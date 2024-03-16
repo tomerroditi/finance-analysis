@@ -1,0 +1,8 @@
+{
+  "name": "node",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "israeli-bank-scrapers": "^4.2.2"
+  }
+}
