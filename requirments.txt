@@ -1,1 +1,3 @@
+pandas==2.2.1
 pytest==8.1.1
+Faker==24.3.0

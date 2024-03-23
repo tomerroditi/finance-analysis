@@ -4,14 +4,14 @@ import { CompanyTypes, createScraper } from 'israeli-bank-scrapers';
 const args = process.argv.slice(2);
 const username = args[0];
 const password = args[1];
-
+const start_date = args[2];
 
 (async function() {
   try {
     // read documentation below for available options
     const options = {
       companyId: CompanyTypes.max,
-      startDate: new Date('2024-01-01'),
+      startDate: new Date(start_date),
       combineInstallments: false,
       showBrowser: true
     };
@@ -29,7 +29,7 @@ const password = args[1];
       scrapeResult.accounts.forEach((account) => {
         console.log(`found ${account.txns.length} transactions for account number ${account.accountNumber}`);
         account.txns.forEach((txn) => {
-          console.log(`type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
+          console.log(`account number: ${account.accountNumber}| type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
         });
       });
     }

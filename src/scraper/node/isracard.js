@@ -5,6 +5,7 @@ const args = process.argv.slice(2);
 const id = args[0];
 const card6Digits = args[1];
 const password = args[2];
+const start_date = args[3];
 
 
 (async function() {
@@ -12,7 +13,7 @@ const password = args[2];
     // read documentation below for available options
     const options = {
       companyId: CompanyTypes.isracard,
-      startDate: new Date('2024-01-01'),
+      startDate: new Date(start_date),
       combineInstallments: false,
       showBrowser: true
     };
@@ -31,7 +32,7 @@ const password = args[2];
       scrapeResult.accounts.forEach((account) => {
         console.log(`found ${account.txns.length} transactions for account number ${account.accountNumber}`);
         account.txns.forEach((txn) => {
-          console.log(`type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
+          console.log(`account number: ${account.accountNumber}| type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
         });
       });
     }
