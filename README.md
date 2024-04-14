@@ -23,3 +23,15 @@ This project aims to help individuals track their finance status, including savi
 - create a dashboard to visualize the data and it's analysis (maybe grafana)
 - create a forecasting feature to predict future savings
 - create a summary of the data
+
+
+# Streamlit App
+the app should be able to:
+- categories setting page to add new categories and tags
+- add\edit\delete credentials of different data scraping websites
+- edit the tags of the expenses (the tags table of the database)
+- visualize the data in various ways with an interactive dashboard
+- provide a forecast of the future savings
+- provide a summary of the data
+- upload a pdf of their monthly salary to be digested by the system
+- support the 2 factor authentication process
