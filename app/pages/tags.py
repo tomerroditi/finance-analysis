@@ -15,6 +15,7 @@ conn = st.connection('data', 'sql')
 ############################################################
 # This page should display all the current categories and their tags, and allow the user to edit them.
 # the user should be able to only add categories and tags.
+# in the future, the user should be able to edit and delete categories and tags.
 def edit_categories_and_tags():
     # load the categories and tags configuration file
     with open(os.path.join(src_path, 'categories.yaml'), 'r') as file:
