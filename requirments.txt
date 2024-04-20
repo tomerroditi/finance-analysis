@@ -1,6 +1,7 @@
-pandas==2.2.1
-pytest==8.1.1
-Faker==24.3.0
+pandas>=2.2.1
+pytest>=8.1.1
+Faker>=24.3.0
 streamlit==1.33.0
 pyyaml==6.0.1
 sqlalchemy==2.0.29
+streamlit-tags>=1.2.8

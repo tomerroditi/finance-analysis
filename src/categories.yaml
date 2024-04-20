@@ -1,58 +1,53 @@
----
-Transportation:
-  - Gas
-  - Public transportation
-  - Taxi
-  - Parking
-  - Tolls
-  - Car maintenance
-  - Car insurance
-  - Car payment
-  - Bike
-  - Scooter
-
-Food:
-  - Groceries
-  - Restaurants
-  - Coffee
-  - Alcohol
-  - Snacks
-  - Work lunches
-
-Health:
-  - Gym
-  - Yoga
-  - Doctor
-  - Dentist
-  - Optometrist
-  - Medication
-  - Therapy
-  - Medical insurance
-
-Household:
-  - Rent
-  - Electricity
-  - Water
-  - Gas
-  - Internet
-  - Phone
-  - Mortgage
-  - Home insurance
-  - Home maintenance
-  - Home improvement
-  - Cleaning supplies
-  - Kitchen accessories
-  - Office accessories
-  - Furniture
-  - Gardening
-
 Entertainment:
-  - Movies
-  - Concerts
-  - Museums
-  - Events
-  - Books
-  - Music
-  - Video games
-  - Streaming services
-  - Subscriptions
+- Movies
+- Concerts
+- Museums
+- Events
+- Books
+- Music
+- Video games
+- Streaming services
+- Subscriptions
+Food:
+- Groceries
+- Restaurants
+- Coffee
+- Alcohol
+- Snacks
+- Work lunches
+Health:
+- Gym
+- Yoga
+- Doctor
+- Dentist
+- Optometrist
+- Medication
+- Therapy
+- Medical insurance
+Household:
+- Rent
+- Electricity
+- Water
+- Gas
+- Internet
+- Phone
+- Mortgage
+- Home insurance
+- Home maintenance
+- Home improvement
+- Cleaning supplies
+- Kitchen accessories
+- Office accessories
+- Furniture
+- Gardening
+Transportation:
+- Gas
+- Public transportation
+- Taxi
+- Parking
+- Tolls
+- Car maintenance
+- Car insurance
+- Car payment
+- Scooter
+- Bike
