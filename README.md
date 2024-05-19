@@ -20,7 +20,7 @@ This project aims to help individuals track their finance status, including savi
 - [x] create a labeling/categorization system for the expenses
     - [x] a framework for labeling new data (adding new labels as well)
     - [x] automation of labeling data that is already labeled
-- create a dashboard to visualize the data and it's analysis (maybe grafana)
+- create an app to visualize the data and it's analysis
 - create a forecasting feature to predict future savings
 - create a summary of the data
 

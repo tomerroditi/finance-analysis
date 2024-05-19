@@ -9,66 +9,131 @@ from streamlit_tags import st_tags
 from src import src_path
 from copy import deepcopy
 
-#TODO: when deleting specific tags make sure to delete them from the tags and credit card tables
-#TODO: when deleting categories make sure to delete them from the credit card table (tags table update is already implemented)
 
-def edit_categories_and_tags(categories_and_tags, yaml_path, conn) -> None:
-    """
-    Edit the categories and tags configuration file.
-    this function takes care of rendering the categories and tags and allows the user to add/delete tags and categories.
+# TODO: when deleting specific tags make sure to delete them from the tags and credit card tables
+# TODO: when deleting categories make sure to delete them from the credit card table (tags table update is already
+#  implemented)
+# TODO: when editing tags, if we add a new tag/category make sure to update the credit card table and the category and
+#  tags UI
 
-    Parameters
-    ----------
-    categories_and_tags : dict
-        A dictionary containing the categories as keys and their tags as values.
-    yaml_path : str
-        The path to the yaml file containing the categories and tags.
+def edit_categories_and_tags(categories_and_tags, yaml_path, conn):
+    # Initialize session state for each category before the loop
+    for category in categories_and_tags.keys():
+        if f'confirm_delete_{category}' not in st.session_state:
+            st.session_state[f'confirm_delete_{category}'] = False
 
-    Returns
-    -------
-    None
-    """
-    change = False
-
-    # render the categories and tags with an option to add/delete tags
-    del_cat = None
-    for category, tags in categories_and_tags.items():
+    # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
+    for category, tags in list(categories_and_tags.items()):
         st.subheader(category, divider="gray")
-        # Render tags input box and use a button to confirm changes
         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
         if new_tags != tags:
             categories_and_tags[category] = new_tags
-            change = True
+            # save changes and rerun to update the UI
+            update_yaml_and_rerun(categories_and_tags, yaml_path)
 
         # delete category
-        if st.button(f'Delete {category}', key=f'{category}_delete'):
-            change = True
-            del_cat = category
+        delete_button = st.button(f'Delete {category}', key=f'my_{category}_delete')
+        if delete_button:
+            st.session_state[f'confirm_delete_{category}'] = True
 
-    # delete categories
-    if del_cat is not None:
-        # remove the deleted categories from the dictionary
-        del categories_and_tags[del_cat]
-        # update the database (delete the tags with the deleted categories)
-        data_to_delete = conn.query('SELECT name FROM tags WHERE category=:category;',
-                                    params={'category': del_cat}, ttl=0)
-        with conn.session as s:
-            for i, row in data_to_delete.iterrows():
-                s.execute(text("UPDATE tags SET category='', tag='' WHERE name=:name;"),
-                          params={'name': row['name']})
-            s.commit()
+        # confirm deletion
+        if st.session_state[f'confirm_delete_{category}']:
+            confirm_button = st.button('Confirm Delete', key=f'confirm_{category}_delete')
+            cancel_button = st.button('Cancel', key=f'cancel_{category}_delete')
 
-    # add a new category
+            # delete and update database
+            if confirm_button:
+                del categories_and_tags[category]
+                data_to_delete = conn.query('SELECT name FROM tags WHERE category=:category;',
+                                            params={'category': category}, ttl=0)
+                with conn.session as s:
+                    for i, row in data_to_delete.iterrows():
+                        s.execute(text("UPDATE tags SET category='', tag='' WHERE name=:name;"),
+                                  params={'name': row['name']})
+                    s.commit()
+                del st.session_state[f'confirm_delete_{category}']
+                update_yaml_and_rerun(categories_and_tags, yaml_path)
+
+            # cancel deletion
+            if cancel_button:
+                st.session_state[f'confirm_delete_{category}'] = False
+                st.rerun()
+
+    # add new categories
     st.subheader('Add a new Category', divider="gray")
     new_category = st.text_input('New Category Name', key='new_category')
     if st.button('Add Category') and new_category != '':
-        change = True
         categories_and_tags[new_category] = []
+        update_yaml_and_rerun(categories_and_tags, yaml_path)
 
-    if change:
-        with open(yaml_path, 'w') as file:
-            yaml.dump(categories_and_tags, file)
-        st.rerun()
+
+def update_yaml_and_rerun(categories_and_tags, yaml_path):
+    with open(yaml_path, 'w') as file:
+        yaml.dump(categories_and_tags, file)
+    st.rerun()
+
+# def edit_categories_and_tags(categories_and_tags, yaml_path, conn) -> None:
+#     """
+#     Edit the categories and tags configuration file.
+#     this function takes care of rendering the categories and tags and allows the user to add/delete tags and categories.
+#
+#     Parameters
+#     ----------
+#     categories_and_tags : dict
+#         A dictionary containing the categories as keys and their tags as values.
+#     yaml_path : str
+#         The path to the yaml file containing the categories and tags.
+#
+#     Returns
+#     -------
+#     None
+#     """
+#     change = False
+#     del_cat = None
+#
+#     if 'confirm_delete' not in st.session_state:
+#         st.session_state['confirm_delete'] = False
+#         st.session_state['category_to_delete'] = None
+#
+#     # render the categories and tags with an option to add/delete tags
+#     del_cat = None
+#     for category, tags in categories_and_tags.items():
+#         st.subheader(category, divider="gray")
+#         # Render tags input box and use a button to confirm changes
+#         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
+#         if new_tags != tags:
+#             categories_and_tags[category] = new_tags
+#             change = True
+#
+#         # delete category
+#         if st.button(f'Delete {category}', key=f'{category}_delete'):
+#             change = True
+#             del_cat = category
+#
+#     # delete categories
+#     if del_cat is not None:
+#         # remove the deleted categories from the dictionary
+#         del categories_and_tags[del_cat]
+#         # update the database (delete the tags with the deleted categories)
+#         data_to_delete = conn.query('SELECT name FROM tags WHERE category=:category;',
+#                                     params={'category': del_cat}, ttl=0)
+#         with conn.session as s:
+#             for i, row in data_to_delete.iterrows():
+#                 s.execute(text("UPDATE tags SET category='', tag='' WHERE name=:name;"),
+#                           params={'name': row['name']})
+#             s.commit()
+#
+#     # add a new category
+#     st.subheader('Add a new Category', divider="gray")
+#     new_category = st.text_input('New Category Name', key='new_category')
+#     if st.button('Add Category') and new_category != '':
+#         change = True
+#         categories_and_tags[new_category] = []
+#
+#     if change:
+#         with open(yaml_path, 'w') as file:
+#             yaml.dump(categories_and_tags, file)
+#         st.rerun()
 
 
 def tag_new_data(conn, categories_and_tags):
