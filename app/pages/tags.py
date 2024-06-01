@@ -1,21 +1,19 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import yaml
 import os
 
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
 from src import src_path
-from copy import deepcopy
 
 
+# TODO: a major refactor to move all the database operations to a module in the src folder, and only wrap the functions
+#  in the streamlit app
 # TODO: when deleting specific tags make sure to delete them from the tags and credit card tables
 # TODO: when deleting categories make sure to delete them from the credit card table (tags table update is already
 #  implemented)
 # TODO: when editing tags, if we add a new tag/category make sure to update the credit card table and the category and
 #  tags UI
-
 def edit_categories_and_tags(categories_and_tags, yaml_path, conn):
     # Initialize session state for each category before the loop
     for category in categories_and_tags.keys():
@@ -72,69 +70,6 @@ def update_yaml_and_rerun(categories_and_tags, yaml_path):
         yaml.dump(categories_and_tags, file)
     st.rerun()
 
-# def edit_categories_and_tags(categories_and_tags, yaml_path, conn) -> None:
-#     """
-#     Edit the categories and tags configuration file.
-#     this function takes care of rendering the categories and tags and allows the user to add/delete tags and categories.
-#
-#     Parameters
-#     ----------
-#     categories_and_tags : dict
-#         A dictionary containing the categories as keys and their tags as values.
-#     yaml_path : str
-#         The path to the yaml file containing the categories and tags.
-#
-#     Returns
-#     -------
-#     None
-#     """
-#     change = False
-#     del_cat = None
-#
-#     if 'confirm_delete' not in st.session_state:
-#         st.session_state['confirm_delete'] = False
-#         st.session_state['category_to_delete'] = None
-#
-#     # render the categories and tags with an option to add/delete tags
-#     del_cat = None
-#     for category, tags in categories_and_tags.items():
-#         st.subheader(category, divider="gray")
-#         # Render tags input box and use a button to confirm changes
-#         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
-#         if new_tags != tags:
-#             categories_and_tags[category] = new_tags
-#             change = True
-#
-#         # delete category
-#         if st.button(f'Delete {category}', key=f'{category}_delete'):
-#             change = True
-#             del_cat = category
-#
-#     # delete categories
-#     if del_cat is not None:
-#         # remove the deleted categories from the dictionary
-#         del categories_and_tags[del_cat]
-#         # update the database (delete the tags with the deleted categories)
-#         data_to_delete = conn.query('SELECT name FROM tags WHERE category=:category;',
-#                                     params={'category': del_cat}, ttl=0)
-#         with conn.session as s:
-#             for i, row in data_to_delete.iterrows():
-#                 s.execute(text("UPDATE tags SET category='', tag='' WHERE name=:name;"),
-#                           params={'name': row['name']})
-#             s.commit()
-#
-#     # add a new category
-#     st.subheader('Add a new Category', divider="gray")
-#     new_category = st.text_input('New Category Name', key='new_category')
-#     if st.button('Add Category') and new_category != '':
-#         change = True
-#         categories_and_tags[new_category] = []
-#
-#     if change:
-#         with open(yaml_path, 'w') as file:
-#             yaml.dump(categories_and_tags, file)
-#         st.rerun()
-
 
 def tag_new_data(conn, categories_and_tags):
     df_tags = conn.query("SELECT * FROM tags WHERE category='' OR tag='';", ttl=0)
@@ -185,21 +120,10 @@ def edit_tagged_data(conn, categories_and_tags):
         st.rerun()
 
 
-# @st.cache_data
-# def fetch_data(connection):
-#     # add a pie chart of the amount spent in each category
-#     df_transactions = conn.query('SELECT * FROM credit_card_transactions')
-#     df_tags = conn.query('SELECT * FROM tags')
-#
-#     df_transactions['category'] = df_transactions['desc'].apply(lambda x: df_tags[df_tags['name'] == x]['category'].values[0] if x in df_tags['name'].values else 'Other')
-#     return df_transactions
-
-
 def main():
-    # if 'conn' not in st.session_state:
-    #     st.session_state['conn'] = st.connection('data', 'sql')
-    # conn = st.session_state['conn']
-    conn = st.connection('data', 'sql')
+    if 'conn' not in st.session_state:
+        st.session_state['conn'] = st.connection('data', 'sql')
+    conn = st.session_state['conn']
 
     # Path to the YAML file
     yaml_path = os.path.join(src_path, 'categories.yaml')
