@@ -2,18 +2,21 @@ import subprocess
 import pandas as pd
 import datetime
 import sqlite3
+import yaml
 
 from pathlib import Path
-from .credentials import isracard_credentials, max_credentials, onezero_credentials, hafenix_credentials
 from src import __file__ as src_file
 
 
-def get_isracard_data(start_date: datetime.datetime) -> str:
+# TODO: exchange the python file that hold the credentials with a yaml file
+def get_isracard_data(credentials: dict, start_date: datetime.datetime) -> str:
     """
     Get the data from the Isracard website
 
     Parameters
     ----------
+    credentials : dict
+        The credentials to log in to the website, should contain the following keys: 'id', 'card6Digits', 'password'
     start_date : datetime.datetime
         The date from which to start pulling the data
     """
@@ -23,19 +26,21 @@ def get_isracard_data(start_date: datetime.datetime) -> str:
     # Path to your Node.js script
     script_path = Path(__file__).parent / 'node/isracard.js'
     # Run the Node.js script
-    result = subprocess.run(['node', script_path, isracard_credentials['id'], isracard_credentials['card6Digits'],
-                             isracard_credentials['password'], start_date],
+    result = subprocess.run(['node', script_path, credentials['id'], credentials['card6Digits'],
+                             credentials['password'], start_date],
                             capture_output=True, text=True, encoding='utf-8')
     print(result.stdout.split('\n')[0])
     return result.stdout
 
 
-def get_max_data(start_date: datetime.datetime) -> str:
+def get_max_data(credentials: dict, start_date: datetime.datetime) -> str:
     """
     Get the data from the Max website
 
     Parameters
     ----------
+    credentials : dict
+        The credentials to log in to the website, should contain the following keys: 'username', 'password'
     start_date : datetime.datetime
         The date from which to start pulling the data
     """
@@ -45,18 +50,10 @@ def get_max_data(start_date: datetime.datetime) -> str:
     # Path to your Node.js script
     script_path = Path(__file__).parent / 'node/max.js'
     # Run the Node.js script
-    result = subprocess.run(['node', script_path, max_credentials['username'], max_credentials['password'], start_date],
+    result = subprocess.run(['node', script_path, credentials['username'], credentials['password'], start_date],
                             capture_output=True, text=True, encoding='utf-8')
     print(result.stdout.split('\n')[0])
     return result.stdout
-
-
-def get_onezero_data():
-    pass
-
-
-def get_hafenixa_data():
-    pass
 
 
 def scraped_data_to_df(data: str) -> pd.DataFrame:
@@ -103,8 +100,12 @@ def pull_data(start_date: datetime.datetime):
     """
     assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
 
-    isracard_data = get_isracard_data(start_date)
-    max_data = get_max_data(start_date)
+    with open('../credentials.yaml') as file:
+        credentials = yaml.load(file, Loader=yaml.FullLoader)
+    credentials = credentials['credit_cards']
+
+    isracard_data = get_isracard_data(credentials['isracard'], start_date)
+    max_data = get_max_data(credentials['max'], start_date)
     # onezero_data = get_onezero_data()
     # hafenixa_data = get_hafenixa_data()
     isracard_df = scraped_data_to_df(isracard_data)

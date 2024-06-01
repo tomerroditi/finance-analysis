@@ -22,3 +22,4 @@ Backup of *.doc*
 
 # dont upload scraper.credentials file since it has sensitive information
 src/scraper/credentials.py
+src/scraper/credentials.yaml
