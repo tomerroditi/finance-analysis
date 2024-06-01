@@ -4,7 +4,7 @@ import datetime
 import sqlite3
 import os
 
-from src.scraper.scrapers import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
+from src.scraper.credit_card import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
 
 
 last_month = datetime.datetime.now() - datetime.timedelta(days=30)
