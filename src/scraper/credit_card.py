@@ -60,10 +60,7 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     assert isinstance(data, str), 'data should be a string'
 
     data = data.split('\n')
-    if data[0].startswith('found '):
-        data = data[1:]
-    if data[-1] == '':
-        data = data[:-1]
+    data = [line for line in data if not line.startswith('found ') or not line == '']
     data = [line.split('| ') for line in data]
     col_names = [item.split(': ')[0] for item in data[0]]
     data = [[item.split(': ')[1] for item in line] for line in data]
@@ -106,15 +103,12 @@ def pull_data(start_date: datetime.datetime):
 
     isracard_data = get_isracard_data(credentials['isracard'], start_date)
     max_data = get_max_data(credentials['max'], start_date)
-    # onezero_data = get_onezero_data()
-    # hafenixa_data = get_hafenixa_data()
+
     isracard_df = scraped_data_to_df(isracard_data)
     max_df = scraped_data_to_df(max_data)
-    # onezero_df = scraped_data_to_df(onezero_data)
-    # hafenixa_df = scraped_data_to_df(hafenixa_data)
+
     save_to_db(isracard_df, 'credit_card_transactions')
     save_to_db(max_df, 'credit_card_transactions')
-    # save_to_db(onezero_df, 'bank_transactions')
-    # save_to_db(hafenixa_df, 'finance_transactions
+
 
 
