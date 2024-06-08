@@ -3,14 +3,26 @@ import pytest
 import datetime
 import sqlite3
 import os
+import yaml
 
 from src.scraper.credit_card import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
+from src.scraper.bank import get_onezero_data
+from src import __file__ as src_file
+from pathlib import Path
 
 
 last_month = datetime.datetime.now() - datetime.timedelta(days=30)
 
+
 @pytest.fixture(scope='function')
-def ex_data(faker) -> pd.DataFrame:
+def credentials():
+    with (Path(src_file).parent / 'scraper/credentials.yaml').open('r') as file:
+        credentials = yaml.safe_load(file)
+    return credentials
+
+
+@pytest.fixture(scope='function')
+def example_data(faker) -> pd.DataFrame:
     """create a fake data for testing the save_to_db function"""
     len = 10
     data = pd.DataFrame({'type': [faker.word() for _ in range(len)],
@@ -23,9 +35,9 @@ def ex_data(faker) -> pd.DataFrame:
 
 
 @pytest.mark.sensitive
-def test_get_isracard_data():
+def test_get_isracard_data(credentials):
     # get the data from the last month
-    data = get_isracard_data(last_month)
+    data = get_isracard_data(credentials['credit_cards']['isracard'], last_month)
     assert data.startswith('found ')
     # check that the number of lines in the output are as expected
     number_of_lines = int(data[:20].split(' ')[1])
@@ -33,13 +45,22 @@ def test_get_isracard_data():
 
 
 @pytest.mark.sensitive
-def test_get_max_data():
+def test_get_max_data(credentials):
     # get the data from the last month
-    data = get_max_data(last_month)
+    data = get_max_data(credentials['credit_cards']['max'], last_month)
     assert data.startswith('found ')
     # check that the number of lines in the output are as expected
     number_of_lines = int(data[:20].split(' ')[1])
     assert len(data.split('\n')) == number_of_lines + 2  # 1 for the first line and 1 for the last line which is empty
+
+@pytest.mark.sensitive
+def test_get_onezero_data(credentials):
+    # get the data from the last month
+    data = get_onezero_data(credentials['banks']['onezero'], last_month)
+    assert data.startswith('found ')
+    # check that the number of lines in the output are as expected
+    number_of_lines = int(data[:20].split(' ')[1])
+    assert len(data.split('\n')) == number_of_lines + 2
 
 
 def test_scraped_data_to_df():
@@ -60,11 +81,11 @@ def test_scraped_data_to_df():
     assert df['status'].to_list() == ['my_status', 'my_status', 'my_status']
 
 
-def test_save_to_db(ex_data, tmpdir, monkeypatch):
+def test_save_to_db(example_data, tmpdir, monkeypatch):
     # rename scrapers.src_file to the tmpdir
     monkeypatch.setattr('src.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
     # save the data to the db
-    save_to_db(ex_data, 'test_table')
+    save_to_db(example_data, 'test_table')
 
 
 def test_pull_data(monkeypatch, tmpdir):
