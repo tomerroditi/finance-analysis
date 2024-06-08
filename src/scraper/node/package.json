@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
+    "enquirer": "^2.4.1",
     "israeli-bank-scrapers": "^4.2.2"
   }
 }
