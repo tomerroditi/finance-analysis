@@ -8,7 +8,6 @@ from pathlib import Path
 from src import __file__ as src_file
 
 
-# TODO: exchange the python file that hold the credentials with a yaml file
 def get_isracard_data(credentials: dict, start_date: datetime.datetime) -> str:
     """
     Get the data from the Isracard website
