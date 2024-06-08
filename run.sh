@@ -1,1 +1,1 @@
-streamlit run .\app\overview.py
+streamlit run .\app\overview.
