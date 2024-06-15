@@ -5,9 +5,9 @@ import sqlite3
 import os
 import yaml
 
-from src.scraper.credit_card import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
-from src.scraper.bank import get_onezero_data
-from src import __file__ as src_file
+from fad.scraper.credit_card import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
+from fad.scraper.bank import get_onezero_data
+from fad import __file__ as src_file
 from pathlib import Path
 
 
@@ -83,7 +83,7 @@ def test_scraped_data_to_df():
 
 def test_save_to_db(example_data, tmpdir, monkeypatch):
     # rename scrapers.src_file to the tmpdir
-    monkeypatch.setattr('src.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
+    monkeypatch.setattr('fad.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
     # save the data to the db
     save_to_db(example_data, 'test_table')
 
@@ -102,11 +102,11 @@ def test_pull_data(monkeypatch, tmpdir):
                'account number: 002| type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
                'account number: 002| type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
 
-    monkeypatch.setattr('src.scraper.scrapers.get_isracard_data', mock_get_isracard_data)
-    monkeypatch.setattr('src.scraper.scrapers.get_max_data', mock_get_max_data)
+    monkeypatch.setattr('fad.scraper.scrapers.get_isracard_data', mock_get_isracard_data)
+    monkeypatch.setattr('fad.scraper.scrapers.get_max_data', mock_get_max_data)
 
     # mock the src_file path
-    monkeypatch.setattr('src.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
+    monkeypatch.setattr('fad.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
 
     start_date = datetime.datetime(2021, 1, 1)
     pull_data(start_date)

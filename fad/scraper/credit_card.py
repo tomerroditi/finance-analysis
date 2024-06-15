@@ -5,7 +5,7 @@ import sqlite3
 import yaml
 
 from pathlib import Path
-from src import __file__ as src_file
+from fad import __file__ as src_file
 
 
 def get_isracard_data(credentials: dict, start_date: datetime.datetime) -> str:

@@ -1,5 +1,5 @@
 from datetime import datetime
-from src.scraper.credit_card import pull_data
+from fad.scraper.credit_card import pull_data
 
 
 if __name__ == "__main__":

@@ -4,10 +4,10 @@ import os
 
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
-from src import src_path
+from fad import src_path
 
 
-# TODO: a major refactor to move all the database operations to a module in the src folder, and only wrap the functions
+# TODO: a major refactor to move all the database operations to a module in the fad folder, and only wrap the functions
 #  in the streamlit app
 # TODO: when deleting specific tags make sure to delete them from the tags and credit card tables
 # TODO: when deleting categories make sure to delete them from the credit card table (tags table update is already

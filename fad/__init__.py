@@ -1,6 +1,7 @@
-from enum import Enum
 import os
 
+from enum import Enum
+from fad import scraper
 
 src_path = os.path.dirname(os.path.abspath(__file__))
 
