@@ -14,7 +14,6 @@ const phoneNumber = args[0];
       combineInstallments: false,
       showBrowser: false
     };
-
     const scraper = createScraper(options);
     await scraper.triggerTwoFactorAuth(phoneNumber);
 

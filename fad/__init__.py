@@ -4,6 +4,7 @@ from enum import Enum
 from fad import scraper
 
 src_path = os.path.dirname(os.path.abspath(__file__))
+credentials_path = os.path.join(src_path, 'scraper', 'credentials.yaml')
 
 __version__ = "0.0.1"
 
