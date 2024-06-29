@@ -15,7 +15,7 @@ const start_date = args[3];
       companyId: CompanyTypes.isracard,
       startDate: new Date(start_date),
       combineInstallments: false,
-      showBrowser: false
+      showBrowser: true
     };
 
     // read documentation below for information about credentials

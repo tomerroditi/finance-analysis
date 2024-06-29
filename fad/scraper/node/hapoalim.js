@@ -14,7 +14,7 @@ const start_date = args[2];
       companyId: CompanyTypes.hapoalim,
       startDate: new Date(start_date),
       combineInstallments: false,
-      showBrowser: false
+      showBrowser: true
     };
 
     // create the credentials object
