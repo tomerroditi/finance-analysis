@@ -126,7 +126,7 @@ def main():
     conn = st.session_state['conn']
 
     # Path to the YAML file
-    yaml_path = os.path.join(src_path, 'categories.yaml')
+    yaml_path = os.path.join(src_path, 'app', 'categories.yaml')
 
     # Load data only if it's not already in the session state
     if 'categories_and_tags' not in st.session_state:
