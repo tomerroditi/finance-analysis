@@ -1,113 +1,135 @@
 import subprocess
 import pandas as pd
 import datetime
-import sqlite3
-import yaml
 
 from pathlib import Path
-from fad import __file__ as src_file
+from fad.scraper.utils import save_to_db, scraped_data_to_df
 
 
-def get_isracard_data(credentials: dict, start_date: datetime.datetime) -> str:
+class CreditCardScraper:
     """
-    Get the data from the Isracard website
-
-    Parameters
-    ----------
-    credentials : dict
-        The credentials to log in to the website, should contain the following keys: 'id', 'card6Digits', 'password'
-    start_date : datetime.datetime
-        The date from which to start pulling the data
+    A class to scrape credit card transactions from different providers and save them to the database using Node.js
+    scripts and pandas DataFrames.
     """
-    assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
 
-    start_date = start_date.strftime('%Y-%m-%d')
-    # Path to your Node.js script
-    script_path = Path(__file__).parent / 'node/isracard.js'
-    # Run the Node.js script
-    result = subprocess.run(['node', script_path, credentials['id'], credentials['card6Digits'],
-                             credentials['password'], start_date],
-                            capture_output=True, text=True, encoding='utf-8')
-    print(result.stdout.split('\n')[0])
-    return result.stdout
+    script_path = {
+        'isracard': Path(__file__).parent / 'node/isracard.js',
+        'max': Path(__file__).parent / 'node/max.js'
+    }
 
+    def __init__(self, credentials: dict):
+        """
+        Initialize the CreditCardScraper object with the credentials to be used to log in to the websites
 
-def get_max_data(credentials: dict, start_date: datetime.datetime) -> str:
-    """
-    Get the data from the Max website
+        Parameters
+        ----------
+        credentials : dict
+            The credit cards credentials to log in to the website in the format of:
+            {
+             provider1:
+                account1: {cred|_field1: value1, cred_field2: value2, ...},
+                account2: {cred_field1: value1, cred_field2: value2, ...},
+                ...
+             provider2:
+                account1: {cred_field1: value1, cred_field2: value2, ...},
+                account2: {cred_field1: value1, cred_field2: value2, ...},
+                ...
+             }
+        """
+        self.credentials = credentials
 
-    Parameters
-    ----------
-    credentials : dict
-        The credentials to log in to the website, should contain the following keys: 'username', 'password'
-    start_date : datetime.datetime
-        The date from which to start pulling the data
-    """
-    assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
+    def pull_data_to_db(self, start_date: datetime.datetime, db_path: str = None):
+        """
+        Pull data from the specified provider and save it to the database
 
-    start_date = start_date.strftime('%Y-%m-%d')
-    # Path to your Node.js script
-    script_path = Path(__file__).parent / 'node/max.js'
-    # Run the Node.js script
-    result = subprocess.run(['node', script_path, credentials['username'], credentials['password'], start_date],
-                            capture_output=True, text=True, encoding='utf-8')
-    print(result.stdout.split('\n')[0])
-    return result.stdout
+        Parameters
+        ----------
+        start_date : datetime.datetime
+            The date from which to start pulling the data
+        db_path : str
+            The path to the database file. If None, the database file will be created in the folder of fad package
+        """
+        assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
+        start_date = start_date.strftime('%Y-%m-%d')
 
+        data = []
+        for provider, accounts in self.credentials.items():
+            scrape_func = self.get_provider_scraping_function(provider)
+            for account, creds in accounts.items():
+                scraped_data = scrape_func(start_date, **creds)
+                scraped_data['account'] = account
+                data.append(scraped_data)
 
-def scraped_data_to_df(data: str) -> pd.DataFrame:
-    assert isinstance(data, str), 'data should be a string'
+        df = pd.concat(data, ignore_index=True)
+        save_to_db(df, 'credit_card_transactions', db_path=db_path)
 
-    data = data.split('\n')
-    data = [line for line in data if not line.startswith('found ') or not line == '']
-    data = [line.split('| ') for line in data]
-    col_names = [item.split(': ')[0] for item in data[0]]
-    data = [[item.split(': ')[1] for item in line] for line in data]
-    df = pd.DataFrame(data, columns=col_names)
-    if 'amount' in df.columns:
-        df['amount'] = df['amount'].astype(float)
-    if 'date' in df.columns:
-        df['date'] = df['date'].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ'))
-    return df
+    def get_provider_scraping_function(self, provider: str):
+        """
+        Get the scraping function for the specified provider
 
+        Parameters
+        ----------
+        provider : str
+            The provider to get the scraping function for
+        """
+        assert isinstance(provider, str), 'provider should be a string'
 
-def save_to_db(df: pd.DataFrame, table_name: str) -> None:
-    assert isinstance(df, pd.DataFrame), 'df should be a pandas DataFrame object'
-    assert isinstance(table_name, str), 'table_name should be a string'
+        match provider:
+            case 'isracard':
+                return self.get_isracard_data
+            case 'max':
+                return self.get_max_data
+            case _:
+                raise ValueError('currently only supporting Isracard and Max providers')
 
-    db_path = Path(src_file).parent / 'data.db'
-    conn = sqlite3.connect(db_path)
-    df.to_sql(table_name, conn, if_exists='append', index=False)
-    # delete duplicates
-    conn.execute(f"DELETE FROM {table_name} WHERE rowid NOT IN (SELECT MIN(rowid) FROM {table_name} GROUP BY id)")
-    conn.commit()
-    conn.close()
-    print(f'Successfully saved the data to the {table_name} table in the database')
+    @staticmethod
+    def get_isracard_data(start_date: str, id: str = None, card6Digits: str = None, password: str = None,
+                          **kwargs) -> (
+            pd.DataFrame):
+        """
+        Get the data from the Isracard website
 
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        id : str
+            The owner's ID
+        card6Digits : str
+            The last 6 digits of the credit card
+        password : str
+            The password to log in to the website
+        kwargs : dict
+            Additional arguments, not used in this function
+        """
+        script_path = CreditCardScraper.script_path['isracard']
+        # Run the Node.js script
+        result = subprocess.run(['node', script_path, id, card6Digits, password, start_date],
+                                capture_output=True, text=True, encoding='utf-8')
+        print(result.stdout.split('\n')[0])
+        df = scraped_data_to_df(result.stdout)
+        return df
 
-def pull_data(start_date: datetime.datetime):
-    """
-    Pull data from all the sources and save it to the database
+    @staticmethod
+    def get_max_data(start_date: str, username: str = None, password: str = None, **kwargs) -> pd.DataFrame:
+        """
+        Get the data from the Max website
 
-    Parameters
-    ----------
-    start_date : datetime.datetime
-        The date from which to start pulling the data
-    """
-    assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
-
-    with open('../credentials.yaml') as file:
-        credentials = yaml.load(file, Loader=yaml.FullLoader)
-    credentials = credentials['credit_cards']
-
-    isracard_data = get_isracard_data(credentials['isracard'], start_date)
-    max_data = get_max_data(credentials['max'], start_date)
-
-    isracard_df = scraped_data_to_df(isracard_data)
-    max_df = scraped_data_to_df(max_data)
-
-    save_to_db(isracard_df, 'credit_card_transactions')
-    save_to_db(max_df, 'credit_card_transactions')
-
-
-
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        username : str
+            The username to log in to the website
+        password : str
+            The password to log in to the website
+        kwargs : dict
+            Additional arguments, not used in this function
+        """
+        script_path = CreditCardScraper.script_path['max']
+        # Run the Node.js script
+        result = subprocess.run(['node', script_path, username, password, start_date],
+                                capture_output=True, text=True, encoding='utf-8')
+        print(result.stdout.split('\n')[0])
+        df = scraped_data_to_df(result.stdout)
+        return df

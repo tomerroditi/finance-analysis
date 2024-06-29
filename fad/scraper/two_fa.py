@@ -5,12 +5,12 @@ from threading import Event
 from time import sleep
 
 
-activate = {
-    "onezero": "onezero_2fa.js",
-}
-
-
 class TwoFAHandler:
+
+    tfa_scripts = {
+        "onezero": "onezero_2fa.js",
+    }
+
     def __init__(self, provider, contact_info):
         self.provider = provider
         self.contact_info = contact_info
@@ -31,8 +31,8 @@ class TwoFAHandler:
         """
         provider = self.provider.lower()
 
-        if provider in activate:
-            js_script = str(Path(__file__).parent / 'node' / activate[provider])
+        if provider in TwoFAHandler.tfa_scripts:
+            js_script = str(Path(__file__).parent / 'node' / TwoFAHandler.tfa_scripts[provider])
 
             # Start the Node.js script
             self.process = subprocess.Popen(

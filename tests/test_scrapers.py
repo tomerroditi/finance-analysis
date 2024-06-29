@@ -5,13 +5,15 @@ import sqlite3
 import os
 import yaml
 
-from fad.scraper.credit_card import get_isracard_data, get_max_data, scraped_data_to_df, save_to_db, pull_data
-from fad.scraper.bank import get_onezero_data
+from fad.scraper.credit_card import CreditCardScraper
+from fad.scraper.bank import BankScraper
+from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad import __file__ as src_file
 from pathlib import Path
 
 
 last_month = datetime.datetime.now() - datetime.timedelta(days=30)
+last_month_str = last_month.strftime('%Y-%m-%d')
 
 
 @pytest.fixture(scope='function')
@@ -22,96 +24,127 @@ def credentials():
 
 
 @pytest.fixture(scope='function')
-def example_data(faker) -> pd.DataFrame:
-    """create a fake data for testing the save_to_db function"""
-    len = 10
-    data = pd.DataFrame({'type': [faker.word() for _ in range(len)],
-                         'id': [faker.word() for _ in range(len)],
-                         'date': [faker.date_time_this_year() for _ in range(len)],
-                         'amount': [faker.random_number() for _ in range(len)],
-                         'desc': [faker.word() for _ in range(len)],
-                         'status': [faker.word() for _ in range(len)]})
-    return data
+def fake_data_maker(faker):
+    def example_data(length: int = 10) -> pd.DataFrame:
+        """create a fake data for testing the save_to_db function"""
+        data = pd.DataFrame({'account number': [faker.word()] * length,
+                             'type': [faker.word() for _ in range(length)],
+                             'id': [faker.word() for _ in range(length)],
+                             'date': [faker.date_time_this_year() for _ in range(length)],
+                             'amount': [faker.random_number() for _ in range(length)],
+                             'desc': [faker.word() for _ in range(length)],
+                             'status': [faker.word() for _ in range(length)]})
+        return data
+    return example_data
 
 
-@pytest.mark.sensitive
-def test_get_isracard_data(credentials):
-    # get the data from the last month
-    data = get_isracard_data(credentials['credit_cards']['isracard'], last_month)
-    assert data.startswith('found ')
-    # check that the number of lines in the output are as expected
-    number_of_lines = int(data[:20].split(' ')[1])
-    assert len(data.split('\n')) == number_of_lines + 2  # 1 for the first line and 1 for the last line which is empty
+class TestUtils:
+    @staticmethod
+    def test_scraped_data_to_df():
+        data = 'found 3 some other txt information bla blabla\n' \
+               'type: my_type| id: my_id| date: 2024-02-03T22:00:00.000Z| amount: -500| desc: shop name| status: my_status\n' \
+               'type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
+               'type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
+
+        df = scraped_data_to_df(data)
+        assert df.shape == (3, 6)
+        assert df['amount'].sum() == -1000
+        assert df['type'].to_list() == ['my_type', 'my_type', 'my_type']
+        assert df['id'].to_list() == ['my_id', 'my_id_1', 'my_id_2']
+        assert df['date'].to_list() == [datetime.datetime(2024, 2, 3, 22, 0),
+                                        datetime.datetime(2024, 1, 1, 22, 0),
+                                        datetime.datetime(2024, 1, 1, 22, 0)]
+        assert df['desc'].to_list() == ['shop name', 'some shop name', 'some other shop name']
+        assert df['status'].to_list() == ['my_status', 'my_status', 'my_status']
+
+    @staticmethod
+    def test_save_to_db(fake_data_maker, tmpdir, monkeypatch):
+        example_data = fake_data_maker()
+        save_to_db(example_data, 'test_table', db_path=os.path.join(tmpdir, 'test.db'))
+        conn = sqlite3.connect(os.path.join(tmpdir, 'test.db'))
+        data = pd.read_sql('SELECT * FROM test_table', conn)
+        assert data.shape == example_data.shape
 
 
-@pytest.mark.sensitive
-def test_get_max_data(credentials):
-    # get the data from the last month
-    data = get_max_data(credentials['credit_cards']['max'], last_month)
-    assert data.startswith('found ')
-    # check that the number of lines in the output are as expected
-    number_of_lines = int(data[:20].split(' ')[1])
-    assert len(data.split('\n')) == number_of_lines + 2  # 1 for the first line and 1 for the last line which is empty
+class TestCreditCardScraper:
+    @staticmethod
+    @pytest.mark.sensitive
+    def test_get_isracard_data(credentials):
+        data = CreditCardScraper.get_isracard_data(last_month_str, **credentials['credit_cards']['isracard']['Tomer'])
+        assert isinstance(data, pd.DataFrame)
+        assert len(data) > 0
 
-@pytest.mark.sensitive
-def test_get_onezero_data(credentials):
-    # get the data from the last month
-    data = get_onezero_data(credentials['banks']['onezero'], last_month)
-    assert data.startswith('found ')
-    # check that the number of lines in the output are as expected
-    number_of_lines = int(data[:20].split(' ')[1])
-    assert len(data.split('\n')) == number_of_lines + 2
+    @staticmethod
+    @pytest.mark.sensitive
+    def test_get_max_data(credentials):
+        data = CreditCardScraper.get_max_data(last_month_str, **credentials['credit_cards']['max']['Tomer'])
+        assert isinstance(data, pd.DataFrame)
+        assert len(data) > 0
+
+    @staticmethod
+    def test_pull_data(monkeypatch, tmpdir, fake_data_maker):
+        # mock the get_isracard_data and get_max_data functions
+        def mock_get_isracard_data(*args, **kwargs):
+            return fake_data_maker(10)
+
+        def mock_get_max_data(*args, **kwargs):
+            return fake_data_maker(3)
+
+        credentials = {
+            'isracard': {
+                'some_name': {'id': '123456789', 'card6Digits': '123456'}
+            },
+            'max': {
+                'other_name': {'username': 'tomer', 'password': '123456'}
+            }
+        }
+
+        credit_card_scraper = CreditCardScraper(credentials)
+        monkeypatch.setattr(credit_card_scraper, 'get_isracard_data', mock_get_isracard_data)
+        monkeypatch.setattr(credit_card_scraper, 'get_max_data', mock_get_max_data)
+
+        start_date = datetime.datetime(2021, 1, 1)
+        db_path = os.path.join(tmpdir, 'data.db')
+
+        credit_card_scraper.pull_data_to_db(start_date, db_path)
+        conn = sqlite3.connect(db_path)
+        credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
+        assert credit_cards_data.shape == (13, 8)
 
 
-def test_scraped_data_to_df():
-    data = 'found 3 some other txt information bla blabla\n' \
-           'type: my_type| id: my_id| date: 2024-02-03T22:00:00.000Z| amount: -500| desc: shop name| status: my_status\n' \
-           'type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
-           'type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
+class TestBankScraper:
+    @staticmethod
+    @pytest.mark.sensitive
+    def test_get_onezero_data(credentials):
+        data = BankScraper.get_onezero_data(last_month_str, **credentials['banks']['onezero']['Tomer'])
+        assert isinstance(data, pd.DataFrame)
+        assert len(data) > 0
 
-    df = scraped_data_to_df(data)
-    assert df.shape == (3, 6)
-    assert df['amount'].sum() == -1000
-    assert df['type'].to_list() == ['my_type', 'my_type', 'my_type']
-    assert df['id'].to_list() == ['my_id', 'my_id_1', 'my_id_2']
-    assert df['date'].to_list() == [datetime.datetime(2024, 2, 3, 22, 0),
-                                    datetime.datetime(2024, 1, 1, 22, 0),
-                                    datetime.datetime(2024, 1, 1, 22, 0)]
-    assert df['desc'].to_list() == ['shop name', 'some shop name', 'some other shop name']
-    assert df['status'].to_list() == ['my_status', 'my_status', 'my_status']
+    @staticmethod
+    @pytest.mark.sensitive
+    def test_get_hapoalim_data(credentials):
+        data = BankScraper.get_hapoalim_data(last_month_str, **credentials['banks']['hapoalim']['Shir'])
+        assert isinstance(data, pd.DataFrame)
+        assert len(data) > 0
 
+    @staticmethod
+    def test_pull_data(monkeypatch, tmpdir, fake_data_maker):
+        # mock the get_isracard_data and get_max_data functions
+        def mock_get_onezero_data(*args, **kwargs):
+            return fake_data_maker(5)
 
-def test_save_to_db(example_data, tmpdir, monkeypatch):
-    # rename scrapers.src_file to the tmpdir
-    monkeypatch.setattr('fad.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
-    # save the data to the db
-    save_to_db(example_data, 'test_table')
+        credentials = {
+            'onezero': {
+                'some_name': {'id': '123456789', 'card6Digits': '123456', 'otplongtermtoken': '123456'}
+            },
+        }
 
+        credit_card_scraper = BankScraper(credentials)
+        monkeypatch.setattr(credit_card_scraper, 'get_onezero_data', mock_get_onezero_data)
 
-def test_pull_data(monkeypatch, tmpdir):
-    # mock the get_isracard_data and get_max_data functions
-    def mock_get_isracard_data(start_date):
-        return 'found 3 some other txt information bla blabla\n' \
-               'account number: 001| type: my_type| id: my_id| date: 2024-02-03T22:00:00.000Z| amount: -500| desc: shop name| status: my_status\n' \
-               'account number: 001| type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
-               'account number: 001| type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
+        db_path = os.path.join(tmpdir, 'data.db')
 
-    def mock_get_max_data(start_date):
-        return 'found 3 some other txt information bla blabla\n' \
-               'account number: 002| type: my_type| id: my_id| date: 2024-02-03T22:00:00.000Z| amount: -500| desc: shop name| status: my_status\n' \
-               'account number: 002| type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
-               'account number: 002| type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
-
-    monkeypatch.setattr('fad.scraper.scrapers.get_isracard_data', mock_get_isracard_data)
-    monkeypatch.setattr('fad.scraper.scrapers.get_max_data', mock_get_max_data)
-
-    # mock the src_file path
-    monkeypatch.setattr('fad.scraper.scrapers.src_file', os.path.join(tmpdir, 'test.txt'))
-
-    start_date = datetime.datetime(2021, 1, 1)
-    pull_data(start_date)
-    db_path = os.path.join(tmpdir, 'data.db')
-    conn = sqlite3.connect(db_path)
-    credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
-    assert credit_cards_data.shape == (6, 7)
-    assert credit_cards_data['amount'].sum() == -2000
+        credit_card_scraper.pull_data_to_db(last_month, db_path)
+        conn = sqlite3.connect(db_path)
+        credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
+        assert credit_cards_data.shape == (5, 8)
