@@ -1,13 +1,15 @@
 import streamlit as st
 import yaml
-import sys
+import sqlite3
 
 from streamlit_phone_number import st_phone_number
-from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
-from fad.scraper import TwoFAHandler
-from fad import credentials_path
 from typing import Literal
 from threading import Thread
+from datetime import datetime, timedelta
+
+from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
+from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
+from fad import credentials_path
 
 
 class CredentialsUtils:
@@ -405,3 +407,49 @@ class CredentialsUtils:
             st.rerun()
 
         # st.stop()  # stop the script until the user submits the code
+
+
+class DataUtils:
+
+    @staticmethod
+    def pull_data(start_date: datetime | str, credentials: dict):
+        """
+        Pull data from the data sources and save it to the database
+        """
+        for service, providers in credentials.items():
+            match service:
+                case 'credit_cards':
+                    scraper = CreditCardScraper(providers)
+                case 'banks':
+                    scraper = BankScraper(providers)
+                case 'insurances':
+                    scraper = None
+                case _:
+                    raise ValueError(f'Invalid service: {service}')
+
+            if scraper is not None:
+                scraper.pull_data_to_db(start_date)
+
+    @staticmethod
+    def get_latest_data_date(conn: sqlite3.Connection) -> datetime.date:
+        """
+        Get the latest date in the database
+        """
+        query = 'SELECT MAX(date) FROM credit_card_transactions'
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            latest_date = cursor.fetchone()[0]
+        except sqlite3.OperationalError as e:
+            if 'no such table' in str(e):
+                return datetime.today() - timedelta(days=365)
+            else:
+                raise e
+
+        latest_date = datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S').date()
+        return latest_date
+
+
+
+
+

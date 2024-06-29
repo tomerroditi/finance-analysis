@@ -38,7 +38,7 @@ class CreditCardScraper:
         """
         self.credentials = credentials
 
-    def pull_data_to_db(self, start_date: datetime.datetime, db_path: str = None):
+    def pull_data_to_db(self, start_date: datetime.datetime | str, db_path: str = None):
         """
         Pull data from the specified provider and save it to the database
 
@@ -49,8 +49,7 @@ class CreditCardScraper:
         db_path : str
             The path to the database file. If None, the database file will be created in the folder of fad package
         """
-        assert isinstance(start_date, datetime.datetime), 'start_date should be a datetime.datetime object'
-        start_date = start_date.strftime('%Y-%m-%d')
+        start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.datetime) else start_date
 
         data = []
         for provider, accounts in self.credentials.items():
