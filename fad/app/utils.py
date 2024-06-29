@@ -301,7 +301,6 @@ class CredentialsUtils:
         # save the long-term token in the credentials
         if st.session_state.long_term_token not in ['not required', 'waiting for token', 'aborted']:
             field_name = CredentialsUtils.two_fa_field_name[provider]
-            sys.stdout.write(f'long-term token: {st.session_state.long_term_token}\n')
             credentials[service][provider][account_name][field_name] = st.session_state.long_term_token
             st.session_state.long_term_token = 'completed'  # doesn't require 2fa anymore
 
@@ -310,7 +309,7 @@ class CredentialsUtils:
             CredentialsUtils._save_credentials(credentials)
 
         # reset the session state variables related to the new credentials and rerun the script to clear the form
-        if st.session_state.long_term_token in ['completed', 'not required', 'aborted']:
+        if st.session_state.long_term_token in ['not required', 'completed', 'aborted']:
             del st.session_state.long_term_token
             del st.session_state[f'add_new_{service}']
             del st.session_state.saving_credentials_in_progress
@@ -349,28 +348,28 @@ class CredentialsUtils:
             # prompt the user to enter the OTP code, the user can either submit the code or cancel the 2FA which will
             # set the tfa_code session state variable to 'cancel' or the code entered by the user and rerun the script
             if not st.session_state.opened_2fa_dialog:
-                st.session_state.opt_handler = TwoFAHandler(provider, contact_info)
-                st.session_state.thread = Thread(target=st.session_state.opt_handler.handle_2fa)
+                st.session_state.otp_handler = TwoFAHandler(provider, contact_info)
+                st.session_state.thread = Thread(target=st.session_state.otp_handler.handle_2fa)
                 st.session_state.thread.start()
                 CredentialsUtils._two_fa_dialog(provider)
                 st.session_state.opened_2fa_dialog = True
         elif st.session_state.tfa_code == 'cancel':
             # terminate the thread and set the long-term token to 'aborted'
-            st.session_state.opt_handler.process.terminate()
+            st.session_state.otp_handler.process.terminate()
             st.session_state.long_term_token = 'aborted'
         else:
             # fetch the long term token using the OTP code entered by the user
-            st.session_state.opt_handler.set_otp_code(st.session_state.tfa_code)
+            st.session_state.otp_handler.set_otp_code(st.session_state.tfa_code)
             st.session_state.thread.join()  # wait for the thread to finish
-            if st.session_state.opt_handler.error:
-                st.error(f'Error getting long-term token: {st.session_state.opt_handler.error}')
+            if st.session_state.otp_handler.error:
+                st.error(f'Error getting long-term token: {st.session_state.otp_handler.error}')
                 st.stop()
-            st.session_state.long_term_token = st.session_state.opt_handler.result
+            st.session_state.long_term_token = st.session_state.otp_handler.result
 
         if st.session_state.long_term_token != 'waiting for token':
             # we reach here only if the 2FA process is completed successfully or aborted
             del st.session_state.tfa_code
-            del st.session_state.opt_handler
+            del st.session_state.otp_handler
             del st.session_state.thread
             del st.session_state.opened_2fa_dialog
 
