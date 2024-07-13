@@ -4,7 +4,7 @@ import os
 import yaml
 import pandas as pd
 
-from fad import data_path, credentials_path
+from fad import DB_PATH, CREDENTIALS_PATH
 from typing import Callable
 
 
@@ -12,7 +12,7 @@ class ConnFixtures:
     @pytest.fixture(scope='session')
     def db_conn(self):
         """return a connection to the app database"""
-        conn = sqlite3.connect(data_path)
+        conn = sqlite3.connect(DB_PATH)
         yield conn
         conn.close()
 
@@ -36,7 +36,7 @@ class DataFixtures:
     @pytest.fixture(scope='session')
     def credentials(self) -> dict:
         """returns a set of real credentials for the tests to use for scraping"""
-        with open(credentials_path, 'r') as file:
+        with open(CREDENTIALS_PATH, 'r') as file:
             creds = yaml.safe_load(file)
         return creds
 

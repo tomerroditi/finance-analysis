@@ -6,7 +6,6 @@ import os
 
 from tests.conftest import DataFixtures
 from fad.scraper.scrapers import CreditCardScraper, BankScraper
-from fad.scraper.bank import BankScraper
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 
 

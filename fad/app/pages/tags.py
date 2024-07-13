@@ -4,7 +4,7 @@ import os
 
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
-from fad import src_path
+from fad import CATEGORIES_PATH
 
 
 # TODO: a major refactor to move all the database operations to a module in the fad folder, and only wrap the functions
@@ -125,12 +125,9 @@ def main():
         st.session_state['conn'] = st.connection('data', 'sql')
     conn = st.session_state['conn']
 
-    # Path to the YAML file
-    yaml_path = os.path.join(src_path, 'app', 'categories.yaml')
-
     # Load data only if it's not already in the session state
     if 'categories_and_tags' not in st.session_state:
-        with open(yaml_path, 'r') as file:
+        with open(CATEGORIES_PATH, 'r') as file:
             st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
 
     categories_and_tags = st.session_state['categories_and_tags']
@@ -145,7 +142,7 @@ def main():
     # edit categories and tags configuration file
     # TODO: when deleting tags or categories make sure to update the tagged data as well
     st.header('My Categories and Tags', divider="gray")
-    edit_categories_and_tags(categories_and_tags, yaml_path, conn)
+    edit_categories_and_tags(categories_and_tags, CATEGORIES_PATH, conn)
 
 
 if __name__ == '__main__':

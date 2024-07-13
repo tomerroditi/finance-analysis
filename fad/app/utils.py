@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
 from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
-from fad import credentials_path
+from fad import CREDENTIALS_PATH
 
 
 class CredentialsUtils:
@@ -62,7 +62,7 @@ class CredentialsUtils:
         dict
             The credentials dictionary
         """
-        with open(credentials_path, 'r') as file:
+        with open(CREDENTIALS_PATH, 'r') as file:
             return yaml.safe_load(file)
 
     @staticmethod
@@ -87,7 +87,7 @@ class CredentialsUtils:
                 break
 
         # save the credentials to the yaml file
-        with open(credentials_path, 'w') as file:
+        with open(CREDENTIALS_PATH, 'w') as file:
             yaml.dump(credentials, file, sort_keys=False, indent=4)
         st.success('Credentials saved successfully!')
 

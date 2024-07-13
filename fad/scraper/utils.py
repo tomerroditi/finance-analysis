@@ -1,9 +1,8 @@
 import pandas as pd
 import sqlite3
 
-from pathlib import Path
 from datetime import datetime
-from fad import __file__ as src_file
+from fad import DB_PATH
 
 
 def scraped_data_to_df(data: str) -> pd.DataFrame:
@@ -33,7 +32,8 @@ def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = None) -> None:
     table_name: str
         the name of the table to save the data to
     db_path: str
-        the path to the database file. If None, the database file will be created in the folder of fad package
+        the path to the database file. If None, the database file will be created in the folder of fad package with
+        the name 'data.db'
 
     Returns
     -------
@@ -42,7 +42,7 @@ def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = None) -> None:
     assert isinstance(df, pd.DataFrame), 'df should be a pandas DataFrame object'
     assert isinstance(table_name, str), 'table_name should be a string'
 
-    db_path = Path(src_file).parent / 'data.db' if db_path is None else db_path
+    db_path = DB_PATH if db_path is None else db_path
     conn = sqlite3.connect(db_path)
     df.to_sql(table_name, conn, if_exists='append', index=False)
     # delete duplicates
