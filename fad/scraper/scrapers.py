@@ -2,6 +2,7 @@ import os
 import subprocess
 import pandas as pd
 import datetime
+import sqlite3
 
 from abc import ABC, abstractmethod
 from fad.scraper import NODE_JS_SCRIPTS_DIR
@@ -48,6 +49,22 @@ class Scraper(ABC):
 
     @property
     @abstractmethod
+    def table_unique_key(self) -> str:
+        """
+        The unique key in the table which is used to identify duplicated rows
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def sort_by_columns(self) -> list[str]:
+        """
+        The columns to sort the data by
+        """
+        pass
+
+    @property
+    @abstractmethod
     def provider_scraping_function(self) -> dict:
         """
         A dictionary containing the scraping functions for each provider
@@ -75,7 +92,7 @@ class Scraper(ABC):
         """
         self.credentials = credentials
 
-    def pull_data_to_db(self, start_date: datetime.datetime | str, db_path: str = None):
+    def pull_data_to_db(self, start_date: datetime.date | str, db_path: str = None):
         """
         Pull data from the specified provider and save it to the database
 
@@ -86,18 +103,36 @@ class Scraper(ABC):
         db_path : str
             The path to the database file. If None, the database file will be created in the folder of fad package
         """
-        start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.datetime) else start_date
+        start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
 
         data = []
         for provider, accounts in self.credentials.items():
             scrape_func = self.get_provider_scraping_function(provider)
             for account, creds in accounts.items():
                 scraped_data = scrape_func(start_date, **creds)
-                scraped_data['account'] = account
+                scraped_data['account_name'] = account
                 data.append(scraped_data)
 
         df = pd.concat(data, ignore_index=True)
         save_to_db(df, self.table_name, db_path=db_path)
+
+        self.drop_duplicates(db_path=db_path)
+
+    def drop_duplicates(self, db_path: str):
+        """
+        Drop duplicates in the database
+
+        Parameters
+        ----------
+        db_path : str
+            The path to the database file.
+        """
+        conn = sqlite3.connect(db_path)
+        with conn:
+            conn.execute(f"DELETE FROM {self.table_name} WHERE {self.table_unique_key} NOT IN "
+                         f"(SELECT MIN({self.table_unique_key}) FROM {self.table_name} "
+                         f"GROUP BY {self.table_unique_key})")
+            conn.commit()
 
     def get_provider_scraping_function(self, provider: str):
         """
@@ -128,6 +163,8 @@ class CreditCardScraper(Scraper):
         'max': os.path.join(NODE_JS_SCRIPTS_DIR, 'max.js'),
     }
     table_name = 'credit_card_transactions'
+    table_unique_key = 'id'
+    sort_by_columns = ['date', 'account_name', 'account_number']
 
     @property
     def provider_scraping_function(self) -> dict:
@@ -159,10 +196,8 @@ class CreditCardScraper(Scraper):
             Additional arguments, not used in this function
         """
         script_path = CreditCardScraper.script_path['isracard']
-        # Run the Node.js script
         result = subprocess.run(['node', script_path, id, card6Digits, password, start_date],
                                 capture_output=True, text=True, encoding='utf-8')
-        print(result.stdout.split('\n')[0])
         df = scraped_data_to_df(result.stdout)
         return df
 
@@ -183,10 +218,8 @@ class CreditCardScraper(Scraper):
             Additional arguments, not used in this function
         """
         script_path = CreditCardScraper.script_path['max']
-        # Run the Node.js script
         result = subprocess.run(['node', script_path, username, password, start_date],
                                 capture_output=True, text=True, encoding='utf-8')
-        print(result.stdout.split('\n')[0])
         df = scraped_data_to_df(result.stdout)
         return df
 
@@ -205,6 +238,8 @@ class BankScraper(Scraper):
         'hapoalim': os.path.join(NODE_JS_SCRIPTS_DIR, 'hapoalim.js'),
     }
     table_name = 'bank_transactions'
+    table_unique_key = 'id'
+    sort_by_columns = ['date', 'account_name', 'account_number']
 
     @property
     def provider_scraping_function(self) -> dict:
@@ -236,11 +271,9 @@ class BankScraper(Scraper):
             The OTP long-term token to log in to the website
         """
         script_path = BankScraper.script_path['onezero']
-        # Run the Node.js script
         result = subprocess.run(['node', script_path, email, password,
                                  otpLongTermToken, phoneNumber, start_date],
                                 capture_output=True, text=True, encoding='utf-8')
-        print(result.stdout.split('\n')[0])
         df = scraped_data_to_df(result.stdout)
         return df
 
@@ -260,10 +293,8 @@ class BankScraper(Scraper):
             The password to log in to the website
         """
         script_path = BankScraper.script_path['hapoalim']
-        # Run the Node.js script
         result = subprocess.run(['node', script_path, userCode, password, start_date],
                                 capture_output=True, text=True, encoding='utf-8')
-        print(result.stdout.split('\n')[0])
         df = scraped_data_to_df(result.stdout)
         return df
 
@@ -276,6 +307,8 @@ class InsuranceScraper(Scraper):
 
     script_path = {}
     table_name = 'insurance_data'
+    table_unique_key = 'id'
+    sort_by_column = 'date'
 
     @property
     def provider_scraping_function(self) -> dict:

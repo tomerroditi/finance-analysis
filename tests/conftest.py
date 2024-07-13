@@ -67,7 +67,7 @@ class DataFixtures:
         """
         def example_data(length: int = 10) -> pd.DataFrame:
             """create a fake data for testing the save_to_db function"""
-            data = pd.DataFrame({'account number': [faker.word()] * length,
+            data = pd.DataFrame({'account_number': [faker.word()] * length,
                                  'type': [faker.word() for _ in range(length)],
                                  'id': [faker.word() for _ in range(length)],
                                  'date': [faker.date_time_this_year() for _ in range(length)],

@@ -1,8 +1,10 @@
 import streamlit as st
 import yaml
 import sqlite3
+import sqlalchemy
 
 from streamlit_phone_number import st_phone_number
+from streamlit.connections import SQLConnection
 from typing import Literal
 from threading import Thread
 from datetime import datetime, timedelta
@@ -412,9 +414,23 @@ class CredentialsUtils:
 class DataUtils:
 
     @staticmethod
-    def pull_data(start_date: datetime | str, credentials: dict):
+    def pull_data(start_date: datetime | str, credentials: dict, db_path: str = None) -> None:
         """
-        Pull data from the data sources and save it to the database
+        Pull data from the data sources, from the given date to present, and save it to the database file.
+
+        Parameters
+        ----------
+        start_date : datetime | str
+            The date from which to start pulling the data
+        credentials : dict
+            The credentials dictionary
+        db_path : str
+            The path to the database file. If None the database file will be created in the folder of fad package
+            with the name 'data.db'
+
+        Returns
+        -------
+        None
         """
         for service, providers in credentials.items():
             match service:
@@ -428,19 +444,27 @@ class DataUtils:
                     raise ValueError(f'Invalid service: {service}')
 
             if scraper is not None:
-                scraper.pull_data_to_db(start_date)
+                scraper.pull_data_to_db(start_date, db_path)
 
     @staticmethod
-    def get_latest_data_date(conn: sqlite3.Connection) -> datetime.date:
+    def get_latest_data_date(conn: SQLConnection) -> datetime.date:
         """
         Get the latest date in the database
+
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            The connection to the database
+
+        Returns
+        -------
+        datetime.date:
+            The latest date in the database
         """
         query = 'SELECT MAX(date) FROM credit_card_transactions'
         try:
-            cursor = conn.cursor()
-            cursor.execute(query)
-            latest_date = cursor.fetchone()[0]
-        except sqlite3.OperationalError as e:
+            latest_date = conn.query(query, ttl=0).iloc[0, 0]
+        except sqlalchemy.exc.OperationalError as e:
             if 'no such table' in str(e):
                 return datetime.today() - timedelta(days=365)
             else:

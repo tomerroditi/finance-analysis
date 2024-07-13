@@ -33,6 +33,13 @@ class TestUtils(DataFixtures):
         assert df['status'].to_list() == ['my_status', 'my_status', 'my_status']
 
     @staticmethod
+    def test_scraped_data_to_df_no_transactions():
+        data = 'found 0 some other txt information bla blabla\n'
+
+        df = scraped_data_to_df(data)
+        assert df.empty
+
+    @staticmethod
     def test_save_to_db(fake_transactions_data_maker, tmpdir, monkeypatch):
         example_data = fake_transactions_data_maker()
         save_to_db(example_data, 'test_table', db_path=os.path.join(tmpdir, 'test.db'))
@@ -114,12 +121,12 @@ class TestBankScraper(DataFixtures):
             },
         }
 
-        credit_card_scraper = BankScraper(credentials)
-        monkeypatch.setattr(credit_card_scraper, 'get_onezero_data', mock_get_onezero_data)
+        scraper = BankScraper(credentials)
+        monkeypatch.setattr(scraper, 'get_onezero_data', mock_get_onezero_data)
 
         db_path = os.path.join(tmpdir, 'data.db')
 
-        credit_card_scraper.pull_data_to_db(last_month, db_path)
+        scraper.pull_data_to_db(last_month, db_path)
         conn = sqlite3.connect(db_path)
         credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
         assert credit_cards_data.shape == (5, 8)
