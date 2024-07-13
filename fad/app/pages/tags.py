@@ -2,6 +2,7 @@ import streamlit as st
 import yaml
 import os
 
+from streamlit.connections import SQLConnection
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
 from fad import CATEGORIES_PATH
@@ -71,8 +72,24 @@ def update_yaml_and_rerun(categories_and_tags, yaml_path):
     st.rerun()
 
 
+def assure_tags_table(conn: SQLConnection):
+    with conn.session as s:
+        s.execute(text('CREATE TABLE IF NOT EXISTS tags (name TEXT PRIMARY KEY, category TEXT, tag TEXT);'))
+        s.commit()
+
+
+def pull_new_names(conn):
+    current_names = conn.query("SELECT name FROM tags;", ttl=0)
+    all_names = conn.query("SELECT desc FROM credit_card_transactions;", ttl=0)
+    new_names = all_names.loc[~all_names['desc'].isin(current_names), 'desc'].unique()
+    with conn.session as s:
+        for name in new_names:
+            s.execute(text('INSERT INTO tags (name) VALUES (:name);'), params={'name': name})
+        s.commit()
+
+
 def tag_new_data(conn, categories_and_tags):
-    df_tags = conn.query("SELECT * FROM tags WHERE category='' OR tag='';", ttl=0)
+    df_tags = conn.query("SELECT * FROM tags WHERE category IS NULL OR tag IS NULL;", ttl=0)
     if df_tags.empty:
         st.write("No data to tag")
         return
@@ -136,6 +153,8 @@ def main():
     st.header('Tag New Data', divider="gray")
     st.write("Tag the new data with the appropriate category and tags. you may see the current categories and their "
              "tags bellow. If you want to create new tags use the input boxes bellow the table.")
+    assure_tags_table(conn)
+    pull_new_names(conn)
     tag_new_data(conn, categories_and_tags)
     edit_tagged_data(conn, categories_and_tags)
 
