@@ -1,3 +1,6 @@
+import os
+
 from .two_fa import TwoFAHandler
-from .bank import BankScraper
-from .credit_card import CreditCardScraper
+from .scrapers import CreditCardScraper, BankScraper
+
+NODE_JS_SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), 'node')
