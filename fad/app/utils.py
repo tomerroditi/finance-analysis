@@ -2,14 +2,15 @@ import streamlit as st
 import yaml
 import sqlite3
 import sqlalchemy
+import pandas as pd
 
 from streamlit_phone_number import st_phone_number
 from streamlit.connections import SQLConnection
 from typing import Literal
 from threading import Thread
 from datetime import datetime, timedelta
-
-from fad.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
+from fad.naming_conventions import (Banks, CreditCards, Insurances, LoginFields, DisplayFields, CreditCardTableFields,
+                                    Tables, BankTableFields)
 from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
 from fad import CREDENTIALS_PATH, CATEGORIES_PATH
 
@@ -425,6 +426,28 @@ class DataUtils:
         return st.session_state['conn']
 
     @staticmethod
+    def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
+        """
+        Get the data from the given table
+
+        Parameters
+        ----------
+        conn : SQLConnection
+            The connection to the database
+        table_name : str
+            The name of the table to get the data from
+
+        Returns
+        -------
+        pd.DataFrame
+            The data from the table
+        """
+        try:
+            return conn.query(f'SELECT * FROM {table_name};', ttl=0)
+        except sqlalchemy.exc.OperationalError:
+            return pd.DataFrame()
+
+    @staticmethod
     def get_categories_and_tags() -> dict:
         """
         Get the categories and tags from the yaml file
@@ -487,17 +510,67 @@ class DataUtils:
         datetime.date:
             The latest date in the database
         """
-        query = 'SELECT MAX(date) FROM credit_card_transactions'
+        cc_table = Tables.CREDIT_CARD.value
+        bank_table = Tables.BANK.value
+        date_col_cc = CreditCardTableFields.DATE.value
+        date_col_bank = BankTableFields.DATE.value
+
+        query_cc = f'SELECT MAX({date_col_cc}) FROM {cc_table}'
+        query_bank = f'SELECT MAX({date_col_bank}) FROM {bank_table}'
         try:
-            latest_date = conn.query(query, ttl=0).iloc[0, 0]
+            latest_date_cc = conn.query(query_cc, ttl=0).iloc[0, 0]
+            latest_date_bank = conn.query(query_bank, ttl=0).iloc[0, 0]
         except sqlalchemy.exc.OperationalError as e:
             if 'no such table' in str(e):
                 return datetime.today() - timedelta(days=365)
             else:
                 raise e
 
-        latest_date = datetime.strptime(latest_date, '%Y-%m-%d %H:%M:%S').date()
+        latest_date_cc = datetime.strptime(latest_date_cc, '%Y-%m-%d')
+        latest_date_bank = datetime.strptime(latest_date_bank, '%Y-%m-%d')
+        latest_date = max(latest_date_cc, latest_date_bank)
         return latest_date
+
+    @staticmethod
+    def update_db_table(conn: SQLConnection, table_name: str, edited_rows: pd.DataFrame, columns_order: list) -> None:
+        """
+        Update the database table with the edited rows
+
+        Parameters
+        ----------
+        conn : SQLConnection
+            The connection to the database
+        table_name : str
+            The name of the table to update
+        edited_rows : pd.DataFrame
+            The edited rows
+        columns_order : list
+            The order of the columns in the table
+
+        Returns
+        -------
+        None
+        """
+        match table_name:
+            case Tables.CREDIT_CARD.value:
+                id_col = CreditCardTableFields.ID.value
+            case Tables.BANK.value:
+                id_col = BankTableFields.ID.value
+            case Tables.INSURANCE.value:
+                raise NotImplementedError('Insurance table update is not implemented yet')
+            case _:
+                raise ValueError(f'Invalid table name: {table_name}')
+
+        with conn.session as s:
+            for i, row in edited_rows.iterrows():
+                set_clause = ', '.join([f"{col}=:{col}" for col in columns_order])
+                query = sqlalchemy.text(f"UPDATE {table_name} SET {set_clause} WHERE {id_col}=:id_col")
+                params = {col: row[col] for col in columns_order}
+                params['id_col'] = row[id_col]
+                s.execute(query, params)
+            s.commit()
+        st.success('Table updated successfully!')
+
 
 
 

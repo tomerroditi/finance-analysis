@@ -3,6 +3,7 @@ import sqlite3
 
 from datetime import datetime
 from fad import DB_PATH
+from fad.naming_conventions import TransactionsTableFields
 
 
 def scraped_data_to_df(data: str) -> pd.DataFrame:
@@ -38,10 +39,13 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     col_names = [item.split(': ')[0].replace(' ', '_') for item in data[0]]
     data = [[item.split(': ')[1] for item in line] for line in data]
     df = pd.DataFrame(data, columns=col_names)
-    if 'amount' in df.columns:
-        df['amount'] = df['amount'].astype(float)
-    if 'date' in df.columns:
-        df['date'] = df['date'].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ'))
+
+    amount_col = TransactionsTableFields.AMOUNT.value
+    date_col = TransactionsTableFields.DATE.value
+    if amount_col in df.columns:
+        df[amount_col] = df[amount_col].astype(float)
+    if date_col in df.columns:
+        df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').date())
     return df
 
 

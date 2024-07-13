@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Type
 
 
 class Tables(Enum):
@@ -9,25 +10,27 @@ class Tables(Enum):
     TAGS = 'tags'
 
 
-class CreditCardTableFields(Enum):
-    ACCOUNT_NUMBER = 'account_number'
-    TYPE = 'type'
-    ID = 'id'
-    DATE = 'date'
-    DESCRIPTION = 'desc'
-    AMOUNT = 'amount'
-    STATUS = 'status'
-    ACCOUNT_NAME = 'account_name'
+def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
+    return Enum(name, fields)
 
-class BankTableFields(Enum):
-    ACCOUNT_NUMBER = 'account_number'
-    TYPE = 'type'
-    ID = 'id'
-    DATE = 'date'
-    DESCRIPTION = 'desc'
-    AMOUNT = 'amount'
-    STATUS = 'status'
-    ACCOUNT_NAME = 'account_name'
+
+fields = [
+    ('ACCOUNT_NUMBER', 'account_number'),
+    ('TYPE', 'type'),
+    ('ID', 'id'),
+    ('DATE', 'date'),
+    ('DESCRIPTION', 'desc'),
+    ('AMOUNT', 'amount'),
+    ('STATUS', 'status'),
+    ('ACCOUNT_NAME', 'account_name'),
+    ('PROVIDER', 'provider'),
+    ('CATEGORY', 'category'),
+    ('TAG', 'tag'),
+]
+
+TransactionsTableFields = create_enum('TransactionsTableFields', fields)
+CreditCardTableFields = create_enum('CreditCardTableFields', fields)
+BankTableFields = create_enum('BankTableFields', fields)
 
 
 class TagsTableFields(Enum):

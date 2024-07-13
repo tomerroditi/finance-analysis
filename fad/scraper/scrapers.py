@@ -7,6 +7,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
+from fad.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 
 
 class Scraper(ABC):
@@ -108,15 +109,71 @@ class Scraper(ABC):
         data = []
         for provider, accounts in self.credentials.items():
             scrape_func = self.get_provider_scraping_function(provider)
-            for account, creds in accounts.items():
+            for account_name, creds in accounts.items():
                 scraped_data = scrape_func(start_date, **creds)
-                scraped_data['account_name'] = account
+                scraped_data = self.add_account_name_and_provider_columns(scraped_data, account_name, provider)
                 data.append(scraped_data)
 
         df = pd.concat(data, ignore_index=True)
+        df = df.sort_values(by=self.sort_by_columns)
+        df = self.add_missing_columns(df)
         save_to_db(df, self.table_name, db_path=db_path)
 
         self.drop_duplicates(db_path=db_path)
+
+    def add_account_name_and_provider_columns(self, df: pd.DataFrame, account_name: str, provider: str) -> pd.DataFrame:
+        """
+        Add the account name and provider columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the account name and provider columns to
+        account_name : str
+            The account name to add to the DataFrame
+        provider : str
+            The provider to add to the DataFrame
+
+        Returns
+        -------
+        pd.DataFrame
+            The DataFrame with the account name and provider columns added
+        """
+        match self.table_name:
+            case Tables.CREDIT_CARD.value:
+                account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
+                provider_col = CreditCardTableFields.PROVIDER.value
+            case Tables.BANK.value:
+                account_name_col = BankTableFields.ACCOUNT_NAME.value
+                provider_col = BankTableFields.PROVIDER.value
+            case _:
+                raise ValueError(f'The table name {self.table_name} is not supported yet.')
+        df[account_name_col] = account_name
+        df[provider_col] = provider
+        return df
+
+    def add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add missing columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the missing columns to
+        """
+        match self.table_name:
+            case Tables.CREDIT_CARD.value:
+                cols_to_add = [CreditCardTableFields.ID.value, CreditCardTableFields.STATUS.value,
+                               CreditCardTableFields.CATEGORY.value, CreditCardTableFields.TAG.value]
+            case Tables.BANK.value:
+                cols_to_add = [BankTableFields.ID.value, BankTableFields.STATUS.value,
+                               BankTableFields.CATEGORY.value, BankTableFields.TAG.value]
+            case _:
+                cols_to_add = []
+        for col in cols_to_add:
+            if col not in df.columns:
+                df[col] = None
+        return df
 
     def drop_duplicates(self, db_path: str):
         """
