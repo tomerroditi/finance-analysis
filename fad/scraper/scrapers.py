@@ -308,7 +308,7 @@ class InsuranceScraper(Scraper):
     script_path = {}
     table_name = 'insurance_data'
     table_unique_key = 'id'
-    sort_by_column = 'date'
+    sort_by_columns = 'date'
 
     @property
     def provider_scraping_function(self) -> dict:

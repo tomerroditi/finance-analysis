@@ -1,6 +1,41 @@
 from enum import Enum
 
 
+class Tables(Enum):
+    CREDIT_CARD = 'credit_card_transactions'
+    BANK = 'bank_transactions'
+    INSURANCE = 'insurance_transactions'
+    SAVINGS = 'savings'
+    TAGS = 'tags'
+
+
+class CreditCardTableFields(Enum):
+    ACCOUNT_NUMBER = 'account_number'
+    TYPE = 'type'
+    ID = 'id'
+    DATE = 'date'
+    DESCRIPTION = 'desc'
+    AMOUNT = 'amount'
+    STATUS = 'status'
+    ACCOUNT_NAME = 'account_name'
+
+class BankTableFields(Enum):
+    ACCOUNT_NUMBER = 'account_number'
+    TYPE = 'type'
+    ID = 'id'
+    DATE = 'date'
+    DESCRIPTION = 'desc'
+    AMOUNT = 'amount'
+    STATUS = 'status'
+    ACCOUNT_NAME = 'account_name'
+
+
+class TagsTableFields(Enum):
+    NAME = 'name'
+    CATEGORY = 'category'
+    TAG = 'tag'
+
+
 class CreditCards(Enum):
     MAX = 'max'
     VISA_CAL = 'visa cal'

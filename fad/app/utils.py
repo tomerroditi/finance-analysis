@@ -9,9 +9,9 @@ from typing import Literal
 from threading import Thread
 from datetime import datetime, timedelta
 
-from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
+from fad.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
 from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
-from fad import CREDENTIALS_PATH
+from fad import CREDENTIALS_PATH, CATEGORIES_PATH
 
 
 class CredentialsUtils:
@@ -408,10 +408,36 @@ class CredentialsUtils:
             st.session_state.tfa_code = 'cancel'
             st.rerun()
 
-        # st.stop()  # stop the script until the user submits the code
-
 
 class DataUtils:
+    @staticmethod
+    def get_db_connection() -> SQLConnection:
+        """
+        Get a connection to the database
+
+        Returns
+        -------
+        SQLConnection
+            The connection to the app database
+        """
+        if 'conn' not in st.session_state:
+            st.session_state['conn'] = st.connection('data', 'sqlite')
+        return st.session_state['conn']
+
+    @staticmethod
+    def get_categories_and_tags() -> dict:
+        """
+        Get the categories and tags from the yaml file
+
+        Returns
+        -------
+        dict
+            The categories and tags dictionary
+        """
+        if 'categories_and_tags' not in st.session_state:
+            with open(CATEGORIES_PATH, 'r') as file:
+                st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
+        return st.session_state['categories_and_tags']
 
     @staticmethod
     def pull_data(start_date: datetime | str, credentials: dict, db_path: str = None) -> None:

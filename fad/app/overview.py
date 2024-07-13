@@ -4,9 +4,7 @@ from fad.app.utils import DataUtils, CredentialsUtils
 from fad import DB_PATH
 
 
-if 'conn' not in st.session_state:
-    st.session_state['conn'] = st.connection('data', 'sql')
-conn = st.session_state['conn']
+conn = DataUtils.get_db_connection()
 
 latest_data_date = DataUtils.get_latest_data_date(conn)
 start_date = st.date_input("Set the date from which to start fetching your data "

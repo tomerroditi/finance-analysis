@@ -1,11 +1,19 @@
 import streamlit as st
 import yaml
-import os
 
+from fad.app.utils import DataUtils
 from streamlit.connections import SQLConnection
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
 from fad import CATEGORIES_PATH
+from fad.naming_conventions import TagsTableFields, Tables, CreditCardTableFields, BankTableFields
+
+
+tags_table = Tables.TAGS.value
+credit_card_table = Tables.CREDIT_CARD.value
+category_col = TagsTableFields.CATEGORY.value
+tag_col = TagsTableFields.TAG.value
+name_col = TagsTableFields.NAME.value
 
 
 # TODO: a major refactor to move all the database operations to a module in the fad folder, and only wrap the functions
@@ -43,12 +51,12 @@ def edit_categories_and_tags(categories_and_tags, yaml_path, conn):
             # delete and update database
             if confirm_button:
                 del categories_and_tags[category]
-                data_to_delete = conn.query('SELECT name FROM tags WHERE category=:category;',
-                                            params={'category': category}, ttl=0)
+                data_to_delete = conn.query(f'SELECT {name_col} FROM {tags_table} WHERE {category_col}={category_col};',
+                                            ttl=0)
                 with conn.session as s:
                     for i, row in data_to_delete.iterrows():
-                        s.execute(text("UPDATE tags SET category='', tag='' WHERE name=:name;"),
-                                  params={'name': row['name']})
+                        s.execute(text(f"UPDATE {tags_table} SET {category_col}='', {tag_col}='' "
+                                       f"WHERE {name_col}={row[name_col]};"))
                     s.commit()
                 del st.session_state[f'confirm_delete_{category}']
                 update_yaml_and_rerun(categories_and_tags, yaml_path)
@@ -74,22 +82,25 @@ def update_yaml_and_rerun(categories_and_tags, yaml_path):
 
 def assure_tags_table(conn: SQLConnection):
     with conn.session as s:
-        s.execute(text('CREATE TABLE IF NOT EXISTS tags (name TEXT PRIMARY KEY, category TEXT, tag TEXT);'))
+        s.execute(text(f'CREATE TABLE IF NOT EXISTS {tags_table} ({name_col} TEXT PRIMARY KEY, {category_col}'
+                       f' TEXT, {tag_col} TEXT);'))
         s.commit()
 
 
 def pull_new_names(conn):
-    current_names = conn.query("SELECT name FROM tags;", ttl=0)
-    all_names = conn.query("SELECT desc FROM credit_card_transactions;", ttl=0)
-    new_names = all_names.loc[~all_names['desc'].isin(current_names), 'desc'].unique()
+    desc_col = CreditCardTableFields.DESCRIPTION.value
+    current_names = conn.query(f"SELECT {name_col} FROM {tags_table};", ttl=0)[name_col]
+    all_names = conn.query(f"SELECT {desc_col} FROM {credit_card_table};", ttl=0)
+    new_names = all_names.loc[~all_names[desc_col].isin(current_names), desc_col].unique()
     with conn.session as s:
         for name in new_names:
-            s.execute(text('INSERT INTO tags (name) VALUES (:name);'), params={'name': name})
+            s.execute(text(f'INSERT INTO {tags_table} ({name_col}) VALUES ({name});'))
         s.commit()
 
 
 def tag_new_data(conn, categories_and_tags):
-    df_tags = conn.query("SELECT * FROM tags WHERE category IS NULL OR tag IS NULL;", ttl=0)
+
+    df_tags = conn.query(f"SELECT * FROM {tags_table} WHERE {category_col} IS NULL OR {tag_col} IS NULL;", ttl=0)
     if df_tags.empty:
         st.write("No data to tag")
         return
@@ -99,25 +110,26 @@ def tag_new_data(conn, categories_and_tags):
     tags = [f'{category}: {tag}' for category in categories for tag in categories_and_tags[category]]
     df_tags['new tag'] = ''
     tags_col = st.column_config.SelectboxColumn('new tag', options=tags)
-    edited_df_tags = st.data_editor(df_tags[['name', 'new tag']], hide_index=True, width=800, column_config={'new tag': tags_col})
+    edited_df_tags = st.data_editor(df_tags[[name_col, 'new tag']], hide_index=True, width=800,
+                                    column_config={'new tag': tags_col})
 
     # save the edited data
     if st.button('Save', key='save_tagged_data'):
         edited_df_tags = edited_df_tags.loc[edited_df_tags['new tag'] != '']
         if not edited_df_tags.empty:
-            edited_df_tags['category'] = edited_df_tags['new tag'].apply(lambda x: x.split(': ', 1)[0])
-            edited_df_tags['tag'] = edited_df_tags['new tag'].apply(lambda x: x.split(': ', 1)[1])
+            edited_df_tags[category_col] = edited_df_tags['new tag'].apply(lambda x: x.split(': ', 1)[0])
+            edited_df_tags[tag_col] = edited_df_tags['new tag'].apply(lambda x: x.split(': ', 1)[1])
             edited_df_tags = edited_df_tags.drop('new tag', axis=1)
             with conn.session as s:
                 for i, row in edited_df_tags.iterrows():
-                    s.execute(text('UPDATE tags SET category=:category, tag=:tag WHERE name=:name;'),
-                              params={'category': row['category'], 'tag': row['tag'], 'name': row['name']})
+                    s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{row[category_col]}, '
+                                   f'{tag_col}=:{row[tag_col]} WHERE {name_col}=:{row[name_col]};'))
                 s.commit()
         st.rerun()
 
 
 def edit_tagged_data(conn, categories_and_tags):
-    tagged_data = conn.query("SELECT * FROM tags WHERE category!='' AND tag!='';", ttl=0)
+    tagged_data = conn.query(f"SELECT * FROM {tags_table} WHERE {category_col}!='' AND {tag_col}!='';", ttl=0)
     if tagged_data.empty:
         st.write("No data to edit")
         return
@@ -126,28 +138,20 @@ def edit_tagged_data(conn, categories_and_tags):
     edited_tagged_data = st.data_editor(tagged_data, hide_index=True, width=800, key='edit_tagged_data')
     if st.button('Save', key='save_edited_tagged_data'):
         # keep only the modified rows
-        edited_tagged_data = edited_tagged_data[(edited_tagged_data['category'] != tagged_data['category']) |
-                                                (edited_tagged_data['tag'] != tagged_data['tag'])]
+        edited_tagged_data = edited_tagged_data[(edited_tagged_data[category_col] != tagged_data[category_col]) |
+                                                (edited_tagged_data[tag_col] != tagged_data[tag_col])]
         # save the edited data to the database
         with conn.session as s:
             for i, row in edited_tagged_data.iterrows():
-                s.execute(text('UPDATE tags SET category=:category, tag=:tag WHERE name=:name;'),
-                          params={'category': row['category'], 'tag': row['tag'], 'name': row['name']})
+                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{row[category_col]}, {tag_col}=:{row[tag_col]}'
+                               f' WHERE {name_col}=:{row[name_col]};'))
             s.commit()
         st.rerun()
 
 
 def main():
-    if 'conn' not in st.session_state:
-        st.session_state['conn'] = st.connection('data', 'sql')
-    conn = st.session_state['conn']
-
-    # Load data only if it's not already in the session state
-    if 'categories_and_tags' not in st.session_state:
-        with open(CATEGORIES_PATH, 'r') as file:
-            st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
-
-    categories_and_tags = st.session_state['categories_and_tags']
+    conn = DataUtils.get_db_connection()
+    categories_and_tags = DataUtils.get_categories_and_tags()
 
     # edit tags table
     st.header('Tag New Data', divider="gray")
