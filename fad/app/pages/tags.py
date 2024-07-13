@@ -1,5 +1,6 @@
 import streamlit as st
 import yaml
+import numpy as np
 
 from fad.app.utils import DataUtils
 from streamlit.connections import SQLConnection
@@ -11,9 +12,18 @@ from fad.naming_conventions import TagsTableFields, Tables, CreditCardTableField
 
 tags_table = Tables.TAGS.value
 credit_card_table = Tables.CREDIT_CARD.value
+bank_table = Tables.BANK.value
 category_col = TagsTableFields.CATEGORY.value
 tag_col = TagsTableFields.TAG.value
 name_col = TagsTableFields.NAME.value
+cc_tag_col = CreditCardTableFields.TAG.value
+cc_category_col = CreditCardTableFields.CATEGORY.value
+cc_name_col = CreditCardTableFields.DESCRIPTION.value
+cc_id_col = CreditCardTableFields.ID.value
+bank_tag_col = BankTableFields.TAG.value
+bank_category_col = BankTableFields.CATEGORY.value
+bank_name_col = BankTableFields.DESCRIPTION.value
+bank_id_col = BankTableFields.ID.value
 
 
 # TODO: a major refactor to move all the database operations to a module in the fad folder, and only wrap the functions
@@ -23,7 +33,23 @@ name_col = TagsTableFields.NAME.value
 #  implemented)
 # TODO: when editing tags, if we add a new tag/category make sure to update the credit card table and the category and
 #  tags UI
-def edit_categories_and_tags(categories_and_tags, yaml_path, conn):
+def edit_categories_and_tags(categories_and_tags: dict, yaml_path: str, conn: SQLConnection):
+    """
+    Display the categories and tags and allow editing them
+
+    Parameters
+    ----------
+    categories_and_tags: dict
+        a dictionary of categories and their tags
+    yaml_path: str
+        the path to the yaml file that contains the categories and tags
+    conn: SQLConnection
+        the connection to the database
+
+    Returns
+    -------
+
+    """
     # Initialize session state for each category before the loop
     for category in categories_and_tags.keys():
         if f'confirm_delete_{category}' not in st.session_state:
@@ -94,7 +120,8 @@ def pull_new_names(conn):
     new_names = all_names.loc[~all_names[desc_col].isin(current_names), desc_col].unique()
     with conn.session as s:
         for name in new_names:
-            s.execute(text(f'INSERT INTO {tags_table} ({name_col}) VALUES ({name});'))
+            s.execute(text(f'INSERT INTO {tags_table} ({name_col}) VALUES (:curr_name);'),
+                      {'curr_name': name})
         s.commit()
 
 
@@ -149,6 +176,35 @@ def edit_tagged_data(conn, categories_and_tags):
         st.rerun()
 
 
+def update_raw_data_tags(conn: SQLConnection):
+    tags_table_data = conn.query(f'SELECT * FROM {tags_table};', ttl=0)
+    credit_card_data = conn.query(f'SELECT * FROM {credit_card_table};', ttl=0)
+    bank_data = conn.query(f'SELECT * FROM {bank_table};', ttl=0)
+
+    cc_changed_locs = []
+    bank_changed_locs = []
+    tags_table_data = tags_table_data.dropna(subset=[category_col, tag_col])
+    for i, row in tags_table_data.iterrows():
+        cc_name_cond = credit_card_data[cc_name_col] == row[name_col]
+        cc_category_nan_cond = credit_card_data[cc_category_col].isna()
+        credit_card_data.loc[cc_name_cond & cc_category_nan_cond, cc_category_col] = row[category_col]
+        credit_card_data.loc[cc_name_cond & cc_category_nan_cond, cc_tag_col] = row[tag_col]
+        cc_changed_locs.append((cc_name_cond & cc_category_nan_cond).to_numpy())
+
+        bank_name_cond = bank_data[bank_name_col] == row[name_col]
+        bank_category_nan_cond = bank_data[bank_category_col].isna()
+        bank_data.loc[bank_name_cond & bank_category_nan_cond, bank_category_col] = row[category_col]
+        bank_data.loc[bank_name_cond & bank_category_nan_cond, bank_tag_col] = row[tag_col]
+        bank_changed_locs.append((bank_name_cond & bank_category_nan_cond).to_numpy())
+
+    cc_changed_locs = np.logical_or.reduce(np.stack(cc_changed_locs, axis=1), axis=1)
+    bank_changed_locs = np.logical_or.reduce(np.stack(bank_changed_locs, axis=1), axis=1)
+    DataUtils.update_db_table(conn, credit_card_table,
+                              credit_card_data.loc[cc_changed_locs, [cc_id_col, cc_category_col, cc_tag_col]])
+    DataUtils.update_db_table(conn, bank_table,
+                              bank_data.loc[bank_changed_locs, [bank_id_col, bank_category_col, bank_tag_col]])
+
+
 def main():
     conn = DataUtils.get_db_connection()
     categories_and_tags = DataUtils.get_categories_and_tags()
@@ -163,9 +219,11 @@ def main():
     edit_tagged_data(conn, categories_and_tags)
 
     # edit categories and tags configuration file
-    # TODO: when deleting tags or categories make sure to update the tagged data as well
+    # TODO: when deleting tags or categories make sure to update the tagged raw data as well
     st.header('My Categories and Tags', divider="gray")
     edit_categories_and_tags(categories_and_tags, CATEGORIES_PATH, conn)
+
+    update_raw_data_tags(conn)
 
 
 if __name__ == '__main__':

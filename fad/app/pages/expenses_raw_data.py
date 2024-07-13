@@ -8,6 +8,7 @@ the user should be able to:
 
 import streamlit as st
 import pandas as pd
+import streamlit_pandas
 
 from sqlalchemy.exc import OperationalError
 from fad.app.utils import DataUtils
@@ -36,17 +37,33 @@ columns_order = [TransactionsTableFields.PROVIDER.value,
                  TransactionsTableFields.TYPE.value]
 
 # display the data
-st.subheader('Credit Card Transactions', divider="gray")
-with st.form(key='credit_card_transactions_editor_form'):
-    edited_data_cc = st.data_editor(credit_card_data, key='credit_card_transactions_editor', column_order=columns_order,
-                                    num_rows="dynamic", hide_index=True)
-    submit_button_cc = st.form_submit_button(label='Submit', on_click=DataUtils.update_db_table,
-                                             args=(conn, credit_card_table, edited_data_cc, columns_order))
-
-
-st.subheader('Bank Transactions', divider="gray")
-with st.form(key='bank_transactions_editor_form'):
-    edited_data_bank = st.data_editor(bank_data, key='bank_transactions_editor', column_order=columns_order,
-                                      num_rows="dynamic", hide_index=True)
-    submit_button_bank = st.form_submit_button(label='Submit', on_click=DataUtils.update_db_table,
-                                               args=(conn, bank_table, edited_data_bank, columns_order))
+create_data = {
+    TransactionsTableFields.PROVIDER.value: 'multiselect',
+    TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+    TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+    TransactionsTableFields.DATE.value: 'multiselect',
+    TransactionsTableFields.DESCRIPTION.value: 'multiselect',
+    TransactionsTableFields.CATEGORY.value: 'multiselect',
+    TransactionsTableFields.TAG.value: 'multiselect',
+    TransactionsTableFields.STATUS.value: 'multiselect',
+    TransactionsTableFields.TYPE.value: 'multiselect',
+}
+ignored_columns = [TransactionsTableFields.ID.value]
+data = st.selectbox('Select the data to edit:', [credit_card_table, bank_table])
+with st.form(key='raw_data_transactions_editor_form'):
+    if data == credit_card_table:
+        widgets = streamlit_pandas.create_widgets(credit_card_data, create_data, ignore_columns=ignored_columns)
+        widgets = sorted(widgets, key=lambda item: item[0])
+        edited_data = st.data_editor(streamlit_pandas.filter_df(credit_card_data, widgets),
+                                     key='cc_transactions_editor',
+                                     column_order=columns_order, num_rows="fixed", hide_index=False)
+        submit_button = st.form_submit_button(label='Save', on_click=DataUtils.update_db_table,
+                                              args=(conn, credit_card_table, edited_data, columns_order))
+    else:
+        widgets = streamlit_pandas.create_widgets(bank_data, create_data, ignore_columns=ignored_columns)
+        widgets = sorted(widgets, key=lambda item: item[0])
+        edited_data = st.data_editor(streamlit_pandas.filter_df(bank_data, widgets),
+                                     key='bank_transactions_editor',
+                                     column_order=columns_order, num_rows="fixed", hide_index=False)
+        submit_button = st.form_submit_button(label='Save', on_click=DataUtils.update_db_table,
+                                              args=(conn, bank_table, edited_data, columns_order))
