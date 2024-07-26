@@ -422,7 +422,7 @@ class DataUtils:
             The connection to the app database
         """
         if 'conn' not in st.session_state:
-            st.session_state['conn'] = st.connection('data', 'sqlite')
+            st.session_state['conn'] = st.connection('data', 'sql')
         return st.session_state['conn']
 
     @staticmethod
@@ -532,7 +532,7 @@ class DataUtils:
         return latest_date
 
     @staticmethod
-    def update_db_table(conn: SQLConnection, table_name: str, edited_rows: pd.DataFrame, columns_order: list) -> None:
+    def update_db_table(conn: SQLConnection, table_name: str, edited_rows: pd.DataFrame) -> None:
         """
         Update the database table with the edited rows
 
@@ -544,8 +544,6 @@ class DataUtils:
             The name of the table to update
         edited_rows : pd.DataFrame
             The edited rows
-        columns_order : list
-            The order of the columns in the table
 
         Returns
         -------
@@ -561,17 +559,149 @@ class DataUtils:
             case _:
                 raise ValueError(f'Invalid table name: {table_name}')
 
+        columns = edited_rows.columns.tolist()
         with conn.session as s:
             for i, row in edited_rows.iterrows():
-                set_clause = ', '.join([f"{col}=:{col}" for col in columns_order])
+                set_clause = ', '.join([f"{col}=:{col}" for col in columns])
                 query = sqlalchemy.text(f"UPDATE {table_name} SET {set_clause} WHERE {id_col}=:id_col")
-                params = {col: row[col] for col in columns_order}
+                params = {col: row[col] for col in columns}
                 params['id_col'] = row[id_col]
                 s.execute(query, params)
             s.commit()
         st.success('Table updated successfully!')
 
 
+class PandasFilterWidgets:
+    def __init__(self, df: pd.DataFrame, widgets_map: dict[str, str] = None, keys_prefix: str = None):
+        """
+        This class will create widgets for filtering a Pandas DataFrame and return the filtered DataFrame.
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+            The DataFrame to filter using the widgets.
+        widgets_map: dict
+            A dictionary whose keys are the column names of the DataFrame and whose values are the type of widget
+            to create for that column. Only the columns in this dictionary will be used to create the widgets.
+            Optional widgets are: 'text', 'select', 'multiselect', 'number_range', 'date_range'.
+        keys_prefix: str
+            A prefix to add to the keys of the widgets. This is useful when using multiple instances of this class in
+            the same script.
+        """
+        self.df = df.copy()
+        self.widgets_map = widgets_map if widgets_map is not None else {}
+        self.keys_prefix = f'pandas_filter_widgets_{keys_prefix if keys_prefix is not None else ""}'
+        self.widgets_returns = {}
+
+        self.fetch_widgets_values()
+
+    def fetch_widgets_values(self):
+        """
+        This function will create the widgets based on the widgets_map and store the values of the widgets in the
+        widgets_returns dictionary.
+        """
+        for column, widget_type in self.widgets_map.items():
+            match widget_type:
+                case 'text':
+                    self.widgets_returns[column] = self.create_text_widget(column)
+                case 'select':
+                    self.widgets_returns[column] = self.create_select_widget(column, multi=False)
+                case 'multiselect':
+                    self.widgets_returns[column] = self.create_select_widget(column, multi=True)
+                case 'number_range':
+                    self.widgets_returns[column] = self.create_slider_widget(column)
+                case 'date_range':
+                    self.widgets_returns[column] = self.create_date_range_widget(column)
+                case _:
+                    raise ValueError(f'Invalid widget type: {widget_type}')
+
+    def create_slider_widget(self, column: str) -> tuple[float, float]:
+        df = self.df.copy()
+        df = df.loc[df[column].notna(), :]
+        max_val = float(df[column].max())
+        min_val = float(df[column].min())
+        lower_bound, upper_bound = st.slider(
+            column, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'
+        )
+        return lower_bound, upper_bound
+
+    def create_select_widget(self, column: str, multi: bool) -> str | list[str]:
+        df = self.df.copy()
+        df = df.loc[df[column].notna(), :]
+        options = df[column].unique()
+        options.sort()
+        if multi:
+            selected_list = st.multiselect(column, options, key=f'{self.keys_prefix}_{column}_multiselect')
+            return selected_list
+        else:
+            selected_item = st.selectbox(column, options, key=f'{self.keys_prefix}_{column}_select')
+            return selected_item
+
+    def create_text_widget(self, column: str) -> str:
+        text = st.text_input(f"{column.title()}", key=f"{self.keys_prefix}_{column}_text")
+        return text
+
+    def create_date_range_widget(self, column: str) -> datetime.date:
+        df = self.df.copy()
+        df = df.loc[df[column].notna(), :]
+        max_val = datetime.today().date()
+        min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
+        start_date, end_date = st.date_input(
+            column, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input'
+        )
+        return start_date, end_date
+
+    def filter_df(self):
+        """
+        This function will take the input dataframe and all the widgets generated from
+        Streamlit Pandas. It will then return a filtered DataFrame based on the changes
+        to the input widgets.
+
+        df => the original Pandas DataFrame
+        all_widgets => the widgets created by the function create_widgets().
+        """
+        res = self.df.copy()
+        for column, widget_return in self.widgets_returns.items():
+            match self.widgets_map[column]:
+                case 'text':
+                    res = self.filter_string(res, column, widget_return)
+                case 'select':
+                    res = self.filter_select(res, column, widget_return)
+                case 'multiselect':
+                    res = self.filter_select(res, column, widget_return)
+                case 'number_range':
+                    res = self.filter_range(res, column, widget_return[0], widget_return[1])
+                case 'date_range':
+                    res = self.filter_date(res, column, widget_return[0], widget_return[1])
+        return res
+
+    @staticmethod
+    def filter_string(df: pd.DataFrame, column: str, text: str | None) -> pd.DataFrame:
+        if text is not None:
+            return df
+        df = df.loc[df[column].str.contains(text, case=False, na=False), :]
+        return df
+
+    @staticmethod
+    def filter_date(df: pd.DataFrame, column: str, start_date: datetime.date, end_date: datetime.date) -> pd.DataFrame:
+        df[column] = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date())
+        df = df.loc[(df[column] >= start_date) & (df[column] <= end_date), :]
+        return df
+
+    @staticmethod
+    def filter_range(df: pd.DataFrame, column: str, min_val: float, max_val: float) -> pd.DataFrame:
+        df = df.loc[(df[column] >= min_val) & (df[column] <= max_val), :]
+        return df
+
+    @staticmethod
+    def filter_select(df: pd.DataFrame, column: str, selected_values: str | list[str] | None) -> pd.DataFrame:
+        if selected_values is None or selected_values == []:
+            return df
+
+        if isinstance(selected_values, str):
+            selected_values = [selected_values]
+        df = df.loc[df[column].isin(selected_values), :]
+        return df
 
 
 
