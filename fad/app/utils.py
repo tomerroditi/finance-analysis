@@ -3,6 +3,7 @@ import yaml
 import sqlite3
 import sqlalchemy
 import pandas as pd
+import plotly.graph_objects as go
 
 from streamlit_phone_number import st_phone_number
 from streamlit.connections import SQLConnection
@@ -571,6 +572,112 @@ class DataUtils:
         st.success('Table updated successfully!')
 
 
+class PlottingUtils:
+    @staticmethod
+    def plot_expenses_by_categories(df: pd.DataFrame, amount_col: str, category_col: str, ignore_uncategorized: bool):
+        """
+        Plot the expenses by categories
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The data to plot
+        amount_col : str
+            The column name of the amount
+        category_col : str
+            The column name of the category
+        ignore_uncategorized : bool
+            Whether to ignore the uncategorized category
+
+        Returns
+        -------
+        None
+        """
+        df = df.copy()
+        if ignore_uncategorized:
+            df = df[df[category_col] != 'Uncategorized']
+        df[amount_col] = df[amount_col] * -1
+        df = df.groupby(category_col).sum().reset_index()
+        fig = go.Figure(
+            go.Bar(
+                x=df[amount_col],
+                y=df[category_col],
+                orientation='h',
+                text=df[amount_col],
+                textposition='auto'
+            )
+        )
+        fig.update_layout(
+            title='Expenses Recap',
+            xaxis_title='Spent [₪]',
+            yaxis_title='Category',
+            annotations=[
+                dict(
+                    x=-0.085,  # position along the x-axis, slightly outside the plot
+                    y=-0.25,  # position along the y-axis, slightly above the plot
+                    xref='paper',
+                    yref='paper',
+                    text='The amounts are negative',
+                    showarrow=False
+                )
+            ]
+        )
+        return fig
+
+    @staticmethod
+    def plot_expenses_by_categories_over_time(df: pd.DataFrame, amount_col: str, category_col: str, date_col: str,
+                                              time_interval: str, ignore_uncategorized: bool):
+        """
+        Plot the expenses by categories over time as a stacked bar plot
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The data to plot
+        amount_col : str
+            The column name of the amount
+        category_col : str
+            The column name of the category
+        date_col : str
+            The column name of the date
+        time_interval : str
+            The time interval to group the data by. Should be one of "1W", "1M", "1Y"
+        ignore_uncategorized : bool
+            Whether to ignore the uncategorized category
+
+        Returns
+        -------
+        None
+        """
+        df = df.copy()
+        if ignore_uncategorized:
+            df = df[df[category_col] != 'Uncategorized']
+        df[amount_col] = df[amount_col] * -1
+        df[date_col] = pd.to_datetime(df[date_col])
+        df = df.groupby(pd.Grouper(key=date_col, freq=time_interval))
+        time_str_format = '%Y-%m-%d' if time_interval == '1D' else '%Y-%m' if time_interval == '1M' else '%Y'
+        fig = go.Figure()
+        for date, data in df:
+            curr_date_df = data.groupby(category_col).sum().reset_index()
+            fig.add_trace(
+                go.Bar(
+                    x=curr_date_df[amount_col],
+                    y=curr_date_df[category_col],
+                    name=date.strftime(time_str_format),
+                    orientation='h'
+                )
+            )
+        title_time_period = 'Days' if time_interval == '1D' else 'Months' if time_interval == '1M' else 'Years'
+        fig.update_layout(
+            barmode='stack',
+            title=f'Expenses Recap Over {title_time_period}',
+            xaxis_title='Spent [₪]',
+            yaxis_title='Category',
+            xaxis_tickformat=',d'
+        )
+        return fig
+
+
 class PandasFilterWidgets:
     def __init__(self, df: pd.DataFrame, widgets_map: dict[str, str] = None, keys_prefix: str = None):
         """
@@ -620,8 +727,9 @@ class PandasFilterWidgets:
         df = df.loc[df[column].notna(), :]
         max_val = float(df[column].max())
         min_val = float(df[column].min())
+        name = column.replace('_', ' ').title()
         lower_bound, upper_bound = st.slider(
-            column, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'
+            name, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'
         )
         return lower_bound, upper_bound
 
@@ -630,15 +738,17 @@ class PandasFilterWidgets:
         df = df.loc[df[column].notna(), :]
         options = df[column].unique()
         options.sort()
+        name = column.replace('_', ' ').title()
         if multi:
-            selected_list = st.multiselect(column, options, key=f'{self.keys_prefix}_{column}_multiselect')
+            selected_list = st.multiselect(name, options, key=f'{self.keys_prefix}_{column}_multiselect')
             return selected_list
         else:
-            selected_item = st.selectbox(column, options, key=f'{self.keys_prefix}_{column}_select')
+            selected_item = st.selectbox(name, options, key=f'{self.keys_prefix}_{column}_select')
             return selected_item
 
     def create_text_widget(self, column: str) -> str:
-        text = st.text_input(f"{column.title()}", key=f"{self.keys_prefix}_{column}_text")
+        name = column.replace('_', ' ').title()
+        text = st.text_input(name, key=f"{self.keys_prefix}_{column}_text")
         return text
 
     def create_date_range_widget(self, column: str) -> datetime.date:
@@ -646,8 +756,9 @@ class PandasFilterWidgets:
         df = df.loc[df[column].notna(), :]
         max_val = datetime.today().date()
         min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
+        name = column.replace('_', ' ').title()
         start_date, end_date = st.date_input(
-            column, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input'
+            name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input'
         )
         return start_date, end_date
 
@@ -702,7 +813,3 @@ class PandasFilterWidgets:
             selected_values = [selected_values]
         df = df.loc[df[column].isin(selected_values), :]
         return df
-
-
-
-
