@@ -10,10 +10,16 @@ from streamlit.connections import SQLConnection
 from typing import Literal
 from threading import Thread
 from datetime import datetime, timedelta
-from fad.naming_conventions import (Banks, CreditCards, Insurances, LoginFields, DisplayFields, CreditCardTableFields,
-                                    Tables, BankTableFields)
 from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
 from fad import CREDENTIALS_PATH, CATEGORIES_PATH
+from fad.naming_conventions import (Banks,
+                                    CreditCards,
+                                    Insurances,
+                                    LoginFields,
+                                    DisplayFields,
+                                    CreditCardTableFields,
+                                    Tables,
+                                    BankTableFields)
 
 
 class CredentialsUtils:
@@ -550,6 +556,9 @@ class DataUtils:
         -------
         None
         """
+        if edited_rows.empty:
+            return
+
         match table_name:
             case Tables.CREDIT_CARD.value:
                 id_col = CreditCardTableFields.ID.value
@@ -569,7 +578,6 @@ class DataUtils:
                 params['id_col'] = row[id_col]
                 s.execute(query, params)
             s.commit()
-        st.success('Table updated successfully!')
 
 
 class PlottingUtils:
@@ -596,14 +604,15 @@ class PlottingUtils:
         df = df.copy()
         if ignore_uncategorized:
             df = df[df[category_col] != 'Uncategorized']
+        df = df[~((df[category_col] == "Other") & (df["tag"] == "No tag"))]
         df[amount_col] = df[amount_col] * -1
-        df = df.groupby(category_col).sum().reset_index()
+        df = df.groupby(category_col).sum(numeric_only=True).reset_index()
         fig = go.Figure(
             go.Bar(
                 x=df[amount_col],
                 y=df[category_col],
                 orientation='h',
-                text=df[amount_col],
+                text=df[amount_col].round(2),
                 textposition='auto'
             )
         )
@@ -652,13 +661,14 @@ class PlottingUtils:
         df = df.copy()
         if ignore_uncategorized:
             df = df[df[category_col] != 'Uncategorized']
+        df = df[~((df[category_col] == "Other") & (df["tag"] == "No tag"))]
         df[amount_col] = df[amount_col] * -1
         df[date_col] = pd.to_datetime(df[date_col])
         df = df.groupby(pd.Grouper(key=date_col, freq=time_interval))
         time_str_format = '%Y-%m-%d' if time_interval == '1D' else '%Y-%m' if time_interval == '1M' else '%Y'
         fig = go.Figure()
         for date, data in df:
-            curr_date_df = data.groupby(category_col).sum().reset_index()
+            curr_date_df = data.groupby(category_col).sum(numeric_only=True).reset_index()
             fig.add_trace(
                 go.Bar(
                     x=curr_date_df[amount_col],
