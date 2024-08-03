@@ -9,3 +9,7 @@ the user should be able to view the following data:
 - a prediction of his net worth in the future
 - a comparison between his net worth and the average net worth of people his age/country
 """
+
+import streamlit as st
+
+st.text("Coming soon...")  # TODO: implement this page
