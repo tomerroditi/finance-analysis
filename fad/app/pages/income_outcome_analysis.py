@@ -33,7 +33,7 @@ all_data.loc[all_data[category_col].isnull(), category_col] = "Uncategorized"
 categories_tab, tags_tab, monthly_recap_tab, yearly_recap_tab, paychecks_analysis_tab = \
     st.tabs(["Categories", "Tags", "Monthly Recap", "Yearly Recap", "Paychecks Analysis"])
 
-
+# TODO: separate between income and outcome when plotting expenses and plot only outcomes
 with categories_tab:
     st.caption("<p style='font-size:20px; color: black;'>"
                "This tab displays an analysis of your expenses by categories.<br>"
@@ -49,6 +49,7 @@ with categories_tab:
     }
     df_filter = PandasFilterWidgets(all_data, widgets_map)
     filtered_data = df_filter.filter_df()
+    filtered_data = filtered_data[~filtered_data[category_col].isin(["Salary", "Savings", "Investments"])]
 
     ignore_uncategorized = st.checkbox("Ignore Uncategorized", key="expenses_analysis_ignore_uncategorized")
     st.plotly_chart(
@@ -56,12 +57,12 @@ with categories_tab:
     )
     st.plotly_chart(
         PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1M", ignore_uncategorized
+            filtered_data, amount_col, category_col, date_col, "1Y", ignore_uncategorized
         )
     )
     st.plotly_chart(
         PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1Y", ignore_uncategorized
+            filtered_data, amount_col, category_col, date_col, "1M", ignore_uncategorized
         )
     )
 
