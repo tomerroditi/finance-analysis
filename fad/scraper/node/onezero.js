@@ -29,7 +29,6 @@ const start_date = args[4];
     // Start scraping with the provided credentials
     const scrapeResult = await scraper.scrape(credentials);
 
-    // TODO: fix this part to handle the scrape result
     if (scrapeResult.success) {
       scrapeResult.accounts.forEach((account) => {
         console.log(`found ${account.txns.length} transactions for account number ${account.accountNumber}`);
