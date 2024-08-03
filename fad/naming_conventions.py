@@ -37,6 +37,8 @@ class TagsTableFields(Enum):
     NAME = 'name'
     CATEGORY = 'category'
     TAG = 'tag'
+    SERVICE = 'service'
+    ACCOUNT_NUMBER = 'account_number'
 
 
 class CreditCards(Enum):
