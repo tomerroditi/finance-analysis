@@ -582,7 +582,7 @@ class DataUtils:
 
 class PlottingUtils:
     @staticmethod
-    def plot_expenses_by_categories(df: pd.DataFrame, amount_col: str, category_col: str, ignore_uncategorized: bool):
+    def plot_expenses_by_categories(df: pd.DataFrame, amount_col: str, category_col: str):
         """
         Plot the expenses by categories
 
@@ -594,17 +594,11 @@ class PlottingUtils:
             The column name of the amount
         category_col : str
             The column name of the category
-        ignore_uncategorized : bool
-            Whether to ignore the uncategorized category
 
         Returns
         -------
         None
         """
-        df = df.copy()
-        if ignore_uncategorized:
-            df = df[df[category_col] != 'Uncategorized']
-        df = df[~((df[category_col] == "Other") & (df["tag"] == "No tag"))]
         df[amount_col] = df[amount_col] * -1
         df = df.groupby(category_col).sum(numeric_only=True).reset_index()
         fig = go.Figure(
@@ -635,7 +629,7 @@ class PlottingUtils:
 
     @staticmethod
     def plot_expenses_by_categories_over_time(df: pd.DataFrame, amount_col: str, category_col: str, date_col: str,
-                                              time_interval: str, ignore_uncategorized: bool):
+                                              time_interval: str):
         """
         Plot the expenses by categories over time as a stacked bar plot
 
@@ -651,17 +645,12 @@ class PlottingUtils:
             The column name of the date
         time_interval : str
             The time interval to group the data by. Should be one of "1W", "1M", "1Y"
-        ignore_uncategorized : bool
-            Whether to ignore the uncategorized category
 
         Returns
         -------
         None
         """
         df = df.copy()
-        if ignore_uncategorized:
-            df = df[df[category_col] != 'Uncategorized']
-        df = df[~((df[category_col] == "Other") & (df["tag"] == "No tag"))]
         df[amount_col] = df[amount_col] * -1
         df[date_col] = pd.to_datetime(df[date_col])
         df = df.groupby(pd.Grouper(key=date_col, freq=time_interval))
@@ -761,15 +750,20 @@ class PandasFilterWidgets:
         text = st.text_input(name, key=f"{self.keys_prefix}_{column}_text")
         return text
 
-    def create_date_range_widget(self, column: str) -> datetime.date:
+    def create_date_range_widget(self, column: str) -> tuple[datetime.date, datetime.date]:
         df = self.df.copy()
         df = df.loc[df[column].notna(), :]
         max_val = datetime.today().date()
         min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
         name = column.replace('_', ' ').title()
-        start_date, end_date = st.date_input(
+        dates = st.date_input(
             name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input'
         )
+        try:
+            start_date, end_date = dates
+        except ValueError:
+            start_date, end_date = dates[0], dates[0]
+
         return start_date, end_date
 
     def filter_df(self):

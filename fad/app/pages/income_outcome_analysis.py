@@ -10,12 +10,13 @@ the user should be able to view the following data:
 """
 import streamlit as st
 import pandas as pd
-from fad.naming_conventions import Tables, TransactionsTableFields
+from fad.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
 from fad.app.utils import DataUtils, PandasFilterWidgets, PlottingUtils
 
 amount_col = TransactionsTableFields.AMOUNT.value
 date_col = TransactionsTableFields.DATE.value
 category_col = TransactionsTableFields.CATEGORY.value
+tag_col = TransactionsTableFields.TAG.value
 
 
 conn = DataUtils.get_db_connection()
@@ -28,12 +29,12 @@ credit_card_data = DataUtils.get_table(conn, credit_card_table)
 bank_data = DataUtils.get_table(conn, bank_table)
 
 all_data = pd.concat([credit_card_data, bank_data])
-all_data.loc[all_data[category_col].isnull(), category_col] = "Uncategorized"
 
 categories_tab, tags_tab, monthly_recap_tab, yearly_recap_tab, paychecks_analysis_tab = \
     st.tabs(["Categories", "Tags", "Monthly Recap", "Yearly Recap", "Paychecks Analysis"])
 
-# TODO: separate between income and outcome when plotting expenses and plot only outcomes
+non_expenses_categories = [category.value for category in NonExpensesCategories]
+
 with categories_tab:
     st.caption("<p style='font-size:20px; color: black;'>"
                "This tab displays an analysis of your expenses by categories.<br>"
@@ -49,20 +50,28 @@ with categories_tab:
     }
     df_filter = PandasFilterWidgets(all_data, widgets_map)
     filtered_data = df_filter.filter_df()
-    filtered_data = filtered_data[~filtered_data[category_col].isin(["Salary", "Savings", "Investments"])]
+    filtered_data = filtered_data[~filtered_data[category_col].isin(non_expenses_categories)]
+    filtered_data.loc[
+        ((filtered_data[category_col] == "Other") & (filtered_data[tag_col] == "No tag")), [category_col, tag_col]
+    ] = [None, None]
 
     ignore_uncategorized = st.checkbox("Ignore Uncategorized", key="expenses_analysis_ignore_uncategorized")
+    if ignore_uncategorized:
+        filtered_data = filtered_data[~filtered_data[category_col].isnull()]
+    else:
+        filtered_data.loc[filtered_data[category_col].isnull(), category_col] = "Uncategorized"
+
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories(filtered_data, amount_col, category_col, ignore_uncategorized)
+        PlottingUtils.plot_expenses_by_categories(filtered_data, amount_col, category_col)
     )
     st.plotly_chart(
         PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1Y", ignore_uncategorized
+            filtered_data, amount_col, category_col, date_col, "1Y"
         )
     )
     st.plotly_chart(
         PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1M", ignore_uncategorized
+            filtered_data, amount_col, category_col, date_col, "1M"
         )
     )
 

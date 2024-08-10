@@ -71,6 +71,12 @@ class Insurances(Enum):
     HAFENIX = 'hafenix'
 
 
+class NonExpensesCategories(Enum):
+    SALARY = 'Salary'
+    SAVINGS = 'Savings'
+    INVESTMENTS = 'Investments'
+
+
 class Fields(Enum):
     ID = 'id'
     CARD_6_DIGITS = 'card6Digits'
