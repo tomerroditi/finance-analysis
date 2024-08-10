@@ -154,7 +154,7 @@ def assure_tags_table(conn: SQLConnection):
     """create the tags table if it doesn't exist"""
     with conn.session as s:
         s.execute(text(f'CREATE TABLE IF NOT EXISTS {tags_table} ({name_col} TEXT PRIMARY KEY, {category_col}'
-                       f' TEXT, {tag_col} TEXT), {service_col} TEXT, {account_number_col} TEXT;'))
+                       f' TEXT, {tag_col} TEXT, {service_col} TEXT, {account_number_col} TEXT);'))
         s.commit()
 
 
