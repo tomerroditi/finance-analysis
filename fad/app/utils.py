@@ -599,6 +599,7 @@ class PlottingUtils:
         -------
         None
         """
+        df = df.copy()
         df[amount_col] = df[amount_col] * -1
         df = df.groupby(category_col).sum(numeric_only=True).reset_index()
         fig = go.Figure(
@@ -612,15 +613,15 @@ class PlottingUtils:
         )
         fig.update_layout(
             title='Expenses Recap',
-            xaxis_title='Spent [₪]',
+            xaxis_title='Outcome [₪]',
             yaxis_title='Category',
             annotations=[
                 dict(
-                    x=-0.085,  # position along the x-axis, slightly outside the plot
-                    y=-0.25,  # position along the y-axis, slightly above the plot
+                    x=0,  # position along the x-axis, slightly outside the plot
+                    y=-0.2,  # position along the y-axis, slightly above the plot
                     xref='paper',
                     yref='paper',
-                    text='The amounts are negative',
+                    text='* Negative values represent income',
                     showarrow=False
                 )
             ]
@@ -670,9 +671,19 @@ class PlottingUtils:
         fig.update_layout(
             barmode='stack',
             title=f'Expenses Recap Over {title_time_period}',
-            xaxis_title='Spent [₪]',
+            xaxis_title='Outcome [₪]',
             yaxis_title='Category',
-            xaxis_tickformat=',d'
+            xaxis_tickformat=',d',
+            annotations=[
+                dict(
+                    x=0,  # position along the x-axis, slightly outside the plot
+                    y=-0.2,  # position along the y-axis, slightly above the plot
+                    xref='paper',
+                    yref='paper',
+                    text='* Negative values represent income',
+                    showarrow=False
+                )
+            ]
         )
         return fig
 
