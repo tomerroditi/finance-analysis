@@ -1,3 +1,5 @@
+import time
+
 import streamlit as st
 import yaml
 import numpy as np
@@ -42,6 +44,7 @@ bank_account_number_col = BankTableFields.ACCOUNT_NUMBER.value
 #   when editing the tags in the auto tagger
 # TODO: make it impossible to delete the Other, Salaries, Savings, and Investments categories
 # TODO: make it impossible to delete the Other: No tag tag
+# TODO: add a feature to shift the tags of a category to another category and update the tagged data accordingly
 def edit_categories_and_tags(categories_and_tags: dict, yaml_path: str, conn: SQLConnection):
     """
     Display the categories and tags and allow editing them
@@ -411,10 +414,13 @@ with tab_raw_data:
     }
 
     table_type = st.selectbox(
-        'Select data table to edit:', [credit_card_table.replace('_', ' '), bank_table.replace('_', ' ')]
+        'Select data table to edit:',
+        [credit_card_table.replace('_', ' '), bank_table.replace('_', ' ')],
+        key="tagging_raw_data_table_type"
     )
+    table_type = table_type.replace(' ', '_')
     # select the desired table you want to edit
-    if table_type == credit_card_table.replace('_', ' '):
+    if table_type == credit_card_table:
         df_data = credit_card_data
         prefix = 'cc_'
     else:
@@ -435,6 +441,10 @@ with tab_raw_data:
                 df_data, key=f'{prefix}transactions_editor', column_order=columns_order, num_rows="fixed",
                 hide_index=False
             )
-            submit_button = st.form_submit_button(
-                label='Save', on_click=DataUtils.update_db_table, args=(conn, table_type, edited_data, columns_order)
-            )
+            edited_data = edited_data.merge(df_data, how='outer', indicator=True)
+            edited_data = edited_data[edited_data['_merge'] == 'left_only'].drop('_merge', axis=1)
+
+            submit_button = st.form_submit_button(label='Save')
+            if submit_button:
+                DataUtils.update_db_table(conn, table_type, edited_data)
+                st.success("Data saved successfully")
