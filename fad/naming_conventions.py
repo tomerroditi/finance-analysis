@@ -72,9 +72,11 @@ class Insurances(Enum):
 
 
 class NonExpensesCategories(Enum):
+    IGNORE = 'Ignore'
     SALARY = 'Salary'
     SAVINGS = 'Savings'
     INVESTMENTS = 'Investments'
+    OTHER_INCOME = 'Other Income'
 
 
 class Fields(Enum):
