@@ -10,6 +10,7 @@ from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 
 
+# TODO: open a pull request to add one-zero transaction id to the returned dictionary
 class Scraper(ABC):
     """
     An abstract class to scrape data from different providers and save them to the database using Node.js scripts and
@@ -185,11 +186,10 @@ class Scraper(ABC):
             The path to the database file.
         """
         conn = sqlite3.connect(db_path)
-        with conn:
-            conn.execute(f"DELETE FROM {self.table_name} WHERE {self.table_unique_key} NOT IN "
-                         f"(SELECT MIN({self.table_unique_key}) FROM {self.table_name} "
-                         f"GROUP BY {self.table_unique_key})")
-            conn.commit()
+        df = pd.read_sql_query(f"SELECT * FROM {self.table_name}", conn)
+        df_unique = df.drop_duplicates()
+        df_unique.to_sql(self.table_name, conn, if_exists='replace', index=False)
+        conn.close()
 
     def get_provider_scraping_function(self, provider: str):
         """
