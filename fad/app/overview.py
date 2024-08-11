@@ -12,5 +12,6 @@ start_date = st.date_input("Set the date from which to start fetching your data 
                            "(Defaults to 2 weeks previously to the latest date in your data).", value=latest_data_date)
 if st.button("Fetch Data"):
     creds = CredentialsUtils.load_credentials()
-    DataUtils.pull_data(start_date, creds, DB_PATH)
+    with st.spinner("Please wait while we fetch data from your accounts..."):
+        DataUtils.pull_data(start_date, creds, DB_PATH)
     st.rerun()
