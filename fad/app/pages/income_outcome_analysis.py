@@ -57,17 +57,16 @@ with categories_tab:
         filtered_data.loc[filtered_data[category_col].isnull(), category_col] = "Uncategorized"
 
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories(filtered_data, amount_col, category_col)
+        PlottingUtils.bar_plot_by_categories(filtered_data, amount_col, category_col)
     )
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1Y"
-        )
+        PlottingUtils.pie_plot_by_categories(filtered_data, amount_col, category_col)
     )
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, category_col, date_col, "1M"
-        )
+        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1Y")
+    )
+    st.plotly_chart(
+        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1M")
     )
 
 with tags_tab:
@@ -93,15 +92,11 @@ with tags_tab:
         filtered_data.loc[filtered_data[tag_col].isnull(), tag_col] = "No tag"
 
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories(filtered_data, amount_col, tag_col)
+        PlottingUtils.bar_plot_by_categories(filtered_data, amount_col, tag_col)
     )
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, tag_col, date_col, "1Y"
-        )
+        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1Y")
     )
     st.plotly_chart(
-        PlottingUtils.plot_expenses_by_categories_over_time(
-            filtered_data, amount_col, tag_col, date_col, "1M"
-        )
+        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1M")
     )
