@@ -39,20 +39,31 @@ Household:
 - Phone
 - Rent
 - Water
+Ignore:
+- Internal Transactions
+- credit card bill
 Investments:
 - real estate
 - stocks
 Other:
+- ATM
+- Bank Commisions
 - Haircat
+- Ignore
 - No tag
 - Weddings
 - flowers
 - pharma
+Other Income:
+- Milga - Ariel University
 Salary:
+- Agadir
 - CorrActions
 - Israel-is
 - Miluim
 - TAU
+Savings:
+- Pakam
 Shopping:
 - Clothes
 - Electronics
