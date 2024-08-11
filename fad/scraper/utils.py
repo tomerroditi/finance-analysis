@@ -45,7 +45,10 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     if amount_col in df.columns:
         df[amount_col] = df[amount_col].astype(float)
     if date_col in df.columns:
-        df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').date())
+        try:
+            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').date())
+        except ValueError:
+            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date())
     return df
 
 
