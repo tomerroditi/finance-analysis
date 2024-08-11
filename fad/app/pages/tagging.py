@@ -301,8 +301,14 @@ def edit_cc_tagged_data(conn):
         # save the edited data to the database
         with conn.session as s:
             for i, row in edited_tagged_data.iterrows():
-                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{row[category_col]}, {tag_col}=:{row[tag_col]}'
-                               f' WHERE {name_col}=:{row[name_col]};'))
+                params = {
+                    name_col: row[name_col],
+                    category_col: row[category_col] if row[category_col] != '' else None,
+                    tag_col: row[tag_col] if row[tag_col] != '' else None
+                }
+                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{category_col}, {tag_col}=:{tag_col}'
+                               f' WHERE {name_col}=:{name_col};'),
+                          params)
             s.commit()
         st.rerun()
 
@@ -329,8 +335,15 @@ def edit_bank_tagged_data(conn):
         # save the edited data to the database
         with conn.session as s:
             for i, row in edited_tagged_data.iterrows():
-                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{row[category_col]}, {tag_col}=:{row[tag_col]}'
-                               f' WHERE {name_col}=:{row[name_col]};'))
+                params = {
+                    name_col: row[name_col],
+                    account_number_col: row[account_number_col],
+                    category_col: row[category_col] if row[category_col] != '' else None,
+                    tag_col: row[tag_col] if row[tag_col] != '' else None
+                }
+                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{category_col}, {tag_col}=:{tag_col}'
+                               f' WHERE {name_col}=:{name_col} AND {account_number_col}=:{account_number_col};'),
+                          params)
             s.commit()
         st.rerun()
 
