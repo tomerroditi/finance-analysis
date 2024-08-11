@@ -4,6 +4,7 @@ import sqlite3
 import sqlalchemy
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from streamlit_phone_number import st_phone_number
 from streamlit.connections import SQLConnection
@@ -158,7 +159,7 @@ class CredentialsUtils:
                 creds[field] = st.text_input(label, value, key=f'{provider}_{account}_{field}')
 
     @staticmethod
-    @st.experimental_dialog('verify deletion')
+    @st.dialog('verify deletion')
     def _delete_account_dialog(credentials: dict, service: str, provider: str, account: str) -> None:
         """
         Display a dialog to verify the deletion of the account. if the user confirms the deletion, the account will be
@@ -212,7 +213,7 @@ class CredentialsUtils:
         CredentialsUtils._save_credentials(credentials)
 
     @staticmethod
-    @st.experimental_fragment
+    @st.fragment
     def add_new_data_source(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
         """
         Add a new account for the given service. The user will be prompted to enter the required fields for the new
@@ -351,6 +352,7 @@ class CredentialsUtils:
         None
         """
         # TODO: still missing handling for when the user is pressing esc or the X button on the dialog
+        # TODO: figure out why the function is called again after the dialog is opened (before submitting the otp)
         # first call of this function
         if st.session_state.get('tfa_code', None) is None:
             st.session_state.tfa_code = 'waiting for token'
@@ -379,6 +381,7 @@ class CredentialsUtils:
             st.session_state.long_term_token = st.session_state.otp_handler.result
 
         if st.session_state.long_term_token != 'waiting for token':
+            print("deleting otp properties")
             # we reach here only if the 2FA process is completed successfully or aborted
             del st.session_state.tfa_code
             del st.session_state.otp_handler
@@ -386,7 +389,7 @@ class CredentialsUtils:
             del st.session_state.opened_2fa_dialog
 
     @staticmethod
-    @st.experimental_dialog('Two Factor Authentication')
+    @st.dialog('Two Factor Authentication')
     def _two_fa_dialog(provider: str):
         """
         Display a dialog for the user to enter the OTP code for the given provider. The dialog will stop the script
@@ -405,14 +408,14 @@ class CredentialsUtils:
         st.write(f'The provider, {provider}, requires 2 factor authentication for adding a new account.')
         st.write('Please enter the code you received.')
         st.write(st.session_state.tfa_code)
-        code = st.text_input('Code')
-        if st.button('Submit'):
+        code = st.text_input('Code', key=f'tfa_code_{provider}')
+        if st.button('Submit', key="two_fa_dialog_submit"):
             if code is None or code == '':
                 st.error('Please enter a valid code')
                 st.stop()
             st.session_state.tfa_code = code
             st.rerun()
-        if st.button('Cancel'):
+        if st.button('Cancel', key="two_fa_dialog_cancel"):
             st.session_state.tfa_code = 'cancel'
             st.rerun()
 
@@ -558,7 +561,6 @@ class DataUtils:
         """
         if edited_rows.empty:
             return
-
         match table_name:
             case Tables.CREDIT_CARD.value:
                 id_col = CreditCardTableFields.ID.value
@@ -582,7 +584,7 @@ class DataUtils:
 
 class PlottingUtils:
     @staticmethod
-    def plot_expenses_by_categories(df: pd.DataFrame, amount_col: str, category_col: str):
+    def bar_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str) -> go.Figure:
         """
         Plot the expenses by categories
 
@@ -590,24 +592,24 @@ class PlottingUtils:
         ----------
         df : pd.DataFrame
             The data to plot
-        amount_col : str
-            The column name of the amount
+        values_col : str
+            The column name of the values to plot
         category_col : str
-            The column name of the category
+            The column name of the category to group by the data into bars
 
         Returns
         -------
         None
         """
         df = df.copy()
-        df[amount_col] = df[amount_col] * -1
+        df[values_col] = df[values_col] * -1
         df = df.groupby(category_col).sum(numeric_only=True).reset_index()
         fig = go.Figure(
             go.Bar(
-                x=df[amount_col],
+                x=df[values_col],
                 y=df[category_col],
                 orientation='h',
-                text=df[amount_col].round(2),
+                text=df[values_col].round(2),
                 textposition='auto'
             )
         )
@@ -629,8 +631,8 @@ class PlottingUtils:
         return fig
 
     @staticmethod
-    def plot_expenses_by_categories_over_time(df: pd.DataFrame, amount_col: str, category_col: str, date_col: str,
-                                              time_interval: str):
+    def bar_plot_by_categories_over_time(df: pd.DataFrame, values_col: str, category_col: str, date_col: str,
+                                         time_interval: str) -> go.Figure:
         """
         Plot the expenses by categories over time as a stacked bar plot
 
@@ -638,8 +640,8 @@ class PlottingUtils:
         ----------
         df : pd.DataFrame
             The data to plot
-        amount_col : str
-            The column name of the amount
+        values_col : str
+            The column name of the values to plot
         category_col : str
             The column name of the category
         date_col : str
@@ -652,7 +654,7 @@ class PlottingUtils:
         None
         """
         df = df.copy()
-        df[amount_col] = df[amount_col] * -1
+        df[values_col] = df[values_col] * -1
         df[date_col] = pd.to_datetime(df[date_col])
         df = df.groupby(pd.Grouper(key=date_col, freq=time_interval))
         time_str_format = '%Y-%m-%d' if time_interval == '1D' else '%Y-%m' if time_interval == '1M' else '%Y'
@@ -661,7 +663,7 @@ class PlottingUtils:
             curr_date_df = data.groupby(category_col).sum(numeric_only=True).reset_index()
             fig.add_trace(
                 go.Bar(
-                    x=curr_date_df[amount_col],
+                    x=curr_date_df[values_col],
                     y=curr_date_df[category_col],
                     name=date.strftime(time_str_format),
                     orientation='h'
@@ -685,6 +687,68 @@ class PlottingUtils:
                 )
             ]
         )
+        return fig
+
+    @staticmethod
+    def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str) -> go.Figure:
+        """
+        Plot the expenses by categories
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The data to plot
+        values_col : str
+            The column name of the values to plot
+        category_col : str
+            The column name of the category to group by the data into bars
+
+        Returns
+        -------
+        None
+        """
+        df = df.copy()
+        df[values_col] = df[values_col] * -1
+
+        # Get negative and positive values categories
+        df_neg = df[df[values_col] < 0].copy()
+        df_pos = df[df[values_col] >= 0].copy()
+
+        df_neg = df_neg.groupby(category_col).sum(numeric_only=True).reset_index()
+        df_pos = df_pos.groupby(category_col).sum(numeric_only=True).reset_index()
+
+        fig = make_subplots(
+            rows=1, cols=2,
+            specs=[[{'type': 'pie'}, {'type': 'pie'}]],
+            subplot_titles=['Outcome [₪]', 'Refunds & Paybacks [₪]']
+        )
+
+        fig.add_trace(
+            go.Pie(
+                labels=df_pos[category_col],
+                values=df_pos[values_col],
+                textinfo='label+percent',
+                hole=0.3,
+                name="Outcome"
+            ),
+            row=1, col=1
+        )
+
+        fig.add_trace(
+            go.Pie(
+                labels=df_neg[category_col] if not df_neg.empty else ['No refunds & paybacks'],
+                values=df_neg[values_col] * -1 if not df_neg.empty else [1],
+                textinfo='label+percent',
+                hole=0.3,
+                name="Refunds & Paybacks"
+            ),
+            row=1, col=2
+        )
+
+        fig.update_layout(
+            title_text='Expenses Recap',
+        )
+
         return fig
 
 
