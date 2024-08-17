@@ -1,10 +1,9 @@
-import time
-
 import streamlit as st
 import yaml
-import numpy as np
 import pandas as pd
+import numpy as np
 
+from typing import Literal
 from streamlit.connections import SQLConnection
 from sqlalchemy.sql import text
 from streamlit_tags import st_tags
@@ -12,9 +11,11 @@ from fad import CATEGORIES_PATH
 from fad.app.utils import DataUtils, PandasFilterWidgets
 from fad.naming_conventions import (TagsTableFields,
                                     Tables,
+                                    Services,
                                     CreditCardTableFields,
                                     BankTableFields,
-                                    TransactionsTableFields)
+                                    TransactionsTableFields,
+                                    NonExpensesCategories)
 
 tags_table = Tables.TAGS.value
 credit_card_table = Tables.CREDIT_CARD.value
@@ -38,14 +39,11 @@ bank_account_number_col = BankTableFields.ACCOUNT_NUMBER.value
 
 
 # TODO: refactor this module by moving all its functions into the utils module
-# TODO: when deleting tags/categories make sure to delete them from the tags and credit card tables
 # TODO: add a feature that enables one to split a transaction into multiple transactions of different amounts and tags
 # TODO: add a feature to mark if you want to update all tagged rows with the auto tagger new value or only future rows
 #   when editing the tags in the auto tagger
-# TODO: make it impossible to delete the Other, Salaries, Savings, and Investments categories
 # TODO: make it impossible to delete the Other: No tag tag
-# TODO: add a feature to shift the tags of a category to another category and update the tagged data accordingly
-def edit_categories_and_tags(categories_and_tags: dict, yaml_path: str, conn: SQLConnection):
+def edit_categories_and_tags(categories_and_tags: dict[str: list[str]], yaml_path: str, conn: SQLConnection):
     """
     Display the categories and tags and allow editing them
 
@@ -62,95 +60,193 @@ def edit_categories_and_tags(categories_and_tags: dict, yaml_path: str, conn: SQ
     -------
 
     """
-    # Initialize session state for each category before the loop
-    for category in categories_and_tags.keys():
-        if f'confirm_delete_{category}' not in st.session_state:
-            st.session_state[f'confirm_delete_{category}'] = False
+    add_cat_col, reallocate_tags_col, _ = st.columns([0.2, 0.2, 0.6])
+    # add new categories
+    with add_cat_col:
+        st.button('New Category', key='add_new_category', on_click=add_new_category,
+                  args=(categories_and_tags, yaml_path))
+
+    # reallocate tags
+    with reallocate_tags_col:
+        st.button('Reallocate Tags', key='reallocate_tags', on_click=reallocate_tags,
+                  args=(categories_and_tags, conn, yaml_path))
 
     # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
     for category, tags in list(categories_and_tags.items()):
         st.subheader(category, divider="gray")
+        if category == "Ignore":
+            st.write("Transactions that you don't want to consider in the analysis. For example credit card bills in "
+                     "you bank account (which are already accounted for in the credit card transactions tracking), "
+                     "internal transfers, etc.")
+        if category == "Salary":
+            st.write("Transactions that are your salary income. we advise using the employer's name as the tag.")
+        if category == "Other Income":
+            st.write("Transactions that are income other than your salary. For example, rental income, dividends, "
+                     "refunds, etc.")
+        if category == "Investments":
+            st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
+                     "stocks, real estate, etc.")
         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
         if new_tags != tags:
+            new_tags = [format_category_or_tag_strings(tag) for tag in new_tags]
             categories_and_tags[category] = new_tags
             # save changes and rerun to update the UI
             update_yaml_and_rerun(categories_and_tags, yaml_path)
 
         # delete category
-        delete_button = st.button(f'Delete {category}', key=f'my_{category}_delete')
-        if delete_button:
-            st.session_state[f'confirm_delete_{category}'] = True
+        disable = True if category in [e.value for e in NonExpensesCategories] else False
+        st.button(f'Delete {category}', key=f'my_{category}_delete', disabled=disable, on_click=delete_category,
+                  args=(categories_and_tags, category, conn, yaml_path))
 
-        # confirm deletion
-        if st.session_state[f'confirm_delete_{category}']:
-            confirm_button = st.button('Confirm Delete', key=f'confirm_{category}_delete')
-            cancel_button = st.button('Cancel', key=f'cancel_{category}_delete')
 
-            # delete and update database
-            if confirm_button:
-                del categories_and_tags[category]
-                data_to_delete = conn.query(f'SELECT {name_col} FROM {tags_table} WHERE {category_col}={category_col};',
-                                            ttl=0)
-                with conn.session as s:
-                    for i, row in data_to_delete.iterrows():
-                        s.execute(text(f"UPDATE {tags_table} SET {category_col}='', {tag_col}='' "
-                                       f"WHERE {name_col}={row[name_col]};"))
-                    s.commit()
-                del st.session_state[f'confirm_delete_{category}']
-                update_yaml_and_rerun(categories_and_tags, yaml_path)
-
-            # cancel deletion
-            if cancel_button:
-                st.session_state[f'confirm_delete_{category}'] = False
-                st.rerun()
-
-    # add new categories
-    st.subheader('Add a new Category', divider="gray")
+@st.dialog('Add New Category')
+def add_new_category(categories_and_tags: dict[str: list[str]], yaml_path: str):
+    existing_categories = [k.lower() for k in categories_and_tags.keys()]
     new_category = st.text_input('New Category Name', key='new_category')
-    if st.button('Add Category') and new_category != '':
-        categories_and_tags[new_category] = []
+
+    if st.button('Cancel'):
+        st.rerun()
+
+    if st.button('Continue') and new_category != '' and new_category is not None:
+        if new_category.lower() in existing_categories:
+            st.warning(f'The category "{new_category}" already exists. Please choose a different name.')
+            st.stop()
+        categories_and_tags[format_category_or_tag_strings(new_category)] = []
         update_yaml_and_rerun(categories_and_tags, yaml_path)
 
 
-def update_yaml_and_rerun(categories_and_tags, yaml_path):
-    """update the yaml file and rerun the streamlit app"""
+@st.dialog('Reallocate Tags')
+def reallocate_tags(categories_and_tags: dict[str: list[str]], conn: SQLConnection, yaml_path: str):
+    all_categories = list(categories_and_tags.keys())
+    old_category = st.selectbox('Select current category', all_categories, index=None,
+                                key='old_category')
+    tags_to_select = categories_and_tags[old_category] if old_category is not None else []
+    tags_to_reallocate = st.multiselect('Select tags to reallocate', tags_to_select, key='reallocate_tags')
+    if old_category is None:
+        st.stop()
+
+    all_categories.remove(old_category)
+    new_category = st.selectbox('Select new category', all_categories, key='new_category', index=None)
+    if old_category is not None and new_category is not None and tags_to_reallocate:
+        if st.button('Continue', key='continue_reallocate_tags'):
+            # update the tags in the database
+            for table in [tags_table, credit_card_table, bank_table]:
+                match table:
+                    case Tables.TAGS.value:
+                        curr_tag_col = tag_col
+                        curr_category_col = category_col
+                    case Tables.CREDIT_CARD.value:
+                        curr_tag_col = cc_tag_col
+                        curr_category_col = cc_category_col
+                    case Tables.BANK.value:
+                        curr_tag_col = bank_tag_col
+                        curr_category_col = bank_category_col
+                    case _:
+                        raise ValueError(f"Invalid table name: {table}")
+                with (conn.session as s):
+                    for tag in tags_to_reallocate:
+                        query = text(f'UPDATE {table} SET {curr_category_col}=:new_category WHERE {curr_tag_col}=:tag AND '
+                                     f'{curr_category_col}=:old_category;')
+                        s.execute(query, {'new_category': new_category, 'tag': tag,
+                                          'old_category': old_category})
+                        s.commit()
+
+            categories_and_tags[new_category].extend(tags_to_reallocate)
+            _ = [categories_and_tags[old_category].remove(tag) for tag in tags_to_reallocate]
+            update_yaml_and_rerun(categories_and_tags, yaml_path)
+
+
+@st.dialog('Confirm Deletion')
+def delete_category(categories_and_tags: dict[str: list[str]], category: str, conn: SQLConnection, yaml_path: str):
+    st.write(f'Are you sure you want to delete the "{category}" category?')
+    st.write('Deleting a category deletes it from the auto tagger rules as well.')
+    delete_tags_of_logged_data = st.checkbox('Delete tags of logged data', key=f'delete_tags_of_logged_data')
+    confirm_button = st.button('Continue', key=f'continue_delete_category')
+    cancel_button = st.button('Cancel', key=f'cancel_delete_category')
+
+    if confirm_button:
+        data_to_delete = conn.query(f'SELECT {name_col} FROM {tags_table} WHERE {category_col}=:category',
+                                    params={'category': category}, ttl=0)
+
+        with conn.session as s:
+            for i, row in data_to_delete.iterrows():
+                query = text(f"UPDATE {tags_table} SET {category_col}=Null, {tag_col}=Null WHERE {name_col}=:name")
+                s.execute(query, {'name': row[name_col]})
+                s.commit()
+
+        if delete_tags_of_logged_data:
+            update_raw_data_deleted_category(conn, category)
+
+        del categories_and_tags[category]
+        update_yaml_and_rerun(categories_and_tags, yaml_path)
+
+    if cancel_button:
+        st.rerun()
+
+
+def update_raw_data_deleted_category(conn: SQLConnection, category: str) -> None:
+    """
+    update the tags, to Null, of the raw data in the credit card and bank tables of deleted categories
+
+    Parameters
+    ----------
+    conn: SQLConnection
+        the connection to the database
+    category: str
+        the category to delete
+
+    Returns
+    -------
+    None
+    """
+    for table in [credit_card_table, bank_table]:
+        match table:
+            case Tables.CREDIT_CARD.value:
+                curr_tag_col = cc_tag_col
+                curr_category_col = cc_category_col
+            case Tables.BANK.value:
+                curr_tag_col = bank_tag_col
+                curr_category_col = bank_category_col
+            case _:
+                raise ValueError(f"Invalid table name: {table}")
+        with conn.session as s:
+            query = text(f"UPDATE {table} SET {curr_category_col}=Null, {curr_tag_col}=Null "
+                         f"WHERE {curr_category_col}=:category")
+            s.execute(query, {'category': category})
+            s.commit()
+
+
+def update_yaml_and_rerun(categories_and_tags: dict[str: list[str]], yaml_path: str) -> None:
+    """
+    update the yaml file and rerun the streamlit app
+
+    Parameters
+    ----------
+    categories_and_tags: dict
+        a dictionary of categories and their tags
+    yaml_path: str
+        the path to the yaml file that contains the categories and tags
+
+    Returns
+    -------
+    None
+    """
     # sort the categories and tags by alphabetical order
-    categories_and_tags = {category: sorted(tags) for category, tags in categories_and_tags.items()}
+    categories_and_tags = {category: sorted(list(set(tags))) for category, tags in categories_and_tags.items()}
     categories_and_tags = dict(sorted(categories_and_tags.items()))
     st.session_state["categories_and_tags"] = categories_and_tags
+
+    # del the tags editing widgets state to prevent overwriting the changes
+    for category in categories_and_tags.keys():
+        try:
+            del st.session_state[f"{category}_tags"]
+        except KeyError:  # new category doesn't has a state yet
+            pass
+
+    # save the changes to the yaml file
     with open(yaml_path, 'w') as file:
         yaml.dump(categories_and_tags, file)
     st.rerun()
-
-
-def update_raw_data_tags(conn: SQLConnection):
-    """update the tags of the raw data in the credit card and bank tables of deleted categories and tags"""
-    tags_table_data = conn.query(f'SELECT * FROM {tags_table};', ttl=0)
-    credit_card_data = conn.query(f'SELECT * FROM {credit_card_table};', ttl=0)
-    bank_data = conn.query(f'SELECT * FROM {bank_table};', ttl=0)
-
-    cc_changed_locs = []
-    bank_changed_locs = []
-    tags_table_data = tags_table_data.dropna(subset=[category_col, tag_col])
-    for i, row in tags_table_data.iterrows():
-        cc_name_cond = credit_card_data[cc_name_col] == row[name_col]
-        cc_category_nan_cond = credit_card_data[cc_category_col].isna()
-        credit_card_data.loc[cc_name_cond & cc_category_nan_cond, cc_category_col] = row[category_col]
-        credit_card_data.loc[cc_name_cond & cc_category_nan_cond, cc_tag_col] = row[tag_col]
-        cc_changed_locs.append((cc_name_cond & cc_category_nan_cond).to_numpy())
-
-        bank_name_cond = bank_data[bank_name_col] == row[name_col]
-        bank_category_nan_cond = bank_data[bank_category_col].isna()
-        bank_data.loc[bank_name_cond & bank_category_nan_cond, bank_category_col] = row[category_col]
-        bank_data.loc[bank_name_cond & bank_category_nan_cond, bank_tag_col] = row[tag_col]
-        bank_changed_locs.append((bank_name_cond & bank_category_nan_cond).to_numpy())
-
-    cc_changed_locs = np.logical_or.reduce(np.stack(cc_changed_locs, axis=1), axis=1)
-    bank_changed_locs = np.logical_or.reduce(np.stack(bank_changed_locs, axis=1), axis=1)
-    DataUtils.update_db_table(conn, credit_card_table,
-                              credit_card_data.loc[cc_changed_locs, [cc_id_col, cc_category_col, cc_tag_col]])
-    DataUtils.update_db_table(conn, bank_table,
-                              bank_data.loc[bank_changed_locs, [bank_id_col, bank_category_col, bank_tag_col]])
 
 
 def assure_tags_table(conn: SQLConnection):
@@ -161,7 +257,7 @@ def assure_tags_table(conn: SQLConnection):
         s.commit()
 
 
-def pull_new_cc_names(conn):
+def pull_new_cc_names(conn: SQLConnection):
     """pull new credit card transactions names from the credit card table and insert them into the tags table"""
     current_cc_names = conn.query(
         f"SELECT {name_col} FROM {tags_table} WHERE {service_col}='credit_card';", ttl=0
@@ -175,7 +271,7 @@ def pull_new_cc_names(conn):
         s.commit()
 
 
-def pull_new_bank_names(conn):
+def pull_new_bank_names(conn: SQLConnection):
     """pull new bank transactions names from the bank table and insert them into the tags table"""
     current_banks_names = conn.query(
         f"SELECT {name_col}, {account_number_col} FROM {tags_table} WHERE {service_col} = 'bank';", ttl=0
@@ -192,7 +288,7 @@ def pull_new_bank_names(conn):
         s.commit()
 
 
-def tag_new_cc_data(conn, categories_and_tags):
+def tag_new_cc_data(conn: SQLConnection, categories_and_tags: dict[str: list[str]]):
     """tag new credit card data"""
 
     df_tags = conn.query(f"""
@@ -237,7 +333,7 @@ def tag_new_cc_data(conn, categories_and_tags):
         st.rerun()
 
 
-def tag_new_bank_data(conn, categories_and_tags):
+def tag_new_bank_data(conn: SQLConnection, categories_and_tags: dict[str: list[str]]):
     """tag new bank data"""
     df_tags = conn.query(f"""
         SELECT * FROM {tags_table}
@@ -282,13 +378,22 @@ def tag_new_bank_data(conn, categories_and_tags):
         st.rerun()
 
 
-def edit_cc_tagged_data(conn):
+def edit_auto_tagger_data(conn: SQLConnection, service: Literal['credit card', 'bank'],
+                          categories_and_tags: dict[str: list[str]]):
     """edit tagged credit card data within the tags table"""
+    match service:
+        case 'credit card':
+            service = Services.CREDIT_CARD.value
+        case 'bank':
+            service = Services.BANK.value
+        case _:
+            raise ValueError(f"Invalid service name: {service}")
+
     tagged_data = conn.query(
         f"SELECT * FROM {tags_table} "
-        f"WHERE {category_col}!='' "
-        f"AND {tag_col}!='' "
-        f"AND {service_col} = 'credit_card';",
+        f"WHERE {category_col} is not Null "
+        f"AND {service_col}=:service;",
+        params={'service': service},
         ttl=0)
     if tagged_data.empty:
         st.write("No data to edit")
@@ -296,94 +401,97 @@ def edit_cc_tagged_data(conn):
 
     # editable table to edit the tagged data
     edited_tagged_data = st.data_editor(tagged_data[[name_col, category_col, tag_col]],
-                                        hide_index=True, width=800, key='edit_cc_tagged_data')
-    if st.button('Save', key='save_edited_cc_tagged_data'):
+                                        hide_index=True, width=800, key=f'edit_{service}_tagged_data')
+    if st.button('Save', key=f'save_edited_{service}_tagged_data'):
         # keep only the modified rows
         edited_tagged_data = edited_tagged_data[(edited_tagged_data[category_col] != tagged_data[category_col]) |
                                                 (edited_tagged_data[tag_col] != tagged_data[tag_col])]
         # save the edited data to the database
         with conn.session as s:
             for i, row in edited_tagged_data.iterrows():
+                category, tag = format_category_or_tag_strings(row[category_col], row[tag_col])
+                verify_category_and_tag(category, tag, categories_and_tags)
+
+                query = text(f'UPDATE {tags_table} SET {category_col}=:category, {tag_col}=:tag'
+                             f' WHERE {name_col}=:name AND {service_col}=:service;')
                 params = {
-                    name_col: row[name_col],
-                    category_col: row[category_col] if row[category_col] != '' else None,
-                    tag_col: row[tag_col] if row[tag_col] != '' else None
+                    'category': category if category != '' else None,
+                    'tag': tag if category != '' else None,
+                    'name': row[name_col],
+                    'service': service
                 }
-                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{category_col}, {tag_col}=:{tag_col}'
-                               f' WHERE {name_col}=:{name_col};'),
-                          params)
-            s.commit()
+                s.execute(query, params)
+                s.commit()
         st.rerun()
 
 
-def edit_bank_tagged_data(conn):
-    """edit tagged bank data within the tags table"""
-    tagged_data = conn.query(
-        f"SELECT * FROM {tags_table} "
-        f"WHERE {category_col}!='' "
-        f"AND {tag_col}!='' "
-        f"AND {service_col} = 'bank';",
-        ttl=0)
-    if tagged_data.empty:
-        st.write("No data to edit")
-        return
+def format_category_or_tag_strings(*args) -> tuple[str | None] | str | None:
+    """
+    format the category and tag to be title case
 
-    # editable table to edit the tagged data
-    edited_tagged_data = st.data_editor(tagged_data[[name_col, account_number_col, category_col, tag_col]],
-                                        hide_index=True, width=800, key='edit_bank_tagged_data')
-    if st.button('Save', key='save_edited_bank_tagged_data'):
-        # keep only the modified rows
-        edited_tagged_data = edited_tagged_data[(edited_tagged_data[category_col] != tagged_data[category_col]) |
-                                                (edited_tagged_data[tag_col] != tagged_data[tag_col])]
-        # save the edited data to the database
-        with conn.session as s:
-            for i, row in edited_tagged_data.iterrows():
-                params = {
-                    name_col: row[name_col],
-                    account_number_col: row[account_number_col],
-                    category_col: row[category_col] if row[category_col] != '' else None,
-                    tag_col: row[tag_col] if row[tag_col] != '' else None
-                }
-                s.execute(text(f'UPDATE {tags_table} SET {category_col}=:{category_col}, {tag_col}=:{tag_col}'
-                               f' WHERE {name_col}=:{name_col} AND {account_number_col}=:{account_number_col};'),
-                          params)
-            s.commit()
-        st.rerun()
+    Parameters
+    ----------
+    args: tuple[str | None]
+        sequence of strings to format to title case
+
+    Returns
+    -------
+    tuple
+        the formatted category and tag
+    """
+    assert all(isinstance(arg, str) or arg is None or np.isnan(arg) for arg in args), 'all arguments should be strings'
+    strings = tuple(arg.title() if isinstance(arg, str) and arg != '' else None for arg in args)
+    if len(strings) == 1:
+        return strings[0]
+    return strings  # type: ignore
 
 
-conn = DataUtils.get_db_connection()
-categories_and_tags = DataUtils.get_categories_and_tags()
-tab_tags, tab_auto_tagger, tab_raw_data = st.tabs(["Categories & Tags", "Automatic Tagger", "Raw Data"])
+def verify_category_and_tag(category: str, tag: str, categories_and_tags: dict[str: list[str]]) -> bool:
+    """
+    verify that the category and tag are valid
 
-with tab_tags:
-    st.caption("<p style='font-size:20px; color: black;'>"
-               "Add, edit or delete categories and tags here.<br>"
-               "Note that deleted tags will be removed from the tagged data as well."
-               "</p>",
-               unsafe_allow_html=True)
-    edit_categories_and_tags(categories_and_tags, CATEGORIES_PATH, conn)
-    update_raw_data_tags(conn)
+    Parameters
+    ----------
+    category: str
+        the category to verify
+    tag: str
+        the tag to verify
+    categories_and_tags: dict
+        a dictionary of categories and their tags
 
-with tab_auto_tagger:
-    st.caption("<p style='font-size:20px; color: black;'>"
-               "The automatic tagger will tag new data according to the rules you set here making the tagging process "
-               "less time consuming."
-               "</p>",
-               unsafe_allow_html=True)
-    assure_tags_table(conn)
-    pull_new_cc_names(conn)
-    pull_new_bank_names(conn)
-    cc_tab, bank_tab = st.tabs(["Credit Card", "Bank"])
+    Returns
+    -------
+    bool
+        True if the category and tag are valid, False otherwise
+    """
+    if category is None and tag is None:
+        return True
 
-    with cc_tab:
-        tag_new_cc_data(conn, categories_and_tags)
-        edit_cc_tagged_data(conn)
+    if (category is None and tag is not None) or (category is not None and tag is None):
+        st.error('Category and tag should be both None or both not None. please delete both fields or fill them both.')
+        return False
 
-    with bank_tab:
-        tag_new_bank_data(conn, categories_and_tags)
-        edit_bank_tagged_data(conn)
+    if category not in categories_and_tags.keys():
+        st.error(f'Category "{category}" does not exist. Please select a valid category.'
+                 f'In case you want to add a new category, please do so in the "Categories & Tags" tab.')
+        return False
 
-with tab_raw_data:
+    if tag is None:
+        st.error(f'Tag cannot be empty while setting a category. Please select a valid tag from the following list:\n'
+                 f'{categories_and_tags[category]}.')
+        return False
+
+    if tag not in categories_and_tags[category]:
+        st.error(f'Tag "{tag}" does not exist in the category "{category}". Please select a valid tag from the following'
+                 f' list:\n{categories_and_tags[category]}.\n'
+                 f'In case you want to add a new tag, please do so in the "Categories & Tags" tab.')
+        return False
+
+    return True
+
+
+def edit_raw_data_tags(conn: SQLConnection, categories_and_tags: dict[str: list[str]]):
+    """edit the tags of the raw data in the credit card and bank tables"""
     credit_card_data = DataUtils.get_table(conn, credit_card_table)
     bank_data = DataUtils.get_table(conn, bank_table)
 
@@ -441,10 +549,54 @@ with tab_raw_data:
                 df_data, key=f'{prefix}transactions_editor', column_order=columns_order, num_rows="fixed",
                 hide_index=False
             )
+
             edited_data = edited_data.merge(df_data, how='outer', indicator=True)
             edited_data = edited_data[edited_data['_merge'] == 'left_only'].drop('_merge', axis=1)
+            if not edited_data.empty:
+                edited_data[[category_col, tag_col]] = edited_data.apply(
+                        lambda row: pd.Series(format_category_or_tag_strings(row[category_col], row[tag_col])),
+                        axis=1
+                    )
+                verifications = edited_data.apply(
+                    lambda row: verify_category_and_tag(row[category_col], row[tag_col], categories_and_tags),
+                    axis=1
+                )
+                if not verifications.all():
+                    st.error('Please fix the errors before saving the data.')
 
-            submit_button = st.form_submit_button(label='Save')
-            if submit_button:
-                DataUtils.update_db_table(conn, table_type, edited_data)
-                st.success("Data saved successfully")
+            if st.form_submit_button(label='Save'):
+                if not edited_data.empty:
+                    if verifications.all():
+                        DataUtils.update_db_table(conn, table_type, edited_data)
+                    else:
+                        st.stop()
+                st.rerun()
+
+
+conn_ = DataUtils.get_db_connection()
+categories_and_tags_ = DataUtils.get_categories_and_tags()
+assure_tags_table(conn_)
+tab_tags, tab_auto_tagger, tab_raw_data = st.tabs(["Categories & Tags", "Automatic Tagger", "Raw Data"])
+
+with tab_tags:
+    edit_categories_and_tags(categories_and_tags_, CATEGORIES_PATH, conn_)
+
+with tab_auto_tagger:
+    st.caption("<p style='font-size:20px;'>"
+               "The automatic tagger will tag new data according to the rules you set here"
+               "</p>",
+               unsafe_allow_html=True)
+    pull_new_cc_names(conn_)
+    pull_new_bank_names(conn_)
+    cc_tab, bank_tab = st.tabs(["Credit Card", "Bank"])
+
+    with cc_tab:
+        tag_new_cc_data(conn_, categories_and_tags_)
+        edit_auto_tagger_data(conn_, 'credit card', categories_and_tags_)
+
+    with bank_tab:
+        tag_new_bank_data(conn_, categories_and_tags_)
+        edit_auto_tagger_data(conn_, 'bank', categories_and_tags_)
+
+with (tab_raw_data):
+    edit_raw_data_tags(conn_, categories_and_tags_)
