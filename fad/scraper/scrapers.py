@@ -10,7 +10,6 @@ from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 
 
-# TODO: open a pull request to add one-zero transaction id to the returned dictionary
 class Scraper(ABC):
     """
     An abstract class to scrape data from different providers and save them to the database using Node.js scripts and
