@@ -41,6 +41,12 @@ class TagsTableFields(Enum):
     ACCOUNT_NUMBER = 'account_number'
 
 
+class Services(Enum):
+    CREDIT_CARD = 'credit_card'
+    BANK = 'bank'
+    INSURANCE = 'insurance'
+
+
 class CreditCards(Enum):
     MAX = 'max'
     VISA_CAL = 'visa cal'
