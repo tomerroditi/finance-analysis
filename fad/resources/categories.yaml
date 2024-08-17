@@ -5,7 +5,7 @@ Entertainment:
 - Movies
 - Museums
 - Music
-- Video games
+- Video Games
 Food:
 - Alcohol
 - Bar
@@ -13,55 +13,55 @@ Food:
 - Groceries
 - Restaurants
 - Snacks
-- Work lunches
+- Work Lunches
 Health:
 - Dentist
 - Doctor
 - Gym
-- Medical insurance
+- Medical Insurance
 - Medication
 - Optometrist
 - Therapy
 - Yoga
 Household:
-- Cleaning supplies
+- Cleaning Supplies
 - Electricity
 - Furniture
 - Gardening
 - Gas
-- Home improvement
-- Home insurance
-- Home maintenance
+- Home Improvement
+- Home Insurance
+- Home Maintenance
 - Internet
-- Kitchen accessories
+- Kitchen Accessories
 - Mortgage
-- Office accessories
+- Office Accessories
 - Phone
 - Rent
 - Water
 Ignore:
+- Credit Card Bill
 - Internal Transactions
-- credit card bill
 Investments:
-- real estate
-- stocks
+- Real Estate
+- Stocks
 Other:
-- ATM
+- Atm
 - Bank Commisions
-- Haircat
+- Flowers
+- Haircut
 - Ignore
-- No tag
+- No Tag
+- Pharma
 - Weddings
-- flowers
-- pharma
 Other Income:
 - Milga - Ariel University
 Salary:
 - Agadir
-- CorrActions
-- Israel-is
+- Corractions
+- Israel-Is
 - Miluim
-- TAU
+- Tau
 Savings:
 - Pakam
 Shopping:
@@ -69,26 +69,28 @@ Shopping:
 - Electronics
 - Flowers
 Subscriptions:
+- Chat-Gpt
+- Disney
+- Github
+- Google Storage
 - Lobi-99
-- disney
-- google storage
-- netflix
-- spotify
+- Netflix
+- Spotify
 Transportation:
 - Bike
-- Car insurance
-- Car maintenance
-- Car payment
+- Car Insurance
+- Car Maintenance
+- Car Payment
 - Fees
 - Gas
 - Parking
-- Public transportation
+- Public Transportation
 - Scooter
 - Taxi
 - Tolls
 Vacations:
-- flights
-- food
-- hotel
-- other
-- souvenirs
+- Flights
+- Food
+- Hotel
+- Other
+- Souvenirs
