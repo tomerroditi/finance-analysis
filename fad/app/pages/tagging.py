@@ -5,7 +5,11 @@ from fad.app.utils import DataUtils, CategoriesAndTags
 
 # TODO: add a feature that enables one to split a transaction into multiple transactions of different amounts and tags
 # TODO: make it impossible to delete the Other: No tag tag
+if st.session_state.get('i') is None:
+    st.session_state['i'] = 0
 
+st.session_state['i'] += 1
+st.write("number of times the page has been refreshed: ", st.session_state['i'])
 
 categories_and_tags = CategoriesAndTags(DataUtils.get_db_connection())
 tab_tags, tab_auto_tagger, tab_manually_tag = st.tabs(["Categories & Tags", "Automatic Tagger", "Manually Tagging"])
@@ -27,7 +31,6 @@ with tab_auto_tagger:
         categories_and_tags.edit_auto_tagger_rules('credit_card')
 
     with bank_tab:
-        st.write("Bank")
         categories_and_tags.set_auto_tagger_rules('bank')
         st.divider()
         categories_and_tags.edit_auto_tagger_rules('bank')

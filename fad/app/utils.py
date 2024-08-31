@@ -60,6 +60,7 @@ bank_provider_col = BankTableFields.PROVIDER.value
 bank_account_name_col = BankTableFields.ACCOUNT_NAME.value
 bank_amount_col = BankTableFields.AMOUNT.value
 
+
 class CredentialsUtils:
     """
     This class contains utility functions for handling the credentials in the app.
@@ -832,7 +833,7 @@ class CategoriesAndTags:
         self.categories_and_tags = DataUtils.get_categories_and_tags()
         self.conn = conn
 
-        DataUtils.assure_tags_table(self.conn)
+        # DataUtils.assure_tags_table(self.conn)
 
     ########################################################
     # categories and tags editing functions
@@ -861,32 +862,50 @@ class CategoriesAndTags:
 
         # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
         for category, tags in list(self.categories_and_tags.items()):
-            st.subheader(category, divider="gray")
-            if category == "Ignore":
-                st.write(
-                    "Transactions that you don't want to consider in the analysis. For example credit card bills in "
-                    "you bank account (which are already accounted for in the credit card transactions tracking), "
-                    "internal transfers, etc.")
-            if category == "Salary":
-                st.write("Transactions that are your salary income. we advise using the employer's name as the tag.")
-            if category == "Other Income":
-                st.write("Transactions that are income other than your salary. For example, rental income, dividends, "
-                         "refunds, etc.")
-            if category == "Investments":
-                st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
-                         "stocks, real estate, etc.")
-            new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
-            if new_tags != tags:
-                new_tags = [DataUtils.format_category_or_tag_strings(tag) for tag in new_tags]
-                self.categories_and_tags[category] = new_tags
-                # save changes and rerun to update the UI
-                self._update_yaml_and_rerun()
+            self._view_and_edit_tags(category)
 
             # delete category
             disable = True if category in [e.value for e in NonExpensesCategories] else False
             st.button(f'Delete {category}', key=f'my_{category}_delete', disabled=disable,
                       on_click=self._delete_category,
                       args=(self.categories_and_tags, category, self.conn, CATEGORIES_PATH))
+
+    @st.fragment
+    def _view_and_edit_tags(self, category: str) -> None:
+        """
+        Display the tags of the given category and allow the user to edit them
+
+        Parameters
+        ----------
+        category : str
+            The category to display its tags
+
+        Returns
+        -------
+        None
+        """
+        # TODO: change st_tags to something else due to internal bug in the package that causes many undesired reruns.
+        st.subheader(category, divider="gray")
+        if category == "Ignore":
+            st.write(
+                "Transactions that you don't want to consider in the analysis. For example credit card bills in "
+                "you bank account (which are already accounted for in the credit card transactions tracking), "
+                "internal transfers, etc.")
+        if category == "Salary":
+            st.write("Transactions that are your salary income. we advise using the employer's name as the tag.")
+        if category == "Other Income":
+            st.write("Transactions that are income other than your salary. For example, rental income, dividends, "
+                     "refunds, etc.")
+        if category == "Investments":
+            st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
+                     "stocks, real estate, etc.")
+        tags = self.categories_and_tags[category]
+        new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
+        if new_tags != tags:
+            new_tags = [DataUtils.format_category_or_tag_strings(tag) for tag in new_tags]
+            self.categories_and_tags[category] = new_tags
+            # save changes and rerun to update the UI
+            self._update_yaml_and_rerun()
 
     @st.dialog('Add New Category')
     def _add_new_category(self) -> None:
@@ -1059,7 +1078,7 @@ class CategoriesAndTags:
         # save the changes to the yaml file
         with open(CATEGORIES_PATH, 'w') as file:
             yaml.dump(categories_and_tags, file)
-        st.rerun()
+        st.rerun()  # TODO: remove this rerun after verifying that it is safe
 
     ########################################################
     # auto tagger functions
@@ -1271,7 +1290,7 @@ class CategoriesAndTags:
         if idx is not None:
             row = df_tags.iloc[idx]
             account_number = row[account_number_col] if service == 'bank' else None
-            self._auto_tagger_editing_window(row[name_col], service, account_number)
+            self._auto_tagger_editing_window(row[name_col], service, account_number, show_description=False)
 
     def edit_auto_tagger_rules(self, service: Literal['credit_card', 'bank']):
         """edit the auto tagger rules"""
@@ -1306,11 +1325,16 @@ class CategoriesAndTags:
             account_number = row[account_number_col] if service == 'bank' else None
             self._auto_tagger_editing_window(row[name_col], service, account_number, row[category_col], row[tag_col])
 
-
     @st.fragment
-    def _auto_tagger_editing_window(self, description: str, service: Literal['credit_card', 'bank'],
-                                    account_number: str | None = None, default_category: str | None = None,
-                                    default_tag: str | None = None):
+    def _auto_tagger_editing_window(
+            self,
+            description: str,
+            service: Literal['credit_card', 'bank'],
+            account_number: str | None = None,
+            default_category: str | None = None,
+            default_tag: str | None = None,
+            show_description: bool = True
+    ):
         """
         a fragment to tag new data for the auto tagger. The fragment displays the description of the transaction and
         allow the user to select the category and tag for the transaction. it contains a save button to save the
@@ -1335,20 +1359,27 @@ class CategoriesAndTags:
 
         # Columns for layout
         if service == 'credit_card':
-            desc_col_, catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
+            if show_description:
+                desc_col_, catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
+            else:
+                catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2])
         elif service == 'bank':
-            desc_col_, acc_num_col_, catg_col_, tag_col_, update_method_col_, save_col_ = (
-                st.columns([0.2, 0.2, 0.15, 0.15, 0.15, 0.15]))
+            if show_description:
+                desc_col_, acc_num_col_, catg_col_, tag_col_, update_method_col_, save_col_ = \
+                    st.columns([0.2, 0.2, 0.15, 0.15, 0.15, 0.15])
+            else:
+                acc_num_col_, catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
         else:
             raise ValueError(f"Invalid service name: {service}")
 
-        with desc_col_:
-            st.markdown("<br>", unsafe_allow_html=True)  # Add space before text for better UI alignment
-            st.markdown(
-                f"<div style='background-color: #82e0aa; padding: 10px; "
-                f"border-radius: 5px; color: white;'>{description}</div>",
-                unsafe_allow_html=True
-            )
+        if show_description:
+            with desc_col_:  # noqa, desc_col_ is defined in case show_description is True
+                st.markdown("<br>", unsafe_allow_html=True)  # Add space before text for better UI alignment
+                st.markdown(
+                    f"<div style='background-color: #82e0aa; padding: 10px; "
+                    f"border-radius: 5px; color: white;'>{description}</div>",
+                    unsafe_allow_html=True
+                )
 
         if service == 'bank':
             with acc_num_col_:  # noqa, acc_num_col_ is defined in case account_number is not None
@@ -1367,7 +1398,7 @@ class CategoriesAndTags:
                 options=categories,
                 index=None if default_category is None else categories.index(default_category),
                 placeholder='Category',
-                key=f'select_category_{description}'
+                key=f'select_category_{description}_{service}_{account_number}_auto_tagger'
             )
 
         with tag_col_:
@@ -1378,7 +1409,7 @@ class CategoriesAndTags:
                 options=tags,
                 index=None if default_tag is None else tags.index(default_tag),
                 placeholder='Tag',
-                key=f'select_tag_{description}'
+                key=f'select_tag_{description}_{service}_{account_number}_auto_tagger'
             )
 
         with update_method_col_:
@@ -1388,17 +1419,17 @@ class CategoriesAndTags:
                 options=["All", "From now on"],
                 index=None,
                 placeholder="How to update",
-                key=f'select_method_{description}',
+                key=f'select_method_{description}_{service}_{account_number}_auto_tagger',
                 help="Select 'All' to tag all of this transaction's occurrences. Select 'From now on'"
                      " to keep old tags and tag only future occurrences.")
 
         with save_col_:
             st.markdown("<br>", unsafe_allow_html=True)  # Add space before button
-            if st.button('Save', key=f'save_{description}_auto_tagger'):
+            if st.button('Save', key=f'save_{description}_{service}_{account_number}_auto_tagger'):
                 if category is None or tag is None:
                     st.error('Please select both a category and a tag before saving.')
 
-                self._update_auto_tagger_table(description, category, tag, service, method, account_number)
+                # self._update_auto_tagger_table(description, category, tag, service, method, account_number)
                 st.rerun()
 
     def _update_auto_tagger_table(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
