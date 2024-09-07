@@ -34,9 +34,9 @@ const start_date = args[2];
       });
     }
     else {
-      throw new Error(scrapeResult.errorType);
+      throw new Error(`${scrapeResult.errorType}: ${scrapeResult.errorMessage}`);
     }
   } catch(e) {
-    console.error(`scraping failed for the following reason: ${e.message}`);
+    console.error(e.message);
   }
 })();

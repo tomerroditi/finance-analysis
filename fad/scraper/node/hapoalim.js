@@ -14,7 +14,7 @@ const start_date = args[2];
       companyId: CompanyTypes.hapoalim,
       startDate: new Date(start_date),
       combineInstallments: false,
-      showBrowser: true
+      showBrowser: true,
     };
 
     // create the credentials object
@@ -36,9 +36,9 @@ const start_date = args[2];
       });
     }
     else {  // if the scraping failed
-      throw new Error(scrapeResult.errorType);
+      throw new Error(`${scrapeResult.errorType}: ${scrapeResult.errorMessage}`);
     }
   } catch(e) {
-    console.error(`scraping failed for the following reason: ${e.message}`);
+    console.error(e.message);
   }
 })();
