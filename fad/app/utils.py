@@ -1,5 +1,6 @@
 import streamlit as st
 import yaml
+import time
 import sqlite3
 import sqlalchemy
 import pandas as pd
@@ -9,13 +10,14 @@ import streamlit_antd_components as sac
 from plotly.subplots import make_subplots
 from streamlit_tags import st_tags
 from sqlalchemy.sql import text
+from threading import Thread
 
 from streamlit_phone_number import st_phone_number
 from streamlit.connections import SQLConnection
 from typing import Literal
 from threading import Thread
 from datetime import datetime, timedelta
-from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
+from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper, get_scraper, Scraper
 from fad import CREDENTIALS_PATH, CATEGORIES_PATH
 from fad.app.naming_conventions import (Banks,
                                         CreditCards,
@@ -519,7 +521,7 @@ class DataUtils:
         return st.session_state['categories_and_tags']
 
     @staticmethod
-    def pull_data(start_date: datetime | str, credentials: dict, db_path: str = None) -> None:
+    def pull_data(start_date: datetime | str, credentials: dict, db_path: str | None = None) -> None:
         """
         Pull data from the data sources, from the given date to present, and save it to the database file.
 
@@ -537,19 +539,96 @@ class DataUtils:
         -------
         None
         """
-        for service, providers in credentials.items():
-            match service:
-                case 'credit_cards':
-                    scraper = CreditCardScraper(providers)
-                case 'banks':
-                    scraper = BankScraper(providers)
-                case 'insurances':
-                    scraper = None
-                case _:
-                    raise ValueError(f'Invalid service: {service}')
+        if "pulled_data_from" not in st.session_state:
+            st.session_state.pulled_data_from = {}
 
-            if scraper is not None:
-                scraper.pull_data_to_db(start_date, db_path)
+        for service, providers in credentials.items():
+            if service not in st.session_state.pulled_data_from:
+                st.session_state.pulled_data_from[service] = {}
+            for provider, accounts in providers.items():
+                if provider not in st.session_state.pulled_data_from[service]:
+                    st.session_state.pulled_data_from[service][provider] = []
+                for account, credentials in accounts.items():
+                    if (
+                        service in st.session_state.pulled_data_from
+                        and provider in st.session_state.pulled_data_from[service]
+                        and account in st.session_state.pulled_data_from[service][provider]
+                    ):
+                        continue
+                    scraper = get_scraper(service, provider, account, credentials)
+                    if scraper.requires_2fa:
+                        st.write("going into 2fa handling")
+                        DataUtils._handle_2fa_scrapers(scraper, start_date, db_path)
+                    else:
+                        scraper.pull_data_to_db(start_date, db_path)
+                    st.session_state.pulled_data_from[service][provider].append(account)
+        del st.session_state.pulled_data_from
+
+    @staticmethod
+    def _handle_2fa_scrapers(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
+        if st.session_state.get("tfa_scraper") is None:
+            st.session_state["tfa_scraper"] = scraper
+            t1 = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
+            t1.start()
+            st.session_state["tfa_scraper_thread"] = t1
+        st.write("after running the scraper in a thread")
+
+        if st.session_state.get("otp_code_insertion") == "cancel":
+            st.session_state["tfa_scraper_thread"].terminate()
+            del st.session_state["tfa_scraper_thread"]
+            del st.session_state["tfa_scraper"]
+            del st.session_state["otp_code_insertion"]
+            return
+        st.write("after checking for cancel")
+
+        while True:  # wait for the scraper to update the otp_code
+            if scraper.otp_code == "waiting for input":
+                st.write("waiting for input from user")
+                DataUtils._two_fa_dialog(scraper)
+                st.stop()
+            elif scraper.otp_code == "not required":
+                st.write("2fa not required")
+                break
+            elif scraper.otp_code is not None:  # the scraper has set the otp_code
+                st.write("otp code set")
+                break
+            time.sleep(1)
+
+        st.session_state["tfa_scraper_thread"].join()
+
+        del st.session_state["tfa_scraper_thread"]
+        del st.session_state["tfa_scraper"]
+
+    @staticmethod
+    @st.dialog('Two Factor Authentication')
+    def _two_fa_dialog(scraper: Scraper):
+        """
+        Display a dialog for the user to enter the OTP code for the given provider. The dialog will stop the script
+        until the user submits the code. If the user cancels the 2FA the tfa_code session state variable will be set to
+        'cancel' and the script will rerun, otherwise the tfa_code session state variable will be set to the code
+        entered by the user and the script will rerun as well.
+
+        Parameters
+        ----------
+        provider
+
+        Returns
+        -------
+
+        """
+        st.write(
+            f'The provider, {scraper.provider_name}, requires 2 factor authentication for adding a new account.')
+        st.write('Please enter the code you received.')
+        code = st.text_input('Code', key=f'tfa_code_dialog_text_input')
+        if st.button('Submit', key="two_fa_dialog_submit"):
+            if code is None or code == '':
+                st.error('Please enter a valid code')
+                st.stop()
+            scraper.set_otp_code(code)
+            st.rerun()
+        if st.button('Cancel', key="two_fa_dialog_cancel"):
+            st.session_state.otp_code_insertion = 'cancel'
+            st.rerun()
 
     @staticmethod
     def get_latest_data_date(conn: SQLConnection) -> datetime.date:
@@ -648,6 +727,42 @@ class DataUtils:
         if len(strings) == 1:
             return strings[0]
         return strings  # type: ignore
+
+    @staticmethod
+    def update_tags_according_to_auto_tagger():
+        """
+        Update the tags table according to the auto tagger rules
+
+        Returns
+        -------
+        None
+        """
+        # get the tags table
+        conn = DataUtils.get_db_connection()
+        DataUtils.assure_tags_table(conn)
+        tags_df = DataUtils.get_table(conn, tags_table)
+        cc_df = DataUtils.get_table(conn, credit_card_table)
+        bank_df = DataUtils.get_table(conn, bank_table)
+
+        # set the category and tag columns
+        for _, row in tags_df.iterrows():
+            category = row[category_col]
+            tag = row[tag_col]
+            name = row[name_col]
+            service = row[service_col]
+            account = row[account_number_col]
+
+            cc_df.loc[(cc_df[cc_name_col] == name), cc_category_col] = category
+            cc_df.loc[(cc_df[cc_name_col] == name), cc_tag_col] = tag
+            bank_df.loc[(bank_df[bank_name_col] == name) & (bank_df[bank_account_number_col] == account), bank_category_col] = category
+            bank_df.loc[(bank_df[bank_name_col] == name) & (bank_df[bank_account_number_col] == account), bank_tag_col] = tag
+
+        # update the tables
+        DataUtils.update_db_table(conn, credit_card_table, cc_df)
+        DataUtils.update_db_table(conn, bank_table, bank_df)
+
+        st.dataframe(cc_df)
+        st.dataframe(bank_df)
 
 
 class PlottingUtils:

@@ -3,8 +3,13 @@ import subprocess
 import pandas as pd
 import datetime
 import sqlite3
+import yaml
+import streamlit as st
 
+from time import sleep
+from threading import Event
 from abc import ABC, abstractmethod
+from fad.scraper.exceptions import LoginError
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
@@ -56,18 +61,63 @@ class Scraper(ABC):
 
     Attributes
     ----------
-    script_path : dict
-        A dictionary containing the paths to the Node.js scripts for each provider
+    service_name : str
+        The name of the service of the scraper. banks, credit_cards, insurance, etc.
+    provider_name : str
+        The name of the provider of the scraper. isracard, hapoalim, max, etc.
+    account_name : str
+        The name of the account to log the data into the database. used to allow multiple accounts for the same provider
+    credentials : dict
+        A dictionary containing the credentials to log in to the websites
+    script_path : str
+        The path to the Node.js script to scrape the data
     table_name : str
-        The name of the table to save the data to
-
-    Methods
-    -------
-    pull_data_to_db(start_date: datetime.datetime | str, db_path: str = None)
-        Pull data from the specified provider and save it to the database
-    get_provider_scraping_function(provider: str)
-        Get the scraping function for the specified provider
+        The name of the table to save the data to in the database
+    table_unique_key : str
+        The unique key in the table which is used to identify duplicated rows
+    sort_by_columns : list[str]
+        The columns to sort the data by in the database to maintain consistency
     """
+    requires_2fa = False
+
+    def __init__(self, account_name: str, credentials: dict):
+        """
+        Initialize the Scraper object with the credentials to be used to log in to the websites
+
+        Parameters
+        ----------
+        account_name : str
+            The name of the account to use to log data into the database
+        credentials : dict
+            A dictionary containing the credentials to log in to the websites
+
+        """
+        self.account_name = account_name
+        self.credentials = credentials
+        self.process = None
+        self.result = ''
+        self.error = ''
+        self.data = None
+
+        # 2fa related attributes
+        self.otp_code = None
+        self.otp_event = Event()
+
+    @property
+    @abstractmethod
+    def service_name(self) -> str:
+        """
+        The name of the service
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """
+        The name of the provider
+        """
+        pass
 
     @property
     @abstractmethod
@@ -101,35 +151,6 @@ class Scraper(ABC):
         """
         pass
 
-    @property
-    @abstractmethod
-    def provider_scraping_function(self) -> dict:
-        """
-        A dictionary containing the scraping functions for each provider
-        """
-        pass
-
-    def __init__(self, credentials: dict):
-        """
-        Initialize the Scraper object with the credentials to be used to log in to the websites
-
-        Parameters
-        ----------
-        credentials : dict
-            The credentials to log in to the website in the format of:
-            {
-             provider1:
-                account1: {cred|_field1: value1, cred_field2: value2, ...},
-                account2: {cred_field1: value1, cred_field2: value2, ...},
-                ...
-             provider2:
-                account1: {cred_field1: value1, cred_field2: value2, ...},
-                account2: {cred_field1: value1, cred_field2: value2, ...},
-                ...
-             }
-        """
-        self.credentials = credentials
-
     def pull_data_to_db(self, start_date: datetime.date | str, db_path: str = None):
         """
         Pull data from the specified provider and save it to the database
@@ -139,26 +160,61 @@ class Scraper(ABC):
         start_date : datetime.datetime
             The date from which to start pulling the data
         db_path : str
-            The path to the database file. If None, the database file will be created in the folder of fad package
+            The path to the database file. If None, the data will be saved in the app default database which is at
+            fad.resources.data.db
         """
         start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
 
-        data = []
-        for provider, accounts in self.credentials.items():
-            scrape_func = self.get_provider_scraping_function(provider)
-            for account_name, creds in accounts.items():
-                scraped_data = scrape_func(start_date, **creds)
-                scraped_data = self.add_account_name_and_provider_columns(scraped_data, account_name, provider)
-                data.append(scraped_data)
+        try:
+            self.scrape_data(start_date)
+        except LoginError as e:
+            print(f'{self.provider_name}: {self.account_name}: {e}')
+            return
 
-        df = pd.concat(data, ignore_index=True)
-        df = df.sort_values(by=self.sort_by_columns)
-        df = self.add_missing_columns(df)
-        save_to_db(df, self.table_name, db_path=db_path)
+        if self.data.empty:
+            print(f'{self.provider_name}: {self.account_name}: No transactions found')
+            return
 
-        self.drop_duplicates(db_path=db_path)
+        self.data = self.data.sort_values(by=self.sort_by_columns)
+        self.data = self._add_account_name_and_provider_columns(self.data)
+        self.data = self._add_missing_columns(self.data)
+        # TODO: improve the saving protocol, make the id column the primary key and add a check for duplicates
+        save_to_db(self.data, self.table_name, db_path=db_path)
 
-    def add_account_name_and_provider_columns(self, df: pd.DataFrame, account_name: str, provider: str) -> pd.DataFrame:
+        self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
+
+    @abstractmethod
+    def scrape_data(self, start_date: str) -> pd.DataFrame:
+        """
+        Get the data from the specified provider
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        pass
+
+    def _scrape_data(self, start_date: str, *args) -> pd.DataFrame:
+        """
+        Get the data from the specified provider
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        args : tuple
+            Additional arguments to pass to the scraping script
+        """
+        args = ['node', self.script_path, *args, start_date]
+        result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
+        self.result = result.stdout
+        self.error = result.stderr
+        self._handle_error(self.error)
+        data = scraped_data_to_df(self.result)
+        return data
+
+    def _add_account_name_and_provider_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Add the account name and provider columns to the DataFrame
 
@@ -166,10 +222,6 @@ class Scraper(ABC):
         ----------
         df : pd.DataFrame
             The DataFrame to add the account name and provider columns to
-        account_name : str
-            The account name to add to the DataFrame
-        provider : str
-            The provider to add to the DataFrame
 
         Returns
         -------
@@ -185,34 +237,11 @@ class Scraper(ABC):
                 provider_col = BankTableFields.PROVIDER.value
             case _:
                 raise ValueError(f'The table name {self.table_name} is not supported yet.')
-        df[account_name_col] = account_name
-        df[provider_col] = provider
+        df[account_name_col] = self.account_name
+        df[provider_col] = self.provider_name
         return df
 
-    def add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add missing columns to the DataFrame
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            The DataFrame to add the missing columns to
-        """
-        match self.table_name:
-            case Tables.CREDIT_CARD.value:
-                cols_to_add = [CreditCardTableFields.ID.value, CreditCardTableFields.STATUS.value,
-                               CreditCardTableFields.CATEGORY.value, CreditCardTableFields.TAG.value]
-            case Tables.BANK.value:
-                cols_to_add = [BankTableFields.ID.value, BankTableFields.STATUS.value,
-                               BankTableFields.CATEGORY.value, BankTableFields.TAG.value]
-            case _:
-                cols_to_add = []
-        for col in cols_to_add:
-            if col not in df.columns:
-                df[col] = None
-        return df
-
-    def drop_duplicates(self, db_path: str):
+    def _drop_duplicates(self, db_path: str, id_col: str):
         """
         Drop duplicates in the database
 
@@ -223,55 +252,133 @@ class Scraper(ABC):
         """
         conn = sqlite3.connect(db_path)
         df = pd.read_sql_query(f"SELECT * FROM {self.table_name}", conn)
-        df_unique = df.drop_duplicates()
+        df_unique = df.drop_duplicates(subset=id_col)
         df_unique.to_sql(self.table_name, conn, if_exists='replace', index=False)
         conn.close()
 
-    def get_provider_scraping_function(self, provider: str):
+    @abstractmethod
+    def _add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Get the scraping function for the specified provider
+        Add missing columns to the DataFrame to align all the scrapers
 
         Parameters
         ----------
-        provider : str
-            The provider to get the scraping function for
+        df : pd.DataFrame
+            The DataFrame to add the missing columns to
         """
-        provider_scraping_function = self.provider_scraping_function
-        try:
-            func = provider_scraping_function[provider]
-        except KeyError:
-            raise ValueError(f'The provider {provider} is not supported yet. currently supporting: '
-                             f'{", ".join(provider_scraping_function.keys())}')
-        return func
+        # TODO: is this necessary?
+        pass
+
+    @staticmethod
+    def _handle_error(error: str):
+        """
+        Handle the error message from the scraping script. this is the most generic way to handle errors, each scraper
+        should implement its own error handling method since the error messages can be different for each provider.
+
+        Parameters
+        ----------
+        error: str
+            The error message from the scraping script
+
+        Raises
+        ------
+        LoginError
+            If an error occurs during the scraping process
+        """
+        if error:
+            raise LoginError(error)
+
+    def _update_credentials_file(self):
+        """
+        Update the credentials file with the new OTP long-term token
+        """
+        with open(CREDENTIALS_PATH, 'r') as file:
+            credentials = yaml.safe_load(file)
+
+        credentials[self.service_name][self.provider_name][self.account_name] = self.credentials
+
+        with open(CREDENTIALS_PATH, 'w') as file:
+            yaml.dump(credentials, file)
+
+    def set_otp_code(self, otp_code):
+        """
+        Set the OTP code to be used for the 2FA process. is used only by scrapers that require 2FA. calling this method
+        will notify the scraper that the OTP code is available and will continue the scraping process.
+
+        Parameters
+        ----------
+        otp_code : str
+            The OTP (One-Time Password) code to be used for the 2FA process
+
+        Returns
+        -------
+        None
+        """
+        self.otp_code = otp_code
+        self.otp_event.set()  # Notify that the OTP code is available
 
 
-class CreditCardScraper(Scraper):
-    """
-    A class to scrape credit card transactions from different providers and save them to the database using Node.js
-    scripts and pandas DataFrames.
-    """
-
-    script_path = {
-        'isracard': os.path.join(NODE_JS_SCRIPTS_DIR, 'isracard.js'),
-        'max': os.path.join(NODE_JS_SCRIPTS_DIR, 'max.js'),
-    }
+############################################
+# Credit Card Scrapers
+############################################
+class CreditCardScraper(Scraper, ABC):
+    service_name = 'credit_cards'
     table_name = 'credit_card_transactions'
     table_unique_key = 'id'
     sort_by_columns = ['date', 'account_name', 'account_number']
 
     @property
-    def provider_scraping_function(self) -> dict:
+    @abstractmethod
+    def script_path(self) -> dict:
         """
-        A dictionary containing the scraping functions for each provider
+        A dictionary containing the paths to the Node.js scripts for each provider
         """
-        return {
-            'isracard': self.get_isracard_data,
-            'max': self.get_max_data
-        }
+        pass
 
-    @staticmethod
-    def get_isracard_data(start_date: str, id: str = None, card6Digits: str = None, password: str = None,
-                          **kwargs) -> pd.DataFrame:
+    def _add_account_name_and_provider_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add the account name and provider columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the account name and provider columns to
+
+        Returns
+        -------
+        pd.DataFrame
+            The DataFrame with the account name and provider columns added
+        """
+        account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
+        provider_col = CreditCardTableFields.PROVIDER.value
+
+        df[account_name_col] = self.account_name
+        df[provider_col] = self.provider_name
+        return df
+
+    def _add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add missing columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the missing columns to
+        """
+        cols_to_add = [CreditCardTableFields.ID.value, CreditCardTableFields.STATUS.value,
+                       CreditCardTableFields.CATEGORY.value, CreditCardTableFields.TAG.value]
+
+        for col in cols_to_add:
+            if col not in df.columns:
+                df[col] = None
+        return df
+
+
+class IsracardScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'isracard.js')
+    provider_name = 'isracard'
+
+    def scrape_data(self, start_date: str) -> None:
         """
         Get the data from the Isracard website
 
@@ -279,23 +386,16 @@ class CreditCardScraper(Scraper):
         ----------
         start_date : str
             The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
-        id : str
-            The owner's ID
-        card6Digits : str
-            The last 6 digits of the credit card
-        password : str
-            The password to log in to the website
-        kwargs : dict
-            Additional arguments, not used in this function
         """
-        script_path = CreditCardScraper.script_path['isracard']
-        result = subprocess.run(['node', script_path, id, card6Digits, password, start_date],
-                                capture_output=True, text=True, encoding='utf-8')
-        df = scraped_data_to_df(result.stdout)
-        return df
+        args = (self.credentials["id"], self.credentials["card6Digits"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
 
-    @staticmethod
-    def get_max_data(start_date: str, username: str = None, password: str = None, **kwargs) -> pd.DataFrame:
+
+class MaxScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'max.js')
+    provider_name = 'max'
+
+    def scrape_data(self, start_date: str) -> None:
         """
         Get the data from the Max website
 
@@ -310,43 +410,89 @@ class CreditCardScraper(Scraper):
         kwargs : dict
             Additional arguments, not used in this function
         """
-        script_path = CreditCardScraper.script_path['max']
-        result = subprocess.run(['node', script_path, username, password, start_date],
-                                capture_output=True, text=True, encoding='utf-8')
-        df = scraped_data_to_df(result.stdout)
-        return df
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
 
 
-class BankScraper(Scraper):
-    """
-    A class to scrape credit card transactions from different providers and save them to the database using Node.js
-    scripts and pandas DataFrames.
-
-    Currently, the functionality of the bank scrapers is very similar to the credit card scrapers, but we keep them
-    separate for easier maintenance and future development.
-    """
-
-    script_path = {
-        'onezero': os.path.join(NODE_JS_SCRIPTS_DIR, 'onezero.js'),
-        'hapoalim': os.path.join(NODE_JS_SCRIPTS_DIR, 'hapoalim.js'),
-    }
+############################################
+# Bank Scrapers
+############################################
+class BankScraper(Scraper, ABC):
+    service_name = 'banks'
     table_name = 'bank_transactions'
     table_unique_key = 'id'
     sort_by_columns = ['date', 'account_name', 'account_number']
 
     @property
-    def provider_scraping_function(self) -> dict:
+    @abstractmethod
+    def script_path(self) -> dict:
         """
-        A dictionary containing the scraping functions for each provider
+        A dictionary containing the paths to the Node.js scripts for each provider
         """
-        return {
-            'onezero': self.get_onezero_data,
-            'hapoalim': self.get_hapoalim_data
-        }
+        pass
 
-    @staticmethod
-    def get_onezero_data(start_date: str, email: str = None, password: str = None,
-                         phoneNumber: str = None, otpLongTermToken: str = None, **kwargs) -> pd.DataFrame:
+    def _add_account_name_and_provider_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add the account name and provider columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the account name and provider columns to
+
+        Returns
+        -------
+        pd.DataFrame
+            The DataFrame with the account name and provider columns added
+        """
+        account_name_col = BankTableFields.ACCOUNT_NAME.value
+        provider_col = BankTableFields.PROVIDER.value
+
+        df[account_name_col] = self.account_name
+        df[provider_col] = self.provider_name
+        return df
+
+    def _add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add missing columns to the DataFrame
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The DataFrame to add the missing columns to
+        """
+        cols_to_add = [BankTableFields.ID.value, BankTableFields.STATUS.value,
+                       BankTableFields.CATEGORY.value, BankTableFields.TAG.value]
+
+        for col in cols_to_add:
+            if col not in df.columns:
+                df[col] = None
+        return df
+
+
+class OneZeroScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'onezero.js')
+    provider_name = 'onezero'
+    requires_2fa = True
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the OneZero website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (
+            self.credentials["email"],
+            self.credentials["password"],
+            self.credentials["phoneNumber"],
+            self.credentials.get("otpLongTermToken", "none")
+        )
+        self.data = self._scrape_data(start_date, *args)
+
+    def _scrape_data(self, start_date: str, *args) -> pd.DataFrame:
         """
         Get the data from the Isracard website
 
@@ -363,49 +509,79 @@ class BankScraper(Scraper):
         otpLongTermToken : str
             The OTP long-term token to log in to the website
         """
-        script_path = BankScraper.script_path['onezero']
-        result = subprocess.run(['node', script_path, email, password,
-                                 otpLongTermToken, phoneNumber, start_date],
-                                capture_output=True, text=True, encoding='utf-8')
-        df = scraped_data_to_df(result.stdout)
-        return df
+        args = ['node', self.script_path, *args, start_date]
+        self.process = subprocess.Popen(args,
+                                        stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE,
+                                        text=True,
+                                        encoding='utf-8')
 
-    @staticmethod
-    def get_hapoalim_data(start_date: str, userCode: str = None, password: str = None, **kwargs) -> (
-            pd.DataFrame):
+        # wait for the OTP code to be requested, and then send it
+        while True:
+            # get the entire output string
+            output = self.process.stdout.readline()
+            st.write(output)
+            if output:
+                if 'Enter OTP code:' in output:
+                    self.otp_code = "waiting for input"
+                    self.otp_event.wait()  # Wait until the OTP code is set
+                    self.process.stdin.write(self.otp_code + '\n')
+                    self.process.stdin.flush()
+                    break
+                elif 'finished scraping' in output:
+                    self.otp_code = "not required"
+                    break
+            sleep(0.3)
+
+        # wait for the process to finish
+        while self.process.poll() is None:
+            sleep(0.5)
+
+        # Get the results
+        self.result, self.error = self.process.communicate()
+
+        # get long term token
+        outputs = [line for line in self.result.split('\n') if line.startswith('renewed long term token:')]
+        if outputs:
+            self.credentials['otpLongTermToken'] = outputs[0].split(':', 1)[-1].strip()
+            self._update_credentials_file()
+
+        if self.error:
+            raise LoginError(self.error)
+        return scraped_data_to_df(self.result)
+
+
+class HapoalimScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'hapoalim.js')
+    provider_name = 'hapoalim'
+
+    def scrape_data(self, start_date: str) -> None:
         """
-        Get the data from the Hapoalim website
+        Get the data from the Max website
 
         Parameters
         ----------
         start_date : str
             The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
-        userCode : str
-            The user code to log in to the website
-        password : str
-            The password to log in to the website
         """
-        script_path = BankScraper.script_path['hapoalim']
-        result = subprocess.run(['node', script_path, userCode, password, start_date],
-                                capture_output=True, text=True, encoding='utf-8')
-        df = scraped_data_to_df(result.stdout)
-        return df
+        args = (self.credentials["userCode"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
 
 
+############################################
+# Insurance Scrapers
+############################################
 class InsuranceScraper(Scraper):
-    """
-    A class to scrape insurance data from different providers and save them to the database using Node.js scripts and
-    pandas DataFrames.
-    """
-
-    script_path = {}
+    service_name = 'insurance'
     table_name = 'insurance_data'
     table_unique_key = 'id'
     sort_by_columns = 'date'
 
     @property
-    def provider_scraping_function(self) -> dict:
+    @abstractmethod
+    def script_path(self) -> dict:
         """
-        A dictionary containing the scraping functions for each provider
+        A dictionary containing the paths to the Node.js scripts for each provider
         """
-        raise NotImplementedError('The InsuranceScraper class is not implemented yet')
+        pass
