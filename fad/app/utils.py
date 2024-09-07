@@ -17,19 +17,19 @@ from threading import Thread
 from datetime import datetime, timedelta
 from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper
 from fad import CREDENTIALS_PATH, CATEGORIES_PATH
-from fad.naming_conventions import (Banks,
-                                    CreditCards,
-                                    Insurances,
-                                    LoginFields,
-                                    DisplayFields,
-                                    CreditCardTableFields,
-                                    Tables,
-                                    BankTableFields,
-                                    TagsTableFields,
-                                    NonExpensesCategories,
-                                    TransactionsTableFields,
-                                    Services
-                                    )
+from fad.app.naming_conventions import (Banks,
+                                        CreditCards,
+                                        Insurances,
+                                        LoginFields,
+                                        DisplayFields,
+                                        CreditCardTableFields,
+                                        Tables,
+                                        BankTableFields,
+                                        TagsTableFields,
+                                        NonExpensesCategories,
+                                        TransactionsTableFields,
+                                        Services
+                                        )
 
 tags_table = Tables.TAGS.value
 credit_card_table = Tables.CREDIT_CARD.value

@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.naming_conventions import CreditCardTableFields, BankTableFields, Tables
+from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 
 
 class Scraper(ABC):

@@ -3,7 +3,7 @@ import sqlite3
 
 from datetime import datetime
 from fad import DB_PATH
-from fad.naming_conventions import TransactionsTableFields
+from fad.app.naming_conventions import TransactionsTableFields
 
 
 def scraped_data_to_df(data: str) -> pd.DataFrame:

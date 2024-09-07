@@ -83,6 +83,7 @@ class NonExpensesCategories(Enum):
     SAVINGS = 'Savings'
     INVESTMENTS = 'Investments'
     OTHER_INCOME = 'Other Income'
+    LIABILITIES = 'Liabilities'
 
 
 class Fields(Enum):

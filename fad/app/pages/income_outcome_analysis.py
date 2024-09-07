@@ -10,7 +10,7 @@ the user should be able to view the following data:
 """
 import streamlit as st
 import pandas as pd
-from fad.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
+from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
 from fad.app.utils import DataUtils, PandasFilterWidgets, PlottingUtils
 
 
