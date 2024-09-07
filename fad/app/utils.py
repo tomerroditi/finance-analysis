@@ -852,13 +852,11 @@ class CategoriesAndTags:
         add_cat_col, reallocate_tags_col, _ = st.columns([0.2, 0.2, 0.6])
         # add new categories
         with add_cat_col:
-            st.button('New Category', key='add_new_category', on_click=self._add_new_category,
-                      args=(self.categories_and_tags, CATEGORIES_PATH))
+            st.button('New Category', key='add_new_category', on_click=self._add_new_category)
 
         # reallocate tags
         with reallocate_tags_col:
-            st.button('Reallocate Tags', key='reallocate_tags', on_click=self._reallocate_tags,
-                      args=(self.categories_and_tags, self.conn, CATEGORIES_PATH))
+            st.button('Reallocate Tags', key='reallocate_tags', on_click=self._reallocate_tags)
 
         # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
         for category, tags in list(self.categories_and_tags.items()):
@@ -905,7 +903,8 @@ class CategoriesAndTags:
             new_tags = [DataUtils.format_category_or_tag_strings(tag) for tag in new_tags]
             self.categories_and_tags[category] = new_tags
             # save changes and rerun to update the UI
-            self._update_yaml_and_rerun()
+            self._update_yaml()
+            st.rerun()
 
     @st.dialog('Add New Category')
     def _add_new_category(self) -> None:
@@ -930,7 +929,8 @@ class CategoriesAndTags:
                 st.warning(f'The category "{new_category}" already exists. Please choose a different name.')
                 st.stop()
             self.categories_and_tags[DataUtils.format_category_or_tag_strings(new_category)] = []
-            self._update_yaml_and_rerun()
+            self._update_yaml()
+            st.rerun()
 
     @st.dialog('Reallocate Tags')
     def _reallocate_tags(self) -> None:
@@ -982,7 +982,8 @@ class CategoriesAndTags:
 
                 self.categories_and_tags[new_category].extend(tags_to_reallocate)
                 _ = [self.categories_and_tags[old_category].remove(tag) for tag in tags_to_reallocate]
-                self._update_yaml_and_rerun()
+                self._update_yaml()
+                st.rerun()
 
     @st.dialog('Confirm Deletion')
     def _delete_category(self, category: str) -> None:
@@ -1021,7 +1022,8 @@ class CategoriesAndTags:
                 self._update_raw_data_deleted_category(category)
 
             del self.categories_and_tags[category]
-            self._update_yaml_and_rerun()
+            self._update_yaml()
+            st.rerun()
 
         if cancel_button:
             st.rerun()
@@ -1055,7 +1057,7 @@ class CategoriesAndTags:
                 s.execute(query, {'category': category})
                 s.commit()
 
-    def _update_yaml_and_rerun(self) -> None:
+    def _update_yaml(self) -> None:
         """
         update the yaml file with the current state of the categories and tags and rerun the app.
 
@@ -1078,7 +1080,6 @@ class CategoriesAndTags:
         # save the changes to the yaml file
         with open(CATEGORIES_PATH, 'w') as file:
             yaml.dump(categories_and_tags, file)
-        st.rerun()  # TODO: remove this rerun after verifying that it is safe
 
     ########################################################
     # auto tagger functions
@@ -1269,15 +1270,38 @@ class CategoriesAndTags:
             ttl=0
         )
 
-        st.subheader(f'Set new auto tagger rules')
-
         if df_tags.empty:
             st.write("No transactions to set new rules to")
             return
 
-        df_tags = df_tags.sort_values(by=name_col)
+        if service == 'credit_card':
+            st.subheader(f'Set new rules')
+            self._set_auto_tagger_rules_container(df_tags)
+        elif service == 'bank':
+            for account_number in df_tags[account_number_col].unique():
+                account_name_and_provider = self.conn.query(
+                    f"""
+                    SELECT {bank_account_name_col}, {bank_provider_col} 
+                    FROM {bank_table} 
+                    WHERE {account_number_col}=:account_number 
+                    LIMIT 1;
+                    """,
+                    params={'account_number': account_number},
+                    ttl=0
+                )
+                account_name = account_name_and_provider[bank_account_name_col].iloc[0]
+                account_provider = account_name_and_provider[bank_provider_col].iloc[0]
+                st.subheader(f'Set new rule for {account_name} - {account_provider}: {account_number}')
+                df = df_tags[df_tags[account_number_col] == account_number]
+                self._set_auto_tagger_rules_container(df)
+        else:
+            raise ValueError(f"Invalid service name: {service}")
+
+    def _set_auto_tagger_rules_container(self, df: pd.DataFrame):
+        df = df.copy()
+        df = df.sort_values(by=name_col)
         idx = sac.buttons(
-            items=df_tags[name_col].tolist(),
+            items=df[name_col].tolist(),
             index=0,
             radius='lg',
             variant='outline',
@@ -1288,9 +1312,8 @@ class CategoriesAndTags:
         )
 
         if idx is not None:
-            row = df_tags.iloc[idx]
-            account_number = row[account_number_col] if service == 'bank' else None
-            self._auto_tagger_editing_window(row[name_col], service, account_number, show_description=False)
+            row = df.iloc[idx]
+            self._auto_tagger_editing_window(row[name_col], row[service_col], account_number=row[account_number_col])
 
     def edit_auto_tagger_rules(self, service: Literal['credit_card', 'bank']):
         """edit the auto tagger rules"""
@@ -1310,11 +1333,18 @@ class CategoriesAndTags:
             return
 
         df_tags = df_tags.sort_values(by=name_col)
+        if service == 'credit_card':
+            cols = [name_col, category_col, tag_col]
+        elif service == 'bank':
+            cols = [name_col, account_number_col, category_col, tag_col]
+        else:
+            raise ValueError(f"Invalid service name: {service}")
+
         changes = st.dataframe(
             df_tags,
             on_select='rerun',
-            selection_mode='multi-row',
-            column_order=[name_col, category_col, tag_col],
+            selection_mode='single-row',
+            column_order=cols,
             hide_index=True,
             use_container_width=True
         )
@@ -1322,18 +1352,16 @@ class CategoriesAndTags:
         indices = changes['selection']['rows']
         for idx in indices:
             row = df_tags.iloc[idx]
-            account_number = row[account_number_col] if service == 'bank' else None
-            self._auto_tagger_editing_window(row[name_col], service, account_number, row[category_col], row[tag_col])
+            self._auto_tagger_editing_window(row[name_col], service, row[account_number_col], row[category_col], row[tag_col])
 
     @st.fragment
     def _auto_tagger_editing_window(
             self,
             description: str,
             service: Literal['credit_card', 'bank'],
-            account_number: str | None = None,
+            account_number: str,
             default_category: str | None = None,
             default_tag: str | None = None,
-            show_description: bool = True
     ):
         """
         a fragment to tag new data for the auto tagger. The fragment displays the description of the transaction and
@@ -1354,41 +1382,8 @@ class CategoriesAndTags:
         -------
         None
         """
-        if service == 'bank' and account_number is None:
-            raise ValueError("account_number should be provided for bank transactions tagging")
-
         # Columns for layout
-        if service == 'credit_card':
-            if show_description:
-                desc_col_, catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
-            else:
-                catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2])
-        elif service == 'bank':
-            if show_description:
-                desc_col_, acc_num_col_, catg_col_, tag_col_, update_method_col_, save_col_ = \
-                    st.columns([0.2, 0.2, 0.15, 0.15, 0.15, 0.15])
-            else:
-                acc_num_col_, catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
-        else:
-            raise ValueError(f"Invalid service name: {service}")
-
-        if show_description:
-            with desc_col_:  # noqa, desc_col_ is defined in case show_description is True
-                st.markdown("<br>", unsafe_allow_html=True)  # Add space before text for better UI alignment
-                st.markdown(
-                    f"<div style='background-color: #82e0aa; padding: 10px; "
-                    f"border-radius: 5px; color: white;'>{description}</div>",
-                    unsafe_allow_html=True
-                )
-
-        if service == 'bank':
-            with acc_num_col_:  # noqa, acc_num_col_ is defined in case account_number is not None
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(
-                    f"<div style='background-color: #82e0aa; padding: 10px; "
-                    f"border-radius: 5px; color: white;'>account: {account_number}</div>",
-                    unsafe_allow_html=True
-                )
+        catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2])
 
         with catg_col_:
             categories = list(self.categories_and_tags.keys())
@@ -1417,7 +1412,7 @@ class CategoriesAndTags:
                 label='method',
                 label_visibility="hidden",
                 options=["All", "From now on"],
-                index=None,
+                index=0,
                 placeholder="How to update",
                 key=f'select_method_{description}_{service}_{account_number}_auto_tagger',
                 help="Select 'All' to tag all of this transaction's occurrences. Select 'From now on'"
@@ -1428,8 +1423,7 @@ class CategoriesAndTags:
             if st.button('Save', key=f'save_{description}_{service}_{account_number}_auto_tagger'):
                 if category is None or tag is None:
                     st.error('Please select both a category and a tag before saving.')
-
-                # self._update_auto_tagger_table(description, category, tag, service, method, account_number)
+                self._update_auto_tagger_table(description, category, tag, service, method, account_number)
                 st.rerun()
 
     def _update_auto_tagger_table(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],

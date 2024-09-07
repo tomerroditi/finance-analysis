@@ -7,8 +7,44 @@ import sqlite3
 from abc import ABC, abstractmethod
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
-from fad.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
+from fad import CREDENTIALS_PATH
+
+
+def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict):
+    """
+    Get the scraper object for the specified service and provider
+
+    Parameters
+    ----------
+    service_name : str
+        The name of the service of the scraper. banks, credit_cards, insurance, etc.
+    provider_name : str
+        The name of the provider of the scraper. isracard, hapoalim, max, etc.
+    account_name : str
+        The name of the account to log the data into the database. used to allow multiple accounts for the same provider
+    credentials : dict
+        A dictionary containing the credentials to log in to the websites
+
+    Returns
+    -------
+    Scraper
+        The scraper object for the specified service and provider
+    """
+    if service_name == 'credit_cards':
+        if provider_name == 'isracard':
+            return IsracardScraper(account_name, credentials)
+        elif provider_name == 'max':
+            return MaxScraper(account_name, credentials)
+    elif service_name == 'banks':
+        if provider_name == 'onezero':
+            return OneZeroScraper(account_name, credentials)
+        elif provider_name == 'hapoalim':
+            return HapoalimScraper(account_name, credentials)
+    elif service_name == 'insurance':
+        return InsuranceScraper(account_name, credentials)
+    else:
+        raise ValueError(f'The service name {service_name} is not supported yet.')
 
 
 class Scraper(ABC):
