@@ -4,7 +4,6 @@ import pandas as pd
 import datetime
 import sqlite3
 import yaml
-import streamlit as st
 
 from time import sleep
 from threading import Event
@@ -325,7 +324,7 @@ class CreditCardScraper(Scraper, ABC):
     service_name = 'credit_cards'
     table_name = 'credit_card_transactions'
     table_unique_key = 'id'
-    sort_by_columns = ['date', 'account_name', 'account_number']
+    sort_by_columns = ['date']
 
     @property
     @abstractmethod
@@ -421,7 +420,7 @@ class BankScraper(Scraper, ABC):
     service_name = 'banks'
     table_name = 'bank_transactions'
     table_unique_key = 'id'
-    sort_by_columns = ['date', 'account_name', 'account_number']
+    sort_by_columns = ['date']
 
     @property
     @abstractmethod
@@ -518,37 +517,38 @@ class OneZeroScraper(BankScraper):
                                         encoding='utf-8')
 
         # wait for the OTP code to be requested, and then send it
+        lines = []
         while True:
-            # get the entire output string
             output = self.process.stdout.readline()
-            st.write(output)
             if output:
+                lines.append(output)
                 if 'Enter OTP code:' in output:
                     self.otp_code = "waiting for input"
                     self.otp_event.wait()  # Wait until the OTP code is set
                     self.process.stdin.write(self.otp_code + '\n')
                     self.process.stdin.flush()
                     break
-                elif 'finished scraping' in output:
+                elif 'writing scraped data to console' in output:  # long term token is valid
                     self.otp_code = "not required"
                     break
             sleep(0.3)
 
-        # wait for the process to finish
-        while self.process.poll() is None:
+        while self.process.poll() is None:  # wait for the process to finish
             sleep(0.5)
-
-        # Get the results
         self.result, self.error = self.process.communicate()
-
-        # get long term token
-        outputs = [line for line in self.result.split('\n') if line.startswith('renewed long term token:')]
-        if outputs:
-            self.credentials['otpLongTermToken'] = outputs[0].split(':', 1)[-1].strip()
-            self._update_credentials_file()
 
         if self.error:
             raise LoginError(self.error)
+
+        lines = self.result.split('\n')
+        for line in lines:
+            if 'renewed long term token' in line:
+                self.credentials['otpLongTermToken'] = line.split(':', 1)[-1].strip()
+                self._update_credentials_file()
+                break
+            elif 'long term token is valid' in line:
+                break
+
         return scraped_data_to_df(self.result)
 
 

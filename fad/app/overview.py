@@ -15,4 +15,4 @@ if st.button("Fetch Data") or st.session_state.get("pulling_data", False):
     creds = CredentialsUtils.load_credentials()
     with st.spinner("Please wait while we fetch data from your accounts..."):
         DataUtils.pull_data(start_date, creds, DB_PATH)
-    st.rerun()
+    # TODO: add auto tagger tagging for the new pulled data

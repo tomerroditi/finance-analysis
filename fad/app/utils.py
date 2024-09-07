@@ -557,12 +557,12 @@ class DataUtils:
                         continue
                     scraper = get_scraper(service, provider, account, credentials)
                     if scraper.requires_2fa:
-                        st.write("going into 2fa handling")
                         DataUtils._handle_2fa_scrapers(scraper, start_date, db_path)
                     else:
                         scraper.pull_data_to_db(start_date, db_path)
                     st.session_state.pulled_data_from[service][provider].append(account)
         del st.session_state.pulled_data_from
+        del st.session_state.pulling_data
 
     @staticmethod
     def _handle_2fa_scrapers(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
@@ -571,7 +571,8 @@ class DataUtils:
             t1 = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
             t1.start()
             st.session_state["tfa_scraper_thread"] = t1
-        st.write("after running the scraper in a thread")
+        else:
+            scraper = st.session_state["tfa_scraper"]
 
         if st.session_state.get("otp_code_insertion") == "cancel":
             st.session_state["tfa_scraper_thread"].terminate()
@@ -579,18 +580,14 @@ class DataUtils:
             del st.session_state["tfa_scraper"]
             del st.session_state["otp_code_insertion"]
             return
-        st.write("after checking for cancel")
 
         while True:  # wait for the scraper to update the otp_code
             if scraper.otp_code == "waiting for input":
-                st.write("waiting for input from user")
                 DataUtils._two_fa_dialog(scraper)
                 st.stop()
             elif scraper.otp_code == "not required":
-                st.write("2fa not required")
                 break
             elif scraper.otp_code is not None:  # the scraper has set the otp_code
-                st.write("otp code set")
                 break
             time.sleep(1)
 

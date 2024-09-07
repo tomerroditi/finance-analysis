@@ -9,6 +9,7 @@ const phoneNumber = args[2];
 const otpLongTermToken = args[3];
 const start_date = args[4];
 
+
 async function otpCodeRetriever() {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -16,7 +17,8 @@ async function otpCodeRetriever() {
   });
 
   return new Promise((resolve, reject) => {
-    rl.question('Enter OTP code: ', (otpCode) => {
+    console.log('Enter OTP code: ');
+    rl.question('', (otpCode) => {
       resolve(otpCode);
       rl.close();
     });
@@ -25,13 +27,13 @@ async function otpCodeRetriever() {
 
 
 function scrapeResultsToConsole(scrapeResult) {
+  console.log('writing scraped data to console')
   scrapeResult.accounts.forEach((account) => {
     console.log(`found ${account.txns.length} transactions for account number ${account.accountNumber}`);
     account.txns.forEach((txn) => {
       console.log(`account number: ${account.accountNumber}| type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
     });
   });
-  console.log('finished scraping');
 }
 
 function renewLongTermToken(scraper) {
@@ -78,6 +80,8 @@ try {
     credentials.otpLongTermToken = await renewLongTermToken(scraper);
     console.log('renewed long term token:', credentials.otpLongTermToken);
     scrapeResult = await scraper.scrape(credentials);
+  } else {
+    console.log('long term token is valid')
   }
 
   if (scrapeResult.success) {

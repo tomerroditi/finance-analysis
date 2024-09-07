@@ -32,7 +32,7 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     assert isinstance(data, str), 'data should be a string'
 
     data = data.split('\n')
-    data = [line for line in data if not line.startswith('found ') and not line == '']
+    data = [line for line in data if line.startswith("account number:")]
     if not data:
         return pd.DataFrame()
     data = [line.split('| ') for line in data]
