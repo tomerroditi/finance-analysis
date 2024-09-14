@@ -13,6 +13,5 @@ start_date = st.date_input("Set the date from which to start fetching your data 
 if st.button("Fetch Data") or st.session_state.get("pulling_data", False):
     st.session_state.pulling_data = True
     creds = CredentialsUtils.load_credentials()
-    with st.spinner("Please wait while we fetch data from your accounts..."):
-        DataUtils.pull_data(start_date, creds, DB_PATH)
+    DataUtils.pull_data(start_date, creds, DB_PATH)
     # TODO: add auto tagger tagging for the new pulled data

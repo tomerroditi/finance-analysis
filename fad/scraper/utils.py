@@ -79,4 +79,3 @@ def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = None) -> None:
     # delete duplicates
     conn.commit()
     conn.close()
-    print(f'Successfully saved the data to the {table_name} table in the database')

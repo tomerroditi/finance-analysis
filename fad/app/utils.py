@@ -152,7 +152,6 @@ class CredentialsUtils:
         # save the credentials to the yaml file
         with open(CREDENTIALS_PATH, 'w') as file:
             yaml.dump(credentials, file, sort_keys=False, indent=4)
-        st.success('Credentials saved successfully!')
 
     @staticmethod
     def edit_delete_credentials(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:

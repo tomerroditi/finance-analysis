@@ -165,8 +165,7 @@ class Scraper(ABC):
 
         try:
             self.scrape_data(start_date)
-        except LoginError as e:
-            print(f'{self.provider_name}: {self.account_name}: {e}')
+        except LoginError:
             return
 
         if self.data.empty:
@@ -180,7 +179,6 @@ class Scraper(ABC):
         save_to_db(self.data, self.table_name, db_path=db_path)
 
         self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
-        print(f'{self.provider_name}: {self.account_name}: Successfully saved the data to the database\n', flush=True)
 
     @abstractmethod
     def scrape_data(self, start_date: str) -> pd.DataFrame:

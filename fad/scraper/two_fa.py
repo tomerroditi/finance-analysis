@@ -48,9 +48,7 @@ class TwoFAHandler:
             while True:
                 output = self.process.stdout.readline()
                 if output:
-                    print(output.strip())
                     if 'Enter OTP code: ' in output:
-                        print("Waiting for OTP code...")
                         self.otp_event.wait()  # Wait until the OTP code is set
                         self.process.stdin.write(self.otp_code + '\n')
                         self.process.stdin.flush()
