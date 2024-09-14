@@ -206,8 +206,7 @@ class Scraper(ABC):
         args = ['node', self.script_path, *args, start_date]
         result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
         self.result = result.stdout
-        self.error = result.stderr
-        self._handle_error(self.error)
+        self._handle_error(result.stderr)
         data = scraped_data_to_df(self.result)
         return data
 
@@ -266,8 +265,7 @@ class Scraper(ABC):
         # TODO: is this necessary?
         pass
 
-    @staticmethod
-    def _handle_error(error: str):
+    def _handle_error(self, error: str):
         """
         Handle the error message from the scraping script. this is the most generic way to handle errors, each scraper
         should implement its own error handling method since the error messages can be different for each provider.
@@ -282,6 +280,14 @@ class Scraper(ABC):
         LoginError
             If an error occurs during the scraping process
         """
+        if "GENERIC" in error:
+            error = "check your card 6 digits"
+        elif "INVALID_PASSWORD" in error:
+            error = "check your password/username/id"
+        elif "CHANGE_PASSWORD" in error:
+            error = "The password has expired, please change it"
+
+        self.error = error
         if error:
             raise LoginError(error)
 
@@ -539,9 +545,7 @@ class OneZeroScraper(BankScraper):
         process.wait()  # wait for process to finish
 
         self.result = process.stdout.read()
-        self.error = process.stderr.read()
-
-        self._handle_error(self.error)
+        self._handle_error(process.stderr.read())
 
         lines = self.result.split('\n')
         for line in lines:
