@@ -168,20 +168,22 @@ class CredentialsUtils:
         for provider, accounts in credentials[service].items():
             for account, creds in accounts.items():
                 with st.expander(f"{provider} - {account}"):
-                    with st.form(key=f'{provider}_{account}_form', border=False):
-                        # edit the credentials
-                        CredentialsUtils._generate_text_input_widgets(provider, account, creds)
-                        # save edited credentials button
-                        st.form_submit_button('Save', on_click=CredentialsUtils._save_credentials, args=(credentials,))
-                    # delete account button
-                    if st.button('Delete', key=f'{provider}_{account}_delete', type='primary'):
-                        # we can't use the on_click parameter here due to how the dialog works. the callback function
-                        # is called preliminary to the rerun (after every button click), which causes the dialog to be
-                        # set, then the script is rerun and the dialog object is deleted (but still displayed in the
-                        # frontend) and this causes a RuntimeError when trying to use the widgets in the dialog. (?)
+                    CredentialsUtils._generate_text_input_widgets(provider, account, creds)
+                    cont_buttons = st.container()
+                    cont_success = st.container()
+                    if cont_buttons.button(
+                        'Save',
+                        key=f'{service}_{provider}_{account}_edit_credentials__save',
+                        on_click=CredentialsUtils._save_credentials,
+                        args=(credentials,)
+                    ):
+                        cont_success.success('Credentials saved successfully')
+
+                    if cont_buttons.button('Delete', key=f'{provider}_{account}_delete', type='primary'):
                         CredentialsUtils._delete_account_dialog(credentials, service, provider, account)
 
     @staticmethod
+    @st.fragment
     def _generate_text_input_widgets(provider: str, account: str, creds: dict[str: str]) -> None:
         """
         Generate text input widgets for the given credentials. the function updates the credentials dictionary with the
@@ -233,8 +235,12 @@ class CredentialsUtils:
         None
         """
         st.write('Are you sure you want to delete this account?')
-        if st.button('Yes', key=f'delete_{service}_{provider}_{account}', on_click=CredentialsUtils._delete_account,
-                     args=(credentials, service, provider, account)):
+        if st.button(
+            'Yes',
+            key=f'delete_{service}_{provider}_{account}',
+            on_click=CredentialsUtils._delete_account,
+            args=(credentials, service, provider, account)
+        ):
             st.rerun()
         if st.button('Cancel', key=f'cancel_delete_{service}_{provider}_{account}'):
             st.rerun()
@@ -471,6 +477,7 @@ class DataUtils:
         """
         if "pulled_data_from" not in st.session_state:
             st.session_state.pulled_data_from = {}
+            st.session_state.pulled_data_status = {}
 
         for service, providers in credentials.items():
             if service not in st.session_state.pulled_data_from:
@@ -479,17 +486,16 @@ class DataUtils:
                 if provider not in st.session_state.pulled_data_from[service]:
                     st.session_state.pulled_data_from[service][provider] = []
                 for account, credentials in accounts.items():
-                    if (
-                            service in st.session_state.pulled_data_from
-                            and provider in st.session_state.pulled_data_from[service]
-                            and account in st.session_state.pulled_data_from[service][provider]
-                    ):
+                    if account in st.session_state.pulled_data_from[service][provider]:
+                        st.session_state.pulled_data_status[f"{service}_{provider}_{account}"]  # noqa
                         continue
                     st.session_state.pulled_data_from[service][provider].append(account)
                     scraper = get_scraper(service, provider, account, credentials)
                     DataUtils._fetch_data_from_scraper(scraper, start_date, db_path)
+                    st.session_state.pulled_data_status[f"{service}_{provider}_{account}"]  # noqa
         del st.session_state.pulled_data_from
         del st.session_state.pulling_data
+        st.session_state.pulled_data_status.update(label="Data fetched", state="complete", expanded=True)
 
     @staticmethod
     def _fetch_data_from_scraper(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
@@ -513,7 +519,7 @@ class DataUtils:
         if scraper.requires_2fa:
             thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
             thread.start()
-            while True:
+            while thread.is_alive():
                 if scraper.otp_code == "waiting for input":
                     DataUtils._two_fa_dialog(scraper, thread)
                     st.stop()
@@ -522,6 +528,7 @@ class DataUtils:
                 time.sleep(2)
         else:
             scraper.pull_data_to_db(start_date, db_path)
+        DataUtils._update_data_pulling_status(scraper)
 
     @staticmethod
     @st.dialog('Two Factor Authentication')
@@ -558,6 +565,21 @@ class DataUtils:
             st.stop()
         scraper.set_otp_code(code)
         thread.join()
+        DataUtils._update_data_pulling_status(scraper)
+
+    @staticmethod
+    def _update_data_pulling_status(scraper: Scraper):
+        name = f"{scraper.service_name}_{scraper.provider_name}_{scraper.account_name}"
+        if not scraper.error:
+            st.session_state.pulled_data_status[name] = st.success(
+                f"Data fetched successfully from: {name.replace('_', ' - ')}",
+                icon="✅"
+            )
+        else:
+            st.session_state.pulled_data_status[name] = st.warning(
+                f"Failed to fetch data from: {name.replace('_', ' - ')}. {scraper.error}",
+                icon="⚠️"
+            )
 
     @staticmethod
     def get_latest_data_date(conn: SQLConnection) -> datetime.date:
