@@ -353,15 +353,16 @@ class CategoriesAndTags:
             f"SELECT {name_col}, {account_number_col} FROM {tags_table} WHERE {service_col} = 'bank';", ttl=0
         )
         bank_names = self.conn.query(f"SELECT {bank_desc_col}, {bank_account_number_col} FROM {bank_table};", ttl=0)
-        new_bank_names = bank_names.loc[~bank_names[bank_desc_col].isin(current_banks_names[name_col]) &
-                                        ~bank_names[bank_account_number_col].isin(
-                                            current_banks_names[account_number_col]),
-        [bank_desc_col, bank_account_number_col]].drop_duplicates()
+        bank_names = bank_names.rename(columns={bank_desc_col: name_col, bank_account_number_col: account_number_col})
+
+        new_bank_names = current_banks_names.merge(bank_names, on=[name_col, account_number_col], how='outer', indicator=True)
+        new_bank_names = new_bank_names[new_bank_names['_merge'] == 'right_only'].drop('_merge', axis=1)
+        new_bank_names = new_bank_names.drop_duplicates(subset=[name_col, account_number_col])
         with self.conn.session as s:
             for i, row in new_bank_names.iterrows():
                 s.execute(text(f'INSERT INTO {tags_table} ({name_col}, {account_number_col}, {service_col})'
                                f' VALUES (:curr_name, :curr_account_number, "bank");'),
-                          {'curr_name': row[bank_desc_col], 'curr_account_number': row[bank_account_number_col]})
+                          {'curr_name': row[name_col], 'curr_account_number': row[account_number_col]})
             s.commit()
 
     def edit_auto_tagger_data(self, service: Literal['credit card', 'bank']):
@@ -998,3 +999,43 @@ class CategoriesAndTags:
             return False
 
         return True
+
+    def update_raw_data_by_rules(self):
+        """
+        Update the raw data by the auto tagger rules
+        """
+        self._update_raw_data_by_rules_credit_card()
+        self._update_raw_data_by_rules_bank()
+
+    def _update_raw_data_by_rules_credit_card(self):
+        """
+        Update the credit card raw data by the auto tagger rules
+        """
+        with self.conn.session as s:
+            query = text(f"""
+                UPDATE {credit_card_table}
+                SET {cc_category_col} = {tags_table}.{category_col}, {cc_tag_col} = {tags_table}.{tag_col}
+                FROM {tags_table}
+                WHERE {credit_card_table}.{cc_desc_col} = {tags_table}.{name_col}
+                AND {tags_table}.{service_col} = 'credit_card'
+                AND {credit_card_table}.{cc_category_col} IS NULL
+            """)
+            s.execute(query)
+            s.commit()
+
+    def _update_raw_data_by_rules_bank(self):
+        """
+        Update the bank raw data by the auto tagger rules
+        """
+        with self.conn.session as s:
+            query = text(f"""
+                UPDATE {bank_table}
+                SET {bank_category_col} = {tags_table}.{category_col}, {bank_tag_col} = {tags_table}.{tag_col}
+                FROM {tags_table}
+                WHERE {bank_table}.{bank_desc_col} = {tags_table}.{name_col}
+                AND {bank_table}.{bank_account_number_col} = {tags_table}.{account_number_col}
+                AND {tags_table}.{service_col} = 'bank'
+                AND {bank_table}.{bank_category_col} IS NULL
+            """)
+            s.execute(query)
+            s.commit()
