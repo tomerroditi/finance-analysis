@@ -15,9 +15,8 @@ from threading import Thread
 from streamlit_phone_number import st_phone_number
 from streamlit.connections import SQLConnection
 from typing import Literal
-from threading import Thread
 from datetime import datetime, timedelta
-from fad.scraper import TwoFAHandler, BankScraper, CreditCardScraper, get_scraper, Scraper
+from fad.scraper import TwoFAHandler, get_scraper, Scraper
 from fad import CREDENTIALS_PATH, CATEGORIES_PATH
 from fad.app.naming_conventions import (Banks,
                                         CreditCards,
@@ -61,6 +60,19 @@ bank_date_col = BankTableFields.DATE.value
 bank_provider_col = BankTableFields.PROVIDER.value
 bank_account_name_col = BankTableFields.ACCOUNT_NAME.value
 bank_amount_col = BankTableFields.AMOUNT.value
+
+
+class CacheUtils:
+    @staticmethod
+    def clear_session_state():
+        """
+        Clear the session state variables
+
+        Returns
+        -------
+        None
+        """
+        st.session_state.clear()
 
 
 class CredentialsUtils:
@@ -271,11 +283,13 @@ class CredentialsUtils:
         -------
         None
         """
-        if st.button(f"Add a new {service.replace('_', ' ').rstrip('s')} account", key=f"add_new_{service}_button"):
+        if st.button(
+            f"Add a new {service.replace('_', ' ').rstrip('s')} account",
+            key=f"add_new_{service}_button"
+        ):
             st.session_state[f'add_new_{service}'] = True
 
         if not st.session_state.get(f'add_new_{service}', False):
-            # hide the form if the user didn't click the button
             return
 
         # select your provider
@@ -289,20 +303,26 @@ class CredentialsUtils:
             credentials[service][provider] = {}
 
         # select your account name
-        account_name = st.text_input('Account name (how would you like to call the account)',
-                                     key=f'new_{service}_account_name')
+        account_name = st.text_input(
+            'Account name (how would you like to call the account)',
+            key=f'new_{service}_account_name',
+            on_change=CredentialsUtils._check_accounts_duplication,
+            args=(
+                credentials,
+                service,
+                provider,
+                st.session_state.get(f'new_{service}_account_name', '')
+            )
+        )
 
-        if account_name is not None and account_name != '':
-            if account_name not in credentials[service][provider].keys():
-                credentials[service][provider][account_name] = {}
-                st.session_state.checked_account_duplication = True
-            elif not st.session_state.get('checked_account_duplication', False):
-                st.error('Account name already exists. Please choose a different name.')
-                st.stop()
-        else:
+        if account_name is None or account_name == '':  # if the user didn't enter an account name
+            if st.button('Cancel', key=f'cancel_add_new_{service}'):
+                CacheUtils.clear_session_state()
+                st.rerun()
             return
 
         # edit the required fields when the provider is selected and is valid
+        credentials[service][provider][account_name] = {}
         for field in LoginFields.get_fields(provider):
             label = DisplayFields.get_display(field)
             if 'phone' in label.lower():  # use the phone number widget for phone fields
@@ -316,16 +336,17 @@ class CredentialsUtils:
                         credentials[service][provider][account_name][field] = number
             else:
                 credentials[service][provider][account_name][field] = (
-                    st.text_input(label, key=f'new_{service}_{field}',
-                                  type='password' if 'password' in label.lower() else 'default')
+                    st.text_input(
+                        label,
+                        key=f'new_{service}_{field}',
+                        type='password' if 'password' in label.lower() else 'default'
+                    )
                 )
 
         # save the new account button
-        st.button('Save new account', key=f'save_new_{service}_data_source_button',
-                  on_click=CredentialsUtils._save_new_data_source,
-                  args=(credentials, service, provider, account_name))  # initiate the saving process
-        if st.session_state.get('saving_credentials_in_progress', False):  # 2fa handling in progress
+        if st.button('Save new account', key=f'save_new_{service}_data_source_button'):
             CredentialsUtils._save_new_data_source(credentials, service, provider, account_name)
+            st.rerun()
 
         # cancel adding a new account button
         if st.button('Cancel', key=f'cancel_add_new_{service}'):
@@ -334,130 +355,40 @@ class CredentialsUtils:
             st.rerun()
 
     @staticmethod
+    def _check_accounts_duplication(credentials: dict, service: str, provider: str, account_name: str) -> None:
+        """
+        Check if the account name already exists in the credentials. If the account name already exists, the script will
+        stop and prompt the user to choose a different name.
+
+        Parameters
+        ----------
+        credentials : dict
+            The credentials dictionary
+        service : str
+            The service for which to add a new account
+        provider : str
+            The provider for which to add a new account
+        account_name : str
+            The account name to check for duplication
+
+        Returns
+        -------
+        None
+        """
+        if provider not in credentials[service].keys():
+            return
+        if account_name in credentials[service][provider].keys():
+            st.error('Account name already exists. Please choose a different name.')
+
+    @staticmethod
     def _save_new_data_source(credentials: dict, service: str, provider: str, account_name: str) -> None:
         # check if all fields are filled - do not proceed if not
         if any([(v == '' or v is None) for v in credentials[service][provider][account_name].values()]):
             st.error('Please fill all the displayed fields.',
                      icon="🚨")
             st.stop()
-
-        st.session_state.long_term_token = 'waiting for token' if provider in CredentialsUtils.two_fa_providers \
-            else 'not required'
-
-        # 2FA handling - get long-term token (only for some providers)
-        if st.session_state.long_term_token == 'waiting for token':
-            contact_field = CredentialsUtils.two_fa_contact[provider]
-            contact_info = credentials[service][provider][account_name][contact_field]
-            CredentialsUtils._handle_two_fa(provider, contact_info)
-            st.session_state.saving_credentials_in_progress = True
-
-        # save the long-term token in the credentials
-        if st.session_state.long_term_token not in ['not required', 'waiting for token', 'aborted']:
-            field_name = CredentialsUtils.two_fa_field_name[provider]
-            credentials[service][provider][account_name][field_name] = st.session_state.long_term_token
-            st.session_state.long_term_token = 'completed'  # doesn't require 2fa anymore
-
-        # complete the saving process when 2fa is completed or not required
-        if st.session_state.long_term_token in ['completed', 'not required']:
-            CredentialsUtils._save_credentials(credentials)
-
-        # reset the session state variables related to the new credentials and rerun the script to clear the form
-        if st.session_state.long_term_token in ['not required', 'completed', 'aborted']:
-            del st.session_state.long_term_token
-            del st.session_state[f'add_new_{service}']
-            del st.session_state.saving_credentials_in_progress
-            st.rerun()
-
-    @staticmethod
-    def _handle_two_fa(provider: str, contact_info: str or None):
-        """
-        Handle two-factor authentication for the given provider. if the provider requires 2FA, the user will be prompted
-        to enter the OTP code. If the user cancels the 2FA, the script will stop.
-        the function sets the long-term token in the session state as 'long_term_token'
-
-        long_term_token states:
-        - 'not required': the provider does not require 2FA
-        - 'aborted': the user canceled the 2FA
-        - '<long-term token>': the long-term token received from the provider
-
-        Parameters
-        ----------
-        provider : str
-            The provider for which to handle two-factor authentication
-        contact_info : str | None
-            The phone number to which the OTP code will be sent. Required for providers that require 2FA, None otherwise
-
-        Returns
-        -------
-        None
-        """
-        # TODO: still missing handling for when the user is pressing esc or the X button on the dialog
-        # TODO: figure out why the function is called again after the dialog is opened (before submitting the otp)
-        # first call of this function
-        if st.session_state.get('tfa_code', None) is None:
-            st.session_state.tfa_code = 'waiting for token'
-            st.session_state.opened_2fa_dialog = False
-
-        if st.session_state.tfa_code == 'waiting for token':
-            # prompt the user to enter the OTP code, the user can either submit the code or cancel the 2FA which will
-            # set the tfa_code session state variable to 'cancel' or the code entered by the user and rerun the script
-            if not st.session_state.opened_2fa_dialog:
-                st.session_state.otp_handler = TwoFAHandler(provider, contact_info)
-                st.session_state.thread = Thread(target=st.session_state.otp_handler.handle_2fa)
-                st.session_state.thread.start()
-                CredentialsUtils._two_fa_dialog(provider)
-                st.session_state.opened_2fa_dialog = True
-        elif st.session_state.tfa_code == 'cancel':
-            # terminate the thread and set the long-term token to 'aborted'
-            st.session_state.otp_handler.process.terminate()
-            st.session_state.long_term_token = 'aborted'
-        else:
-            # fetch the long term token using the OTP code entered by the user
-            st.session_state.otp_handler.set_otp_code(st.session_state.tfa_code)
-            st.session_state.thread.join()  # wait for the thread to finish
-            if st.session_state.otp_handler.error:
-                st.error(f'Error getting long-term token: {st.session_state.otp_handler.error}')
-                st.stop()
-            st.session_state.long_term_token = st.session_state.otp_handler.result
-
-        if st.session_state.long_term_token != 'waiting for token':
-            print("deleting otp properties")
-            # we reach here only if the 2FA process is completed successfully or aborted
-            del st.session_state.tfa_code
-            del st.session_state.otp_handler
-            del st.session_state.thread
-            del st.session_state.opened_2fa_dialog
-
-    @staticmethod
-    @st.dialog('Two Factor Authentication')
-    def _two_fa_dialog(provider: str):
-        """
-        Display a dialog for the user to enter the OTP code for the given provider. The dialog will stop the script
-        until the user submits the code. If the user cancels the 2FA the tfa_code session state variable will be set to
-        'cancel' and the script will rerun, otherwise the tfa_code session state variable will be set to the code
-        entered by the user and the script will rerun as well.
-
-        Parameters
-        ----------
-        provider
-
-        Returns
-        -------
-
-        """
-        st.write(f'The provider, {provider}, requires 2 factor authentication for adding a new account.')
-        st.write('Please enter the code you received.')
-        st.write(st.session_state.tfa_code)
-        code = st.text_input('Code', key=f'tfa_code_{provider}')
-        if st.button('Submit', key="two_fa_dialog_submit"):
-            if code is None or code == '':
-                st.error('Please enter a valid code')
-                st.stop()
-            st.session_state.tfa_code = code
-            st.rerun()
-        if st.button('Cancel', key="two_fa_dialog_cancel"):
-            st.session_state.tfa_code = 'cancel'
-            st.rerun()
+        CredentialsUtils._save_credentials(credentials)
+        CacheUtils.clear_session_state()
 
 
 class DataUtils:
@@ -550,55 +481,53 @@ class DataUtils:
                     st.session_state.pulled_data_from[service][provider] = []
                 for account, credentials in accounts.items():
                     if (
-                        service in st.session_state.pulled_data_from
-                        and provider in st.session_state.pulled_data_from[service]
-                        and account in st.session_state.pulled_data_from[service][provider]
+                            service in st.session_state.pulled_data_from
+                            and provider in st.session_state.pulled_data_from[service]
+                            and account in st.session_state.pulled_data_from[service][provider]
                     ):
                         continue
-                    scraper = get_scraper(service, provider, account, credentials)
-                    if scraper.requires_2fa:
-                        DataUtils._handle_2fa_scrapers(scraper, start_date, db_path)
-                    else:
-                        scraper.pull_data_to_db(start_date, db_path)
                     st.session_state.pulled_data_from[service][provider].append(account)
+                    scraper = get_scraper(service, provider, account, credentials)
+                    DataUtils._fetch_data_from_scraper(scraper, start_date, db_path)
         del st.session_state.pulled_data_from
         del st.session_state.pulling_data
 
     @staticmethod
-    def _handle_2fa_scrapers(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
-        if st.session_state.get("tfa_scraper") is None:
-            st.session_state["tfa_scraper"] = scraper
-            t1 = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
-            t1.start()
-            st.session_state["tfa_scraper_thread"] = t1
+    def _fetch_data_from_scraper(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
+        """
+        Fetch the data from the scraper and save it to the database
+
+        Parameters
+        ----------
+        scraper : Scraper
+            The scraper to use for fetching the data
+        start_date : datetime | str
+            The date from which to start fetching the data
+        db_path : str
+            The path to the database file. If None the database file will be created in the folder of fad package
+            with the name 'data.db'
+
+        Returns
+        -------
+        None
+        """
+        if scraper.requires_2fa:
+            thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
+            thread.start()
+            while True:
+                print(f"otp code: {scraper.otp_code}", flush=True)
+                if scraper.otp_code == "waiting for input":
+                    DataUtils._two_fa_dialog(scraper, thread)
+                    st.stop()
+                elif scraper.otp_code == "not required":
+                    break
+                time.sleep(2)
         else:
-            scraper = st.session_state["tfa_scraper"]
-
-        if st.session_state.get("otp_code_insertion") == "cancel":
-            st.session_state["tfa_scraper_thread"].terminate()
-            del st.session_state["tfa_scraper_thread"]
-            del st.session_state["tfa_scraper"]
-            del st.session_state["otp_code_insertion"]
-            return
-
-        while True:  # wait for the scraper to update the otp_code
-            if scraper.otp_code == "waiting for input":
-                DataUtils._two_fa_dialog(scraper)
-                st.stop()
-            elif scraper.otp_code == "not required":
-                break
-            elif scraper.otp_code is not None:  # the scraper has set the otp_code
-                break
-            time.sleep(1)
-
-        st.session_state["tfa_scraper_thread"].join()
-
-        del st.session_state["tfa_scraper_thread"]
-        del st.session_state["tfa_scraper"]
+            scraper.pull_data_to_db(start_date, db_path)
 
     @staticmethod
     @st.dialog('Two Factor Authentication')
-    def _two_fa_dialog(scraper: Scraper):
+    def _two_fa_dialog(scraper: Scraper, thread: Thread):
         """
         Display a dialog for the user to enter the OTP code for the given provider. The dialog will stop the script
         until the user submits the code. If the user cancels the 2FA the tfa_code session state variable will be set to
@@ -607,25 +536,30 @@ class DataUtils:
 
         Parameters
         ----------
-        provider
+        scraper : Scraper
+            The scraper for which to handle two-factor authentication
 
         Returns
         -------
 
         """
-        st.write(
-            f'The provider, {scraper.provider_name}, requires 2 factor authentication for adding a new account.')
+        st.write(f'The provider, {scraper.provider_name}, requires 2 factor authentication for fetching data.')
         st.write('Please enter the code you received.')
         code = st.text_input('Code', key=f'tfa_code_dialog_text_input')
         if st.button('Submit', key="two_fa_dialog_submit"):
-            if code is None or code == '':
-                st.error('Please enter a valid code')
-                st.stop()
-            scraper.set_otp_code(code)
+            DataUtils._handle_2fa_code(scraper, thread, code)
             st.rerun()
         if st.button('Cancel', key="two_fa_dialog_cancel"):
-            st.session_state.otp_code_insertion = 'cancel'
+            DataUtils._handle_2fa_code(scraper, thread, "cancel")
             st.rerun()
+
+    @staticmethod
+    def _handle_2fa_code(scraper: Scraper, thread: Thread, code: str):
+        if code is None or code == '':
+            st.error('Please enter a valid code')
+            st.stop()
+        scraper.set_otp_code(code)
+        thread.join()
 
     @staticmethod
     def get_latest_data_date(conn: SQLConnection) -> datetime.date:
@@ -751,8 +685,10 @@ class DataUtils:
 
             cc_df.loc[(cc_df[cc_name_col] == name), cc_category_col] = category
             cc_df.loc[(cc_df[cc_name_col] == name), cc_tag_col] = tag
-            bank_df.loc[(bank_df[bank_name_col] == name) & (bank_df[bank_account_number_col] == account), bank_category_col] = category
-            bank_df.loc[(bank_df[bank_name_col] == name) & (bank_df[bank_account_number_col] == account), bank_tag_col] = tag
+            bank_df.loc[(bank_df[bank_name_col] == name) & (
+                        bank_df[bank_account_number_col] == account), bank_category_col] = category
+            bank_df.loc[
+                (bank_df[bank_name_col] == name) & (bank_df[bank_account_number_col] == account), bank_tag_col] = tag
 
         # update the tables
         DataUtils.update_db_table(conn, credit_card_table, cc_df)
@@ -961,14 +897,22 @@ class CategoriesAndTags:
         None
 
         """
+        st.markdown(
+            'Pay attention to the special Categories: "Ignore", "Salary", "Other Income", and "Investments".<br>'
+            'These categories are used for special purposes in the app and you cannot delete them.<br>'
+            'Read more on how to use them under each category name below (TBC).',
+            unsafe_allow_html=True
+        )
+        # TODO: add detailed instructions on how to use the special categories
+
         add_cat_col, reallocate_tags_col, _ = st.columns([0.2, 0.2, 0.6])
         # add new categories
         with add_cat_col:
-            st.button('New Category', key='add_new_category', on_click=self._add_new_category)
+            st.button('New Category', key='add_new_category_button', on_click=self._add_new_category)
 
         # reallocate tags
         with reallocate_tags_col:
-            st.button('Reallocate Tags', key='reallocate_tags', on_click=self._reallocate_tags)
+            st.button('Reallocate Tags', key='reallocate_tags_button', on_click=self._reallocate_tags)
 
         # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
         for category, tags in list(self.categories_and_tags.items()):
@@ -1062,40 +1006,38 @@ class CategoriesAndTags:
                                     key='old_category')
         tags_to_select = self.categories_and_tags[old_category] if old_category is not None else []
         tags_to_reallocate = st.multiselect('Select tags to reallocate', tags_to_select, key='reallocate_tags')
-        if old_category is None:
-            st.stop()
+        if old_category is not None:
+            all_categories.remove(old_category)
+            new_category = st.selectbox('Select new category', all_categories, key='new_category', index=None)
+            if old_category is not None and new_category is not None and tags_to_reallocate:
+                if st.button('Continue', key='continue_reallocate_tags'):
+                    # update the tags in the database
+                    for table in [tags_table, credit_card_table, bank_table]:
+                        match table:
+                            case Tables.TAGS.value:
+                                curr_tag_col = tag_col
+                                curr_category_col = category_col
+                            case Tables.CREDIT_CARD.value:
+                                curr_tag_col = cc_tag_col
+                                curr_category_col = cc_category_col
+                            case Tables.BANK.value:
+                                curr_tag_col = bank_tag_col
+                                curr_category_col = bank_category_col
+                            case _:
+                                raise ValueError(f"Invalid table name: {table}")
+                        with (self.conn.session as s):
+                            for tag in tags_to_reallocate:
+                                query = text(
+                                    f'UPDATE {table} SET {curr_category_col}=:new_category WHERE {curr_tag_col}=:tag AND '
+                                    f'{curr_category_col}=:old_category;')
+                                s.execute(query, {'new_category': new_category, 'tag': tag,
+                                                  'old_category': old_category})
+                                s.commit()
 
-        all_categories.remove(old_category)
-        new_category = st.selectbox('Select new category', all_categories, key='new_category', index=None)
-        if old_category is not None and new_category is not None and tags_to_reallocate:
-            if st.button('Continue', key='continue_reallocate_tags'):
-                # update the tags in the database
-                for table in [tags_table, credit_card_table, bank_table]:
-                    match table:
-                        case Tables.TAGS.value:
-                            curr_tag_col = tag_col
-                            curr_category_col = category_col
-                        case Tables.CREDIT_CARD.value:
-                            curr_tag_col = cc_tag_col
-                            curr_category_col = cc_category_col
-                        case Tables.BANK.value:
-                            curr_tag_col = bank_tag_col
-                            curr_category_col = bank_category_col
-                        case _:
-                            raise ValueError(f"Invalid table name: {table}")
-                    with (self.conn.session as s):
-                        for tag in tags_to_reallocate:
-                            query = text(
-                                f'UPDATE {table} SET {curr_category_col}=:new_category WHERE {curr_tag_col}=:tag AND '
-                                f'{curr_category_col}=:old_category;')
-                            s.execute(query, {'new_category': new_category, 'tag': tag,
-                                              'old_category': old_category})
-                            s.commit()
-
-                self.categories_and_tags[new_category].extend(tags_to_reallocate)
-                _ = [self.categories_and_tags[old_category].remove(tag) for tag in tags_to_reallocate]
-                self._update_yaml()
-                st.rerun()
+                    self.categories_and_tags[new_category].extend(tags_to_reallocate)
+                    _ = [self.categories_and_tags[old_category].remove(tag) for tag in tags_to_reallocate]
+                    self._update_yaml()
+                    st.rerun()
 
     @st.dialog('Confirm Deletion')
     def _delete_category(self, category: str) -> None:
@@ -1464,7 +1406,8 @@ class CategoriesAndTags:
         indices = changes['selection']['rows']
         for idx in indices:
             row = df_tags.iloc[idx]
-            self._auto_tagger_editing_window(row[name_col], service, row[account_number_col], row[category_col], row[tag_col])
+            self._auto_tagger_editing_window(row[name_col], service, row[account_number_col], row[category_col],
+                                             row[tag_col])
 
     @st.fragment
     def _auto_tagger_editing_window(
