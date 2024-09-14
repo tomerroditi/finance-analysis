@@ -527,6 +527,7 @@ class OneZeroScraper(BankScraper):
                     self.otp_event.wait()  # Wait until the OTP code is set
                     self.process.stdin.write(self.otp_code + '\n')
                     self.process.stdin.flush()
+                    process.stdin.close()
                     break
                 elif 'writing scraped data to console' in output:  # long term token is valid
                     self.otp_code = "not required"
