@@ -10,8 +10,10 @@ the user should be able to view the following data:
 """
 import streamlit as st
 import pandas as pd
+from fad.app.utils.data import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
-from fad.app.utils import DataUtils, PandasFilterWidgets, PlottingUtils
+from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
+from fad.app.utils.widgets import PandasFilterWidgets
 
 
 amount_col = TransactionsTableFields.AMOUNT.value
@@ -20,11 +22,11 @@ category_col = TransactionsTableFields.CATEGORY.value
 tag_col = TransactionsTableFields.TAG.value
 non_expenses_categories = [category.value for category in NonExpensesCategories]
 
-conn = DataUtils.get_db_connection()
+conn = get_db_connection()
 
 # get the data from the database
-credit_card_data = DataUtils.get_table(conn, Tables.CREDIT_CARD.value)
-bank_data = DataUtils.get_table(conn, Tables.BANK.value)
+credit_card_data = get_table(conn, Tables.CREDIT_CARD.value)
+bank_data = get_table(conn, Tables.BANK.value)
 all_data = pd.concat([credit_card_data, bank_data])
 expenses_data = all_data[~all_data[category_col].isin(non_expenses_categories)]
 expenses_data.loc[
@@ -57,16 +59,16 @@ with categories_tab:
         filtered_data.loc[filtered_data[category_col].isnull(), category_col] = "Uncategorized"
 
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories(filtered_data, amount_col, category_col)
+        bar_plot_by_categories(filtered_data, amount_col, category_col)
     )
     st.plotly_chart(
-        PlottingUtils.pie_plot_by_categories(filtered_data, amount_col, category_col)
+        pie_plot_by_categories(filtered_data, amount_col, category_col)
     )
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1Y")
     )
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1M")
     )
 
 with tags_tab:
@@ -92,11 +94,11 @@ with tags_tab:
         filtered_data.loc[filtered_data[tag_col].isnull(), tag_col] = "No tag"
 
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories(filtered_data, amount_col, tag_col)
+        bar_plot_by_categories(filtered_data, amount_col, tag_col)
     )
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1Y")
     )
     st.plotly_chart(
-        PlottingUtils.bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1M")
     )

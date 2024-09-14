@@ -1,6 +1,6 @@
 import streamlit as st
 
-from fad.app.utils import CredentialsUtils
+from fad.app.utils.credentials import load_credentials, edit_delete_credentials, add_new_data_source
 
 
 ############################################################################################################
@@ -18,20 +18,20 @@ with settings_tab:
 
 with credentials_tab:
     # fetch credentials
-    credentials = CredentialsUtils.load_credentials()
+    credentials = load_credentials()
 
     # open a tab for each service
     cards_tab, banks_tab, insurance_tab = st.tabs(['Credit Cards', 'Banks', 'Insurance'])
 
     with cards_tab:
-        CredentialsUtils.edit_delete_credentials(credentials, 'credit_cards')
-        CredentialsUtils.add_new_data_source(credentials, 'credit_cards')
+        edit_delete_credentials(credentials, 'credit_cards')
+        add_new_data_source(credentials, 'credit_cards')
 
     with banks_tab:
-        CredentialsUtils.edit_delete_credentials(credentials, 'banks')
-        CredentialsUtils.add_new_data_source(credentials, 'banks')
+        edit_delete_credentials(credentials, 'banks')
+        add_new_data_source(credentials, 'banks')
 
     with insurance_tab:
-        CredentialsUtils.edit_delete_credentials(credentials, 'insurances')
-        CredentialsUtils.add_new_data_source(credentials, 'insurances')
+        edit_delete_credentials(credentials, 'insurances')
+        add_new_data_source(credentials, 'insurances')
 

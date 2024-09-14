@@ -1,11 +1,12 @@
 import streamlit as st
 
-from fad.app.utils import DataUtils, CategoriesAndTags
+from fad.app.utils.tagging import CategoriesAndTags
+from fad.app.utils.data import get_db_connection
 
 
 # TODO: add a feature that enables one to split a transaction into multiple transactions of different amounts and tags
 # TODO: make it impossible to delete the Other: No tag tag
-categories_and_tags = CategoriesAndTags(DataUtils.get_db_connection())
+categories_and_tags = CategoriesAndTags(get_db_connection())
 tab_tags, tab_auto_tagger, tab_manually_tag = st.tabs(["Categories & Tags", "Automatic Tagger", "Manually Tagging"])
 
 with tab_tags:
