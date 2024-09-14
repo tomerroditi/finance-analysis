@@ -515,7 +515,6 @@ class DataUtils:
             thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
             thread.start()
             while True:
-                print(f"otp code: {scraper.otp_code}", flush=True)
                 if scraper.otp_code == "waiting for input":
                     DataUtils._two_fa_dialog(scraper, thread)
                     st.stop()
