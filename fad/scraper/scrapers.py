@@ -93,7 +93,6 @@ class Scraper(ABC):
         """
         self.account_name = account_name
         self.credentials = credentials
-        self.process = None
         self.result = ''
         self.error = ''
         self.data = None
@@ -181,6 +180,7 @@ class Scraper(ABC):
         save_to_db(self.data, self.table_name, db_path=db_path)
 
         self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
+        print(f'{self.provider_name}: {self.account_name}: Successfully saved the data to the database\n', flush=True)
 
     @abstractmethod
     def scrape_data(self, start_date: str) -> pd.DataFrame:
@@ -507,26 +507,30 @@ class OneZeroScraper(BankScraper):
             The phone number to log in to the website
         otpLongTermToken : str
             The OTP long-term token to log in to the website
+
+        Returns
+        -------
+        pd.DataFrame
+            The scraped data as a pandas DataFrame. empty DataFrame is returned if no data was found
         """
         args = ['node', self.script_path, *args, start_date]
-        self.process = subprocess.Popen(args,
-                                        stdin=subprocess.PIPE,
-                                        stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE,
-                                        text=True,
-                                        encoding='utf-8')
+        process = subprocess.Popen(args,
+                                   stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   text=True,
+                                   encoding='utf-8')
 
         # wait for the OTP code to be requested, and then send it
-        lines = []
         while True:
-            output = self.process.stdout.readline()
+            output = process.stdout.readline()
             if output:
-                lines.append(output)
                 if 'Enter OTP code:' in output:
                     self.otp_code = "waiting for input"
-                    self.otp_event.wait()  # Wait until the OTP code is set
-                    self.process.stdin.write(self.otp_code + '\n')
-                    self.process.stdin.flush()
+                    if not self.otp_event.wait(timeout=120):
+                        raise LoginError('Timeout: OTP code was not provided for 2FA')
+                    process.stdin.write(self.otp_code + '\n')
+                    process.stdin.flush()
                     process.stdin.close()
                     break
                 elif 'writing scraped data to console' in output:  # long term token is valid
@@ -534,12 +538,12 @@ class OneZeroScraper(BankScraper):
                     break
             sleep(0.3)
 
-        while self.process.poll() is None:  # wait for the process to finish
-            sleep(0.5)
-        self.result, self.error = self.process.communicate()
+        process.wait()  # wait for process to finish
 
-        if self.error:
-            raise LoginError(self.error)
+        self.result = process.stdout.read()
+        self.error = process.stderr.read()
+
+        self._handle_error(self.error)
 
         lines = self.result.split('\n')
         for line in lines:
