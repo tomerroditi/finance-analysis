@@ -3,6 +3,7 @@ import datetime as dt
 
 from fad.app.utils.data import get_db_connection, get_latest_data_date, pull_data
 from fad.app.utils.credentials import load_credentials
+from fad.app.utils.tagging import CategoriesAndTags
 from fad import DB_PATH
 
 
@@ -15,4 +16,6 @@ if st.button("Fetch Data") or st.session_state.get("pulling_data", False):
     st.session_state.pulling_data = True
     creds = load_credentials()
     pull_data(start_date, creds, DB_PATH)
+    ct = CategoriesAndTags(conn)
+    ct.update_raw_data_by_rules()
     # TODO: add auto tagger tagging for the new pulled data
