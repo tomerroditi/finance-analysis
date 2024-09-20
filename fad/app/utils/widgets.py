@@ -26,10 +26,9 @@ class PandasFilterWidgets:
         self.widgets_map = widgets_map if widgets_map is not None else {}
         self.keys_prefix = f'pandas_filter_widgets_{keys_prefix if keys_prefix is not None else ""}'
         self.widgets_returns = {}
+        self._dates = {}
 
-        self.fetch_widgets_values()
-
-    def fetch_widgets_values(self):
+    def display_widgets(self):
         """
         This function will create the widgets based on the widgets_map and store the values of the widgets in the
         widgets_returns dictionary.
@@ -83,10 +82,31 @@ class PandasFilterWidgets:
         df = df.loc[df[column].notna(), :]
         max_val = datetime.today().date()
         min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
-        name = column.replace('_', ' ').title()
-        dates = st.date_input(
-            name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input'
-        )
+
+        custom_col, curr_month_col, curr_year_col = st.columns([3, 1, 1])
+        with custom_col:
+            name = column.replace('_', ' ').title()
+            prev_custom_dates = self._dates.get(f"{column}_custom", (min_val, max_val))
+            _dates = st.date_input(
+                name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input',
+            )
+            if _dates != prev_custom_dates:
+                self._dates[f"{column}_custom"] = _dates
+                self._dates[column] = _dates
+        with curr_month_col:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Last Month", key=f'{self.keys_prefix}_{column}_last_month_button'):
+                today = datetime.today()
+                month_start = today.replace(day=1)
+                self._dates[column] = (month_start.date(), today.date())
+        with curr_year_col:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Last Year", key=f'{self.keys_prefix}_{column}_last_year_button'):
+                today = datetime.today()
+                year_start = today.replace(month=1, day=1)
+                self._dates[column] = (year_start.date(), today.date())
+
+        dates = self._dates.get(column, (min_val, max_val))
         try:
             start_date, end_date = dates
         except ValueError:

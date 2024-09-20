@@ -10,6 +10,7 @@ the user should be able to view the following data:
 """
 import streamlit as st
 import pandas as pd
+
 from fad.app.utils.data import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
 from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
@@ -43,32 +44,37 @@ with categories_tab:
                "</p>",
                unsafe_allow_html=True)
     # filter data by user input
-    widgets_map = {
-        date_col: 'date_range',
-        TransactionsTableFields.PROVIDER.value: 'multiselect',
-        TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
-        TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
-    }
-    df_filter = PandasFilterWidgets(expenses_data.copy(), widgets_map, "expenses_analysis_categories")
-    filtered_data = df_filter.filter_df()
+    if st.session_state.get("categories_filters_widgets", None) is None:
+        widgets_map = {
+            date_col: 'date_range',
+            TransactionsTableFields.PROVIDER.value: 'multiselect',
+            TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+            TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+        }
+        df_filter_ctgs = PandasFilterWidgets(expenses_data.copy(), widgets_map, "expenses_analysis_categories")
+        st.session_state.categories_filters_widgets = df_filter_ctgs
+    else:
+        df_filter_ctgs = st.session_state.categories_filters_widgets
+    df_filter_ctgs.display_widgets()
+    filtered_data_ctgs = df_filter_ctgs.filter_df()
 
     ignore_uncategorized = st.checkbox("Ignore Uncategorized", key="expenses_analysis_ignore_uncategorized_categories")
     if ignore_uncategorized:
-        filtered_data = filtered_data[~filtered_data[category_col].isnull()]
+        filtered_data_ctgs = filtered_data_ctgs[~filtered_data_ctgs[category_col].isnull()]
     else:
-        filtered_data.loc[filtered_data[category_col].isnull(), category_col] = "Uncategorized"
+        filtered_data_ctgs.loc[filtered_data_ctgs[category_col].isnull(), category_col] = "Uncategorized"
 
     st.plotly_chart(
-        bar_plot_by_categories(filtered_data, amount_col, category_col)
+        bar_plot_by_categories(filtered_data_ctgs, amount_col, category_col)
     )
     st.plotly_chart(
-        pie_plot_by_categories(filtered_data, amount_col, category_col)
+        pie_plot_by_categories(filtered_data_ctgs, amount_col, category_col)
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1Y")
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data, amount_col, category_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1M")
     )
 
 with tags_tab:
@@ -77,28 +83,33 @@ with tags_tab:
                "</p>",
                unsafe_allow_html=True)
     # filter data by user input
-    widgets_map = {
-        date_col: 'date_range',
-        TransactionsTableFields.PROVIDER.value: 'multiselect',
-        TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
-        TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
-        TransactionsTableFields.CATEGORY.value: 'select',
-    }
-    df_filter = PandasFilterWidgets(expenses_data.copy(), widgets_map, "expenses_analysis_tags")
-    filtered_data = df_filter.filter_df()
+    if st.session_state.get("tags_filters_widgets", None) is None:
+        widgets_map = {
+            date_col: 'date_range',
+            TransactionsTableFields.PROVIDER.value: 'multiselect',
+            TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+            TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+            TransactionsTableFields.CATEGORY.value: 'select',
+        }
+        df_filter_tags = PandasFilterWidgets(expenses_data.copy(), widgets_map, "expenses_analysis_tags")
+        st.session_state.tags_filters_widgets = df_filter_tags
+    else:
+        df_filter_tags = st.session_state.tags_filters_widgets
+    df_filter_tags.display_widgets()
+    filtered_data_tags = df_filter_tags.filter_df()
 
     ignore_uncategorized = st.checkbox("Ignore Uncategorized", key="expenses_analysis_ignore_uncategorized_tags")
     if ignore_uncategorized:
-        filtered_data = filtered_data[~filtered_data[tag_col].isnull()]
+        filtered_data_tags = filtered_data_tags[~filtered_data_tags[tag_col].isnull()]
     else:
-        filtered_data.loc[filtered_data[tag_col].isnull(), tag_col] = "No tag"
+        filtered_data_tags.loc[filtered_data_tags[tag_col].isnull(), tag_col] = "No tag"
 
     st.plotly_chart(
-        bar_plot_by_categories(filtered_data, amount_col, tag_col)
+        bar_plot_by_categories(filtered_data_tags, amount_col, tag_col)
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1Y")
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data, amount_col, tag_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1M")
     )

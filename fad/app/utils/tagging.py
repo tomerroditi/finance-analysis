@@ -787,20 +787,6 @@ class CategoriesAndTags:
                          TransactionsTableFields.STATUS.value,
                          TransactionsTableFields.TYPE.value]
 
-        # display the data
-        widgets_map = {
-            TransactionsTableFields.AMOUNT.value: 'number_range',
-            TransactionsTableFields.DATE.value: 'date_range',
-            TransactionsTableFields.PROVIDER.value: 'multiselect',
-            TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
-            TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
-            TransactionsTableFields.DESCRIPTION.value: 'multiselect',
-            TransactionsTableFields.CATEGORY.value: 'multiselect',
-            TransactionsTableFields.TAG.value: 'multiselect',
-            TransactionsTableFields.STATUS.value: 'multiselect',
-            TransactionsTableFields.TYPE.value: 'multiselect',
-        }
-
         table_type = st.selectbox(
             'Select data table to edit:',
             [credit_card_table.replace('_', ' '), bank_table.replace('_', ' ')],
@@ -815,11 +801,28 @@ class CategoriesAndTags:
             df_data = bank_data
             prefix = 'bank_'
 
-        widget_col, data_col = st.columns([0.2, 0.8])
+        widget_col, data_col = st.columns([0.3, 0.7])
 
         # filter the data according to the user's input
         with widget_col:
-            df_filter = PandasFilterWidgets(df_data, widgets_map, keys_prefix=prefix)
+            if st.session_state.get(f"manual_tagging_filter_widgets_{table_type}", None) is None:
+                widgets_map = {
+                    TransactionsTableFields.AMOUNT.value: 'number_range',
+                    TransactionsTableFields.DATE.value: 'date_range',
+                    TransactionsTableFields.PROVIDER.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+                    TransactionsTableFields.DESCRIPTION.value: 'multiselect',
+                    TransactionsTableFields.CATEGORY.value: 'multiselect',
+                    TransactionsTableFields.TAG.value: 'multiselect',
+                    TransactionsTableFields.STATUS.value: 'multiselect',
+                    TransactionsTableFields.TYPE.value: 'multiselect',
+                }
+                df_filter = PandasFilterWidgets(df_data, widgets_map, keys_prefix=prefix)
+                st.session_state[f"manual_tagging_filter_widgets_{table_type}"] = df_filter
+            else:
+                df_filter = st.session_state[f"manual_tagging_filter_widgets_{table_type}"]
+            df_filter.display_widgets()
             df_data = df_filter.filter_df()
 
         # display the data and bulk edit it
