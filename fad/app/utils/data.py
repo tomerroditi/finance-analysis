@@ -50,7 +50,6 @@ bank_account_name_col = BankTableFields.ACCOUNT_NAME.value
 bank_amount_col = BankTableFields.AMOUNT.value
 
 
-
 def get_db_connection() -> SQLConnection:
     """
     Get a connection to the database

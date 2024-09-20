@@ -259,7 +259,7 @@ def add_new_data_source(credentials: dict, service: Literal['credit_cards', 'ban
 
     if account_name is None or account_name == '':  # if the user didn't enter an account name
         if st.button('Cancel', key=f'cancel_add_new_{service}'):
-            CacheUtils.clear_session_state()
+            st.session_state.clear()  # TODO: reduce the clear to only relevant keys of new data source
             st.rerun()
         return
 
