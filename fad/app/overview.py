@@ -9,6 +9,20 @@ from fad import DB_PATH
 
 st.set_page_config(layout='wide')
 
+st.navigation(
+    [
+        st.Page("overview.py", title="Overview"),
+        st.Page("pages/budget management.py", title="Budget Management"),
+        st.Page("pages/income_outcome_analysis.py", title="Income/Outcome Analysis"),
+        st.Page("pages/paycheks.py", title="Paychecks"),
+        st.Page("pages/savings and investments.py", title="Savings and Investments"),
+        st.Page("pages/tagging.py", title="Tagging"),
+        st.Page("pages/settings.py", title="Settings"),
+
+    ]
+)
+
+
 conn = get_db_connection()
 
 latest_data_date = get_latest_data_date(conn) - dt.timedelta(days=14)
@@ -20,4 +34,3 @@ if st.button("Fetch Data") or st.session_state.get("pulling_data", False):
     pull_data(start_date, creds, DB_PATH)
     ct = CategoriesAndTags(conn)
     ct.update_raw_data_by_rules()
-    # TODO: add auto tagger tagging for the new pulled data
