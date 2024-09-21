@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import streamlit_antd_components as sac
 from sqlalchemy.sql import text
 
 from datetime import datetime
@@ -83,28 +84,30 @@ class PandasFilterWidgets:
         max_val = datetime.today().date()
         min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
 
-        custom_col, curr_month_col, curr_year_col = st.columns([3, 1, 1])
-        with custom_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        selection = sac.buttons(
+            items=["Custom Date", "Current Month", "Current Year"],
+            use_container_width=True,
+            variant='outline',
+            color=None,
+            index=0,
+            direction='horizontal',
+            key=f'{self.keys_prefix}_{column}_buttons'
+        )
+        if selection == "Custom Date":
             name = column.replace('_', ' ').title()
-            prev_custom_dates = self._dates.get(f"{column}_custom", (min_val, max_val))
             _dates = st.date_input(
                 name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input',
             )
-            if _dates != prev_custom_dates:
-                self._dates[f"{column}_custom"] = _dates
-                self._dates[column] = _dates
-        with curr_month_col:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Last Month", key=f'{self.keys_prefix}_{column}_last_month_button'):
-                today = datetime.today()
-                month_start = today.replace(day=1)
-                self._dates[column] = (month_start.date(), today.date())
-        with curr_year_col:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Last Year", key=f'{self.keys_prefix}_{column}_last_year_button'):
-                today = datetime.today()
-                year_start = today.replace(month=1, day=1)
-                self._dates[column] = (year_start.date(), today.date())
+            self._dates[column] = _dates
+        elif selection == "Current Month":
+            today = datetime.today()
+            month_start = today.replace(day=1)
+            self._dates[column] = (month_start.date(), today.date())
+        elif selection == "Current Year":
+            today = datetime.today()
+            year_start = today.replace(month=1, day=1)
+            self._dates[column] = (year_start.date(), today.date())
 
         dates = self._dates.get(column, (min_val, max_val))
         try:
