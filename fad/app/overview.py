@@ -6,23 +6,6 @@ from fad.app.utils.credentials import load_credentials
 from fad.app.utils.tagging import CategoriesAndTags
 from fad import DB_PATH
 
-
-st.set_page_config(layout='wide')
-
-st.navigation(
-    [
-        st.Page("overview.py", title="Overview"),
-        st.Page("pages/budget management.py", title="Budget Management"),
-        st.Page("pages/income_outcome_analysis.py", title="Income/Outcome Analysis"),
-        st.Page("pages/paycheks.py", title="Paychecks"),
-        st.Page("pages/savings and investments.py", title="Savings and Investments"),
-        st.Page("pages/tagging.py", title="Tagging"),
-        st.Page("pages/settings.py", title="Settings"),
-
-    ]
-)
-
-
 conn = get_db_connection()
 
 latest_data_date = get_latest_data_date(conn) - dt.timedelta(days=14)

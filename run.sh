@@ -1,1 +1,1 @@
-streamlit run fad\\app\\overview.py
+streamlit run main.py
