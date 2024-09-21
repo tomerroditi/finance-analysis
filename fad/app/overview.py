@@ -7,6 +7,8 @@ from fad.app.utils.tagging import CategoriesAndTags
 from fad import DB_PATH
 
 
+st.set_page_config(layout='wide')
+
 conn = get_db_connection()
 
 latest_data_date = get_latest_data_date(conn) - dt.timedelta(days=14)
