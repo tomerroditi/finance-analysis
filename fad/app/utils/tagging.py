@@ -89,14 +89,18 @@ class CategoriesAndTags:
         )
         # TODO: add detailed instructions on how to use the special categories
 
-        add_cat_col, reallocate_tags_col, _ = st.columns([0.2, 0.2, 0.6])
+        add_cat_col, reallocate_tags_col, _ = st.columns([0.15, 0.15, 0.7])
         # add new categories
         with add_cat_col:
-            st.button('New Category', key='add_new_category_button', on_click=self._add_new_category)
+            st.button(
+                'New Category', 'add_new_category_button', on_click=self._add_new_category, use_container_width=True
+            )
 
         # reallocate tags
         with reallocate_tags_col:
-            st.button('Reallocate Tags', key='reallocate_tags_button', on_click=self._reallocate_tags)
+            st.button(
+                'Reallocate Tags', 'reallocate_tags_button', on_click=self._reallocate_tags, use_container_width=True
+            )
 
         # Iterate over a copy of the dictionary's items and display the categories and tags and allow editing
         for category, tags in list(self.categories_and_tags.items()):
