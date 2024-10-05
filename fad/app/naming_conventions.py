@@ -8,6 +8,7 @@ class Tables(Enum):
     INSURANCE = 'insurance_transactions'
     SAVINGS = 'savings'
     TAGS = 'tags'
+    BUDGET_RULES = 'budget_rules'
 
 
 def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -28,7 +29,7 @@ fields = [
     ('TAG', 'tag'),
 ]
 
-TransactionsTableFields = create_enum('TransactionsTableFields', fields)
+TransactionsTableFields = create_enum('TransactionsTableFields', fields)  # TODO: change to expenses table fields
 CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
 
@@ -39,6 +40,15 @@ class TagsTableFields(Enum):
     TAG = 'tag'
     SERVICE = 'service'
     ACCOUNT_NUMBER = 'account_number'
+
+
+class BudgetRulesTableFields(Enum):
+    ID = "id"
+    YEAR = 'year'
+    MONTH = 'month'
+    CATEGORY = 'category'
+    TAGs = 'tags'
+    USER = 'user'
 
 
 class Services(Enum):

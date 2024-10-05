@@ -73,6 +73,15 @@ def assure_tags_table(conn: SQLConnection):
         s.commit()
 
 
+def create_budget_rules_table(conn: SQLConnection):
+    """create the budget table if it doesn't exist"""
+    with conn.session as s:
+        s.execute(
+            text(f'CREATE TABLE IF NOT EXISTS budget_rules (id INTEGER PRIMARY KEY, name TEXT, amount REAL, '
+                 f'category TEXT, tag TEXT, year INTEGER, month INTEGER);'))
+        s.commit()
+
+
 def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
     """
     Get the data from the given table
@@ -89,6 +98,11 @@ def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
     pd.DataFrame
         The data from the table
     """
+    if table_name == tags_table:
+        assure_tags_table(conn)
+    elif table_name == Tables.BUDGET_RULES.value:
+        create_budget_rules_table(conn)
+
     try:
         return conn.query(f'SELECT * FROM {table_name};', ttl=0)
     except sqlalchemy.exc.OperationalError:
