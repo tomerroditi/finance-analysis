@@ -212,10 +212,10 @@ def budget_overview(year: int, month: int):
 
     total_budget_rule = budget_rules_data.loc[budget_rules_data["category"] == "Total Budget"]
     budget_rules_data = budget_rules_data.loc[~budget_rules_data.index.isin(total_budget_rule.index)]
-    curr_sum = data[TransactionsTableFields.AMOUNT.value].sum()
-    if curr_sum != 0:
-        curr_sum *= -1
-    rule_window(total_budget_rule.iloc[0], curr_sum, allow_edit=True, allow_delete=False)
+    total_sum = data[TransactionsTableFields.AMOUNT.value].sum()
+    if total_sum != 0:
+        total_sum *= -1  # expenses are negative values
+    rule_window(total_budget_rule.iloc[0], total_sum, allow_edit=True, allow_delete=False)
 
     for _, rule in budget_rules_data.iterrows():
         tags = rule["tags"].split(";")
@@ -224,11 +224,12 @@ def budget_overview(year: int, month: int):
         data = data.loc[~data.index.isin(curr_data.index)]
         if tags != ["All tags"]:
             curr_data = curr_data.loc[curr_data[TransactionsTableFields.TAG.value].isin(tags)]
-        curr_sum = curr_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+        curr_sum = curr_data[TransactionsTableFields.AMOUNT.value].sum()
         if curr_sum != 0:
-            curr_sum *= -1
+            curr_sum *= -1  # expenses are negative values
         rule_window(rule, curr_sum)
 
+    # add other expenses window in case we have expenses not covered by any rule
     if not data.empty and not budget_rules_data.empty:
         total_budget = total_budget_rule.iloc[0]["amount"]
         rule = pd.Series({
@@ -236,7 +237,7 @@ def budget_overview(year: int, month: int):
             "amount": total_budget - budget_rules_data["amount"].sum(),
             "category": "Other Expenses",
             "tags": "Other Expenses",
-            "id": -1
+            "id": f"{year}{month}_Other_Expenses"
         })
         rule_window(rule, data[TransactionsTableFields.AMOUNT.value].sum() * -1, allow_edit=False, allow_delete=False)
 
