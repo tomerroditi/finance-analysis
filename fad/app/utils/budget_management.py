@@ -11,6 +11,9 @@ from fad.app.utils.data import get_db_connection, get_table, get_categories_and_
 # TODO: refactor this module to use the naming conventions and to be more modular and clean
 
 
+###################################################
+# Monthly Budget Management
+###################################################
 @st.fragment
 def select_custom_month():
     with st.expander("View Historical Data"):
@@ -194,10 +197,15 @@ def budget_overview(year: int, month: int):
     expenses_data[TransactionsTableFields.DATE.value] = pd.to_datetime(
         expenses_data[TransactionsTableFields.DATE.value])
 
-    # fetch data from database based on the selected month view
+    # fetch data from database based on the selected month view, and exclude projects expenses
+    projects_categories = budget_rules.loc[
+        (budget_rules["year"].isnull()) &
+        (budget_rules["month"].isnull())
+    ]["category"].unique()
     data = expenses_data.loc[
-        (expenses_data[TransactionsTableFields.DATE.value].dt.year == year) &
-        (expenses_data[TransactionsTableFields.DATE.value].dt.month == month)
+        (expenses_data[TransactionsTableFields.DATE.value].dt.year == year)
+        & (expenses_data[TransactionsTableFields.DATE.value].dt.month == month)
+        & ~expenses_data[TransactionsTableFields.CATEGORY.value].isin(projects_categories)
     ]
 
     # fetch budget rules of the selected month view
@@ -276,6 +284,10 @@ def rule_window(rule: pd.Series, curr_amount: float, allow_edit: bool = True, al
         disabled=not allow_edit
     )
 
+    # is_project_rule = pd.isnull(rule["year"]) and pd.isnull(rule["month"])
+    # if is_project_rule:
+    #     return  # we never let the user delete a project rule, so we hide the button (?)
+
     delete_col.button(
         "Delete",
         key=f"delete_{rule['id']}_submit",
@@ -288,11 +300,13 @@ def rule_window(rule: pd.Series, curr_amount: float, allow_edit: bool = True, al
 
 @st.dialog("Edit Rule")
 def edit_budget_rule_dialog(rule: pd.Series):
+    # TODO: add verification that the new amount does not exceed the total budget when summing all rules
+    is_project_rule = pd.isnull(rule["year"]) and pd.isnull(rule["month"])
     if rule["category"] != "Total Budget":
         cat_n_tags = get_categories_and_tags()
-        name = st.text_input("Name", value=rule['name'], key=f"edit_{rule['id']}_name")
-        category = st.selectbox("Category", options=cat_n_tags.keys(), index=list(cat_n_tags.keys()).index(rule['category']), key=f"edit_{rule['id']}_category")
-        tags = st.multiselect("Tags", options=['All tags'] + cat_n_tags.get(category, []), default=rule['tags'].split(";"), key=f"edit_{rule['id']}_tags")
+        name = st.text_input("Name", value=rule['name'], key=f"edit_{rule['id']}_name", disabled=is_project_rule)
+        category = st.selectbox("Category", options=cat_n_tags.keys(), index=list(cat_n_tags.keys()).index(rule['category']), key=f"edit_{rule['id']}_category", disabled=is_project_rule)
+        tags = st.multiselect("Tags", options=['All tags'] + cat_n_tags.get(category, []), default=rule['tags'].split(";"), key=f"edit_{rule['id']}_tags", disabled=is_project_rule)
     else:
         name = rule['name']
         category = rule['category']
@@ -334,3 +348,144 @@ def delete_budget_rule_dialog(id_: int):
         st.rerun()
     if st.button("No"):
         st.rerun()
+
+
+###################################################
+# Project Budget Management
+###################################################
+@st.dialog("Select Project")
+def add_new_project():
+    budget_rules = get_table(get_db_connection(), Tables.BUDGET_RULES.value)
+    curr_projects = budget_rules.loc[
+        (budget_rules["year"].isnull()) &
+        (budget_rules["month"].isnull())
+    ]
+
+    cat_n_tags = deepcopy(get_categories_and_tags())
+    for _, rule in curr_projects.iterrows():
+        cat_n_tags.pop(rule["category"], None)
+
+    # select the category for which the project is related to
+    category = st.selectbox("Select project category", cat_n_tags.keys(), key="new_project_category", index=None)
+    # add a total budget rule, this could not be deleted hence if curr rules are not empty it must already exist
+    col_input, col_set = st.columns([3, 1])
+    total_budget = col_input.number_input("Set your total budget for the project", key="total_budget_project_input", value=1)
+    if total_budget <= 0:
+        st.error("Total budget must be a positive number")
+
+    col_set.markdown("<br>", unsafe_allow_html=True)
+    if col_set.button("Set", key="set_total_budget_project_button", use_container_width=True):
+        conn = get_db_connection()
+        with conn.session as s:
+            cmd = sa.text(
+                f"INSERT INTO {Tables.BUDGET_RULES.value} (name, amount, category, tags, month, year) VALUES "
+                f"(:name, :amount, :category, :tags, :month, :year)"
+            )
+            params = {
+                "name": "Total Budget",
+                "amount": total_budget,
+                "category": category,
+                "tags": "All tags",
+                "month": None,
+                "year": None
+            }
+            s.execute(cmd, params)
+            s.commit()
+        st.rerun()
+
+
+def delete_project(name: str):
+    conn = get_db_connection()
+    with conn.session as s:
+        cmd = sa.text(
+            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE category = :category AND year IS NULL AND month IS NULL"
+        )
+        s.execute(cmd, {"category": name})
+        s.commit()
+
+
+def select_project() -> str | None:
+    budget_rules = get_table(get_db_connection(), Tables.BUDGET_RULES.value)
+    curr_projects = budget_rules.loc[
+        (budget_rules["year"].isnull()) &
+        (budget_rules["month"].isnull())
+    ]
+    project = st.selectbox("Select Project", curr_projects["category"].unique(), key="project_selection", index=None)
+    if project is None:
+        return None
+    return project
+
+
+def view_project_rules(project: str):
+    conn = get_db_connection()
+
+    rules = get_table(conn, Tables.BUDGET_RULES.value)
+    rules = rules.loc[
+        (rules["category"] == project)
+        & rules["year"].isnull()
+        & rules["month"].isnull()
+    ]
+
+    cat_n_tags = deepcopy(get_categories_and_tags())
+    tags = cat_n_tags.get(project, [])
+    for tag in tags:  # add missing tags of the project to the rules
+        if tag in rules["tags"].values:
+            continue
+        with conn.session as s:
+            cmd = sa.text(
+                f"INSERT INTO {Tables.BUDGET_RULES.value} (name, amount, category, tags, month, year) VALUES "
+                f"(:name, :amount, :category, :tags, :month, :year)"
+            )
+            params = {
+                "name": tag,
+                "amount": 1,
+                "category": project,
+                "tags": tag,
+                "month": None,
+                "year": None
+            }
+            s.execute(cmd, params)
+            s.commit()
+
+    for tag in rules["tags"].values:  # remove tags that are not in the project anymore
+        if tag not in tags + ["All tags"]:
+            with conn.session as s:
+                cmd = sa.text(
+                    f"DELETE FROM {Tables.BUDGET_RULES.value} "
+                    f"WHERE category = :category AND tags = :tags AND year IS NULL AND month IS NULL"
+                )
+                params = {
+                    "category": project,
+                    "tags": tag
+                }
+                s.execute(cmd, params)
+                s.commit()
+
+    rules = get_table(conn, Tables.BUDGET_RULES.value)
+    rules = rules.loc[
+        (rules["category"] == project)
+        & rules["year"].isnull()
+        & rules["month"].isnull()
+    ]
+
+    bank_data = get_table(conn, Tables.BANK.value)
+    credit_card_data = get_table(conn, Tables.CREDIT_CARD.value)
+    all_data = pd.concat([credit_card_data, bank_data])
+    project_data = all_data.loc[
+        all_data[TransactionsTableFields.CATEGORY.value] == project
+    ]
+
+    total_budget_rule = rules.loc[rules["tags"] == "All tags"]
+    total_sum = project_data[TransactionsTableFields.AMOUNT.value].sum()
+    if total_sum != 0:
+        total_sum *= -1
+    rule_window(total_budget_rule.iloc[0], total_sum, allow_edit=True, allow_delete=False)
+
+    rules = rules.loc[~rules.index.isin(total_budget_rule.index)]
+    for _, rule in rules.iterrows():
+        tag = rule["tags"]
+        curr_data = project_data.loc[project_data[TransactionsTableFields.TAG.value] == tag]
+        curr_sum = curr_data[TransactionsTableFields.AMOUNT.value].sum()
+        if curr_sum != 0:
+            curr_sum *= -1
+        rule_window(rule, curr_sum, allow_edit=True, allow_delete=False)
