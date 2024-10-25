@@ -28,7 +28,6 @@ from fad.app.utils.budget_management import select_custom_month, select_current_
 monthly_tab, project_tab = st.tabs(["Monthly Budget Management", "Project Budget Management"])
 
 with monthly_tab:
-    # TODO: exclude project expenses from monthly budget
     # TODO: view raw data of the defined rules expenses
     st.session_state.setdefault("year", pd.Timestamp.now().year)
     st.session_state.setdefault("month", pd.Timestamp.now().month)

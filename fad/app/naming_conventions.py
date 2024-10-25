@@ -47,8 +47,9 @@ class BudgetRulesTableFields(Enum):
     YEAR = 'year'
     MONTH = 'month'
     CATEGORY = 'category'
-    TAGs = 'tags'
-    USER = 'user'
+    TAGS = 'tags'
+    NAME = 'name'
+    AMOUNT = 'amount'
 
 
 class Services(Enum):

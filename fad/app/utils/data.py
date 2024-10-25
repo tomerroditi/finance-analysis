@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy.sql import text
 from threading import Thread
+from copy import deepcopy
 
 from streamlit.connections import SQLConnection
 from datetime import datetime, timedelta
@@ -109,7 +110,7 @@ def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def get_categories_and_tags() -> dict:
+def get_categories_and_tags(copy: bool = False) -> dict:
     """
     Get the categories and tags from the yaml file
 
@@ -121,6 +122,9 @@ def get_categories_and_tags() -> dict:
     if 'categories_and_tags' not in st.session_state:
         with open(CATEGORIES_PATH, 'r') as file:
             st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
+
+    if copy:
+        return deepcopy(st.session_state['categories_and_tags'])
     return st.session_state['categories_and_tags']
 
 
