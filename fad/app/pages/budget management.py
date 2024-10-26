@@ -43,7 +43,7 @@ with monthly_tab:
 
     year, month = st.session_state.year, st.session_state.month
 
-    add_rule_col, copy_rules_col = st.columns([4, 1])
+    add_rule_col, copy_rules_col, _ = st.columns([2, 2, 6])
     with add_rule_col:
         add_new_rule(year, month, budget_rules)
 

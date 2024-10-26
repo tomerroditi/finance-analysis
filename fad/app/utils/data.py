@@ -357,9 +357,11 @@ def format_category_or_tag_strings(*args) -> None | str | tuple[str | None, ...]
                 st.error(f'categories and tags must not contain ";". please rename: {arg}')
                 st.stop()
             if arg.isupper():  # all caps should be kept as is (e.g. 'ATM')
-                formated_strings.append(arg)
+                arg = arg
             else:
-                formated_strings.append(arg.title())
+                arg = arg.title()
+            arg = arg.strip()
+            formated_strings.append(arg)
         else:
             raise ValueError('all arguments should be strings or null')
     if len(formated_strings) == 1:
