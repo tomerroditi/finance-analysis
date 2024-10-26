@@ -26,34 +26,33 @@ conn = get_db_connection()
 ###################################################
 # Monthly Budget Management
 ###################################################
-@st.fragment
+@st.dialog("Custom Month Selection")
 def select_custom_month():
     """
     This function creates a UI for selecting a custom month and year to view its budget. The selected month and year are
     stored in the session state variables `year` and `month`
     """
-    with st.expander("View Historical Data"):
-        curr_year = datetime.now().year
-        year_col, month_col, view_col = st.columns([1, 1, 1])
-        years = [i for i in range(curr_year - 50, curr_year + 1)]
-        years.reverse()
-        year_ = year_col.selectbox(
-            "Year",
-            years,
-            index=None,
-            key="budget_custom_year_selection"
-        )
+    curr_year = datetime.now().year
+    year_col, month_col, view_col = st.columns([1, 1, 1])
+    years = [i for i in range(curr_year - 50, curr_year + 1)]
+    years.reverse()
+    year_ = year_col.selectbox(
+        "Year",
+        years,
+        index=None,
+        key="budget_custom_year_selection"
+    )
 
-        if year_ == curr_year:
-            months = [i for i in range(1, datetime.now().month + 1)]
-        else:
-            months = [i for i in range(1, 13)]
-        month_ = month_col.selectbox(
-            "Month", months, index=None, key="budget_custom_month_selection"
-        )
+    if year_ == curr_year:
+        months = [i for i in range(1, datetime.now().month + 1)]
+    else:
+        months = [i for i in range(1, 13)]
+    month_ = month_col.selectbox(
+        "Month", months, index=None, key="budget_custom_month_selection"
+    )
 
-        view_col.markdown("<br>", unsafe_allow_html=True)
-        if view_col.button("View", use_container_width=True):
+    view_col.markdown("<br>", unsafe_allow_html=True)
+    if view_col.button("View", use_container_width=True):
             if year_ is None or month_ is None:
                 st.error("Please select a year and a month")
             st.session_state.year = year_
@@ -66,9 +65,45 @@ def select_current_month() -> None:
     This function creates a UI for selecting the current month and year to view its budget. The selected month and year
     are stored in the session state variables `year` and `month`
     """
-    if st.button("Current Month"):
+    if st.button("Current Month", key="current_month_button_budget", use_container_width=True):
         st.session_state.year = datetime.now().year
         st.session_state.month = datetime.now().month
+
+
+def select_next_month() -> None:
+    """
+    This function creates a UI for selecting the next month and year to view its budget. The selected month and year are
+    stored in the session state variables `year` and `month`
+    """
+    if st.button("Next Month", key="next_month_button_budget", use_container_width=True):
+        year = st.session_state.year
+        month = st.session_state.month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+
+        st.session_state.year = year
+        st.session_state.month = month
+
+
+def select_previous_month() -> None:
+    """
+    This function creates a UI for selecting the previous month and year to view its budget. The selected month and year
+    are stored in the session state variables `year` and `month`
+    """
+    if st.button("Previous Month", key="previous_month_button_budget", use_container_width=True):
+        year = st.session_state.year
+        month = st.session_state.month
+        if month == 1:
+            year -= 1
+            month = 12
+        else:
+            month -= 1
+
+        st.session_state.year = year
+        st.session_state.month = month
 
 
 @st.fragment
@@ -277,7 +312,7 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
     total_sum = data[TransactionsTableFields.AMOUNT.value].sum()
     if total_sum != 0:
         total_sum *= -1  # expenses are negative values
-    _rule_ui_window(budget_rules, total_budget_rule.iloc[0], total_sum, allow_edit=True, allow_delete=False)
+    _rule_ui_window(budget_rules, total_budget_rule.iloc[0], total_sum, data, allow_edit=True, allow_delete=False)
 
     for _, rule in budget_rules_data.iterrows():
         tags = rule[TAGS].split(";")
@@ -288,7 +323,7 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
         curr_sum = curr_data[TransactionsTableFields.AMOUNT.value].sum()
         if curr_sum != 0:
             curr_sum *= -1  # expenses are negative values
-        _rule_ui_window(budget_rules, rule, curr_sum)
+        _rule_ui_window(budget_rules, rule, curr_sum, curr_data)
 
     # add other expenses window in case we have expenses not covered by any rule
     if not data.empty and not budget_rules_data.empty:
@@ -301,13 +336,14 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
             ID: f"{year}{month}_Other_Expenses"
         })
         amount = data[TransactionsTableFields.AMOUNT.value].sum() * -1
-        _rule_ui_window(budget_rules, rule, amount, allow_edit=False, allow_delete=False)
+        _rule_ui_window(budget_rules, rule, amount, data, allow_edit=False, allow_delete=False)
 
 
 def _rule_ui_window(
         budget_rules: pd.DataFrame,
         rule: pd.Series,
         curr_amount: float,
+        raw_data: pd.DataFrame,
         allow_edit: bool = True,
         allow_delete: bool = True
 ) -> None:
@@ -325,12 +361,14 @@ def _rule_ui_window(
         the budget rule to display
     curr_amount: float
         the amount of money spent on the rule
+    raw_data: pd.DataFrame
+        the raw data of the expenses related to the rule
     allow_edit:
         a boolean flag that indicates whether the user is allowed to edit the rule
     allow_delete:
         a boolean flag that indicates whether the user is allowed to delete the rule
     """
-    name_col, bar_col, edit_col, delete_col = st.columns([2, 6, 1, 1])
+    expand_col, name_col, bar_col, edit_col, delete_col = st.columns([1, 4, 12, 2, 2])
 
     if rule[CATEGORY] == TOTAL_BUDGET:
         help_txt = "Total amount of money available for the month"
@@ -353,6 +391,24 @@ def _rule_ui_window(
         </div>
         """
     )
+
+    if expand_col.toggle("Expand", key=f"expand_{rule[ID]}", label_visibility="collapsed"):
+        st.dataframe(
+            raw_data.sort_values(by=[TransactionsTableFields.DATE.value], ascending=False),
+            column_order=[
+                TransactionsTableFields.PROVIDER.value,
+                TransactionsTableFields.ACCOUNT_NAME.value,
+                TransactionsTableFields.ACCOUNT_NUMBER.value,
+                TransactionsTableFields.DATE.value,
+                TransactionsTableFields.DESCRIPTION.value,
+                TransactionsTableFields.AMOUNT.value,
+                TransactionsTableFields.CATEGORY.value,
+                TransactionsTableFields.TAG.value,
+                TransactionsTableFields.STATUS.value,
+                TransactionsTableFields.ID.value
+
+            ]
+        )
 
     edit_col.button(
         "Edit",
@@ -809,7 +865,7 @@ def view_project_budget(project: str, budget_rules: pd.DataFrame):
     total_sum = project_data[TransactionsTableFields.AMOUNT.value].sum()
     if total_sum != 0:
         total_sum *= -1
-    _rule_ui_window(budget_rules, total_budget_rule.iloc[0], total_sum, allow_edit=True, allow_delete=False)
+    _rule_ui_window(budget_rules, total_budget_rule.iloc[0], total_sum, project_data, allow_edit=True, allow_delete=False)
 
     for _, rule in budget_rules.loc[budget_rules[TAGS] != ALL_TAGS].iterrows():
         tag = rule[TAGS]
@@ -817,7 +873,7 @@ def view_project_budget(project: str, budget_rules: pd.DataFrame):
         curr_sum = curr_data[TransactionsTableFields.AMOUNT.value].sum()
         if curr_sum != 0:
             curr_sum *= -1
-        _rule_ui_window(budget_rules, rule, curr_sum, allow_edit=True, allow_delete=False)
+        _rule_ui_window(budget_rules, rule, curr_sum, curr_data, allow_edit=True, allow_delete=False)
 
 
 def _assure_project_rules_integrity(project: str, project_budget_rules: pd.DataFrame) -> None:

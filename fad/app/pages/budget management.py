@@ -25,25 +25,36 @@ import streamlit as st
 from fad.app.naming_conventions import Tables
 from fad.app.utils.data import get_db_connection, get_table
 from fad.app.utils.budget_management import select_custom_month, select_current_month, add_new_rule, budget_overview, \
-    copy_last_month_rules, add_new_project, select_project, view_project_budget, delete_project
+    copy_last_month_rules, add_new_project, select_project, view_project_budget, delete_project, select_next_month, select_previous_month
 
 budget_rules = get_table(get_db_connection(), Tables.BUDGET_RULES.value)
 monthly_tab, project_tab = st.tabs(["Monthly Budget Management", "Project Budget Management"])
 
 with monthly_tab:
-    # TODO: view raw data of the defined rules expenses
+    # TODO: make the raw data editable from here as well
     st.session_state.setdefault("year", pd.Timestamp.now().year)
     st.session_state.setdefault("month", pd.Timestamp.now().month)
 
-    history_col, curr_month_col, _ = st.columns([3, 1, 4])
-    with history_col:
-        select_custom_month()
+    curr_month_col, previous_month_col, next_month_col, history_col = st.columns([1, 1, 1, 1])
     with curr_month_col:
         select_current_month()
+    with previous_month_col:
+        select_previous_month()
+    with next_month_col:
+        select_next_month()
+    with history_col:
+        st.button(
+            "Custom Month",
+            on_click=select_custom_month,
+            key="select_custom_month_budget",
+            use_container_width=True
+        )
 
     year, month = st.session_state.year, st.session_state.month
 
-    add_rule_col, copy_rules_col, _ = st.columns([2, 2, 6])
+    st.title(f"Budget of: {year}-{month}")
+
+    add_rule_col, copy_rules_col, _ = st.columns([1, 1, 2])
     with add_rule_col:
         add_new_rule(year, month, budget_rules)
 
