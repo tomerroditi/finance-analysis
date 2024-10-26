@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import streamlit as st
 import yaml
 import time
@@ -329,26 +331,40 @@ def update_db_table(conn: SQLConnection, table_name: str, edited_rows: pd.DataFr
         s.commit()
 
 
-def format_category_or_tag_strings(*args) -> tuple[str | None] | str | None:
+def format_category_or_tag_strings(*args) -> None | str | tuple[str | None, ...]:
     """
-    format the category and tag to be title case
+    Format the given strings to title case and return them as a tuple. if a string is empty or None it will be returned
+    as None, if a string is uppercase it will be returned as is. in case ';' is in the string an error will be raised
+    by streamlit and the script will stop.
 
     Parameters
     ----------
-    args: tuple[str | None]
-        sequence of strings to format to title case
+    args : str
+        The strings to format
 
     Returns
     -------
-    tuple
-        the formatted category and tag
+    None | str | tuple[str | None, ...]
+        The formatted strings. If only one string is given it will be returned as a string, otherwise as a tuple of
+        strings.
     """
-    assert all(
-        isinstance(arg, str) or arg is None or np.isnan(arg) for arg in args), 'all arguments should be strings'
-    strings = tuple(arg.title() if isinstance(arg, str) and arg != '' else None for arg in args)
-    if len(strings) == 1:
-        return strings[0]
-    return strings  # type: ignore
+    formated_strings = []
+    for arg in args:
+        if pd.isnull(arg) or arg == '':
+            formated_strings.append(None)
+        elif isinstance(arg, str):
+            if ';' in arg:
+                st.error(f'categories and tags must not contain ";". please rename: {arg}')
+                st.stop()
+            if arg.isupper():  # all caps should be kept as is (e.g. 'ATM')
+                formated_strings.append(arg)
+            else:
+                formated_strings.append(arg.title())
+        else:
+            raise ValueError('all arguments should be strings or null')
+    if len(formated_strings) == 1:
+        return formated_strings[0]
+    return tuple(formated_strings)
 
 
 def update_tags_according_to_auto_tagger():

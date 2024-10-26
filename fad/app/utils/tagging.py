@@ -168,7 +168,11 @@ class CategoriesAndTags:
         if st.button('Cancel'):
             st.rerun()
 
-        if st.button('Continue') and new_category != '' and new_category is not None:
+        if st.button('Continue'):
+            if new_category != '' or new_category is None:
+                st.error('Please enter a category name before continuing.')
+                st.stop()
+
             if new_category.lower() in existing_categories:
                 st.warning(f'The category "{new_category}" already exists. Please choose a different name.')
                 st.stop()
@@ -405,8 +409,8 @@ class CategoriesAndTags:
                     query = text(f'UPDATE {tags_table} SET {category_col}=:category, {tag_col}=:tag'
                                  f' WHERE {name_col}=:name AND {service_col}=:service;')
                     params = {
-                        'category': category if category != '' else None,
-                        'tag': tag if category != '' else None,
+                        'category': category,
+                        'tag': tag,
                         'name': row[name_col],
                         'service': service
                     }
