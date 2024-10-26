@@ -307,6 +307,7 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
         st.warning("No budget rules for the selected month")
         return
 
+    # display the total budget rule
     total_budget_rule = budget_rules_data.loc[budget_rules_data[CATEGORY] == TOTAL_BUDGET]
     budget_rules_data = budget_rules_data.loc[~budget_rules_data.index.isin(total_budget_rule.index)]
     total_sum = data[TransactionsTableFields.AMOUNT.value].sum()
@@ -314,6 +315,7 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
         total_sum *= -1  # expenses are negative values
     _rule_ui_window(budget_rules, total_budget_rule.iloc[0], total_sum, data, allow_edit=True, allow_delete=False)
 
+    # display the budget rules
     for _, rule in budget_rules_data.iterrows():
         tags = rule[TAGS].split(";")
         curr_data = data.loc[data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]]
@@ -325,7 +327,7 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
             curr_sum *= -1  # expenses are negative values
         _rule_ui_window(budget_rules, rule, curr_sum, curr_data)
 
-    # add other expenses window in case we have expenses not covered by any rule
+    # display other expenses rule in case we have expenses not covered by any rule
     if not data.empty and not budget_rules_data.empty:
         total_budget = total_budget_rule.iloc[0][AMOUNT]
         rule = pd.Series({
