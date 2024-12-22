@@ -78,6 +78,7 @@ class Scraper(ABC):
         The columns to sort the data by in the database to maintain consistency
     """
     requires_2fa = False
+    CANCEL = "cancel"
 
     def __init__(self, account_name: str, credentials: dict):
         """
@@ -169,7 +170,10 @@ class Scraper(ABC):
             return
 
         if self.data.empty:
-            print(f'{self.provider_name}: {self.account_name}: No transactions found')
+            if self.otp_code == self.CANCEL:
+                print(f'{self.provider_name}: {self.account_name}: The scraping process was canceled')
+            else:
+                print(f'{self.provider_name}: {self.account_name}: No transactions found')
             return
 
         self.data = self.data.sort_values(by=self.sort_by_columns)
@@ -320,7 +324,8 @@ class Scraper(ABC):
         Parameters
         ----------
         otp_code : str
-            The OTP (One-Time Password) code to be used for the 2FA process
+            The OTP (One-Time Password) code to be used for the 2FA process. entering "cancel" will cancel the scraping
+            process.
 
         Returns
         -------
@@ -542,6 +547,9 @@ class OneZeroScraper(BankScraper):
                     self.otp_code = "waiting for input"
                     if not self.otp_event.wait(timeout=120):
                         raise LoginError('Timeout: OTP code was not provided for 2FA')
+                    if self.otp_code == self.CANCEL:
+                        process.kill()
+                        return pd.DataFrame()
                     process.stdin.write(self.otp_code + '\n')
                     process.stdin.flush()
                     process.stdin.close()
@@ -551,9 +559,9 @@ class OneZeroScraper(BankScraper):
                     break
             sleep(0.3)
 
-        process.wait()  # wait for process to finish
+        while process.poll() is None:
+            self.result += process.stdout.readline()
 
-        self.result = process.stdout.read()
         self._handle_error(process.stderr.read())
 
         lines = self.result.split('\n')
