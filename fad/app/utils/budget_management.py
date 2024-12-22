@@ -278,10 +278,10 @@ def budget_overview(year: int, month: int, budget_rules: pd.DataFrame) -> None:
 
     expenses_data = all_data.loc[
         ~all_data[TransactionsTableFields.CATEGORY.value].isin([category.value for category in NonExpensesCategories])
-    ]
+    ].copy()
     liabilities_data = all_data.loc[
         all_data[TransactionsTableFields.CATEGORY.value] == NonExpensesCategories.LIABILITIES.value
-        ]
+        ].copy()
 
     expenses_data[TransactionsTableFields.DATE.value] = pd.to_datetime(
         expenses_data[TransactionsTableFields.DATE.value])
@@ -783,8 +783,8 @@ def add_new_project(budget_rules: pd.DataFrame) -> None:
         st.rerun()
 
 
+@st.dialog("Are you sure you want to delete this project?")
 def delete_project(name: str) -> None:
-    # TODO: add a dialog for asking the user if they are sure they want to delete the project
     """
     This function deletes a project from the database. the project is deleted by deleting all rules related to the
     project.
@@ -794,12 +794,16 @@ def delete_project(name: str) -> None:
     name: str
         the name of the project to delete
     """
-    with conn.session as s:
-        cmd = sa.text(
-            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE category = :category AND year IS NULL AND month IS NULL"
-        )
-        s.execute(cmd, {CATEGORY: name})
-        s.commit()
+    if st.button("Yes"):
+        with conn.session as s:
+            cmd = sa.text(
+                f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE category = :category AND year IS NULL AND month IS NULL"
+            )
+            s.execute(cmd, {CATEGORY: name})
+            s.commit()
+        st.rerun()
+    if st.button("No"):
+        st.rerun()
 
 
 def select_project(budget_rules: pd.DataFrame) -> str | None:
@@ -821,7 +825,7 @@ def select_project(budget_rules: pd.DataFrame) -> str | None:
         (budget_rules[YEAR].isnull()) &
         (budget_rules[MONTH].isnull())
     ]
-    project = st.selectbox("Select Project", curr_projects[CATEGORY].unique(), key="project_selection", index=None)
+    project = st.selectbox("Select Project", curr_projects[CATEGORY].unique(), key="project_selection")
     if project is None:
         return None
     return project
