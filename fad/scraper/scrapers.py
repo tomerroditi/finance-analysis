@@ -204,9 +204,14 @@ class Scraper(ABC):
             Additional arguments to pass to the scraping script
         """
         args = ['node', self.script_path, *args, start_date]
-        result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
-        self.result = result.stdout
-        self._handle_error(result.stderr)
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.result = result.stdout
+            self._handle_error(result.stderr)
+        except subprocess.TimeoutExpired:
+            self.result = ''
+            self.error = 'Timeout: The scraping process took too long (60 seconds) and was terminated'
+
         data = scraped_data_to_df(self.result)
         return data
 
@@ -280,6 +285,11 @@ class Scraper(ABC):
         LoginError
             If an error occurs during the scraping process
         """
+        # prevent taking warnings prints as errors, it is assumed that the actual login error starts with
+        # "logging error: " since we attach it to the error in the js script
+        error = error.split("logging error: ")
+        error = error[-1] if len(error) > 1 else ''
+
         if "GENERIC" in error:
             error = "check your card 6 digits"
         elif "INVALID_PASSWORD" in error:
@@ -299,7 +309,6 @@ class Scraper(ABC):
             credentials = yaml.safe_load(file)
 
         credentials[self.service_name][self.provider_name][self.account_name] = self.credentials
-
         with open(CREDENTIALS_PATH, 'w') as file:
             yaml.dump(credentials, file)
 

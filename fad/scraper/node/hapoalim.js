@@ -39,6 +39,6 @@ const start_date = args[2];
       throw new Error(`${scrapeResult.errorType}: ${scrapeResult.errorMessage}`);
     }
   } catch(e) {
-    console.error(e.message);
+    console.error(`logging error: ${e.message}`);
   }
 })();
