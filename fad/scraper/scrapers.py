@@ -167,6 +167,7 @@ class Scraper(ABC):
         try:
             self.scrape_data(start_date)
         except LoginError:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}')
             return
 
         if self.data.empty:
