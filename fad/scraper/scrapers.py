@@ -78,6 +78,7 @@ class Scraper(ABC):
         The columns to sort the data by in the database to maintain consistency
     """
     requires_2fa = False
+    CANCEL = "cancel"
 
     def __init__(self, account_name: str, credentials: dict):
         """
@@ -166,10 +167,14 @@ class Scraper(ABC):
         try:
             self.scrape_data(start_date)
         except LoginError:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}')
             return
 
         if self.data.empty:
-            print(f'{self.provider_name}: {self.account_name}: No transactions found')
+            if self.otp_code == self.CANCEL:
+                print(f'{self.provider_name}: {self.account_name}: The scraping process was canceled')
+            else:
+                print(f'{self.provider_name}: {self.account_name}: No transactions found')
             return
 
         self.data = self.data.sort_values(by=self.sort_by_columns)
@@ -204,9 +209,14 @@ class Scraper(ABC):
             Additional arguments to pass to the scraping script
         """
         args = ['node', self.script_path, *args, start_date]
-        result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
-        self.result = result.stdout
-        self._handle_error(result.stderr)
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=60)
+            self.result = result.stdout
+            self._handle_error(result.stderr)
+        except subprocess.TimeoutExpired:
+            self.result = ''
+            self.error = 'Timeout: The scraping process took too long (60 seconds) and was terminated'
+
         data = scraped_data_to_df(self.result)
         return data
 
@@ -280,6 +290,11 @@ class Scraper(ABC):
         LoginError
             If an error occurs during the scraping process
         """
+        # prevent taking warnings prints as errors, it is assumed that the actual login error starts with
+        # "logging error: " since we attach it to the error in the js script
+        error = error.split("logging error: ")
+        error = error[-1] if len(error) > 1 else ''
+
         if "GENERIC" in error:
             error = "check your card 6 digits"
         elif "INVALID_PASSWORD" in error:
@@ -299,7 +314,6 @@ class Scraper(ABC):
             credentials = yaml.safe_load(file)
 
         credentials[self.service_name][self.provider_name][self.account_name] = self.credentials
-
         with open(CREDENTIALS_PATH, 'w') as file:
             yaml.dump(credentials, file)
 
@@ -311,7 +325,8 @@ class Scraper(ABC):
         Parameters
         ----------
         otp_code : str
-            The OTP (One-Time Password) code to be used for the 2FA process
+            The OTP (One-Time Password) code to be used for the 2FA process. entering "cancel" will cancel the scraping
+            process.
 
         Returns
         -------
@@ -533,6 +548,9 @@ class OneZeroScraper(BankScraper):
                     self.otp_code = "waiting for input"
                     if not self.otp_event.wait(timeout=120):
                         raise LoginError('Timeout: OTP code was not provided for 2FA')
+                    if self.otp_code == self.CANCEL:
+                        process.kill()
+                        return pd.DataFrame()
                     process.stdin.write(self.otp_code + '\n')
                     process.stdin.flush()
                     process.stdin.close()
@@ -542,9 +560,9 @@ class OneZeroScraper(BankScraper):
                     break
             sleep(0.3)
 
-        process.wait()  # wait for process to finish
+        while process.poll() is None:
+            self.result += process.stdout.readline()
 
-        self.result = process.stdout.read()
         self._handle_error(process.stderr.read())
 
         lines = self.result.split('\n')

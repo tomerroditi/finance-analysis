@@ -142,6 +142,7 @@ class CategoriesAndTags:
             st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
                      "stocks, real estate, etc.")
         tags = self.categories_and_tags[category]
+        # TODO: make the displayed tags display the formatted tags and not the entered values
         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
         if new_tags != tags:
             new_tags = [format_category_or_tag_strings(tag) for tag in new_tags]
@@ -163,12 +164,16 @@ class CategoriesAndTags:
         None
         """
         existing_categories = [k.lower() for k in self.categories_and_tags.keys()]
-        new_category = st.text_input('New Category Name', key='new_category')
+        new_category = st.text_input('New Category Name', key='tagging new_category')
 
         if st.button('Cancel'):
             st.rerun()
 
-        if st.button('Continue') and new_category != '' and new_category is not None:
+        if st.button('Continue'):
+            if new_category == '' or new_category is None:
+                st.error(f'"{new_category}" is an invalid name,please enter new name.')
+                st.stop()
+
             if new_category.lower() in existing_categories:
                 st.warning(f'The category "{new_category}" already exists. Please choose a different name.')
                 st.stop()
@@ -405,8 +410,8 @@ class CategoriesAndTags:
                     query = text(f'UPDATE {tags_table} SET {category_col}=:category, {tag_col}=:tag'
                                  f' WHERE {name_col}=:name AND {service_col}=:service;')
                     params = {
-                        'category': category if category != '' else None,
-                        'tag': tag if category != '' else None,
+                        'category': category,
+                        'tag': tag,
                         'name': row[name_col],
                         'service': service
                     }
@@ -519,7 +524,7 @@ class CategoriesAndTags:
 
         if service == 'credit_card':
             st.subheader(f'Set new rules')
-            self._set_auto_tagger_rules_container(df_tags)
+            self._set_auto_tagger_rules_container(df_tags, widget_key_suffix='cc')
         elif service == 'bank':
             for account_number in df_tags[account_number_col].unique():
                 account_name_and_provider = self.conn.query(
@@ -536,27 +541,45 @@ class CategoriesAndTags:
                 account_provider = account_name_and_provider[bank_provider_col].iloc[0]
                 st.subheader(f'Set new rule for {account_name} - {account_provider}: {account_number}')
                 df = df_tags[df_tags[account_number_col] == account_number]
-                self._set_auto_tagger_rules_container(df)
+                self._set_auto_tagger_rules_container(df, widget_key_suffix=f'bank_{account_number}')
         else:
             raise ValueError(f"Invalid service name: {service}")
 
-    def _set_auto_tagger_rules_container(self, df: pd.DataFrame):
+    def _set_auto_tagger_rules_container(self, df: pd.DataFrame, widget_key_suffix: str) -> None:
+        if df.empty:
+            st.write("No transactions to set new rules to")
+            return
+
         df = df.copy()
-        df = df.sort_values(by=name_col)
+        df = df.sort_values(by=name_col).reset_index(drop=True)
+
+        # after adding a rule the df is shorter hence a new widget is created, we want to keep the last selected index
+        # to provide a better user experience. it also prevents aggregating unused widgets in the session state.
+        prev_index = 0
+        for key in st.session_state.keys():
+            if key.startswith(f'select_transaction_to_set_rule_{widget_key_suffix}'):
+                if key == f'select_transaction_to_set_rule_{widget_key_suffix}_{len(df)}':
+                    continue
+                prev_index = st.session_state[key]
+                if prev_index >= len(df):
+                    prev_index = len(df) - 1
+                del st.session_state[key]
+                break
+
         idx = sac.buttons(
             items=df[name_col].tolist(),
-            index=0,
+            index=prev_index,
             radius='lg',
             variant='outline',
-            label='Select transaction to set its rule for the auto tagger',
+            label='Select transaction name to set its rule for the auto tagger',
             return_index=True,
             color='red',
             use_container_width=True,
+            key=f'select_transaction_to_set_rule_{widget_key_suffix}_{len(df)}'
         )
 
-        if idx is not None:
-            row = df.iloc[idx]
-            self._auto_tagger_editing_window(row[name_col], row[service_col], account_number=row[account_number_col])
+        row = df.iloc[idx]
+        self._auto_tagger_editing_window(row[name_col], row[service_col], account_number=row[account_number_col])
 
     def edit_auto_tagger_rules(self, service: Literal['credit_card', 'bank']):
         """edit the auto tagger rules"""
@@ -642,11 +665,16 @@ class CategoriesAndTags:
 
         with tag_col_:
             tags = self.categories_and_tags.get(category, [])
+            try:
+                default_tag = tags.index(default_tag)
+            except ValueError:
+                default_tag = None
+
             tag = st.selectbox(
                 label="Select a Tag",
                 label_visibility="hidden",
                 options=tags,
-                index=None if default_tag is None else tags.index(default_tag),
+                index=default_tag,
                 placeholder='Tag',
                 key=f'select_tag_{description}_{service}_{account_number}_auto_tagger'
             )

@@ -16,7 +16,7 @@ class TestDataUtils(ConnFixtures, DataFixtures):
             credit_card_mock.return_value = None
 
             last_month = datetime.datetime.now() - datetime.timedelta(days=30)
-            utils.DataUtils.pull_data(last_month, fake_credentials)
+            utils.DataUtils.pull_data_from_all_scrapers_to_db(last_month, fake_credentials)
 
             assert bank_mock.call_count == 1
             assert credit_card_mock.call_count == 1

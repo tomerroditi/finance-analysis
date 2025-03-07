@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import streamlit as st
 import yaml
 import time
@@ -7,6 +9,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy.sql import text
 from threading import Thread
+from copy import deepcopy
 
 from streamlit.connections import SQLConnection
 from datetime import datetime, timedelta
@@ -109,7 +112,7 @@ def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def get_categories_and_tags() -> dict:
+def get_categories_and_tags(copy: bool = False) -> dict:
     """
     Get the categories and tags from the yaml file
 
@@ -121,10 +124,13 @@ def get_categories_and_tags() -> dict:
     if 'categories_and_tags' not in st.session_state:
         with open(CATEGORIES_PATH, 'r') as file:
             st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
+
+    if copy:
+        return deepcopy(st.session_state['categories_and_tags'])
     return st.session_state['categories_and_tags']
 
 
-def pull_data(start_date: datetime | str, credentials: dict, db_path: str | None = None) -> None:
+def pull_data_from_all_scrapers_to_db(start_date: datetime | str, credentials: dict, db_path: str | None = None) -> None:
     """
     Pull data from the data sources, from the given date to present, and save it to the database file.
 
@@ -142,30 +148,21 @@ def pull_data(start_date: datetime | str, credentials: dict, db_path: str | None
     -------
     None
     """
-    if "pulled_data_from" not in st.session_state:
-        st.session_state.pulled_data_from = {}
-        st.session_state.pulled_data_status = {}
+    if "current_pulled_resources" not in st.session_state:  # for 2fa dialog
+        st.session_state.current_pulled_resources = []
 
     for service, providers in credentials.items():
-        if service not in st.session_state.pulled_data_from:
-            st.session_state.pulled_data_from[service] = {}
         for provider, accounts in providers.items():
-            if provider not in st.session_state.pulled_data_from[service]:
-                st.session_state.pulled_data_from[service][provider] = []
             for account, credentials in accounts.items():
-                if account in st.session_state.pulled_data_from[service][provider]:
-                    st.session_state.pulled_data_status[f"{service}_{provider}_{account}"]  # noqa
+                name = f"{service}_{provider}_{account}".replace('_', ' - ')
+                if name in st.session_state.current_pulled_resources:
                     continue
-                st.session_state.pulled_data_from[service][provider].append(account)
                 scraper = get_scraper(service, provider, account, credentials)
-                _fetch_data_from_scraper(scraper, start_date, db_path)
-                st.session_state.pulled_data_status[f"{service}_{provider}_{account}"]  # noqa
-    del st.session_state.pulled_data_from
-    del st.session_state.pulling_data
-    st.session_state.pulled_data_status.update(label="Data fetched", state="complete", expanded=True)
+                pull_data_from_scraper_to_db(scraper, start_date, db_path)
+    del st.session_state.current_pulled_resources
 
 
-def _fetch_data_from_scraper(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
+def pull_data_from_scraper_to_db(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
     """
     Fetch the data from the scraper and save it to the database
 
@@ -184,18 +181,40 @@ def _fetch_data_from_scraper(scraper: Scraper, start_date: datetime | str, db_pa
     None
     """
     if scraper.requires_2fa:
-        thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
-        thread.start()
-        while thread.is_alive():
-            if scraper.otp_code == "waiting for input":
-                _two_fa_dialog(scraper, thread)
-                st.stop()
-            elif scraper.otp_code == "not required":
-                break
-            time.sleep(2)
+        _pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path)
     else:
         scraper.pull_data_to_db(start_date, db_path)
-    _update_data_pulling_status(scraper)
+        _finalize_scraper_session_scraping(scraper)
+
+
+def _pull_data_from_2fa_scraper_to_db(scraper: Scraper, start_date: datetime | str, db_path: str | None) -> None:
+    """
+    Fetch the data from the scraper and save it to the database
+
+    Parameters
+    ----------
+    scraper : Scraper
+        The scraper to use for fetching the data
+    start_date : datetime | str
+        The date from which to start fetching the data
+    db_path : str
+        The path to the database file. If None the database file will be created in the folder of fad package
+        with the name 'data.db'
+
+    Returns
+    -------
+    None
+    """
+    thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
+    thread.start()
+    while thread.is_alive():
+        if scraper.otp_code == "waiting for input":
+            _two_fa_dialog(scraper, thread)
+            st.stop()
+        elif scraper.otp_code == "not required":
+            thread.join()
+            _finalize_scraper_session_scraping(scraper)
+            break
 
 
 @st.dialog('Two Factor Authentication')
@@ -230,23 +249,20 @@ def _handle_2fa_code(scraper: Scraper, thread: Thread, code: str):
     if code is None or code == '':
         st.error('Please enter a valid code')
         st.stop()
+    st.write("Code submitted. Fetching data, please wait...")
     scraper.set_otp_code(code)
     thread.join()
-    _update_data_pulling_status(scraper)
+    _finalize_scraper_session_scraping(scraper)
 
 
-def _update_data_pulling_status(scraper: Scraper):
-    name = f"{scraper.service_name}_{scraper.provider_name}_{scraper.account_name}"
+def _finalize_scraper_session_scraping(scraper: Scraper):
+    name = f"{scraper.service_name}_{scraper.provider_name}_{scraper.account_name}".replace('_', ' - ')
+    st.session_state.current_pulled_resources.append(name)
     if not scraper.error:
-        st.session_state.pulled_data_status[name] = st.success(
-            f"Data fetched successfully from: {name.replace('_', ' - ')}",
-            icon="✅"
-        )
+        st.session_state.data_pulling_status["success"][name] = f"{name} - Data fetched successfully: {datetime.now()}"
     else:
-        st.session_state.pulled_data_status[name] = st.warning(
-            f"Failed to fetch data from: {name.replace('_', ' - ')}. {scraper.error}",
-            icon="⚠️"
-        )
+        st.session_state.data_pulling_status["failed"][name] =\
+            f"{name} - Data fetching failed: {datetime.now()}. Error: {scraper.error}"
 
 
 def get_latest_data_date(conn: SQLConnection) -> datetime.date:
@@ -325,26 +341,42 @@ def update_db_table(conn: SQLConnection, table_name: str, edited_rows: pd.DataFr
         s.commit()
 
 
-def format_category_or_tag_strings(*args) -> tuple[str | None] | str | None:
+def format_category_or_tag_strings(*args) -> None | str | tuple[str | None, ...]:
     """
-    format the category and tag to be title case
+    Format the given strings to title case and return them as a tuple. if a string is empty or None it will be returned
+    as None, if a string is uppercase it will be returned as is. in case ';' is in the string an error will be raised
+    by streamlit and the script will stop.
 
     Parameters
     ----------
-    args: tuple[str | None]
-        sequence of strings to format to title case
+    args : str
+        The strings to format
 
     Returns
     -------
-    tuple
-        the formatted category and tag
+    None | str | tuple[str | None, ...]
+        The formatted strings. If only one string is given it will be returned as a string, otherwise as a tuple of
+        strings.
     """
-    assert all(
-        isinstance(arg, str) or arg is None or np.isnan(arg) for arg in args), 'all arguments should be strings'
-    strings = tuple(arg.title() if isinstance(arg, str) and arg != '' else None for arg in args)
-    if len(strings) == 1:
-        return strings[0]
-    return strings  # type: ignore
+    formated_strings = []
+    for arg in args:
+        if pd.isnull(arg) or arg == '':
+            formated_strings.append(None)
+        elif isinstance(arg, str):
+            if ';' in arg:
+                st.error(f'categories and tags must not contain ";". please rename: {arg}')
+                st.stop()
+            if arg.isupper():  # all caps should be kept as is (e.g. 'ATM')
+                arg = arg
+            else:
+                arg = ' '.join([word.capitalize() for word in arg.split()])
+            arg = arg.strip()
+            formated_strings.append(arg)
+        else:
+            raise ValueError('all arguments should be strings or null')
+    if len(formated_strings) == 1:
+        return formated_strings[0]
+    return tuple(formated_strings)
 
 
 def update_tags_according_to_auto_tagger():
