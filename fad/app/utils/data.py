@@ -369,7 +369,7 @@ def format_category_or_tag_strings(*args) -> None | str | tuple[str | None, ...]
             if arg.isupper():  # all caps should be kept as is (e.g. 'ATM')
                 arg = arg
             else:
-                arg = arg.title()
+                arg = ' '.join([word.capitalize() for word in arg.split()])
             arg = arg.strip()
             formated_strings.append(arg)
         else:
