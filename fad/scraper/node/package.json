@@ -1,0 +1,8 @@
+{
+  "name": "fad-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "israeli-bank-scrapers": "^5.2.2"
+  }
+}
