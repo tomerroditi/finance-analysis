@@ -23,7 +23,7 @@ insurances:
             other_parameter: value_3
             yet_another_parameter: value_4
 """
-
+import os
 import streamlit as st
 import yaml
 
@@ -63,8 +63,8 @@ def load_credentials() -> dict:
         The credentials dictionary
     """
     # make file if it doesn't exist
-    if not CREDENTIALS_PATH.exists():
-        CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not os.path.exists(CREDENTIALS_PATH):
+        os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
         with open(CREDENTIALS_PATH, 'w') as file:
             yaml.dump({"banks": {}, "credit_cards": {}, "insurances": {}}, file)
 

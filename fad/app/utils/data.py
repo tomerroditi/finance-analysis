@@ -1,12 +1,9 @@
-from typing import Tuple
-
+import os
 import streamlit as st
 import yaml
-import time
 import sqlite3
 import sqlalchemy
 import pandas as pd
-import numpy as np
 from sqlalchemy.sql import text
 from threading import Thread
 from copy import deepcopy
@@ -122,7 +119,8 @@ def get_categories_and_tags(copy: bool = False) -> dict:
         The categories and tags dictionary
     """
     if 'categories_and_tags' not in st.session_state:
-        if not CATEGORIES_PATH.exists():
+        if not os.path.exists(CATEGORIES_PATH):
+            os.makedirs(os.path.dirname(CATEGORIES_PATH), exist_ok=True)
             with open(CATEGORIES_PATH, 'w') as file:
                 yaml.dump({}, file)
 
