@@ -11,7 +11,7 @@ from copy import deepcopy
 from streamlit.connections import SQLConnection
 from datetime import datetime, timedelta
 from fad.scraper import get_scraper, Scraper
-from fad import CATEGORIES_PATH
+from fad import CATEGORIES_PATH, DB_PATH
 from fad.app.naming_conventions import (
     CreditCardTableFields,
     Tables,
@@ -60,7 +60,16 @@ def get_db_connection() -> SQLConnection:
         The connection to the app database
     """
     if 'conn' not in st.session_state:
+        if not os.path.exists(DB_PATH):
+            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+            with open(DB_PATH, 'w'):
+                pass
+
         st.session_state['conn'] = st.connection('data', 'sql')
+        assure_tags_table(st.session_state['conn'])
+        assure_budget_rules_table(st.session_state['conn'])
+        assure_transactions_table(st.session_state['conn'], Tables.CREDIT_CARD.value)
+        assure_transactions_table(st.session_state['conn'], Tables.BANK.value)
     return st.session_state['conn']
 
 
@@ -73,12 +82,29 @@ def assure_tags_table(conn: SQLConnection):
         s.commit()
 
 
-def create_budget_rules_table(conn: SQLConnection):
+def assure_budget_rules_table(conn: SQLConnection):
     """create the budget table if it doesn't exist"""
     with conn.session as s:
         s.execute(
             text(f'CREATE TABLE IF NOT EXISTS budget_rules (id INTEGER PRIMARY KEY, name TEXT, amount REAL, '
                  f'category TEXT, tag TEXT, year INTEGER, month INTEGER);'))
+        s.commit()
+
+def assure_transactions_table(conn: SQLConnection, table_name: str):
+    """create the transactions table if it doesn't exist"""
+    with conn.session as s:
+        if table_name == Tables.CREDIT_CARD.value:
+            s.execute(
+                text(f'CREATE TABLE IF NOT EXISTS {credit_card_table} ({cc_id_col} INTEGER PRIMARY KEY, '
+                     f'{cc_date_col} TEXT, {cc_amount_col} REAL, {cc_desc_col} TEXT, {cc_tag_col} TEXT, '
+                     f'{cc_category_col} TEXT, {cc_provider_col} TEXT, {cc_account_name_col} TEXT, '
+                     f'{cc_account_number_col} TEXT);'))
+        elif table_name == Tables.BANK.value:
+            s.execute(
+                text(f'CREATE TABLE IF NOT EXISTS {bank_table} ({bank_id_col} INTEGER PRIMARY KEY, '
+                     f'{bank_date_col} TEXT, {bank_amount_col} REAL, {bank_desc_col} TEXT, {bank_tag_col} TEXT, '
+                     f'{bank_category_col} TEXT, {bank_provider_col} TEXT, {bank_account_name_col} TEXT, '
+                     f'{bank_account_number_col} TEXT);'))
         s.commit()
 
 
@@ -101,7 +127,9 @@ def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
     if table_name == tags_table:
         assure_tags_table(conn)
     elif table_name == Tables.BUDGET_RULES.value:
-        create_budget_rules_table(conn)
+        assure_budget_rules_table(conn)
+    elif table_name in [Tables.CREDIT_CARD.value, Tables.BANK.value]:
+        assure_transactions_table(conn, table_name)
 
     try:
         return conn.query(f'SELECT * FROM {table_name};', ttl=0)
