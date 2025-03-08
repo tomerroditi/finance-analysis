@@ -22,7 +22,8 @@ def bar_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
     """
     df = df.copy()
     df[values_col] = df[values_col] * -1
-    df = df.groupby(category_col).sum(numeric_only=True).reset_index()
+    if not df.empty:
+        df = df.groupby(category_col).sum(numeric_only=True).reset_index()
     fig = go.Figure(
         go.Bar(
             x=df[values_col],
@@ -133,8 +134,11 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
     df_neg = df[df[values_col] < 0].copy()
     df_pos = df[df[values_col] >= 0].copy()
 
-    df_neg = df_neg.groupby(category_col).sum(numeric_only=True).reset_index()
-    df_pos = df_pos.groupby(category_col).sum(numeric_only=True).reset_index()
+    if not df_neg.empty:
+        df_neg = df_neg.groupby(category_col).sum(numeric_only=True).reset_index()
+
+    if not df_pos.empty:
+        df_pos = df_pos.groupby(category_col).sum(numeric_only=True).reset_index()
 
     fig = make_subplots(
         rows=1, cols=2,
@@ -144,8 +148,8 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
 
     fig.add_trace(
         go.Pie(
-            labels=df_pos[category_col],
-            values=df_pos[values_col],
+            labels=df_pos[category_col] if not df_pos.empty else ['No expenses'],
+            values=df_pos[values_col] if not df_pos.empty else [1],
             textinfo='label+percent',
             hole=0.3,
             name="Outcome"
@@ -155,7 +159,7 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
 
     fig.add_trace(
         go.Pie(
-            labels=df_neg[category_col] if not df_neg.empty else ['No refunds & paybacks'],
+            labels=df_neg[category_col] if not df_neg.empty else ['No refunds or paybacks'],
             values=df_neg[values_col] * -1 if not df_neg.empty else [1],
             textinfo='label+percent',
             hole=0.3,
