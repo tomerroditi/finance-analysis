@@ -38,6 +38,8 @@ cc_provider_col = CreditCardTableFields.PROVIDER.value
 cc_account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
 cc_account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
 cc_amount_col = CreditCardTableFields.AMOUNT.value
+cc_status_col = CreditCardTableFields.STATUS.value
+cc_type_col = CreditCardTableFields.TYPE.value
 bank_desc_col = BankTableFields.DESCRIPTION.value
 bank_tag_col = BankTableFields.TAG.value
 bank_category_col = BankTableFields.CATEGORY.value
@@ -48,7 +50,8 @@ bank_date_col = BankTableFields.DATE.value
 bank_provider_col = BankTableFields.PROVIDER.value
 bank_account_name_col = BankTableFields.ACCOUNT_NAME.value
 bank_amount_col = BankTableFields.AMOUNT.value
-
+bank_status_col = BankTableFields.STATUS.value
+bank_type_col = BankTableFields.TYPE.value
 
 def get_db_connection() -> SQLConnection:
     """
@@ -90,6 +93,7 @@ def assure_budget_rules_table(conn: SQLConnection):
                  f'category TEXT, tag TEXT, year INTEGER, month INTEGER);'))
         s.commit()
 
+
 def assure_transactions_table(conn: SQLConnection, table_name: str):
     """create the transactions table if it doesn't exist"""
     with conn.session as s:
@@ -98,13 +102,13 @@ def assure_transactions_table(conn: SQLConnection, table_name: str):
                 text(f'CREATE TABLE IF NOT EXISTS {credit_card_table} ({cc_id_col} INTEGER PRIMARY KEY, '
                      f'{cc_date_col} TEXT, {cc_amount_col} REAL, {cc_desc_col} TEXT, {cc_tag_col} TEXT, '
                      f'{cc_category_col} TEXT, {cc_provider_col} TEXT, {cc_account_name_col} TEXT, '
-                     f'{cc_account_number_col} TEXT);'))
+                     f'{cc_account_number_col} TEXT, {cc_status_col} TEXT, {cc_type_col} TEXT);'))
         elif table_name == Tables.BANK.value:
             s.execute(
                 text(f'CREATE TABLE IF NOT EXISTS {bank_table} ({bank_id_col} INTEGER PRIMARY KEY, '
                      f'{bank_date_col} TEXT, {bank_amount_col} REAL, {bank_desc_col} TEXT, {bank_tag_col} TEXT, '
                      f'{bank_category_col} TEXT, {bank_provider_col} TEXT, {bank_account_name_col} TEXT, '
-                     f'{bank_account_number_col} TEXT);'))
+                     f'{bank_account_number_col} TEXT, {bank_status_col} TEXT, {bank_type_col} TEXT);'))
         s.commit()
 
 
