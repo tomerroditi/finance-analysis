@@ -62,6 +62,12 @@ def load_credentials() -> dict:
     dict
         The credentials dictionary
     """
+    # make file if it doesn't exist
+    if not CREDENTIALS_PATH.exists():
+        CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(CREDENTIALS_PATH, 'w') as file:
+            yaml.dump({"banks": {}, "credit_cards": {}, "insurances": {}}, file)
+
     with open(CREDENTIALS_PATH, 'r') as file:
         return yaml.safe_load(file)
 
