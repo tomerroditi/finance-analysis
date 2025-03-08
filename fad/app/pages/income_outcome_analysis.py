@@ -105,11 +105,13 @@ with tags_tab:
         filtered_data_tags.loc[filtered_data_tags[tag_col].isnull(), tag_col] = "No tag"
 
     st.plotly_chart(
-        bar_plot_by_categories(filtered_data_tags, amount_col, tag_col)
+        bar_plot_by_categories(filtered_data_tags, amount_col, tag_col), key="bar_plot_by_tags"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1Y"),
+        key="bar_plot_by_tags_over_time_1Y"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1M"),
+        key="bar_plot_by_tags_over_time_1M"
     )
