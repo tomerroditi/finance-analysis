@@ -316,18 +316,21 @@ def get_latest_data_date(conn: SQLConnection) -> datetime.date:
 
     query_cc = f'SELECT MAX({date_col_cc}) FROM {cc_table}'
     query_bank = f'SELECT MAX({date_col_bank}) FROM {bank_table}'
-    try:
-        latest_date_cc = conn.query(query_cc, ttl=0).iloc[0, 0]
-        latest_date_bank = conn.query(query_bank, ttl=0).iloc[0, 0]
-    except sqlalchemy.exc.OperationalError as e:
-        if 'no such table' in str(e):
-            return datetime.today() - timedelta(days=365)
-        else:
-            raise e
 
-    latest_date_cc = datetime.strptime(latest_date_cc, '%Y-%m-%d')
-    latest_date_bank = datetime.strptime(latest_date_bank, '%Y-%m-%d')
-    latest_date = max(latest_date_cc, latest_date_bank)
+    latest_date_cc = conn.query(query_cc, ttl=0).iloc[0, 0]
+    latest_date_bank = conn.query(query_bank, ttl=0).iloc[0, 0]
+
+    if latest_date_cc is None:
+        latest_date_cc = datetime.today() - timedelta(days=365)
+    else:
+        latest_date_cc = datetime.strptime(latest_date_cc, '%Y-%m-%d')
+
+    if latest_date_bank is None:
+        latest_date_bank = datetime.today() - timedelta(days=365)
+    else:
+        latest_date_bank = datetime.strptime(latest_date_bank, '%Y-%m-%d')
+
+    latest_date = min(latest_date_cc, latest_date_bank)
     return latest_date
 
 
