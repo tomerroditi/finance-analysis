@@ -12,7 +12,7 @@ from fad.scraper.exceptions import LoginError
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
-from fad import CREDENTIALS_PATH
+from fad import CREDENTIALS_PATH, DB_PATH
 
 
 def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict):
@@ -150,7 +150,7 @@ class Scraper(ABC):
         """
         pass
 
-    def pull_data_to_db(self, start_date: datetime.date | str, db_path: str = None):
+    def pull_data_to_db(self, start_date: datetime.date | str, db_path: str = DB_PATH):
         """
         Pull data from the specified provider and save it to the database
 
@@ -159,8 +159,7 @@ class Scraper(ABC):
         start_date : datetime.datetime
             The date from which to start pulling the data
         db_path : str
-            The path to the database file. If None, the data will be saved in the app default database which is at
-            fad.resources.data.db
+            The path to the database file. defaults to the global variable DB_PATH.
         """
         start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
 

@@ -1,0 +1,96 @@
+Entertainment:
+  - Books
+  - Concerts
+  - Events
+  - Movies
+  - Museums
+  - Music
+  - Video Games
+
+Food:
+  - Bars
+  - Coffee
+  - Groceries
+  - Restaurants
+  - Snacks
+  - Work Lunch
+
+Health:
+  - Dentist
+  - Doctor
+  - Medical Insurance
+  - Medications
+  - Therapy
+
+Household:
+  - Cleaning Supplies
+  - Electricity
+  - Furniture
+  - Gardening
+  - Gas
+  - Home Improvement
+  - Home Insurance
+  - Home Maintenance
+  - Internet
+  - Mortgage
+  - Phone
+  - Rent
+  - Water
+
+Ignore:
+  - Credit Card Bill
+  - Internal Transactions
+
+Investments:
+  - Gemel
+  - Pakam
+  - Real Estate
+  - Stocks
+
+Liabilities:
+  - Debt
+  - Loans
+  - Mortgage
+
+Other:
+  - Atm
+  - Bank Commisions
+  - Haircut
+  - Ignore
+  - No Tag
+
+Other Income: []
+
+Salary: []
+
+Savings:
+  - Pakam
+
+Shopping:
+  - Clothes
+  - Electronics
+  - Gifts
+  - jewelries
+
+Subscriptions:
+  - Chat-GPT
+  - Disney
+  - Netflix
+  - Spotify
+
+Transportation:
+  - Car Insurance
+  - Car Maintenance
+  - Fees
+  - Gas
+  - Parking
+  - Public Transportation
+  - Scooter
+  - Taxi
+  - Tolls
+
+Vacations:
+  - Flights
+  - Food
+  - Hotel
+  - Other

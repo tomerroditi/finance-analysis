@@ -1,25 +1,4 @@
-### MicrosoftOffice template
-*.tmp
+.venv
 
-# Word temporary
-~$*.doc*
-
-# Word Auto Backup File
-Backup of *.doc*
-
-# Excel temporary
-~$*.xls*
-
-# Excel Backup File
-*.xlk
-
-# PowerPoint temporary
-~$*.ppt*
-
-# Visio autosave temporary files
-*.~vsd*
-
-
-# dont upload scraper.credentials file since it has sensitive information
-fad/resources/credentials.yaml
-fad/resources/data.db
+fad/scraper/node/node_modules
+fad/scraper/node/package-lock.json

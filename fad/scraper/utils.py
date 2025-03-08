@@ -52,7 +52,7 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     return df
 
 
-def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = None) -> None:
+def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = DB_PATH) -> None:
     """
     Save the data to the database
 
@@ -63,19 +63,12 @@ def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = None) -> None:
     table_name: str
         the name of the table to save the data to
     db_path: str
-        the path to the database file. If None, the database file will be created in the folder of fad package with
-        the name 'data.db'
-
-    Returns
-    -------
-
+        the path to the database file. default to the global variable DB_PATH.
     """
     assert isinstance(df, pd.DataFrame), 'df should be a pandas DataFrame object'
     assert isinstance(table_name, str), 'table_name should be a string'
 
-    db_path = DB_PATH if db_path is None else db_path
     conn = sqlite3.connect(db_path)
     df.to_sql(table_name, conn, if_exists='append', index=False)
-    # delete duplicates
     conn.commit()
     conn.close()
