@@ -11,7 +11,7 @@ from copy import deepcopy
 from streamlit.connections import SQLConnection
 from datetime import datetime, timedelta
 from fad.scraper import get_scraper, Scraper
-from fad import CATEGORIES_PATH, DB_PATH
+from fad import CATEGORIES_PATH, DB_PATH, SRC_PATH
 from fad.app.naming_conventions import (
     CreditCardTableFields,
     Tables,
@@ -164,8 +164,10 @@ def get_categories_and_tags(copy: bool = False) -> dict:
     if 'categories_and_tags' not in st.session_state:
         if not os.path.exists(CATEGORIES_PATH):
             os.makedirs(os.path.dirname(CATEGORIES_PATH), exist_ok=True)
+            with open(os.path.join(SRC_PATH, 'fad', 'resources', 'default_categories.yaml'), 'r') as file:
+                default_categories = yaml.load(file, Loader=yaml.FullLoader)
             with open(CATEGORIES_PATH, 'w') as file:
-                yaml.dump({}, file)
+                yaml.dump(default_categories, file)
 
         with open(CATEGORIES_PATH, 'r') as file:
             st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
