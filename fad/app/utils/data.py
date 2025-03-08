@@ -17,6 +17,7 @@ from fad.app.naming_conventions import (
     Tables,
     BankTableFields,
     TagsTableFields,
+    BudgetRulesTableFields,
 )
 
 
@@ -52,6 +53,13 @@ bank_account_name_col = BankTableFields.ACCOUNT_NAME.value
 bank_amount_col = BankTableFields.AMOUNT.value
 bank_status_col = BankTableFields.STATUS.value
 bank_type_col = BankTableFields.TYPE.value
+br_id = BudgetRulesTableFields.ID.value
+br_name = BudgetRulesTableFields.NAME.value
+br_year = BudgetRulesTableFields.YEAR.value
+br_month = BudgetRulesTableFields.MONTH.value
+br_category = BudgetRulesTableFields.CATEGORY.value
+br_tags = BudgetRulesTableFields.TAGS.value
+br_amount = BudgetRulesTableFields.AMOUNT.value
 
 def get_db_connection() -> SQLConnection:
     """
@@ -89,8 +97,11 @@ def assure_budget_rules_table(conn: SQLConnection):
     """create the budget table if it doesn't exist"""
     with conn.session as s:
         s.execute(
-            text(f'CREATE TABLE IF NOT EXISTS budget_rules (id INTEGER PRIMARY KEY, name TEXT, amount REAL, '
-                 f'category TEXT, tag TEXT, year INTEGER, month INTEGER);'))
+            text(
+                f'CREATE TABLE IF NOT EXISTS budget_rules ({br_id} INTEGER PRIMARY KEY, {br_name} TEXT, {br_amount} REAL, '
+                f'{br_category} TEXT, {br_tags} TEXT, {br_year} INTEGER, {br_month} INTEGER);'
+            )
+        )
         s.commit()
 
 
