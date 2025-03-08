@@ -110,7 +110,7 @@ class CategoriesAndTags:
             disable = True if category in [e.value for e in NonExpensesCategories] else False
             st.button(f'Delete {category}', key=f'my_{category}_delete', disabled=disable,
                       on_click=self._delete_category,
-                      args=(self.categories_and_tags, category, self.conn, CATEGORIES_PATH))
+                      args=(category,))
 
     @st.fragment
     def _view_and_edit_tags(self, category: str) -> None:
@@ -142,11 +142,12 @@ class CategoriesAndTags:
             st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
                      "stocks, real estate, etc.")
         tags = self.categories_and_tags[category]
-        # TODO: make the displayed tags display the formatted tags and not the entered values
+        tags = [format_category_or_tag_strings(tag) for tag in tags]
         new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
-        if new_tags != tags:
-            new_tags = [format_category_or_tag_strings(tag) for tag in new_tags]
-            self.categories_and_tags[category] = new_tags
+        new_tags = [format_category_or_tag_strings(tag) for tag in new_tags]
+        new_tags = list(set(new_tags).difference(set(tags)))
+        if new_tags:
+            self.categories_and_tags[category] += new_tags
             # save changes and rerun to update the UI
             self._update_yaml()
             st.rerun()
