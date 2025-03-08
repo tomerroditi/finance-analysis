@@ -246,7 +246,7 @@ def delete_monthly_budget_rules(year: int, month: int) -> None:
     """
     with conn.session as s:
         cmd = sa.text(
-            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE year = :year AND month = :month"
+            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE {YEAR} = :{YEAR} AND {MONTH} = :{MONTH}"
         )
         params = {
             YEAR: year,
@@ -670,8 +670,8 @@ def _add_rule_to_db(name: str, amount: float, category: str, tags: list[str], mo
     """
     with conn.session as s:
         cmd = sa.text(
-            f"INSERT INTO {Tables.BUDGET_RULES.value} (name, amount, category, tags, month, year) VALUES "
-            f"(:name, :amount, :category, :tags, :month, :year)"
+            f"INSERT INTO {Tables.BUDGET_RULES.value} ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR}) VALUES "
+            f"(:{NAME}, :{AMOUNT}, :{CATEGORY}, :{TAGS}, :{MONTH}, :{YEAR})"
         )
         params = {
             NAME: name,
@@ -696,7 +696,7 @@ def _delete_rule_from_db(id_: int) -> None:
     """
     with conn.session as s:
         cmd = sa.text(
-            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE id = :id"
+            f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE {ID} = :{ID}"
         )
         s.execute(cmd, {ID: id_})
         s.commit()
@@ -722,8 +722,9 @@ def _update_rule_in_db(id_: int, **kwargs) -> None:
         cmd = sa.text(
             f"UPDATE {Tables.BUDGET_RULES.value} SET "
             + ", ".join([f"{field} = :{field}" for field in fields_to_update])
-            + f" WHERE id = :id"
+            + f" WHERE {ID} = :{ID}"
         )
+        kwargs[ID] = id_
         kwargs[ID] = int(id_)
         s.execute(cmd, kwargs)
         s.commit()
@@ -767,8 +768,8 @@ def add_new_project(budget_rules: pd.DataFrame) -> None:
     if col_set.button("Set", key="set_total_budget_project_button", use_container_width=True):
         with conn.session as s:
             cmd = sa.text(
-                f"INSERT INTO {Tables.BUDGET_RULES.value} (name, amount, category, tags, month, year) VALUES "
-                f"(:name, :amount, :category, :tags, :month, :year)"
+                f"INSERT INTO {Tables.BUDGET_RULES.value} ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR}) VALUES "
+                f"(:{NAME}, :{AMOUNT}, :{CATEGORY}, :{TAGS}, :{MONTH}, :{YEAR})"
             )
             params = {
                 NAME: TOTAL_BUDGET,
@@ -797,7 +798,7 @@ def delete_project(name: str) -> None:
     if st.button("Yes"):
         with conn.session as s:
             cmd = sa.text(
-                f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE category = :category AND year IS NULL AND month IS NULL"
+                f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE {CATEGORY} = :{CATEGORY} AND {YEAR} IS NULL AND {MONTH} IS NULL"
             )
             s.execute(cmd, {CATEGORY: name})
             s.commit()
@@ -902,8 +903,8 @@ def _assure_project_rules_integrity(project: str, project_budget_rules: pd.DataF
             continue
         with conn.session as s:
             cmd = sa.text(
-                f"INSERT INTO {Tables.BUDGET_RULES.value} (name, amount, category, tags, month, year) VALUES "
-                f"(:name, :amount, :category, :tags, :month, :year)"
+                f"INSERT INTO {Tables.BUDGET_RULES.value} ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR}) VALUES "
+                f"(:{NAME}, :{AMOUNT}, :{CATEGORY}, :{TAGS}, :{MONTH}, :{YEAR})"
             )
             params = {
                 NAME: tag,
@@ -921,7 +922,7 @@ def _assure_project_rules_integrity(project: str, project_budget_rules: pd.DataF
             with conn.session as s:
                 cmd = sa.text(
                     f"DELETE FROM {Tables.BUDGET_RULES.value} "
-                    f"WHERE category = :category AND tags = :tags AND year IS NULL AND month IS NULL"
+                    f"WHERE {CATEGORY} = :{CATEGORY} AND {TAGS} = :{TAGS} AND {YEAR} IS NULL AND {MONTH} IS NULL"
                 )
                 params = {
                     CATEGORY: project,

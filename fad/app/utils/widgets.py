@@ -52,8 +52,12 @@ class PandasFilterWidgets:
     def create_slider_widget(self, column: str) -> tuple[float, float]:
         df = self.df.copy()
         df = df.loc[df[column].notna(), :]
-        max_val = float(df[column].max())
-        min_val = float(df[column].min())
+        if df.empty:
+            max_val = 0.0
+            min_val = 1.0
+        else:
+            max_val = float(df[column].max())
+            min_val = float(df[column].min())
         name = column.replace('_', ' ').title()
         lower_bound, upper_bound = st.slider(
             name, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'
@@ -81,8 +85,12 @@ class PandasFilterWidgets:
     def create_date_range_widget(self, column: str) -> tuple[datetime.date, datetime.date]:
         df = self.df.copy()
         df = df.loc[df[column].notna(), :]
-        max_val = datetime.today().date()
-        min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
+        if df.empty:
+            max_val = datetime.today().date()
+            min_val = datetime.today().date()
+        else:
+            max_val = datetime.today().date()
+            min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
 
         st.markdown("<br>", unsafe_allow_html=True)
         selection = sac.buttons(
