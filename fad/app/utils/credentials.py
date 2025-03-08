@@ -29,7 +29,7 @@ import yaml
 
 from streamlit_phone_number import st_phone_number
 from typing import Literal
-from fad import CREDENTIALS_PATH
+from fad import CREDENTIALS_PATH, SRC_PATH
 from fad.app.naming_conventions import (
     Banks,
     CreditCards,
@@ -65,8 +65,10 @@ def load_credentials() -> dict:
     # make file if it doesn't exist
     if not os.path.exists(CREDENTIALS_PATH):
         os.makedirs(os.path.dirname(CREDENTIALS_PATH), exist_ok=True)
+        with open(os.path.join(SRC_PATH, 'resources', 'default_credentials.yaml'), 'r') as file:
+            default_credentials = yaml.safe_load(file)  # empty credentials
         with open(CREDENTIALS_PATH, 'w') as file:
-            yaml.dump({"banks": {}, "credit_cards": {}, "insurances": {}}, file)
+            yaml.dump(default_credentials, file, sort_keys=False, indent=4)
 
     with open(CREDENTIALS_PATH, 'r') as file:
         return yaml.safe_load(file)
