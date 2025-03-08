@@ -122,6 +122,10 @@ def get_categories_and_tags(copy: bool = False) -> dict:
         The categories and tags dictionary
     """
     if 'categories_and_tags' not in st.session_state:
+        if not CATEGORIES_PATH.exists():
+            with open(CATEGORIES_PATH, 'w') as file:
+                yaml.dump({}, file)
+
         with open(CATEGORIES_PATH, 'r') as file:
             st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
 
