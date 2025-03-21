@@ -1,107 +1,96 @@
 Entertainment:
-- Books
-- Concerts
-- Events
-- Movies
-- Museums
-- Music
-- Video Games
+  - Books
+  - Concerts
+  - Events
+  - Movies
+  - Museums
+  - Music
+  - Video Games
+
 Food:
-- Alcohol
-- Bar
-- Coffee
-- Groceries
-- Restaurants
-- Snacks
-- Work Lunches
+  - Bars
+  - Coffee
+  - Groceries
+  - Restaurants
+  - Snacks
+  - Work Lunch
+
 Health:
-- Dentist
-- Doctor
-- Gym
-- Medical Insurance
-- Medication
-- Optometrist
-- Therapy
-- Yoga
+  - Dentist
+  - Doctor
+  - Medical Insurance
+  - Medications
+  - Therapy
+
 Household:
-- Cleaning Supplies
-- Electricity
-- Furniture
-- Gardening
-- Gas
-- Home Improvement
-- Home Insurance
-- Home Maintenance
-- Internet
-- Kitchen Accessories
-- Mortgage
-- Office Accessories
-- Phone
-- Rent
-- Water
+  - Cleaning Supplies
+  - Electricity
+  - Furniture
+  - Gardening
+  - Gas
+  - Home Improvement
+  - Home Insurance
+  - Home Maintenance
+  - Internet
+  - Mortgage
+  - Phone
+  - Rent
+  - Water
+
 Ignore:
-- Credit Card Bill
-- Internal Transactions
+  - Credit Card Bill
+  - Internal Transactions
+
 Investments:
-- Gemel
-- Pakam
-- Real Estate
-- Stocks
+  - Gemel
+  - Pakam
+  - Real Estate
+  - Stocks
+
 Liabilities:
-- 100K Onezero Loan
-New Apartment:
-- Electronic Devices
-- Furniture - Decorative
-- Furniture - Essentials
-- Kitchen Accessories
+  - Debt
+  - Loans
+  - Mortgage
+
 Other:
-- Atm
-- Bachelorette Party
-- Bank Commisions
-- Flowers
-- Haircut
-- Ignore
-- No Tag
-- Pharma
-- Weddings
-Other Income:
-- Milga - Ariel University
-- Miluim
-Salary:
-- Agadir
-- Corractions
-- Israel-Is
-- Miluim
-- Tau
+  - Atm
+  - Bank Commisions
+  - Haircut
+  - Ignore
+  - No Tag
+
+Other Income: []
+
+Salary: []
+
 Savings:
-- Pakam
+  - Pakam
+
 Shopping:
-- Clothes
-- Electronics
-- Flowers
+  - Clothes
+  - Electronics
+  - Gifts
+  - jewelries
+
 Subscriptions:
-- Chat-Gpt
-- Disney
-- Github
-- Google Storage
-- Lobi-99
-- Netflix
-- Spotify
+  - Chat-GPT
+  - Disney
+  - Netflix
+  - Spotify
+
 Transportation:
-- Bike
-- Car Insurance
-- Car Maintenance
-- Car Payment
-- Fees
-- Gas
-- Parking
-- Public Transportation
-- Scooter
-- Taxi
-- Tolls
+  - Car Insurance
+  - Car Maintenance
+  - Fees
+  - Gas
+  - Parking
+  - Public Transportation
+  - Scooter
+  - Taxi
+  - Tolls
+
 Vacations:
-- Flights
-- Food
-- Hotel
-- Other
-- Souvenirs
+  - Flights
+  - Food
+  - Hotel
+  - Other

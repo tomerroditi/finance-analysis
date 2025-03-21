@@ -1,7 +1,12 @@
 name: Build and Push Docker Image
 
 on:
+  push:
+    branches:
+      - main  # Only triggers when code is pushed to the main branch
   pull_request:
+    branches:
+      - main  # Only triggers when a PR is opened against the main branch
     types:
       - closed  # Only triggers when a PR is merged
   workflow_dispatch:  # Allows manual triggering if needed
