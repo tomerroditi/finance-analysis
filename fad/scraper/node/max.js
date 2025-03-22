@@ -13,7 +13,7 @@ const start_date = args[2];
       companyId: CompanyTypes.max,
       startDate: new Date(start_date),
       combineInstallments: false,
-      showBrowser: false
+      showBrowser: true
     };
 
     // read documentation below for information about credentials
