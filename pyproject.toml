@@ -1,6 +1,6 @@
 [project]
 name = "finance-analysis"
-authors = ["Author Name: <tomerroditi1@gmail.com>"]
+authors = [{ name = "Author Name", email = "tomerroditi1@gmail.com" }]
 readme = "README.md"
 license = "MIT"
 
@@ -19,7 +19,7 @@ description = ""
 authors = ["Author Name: <tomerroditi1@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "==3.12"
+python = "==3.12.6"
 pandas = "==2.2.3"
 numpy = "==1.26.4"
 pyarrow = "==15.0.2"
@@ -30,7 +30,7 @@ streamlit = "==1.42.2"
 streamlit-antd-components = "==0.3.2"
 streamlit-tags = "==1.2.8"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "==8.3.5"
 Faker = "==24.3.0"
 
