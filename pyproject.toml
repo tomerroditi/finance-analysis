@@ -14,7 +14,7 @@ markers = [
 
 [tool.poetry]
 name = "finance-analysis"
-version = "0.1.0"
+version = "0.0.0"
 description = ""
 authors = ["Author Name: <tomerroditi1@gmail.com>"]
 
@@ -36,6 +36,13 @@ streamlit-tags = "==1.2.8"
 pytest = "==8.3.5"
 Faker = "==24.3.0"
 pydevd_pycharm = "==251.23526.40"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver2"
+version_provider = "poetry"
+update_changelog_on_bump = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
