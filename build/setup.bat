@@ -80,7 +80,8 @@ echo Upgrading pip...
 python -m pip install --upgrade pip
 
 echo Installing Python dependencies...
-pip install -r requirements.txt
+pip install poetry
+poetry install
 
 :: -------------------------
 :: Install Node packages
