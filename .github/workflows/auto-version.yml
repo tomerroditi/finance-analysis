@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
 
 jobs:
   bump-version:
@@ -57,9 +58,14 @@ jobs:
           mkdir issetup
           & "C:\Program Files\7-Zip\7z.exe" x is.exe -oissetup
 
+      - name: 📂 Debug extracted Inno Setup
+        run: |
+          dir issetup
+
       - name: 🛠️ Build installer
         shell: pwsh
-        run: .\issetup\ISCC.exe build\installer_script.iss
+        run: |
+          & "${{ github.workspace }}\issetup\ISCC.exe" build\installer_script.iss
 
       - name: 🚀 Push version and tag
         env:
