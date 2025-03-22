@@ -1,0 +1,75 @@
+name: Auto Version on Merge
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    name: Auto-bump using Commitizen
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # needed for commitizen/changelog
+
+      - name: 🛠️ Install Poetry
+        run: |
+          pip install poetry
+
+      - name: 🔍 Extract Python version from pyproject.toml
+        id: python_version
+        run: |
+          PY_VERSION=$(poetry run python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+          echo "PYTHON_VERSION=$PY_VERSION" >> $GITHUB_ENV
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📦 Install Commitizen
+        run: |
+          pip install commitizen
+
+      - name: 🔖 Bump version and changelog
+        id: cz
+        run: |
+          cz bump --yes --changelog
+          echo "VERSION=$(cz version)" >> $GITHUB_ENV
+
+      - name: 📝 Update installer version
+        run: |
+          sed -i "s/^#define AppVersion .*/#define AppVersion \"${{ env.VERSION }}\"/" finance-analysis/build/installer_script.iss
+
+      - name: 🏗️ Download Inno Setup CLI
+        run: |
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "is.exe"
+          mkdir issetup
+          & "C:\Program Files\7-Zip\7z.exe" x is.exe -oissetup
+
+      - name: 🛠️ Build installer
+        run: |
+          ./issetup/ISCC.exe finance-analysis/build/installer_script.iss
+
+      - name: 🚀 Push version and tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
+          git push origin HEAD:main --follow-tags
+
+      -   name: 📢 Create GitHub Release and Upload Installer
+          uses: softprops/action-gh-release@v1
+          with:
+            tag_name: ${{ env.VERSION }}
+            name: Release ${{ env.VERSION }}
+            body_path: CHANGELOG.md
+            files: ./Output/FinanceAnalysisSetup.exe
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
