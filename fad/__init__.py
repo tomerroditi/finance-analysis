@@ -6,9 +6,10 @@ __version__ = "0.0.1"
 
 
 SRC_PATH = os.path.dirname(os.path.abspath(__file__))
-CREDENTIALS_PATH = os.path.join(SRC_PATH, 'resources', 'credentials.yaml')
-DB_PATH = os.path.join(SRC_PATH, 'resources', 'data.db')
-CATEGORIES_PATH = os.path.join(SRC_PATH, 'resources', 'categories.yaml')
+USER_DIR = os.path.join(os.path.expanduser('~'), '.finance-analysis')
+CREDENTIALS_PATH = os.path.join(USER_DIR, 'resources', 'credentials.yaml')
+DB_PATH = os.path.join(USER_DIR, 'resources', 'data.db')
+CATEGORIES_PATH = os.path.join(USER_DIR, 'resources', 'categories.yaml')
 
 
 class Tables(Enum):
