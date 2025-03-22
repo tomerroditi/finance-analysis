@@ -55,10 +55,6 @@ jobs:
         run: |
           choco install innosetup --no-progress --yes
 
-      - name: 📂 Debug extracted Inno Setup
-        run: |
-          dir issetup
-
       - name: 🛠️ Build installer
         shell: pwsh
         run: |
