@@ -58,7 +58,8 @@ jobs:
           & "C:\Program Files\7-Zip\7z.exe" x is.exe -oissetup
 
       - name: 🛠️ Build installer
-        run: ./issetup/ISCC.exe build/installer_script.iss
+        shell: pwsh
+        run: .\issetup\ISCC.exe build\installer_script.iss
 
       - name: 🚀 Push version and tag
         env:
