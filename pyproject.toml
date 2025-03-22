@@ -36,13 +36,13 @@ streamlit-tags = "==1.2.8"
 pytest = "==8.3.5"
 Faker = "==24.3.0"
 
-
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "v$version"
 version_scheme = "semver2"
 version_provider = "poetry"
 update_changelog_on_bump = true
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
