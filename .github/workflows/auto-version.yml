@@ -51,12 +51,9 @@ jobs:
         run: |
           (Get-Content build/installer_script.iss) -replace '^#define AppVersion .*', "#define AppVersion `"${{ env.VERSION }}`"" | Set-Content build/installer_script.iss
 
-      - name: 🏗️ Download Inno Setup CLI
-        shell: powershell
+      - name: 🏗️ Install Inno Setup using Chocolatey
         run: |
-          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "is.exe"
-          mkdir issetup
-          & "C:\Program Files\7-Zip\7z.exe" x is.exe -oissetup
+          choco install innosetup --no-progress --yes
 
       - name: 📂 Debug extracted Inno Setup
         run: |
@@ -65,7 +62,7 @@ jobs:
       - name: 🛠️ Build installer
         shell: pwsh
         run: |
-          & "${{ github.workspace }}\issetup\ISCC.exe" build\installer_script.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer_script.iss
 
       - name: 🚀 Push version and tag
         env:
