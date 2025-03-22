@@ -61,7 +61,7 @@ try {
     companyId: CompanyTypes.oneZero,  // Adjust based on the specific bank
     startDate: new Date(start_date),
     combineInstallments: false,
-    showBrowser: false
+    showBrowser: true
   };
 
   const scraper = createScraper(options);
