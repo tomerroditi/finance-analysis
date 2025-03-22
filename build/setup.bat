@@ -19,7 +19,7 @@ set "USER_DIR=%USERPROFILE%\.finance-analysis"
 python --version >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
     echo Python not found. Installing...
-    powershell -Command "& {Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe' -OutFile 'python_installer.exe'}"
+    powershell -Command "& {Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.6/python-3.12.6-amd64.exe' -OutFile 'python_installer.exe'}"
     start /wait python_installer.exe /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
     del python_installer.exe
 ) ELSE (
