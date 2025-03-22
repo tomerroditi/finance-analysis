@@ -14,26 +14,25 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # needed for commitizen/changelog
-
-      - name: 🛠️ Install Poetry
-        run: |
-          pip install poetry
-
-      - name: 🔍 Extract Python version from pyproject.toml
-        id: python_version
-        run: |
-          PY_VERSION=$(poetry run python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-          echo "PYTHON_VERSION=$PY_VERSION" >> $GITHUB_ENV
+          fetch-depth: 0
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 📦 Install Commitizen
+      - name: 🛠️ Install Poetry
+        run: pip install poetry
+
+      - name: 🔍 Extract Python version from pyproject.toml
+        id: python_version
+        shell: pwsh
         run: |
-          pip install commitizen
+          $pyVersion = poetry run python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+          echo "PYTHON_VERSION=$pyVersion" >> $env:GITHUB_ENV
+
+      - name: 📦 Install Commitizen
+        run: pip install commitizen
 
       - name: 🛠️ Configure Git identity
         run: |
@@ -44,21 +43,22 @@ jobs:
         id: cz
         run: |
           cz bump --yes --changelog
-          echo "VERSION=$(cz version)" >> $GITHUB_ENV
+          echo "VERSION=$(cz version)" >> $env:GITHUB_ENV
 
       - name: 📝 Update installer version
+        shell: pwsh
         run: |
-          sed -i "s/^#define AppVersion .*/#define AppVersion \"${{ env.VERSION }}\"/" build/installer_script.iss
+          (Get-Content build/installer_script.iss) -replace '^#define AppVersion .*', "#define AppVersion `"${{ env.VERSION }}`"" | Set-Content build/installer_script.iss
 
       - name: 🏗️ Download Inno Setup CLI
+        shell: powershell
         run: |
           Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "is.exe"
           mkdir issetup
           & "C:\Program Files\7-Zip\7z.exe" x is.exe -oissetup
 
       - name: 🛠️ Build installer
-        run: |
-          ./issetup/ISCC.exe build/installer_script.iss
+        run: ./issetup/ISCC.exe build/installer_script.iss
 
       - name: 🚀 Push version and tag
         env:
@@ -66,15 +66,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push origin HEAD:main --follow-tags
 
-      -   name: 📢 Create GitHub Release and Upload Installer
-          uses: softprops/action-gh-release@v1
-          with:
-            tag_name: ${{ env.VERSION }}
-            name: Release ${{ env.VERSION }}
-            body_path: CHANGELOG.md
-            files: ./Output/FinanceAppInstaller.exe
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 📢 Create GitHub Release and Upload Installer
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          body_path: CHANGELOG.md
+          files: ./Output/FinanceAppInstaller.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
