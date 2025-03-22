@@ -5,34 +5,14 @@ echo ==================================================
 echo      Finance Analysis App - One-Time Setup
 echo ==================================================
 
-:: Set working directory to script location
+:: Set working directory to the root of the project
 cd /d "%~dp0"
+cd ../..
 
 :: App folder and user data dir
-set "APP_DIR=finance_analysis"
+set "APP_DIR=finance-analysis"
 set "ENV_DIR=.venv"
 set "USER_DIR=%USERPROFILE%\.finance-analysis"
-
-:: -------------------------
-:: Check if app repo exists
-IF NOT EXIST %APP_DIR%\main.py (
-    echo Cloning the finance-analysis repository...
-    git clone https://github.com/tomerroditi/finance-analysis.git
-) ELSE (
-    echo App source already exists.
-)
-
-:: -------------------------
-:: Check Git
-git --version >nul 2>&1
-IF %ERRORLEVEL% NEQ 0 (
-    echo Git not found. Downloading installer...
-    powershell -Command "& {Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe' -OutFile 'git_installer.exe'}"
-    start /wait git_installer.exe /VERYSILENT
-    del git_installer.exe
-) ELSE (
-    echo Git is installed.
-)
 
 :: -------------------------
 :: Check Python
@@ -83,11 +63,12 @@ if not exist "%USER_DIR%\data.db" (
 echo Creating secrets.toml for Streamlit...
 mkdir "%APP_DIR%\.streamlit" >nul 2>&1
 echo [connections.data] > "%APP_DIR%\.streamlit\secrets.toml"
-echo url = "sqlite:///%USER_DIR:/=\%/data.db" >> "%APP_DIR%\.streamlit\secrets.toml"
+echo url = "sqlite:///%USER_DIR:\=/%/data.db" >> "%APP_DIR%\.streamlit\secrets.toml"
 
 :: -------------------------
 :: Set up Python virtual environment
 cd %APP_DIR%
+echo %cd%
 IF NOT EXIST %ENV_DIR% (
     echo Creating virtual environment...
     python -m venv %ENV_DIR%
@@ -115,10 +96,5 @@ IF EXIST fad\scraper\node\package.json (
 )
 
 echo.
-echo ✅ Setup complete! You can now run the app using:
-echo     run_finance_app.bat
+echo Setup complete. You can now run the app using: run.bat
 echo.
-
-cd ..
-endlocal
-pause
