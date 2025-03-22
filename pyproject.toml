@@ -28,6 +28,7 @@ PyYAML = "==6.0.1"
 SQLAlchemy = "==2.0.29"
 streamlit = "==1.42.2"
 streamlit-antd-components = "==0.3.2"
+streamlit_phone_number = "==0.0.9"
 streamlit-tags = "==1.2.8"
 
 [tool.poetry.group.dev.dependencies]

@@ -1378,6 +1378,20 @@ files = [
 streamlit = ">=1.12.0"
 
 [[package]]
+name = "streamlit-phone-number"
+version = "0.0.9"
+description = ""
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "streamlit-phone-number-0.0.9.tar.gz", hash = "sha256:206be582cc03f8ed43be9ea05eeb1ca08ba8340c9e6080a9df4021691ee14b04"},
+]
+
+[package.dependencies]
+streamlit = "*"
+
+[[package]]
 name = "streamlit-tags"
 version = "1.2.8"
 description = "Tags custom component for Streamlit"
@@ -1530,4 +1544,4 @@ watchmedo = ["PyYAML (>=3.10)"]
 [metadata]
 lock-version = "2.1"
 python-versions = "==3.12.6"
-content-hash = "5ab7497cbbd6c3faf5976f12bbba06b8876cc5ffb28f5ff15152a63a7b72524a"
+content-hash = "14e7726dfe02033a1b341f135e96169c50f61fded43637507e087ac3d7bb4a34"
