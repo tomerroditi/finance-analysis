@@ -35,6 +35,11 @@ jobs:
         run: |
           pip install commitizen
 
+      - name: 🛠️ Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: 🔖 Bump version and changelog
         id: cz
         run: |
