@@ -48,7 +48,7 @@ jobs:
 
       - name: 📝 Update installer version
         run: |
-          sed -i "s/^#define AppVersion .*/#define AppVersion \"${{ env.VERSION }}\"/" finance-analysis/build/installer_script.iss
+          sed -i "s/^#define AppVersion .*/#define AppVersion \"${{ env.VERSION }}\"/" build/installer_script.iss
 
       - name: 🏗️ Download Inno Setup CLI
         run: |
@@ -58,7 +58,7 @@ jobs:
 
       - name: 🛠️ Build installer
         run: |
-          ./issetup/ISCC.exe finance-analysis/build/installer_script.iss
+          ./issetup/ISCC.exe build/installer_script.iss
 
       - name: 🚀 Push version and tag
         env:
@@ -75,6 +75,6 @@ jobs:
             tag_name: ${{ env.VERSION }}
             name: Release ${{ env.VERSION }}
             body_path: CHANGELOG.md
-            files: ./Output/FinanceAnalysisSetup.exe
+            files: ./Output/FinanceAppInstaller.exe
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
