@@ -1,6 +1,17 @@
 from enum import Enum
 from typing import Type
 
+ID = 'id'
+CATEGORY = 'category'
+TAGS = 'tags'
+NAME = 'name'
+AMOUNT = 'amount'
+MONTH = 'month'
+YEAR = 'year'
+ALL_TAGS = 'all_tags'
+
+TOTAL_BUDGET = 'Total Budget'
+
 
 class Tables(Enum):
     CREDIT_CARD = 'credit_card_transactions'

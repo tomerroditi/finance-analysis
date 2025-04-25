@@ -18,79 +18,25 @@ isolated budget management for a project/event (wedding, big trip, home renovati
 - edit/view rules (forbid adding and deleting) [v]
 - exclude project/event expenses from the monthly budget management expenses [v]
 """
-
-import pandas as pd
 import streamlit as st
 
-from fad.app.naming_conventions import Tables
-from fad.app.utils.data import get_db_connection, get_table
-from fad.app.utils.budget_management import select_custom_month, select_current_month, add_new_rule, budget_overview, \
-    copy_last_month_rules, add_new_project, select_project, view_project_budget, delete_project, select_next_month, select_previous_month
+from fad.app.components.budget_overview import (
+    monthly_budget_overview,
+    select_month_ui,
+    add_or_copy_rules_ui,
+    project_budget_overview,
+    project_budget_buttons_bar
+)
 
-budget_rules = get_table(get_db_connection(), Tables.BUDGET_RULES.value)
 monthly_tab, project_tab = st.tabs(["Monthly Budget Management", "Project Budget Management"])
 
 with monthly_tab:
     # TODO: make the raw data editable from here as well
-    st.session_state.setdefault("year", pd.Timestamp.now().year)
-    st.session_state.setdefault("month", pd.Timestamp.now().month)
-
-    curr_month_col, previous_month_col, next_month_col, history_col = st.columns([1, 1, 1, 1])
-    with curr_month_col:
-        select_current_month()
-    with previous_month_col:
-        select_previous_month()
-    with next_month_col:
-        select_next_month()
-    with history_col:
-        st.button(
-            "Custom Month",
-            on_click=select_custom_month,
-            key="select_custom_month_budget",
-            use_container_width=True
-        )
-
-    year, month = st.session_state.year, st.session_state.month
-
+    year, month = select_month_ui()
     st.title(f"Budget of: {year}-{month}")
-
-    add_rule_col, copy_rules_col, _ = st.columns([1, 1, 2])
-    with add_rule_col:
-        add_new_rule(year, month, budget_rules)
-
-    copy_rules_col.button(
-        "Copy last month's rules",
-        on_click=copy_last_month_rules,
-        args=(year, month, budget_rules),
-        key="copy_last_month_rules",
-        use_container_width=True
-    )
-
-    budget_overview(year, month, budget_rules)
+    add_or_copy_rules_ui(year, month)
+    monthly_budget_overview(year, month)
 
 with project_tab:
-    col_select, col_add, col_delete = st.columns([8, 1, 1])
-    with col_select:
-        project_name = select_project(budget_rules)
-    with col_add:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            "New project",
-            on_click=add_new_project,
-            args=(budget_rules,),
-            key="add_new_budget_project",
-            use_container_width=True
-        )
-    with col_delete:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            "Delete project",
-            on_click=delete_project,
-            key="delete_budget_project",
-            use_container_width=True,
-            args=(project_name,),
-            disabled=project_name is None
-        )
-
-    if project_name is not None:
-        view_project_budget(project_name, budget_rules)
+    project_name = project_budget_buttons_bar()
+    project_budget_overview(project_name)
