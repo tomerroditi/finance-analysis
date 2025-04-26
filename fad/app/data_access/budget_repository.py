@@ -9,21 +9,27 @@ from fad.app.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS,
 conn = get_db_connection()
 
 
-class MonthlyBudgetRepository:
+class BudgetRepository:
+    @staticmethod
+    def get_all_rules() -> pd.DataFrame:
+        """Get all rules from the budget repository."""
+        rules = get_table(conn, Tables.BUDGET_RULES.value)
+        rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        return rules
 
     @staticmethod
-    def add_rule(name: str, amount: float, category: str, tags: str, month: Optional[int], year: Optional[int]) -> None:
+    def add_rule(name: str, amount: float, category: str, tags: str | list[str], month: Optional[int], year: Optional[int]) -> None:
         with conn.session as s:
             cmd = sa.text(f"""
                 INSERT INTO {Tables.BUDGET_RULES.value}
-                (name, amount, category, tags, month, year)
-                VALUES (:name, :amount, :category, :tags, :month, :year)
+                ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR})
+                VALUES (:{NAME}, :{AMOUNT}, :{CATEGORY}, :{TAGS}, :{MONTH}, :{YEAR})
             """)
             s.execute(cmd, {
                 NAME: name,
                 AMOUNT: amount,
                 CATEGORY: category,
-                TAGS: tags,
+                TAGS: ";".join(tags) if isinstance(tags, list) else tags,
                 MONTH: month,
                 YEAR: year
             })
@@ -33,17 +39,29 @@ class MonthlyBudgetRepository:
     def update_rule(id_: int, **fields) -> None:
         assert all(k in {NAME, AMOUNT, CATEGORY, TAGS} for k in fields), "Invalid fields for update"
 
-        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
-        fields[ID] = id_
+        set_clause = ", ".join(f"{k} = :{k}" for k in fields.keys())
+        fields[ID] = str(id_)  # TODO: realize why we need to convert to str here where the table column is set to int
+        if TAGS in fields and isinstance(fields[TAGS], list):
+            fields[TAGS] = ";".join(fields[TAGS])
 
         with conn.session as s:
             cmd = sa.text(f"""
                 UPDATE {Tables.BUDGET_RULES.value}
                 SET {set_clause}
-                WHERE id = :id
-            """)
-            s.execute(cmd, fields)
+                WHERE {ID} = :{ID}
+            """).bindparams(sa.bindparam(ID, type_=sa.Integer))
+            result = s.execute(cmd, fields)
+            if result.rowcount == 0:
+                raise ValueError(f"No rule found with ID {id_}. Update failed.")
             s.commit()
+
+
+class MonthlyBudgetRepository(BudgetRepository):
+    @staticmethod
+    def get_all_rules() -> pd.DataFrame:
+        rules = super(MonthlyBudgetRepository, MonthlyBudgetRepository).get_all_rules()
+        rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
+        return rules
 
     @staticmethod
     def delete_rule(id_: int) -> None:
@@ -63,12 +81,6 @@ class MonthlyBudgetRepository:
             s.commit()
 
     @staticmethod
-    def get_all_rules() -> list[dict]:
-        with conn.session as s:
-            result = s.execute(sa.text(f"SELECT * FROM {Tables.BUDGET_RULES.value}"))
-            return [dict(row) for row in result.fetchall()]
-
-    @staticmethod
     def delete_rules_by_month(year: int, month: int) -> None:
         with conn.session as s:
             cmd = sa.text(
@@ -78,27 +90,26 @@ class MonthlyBudgetRepository:
             s.commit()
 
 
-class ProjectBudgetRepository:
+class ProjectBudgetRepository(BudgetRepository):
+    @staticmethod
+    def get_all_rules() -> pd.DataFrame:
+        rules = super(ProjectBudgetRepository, ProjectBudgetRepository).get_all_rules()
+        rules = rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
+        return rules
 
     @staticmethod
-    def insert_project_rule(category: str, name: str, tags: str, amount: float):
-        with conn.session as s:
-            s.execute(
-                sa.text(
-                    f"""
-                    INSERT INTO {Tables.BUDGET_RULES.value}
-                    ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR})
-                    VALUES (:name, :amount, :category, :tags, NULL, NULL)
-                    """
-                ),
-                {
-                    "name": name,
-                    "amount": amount,
-                    "category": category,
-                    "tags": tags
-                }
-            )
-            s.commit()
+    def add_rule(name: str, amount: float, category: str, tags: str | list[str], year: Optional[int] = None, month: Optional[int] = None) -> None:
+        if year is not None or month is not None:
+            raise ValueError("Year and month should be None for project rules")
+
+        super(ProjectBudgetRepository, ProjectBudgetRepository).add_rule(
+            name=name,
+            amount=amount,
+            category=category,
+            tags=tags,
+            month=None,
+            year=None
+        )
 
     @staticmethod
     def delete_project_rules(category: str):
@@ -116,6 +127,7 @@ class ProjectBudgetRepository:
 
     @staticmethod
     def delete_project_tag_rule(category: str, tag: str):
+        assert isinstance(tag, str), f"Tag should be a string, got {type(tag)} ({tag})"
         with conn.session as s:
             s.execute(
                 sa.text(
@@ -131,8 +143,10 @@ class ProjectBudgetRepository:
     @staticmethod
     def get_rules_for_project(category: str) -> pd.DataFrame:
         rules = get_table(conn, Tables.BUDGET_RULES.value)
-        return rules.loc[
+        rules = rules.loc[
             (rules[CATEGORY] == category) &
             (rules[YEAR].isnull()) &
             (rules[MONTH].isnull())
         ]
+        rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        return rules

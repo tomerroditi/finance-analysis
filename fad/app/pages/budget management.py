@@ -21,22 +21,19 @@ isolated budget management for a project/event (wedding, big trip, home renovati
 import streamlit as st
 
 from fad.app.components.budget_overview import (
-    monthly_budget_overview,
-    select_month_ui,
-    add_or_copy_rules_ui,
-    project_budget_overview,
-    project_budget_buttons_bar
+    MonthlyBudgetUI,
+    ProjectBudgetUI,
 )
 
 monthly_tab, project_tab = st.tabs(["Monthly Budget Management", "Project Budget Management"])
 
 with monthly_tab:
     # TODO: make the raw data editable from here as well
-    year, month = select_month_ui()
-    st.title(f"Budget of: {year}-{month}")
-    add_or_copy_rules_ui(year, month)
-    monthly_budget_overview(year, month)
-
+    monthly_ui = MonthlyBudgetUI()
+    monthly_ui.select_month()
+    monthly_ui.add_or_copy_rules_ui()
+    monthly_ui.monthly_budget_overview()
 with project_tab:
-    project_name = project_budget_buttons_bar()
-    project_budget_overview(project_name)
+    project_ui = ProjectBudgetUI()
+    project_ui.project_budget_buttons_bar()
+    project_ui.project_budget_overview()
