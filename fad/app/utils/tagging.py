@@ -3,7 +3,6 @@ import yaml
 
 import pandas as pd
 import streamlit_antd_components as sac
-from streamlit_tags import st_tags
 from sqlalchemy.sql import text
 from streamlit.connections import SQLConnection
 from typing import Literal
@@ -111,46 +110,6 @@ class CategoriesAndTags:
             st.button(f'Delete {category}', key=f'my_{category}_delete', disabled=disable,
                       on_click=self._delete_category,
                       args=(category,))
-
-    @st.fragment
-    def _view_and_edit_tags(self, category: str) -> None:
-        """
-        Display the tags of the given category and allow the user to edit them
-
-        Parameters
-        ----------
-        category : str
-            The category to display its tags
-
-        Returns
-        -------
-        None
-        """
-        # TODO: change st_tags to something else due to internal bug in the package that causes many undesired reruns.
-        st.subheader(category, divider="gray")
-        if category == "Ignore":
-            st.write(
-                "Transactions that you don't want to consider in the analysis. For example credit card bills in "
-                "you bank account (which are already accounted for in the credit card transactions tracking), "
-                "internal transfers, etc.")
-        if category == "Salary":
-            st.write("Transactions that are your salary income. we advise using the employer's name as the tag.")
-        if category == "Other Income":
-            st.write("Transactions that are income other than your salary. For example, rental income, dividends, "
-                     "refunds, etc.")
-        if category == "Investments":
-            st.write("Transactions for investments you made. For example, depositing money into some fund, buying "
-                     "stocks, real estate, etc.")
-        tags = self.categories_and_tags[category]
-        tags = [format_category_or_tag_strings(tag) for tag in tags]
-        new_tags = st_tags(label='', value=tags, key=f'{category}_tags')
-        new_tags = [format_category_or_tag_strings(tag) for tag in new_tags]
-        new_tags = list(set(new_tags).difference(set(tags)))
-        if new_tags:
-            self.categories_and_tags[category] += new_tags
-            # save changes and rerun to update the UI
-            self._update_yaml()
-            st.rerun()
 
     @st.dialog('Add New Category')
     def _add_new_category(self) -> None:

@@ -1,5 +1,6 @@
 import streamlit as st
 
+from fad.app.components.tagging_components import CategoriesTagsEditor
 from fad.app.utils.tagging import CategoriesAndTags
 from fad.app.utils.data import get_db_connection
 
@@ -10,7 +11,7 @@ categories_and_tags = CategoriesAndTags(get_db_connection())
 tab_tags, tab_auto_tagger, tab_manually_tag = st.tabs(["Categories & Tags", "Automatic Tagger", "Manually Tagging"])
 
 with tab_tags:
-    categories_and_tags.edit_categories_and_tags()
+    CategoriesTagsEditor().render()
 
 with tab_auto_tagger:
     st.caption("<p style='font-size:20px;'>"
