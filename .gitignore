@@ -1,4 +1,65 @@
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+*.log
+*.pot
+*.mo
+*.sqlite3
+*.db
+*.env
+.env.*
+.venv/
+venv/
 
-fad/scraper/node/node_modules
-fad/scraper/node/package-lock.json
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Test and coverage
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+htmlcov/
+
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+npm-debug.log*
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# GitHub
+.github/
+
+# Misc
+*.bak
+*.swp
+*.swo
+*.tmp
+
+# Ignore history folder (if not needed)
+.history/
+
