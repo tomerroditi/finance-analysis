@@ -16,9 +16,7 @@ TOTAL_BUDGET = 'Total Budget'
 class Tables(Enum):
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
-    INSURANCE = 'insurance_transactions'
-    SAVINGS = 'savings'
-    TAGS = 'tags'
+    AUTO_TAGGER = 'automatic_tagger'
     BUDGET_RULES = 'budget_rules'
 
 
@@ -45,7 +43,7 @@ CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
 
 
-class TagsTableFields(Enum):
+class AutoTaggerTableFields(Enum):
     NAME = 'name'
     CATEGORY = 'category'
     TAG = 'tag'
