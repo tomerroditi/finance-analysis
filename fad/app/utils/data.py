@@ -16,19 +16,19 @@ from fad.app.naming_conventions import (
     CreditCardTableFields,
     Tables,
     BankTableFields,
-    TagsTableFields,
+    AutoTaggerTableFields,
     BudgetRulesTableFields,
 )
 
 
-tags_table = Tables.TAGS.value
+tags_table = Tables.AUTO_TAGGER.value
 credit_card_table = Tables.CREDIT_CARD.value
 bank_table = Tables.BANK.value
-tags_category_col = TagsTableFields.CATEGORY.value
-tag_col = TagsTableFields.TAG.value
-tags_name_col = TagsTableFields.NAME.value
-tags_service_col = TagsTableFields.SERVICE.value
-tags_account_number_col = TagsTableFields.ACCOUNT_NUMBER.value
+tags_category_col = AutoTaggerTableFields.CATEGORY.value
+tag_col = AutoTaggerTableFields.TAG.value
+tags_name_col = AutoTaggerTableFields.NAME.value
+tags_service_col = AutoTaggerTableFields.SERVICE.value
+tags_account_number_col = AutoTaggerTableFields.ACCOUNT_NUMBER.value
 cc_desc_col = CreditCardTableFields.DESCRIPTION.value
 cc_tag_col = CreditCardTableFields.TAG.value
 cc_category_col = CreditCardTableFields.CATEGORY.value
