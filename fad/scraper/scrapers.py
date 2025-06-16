@@ -45,6 +45,10 @@ def get_scraper(service_name: str, provider_name: str, account_name: str, creden
             return OneZeroScraper(account_name, credentials)
         elif provider_name == 'hapoalim':
             return HapoalimScraper(account_name, credentials)
+        elif provider_name == 'dummy_tfa':
+            return DummyTFAScraper(account_name, credentials)
+        elif provider_name == 'dummy_tfa_no_otp':
+            return DummyTFAScraperNoOTP(account_name, credentials)
     elif service_name == 'insurance':
         return InsuranceScraper(account_name, credentials)
     else:
@@ -163,11 +167,14 @@ class Scraper(ABC):
         """
         start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
 
+        print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} started', flush=True)
         try:
             self.scrape_data(start_date)
         except LoginError:
-            print(f'{self.provider_name}: {self.account_name}: {self.error}')
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
             return
+
+        print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} finished', flush=True)
 
         if self.data.empty:
             if self.otp_code == self.CANCEL:
@@ -574,6 +581,52 @@ class OneZeroScraper(BankScraper):
                 break
 
         return scraped_data_to_df(self.result)
+
+
+class DummyTFAScraper(OneZeroScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'dummy_tfa.js')
+    provider_name = 'dummy_tfa'
+    requires_2fa = True
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Dummy TFA scraper
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (
+            self.credentials.get("email", "dummy@example.com"),
+            self.credentials.get("password", "dummypass"),
+            self.credentials.get("phoneNumber", "1234567890"),
+            self.credentials.get("otpLongTermToken", "none")
+        )
+        self.data = self._scrape_data(start_date, *args)
+
+
+class DummyTFAScraperNoOTP(OneZeroScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'dummy_tfa_no_otp.js')
+    provider_name = 'dummy_tfa_no_otp'
+    requires_2fa = True
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Dummy TFA scraper
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (
+            self.credentials.get("email", "dummy@example.com"),
+            self.credentials.get("password", "dummypass"),
+            self.credentials.get("phoneNumber", "1234567890"),
+            self.credentials.get("otpLongTermToken", "none")
+        )
+        self.data = self._scrape_data(start_date, *args)
 
 
 class HapoalimScraper(BankScraper):
