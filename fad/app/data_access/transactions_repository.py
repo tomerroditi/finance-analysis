@@ -2,6 +2,7 @@ import pandas as pd
 from streamlit.connections import SQLConnection
 from sqlalchemy import text
 from typing import Literal
+from datetime import datetime, timedelta
 
 from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields
 
@@ -114,6 +115,27 @@ class TransactionsRepository:
         else:
             return self.bank_repo.get_table()
 
+    def get_latest_data_date(self) -> datetime:
+        """
+        Get the latest date of transactions for the specified service.
+
+        Returns
+        -------
+        datetime
+            The latest date of transactions across all tables.
+        """
+        latest_dates = []
+
+        for table in self.tables:
+            query = f'SELECT MAX({self.date_col}) FROM {table}'
+            latest_date = self.conn.query(query, ttl=0).iloc[0, 0]
+            if latest_date is not None:
+                latest_dates.append(datetime.strptime(latest_date, '%Y-%m-%d'))
+            else:
+                latest_dates.append(pd.Timestamp(datetime.today() - timedelta(days=365)))
+
+        latest_date = min(latest_dates)
+        return latest_date
 
 
 class ServiceRepository:
