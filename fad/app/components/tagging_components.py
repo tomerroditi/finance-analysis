@@ -1,13 +1,15 @@
-import streamlit as st
 from typing import List
-from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
-from fad.app.naming_conventions import NonExpensesCategories
-from fad.app.data_access import get_db_connection
-import streamlit_antd_components as sac
 from typing import Literal
-from fad.app.utils.widgets import PandasFilterWidgets
-from fad.app.services.transactions_service import TransactionsService
+
 import pandas as pd
+import streamlit as st
+import streamlit_antd_components as sac
+
+from fad.app.data_access import get_db_connection
+from fad.app.naming_conventions import NonExpensesCategories
+from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
+from fad.app.services.transactions_service import TransactionsService
+from fad.app.utils.widgets import PandasFilterWidgets
 
 
 def format_category_or_tag_strings(s: str) -> str:

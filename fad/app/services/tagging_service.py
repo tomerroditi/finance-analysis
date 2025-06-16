@@ -1,12 +1,12 @@
 from typing import Dict, List, Tuple
-import streamlit as st
-from fad.app.data_access import get_table
-from streamlit.connections import SQLConnection
 from typing import Literal
 
+import streamlit as st
+from streamlit.connections import SQLConnection
+
+from fad.app.data_access import get_table
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
-
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,

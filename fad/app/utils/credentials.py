@@ -24,11 +24,12 @@ insurances:
             yet_another_parameter: value_4
 """
 import os
+from typing import Literal
+
 import streamlit as st
 import yaml
-
 from streamlit_phone_number import st_phone_number
-from typing import Literal
+
 from fad import CREDENTIALS_PATH, SRC_PATH
 from fad.app.naming_conventions import (
     Banks,
@@ -37,7 +38,6 @@ from fad.app.naming_conventions import (
     LoginFields,
     DisplayFields,
 )
-
 
 two_fa_providers = [
     'onezero'

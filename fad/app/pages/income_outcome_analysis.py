@@ -8,14 +8,13 @@ the user should be able to view the following data:
 - paychecks analysis - total income, net income, pension, taxes, etc.
 
 """
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 from fad.app.data_access import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
 from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
 from fad.app.utils.widgets import PandasFilterWidgets
-
 
 amount_col = TransactionsTableFields.AMOUNT.value
 date_col = TransactionsTableFields.DATE.value

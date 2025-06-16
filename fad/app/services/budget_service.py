@@ -1,12 +1,12 @@
+from typing import Optional
+
 import pandas as pd
 
-from typing import Optional
-from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
-from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, TransactionsTableFields, NonExpensesCategories
-from fad.app.data_access.tagging_repository import TaggingRepository
-
 from fad.app.data_access import get_table, get_db_connection
-
+from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.tagging_repository import TaggingRepository
+from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, \
+    TransactionsTableFields, NonExpensesCategories
 
 tagging_repository = TaggingRepository()
 

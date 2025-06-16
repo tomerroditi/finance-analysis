@@ -1,7 +1,9 @@
 from typing import List
+from typing import Literal
+
 import pandas as pd
 from streamlit.connections import SQLConnection
-from typing import Literal
+
 from fad.app.data_access.transactions_repository import TransactionsRepository
 
 

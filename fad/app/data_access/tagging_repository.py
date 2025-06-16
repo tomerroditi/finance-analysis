@@ -1,12 +1,14 @@
+import os
+from typing import Dict, List
+from typing import Literal, Optional
+
+import pandas as pd
 import sqlalchemy as sa
 import streamlit as st
-import pandas as pd
-import os
-from typing import Literal, Optional
-from streamlit.connections import SQLConnection
-from sqlalchemy.sql import text
 import yaml
-from typing import Dict, List
+from sqlalchemy.sql import text
+from streamlit.connections import SQLConnection
+
 from fad import CATEGORIES_PATH
 from fad.app.naming_conventions import (
     Tables,

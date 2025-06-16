@@ -1,18 +1,18 @@
 import pandas as pd
 import streamlit as st
 
-from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, ALL_TAGS, YEAR, MONTH
-from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService
-from fad.app.data_access.budget_repository import BudgetRepository, MonthlyBudgetRepository, ProjectBudgetRepository
-from fad.app.data_access.tagging_repository import TaggingRepository
-from fad.app.data_access import get_db_connection
 from fad.app.components.month_selector import (
     select_current_month,
     select_previous_month,
     select_next_month,
     select_custom_month
 )
-
+from fad.app.data_access import get_db_connection
+from fad.app.data_access.budget_repository import BudgetRepository, MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.tagging_repository import TaggingRepository
+from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
+    ALL_TAGS, YEAR, MONTH
+from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService
 
 tagging_repository = TaggingRepository()
 

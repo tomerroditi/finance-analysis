@@ -2,7 +2,6 @@ import streamlit as st
 
 from fad.app.utils.credentials import load_credentials, edit_delete_credentials, add_new_data_source
 
-
 ############################################################################################################
 # UI
 ############################################################################################################

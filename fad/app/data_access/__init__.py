@@ -1,11 +1,12 @@
 import os
-import sqlalchemy
-import pandas as pd
-import streamlit as st
 
+import pandas as pd
+import sqlalchemy
+import streamlit as st
 from streamlit.connections import SQLConnection
-from fad.app.data_access.transactions_repository import TransactionsRepository
+
 from fad import DB_PATH
+from fad.app.data_access.transactions_repository import TransactionsRepository
 
 
 def get_db_connection() -> SQLConnection:

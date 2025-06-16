@@ -1,8 +1,9 @@
-import pandas as pd
-from streamlit.connections import SQLConnection
-from sqlalchemy import text
-from typing import Literal
 from datetime import datetime, timedelta
+from typing import Literal
+
+import pandas as pd
+from sqlalchemy import text
+from streamlit.connections import SQLConnection
 
 from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields
 

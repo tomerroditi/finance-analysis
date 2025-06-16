@@ -1,13 +1,12 @@
-import sqlalchemy as sa
-import pandas as pd
+from typing import Optional
 
+import pandas as pd
+import sqlalchemy as sa
 from sqlalchemy.sql import text
 from streamlit.connections import SQLConnection
 
-from typing import Optional
 from fad.app.data_access import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH
-
 
 conn = get_db_connection()
 
