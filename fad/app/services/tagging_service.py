@@ -1,9 +1,8 @@
 from typing import Dict, List, Tuple
 import streamlit as st
 from fad.app.data_access.tagging_data import load_categories_and_tags, save_categories_and_tags
-from fad.app.utils.data import get_categories_and_tags, format_category_or_tag_strings, assure_tags_table, get_table
+from fad.app.utils.data import get_table
 from streamlit.connections import SQLConnection
-from sqlalchemy import text
 from typing import Literal
 from fad.app.data_access.tagging_repository import AutoTaggerRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
@@ -11,8 +10,6 @@ from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
-    CreditCardTableFields,
-    BankTableFields,
 )
 
 tags_table = Tables.AUTO_TAGGER.value
@@ -25,9 +22,9 @@ service_col = AutoTaggerTableFields.SERVICE.value
 account_number_col = AutoTaggerTableFields.ACCOUNT_NUMBER.value
 
 
-
 def _sorted_unique(lst):
     return sorted(list(set(lst)))
+
 
 class CategoriesTagsService:
     def __init__(self):
@@ -210,4 +207,14 @@ class AutomaticTaggerService:
             pass  # No additional action needed
         else:
             raise ValueError(f"Invalid update method: {method}")
+
+    def update_raw_data_by_rules(self) -> None:
+        """
+        Apply automatic tagging rules to all untagged raw transaction data.
+
+        This method applies the rules from the auto tagger table to both credit card
+        and bank transactions that don't have tags yet.
+        """
+        self.auto_tagger_repo.update_raw_data_by_rules('credit_card')
+        self.auto_tagger_repo.update_raw_data_by_rules('bank')
 
