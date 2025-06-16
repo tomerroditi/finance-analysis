@@ -33,6 +33,7 @@ class TransactionsRepository:
         self.conn = conn
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
+        self.assure_table_exists()
 
     def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
                        account_number: str | None = None) -> None:
@@ -136,6 +137,11 @@ class TransactionsRepository:
 
         latest_date = min(latest_dates)
         return latest_date
+
+    def assure_table_exists(self):
+        """create the transactions table if it doesn't exist"""
+        self.cc_repo.assure_table_exists()
+        self.bank_repo.assure_table_exists()
 
 
 class ServiceRepository:
@@ -261,6 +267,8 @@ class CreditCardRepository(ServiceRepository):
     account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
     account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
     amount_col = CreditCardTableFields.AMOUNT.value
+    type_col = CreditCardTableFields.TYPE.value
+    status_col = CreditCardTableFields.STATUS.value
 
     def update_tagging_by_name(self, name: str, category: str, tag: str) -> None:
         """
@@ -294,6 +302,26 @@ class CreditCardRepository(ServiceRepository):
             s.execute(text(my_query), params)
             s.commit()
 
+    def assure_table_exists(self):
+        with self.conn.session as s:
+            s.execute(
+                text(f'CREATE TABLE IF NOT EXISTS {self.table} ('
+                     f'{self.id_col} INTEGER PRIMARY KEY, '
+                     f'{self.date_col} TEXT, '
+                     f'{self.amount_col} REAL, '
+                     f'{self.desc_col} TEXT, '
+                     f'{self.tag_col} TEXT, '
+                     f'{self.category_col} TEXT, '
+                     f'{self.provider_col} TEXT, '
+                     f'{self.account_name_col} TEXT, '
+                     f'{self.account_number_col} TEXT, '
+                     f'{self.status_col} TEXT, '
+                     f'{self.type_col} TEXT'
+                     f');'
+                )
+            )
+            s.commit()
+
 
 class BankRepository(ServiceRepository):
     table = Tables.BANK.value
@@ -307,6 +335,8 @@ class BankRepository(ServiceRepository):
     provider_col = BankTableFields.PROVIDER.value
     account_name_col = BankTableFields.ACCOUNT_NAME.value
     amount_col = BankTableFields.AMOUNT.value
+    type_col = BankTableFields.TYPE.value
+    status_col = BankTableFields.STATUS.value
 
     def update_tagging_by_name_and_account_number(self, name: str, account_number: str, category: str, tag: str) -> None:
         """
@@ -336,4 +366,24 @@ class BankRepository(ServiceRepository):
                 'account_number_val': account_number
             }
             s.execute(text(my_query), params)
+            s.commit()
+
+    def assure_table_exists(self):
+        with self.conn.session as s:
+            s.execute(
+                text(f'CREATE TABLE IF NOT EXISTS {self.table} ('
+                     f'{self.id_col} INTEGER PRIMARY KEY, '
+                     f'{self.date_col} TEXT, '
+                     f'{self.amount_col} REAL, '
+                     f'{self.desc_col} TEXT, '
+                     f'{self.tag_col} TEXT, '
+                     f'{self.category_col} TEXT, '
+                     f'{self.provider_col} TEXT, '
+                     f'{self.account_name_col} TEXT, '
+                     f'{self.account_number_col} TEXT, '
+                     f'{self.status_col} TEXT, '
+                     f'{self.type_col} TEXT'
+                     f');'
+                )
+            )
             s.commit()

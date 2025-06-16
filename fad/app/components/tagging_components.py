@@ -2,7 +2,7 @@ import streamlit as st
 from typing import List
 from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
 from fad.app.naming_conventions import NonExpensesCategories
-from ..utils.data import get_db_connection
+from fad.app.data_access import get_db_connection
 import streamlit_antd_components as sac
 from typing import Literal
 from fad.app.utils.widgets import PandasFilterWidgets

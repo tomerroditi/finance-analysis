@@ -11,7 +11,7 @@ the user should be able to view the following data:
 import streamlit as st
 import pandas as pd
 
-from fad.app.utils.data import get_db_connection, get_table
+from fad.app.data_access import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
 from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
 from fad.app.utils.widgets import PandasFilterWidgets

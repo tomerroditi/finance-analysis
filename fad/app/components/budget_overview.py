@@ -1,16 +1,20 @@
 import pandas as pd
 import streamlit as st
 
-from ..naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, ALL_TAGS, YEAR, MONTH
-from ..services.budget_service import MonthlyBudgetService, ProjectBudgetService
-from ..data_access.budget_repository import BudgetRepository, MonthlyBudgetRepository, ProjectBudgetRepository
-from ..utils.data import get_categories_and_tags
-from ..components.month_selector import (
+from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, ALL_TAGS, YEAR, MONTH
+from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService
+from fad.app.data_access.budget_repository import BudgetRepository, MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.tagging_repository import TaggingRepository
+from fad.app.data_access import get_db_connection
+from fad.app.components.month_selector import (
     select_current_month,
     select_previous_month,
     select_next_month,
     select_custom_month
 )
+
+
+tagging_repository = TaggingRepository()
 
 
 class BudgetUI:
@@ -127,13 +131,13 @@ class BudgetUI:
                 st.error(msg)
                 return
 
-            BudgetRepository.update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
+            BudgetRepository(get_db_connection()).update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
             st.success("Rule updated.")
             st.rerun()
 
     @staticmethod
     def _edit_rule_ui(rule: pd.Series) -> tuple[str, str, list[str]]:
-        cat_n_tags = get_categories_and_tags(copy=True)
+        cat_n_tags = tagging_repository.get_categories_and_tags(copy=True)
         is_project = pd.isnull(rule[YEAR]) and pd.isnull(rule[MONTH])
 
         name = st.text_input("Name", rule[NAME], key=f"edit_{rule[ID]}_name", disabled=is_project)
@@ -164,7 +168,7 @@ class MonthlyBudgetUI(BudgetUI):
     """
     def __init__(self):
         super().__init__()
-        self.budget_rules = MonthlyBudgetRepository.get_all_rules()
+        self.budget_rules = MonthlyBudgetRepository(get_db_connection()).get_all_rules()
         self.year = st.session_state.setdefault("year", pd.Timestamp.now().year)
         self.month = st.session_state.setdefault("month", pd.Timestamp.now().month)
         self.month_rules = MonthlyBudgetService.get_month_rules(self.year, self.month, self.budget_rules)
@@ -309,7 +313,7 @@ class ProjectBudgetUI(BudgetUI):
     """
     def __init__(self):
         super().__init__()
-        self.budget_rules = ProjectBudgetRepository.get_all_rules()
+        self.budget_rules = ProjectBudgetRepository(get_db_connection()).get_all_rules()
         self.project_name = None
         self.project_rules = None
 

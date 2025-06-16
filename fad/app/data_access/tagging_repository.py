@@ -1,14 +1,44 @@
 import sqlalchemy as sa
+import streamlit as st
 import pandas as pd
+import os
 from typing import Literal, Optional
 from streamlit.connections import SQLConnection
 from sqlalchemy.sql import text
-
+import yaml
+from typing import Dict, List
+from fad import CATEGORIES_PATH
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
     TransactionsTableFields,
 )
+
+
+class TaggingRepository:
+    @staticmethod
+    def get_categories_and_tags(copy: bool = False) -> dict[str, list[str]]:
+        """Load categories and tags from the YAML file."""
+        if 'categories_and_tags' not in st.session_state:
+            if not os.path.exists(CATEGORIES_PATH):
+                os.makedirs(os.path.dirname(CATEGORIES_PATH), exist_ok=True)
+                with open(os.path.join(SRC_PATH, 'resources', 'default_categories.yaml'), 'r') as file:
+                    default_categories = yaml.load(file, Loader=yaml.FullLoader)
+                with open(CATEGORIES_PATH, 'w') as file:
+                    yaml.dump(default_categories, file)
+
+            with open(CATEGORIES_PATH, 'r') as file:
+                st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
+
+        if copy:
+            return deepcopy(st.session_state['categories_and_tags'])
+        return st.session_state['categories_and_tags']
+
+    @staticmethod
+    def save_categories_and_tags(categories_and_tags: Dict[str, List[str]]) -> None:
+        """Save categories and tags to the YAML file."""
+        with open(CATEGORIES_PATH, 'w') as file:
+            yaml.dump(categories_and_tags, file)
 
 
 class AutoTaggerRepository:
@@ -27,8 +57,16 @@ class AutoTaggerRepository:
         """create the tags table if it doesn't exist"""
         with self.conn.session as s:
             s.execute(
-                text(f'CREATE TABLE IF NOT EXISTS {self.table} ({self.name_col} TEXT PRIMARY KEY, {self.category_col}'
-                     f' TEXT, {self.tag_col} TEXT, {self.service_col} TEXT, {self.account_number_col} TEXT);'))
+                text(
+                    f'CREATE TABLE IF NOT EXISTS {self.table} ('
+                    f'{self.name_col} TEXT PRIMARY KEY, '
+                    f'{self.category_col} TEXT, '
+                    f'{self.tag_col} TEXT, '
+                    f'{self.service_col} TEXT, '
+                    f'{self.account_number_col} TEXT'
+                    f');'
+                )
+            )
             s.commit()
 
     def get_table(self, service: Literal['credit_card', 'bank'] | None = None) -> pd.DataFrame:

@@ -1,16 +1,20 @@
 import pandas as pd
 
 from typing import Optional
-from ..data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
 from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, TransactionsTableFields, NonExpensesCategories
+from fad.app.data_access.tagging_repository import TaggingRepository
 
-from ..utils.data import get_categories_and_tags, get_table, get_db_connection
+from fad.app.data_access import get_table, get_db_connection
+
+
+tagging_repository = TaggingRepository()
 
 
 class MonthlyBudgetService:
     @staticmethod
     def get_available_tags_for_each_category(budget_rules: pd.DataFrame) -> dict[str, list[str]]:
-        cats_n_tags = get_categories_and_tags(copy=True)
+        cats_n_tags = tagging_repository.get_categories_and_tags(copy=True)
         for _, rule in budget_rules.iterrows():
             used_tags = rule[TAGS]
             if used_tags == [ALL_TAGS]:
@@ -201,7 +205,7 @@ class MonthlyBudgetService:
                 - allow_delete: bool
         """
         # TODO: split this function into smaller functions
-        budget_rules = MonthlyBudgetRepository.get_all_rules()
+        budget_rules = MonthlyBudgetRepository(get_db_connection()).get_all_rules()
         # Fetch all transaction data TODO: move to a separate function in data access layer
         conn = get_db_connection()
         bank_data = get_table(conn, Tables.BANK.value)
@@ -333,7 +337,7 @@ class ProjectBudgetService:
 
     @staticmethod
     def update_project_rules(project: str, project_rules: pd.DataFrame) -> bool:
-        cat_n_tags = get_categories_and_tags(copy=True)
+        cat_n_tags = tagging_repository.get_categories_and_tags(copy=True)
         tags = cat_n_tags.get(project, [])
         existing_tags = project_rules[TAGS].tolist()
         existing_tags = [tag[0] for tag in existing_tags]
@@ -356,7 +360,7 @@ class ProjectBudgetService:
     @staticmethod
     def get_available_categories(budget_rules: pd.DataFrame) -> list[str]:
         avail_cats = list(
-            set(list(get_categories_and_tags(copy=True).keys())) -
+            set(list(tagging_repository.get_categories_and_tags().keys())) -
             set(ProjectBudgetService.get_project_names(budget_rules))
         )
 

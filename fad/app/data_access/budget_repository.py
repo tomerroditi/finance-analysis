@@ -1,8 +1,11 @@
 import sqlalchemy as sa
 import pandas as pd
 
+from sqlalchemy.sql import text
+from streamlit.connections import SQLConnection
+
 from typing import Optional
-from fad.app.utils.data import get_db_connection, get_table
+from fad.app.data_access import get_db_connection, get_table
 from fad.app.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH
 
 
@@ -10,16 +13,27 @@ conn = get_db_connection()
 
 
 class BudgetRepository:
-    @staticmethod
-    def get_all_rules() -> pd.DataFrame:
+    table = Tables.BUDGET_RULES.value
+    id_col = ID
+    name_col = NAME
+    amount_col = AMOUNT
+    category_col = CATEGORY
+    tags_col = TAGS
+    year_col = YEAR
+    month_col = MONTH
+
+    def __init__(self, conn: SQLConnection):
+        self.conn = conn
+        self.assure_table_exists()
+
+    def get_all_rules(self) -> pd.DataFrame:
         """Get all rules from the budget repository."""
-        rules = get_table(conn, Tables.BUDGET_RULES.value)
+        rules = get_table(self.conn, Tables.BUDGET_RULES.value)
         rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
         return rules
 
-    @staticmethod
-    def add_rule(name: str, amount: float, category: str, tags: str | list[str], month: Optional[int], year: Optional[int]) -> None:
-        with conn.session as s:
+    def add_rule(self, name: str, amount: float, category: str, tags: str | list[str], month: Optional[int], year: Optional[int]) -> None:
+        with self.conn.session as s:
             cmd = sa.text(f"""
                 INSERT INTO {Tables.BUDGET_RULES.value}
                 ({NAME}, {AMOUNT}, {CATEGORY}, {TAGS}, {MONTH}, {YEAR})
@@ -35,8 +49,7 @@ class BudgetRepository:
             })
             s.commit()
 
-    @staticmethod
-    def update_rule(id_: int, **fields) -> None:
+    def update_rule(self, id_: int, **fields) -> None:
         assert all(k in {NAME, AMOUNT, CATEGORY, TAGS} for k in fields), "Invalid fields for update"
 
         set_clause = ", ".join(f"{k} = :{k}" for k in fields.keys())
@@ -44,7 +57,7 @@ class BudgetRepository:
         if TAGS in fields and isinstance(fields[TAGS], list):
             fields[TAGS] = ";".join(fields[TAGS])
 
-        with conn.session as s:
+        with self.conn.session as s:
             cmd = sa.text(f"""
                 UPDATE {Tables.BUDGET_RULES.value}
                 SET {set_clause}
@@ -55,24 +68,40 @@ class BudgetRepository:
                 raise ValueError(f"No rule found with ID {id_}. Update failed.")
             s.commit()
 
+    def assure_table_exists(self):
+        """create the budget table if it doesn't exist"""
+        with self.conn.session as s:
+            s.execute(
+                text(
+                    f'CREATE TABLE IF NOT EXISTS budget_rules ('
+                    f'{self.id_col} INTEGER PRIMARY KEY, '
+                    f'{self.name_col} TEXT, '
+                    f'{self.amount_col} REAL, '
+                    f'{self.category_col} TEXT, '
+                    f'{self.tags_col} TEXT, '
+                    f'{self.year_col} INTEGER, '
+                    f'{self.month_col} INTEGER'
+                    f');'
+                )
+            )
+            s.commit()
+
 
 class MonthlyBudgetRepository(BudgetRepository):
-    @staticmethod
-    def get_all_rules() -> pd.DataFrame:
-        rules = super(MonthlyBudgetRepository, MonthlyBudgetRepository).get_all_rules()
+
+    def get_all_rules(self) -> pd.DataFrame:
+        rules = super(MonthlyBudgetRepository, self).get_all_rules()
         rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
         return rules
 
-    @staticmethod
-    def delete_rule(id_: int) -> None:
-        with conn.session as s:
+    def delete_rule(self, id_: int) -> None:
+        with self.conn.session as s:
             cmd = sa.text(f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE id = :id")
             s.execute(cmd, {ID: id_})
             s.commit()
 
-    @staticmethod
-    def delete_project(project_name: str) -> None:
-        with conn.session as s:
+    def delete_project(self, project_name: str) -> None:
+        with self.conn.session as s:
             cmd = sa.text(f"""
                 DELETE FROM {Tables.BUDGET_RULES.value}
                 WHERE category = :category AND year IS NULL AND month IS NULL
@@ -80,9 +109,8 @@ class MonthlyBudgetRepository(BudgetRepository):
             s.execute(cmd, {CATEGORY: project_name})
             s.commit()
 
-    @staticmethod
-    def delete_rules_by_month(year: int, month: int) -> None:
-        with conn.session as s:
+    def delete_rules_by_month(self, year: int, month: int) -> None:
+        with self.conn.session as s:
             cmd = sa.text(
                 f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE {YEAR} = :{YEAR} AND {MONTH} = :{MONTH}"
             )
@@ -91,14 +119,12 @@ class MonthlyBudgetRepository(BudgetRepository):
 
 
 class ProjectBudgetRepository(BudgetRepository):
-    @staticmethod
-    def get_all_rules() -> pd.DataFrame:
-        rules = super(ProjectBudgetRepository, ProjectBudgetRepository).get_all_rules()
+    def get_all_rules(self) -> pd.DataFrame:
+        rules = super(ProjectBudgetRepository, self).get_all_rules()
         rules = rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
         return rules
 
-    @staticmethod
-    def add_rule(name: str, amount: float, category: str, tags: str | list[str], year: Optional[int] = None, month: Optional[int] = None) -> None:
+    def add_rule(self, name: str, amount: float, category: str, tags: str | list[str], year: Optional[int] = None, month: Optional[int] = None) -> None:
         if year is not None or month is not None:
             raise ValueError("Year and month should be None for project rules")
 
@@ -111,9 +137,8 @@ class ProjectBudgetRepository(BudgetRepository):
             year=None
         )
 
-    @staticmethod
-    def delete_project_rules(category: str):
-        with conn.session as s:
+    def delete_project_rules(self, category: str):
+        with self.conn.session as s:
             s.execute(
                 sa.text(
                     f"""
@@ -125,10 +150,9 @@ class ProjectBudgetRepository(BudgetRepository):
             )
             s.commit()
 
-    @staticmethod
-    def delete_project_tag_rule(category: str, tag: str):
+    def delete_project_tag_rule(self, category: str, tag: str):
         assert isinstance(tag, str), f"Tag should be a string, got {type(tag)} ({tag})"
-        with conn.session as s:
+        with self.conn.session as s:
             s.execute(
                 sa.text(
                     f"""
@@ -140,9 +164,8 @@ class ProjectBudgetRepository(BudgetRepository):
             )
             s.commit()
 
-    @staticmethod
-    def get_rules_for_project(category: str) -> pd.DataFrame:
-        rules = get_table(conn, Tables.BUDGET_RULES.value)
+    def get_rules_for_project(self, category: str) -> pd.DataFrame:
+        rules = get_table(self.conn, Tables.BUDGET_RULES.value)
         rules = rules.loc[
             (rules[CATEGORY] == category) &
             (rules[YEAR].isnull()) &

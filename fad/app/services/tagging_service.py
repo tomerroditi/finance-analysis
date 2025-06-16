@@ -1,10 +1,10 @@
 from typing import Dict, List, Tuple
 import streamlit as st
-from fad.app.data_access.tagging_data import load_categories_and_tags, save_categories_and_tags
-from fad.app.utils.data import get_table
+from fad.app.data_access import get_table
 from streamlit.connections import SQLConnection
 from typing import Literal
-from fad.app.data_access.tagging_repository import AutoTaggerRepository
+
+from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 
 from fad.app.naming_conventions import (
@@ -28,9 +28,7 @@ def _sorted_unique(lst):
 
 class CategoriesTagsService:
     def __init__(self):
-        if 'categories_and_tags' not in st.session_state:
-            st.session_state['categories_and_tags'] = load_categories_and_tags()
-        self.categories_and_tags = st.session_state['categories_and_tags']
+        self.categories_and_tags = TaggingRepository.get_categories_and_tags()
 
     def add_category(self, category: str) -> bool:
         if not category or not isinstance(category, str) or not category.strip():
@@ -84,7 +82,7 @@ class CategoriesTagsService:
 
     def _save(self):
         st.session_state['categories_and_tags'] = self.categories_and_tags
-        save_categories_and_tags(self.categories_and_tags)
+        TaggingRepository.save_categories_and_tags(self.categories_and_tags)
 
 
 class AutomaticTaggerService:
