@@ -1,0 +1,53 @@
+from copy import deepcopy
+
+from fad.app.data_access.credentials_repository import CredentialsRepository
+
+
+class CredentialsService:
+    def __init__(self):
+        self.creds_access = CredentialsRepository()
+        self.credentials = self.creds_access.credentials
+
+    def get_available_data_sources(self) -> list[str]:
+        """
+        Get a list of available services based on the credentials.
+
+        Returns
+        -------
+        list[str]
+            A list of available data sources in the format of "Service - Provider - Account"
+        """
+        available_scrapers = []
+        for service, providers in self.credentials.items():
+            for provider, accounts in providers.items():
+                for account in accounts.keys():
+                    available_scrapers.append(f"{service} - {provider} - {account}")
+
+        return available_scrapers
+
+    def get_data_sources_credentials(self, data_sources: list[str]) -> dict:
+        """
+        This method filters the stored credentials based on the provided list of
+        data sources. It removes credentials for accounts that are not included
+        in the list of data sources.
+
+        Parameters
+        ----------
+        data_sources : list[str]
+            A list of strings representing the data sources for which credentials should be retained. The format is
+            "Service - Provider - Account".
+
+        Returns
+        -------
+        dict:
+            A deep copy of the filtered credentials dictionary where only the relevant credentials for the given data
+            sources are included.
+        """
+        creds_to_use = deepcopy(self.credentials)
+        for service, providers in self.credentials.items():
+            for provider, accounts in providers.items():
+                for account, cred in accounts.items():
+                    if f"{service} - {provider} - {account}" not in data_sources:
+                        creds_to_use[service][provider].pop(account, None)
+
+        return creds_to_use
