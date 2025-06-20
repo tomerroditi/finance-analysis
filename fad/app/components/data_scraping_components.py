@@ -4,7 +4,7 @@ import streamlit as st
 from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.tagging_service import AutomaticTaggerService
-from ..utils.data import get_db_connection
+from fad.app.data_access import get_db_connection
 
 
 class DataScrapingComponent:
