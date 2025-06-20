@@ -86,8 +86,23 @@ export async function runScraper(options, credentials, requires2FA = false) {
 
     return scrapeResult;
   } catch (e) {
+    // Define error types that match the Python ErrorType enum
+    const ErrorType = {
+      GENERAL: "GENERAL",
+      CREDENTIALS: "CREDENTIALS",
+      CONNECTION: "CONNECTION",
+      TIMEOUT: "TIMEOUT",
+      DATA: "DATA",
+      LOGIN: "LOGIN",
+      PASSWORD_CHANGE: "PASSWORD_CHANGE",
+      ACCOUNT: "ACCOUNT",
+      SERVICE: "SERVICE",
+      RATE_LIMIT: "RATE_LIMIT",
+      SECURITY: "SECURITY"
+    };
+
     // Categorize the error for better handling in Python
-    let errorPrefix = "ERROR_GENERAL";
+    let errorType = ErrorType.GENERAL;
     let errorMessage = e.message;
 
     // Check for credential errors
@@ -96,78 +111,78 @@ export async function runScraper(options, credentials, requires2FA = false) {
         e.message.includes("password") || 
         e.message.includes("credentials") ||
         e.message.includes("GENERIC")) {
-      errorPrefix = "ERROR_CREDENTIALS";
+      errorType = ErrorType.CREDENTIALS;
     }
     // Check for connection errors
     else if (e.message.includes("ENOTFOUND") || 
              e.message.includes("ECONNREFUSED") || 
              e.message.includes("network") ||
              e.message.includes("Network")) {
-      errorPrefix = "ERROR_CONNECTION";
+      errorType = ErrorType.CONNECTION;
     }
     // Check for timeout errors
     else if (e.message.includes("timeout") || 
              e.message.includes("timed out") ||
              e.message.includes("TIMEOUT")) {
-      errorPrefix = "ERROR_TIMEOUT";
+      errorType = ErrorType.TIMEOUT;
     }
     // Check for data errors
     else if (e.message.includes("data") || 
              e.message.includes("parsing") ||
              e.message.includes("DATA")) {
-      errorPrefix = "ERROR_DATA";
+      errorType = ErrorType.DATA;
     }
     // Check for login errors
     else if (e.message.includes("login") || 
              e.message.includes("authentication") || 
              e.message.includes("auth") ||
              e.message.includes("LOGIN")) {
-      errorPrefix = "ERROR_LOGIN";
+      errorType = ErrorType.LOGIN;
     }
     // Check for password change required
     else if (e.message.includes("CHANGE_PASSWORD") || 
              e.message.includes("password expired") ||
              e.message.includes("change password")) {
-      errorPrefix = "ERROR_PASSWORD_CHANGE";
+      errorType = ErrorType.PASSWORD_CHANGE;
     }
     // Check for account-related errors
     else if (e.message.includes("account") || 
              e.message.includes("blocked") || 
              e.message.includes("suspended") ||
              e.message.includes("locked")) {
-      errorPrefix = "ERROR_ACCOUNT";
+      errorType = ErrorType.ACCOUNT;
     }
     // Check for service unavailability
     else if (e.message.includes("maintenance") || 
              e.message.includes("unavailable") || 
              e.message.includes("service") ||
              e.message.includes("down")) {
-      errorPrefix = "ERROR_SERVICE";
+      errorType = ErrorType.SERVICE;
     }
     // Check for rate limiting
     else if (e.message.includes("rate limit") || 
              e.message.includes("too many requests") || 
              e.message.includes("try again later") ||
              e.message.includes("429")) {
-      errorPrefix = "ERROR_RATE_LIMIT";
+      errorType = ErrorType.RATE_LIMIT;
     }
     // Check for security-related issues
     else if (e.message.includes("captcha") || 
              e.message.includes("verification") || 
              e.message.includes("security") ||
              e.message.includes("challenge")) {
-      errorPrefix = "ERROR_SECURITY";
+      errorType = ErrorType.SECURITY;
     }
 
     // Log the error with its category for debugging
-    console.error(`logging error: ${errorPrefix}: ${errorMessage}`);
+    console.error(`logging error: ${errorType}: ${errorMessage}`);
 
     // Add stack trace for more detailed debugging
     console.error(`DEBUG: Error stack trace: ${e.stack}`);
 
     return { 
       success: false, 
-      errorType: errorPrefix,
+      errorType: errorType,
       errorMessage: errorMessage
     };
   }

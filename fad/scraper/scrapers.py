@@ -9,8 +9,9 @@ from time import sleep
 from threading import Event
 from abc import ABC, abstractmethod
 from fad.scraper.exceptions import (
-    ScraperError, LoginError, CredentialsError, 
-    ConnectionError, TimeoutError, DataError, AccountError, ServiceError, SecurityError, RateLimitError
+    ErrorType, ScraperError, LoginError, CredentialsError, 
+    ConnectionError, TimeoutError, DataError, AccountError, 
+    ServiceError, SecurityError, RateLimitError, PasswordChangeError
 )
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
@@ -272,15 +273,17 @@ class Scraper(ABC):
             Additional arguments to pass to the scraping script
         """
         args = ['node', self.script_path, *args, start_date]
+        timeout = 60
         try:
-            result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=60)
-            self.result = result.stdout
-            self._handle_error(result.stderr)
+            result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=timeout)
         except subprocess.TimeoutExpired as e:
             self.result = ''
-            error_msg = f'Timeout: The scraping process for {self.provider_name} took too long (60 seconds) and was terminated'
+            error_msg = f'Timeout: The scraping process for {self.provider_name} - {self.account_name} took too long ({timeout} seconds) and was terminated'
             self.error = error_msg
             raise TimeoutError(error_msg, str(e))
+
+        self.result = result.stdout
+        self._handle_error(result.stderr)
 
         data = scraped_data_to_df(self.result)
         return data
@@ -364,6 +367,16 @@ class Scraper(ABC):
             If a scraping operation times out
         DataError
             If there's an issue with the scraped data
+        AccountError
+            If there's an issue with the account (blocked, suspended, etc.)
+        ServiceError
+            If the service is unavailable (maintenance, etc.)
+        RateLimitError
+            If the scraper hits a rate limit or too many requests
+        SecurityError
+            If there's a security-related issue (CAPTCHA, additional verification, etc.)
+        PasswordChangeError
+            If a password change is required
         """
         # Store the original error for internal logging
         original_error = error
@@ -380,41 +393,64 @@ class Scraper(ABC):
         # Log the original error for debugging purposes
         print(f"DEBUG: {self.provider_name}: {self.account_name}: Original error: {original_error}", flush=True)
 
-        # Categorize the error and provide a user-friendly message
+        # Map of error types to exception classes and user-friendly message templates
+        error_handlers = {
+            ErrorType.CREDENTIALS: (
+                CredentialsError,
+                f"Invalid credentials: Please check your login details for {self.provider_name} - {self.account_name}"
+            ),
+            ErrorType.CONNECTION: (
+                ConnectionError,
+                f"Connection error: Unable to connect to {self.provider_name} - {self.account_name}. Please check your internet connection and try again."
+            ),
+            ErrorType.TIMEOUT: (
+                TimeoutError,
+                f"Timeout error: The operation for {self.provider_name} - {self.account_name} timed out. Please try again later."
+            ),
+            ErrorType.DATA: (
+                DataError,
+                f"Data error: There was an issue processing data from {self.provider_name} - {self.account_name}."
+            ),
+            ErrorType.LOGIN: (
+                LoginError,
+                f"Login error: Failed to log in to {self.provider_name} - {self.account_name}. Please check your credentials."
+            ),
+            ErrorType.PASSWORD_CHANGE: (
+                PasswordChangeError,
+                f"Password expired: The password for {self.provider_name} - {self.account_name} has expired, please change it"
+            ),
+            ErrorType.ACCOUNT: (
+                AccountError,
+                f"Account error: There is an issue with your {self.provider_name} - {self.account_name} account. It may be blocked, suspended, or locked."
+            ),
+            ErrorType.SERVICE: (
+                ServiceError,
+                f"Service unavailable: The {self.provider_name} - {self.account_name} service is currently unavailable. This may be due to maintenance or technical issues."
+            ),
+            ErrorType.RATE_LIMIT: (
+                RateLimitError,
+                f"Rate limit exceeded: Too many requests to {self.provider_name} - {self.account_name}. Please try again later."
+            ),
+            ErrorType.SECURITY: (
+                SecurityError,
+                f"Security verification required: Additional security verification is needed for {self.provider_name} - {self.account_name}."
+            ),
+            ErrorType.GENERAL: (
+                ScraperError,
+                f"Error with {self.provider_name} - {self.account_name}: {error}"
+            )
+        }
+
         # Check for error prefixes from Node.js scripts
-        if "ERROR_CREDENTIALS" in error:
-            user_message = f"Invalid credentials: Please check your login details for {self.provider_name}"
-            exception_class = CredentialsError
-        elif "ERROR_CONNECTION" in error:
-            user_message = f"Connection error: Unable to connect to {self.provider_name}. Please check your internet connection and try again."
-            exception_class = ConnectionError
-        elif "ERROR_TIMEOUT" in error:
-            user_message = f"Timeout error: The operation for {self.provider_name} timed out. Please try again later."
-            exception_class = TimeoutError
-        elif "ERROR_DATA" in error:
-            user_message = f"Data error: There was an issue processing data from {self.provider_name}."
-            exception_class = DataError
-        elif "ERROR_LOGIN" in error:
-            user_message = f"Login error: Failed to log in to {self.provider_name}. Please check your credentials."
-            exception_class = LoginError
-        elif "ERROR_PASSWORD_CHANGE" in error:
-            user_message = f"Password expired: The password for {self.provider_name} has expired, please change it"
-            exception_class = CredentialsError
-        elif "ERROR_ACCOUNT" in error:
-            user_message = f"Account error: There is an issue with your {self.provider_name} account. It may be blocked, suspended, or locked."
-            exception_class = AccountError
-        elif "ERROR_SERVICE" in error:
-            user_message = f"Service unavailable: The {self.provider_name} service is currently unavailable. This may be due to maintenance or technical issues."
-            exception_class = ServiceError
-        elif "ERROR_RATE_LIMIT" in error:
-            user_message = f"Rate limit exceeded: Too many requests to {self.provider_name}. Please try again later."
-            exception_class = RateLimitError
-        elif "ERROR_SECURITY" in error:
-            user_message = f"Security verification required: Additional security verification is needed for {self.provider_name}."
-            exception_class = SecurityError
+        for et in ErrorType:
+            if error.startswith(et.value):
+                error_type = et
+                break
         else:
-            user_message = f"Error with {self.provider_name}: {error}"
-            exception_class = ScraperError
+            error_type = ErrorType.GENERAL  # If no specific error type is found, default to GENERAL
+
+        # Get the appropriate exception class and user message
+        exception_class, user_message = error_handlers[error_type]
 
         # Store the user-friendly error message
         self.error = user_message
