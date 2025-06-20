@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import streamlit as st
+
 from fad.app.data_access.credentials_repository import CredentialsRepository
 
 
@@ -51,3 +53,28 @@ class CredentialsService:
                         creds_to_use[service][provider].pop(account, None)
 
         return creds_to_use
+
+    def check_accounts_duplication(
+        self, credentials: dict, service: str, provider: str, account_name: str
+    ) -> None:
+        if provider not in credentials[service].keys():
+            return
+        if account_name in credentials[service][provider].keys():
+            st.error("Account name already exists. Please choose a different name.")
+
+    def save_new_data_source(
+        self, credentials: dict, service: str, provider: str, account_name: str
+    ) -> None:
+        if any(
+            [(v == "" or v is None) for v in credentials[service][provider][account_name].values()]
+        ):
+            st.error("Please fill all the displayed fields.", icon="🚨")
+            st.stop()
+        self.creds_access.save_credentials(credentials)
+        st.session_state.clear()
+
+    def delete_account(
+        self, credentials: dict, service: str, provider: str, account: str
+    ) -> None:
+        del credentials[service][provider][account]
+        self.creds_access.save_credentials(credentials)
