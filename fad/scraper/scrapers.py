@@ -8,7 +8,10 @@ import yaml
 from time import sleep
 from threading import Event
 from abc import ABC, abstractmethod
-from fad.scraper.exceptions import LoginError
+from fad.scraper.exceptions import (
+    ScraperError, LoginError, CredentialsError, 
+    ConnectionError, TimeoutError, DataError, AccountError, ServiceError, SecurityError, RateLimitError
+)
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
@@ -196,8 +199,36 @@ class Scraper(ABC):
         print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} started', flush=True)
         try:
             self.scrape_data(start_date)
-        except LoginError:
+        except CredentialsError as e:
             print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: Credentials error details: {e.original_error}', flush=True)
+            return
+        except ConnectionError as e:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: Connection error details: {e.original_error}', flush=True)
+            return
+        except TimeoutError as e:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: Timeout error details: {e.original_error}', flush=True)
+            return
+        except DataError as e:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: Data error details: {e.original_error}', flush=True)
+            return
+        except LoginError as e:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: Login error details: {e.original_error}', flush=True)
+            return
+        except ScraperError as e:
+            print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
+            print(f'DEBUG: General scraper error details: {e.original_error}', flush=True)
+            return
+        except Exception as e:
+            # Catch any other unexpected exceptions
+            error_msg = f"Unexpected error while scraping {self.provider_name}: {str(e)}"
+            print(f'{self.provider_name}: {self.account_name}: {error_msg}', flush=True)
+            print(f'DEBUG: Unexpected error details: {str(e)}', flush=True)
+            self.error = error_msg
             return
 
         print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} finished', flush=True)
@@ -245,9 +276,11 @@ class Scraper(ABC):
             result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=60)
             self.result = result.stdout
             self._handle_error(result.stderr)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             self.result = ''
-            self.error = 'Timeout: The scraping process took too long (60 seconds) and was terminated'
+            error_msg = f'Timeout: The scraping process for {self.provider_name} took too long (60 seconds) and was terminated'
+            self.error = error_msg
+            raise TimeoutError(error_msg, str(e))
 
         data = scraped_data_to_df(self.result)
         return data
@@ -309,7 +342,7 @@ class Scraper(ABC):
 
     def _handle_error(self, error: str):
         """
-        Handle the error message from the scraping script. this is the most generic way to handle errors, each scraper
+        Handle the error message from the scraping script. This is the most generic way to handle errors, each scraper
         should implement its own error handling method since the error messages can be different for each provider.
 
         Parameters
@@ -319,24 +352,76 @@ class Scraper(ABC):
 
         Raises
         ------
+        ScraperError
+            Base exception for all scraper errors
         LoginError
-            If an error occurs during the scraping process
+            If a login error occurs during the scraping process
+        CredentialsError
+            If there's an issue with the credentials
+        ConnectionError
+            If there's a connection issue
+        TimeoutError
+            If a scraping operation times out
+        DataError
+            If there's an issue with the scraped data
         """
-        # prevent taking warnings prints as errors, it is assumed that the actual login error starts with
+        # Store the original error for internal logging
+        original_error = error
+
+        # Extract the actual error message
+        # Prevent taking warnings prints as errors, it is assumed that the actual login error starts with
         # "logging error: " since we attach it to the error in the js script
-        error = error.split("logging error: ")
-        error = error[-1] if len(error) > 1 else ''
+        error_parts = error.split("logging error: ")
+        error = error_parts[-1] if len(error_parts) > 1 else ''
 
-        if "GENERIC" in error:
-            error = "check your card 6 digits"
-        elif "INVALID_PASSWORD" in error:
-            error = "check your password/username/id"
-        elif "CHANGE_PASSWORD" in error:
-            error = "The password has expired, please change it"
+        if not error:
+            return  # No error to handle
 
-        self.error = error
+        # Log the original error for debugging purposes
+        print(f"DEBUG: {self.provider_name}: {self.account_name}: Original error: {original_error}", flush=True)
+
+        # Categorize the error and provide a user-friendly message
+        # Check for error prefixes from Node.js scripts
+        if "ERROR_CREDENTIALS" in error:
+            user_message = f"Invalid credentials: Please check your login details for {self.provider_name}"
+            exception_class = CredentialsError
+        elif "ERROR_CONNECTION" in error:
+            user_message = f"Connection error: Unable to connect to {self.provider_name}. Please check your internet connection and try again."
+            exception_class = ConnectionError
+        elif "ERROR_TIMEOUT" in error:
+            user_message = f"Timeout error: The operation for {self.provider_name} timed out. Please try again later."
+            exception_class = TimeoutError
+        elif "ERROR_DATA" in error:
+            user_message = f"Data error: There was an issue processing data from {self.provider_name}."
+            exception_class = DataError
+        elif "ERROR_LOGIN" in error:
+            user_message = f"Login error: Failed to log in to {self.provider_name}. Please check your credentials."
+            exception_class = LoginError
+        elif "ERROR_PASSWORD_CHANGE" in error:
+            user_message = f"Password expired: The password for {self.provider_name} has expired, please change it"
+            exception_class = CredentialsError
+        elif "ERROR_ACCOUNT" in error:
+            user_message = f"Account error: There is an issue with your {self.provider_name} account. It may be blocked, suspended, or locked."
+            exception_class = AccountError
+        elif "ERROR_SERVICE" in error:
+            user_message = f"Service unavailable: The {self.provider_name} service is currently unavailable. This may be due to maintenance or technical issues."
+            exception_class = ServiceError
+        elif "ERROR_RATE_LIMIT" in error:
+            user_message = f"Rate limit exceeded: Too many requests to {self.provider_name}. Please try again later."
+            exception_class = RateLimitError
+        elif "ERROR_SECURITY" in error:
+            user_message = f"Security verification required: Additional security verification is needed for {self.provider_name}."
+            exception_class = SecurityError
+        else:
+            user_message = f"Error with {self.provider_name}: {error}"
+            exception_class = ScraperError
+
+        # Store the user-friendly error message
+        self.error = user_message
+
+        # Raise the appropriate exception
         if error:
-            raise LoginError(error)
+            raise exception_class(user_message, original_error)
 
     def _update_credentials_file(self):
         """
@@ -641,9 +726,19 @@ class OneZeroScraper(BankScraper):
                                    encoding='utf-8')
 
         # wait for the OTP code to be requested, and then send it
+        start_time = datetime.datetime.now()
+        max_wait_time = 30  # Maximum time to wait for OTP prompt or data in seconds
+
         while True:
+            # Check if we've been waiting too long
+            if (datetime.datetime.now() - start_time).total_seconds() > max_wait_time:
+                print(f"DEBUG: {self.provider_name}: Timed out waiting for OTP prompt or data output", flush=True)
+                process.kill()
+                break
+
             output = process.stdout.readline()
             if output:
+                print(f"DEBUG: {self.provider_name}: Process output: {output.strip()}", flush=True)
                 if 'Enter OTP code:' in output:
                     self.otp_code = "waiting for input"
                     if not self.otp_event.wait(timeout=120):
@@ -656,6 +751,9 @@ class OneZeroScraper(BankScraper):
                     process.stdin.close()
                     break
                 elif 'writing scraped data to console' in output:  # long term token is valid
+                    self.otp_code = "not required"
+                    break
+                elif 'long term token is valid' in output:  # Another indicator that 2FA is not needed
                     self.otp_code = "not required"
                     break
             sleep(0.3)
@@ -877,7 +975,7 @@ class MassadScraper(BankScraper):
 
 
 class YahavScraper(BankScraper):
-    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'yahav.js')
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'yahav.js')
     provider_name = 'yahav'
 
     def scrape_data(self, start_date: str) -> None:

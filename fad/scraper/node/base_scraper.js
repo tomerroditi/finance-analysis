@@ -31,7 +31,7 @@ export async function renewLongTermToken(scraper, credentials) {
     ...credentials,
     otpCodeRetriever: otpCodeRetriever
   };
-  
+
   const otpTokenResult = await scraper.resolveOtpToken(credentialsWithOtp);
   if (otpTokenResult.success) {
     console.log('renewed long term token:', otpTokenResult.longTermTwoFactorAuthToken);
@@ -81,10 +81,92 @@ export async function runScraper(options, credentials, requires2FA = false) {
     } else {
       throw new Error(`${scrapeResult.errorType}: ${scrapeResult.errorMessage}`);
     }
-    
+
     return scrapeResult;
   } catch (e) {
-    console.error(`logging error: ${e.message}`);
-    return { success: false, errorMessage: e.message };
+    // Categorize the error for better handling in Python
+    let errorPrefix = "ERROR_GENERAL";
+    let errorMessage = e.message;
+
+    // Check for credential errors
+    if (e.message.includes("INVALID_PASSWORD") || 
+        e.message.includes("INVALID_CREDENTIALS") || 
+        e.message.includes("password") || 
+        e.message.includes("credentials") ||
+        e.message.includes("GENERIC")) {
+      errorPrefix = "ERROR_CREDENTIALS";
+    }
+    // Check for connection errors
+    else if (e.message.includes("ENOTFOUND") || 
+             e.message.includes("ECONNREFUSED") || 
+             e.message.includes("network") ||
+             e.message.includes("Network")) {
+      errorPrefix = "ERROR_CONNECTION";
+    }
+    // Check for timeout errors
+    else if (e.message.includes("timeout") || 
+             e.message.includes("timed out") ||
+             e.message.includes("TIMEOUT")) {
+      errorPrefix = "ERROR_TIMEOUT";
+    }
+    // Check for data errors
+    else if (e.message.includes("data") || 
+             e.message.includes("parsing") ||
+             e.message.includes("DATA")) {
+      errorPrefix = "ERROR_DATA";
+    }
+    // Check for login errors
+    else if (e.message.includes("login") || 
+             e.message.includes("authentication") || 
+             e.message.includes("auth") ||
+             e.message.includes("LOGIN")) {
+      errorPrefix = "ERROR_LOGIN";
+    }
+    // Check for password change required
+    else if (e.message.includes("CHANGE_PASSWORD") || 
+             e.message.includes("password expired") ||
+             e.message.includes("change password")) {
+      errorPrefix = "ERROR_PASSWORD_CHANGE";
+    }
+    // Check for account-related errors
+    else if (e.message.includes("account") || 
+             e.message.includes("blocked") || 
+             e.message.includes("suspended") ||
+             e.message.includes("locked")) {
+      errorPrefix = "ERROR_ACCOUNT";
+    }
+    // Check for service unavailability
+    else if (e.message.includes("maintenance") || 
+             e.message.includes("unavailable") || 
+             e.message.includes("service") ||
+             e.message.includes("down")) {
+      errorPrefix = "ERROR_SERVICE";
+    }
+    // Check for rate limiting
+    else if (e.message.includes("rate limit") || 
+             e.message.includes("too many requests") || 
+             e.message.includes("try again later") ||
+             e.message.includes("429")) {
+      errorPrefix = "ERROR_RATE_LIMIT";
+    }
+    // Check for security-related issues
+    else if (e.message.includes("captcha") || 
+             e.message.includes("verification") || 
+             e.message.includes("security") ||
+             e.message.includes("challenge")) {
+      errorPrefix = "ERROR_SECURITY";
+    }
+
+    // Log the error with its category for debugging
+    console.error(`logging error: ${errorPrefix}: ${errorMessage}`);
+
+    // Add stack trace for more detailed debugging
+    console.error(`DEBUG: Error stack trace: ${e.stack}`);
+
+    return { 
+      success: false, 
+      errorType: errorPrefix,
+      errorMessage: errorMessage
+    };
   }
 }

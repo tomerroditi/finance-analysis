@@ -5,6 +5,7 @@ from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.tagging_service import AutomaticTaggerService
 from fad.app.data_access import get_db_connection
+from fad.scraper.scrapers import Scraper
 
 
 class DataScrapingComponent:
@@ -124,7 +125,7 @@ class DataScrapingComponent:
             self.tfa_code_input(scraper, thread)
 
     @st.fragment
-    def tfa_code_input(self, scraper: object, thread: object) -> None:
+    def tfa_code_input(self, scraper: Scraper, thread: object) -> None:
         """
         Display a dialog for the user to enter the OTP code for the given provider.
 
@@ -135,7 +136,7 @@ class DataScrapingComponent:
 
         Parameters
         ----------
-        scraper : object
+        scraper : Scraper
             The scraper object for which to handle two-factor authentication.
             Contains service_name, provider_name, and account_name attributes.
         thread : object
