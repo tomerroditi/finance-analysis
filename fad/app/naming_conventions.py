@@ -335,6 +335,8 @@ class LoginFields:
         'massad': ['username', 'password'],
         'yahav': ['username', 'nationalID', 'password'],
         'onezero': ['email', 'password', 'phoneNumber'],
+        'dummy_tfa': ['email', 'password', 'phoneNumber'],
+        'dummy_tfa_no_otp': ['email', 'password', 'phoneNumber'],
         # insurances
         'menora': ['username', 'password'],
         'clal': ['username', 'password'],
