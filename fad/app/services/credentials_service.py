@@ -6,7 +6,26 @@ from fad.app.data_access.credentials_repository import CredentialsRepository
 
 
 class CredentialsService:
+    """
+    Service class for managing user credentials for various financial services.
+
+    This class provides methods for retrieving, filtering, saving, and deleting
+    credential information for different financial services like banks, credit cards,
+    and insurance companies.
+
+    Attributes
+    ----------
+    creds_access : CredentialsRepository
+        Repository instance for accessing and persisting credentials.
+    credentials : dict
+        Dictionary containing all user credentials.
+    """
     def __init__(self):
+        """
+        Initialize the CredentialsService.
+
+        Creates an instance of CredentialsRepository and loads the credentials.
+        """
         self.creds_access = CredentialsRepository()
         self.credentials = self.creds_access.credentials
 
@@ -57,6 +76,28 @@ class CredentialsService:
     def check_accounts_duplication(
         self, credentials: dict, service: str, provider: str, account_name: str
     ) -> None:
+        """
+        Check if an account name already exists for a given provider and service.
+
+        This method is used as a callback for Streamlit input fields to validate
+        that new account names don't duplicate existing ones.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials.
+        service : str
+            The type of service (e.g., 'banks', 'credit_cards', 'insurances').
+        provider : str
+            The name of the service provider.
+        account_name : str
+            The name of the account to check for duplication.
+
+        Returns
+        -------
+        None
+            Displays an error message if the account name already exists.
+        """
         if provider not in credentials[service].keys():
             return
         if account_name in credentials[service][provider].keys():
@@ -65,6 +106,28 @@ class CredentialsService:
     def save_new_data_source(
         self, credentials: dict, service: str, provider: str, account_name: str
     ) -> None:
+        """
+        Save a new data source (account) to the credentials.
+
+        Validates that all required fields are filled before saving the new account.
+        Clears the session state after successful save to reset the form.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials.
+        service : str
+            The type of service (e.g., 'banks', 'credit_cards', 'insurances').
+        provider : str
+            The name of the service provider.
+        account_name : str
+            The name of the new account to save.
+
+        Returns
+        -------
+        None
+            Displays an error message if validation fails, otherwise saves the credentials.
+        """
         if any(
             [(v == "" or v is None) for v in credentials[service][provider][account_name].values()]
         ):
@@ -76,5 +139,25 @@ class CredentialsService:
     def delete_account(
         self, credentials: dict, service: str, provider: str, account: str
     ) -> None:
+        """
+        Delete an account from the credentials.
+
+        Removes the specified account from the credentials dictionary and saves the updated credentials.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials.
+        service : str
+            The type of service (e.g., 'banks', 'credit_cards', 'insurances').
+        provider : str
+            The name of the service provider.
+        account : str
+            The name of the account to delete.
+
+        Returns
+        -------
+        None
+        """
         del credentials[service][provider][account]
         self.creds_access.save_credentials(credentials)

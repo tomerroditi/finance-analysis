@@ -6,15 +6,58 @@ from fad.app.services.credentials_service import CredentialsService
 from fad.app.data_access.credentials_repository import CredentialsRepository
 from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
 
+
 class CredentialsComponents:
+    """
+    A utility class providing various components and functionalities for managing user
+    credentials across different services.
+
+    This class includes static methods to handle data interaction for services like
+    credit cards, banks, and insurances. It enables operations such as editing or
+    deleting existing credentials, adding new data sources, and rendering relevant
+    user interface components. The class relies on integrations with other utility
+    and service classes to streamline interaction, persistence, and validation of user data.
+
+    Attributes
+    ----------
+    credentials_service : CredentialsService
+        An instance of `CredentialsService` used for credential
+        operations like saving and deleting accounts.
+    credentials_repository : CredentialsRepository
+        An instance of `CredentialsRepository` used for
+        interacting with the persistence layer.
+    """
     def __init__(self):
+        """
+        Initialize the CredentialsComponents class.
+
+        Creates instances of CredentialsService and CredentialsRepository for handling
+        credential operations and data persistence.
+        """
         self.credentials_service = CredentialsService()
         self.credentials_repository = CredentialsRepository()
 
     @staticmethod
     @st.fragment
     def edit_delete_credentials(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
-        repo = CredentialsRepository()  # Create an instance for saving
+        """
+        Render UI components for editing or deleting existing credentials.
+
+        This method creates expandable sections for each account under the specified service,
+        allowing users to edit credential details or delete accounts.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials organized by service, provider, and account.
+        service : {'credit_cards', 'banks', 'insurances'}
+            The type of service for which to display credentials.
+
+        Returns
+        -------
+        None
+        """
+        repo: CredentialsRepository = CredentialsRepository()  # Create an instance for saving
         for provider, accounts in credentials[service].items():
             for account, creds in accounts.items():
                 with st.expander(f"{provider} - {account}"):
@@ -34,6 +77,25 @@ class CredentialsComponents:
     @staticmethod
     @st.fragment
     def _generate_text_input_widgets(provider: str, account: str, creds: dict[str, str]) -> None:
+        """
+        Generate text input widgets for credential fields.
+
+        Creates appropriate Streamlit input widgets for each credential field,
+        handling special cases like passwords with masked input.
+
+        Parameters
+        ----------
+        provider : str
+            The name of the service provider (e.g., bank name, credit card company).
+        account : str
+            The name of the specific account.
+        creds : dict[str, str]
+            Dictionary of credential field names and their values.
+
+        Returns
+        -------
+        None
+        """
         for field, value in creds.items():
             label = DisplayFields.get_display(field)
             if label == 'otpLongTermToken':
@@ -46,6 +108,27 @@ class CredentialsComponents:
     @staticmethod
     @st.dialog('verify deletion')
     def _delete_account_dialog(credentials: dict, service: str, provider: str, account: str) -> None:
+        """
+        Display a confirmation dialog for account deletion.
+
+        Creates a Streamlit dialog asking the user to confirm deletion of an account,
+        with options to proceed or cancel.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials.
+        service : str
+            The type of service (e.g., 'banks', 'credit_cards', 'insurances').
+        provider : str
+            The name of the service provider.
+        account : str
+            The name of the account to be deleted.
+
+        Returns
+        -------
+        None
+        """
         st.write('Are you sure you want to delete this account?')
         if st.button(
                 'Yes',
@@ -60,6 +143,23 @@ class CredentialsComponents:
     @staticmethod
     @st.fragment
     def add_new_data_source(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
+        """
+        Render UI components for adding a new data source (account).
+
+        Creates a form-like interface for users to add a new account for the specified service,
+        with appropriate input fields based on the selected provider.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing all user credentials.
+        service : {'credit_cards', 'banks', 'insurances'}
+            The type of service for which to add a new account.
+
+        Returns
+        -------
+        None
+        """
         if st.button(
                 f"Add a new {service.replace('_', ' ').rstrip('s')} account",
                 key=f"add_new_{service}_button"
@@ -99,9 +199,9 @@ class CredentialsComponents:
         for field in LoginFields.get_fields(provider):
             label = DisplayFields.get_display(field)
             if 'phone' in label.lower():
-                number = st_phone_number(label, default_country='IL', key=f'new_{service}_{field}')
+                number: dict = st_phone_number(label, default_country='IL', key=f'new_{service}_{field}')
                 if number is not None:
-                    number = number['number']
+                    number: str = number['number']
                     if not number.startswith('+9725') and len(number) != 13:
                         st.error('Please enter a valid Israeli phone number')
                         st.stop()

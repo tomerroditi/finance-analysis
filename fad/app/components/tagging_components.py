@@ -13,6 +13,20 @@ from fad.app.utils.widgets import PandasFilterWidgets
 
 
 def format_category_or_tag_strings(s: str) -> str:
+    """
+    Format category or tag strings for consistent display.
+
+    Parameters
+    ----------
+    s : str
+        The string to format.
+
+    Returns
+    -------
+    str
+        The formatted string. If the string is all uppercase, it remains uppercase.
+        Otherwise, it is converted to title case.
+    """
     if not s:
         return s
     if s.isupper():
@@ -21,7 +35,27 @@ def format_category_or_tag_strings(s: str) -> str:
 
 
 class CategoriesTagsEditor:
+    """
+    Component for managing categories and tags in the application.
+
+    This class provides UI components and functionality for viewing, adding, editing,
+    and deleting categories and tags. It also handles the reallocation of tags between
+    categories. Some categories are protected and cannot be deleted.
+
+    Attributes
+    ----------
+    service : CategoriesTagsService
+        Service for managing categories and tags data.
+    protected_categories : list[str]
+        List of category names that cannot be deleted.
+    """
     def __init__(self):
+        """
+        Initialize the CategoriesTagsEditor.
+
+        Creates an instance of CategoriesTagsService and sets up the list of
+        protected categories that cannot be deleted.
+        """
         self.service = CategoriesTagsService()
         self.protected_categories = [e.value for e in NonExpensesCategories]
     #     # Call the static method to inject CSS
@@ -48,7 +82,19 @@ class CategoriesTagsEditor:
     #             unsafe_allow_html=True
     #         )
 
-    def render(self):
+    def render(self) -> None:
+        """
+        Render the categories and tags editor UI.
+
+        Displays all categories and their associated tags, along with buttons for
+        adding, editing, and deleting categories and tags. Protected categories
+        cannot be deleted. Categories and tags are displayed in alphabetical order.
+
+        Returns
+        -------
+        None
+            Renders UI components in the Streamlit app.
+        """
         # Always reload from session state to reflect latest changes
         self.service.categories_and_tags = st.session_state['categories_and_tags']
         st.markdown(
@@ -70,7 +116,26 @@ class CategoriesTagsEditor:
                       on_click=self._delete_category_dialog, args=(category,))
 
     @st.fragment
-    def _view_and_edit_tags(self, category: str, tags: List[str]):
+    def _view_and_edit_tags(self, category: str, tags: List[str]) -> None:
+        """
+        Display and provide editing capabilities for tags within a category.
+
+        Creates a UI section for a specific category, displaying all its tags as
+        selectable pills. Provides buttons for editing, reallocating, adding, and
+        deleting tags. Shows warning messages when actions cannot be performed.
+
+        Parameters
+        ----------
+        category : str
+            The name of the category whose tags are being displayed.
+        tags : List[str]
+            List of tag names associated with the category.
+
+        Returns
+        -------
+        None
+            Renders UI components for viewing and editing tags.
+        """
         # Always reload from session state to reflect latest changes
         self.service.categories_and_tags = st.session_state['categories_and_tags']
         st.subheader(category, divider="gray")
@@ -210,11 +275,43 @@ class CategoriesTagsEditor:
 
 
 class AutomaticTaggerComponent:
+    """
+    Component for managing automatic tagging rules for financial transactions.
+
+    This class provides UI components and functionality for creating, editing, and
+    managing rules that automatically assign categories and tags to transactions
+    based on their descriptions. It handles both credit card and bank transactions.
+
+    Attributes
+    ----------
+    service : AutomaticTaggerService
+        Service for managing automatic tagging rules.
+    categories_and_tags : dict
+        Dictionary mapping categories to their associated tags.
+    """
     def __init__(self):
+        """
+        Initialize the AutomaticTaggerComponent.
+
+        Creates an instance of AutomaticTaggerService and retrieves the categories
+        and tags from the session state.
+        """
         self.service = AutomaticTaggerService(get_db_connection())
         self.categories_and_tags = st.session_state['categories_and_tags']
 
-    def render(self):
+    def render(self) -> None:
+        """
+        Render the automatic tagger component UI.
+
+        Creates tabs for credit card and bank transactions, each containing sections
+        for adding new rules and editing existing rules. For transactions without
+        existing rules, provides interfaces to create new tagging rules.
+
+        Returns
+        -------
+        None
+            Renders UI components in the Streamlit app.
+        """
         cc_tab, bank_tab = st.tabs(["Credit Card", "Bank"])
         with cc_tab:
             names = self.service.get_cc_without_rules()
@@ -492,11 +589,42 @@ class AutomaticTaggerComponent:
 
 
 class ManuallyTaggingComponent:
+    """
+    Component for manually tagging financial transactions.
+
+    This class provides UI components and functionality for manually assigning
+    categories and tags to transactions that don't have them. It allows users
+    to filter and select transactions, then assign appropriate categories and tags.
+
+    Attributes
+    ----------
+    categories_tags_service : CategoriesTagsService
+        Service for managing categories and tags data.
+    transactions_service : TransactionsService
+        Service for managing transaction data.
+    """
     def __init__(self):
+        """
+        Initialize the ManuallyTaggingComponent.
+
+        Creates instances of CategoriesTagsService and TransactionsService for
+        managing categories, tags, and transaction data.
+        """
         self.categories_tags_service = CategoriesTagsService()
         self.transactions_service = TransactionsService(get_db_connection())
 
-    def render(self):
+    def render(self) -> None:
+        """
+        Render the manually tagging component UI.
+
+        Displays a header and description of the manual tagging feature,
+        then renders the interface for editing tags on raw transaction data.
+
+        Returns
+        -------
+        None
+            Renders UI components in the Streamlit app.
+        """
         st.subheader("Manually Tagging")
         st.markdown(
             "This feature allows you to manually tag transactions that do not have any tags. "
@@ -504,8 +632,19 @@ class ManuallyTaggingComponent:
         )
         self.edit_raw_data_tags()
 
-    def edit_raw_data_tags(self):
-        """edit the tags of the raw data in the credit card and bank tables"""
+    def edit_raw_data_tags(self) -> None:
+        """
+        Provide interface for editing tags of raw transaction data.
+
+        Creates a UI for selecting a data table (credit card or bank), filtering
+        the data, and selecting individual transactions to edit their categories
+        and tags. Uses PandasFilterWidgets to provide filtering capabilities.
+
+        Returns
+        -------
+        None
+            Renders UI components for editing transaction tags.
+        """
         columns_order = self.transactions_service.get_table_columns_for_display()
 
         names = self.transactions_service.get_table_names_for_display()
@@ -616,4 +755,3 @@ class ManuallyTaggingComponent:
                 if st.button('Save', key=f'save_{row[name_col]}'):
                     self.transactions_service.update_data_table(service, row[id_col], category, tag)
                     st.rerun()
-

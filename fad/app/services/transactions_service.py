@@ -68,22 +68,30 @@ class TransactionsService:
 
     def update_data_table(self, service: Literal['credit_card', 'bank'], id_: int, category: str, tag: str) -> None:
         """
-        update the tags of the raw data in the credit card and bank tables.
+        Update the tags of the raw data in the credit card and bank tables.
+
+        Assigns the specified category and tag to a transaction identified by its ID
+        in either the credit card or bank transactions table.
 
         Parameters
         ----------
         service : Literal['credit_card', 'bank']
-            the service of the transaction, should be one of 'credit_card' or 'bank'
+            The service of the transaction, must be either 'credit_card' or 'bank'.
         id_ : int
-            the id of the transaction
+            The ID of the transaction to update.
         category : str
-            the category to tag the transaction with
+            The category to assign to the transaction.
         tag : str
-            the tag to tag the transaction with
+            The tag to assign to the transaction.
 
         Returns
         -------
         None
+
+        Raises
+        ------
+        AssertionError
+            If the service parameter is not 'credit_card' or 'bank'.
         """
         assert service in ['credit_card', 'bank'], f"service must be either 'credit_card' or 'bank' got {service}"
         self.transactions_repository.update_tagging_by_id(id_, category, tag, service)
