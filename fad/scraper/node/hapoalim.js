@@ -1,4 +1,4 @@
-import { CompanyTypes, createScraper } from 'israeli-bank-scrapers';
+import {CompanyTypes, createScraper} from 'israeli-bank-scrapers';
 
 // get the id, card6Digits and password from the command line
 const args = process.argv.slice(2);

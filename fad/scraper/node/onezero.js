@@ -1,4 +1,4 @@
-import { CompanyTypes, createScraper } from 'israeli-bank-scrapers';
+import {CompanyTypes, createScraper} from 'israeli-bank-scrapers';
 import readline from "readline";
 
 // Get the credentials and other parameters from command line arguments
