@@ -27,8 +27,10 @@ export function otpCodeRetriever() {
  * @returns {Promise<string>} - Promise that resolves with the new long term token
  */
 export async function renewLongTermToken(scraper, credentials) {
-  const credentialsWithOtp = {
-    ...credentials,
+  const credentialsWithOtp = {  // only for onezero
+    email: credentials.email,
+    password: credentials.password,
+    phoneNumber: credentials.phoneNumber,
     otpCodeRetriever: otpCodeRetriever
   };
 
@@ -68,7 +70,7 @@ export async function runScraper(options, credentials, requires2FA = false) {
     let scrapeResult = await scraper.scrape(credentials);
 
     // Handle 2FA if needed
-    if (requires2FA && !scrapeResult.success && scrapeResult.errorMessage && 
+    if (requires2FA && !scrapeResult.success && scrapeResult.errorMessage &&
         scrapeResult.errorMessage.includes('reading \'idToken\'')) {
       credentials.otpLongTermToken = await renewLongTermToken(scraper, credentials);
       scrapeResult = await scraper.scrape(credentials);
