@@ -40,11 +40,37 @@ def get_scraper(service_name: str, provider_name: str, account_name: str, creden
             return IsracardScraper(account_name, credentials)
         elif provider_name == 'max':
             return MaxScraper(account_name, credentials)
+        elif provider_name == 'visa cal':
+            return VisaCalScraper(account_name, credentials)
+        elif provider_name == 'amex':
+            return AmexScraper(account_name, credentials)
+        elif provider_name == 'beyahad bishvilha':
+            return BeyahadBishvilhaScraper(account_name, credentials)
+        elif provider_name == 'behatsdaa':
+            return BehatsdaaScraper(account_name, credentials)
     elif service_name == 'banks':
         if provider_name == 'onezero':
             return OneZeroScraper(account_name, credentials)
         elif provider_name == 'hapoalim':
             return HapoalimScraper(account_name, credentials)
+        elif provider_name == 'leumi':
+            return LeumiScraper(account_name, credentials)
+        elif provider_name == 'discount':
+            return DiscountScraper(account_name, credentials)
+        elif provider_name == 'mizrahi':
+            return MizrahiScraper(account_name, credentials)
+        elif provider_name == 'mercantile':
+            return MercantileScraper(account_name, credentials)
+        elif provider_name == 'otsar hahayal':
+            return OtsarHahayalScraper(account_name, credentials)
+        elif provider_name == 'union':
+            return UnionScraper(account_name, credentials)
+        elif provider_name == 'beinleumi':
+            return BeinleumiScraper(account_name, credentials)
+        elif provider_name == 'massad':
+            return MassadScraper(account_name, credentials)
+        elif provider_name == 'yahav':
+            return YahavScraper(account_name, credentials)
         elif provider_name == 'dummy_tfa':
             return DummyTFAScraper(account_name, credentials)
         elif provider_name == 'dummy_tfa_no_otp':
@@ -399,7 +425,7 @@ class CreditCardScraper(Scraper, ABC):
 
 
 class IsracardScraper(CreditCardScraper):
-    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'isracard.js')
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'isracard.js')
     provider_name = 'isracard'
 
     def scrape_data(self, start_date: str) -> None:
@@ -416,7 +442,7 @@ class IsracardScraper(CreditCardScraper):
 
 
 class MaxScraper(CreditCardScraper):
-    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'max.js')
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'max.js')
     provider_name = 'max'
 
     def scrape_data(self, start_date: str) -> None:
@@ -435,6 +461,74 @@ class MaxScraper(CreditCardScraper):
             Additional arguments, not used in this function
         """
         args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class VisaCalScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'visa_cal.js')
+    provider_name = 'visa cal'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Visa CAL website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class AmexScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'amex.js')
+    provider_name = 'amex'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the American Express website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["id"], self.credentials["card6Digits"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class BeyahadBishvilhaScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'beyahad_bishvilha.js')
+    provider_name = 'beyahad bishvilha'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Beyahad Bishvilha website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["id"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class BehatsdaaScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'behatsdaa.js')
+    provider_name = 'behatsdaa'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Behatsdaa website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["id"], self.credentials["password"])
         self.data = self._scrape_data(start_date, *args)
 
 
@@ -495,7 +589,7 @@ class BankScraper(Scraper, ABC):
 
 
 class OneZeroScraper(BankScraper):
-    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'onezero.js')
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'onezero.js')
     provider_name = 'onezero'
     requires_2fa = True
 
@@ -630,12 +724,12 @@ class DummyTFAScraperNoOTP(OneZeroScraper):
 
 
 class HapoalimScraper(BankScraper):
-    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'hapoalim.js')
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'hapoalim.js')
     provider_name = 'hapoalim'
 
     def scrape_data(self, start_date: str) -> None:
         """
-        Get the data from the Max website
+        Get the data from the Hapoalim website
 
         Parameters
         ----------
@@ -643,6 +737,159 @@ class HapoalimScraper(BankScraper):
             The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
         """
         args = (self.credentials["userCode"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class LeumiScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'leumi.js')
+    provider_name = 'leumi'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Leumi website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class DiscountScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'discount.js')
+    provider_name = 'discount'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Discount website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["id"], self.credentials["password"], self.credentials["num"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class MizrahiScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'mizrahi.js')
+    provider_name = 'mizrahi'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Mizrahi website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class MercantileScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'mercantile.js')
+    provider_name = 'mercantile'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Mercantile website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["id"], self.credentials["password"], self.credentials["num"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class OtsarHahayalScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'otsar_hahayal.js')
+    provider_name = 'otsar hahayal'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Otsar Hahayal website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class UnionScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'union.js')
+    provider_name = 'union'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Union website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class BeinleumiScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'beinleumi.js')
+    provider_name = 'beinleumi'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Beinleumi website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class MassadScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'banks', 'massad.js')
+    provider_name = 'massad'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Massad website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class YahavScraper(BankScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'yahav.js')
+    provider_name = 'yahav'
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Yahav website
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        """
+        args = (self.credentials["username"], self.credentials["nationalID"], self.credentials["password"])
         self.data = self._scrape_data(start_date, *args)
 
 
