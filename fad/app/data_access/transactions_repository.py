@@ -5,11 +5,11 @@ import pandas as pd
 from sqlalchemy import text
 from streamlit.connections import SQLConnection
 
-from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields
+from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields, SplitTransactionsTableFields
 
 
 class TransactionsRepository:
-    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value]
+    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value, Tables.SPLIT_TRANSACTIONS.value]
     account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
     type_col = TransactionsTableFields.TYPE.value
     id_col = TransactionsTableFields.ID.value
@@ -34,7 +34,6 @@ class TransactionsRepository:
         self.conn = conn
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
-        self.assure_table_exists()
 
     def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
                        account_number: str | None = None) -> None:
@@ -138,11 +137,6 @@ class TransactionsRepository:
 
         latest_date = min(latest_dates)
         return latest_date
-
-    def assure_table_exists(self):
-        """create the transactions table if it doesn't exist"""
-        self.cc_repo.assure_table_exists()
-        self.bank_repo.assure_table_exists()
 
 
 class ServiceRepository:

@@ -9,6 +9,7 @@ from fad.app.data_access import get_db_connection
 from fad.app.naming_conventions import NonExpensesCategories
 from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
 from fad.app.services.transactions_service import TransactionsService
+from fad.app.services.split_transactions_service import SplitTransactionsService
 from fad.app.utils.widgets import PandasFilterWidgets
 
 
@@ -607,11 +608,13 @@ class ManuallyTaggingComponent:
         """
         Initialize the ManuallyTaggingComponent.
 
-        Creates instances of CategoriesTagsService and TransactionsService for
-        managing categories, tags, and transaction data.
+        Creates instances of CategoriesTagsService, TransactionsService, and
+        SplitTransactionsService for managing categories, tags, transaction data,
+        and split transactions.
         """
         self.categories_tags_service = CategoriesTagsService()
         self.transactions_service = TransactionsService(get_db_connection())
+        self.split_transactions_service = SplitTransactionsService(get_db_connection())
 
     def render(self) -> None:
         """
@@ -700,9 +703,9 @@ class ManuallyTaggingComponent:
     @st.fragment
     def _manual_tagger_editing_window(self, row: pd.Series, service: Literal['credit_card', 'bank']):
         """
-        a fragment to tag new data for the manual tagger. The fragment displays the description of the transaction and
-        allow the user to select the category and tag for the transaction. it contains a save button to save the
-        selection.
+        A fragment to tag new data for the manual tagger. The fragment displays the description of the transaction and
+        allows the user to select the category and tag for the transaction. It contains a save button to save the
+        selection, and a split transaction button to split the transaction into multiple parts.
 
         Parameters
         ----------
@@ -718,14 +721,20 @@ class ManuallyTaggingComponent:
         assert service in ['credit_card', 'bank'], f"Service must be one of 'credit_card' or 'bank', got {service}"
 
         name_col = self.transactions_service.transactions_repository.desc_col
-        amount_col = self.transactions_service.transactions_repository.amount_col
         tag_col = self.transactions_service.transactions_repository.tag_col
         category_col = self.transactions_service.transactions_repository.category_col
         id_col = self.transactions_service.transactions_repository.id_col
 
-        if st.button("Split Transaction"):
-            st.write("Coming Soon...")
-            st.button("Back", key='back_from_split_transaction')
+        # Check if transaction already has splits
+        has_splits = self.split_transactions_service.has_splits(row[id_col], service)
+
+        if has_splits:
+            split_button_text = "Edit Split Transaction"
+        else:
+            split_button_text = "Split Transaction"
+
+        if st.button(split_button_text) or st.session_state.get(f"splits_{service}", [{}])[0].get('id') == row[id_col]:
+            self._split_transaction_ui(row, service)
         else:
             # Columns for layout
             col_cat, col_tag, col_save = st.columns([0.4, 0.4, 0.2])
@@ -755,3 +764,135 @@ class ManuallyTaggingComponent:
                 if st.button('Save', key=f'save_{row[name_col]}'):
                     self.transactions_service.update_data_table(service, row[id_col], category, tag)
                     st.rerun()
+
+    @st.fragment
+    def _split_transaction_ui(self, row: pd.Series, service: Literal['credit_card', 'bank']):
+        """
+        A fragment to split a transaction into multiple parts. The fragment displays a form for adding
+        multiple splits with amount, category, and tag, and validates that the total amount matches
+        the original transaction amount.
+
+        Parameters
+        ----------
+        row : pd.Series
+            the row of the transaction
+        service : Literal['credit_card', 'bank']
+            the service of the transaction. Should be one of 'credit_card' or 'bank'.
+
+        Returns
+        -------
+        None
+        """
+        name_col = self.transactions_service.transactions_repository.desc_col
+        amount_col = self.transactions_service.transactions_repository.amount_col
+        id_col = self.transactions_service.transactions_repository.id_col
+
+        # Get existing splits if any
+        existing_splits = self.split_transactions_service.get_splits_for_transaction(row[id_col], service)
+
+        # Initialize session state for splits if not already initialized
+        if f"splits_{service}" in st.session_state:
+            # Ensure the session state split is of the same data row - update it if not
+            if row[id_col] != st.session_state[f"splits_{service}"][0].get('id'):
+                st.session_state[f"splits_{service}"] = [
+                    {
+                        'id': row[id_col],
+                        'amount': row[amount_col],
+                        'category': '',
+                        'tag': ''
+                    }
+                ]
+        else:
+            if not existing_splits.empty:
+                # Convert existing splits to list of dictionaries
+                st.session_state[f"splits_{service}"] = existing_splits.to_dict('records')
+            else:
+                # Start with one empty split with the full amount
+                st.session_state[f"splits_{service}"] = [
+                    {
+                        'id': row[id_col],
+                        'amount': row[amount_col],
+                        'category': '',
+                        'tag': ''
+                    }
+                ]
+
+        # Display transaction details
+        st.subheader(f"Split Transaction: {row[name_col]}")
+        st.write(f"Total Amount: {row[amount_col]}")
+
+        # Display current splits
+        st.write("Splits:")
+
+        # Display each split
+        for i, split in enumerate(st.session_state[f"splits_{service}"]):
+            col1, col2, col3, col4 = st.columns([0.2, 0.3, 0.3, 0.2])
+
+            with col1:
+                split['amount'] = st.number_input(
+                    "Amount",
+                    value=float(split.get('amount', 0)),
+                    key=f"split_amount_{i}_{service}",
+                )
+
+            with col2:
+                categories = list(self.categories_tags_service.categories_and_tags.keys())
+                split['category'] = st.selectbox(
+                    "Category",
+                    options=categories,
+                    index=categories.index(split.get('category')) if split.get('category') in categories else None,
+                    key=f"split_category_{i}_{service}"
+                )
+
+            with col3:
+                tags = self.categories_tags_service.categories_and_tags.get(split.get('category', ''), [])
+                split['tag'] = st.selectbox(
+                    "Tag",
+                    options=tags,
+                    index=tags.index(split.get('tag')) if split.get('tag') in tags and split.get('tag') else None,
+                    key=f"split_tag_{i}_{service}"
+                )
+
+            with col4:
+                st.markdown("<br>", unsafe_allow_html=True)  # Add space before button
+                disable = len(st.session_state[f"splits_{service}"]) == 1
+                if st.button("Remove", key=f"remove_split_{i}_{service}", disabled=disable):
+                    st.session_state[f"splits_{service}"].pop(i)
+                    st.rerun()
+
+        # Add button for new split
+        if st.button("Add Split"):
+            st.session_state[f"splits_{service}"].append({
+                'id': row[id_col],
+                'amount': 0,
+                'category': '',
+                'tag': ''
+            })
+            st.rerun()
+
+        # Save and Cancel buttons
+        col_save, col_cancel = st.columns(2)
+
+        with col_save:
+            if st.button("Save Splits"):
+                # Validate total amount
+                total_split_amount = sum(split.get('amount', 0) for split in st.session_state[f"splits_{service}"])
+                if abs(total_split_amount - row[amount_col]) != 0:
+                    st.error(f"Total split amount ({total_split_amount}) does not match transaction amount ({row[amount_col]})")
+                else:
+                    self.split_transactions_service.split_transaction(
+                        transaction_id=row[id_col],
+                        service=service,
+                        splits=st.session_state[f"splits_{service}"]
+                    )
+                    # Clear session state
+                    del st.session_state[f"splits_{service}"]
+                    st.success("Transaction split successfully!")
+                    st.rerun()
+
+        with col_cancel:
+            if st.button("Cancel"):
+                # Clear session state
+                if f"splits_{service}" in st.session_state:
+                    del st.session_state[f"splits_{service}"]
+                st.rerun()

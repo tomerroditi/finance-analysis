@@ -27,11 +27,14 @@ class Tables(Enum):
         Name of the table storing automatic tagging rules.
     BUDGET_RULES : str
         Name of the table storing budget rules.
+    SPLIT_TRANSACTIONS : str
+        Name of the table storing split transactions.
     """
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
     AUTO_TAGGER = 'automatic_tagger'
     BUDGET_RULES = 'budget_rules'
+    SPLIT_TRANSACTIONS = 'split_transactions'
 
 
 def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -70,6 +73,17 @@ fields = [
 TransactionsTableFields = create_enum('TransactionsTableFields', fields)  # TODO: change to expenses table fields
 CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
+
+split_fields = [
+    ('ID', 'id'),
+    ('TRANSACTION_ID', 'transaction_id'),
+    ('SERVICE', 'service'),
+    ('AMOUNT', 'amount'),
+    ('CATEGORY', 'category'),
+    ('TAG', 'tag'),
+]
+
+SplitTransactionsTableFields = create_enum('SplitTransactionsTableFields', split_fields)
 
 
 class AutoTaggerTableFields(Enum):
