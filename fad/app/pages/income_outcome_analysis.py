@@ -70,10 +70,10 @@ with categories_tab:
         pie_plot_by_categories(filtered_data_ctgs, amount_col, category_col)
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1Y")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1YE")
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1M")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1ME")
     )
 
 with tags_tab:
@@ -107,10 +107,10 @@ with tags_tab:
         bar_plot_by_categories(filtered_data_tags, amount_col, tag_col), key="bar_plot_by_tags"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1Y"),
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1YE"),
         key="bar_plot_by_tags_over_time_1Y"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1M"),
+        bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1ME"),
         key="bar_plot_by_tags_over_time_1M"
     )
