@@ -2,8 +2,6 @@ import os
 
 from enum import Enum
 
-__version__ = "0.0.1"
-
 
 SRC_PATH = os.path.dirname(os.path.abspath(__file__))
 USER_DIR = os.path.join(os.path.expanduser('~'), '.finance-analysis')
