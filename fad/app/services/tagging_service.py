@@ -280,7 +280,7 @@ class AutomaticTaggerService:
         result = sorted(bank_set - auto_set)
         return result
 
-    def get_bank_account_details(self, account_number: str) -> (str, str):
+    def get_bank_account_details(self, account_number: str) -> tuple[str, str]:
         """
         Get account name and provider details for a given bank account number.
 

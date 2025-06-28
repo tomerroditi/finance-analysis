@@ -10,7 +10,7 @@ import yaml
 from sqlalchemy.sql import text
 from streamlit.connections import SQLConnection
 
-from fad import CATEGORIES_PATH
+from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
