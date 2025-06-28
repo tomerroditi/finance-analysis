@@ -1,0 +1,553 @@
+from typing import Optional
+
+import pandas as pd
+
+from fad.app.data_access import get_table, get_db_connection
+from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.tagging_repository import TaggingRepository
+from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, \
+    TransactionsTableFields, NonExpensesCategories
+
+tagging_repository = TaggingRepository()
+
+
+class MonthlyBudgetService:
+    """
+    Service for managing monthly budget rules and calculations.
+
+    This class provides static methods for creating, retrieving, validating, and
+    analyzing monthly budget rules. It handles operations such as copying rules
+    from previous months, validating rule inputs, and generating budget views.
+    """
+    @staticmethod
+    def get_available_tags_for_each_category(budget_rules: pd.DataFrame) -> dict[str, list[str]]:
+        """
+        Get available tags for each category that are not already used in budget rules.
+
+        Filters out tags that are already used in budget rules, and removes categories
+        that have no available tags or have a rule with ALL_TAGS.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing budget rules.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Dictionary mapping category names to lists of available tags.
+        """
+        cats_n_tags = tagging_repository.get_categories_and_tags(copy=True)
+        for _, rule in budget_rules.iterrows():
+            used_tags = rule[TAGS]
+            if used_tags == [ALL_TAGS]:
+                cats_n_tags.pop(rule[CATEGORY], None)
+                continue
+
+            available_tags = cats_n_tags.get(rule[CATEGORY], [])
+            available_tags = [tag for tag in available_tags if tag not in used_tags]
+            if not available_tags:
+                cats_n_tags.pop(rule[CATEGORY], None)
+            else:
+                cats_n_tags[rule[CATEGORY]] = available_tags
+
+        return cats_n_tags
+
+    @staticmethod
+    def copy_last_month_rules(year: int, month: int, budget_rules: pd.DataFrame) -> Optional[str]:
+        """
+        Copy budget rules from the previous month into the selected month.
+
+        Identifies the previous month (accounting for year boundaries), retrieves
+        its rules, and copies them to the specified month after deleting any
+        existing rules for that month.
+
+        Parameters
+        ----------
+        year : int
+            The year of the target month.
+        month : int
+            The month to copy rules to (1-12).
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        Optional[str]
+            A success message with the number of rules copied if successful,
+            or None if no rules were found for the previous month.
+        """
+        last_month = month - 1 if month != 1 else 12
+        last_year = year if month != 1 else year - 1
+
+        rules_to_copy = budget_rules[
+            (budget_rules[YEAR] == last_year) & (budget_rules[MONTH] == last_month)
+        ]
+
+        if rules_to_copy.empty:
+            return None
+
+        MonthlyBudgetRepository.delete_rules_by_month(year, month)
+
+        for _, rule in rules_to_copy.iterrows():
+            MonthlyBudgetRepository.add_rule(
+                name=rule[NAME],
+                amount=rule[AMOUNT],
+                category=rule[CATEGORY],
+                tags=rule[TAGS],
+                month=month,
+                year=year
+            )
+
+        return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
+
+    @staticmethod
+    def get_month_rules(year: int, month: int, budget_rules: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fetch all budget rules for a specific month and year.
+
+        Filters the budget rules DataFrame to return only the rules that apply
+        to the specified month and year.
+
+        Parameters
+        ----------
+        year : int
+            The year to filter rules for.
+        month : int
+            The month to filter rules for (1-12).
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing only the rules for the specified month and year.
+        """
+        return budget_rules[
+            (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
+        ]
+
+    @staticmethod
+    def validate_rule_inputs(
+            budget_rules: pd.DataFrame,
+            name: str,
+            category: str,
+            tags: list[str],
+            amount: float,
+            year: int | None,
+            month: int | None,
+            id_: int | None
+    ) -> tuple[bool, str]:
+        """
+        Validate budget rule inputs before saving or updating.
+
+        Verifies that the rule values meet all requirements and constraints. Checks for:
+        - Positive amount
+        - Valid category selection
+        - Tag selection
+        - Non-empty name
+        - Total budget not exceeded
+        - No conflicts with ALL_TAGS rules
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+        name : str
+            The name of the rule.
+        category : str
+            The category for the rule.
+        tags : list[str]
+            List of tags associated with the rule.
+        amount : float
+            The budget amount for the rule.
+        year : int | None
+            The year for the rule. If None/NaN, the rule is a project rule.
+        month : int | None
+            The month for the rule. If None/NaN, the rule is a project rule.
+        id_ : int | None
+            The ID of an existing rule to update, or None for a new rule.
+
+        Returns
+        -------
+        tuple[bool, str]
+            A tuple containing:
+            - bool: True if inputs are valid, False otherwise
+            - str: Error message if invalid, empty string if valid
+        """
+        # TODO: split this function into smaller functions
+        # TODO: add a check for the rule name to be unique
+        if id_ is not None:
+            rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
+            # if no change just return
+            if (rule[NAME] == name
+                    and rule[AMOUNT] == amount
+                    and rule[CATEGORY] == category
+                    and rule[TAGS] == tags):
+                return True, ""
+
+        if name == "":
+            return False, "Please enter a name"
+        if category is None:
+            return False, "Please select a category"
+        if not tags:
+            return False, "Please select at least one tag"
+        if amount <= 0:
+            return False, "Amount must be a positive number"
+
+        if pd.isnull(year) and pd.isnull(month):
+            # updating a project rule (you cannot add a new project rule, and can update amount only)
+            rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
+            budget_rules = budget_rules.loc[
+                (budget_rules[YEAR].isnull())
+                & (budget_rules[MONTH].isnull())
+                & (budget_rules[CATEGORY] == category)
+                ]
+            total_rules_amount = budget_rules.loc[~budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT].sum()
+            if rule[TAGS] == [ALL_TAGS]:
+                # updating the project total budget
+                if amount < total_rules_amount:
+                    return False, "The total budget must be greater than the sum of all other rules of the project"
+
+            else:
+                # updating a project rule with specific tag
+                total_budget = budget_rules.loc[budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT].values[0]
+                new_total_rules_amount = total_rules_amount - rule[AMOUNT] + amount
+                if new_total_rules_amount > total_budget:
+                    return False, "The total budget is exceeded. please set a lower amount or increase the total budget"
+            return True, ""
+
+        budget_rules = budget_rules.loc[
+            (budget_rules[YEAR] == year)
+            & (budget_rules[MONTH] == month)
+            ]
+        total_rules_amount = budget_rules.loc[budget_rules[CATEGORY] != TOTAL_BUDGET][AMOUNT].sum()
+
+        if category == TOTAL_BUDGET:
+            # updating the total budget for a month, only amount might be updated
+            if amount < total_rules_amount:
+                return False, "The total budget must be greater than the sum of all other rules of the month"
+            return True, ""
+
+        # add/update a rule for a specific month
+        if id_ is not None:
+            # updating a certain rule, hence we need to exclude it from the total rules amount
+            total_rules_amount -= budget_rules.loc[budget_rules[ID] == id_][AMOUNT].values[0]
+        total_budget = budget_rules.loc[budget_rules[CATEGORY] == TOTAL_BUDGET][AMOUNT].values[0]
+        new_total_rules_amount = total_rules_amount + amount
+        if new_total_rules_amount > total_budget:
+            return False, "The total budget is exceeded. please set a lower amount or increase the total budget"
+
+        if tags == [ALL_TAGS]:
+            condition = budget_rules[CATEGORY] == category
+            if id_ is not None:
+                condition &= budget_rules[ID] != id_
+            if not budget_rules.loc[condition].empty:
+                return False, f"You cannot have a rule with {ALL_TAGS} for a category that already has rules with specific tags"
+
+        return True, ""
+
+    @staticmethod
+    def get_monthly_budget_view(year: int, month: int) -> Optional[list[dict]]:
+        """
+        Compute budget rule usage view for a given month.
+
+        Retrieves all budget rules and transaction data for the specified month,
+        calculates current spending for each rule, and creates a structured view
+        that can be used for display and analysis.
+
+        Parameters
+        ----------
+        year : int
+            The year to generate the budget view for.
+        month : int
+            The month to generate the budget view for (1-12).
+
+        Returns
+        -------
+        Optional[list[dict]]
+            A list of dictionaries, each containing:
+            - rule: pd.Series - The budget rule
+            - current_amount: float - Current spending for this rule
+            - data: pd.DataFrame - Transactions matching this rule
+            - allow_edit: bool - Whether this rule can be edited
+            - allow_delete: bool - Whether this rule can be deleted
+            Returns None if no rules exist for the specified month.
+        """
+        # TODO: split this function into smaller functions
+        budget_rules = MonthlyBudgetRepository(get_db_connection()).get_all_rules()
+        # Fetch all transaction data TODO: move to a separate function in data access layer
+        conn = get_db_connection()
+        bank_data = get_table(conn, Tables.BANK.value)
+        credit_data = get_table(conn, Tables.CREDIT_CARD.value)
+        all_data = pd.concat([credit_data, bank_data])
+
+        # Only expenses (exclude income, liabilities, etc.)
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value]
+            .isin([c.value for c in NonExpensesCategories])
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+
+        # Exclude project categories
+        projects = budget_rules[
+            budget_rules[YEAR].isnull() & budget_rules[MONTH].isnull()
+        ][CATEGORY].unique()
+
+        month_data = expenses.loc[
+            (expenses[TransactionsTableFields.DATE.value].dt.year == year) &
+            (expenses[TransactionsTableFields.DATE.value].dt.month == month) &
+            ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
+        ]
+
+        # Budget rules for selected month
+        rules = budget_rules[(budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)]
+        if rules.empty:
+            return None
+
+        view = []
+
+        # Total budget
+        total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
+        if not total_rule.empty:
+            total = month_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+            view.append({
+                "rule": total_rule.iloc[0],
+                "current_amount": total,
+                "data": month_data.copy(),
+                "allow_edit": True,
+                "allow_delete": False
+            })
+            rules = rules.loc[~rules.index.isin(total_rule.index)]
+
+        # Per-rule breakdown
+        remaining_data = month_data.copy()
+        for _, rule in rules.iterrows():
+            tags = rule[TAGS]
+            cat_data = remaining_data[remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]]
+
+            if tags != [ALL_TAGS]:
+                cat_data = cat_data[cat_data[TransactionsTableFields.TAG.value].isin(tags)]
+
+            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+            view.append({
+                "rule": rule,
+                "current_amount": amt,
+                "data": cat_data.copy(),
+                "allow_edit": True,
+                "allow_delete": True
+            })
+
+            # Remove from pool
+            remaining_data = remaining_data.loc[~remaining_data.index.isin(cat_data.index)]
+
+        # Handle "Other Expenses"
+        if not remaining_data.empty and not rules.empty and not total_rule.empty:
+            total_alloc = rules[AMOUNT].sum()
+            total_amt = total_rule.iloc[0][AMOUNT] - total_alloc
+            view.append({
+                "rule": pd.Series({
+                    NAME: "Other Expenses",
+                    AMOUNT: total_amt,
+                    CATEGORY: "Other Expenses",
+                    TAGS: "Other Expenses",
+                    ID: f"{year}{month}_Other_Expenses"
+                }),
+                "current_amount": remaining_data[TransactionsTableFields.AMOUNT.value].sum() * -1,
+                "data": remaining_data,
+                "allow_edit": False,
+                "allow_delete": False
+            })
+
+        return view
+
+
+class ProjectBudgetService:
+    """
+    Service for managing project-based budget rules and calculations.
+
+    This class provides static methods for creating, retrieving, updating, and
+    deleting project budget rules. Projects are special categories with their
+    own budget rules that span across months.
+    """
+    @staticmethod
+    def create_project(category: str, total_budget: float) -> None:
+        """
+        Create a new project budget with the specified category and total budget.
+
+        Adds a new rule with ALL_TAGS to represent the total budget for the project.
+
+        Parameters
+        ----------
+        category : str
+            The category name for the new project.
+        total_budget : float
+            The total budget amount for the project.
+
+        Returns
+        -------
+        None
+        """
+        ProjectBudgetRepository.add_rule(
+            category=category,
+            name=TOTAL_BUDGET,
+            tags=ALL_TAGS,
+            amount=total_budget
+        )
+
+    @staticmethod
+    def delete_project(category: str) -> None:
+        """
+        Delete all budget rules for a project.
+
+        Parameters
+        ----------
+        category : str
+            The category name of the project to delete.
+
+        Returns
+        -------
+        None
+        """
+        ProjectBudgetRepository.delete_project_rules(category)
+
+    @staticmethod
+    def get_project_names(budget_rules: pd.DataFrame) -> list[str]:
+        """
+        Get a list of all project names from the budget rules.
+
+        Projects are identified as rules with null year and month values.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        list[str]
+            List of unique project category names.
+        """
+        return budget_rules.loc[
+            (budget_rules[YEAR].isnull()) & (budget_rules[MONTH].isnull())
+        ][CATEGORY].unique().tolist()
+
+    @staticmethod
+    def get_project_budget_rules(project: str | None, budget_rules: pd.DataFrame) -> pd.DataFrame | None:
+        """
+        Get all budget rules for a specific project.
+
+        Parameters
+        ----------
+        project : str | None
+            The name of the project to get rules for, or None.
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        pd.DataFrame | None
+            DataFrame containing only the rules for the specified project,
+            or None if project is None.
+        """
+        if project is None:
+            return None
+
+        rules = budget_rules.loc[
+            (budget_rules[CATEGORY] == project) &
+            (budget_rules[YEAR].isnull()) &
+            (budget_rules[MONTH].isnull())
+        ]
+        return rules
+
+    @staticmethod
+    def get_project_transactions(project: str) -> pd.DataFrame:
+        """
+        Get all transactions categorized under a specific project.
+
+        Retrieves and combines transactions from both bank and credit card tables
+        that are categorized under the specified project.
+
+        Parameters
+        ----------
+        project : str
+            The name of the project to get transactions for.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing all transactions for the specified project.
+        """
+        conn = get_db_connection()
+        bank = get_table(conn, Tables.BANK.value)
+        credit = get_table(conn, Tables.CREDIT_CARD.value)
+        all_data = pd.concat([credit, bank])
+        transactions = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
+        return transactions
+
+    @staticmethod
+    def update_project_rules(project: str, project_rules: pd.DataFrame) -> bool:
+        """
+        Update project rules to match available tags for the project category.
+
+        Synchronizes the project budget rules with the current tags available for
+        the project category. Adds rules for new tags and removes rules for tags
+        that no longer exist.
+
+        Parameters
+        ----------
+        project : str
+            The name of the project to update rules for.
+        project_rules : pd.DataFrame
+            DataFrame containing the current project rules.
+
+        Returns
+        -------
+        bool
+            True if any updates were made, False otherwise.
+        """
+        cat_n_tags = tagging_repository.get_categories_and_tags(copy=True)
+        tags = cat_n_tags.get(project, [])
+        existing_tags = project_rules[TAGS].tolist()
+        existing_tags = [tag[0] for tag in existing_tags]
+
+        updates = False
+        for tag in tags:
+            if tag not in existing_tags:
+                ProjectBudgetRepository.add_rule(
+                    category=project, name=tag, tags=tag, amount=1
+                )
+                updates = True
+
+        for tag in existing_tags:
+            if tag not in tags + [ALL_TAGS]:
+                ProjectBudgetRepository.delete_project_tag_rule(project, tag)
+                updates = True
+
+        return updates
+
+    @staticmethod
+    def get_available_categories(budget_rules: pd.DataFrame) -> list[str]:
+        """
+        Get categories that are available to be used as projects.
+
+        Returns a list of categories that are not already being used as projects.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        list[str]
+            List of category names that are available to be used as projects.
+        """
+        avail_cats = list(
+            set(list(tagging_repository.get_categories_and_tags().keys())) -
+            set(ProjectBudgetService.get_project_names(budget_rules))
+        )
+
+        return avail_cats
