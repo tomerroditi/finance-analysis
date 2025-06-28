@@ -11,8 +11,9 @@ the user should be able to view the following data:
 import pandas as pd
 import streamlit as st
 
-from fad.app.data_access import get_db_connection, get_table
-from fad.app.naming_conventions import Tables, TransactionsTableFields, NonExpensesCategories
+from fad.app.data_access import get_db_connection
+from fad.app.services.transactions_service import TransactionsService
+from fad.app.naming_conventions import TransactionsTableFields, NonExpensesCategories
 from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
 from fad.app.utils.widgets import PandasFilterWidgets
 
@@ -22,11 +23,9 @@ category_col = TransactionsTableFields.CATEGORY.value
 tag_col = TransactionsTableFields.TAG.value
 non_expenses_categories = [category.value for category in NonExpensesCategories]
 
-conn = get_db_connection()
-
-# get the data from the database
-credit_card_data = get_table(conn, Tables.CREDIT_CARD.value)
-bank_data = get_table(conn, Tables.BANK.value)
+transactions_service = TransactionsService(get_db_connection())
+credit_card_data = transactions_service.get_table_data_for_analysis("credit_card")
+bank_data = transactions_service.get_table_data_for_analysis("bank")
 all_data = pd.concat([credit_card_data, bank_data])
 expenses_data = all_data[~all_data[category_col].isin(non_expenses_categories)]
 expenses_data.loc[
@@ -76,7 +75,7 @@ with categories_tab:
         bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1ME")
     )
 
-with tags_tab:
+with tags_tab:  # TODO: fix issue with empty current month and year results
     st.caption("<p style='font-size:20px;'>"
                "Analysis of your expenses by tags.<br>"
                "</p>",

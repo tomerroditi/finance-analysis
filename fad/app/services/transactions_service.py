@@ -65,7 +65,25 @@ class TransactionsService:
         table_name: Literal["credit_card", "bank"] = table_name.lower().replace(' ', '_') # noqa
         table = self.transactions_repository.get_table(table_name)
         return table
+    
+    def get_table_data_for_analysis(self, table_name: str) -> pd.DataFrame:
+        """
+        Get the data from the specified transactions table for analysis.
 
+        Parameters
+        ----------
+        table_name : str
+            The name of the table to retrieve data from.
+
+        Returns
+        ------- 
+        pd.DataFrame
+            A DataFrame containing the data from the specified table for analysis.
+        """
+        table_name: Literal["credit_card", "bank"] = table_name.lower().replace(' ', '_') # noqa
+        table = self.transactions_repository.get_table_for_analysis(table_name)
+        return table
+    
     def update_data_table(self, service: Literal['credit_card', 'bank'], id_: int, category: str, tag: str) -> None:
         """
         Update the tags of the raw data in the credit card and bank tables.

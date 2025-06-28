@@ -8,13 +8,11 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 from fad.app.data_access import get_db_connection
-from fad.app.data_access.budget_repository import BudgetRepository, MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.budget_repository import BudgetRepository
 from fad.app.data_access.tagging_repository import TaggingRepository
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
     ALL_TAGS, YEAR, MONTH
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService
-
-tagging_repository = TaggingRepository()
 
 
 class BudgetUI:
@@ -23,6 +21,9 @@ class BudgetUI:
     """
     def __init__(self):
         self.budget_rules: pd.DataFrame = pd.DataFrame()
+        self.monthly_budget_service = MonthlyBudgetService()
+        self.budget_repository = BudgetRepository(get_db_connection())
+        self.tagging_repository = TaggingRepository()
 
     def render_rule_ui_window(
         self,
@@ -95,14 +96,13 @@ class BudgetUI:
             disabled=not allow_delete
         )
 
-    @staticmethod
     @st.dialog("Are you sure you want to delete this rule?")
-    def show_delete_rule_dialog(rule_id: int) -> None:
+    def show_delete_rule_dialog(self, rule_id: int) -> None:
         """
         Simple confirmation dialog to delete a rule.
         """
         if st.button("Yes"):
-            MonthlyBudgetRepository.delete_rule(rule_id)
+            self.monthly_budget_service.monthly_budget_repository.delete_rule(rule_id)
             st.success("Rule deleted.")
             st.rerun()
         if st.button("No"):
@@ -123,7 +123,7 @@ class BudgetUI:
         amount = st.number_input("Amount", value=rule[AMOUNT], key=f"edit_{rule[ID]}_amount")
 
         if st.button("Update Rule", key=f"edit_{rule[ID]}_submit"):
-            is_valid, msg = MonthlyBudgetService.validate_rule_inputs(
+            is_valid, msg = self.monthly_budget_service.validate_rule_inputs(
                 self.budget_rules, name, category, tags, amount,
                 rule[YEAR], rule[MONTH], rule[ID]
             )
@@ -131,13 +131,12 @@ class BudgetUI:
                 st.error(msg)
                 return
 
-            BudgetRepository(get_db_connection()).update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
+            self.budget_repository.update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
             st.success("Rule updated.")
             st.rerun()
 
-    @staticmethod
-    def _edit_rule_ui(rule: pd.Series) -> tuple[str, str, list[str]]:
-        cat_n_tags = tagging_repository.get_categories_and_tags(copy=True)
+    def _edit_rule_ui(self, rule: pd.Series) -> tuple[str, str, list[str]]:
+        cat_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
         is_project = pd.isnull(rule[YEAR]) and pd.isnull(rule[MONTH])
 
         name = st.text_input("Name", rule[NAME], key=f"edit_{rule[ID]}_name", disabled=is_project)
@@ -168,15 +167,15 @@ class MonthlyBudgetUI(BudgetUI):
     """
     def __init__(self):
         super().__init__()
-        self.budget_rules = MonthlyBudgetRepository(get_db_connection()).get_all_rules()
+        self.budget_rules = self.monthly_budget_service.monthly_budget_repository.get_all_rules()
         self.year = st.session_state.setdefault("year", pd.Timestamp.now().year)
         self.month = st.session_state.setdefault("month", pd.Timestamp.now().month)
-        self.month_rules = MonthlyBudgetService.get_month_rules(self.year, self.month, self.budget_rules)
+        self.month_rules = self.monthly_budget_service.get_month_rules(self.year, self.month, self.budget_rules)
 
     def set_month(self, year: int, month: int) -> None:
         self.year = year
         self.month = month
-        self.month_rules = MonthlyBudgetService.get_month_rules(year, month, self.budget_rules)
+        self.month_rules = self.monthly_budget_service.get_month_rules(year, month, self.budget_rules)
 
     def select_month(self):
         curr_month_col, previous_month_col, next_month_col, history_col = st.columns([1, 1, 1, 1])
@@ -213,7 +212,7 @@ class MonthlyBudgetUI(BudgetUI):
             )
 
         if copy_rules_col.button("Copy last month's rules", use_container_width=True):
-            msg = MonthlyBudgetService.copy_last_month_rules(self.year, self.month, self.budget_rules)
+            msg = self.monthly_budget_service.copy_last_month_rules(self.year, self.month, self.budget_rules)
             if msg:
                 st.success(msg)
             else:
@@ -228,7 +227,7 @@ class MonthlyBudgetUI(BudgetUI):
         )
 
         # Calculate available tags per category
-        available_tags_by_category = MonthlyBudgetService.get_available_tags_for_each_category(self.budget_rules)
+        available_tags_by_category = self.monthly_budget_service.get_available_tags_for_each_category(self.budget_rules)
 
         name = st.text_input("Name", key="new_rule_name")
         category = st.selectbox("Category", available_tags_by_category.keys(), key="new_rule_category", index=None)
@@ -244,14 +243,14 @@ class MonthlyBudgetUI(BudgetUI):
         st.markdown("<br>", unsafe_allow_html=True)
 
         if st.button("Add Rule"):
-            is_valid, message = MonthlyBudgetService.validate_rule_inputs(
+            is_valid, message = self.monthly_budget_service.validate_rule_inputs(
                 self.budget_rules, name, category, tags, amount, self.year, self.month, id_=None
             )
             if not is_valid:
                 st.error(message)
                 st.stop()
 
-            MonthlyBudgetRepository.add_rule(
+            self.monthly_budget_service.monthly_budget_repository.add_rule(
                 name=name,
                 amount=amount,
                 category=category,
@@ -274,7 +273,7 @@ class MonthlyBudgetUI(BudgetUI):
 
         col_set.markdown("<br>", unsafe_allow_html=True)
         if col_set.button("Set Total Budget", key="set_total_budget_button", use_container_width=True):
-            MonthlyBudgetRepository.add_rule(
+            self.monthly_budget_service.monthly_budget_repository.add_rule(
                 name=TOTAL_BUDGET,
                 amount=total_budget,
                 category=TOTAL_BUDGET,
@@ -292,7 +291,7 @@ class MonthlyBudgetUI(BudgetUI):
         by any rule. the UI allows the user to edit and delete the rules as well.
         """
         st.title(f"Budget of: {self.year}-{self.month}")
-        view = MonthlyBudgetService.get_monthly_budget_view(self.year, self.month)
+        view = self.monthly_budget_service.get_monthly_budget_view(self.year, self.month)
         if view is None:
             st.warning("No budget rules for the selected month")
             return
@@ -313,13 +312,14 @@ class ProjectBudgetUI(BudgetUI):
     """
     def __init__(self):
         super().__init__()
-        self.budget_rules = ProjectBudgetRepository(get_db_connection()).get_all_rules()
+        self.project_budget_service = ProjectBudgetService()
+        self.budget_rules = self.project_budget_service.project_budget_repository.get_all_rules()
         self.project_name = None
         self.project_rules = None
 
     def set_project_name(self, project_name: str) -> None:
         self.project_name = project_name
-        self.project_rules = ProjectBudgetService.get_project_budget_rules(project_name, self.budget_rules)
+        self.project_rules = self.project_budget_service.get_project_budget_rules(project_name, self.budget_rules)
 
     def project_budget_overview(self) -> None:
         """
@@ -329,8 +329,8 @@ class ProjectBudgetUI(BudgetUI):
             st.warning("No project selected.")
             return
 
-        project_transactions = ProjectBudgetService.get_project_transactions(self.project_name)
-        updated = ProjectBudgetService.update_project_rules(self.project_name, self.project_rules)
+        project_transactions = self.project_budget_service.get_project_transactions(self.project_name)
+        updated = self.project_budget_service.update_project_rules(self.project_name, self.project_rules)
         if updated:
             st.rerun()
 
@@ -364,7 +364,7 @@ class ProjectBudgetUI(BudgetUI):
         """
         Dropdown selector for choosing a project.
         """
-        projects = ProjectBudgetService.get_project_names(self.budget_rules)
+        projects = self.project_budget_service.get_project_names(self.budget_rules)
         if not projects:
             st.info("No existing projects.")
             return None
@@ -398,7 +398,7 @@ class ProjectBudgetUI(BudgetUI):
         """
         UI + logic for creating a new project.
         """
-        available_categories = ProjectBudgetService.get_available_categories(self.budget_rules)
+        available_categories = self.project_budget_service.get_available_categories(self.budget_rules)
         if not available_categories:
             st.warning("All categories already assigned to projects.")
             return
@@ -412,7 +412,7 @@ class ProjectBudgetUI(BudgetUI):
 
         col_set.markdown("<br>", unsafe_allow_html=True)
         if col_set.button("Create", key="create_project_button", use_container_width=True):
-            ProjectBudgetService.create_project(category, total_budget)
+            self.project_budget_service.create_project(category, total_budget)
             self.set_project_name(category)
             st.session_state["project_selection"] = category
             st.success(f"Project '{category}' created.")
@@ -424,7 +424,7 @@ class ProjectBudgetUI(BudgetUI):
         Confirm and delete a project.
         """
         if st.button("Yes"):
-            ProjectBudgetService.delete_project(self.project_name)
+            self.project_budget_service.delete_project(self.project_name)
             st.success(f"Project '{self.project_name}' deleted.")
             st.rerun()
         if st.button("No"):

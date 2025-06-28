@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlalchemy.sql import text
 from streamlit.connections import SQLConnection
 
-from fad.app.data_access import get_db_connection, get_table
+from fad.app.data_access import get_db_connection
 from fad.app.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH
 
 conn = get_db_connection()
@@ -25,10 +25,20 @@ class BudgetRepository:
         self.conn = conn
         self.assure_table_exists()
 
+    def get_data(self) -> pd.DataFrame:
+        """Get all rules from the budget repository."""
+        with self.conn.session as s:
+            query = f"SELECT * FROM {self.table}"
+            result = s.execute(text(query))
+            df = pd.DataFrame(result.fetchall())
+            if not df.empty:
+                df.columns = result.keys()
+            return df
+
     def get_all_rules(self) -> pd.DataFrame:
         """Get all rules from the budget repository."""
-        rules = get_table(self.conn, Tables.BUDGET_RULES.value)
-        rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        rules = self.get_data()
+        rules[self.tags_col] = rules[self.tags_col].apply(lambda x: x.split(";") if isinstance(x, str) else [])
         return rules
 
     def add_rule(self, name: str, amount: float, category: str, tags: str | list[str], month: Optional[int], year: Optional[int]) -> None:
@@ -127,7 +137,7 @@ class ProjectBudgetRepository(BudgetRepository):
         if year is not None or month is not None:
             raise ValueError("Year and month should be None for project rules")
 
-        super(ProjectBudgetRepository, ProjectBudgetRepository).add_rule(
+        super(ProjectBudgetRepository, self).add_rule(
             name=name,
             amount=amount,
             category=category,

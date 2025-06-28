@@ -26,25 +26,3 @@ def get_db_connection() -> SQLConnection:
 
         st.session_state['conn'] = st.connection('data', 'sql')
     return st.session_state['conn']
-
-
-def get_table(conn: SQLConnection, table_name: str) -> pd.DataFrame:
-    """
-    Get the data from the given table
-
-    Parameters
-    ----------
-    conn : SQLConnection
-        The connection to the database
-    table_name : str
-        The name of the table to get the data from
-
-    Returns
-    -------
-    pd.DataFrame
-        The data from the table
-    """
-    try:
-        return conn.query(f'SELECT * FROM {table_name};', ttl=0)
-    except sqlalchemy.exc.OperationalError:
-        return pd.DataFrame()

@@ -4,7 +4,6 @@ from typing import Literal
 import streamlit as st
 from streamlit.connections import SQLConnection
 
-from fad.app.data_access import get_table
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
@@ -243,8 +242,8 @@ class AutomaticTaggerService:
             A list of unique transaction descriptions without associated tagging rules.
         """
         # get all credit card transactions that do not apear in the auto tagger rules table
-        auto_tagger_table = get_table(self.conn, Tables.AUTO_TAGGER.value)
-        cc_table = get_table(self.conn, Tables.CREDIT_CARD.value)
+        auto_tagger_table = self.auto_tagger_repo.get_table("credit_card")
+        cc_table = self.transactions_repo.get_table("credit_card")
 
         desc_col = self.transactions_repo.desc_col
         cc_without_rules = cc_table.loc[~cc_table[desc_col].isin(auto_tagger_table[name_col]), desc_col].unique().tolist()
@@ -264,8 +263,8 @@ class AutomaticTaggerService:
             A list of tuples containing bank transactions without rules, 
             where each tuple is (description, account_number).
         """
-        auto_tagger_table = get_table(self.conn, Tables.AUTO_TAGGER.value)
-        bank_table = get_table(self.conn, Tables.BANK.value)
+        auto_tagger_table = self.auto_tagger_repo.get_table("bank")
+        bank_table = self.transactions_repo.get_table("bank")
 
         desc_col = self.transactions_repo.desc_col
         bank_account_number_col = self.transactions_repo.account_number_col
