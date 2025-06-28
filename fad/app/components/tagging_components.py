@@ -871,7 +871,7 @@ class ManuallyTaggingComponent:
             st.rerun()
 
         # Save and Cancel buttons
-        col_save, col_cancel = st.columns(2)
+        col_save, col_cancel, col_cancel_split = st.columns(3)
 
         with col_save:
             if st.button("Save Splits"):
@@ -885,6 +885,13 @@ class ManuallyTaggingComponent:
                         service=service,
                         splits=st.session_state[f"splits_{service}"]
                     )
+                    # Update the original transaction to category 'Ignore' and tag 'splitted'
+                    self.transactions_service.update_data_table(
+                        service=service,
+                        id_=row[id_col],
+                        category=NonExpensesCategories.IGNORE.value,
+                        tag="splitted"
+                    )
                     # Clear session state
                     del st.session_state[f"splits_{service}"]
                     st.success("Transaction split successfully!")
@@ -895,4 +902,19 @@ class ManuallyTaggingComponent:
                 # Clear session state
                 if f"splits_{service}" in st.session_state:
                     del st.session_state[f"splits_{service}"]
+                st.rerun()
+
+        with col_cancel_split:
+            if st.button("Cancel Split"):
+                # Delete all splits and reset original transaction's category and tag to None
+                self.split_transactions_service.cancel_split(row[id_col], service)
+                self.transactions_service.update_data_table(
+                    service=service,
+                    id_=row[id_col],
+                    category=None,
+                    tag=None
+                )
+                if f"splits_{service}" in st.session_state:
+                    del st.session_state[f"splits_{service}"]
+                st.success("Split cancelled and transaction restored.")
                 st.rerun()

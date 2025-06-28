@@ -28,6 +28,19 @@ class SplitTransactionsRepository:
         self.conn = conn
         self.assure_table_exists()
 
+    def get_data(self, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+        """
+        Get all splits for a specific service.
+        """
+        with self.conn.session as s:
+            query = f"SELECT * FROM {self.table} WHERE service = :service"
+            params = {"service": service}
+            result = s.execute(text(query), params)
+            df = pd.DataFrame(result.fetchall())
+            if not df.empty:
+                df.columns = result.keys()
+            return df
+        
     def get_splits_for_transaction(self, transaction_id: int, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
         """
         Get all splits for a specific transaction.

@@ -6,10 +6,12 @@ from sqlalchemy import text
 from streamlit.connections import SQLConnection
 
 from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields, SplitTransactionsTableFields
+from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 
 
 class TransactionsRepository:
-    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value, Tables.SPLIT_TRANSACTIONS.value]
+    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value]
+    split_table = Tables.SPLIT_TRANSACTIONS.value
     account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
     type_col = TransactionsTableFields.TYPE.value
     id_col = TransactionsTableFields.ID.value
@@ -21,6 +23,17 @@ class TransactionsRepository:
     provider_col = TransactionsTableFields.PROVIDER.value
     category_col = TransactionsTableFields.CATEGORY.value
     tag_col = TransactionsTableFields.TAG.value
+
+    analysis_cols = [
+        TransactionsTableFields.DATE.value,
+        TransactionsTableFields.PROVIDER.value,
+        TransactionsTableFields.ACCOUNT_NAME.value,
+        TransactionsTableFields.ACCOUNT_NUMBER.value,
+        TransactionsTableFields.DESCRIPTION.value,
+        TransactionsTableFields.AMOUNT.value,
+        TransactionsTableFields.CATEGORY.value,
+        TransactionsTableFields.TAG.value,
+    ]
 
     def __init__(self, conn: SQLConnection):
         """
@@ -34,6 +47,7 @@ class TransactionsRepository:
         self.conn = conn
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
+        self.split_repo = SplitTransactionsRepository(conn)
 
     def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
                        account_number: str | None = None) -> None:
@@ -137,6 +151,54 @@ class TransactionsRepository:
 
         latest_date = min(latest_dates)
         return latest_date
+
+    def get_table_for_analysis(self, service: Literal['credit_card', 'bank'] = 'credit_card') -> pd.DataFrame:
+        """
+        Returns the transactions table for the specified service (credit card or bank), replacing rows with split transactions by their splits.
+        The returned DataFrame has the same columns as the original, with split rows replacing the originals, and all other rows unchanged.
+
+        Parameters
+        ----------
+        service : Literal['credit_card', 'bank']
+            The service for which to return the table ('credit_card' or 'bank').
+        """
+        if service == 'credit_card':
+            df = self.cc_repo.get_table().copy()
+        elif service == 'bank':
+            df = self.bank_repo.get_table().copy()
+        else:
+            raise ValueError("service must be either 'credit_card' or 'bank'")
+
+        # Get all splits for this service
+        split_df = self.split_repo.get_data(service)
+        if split_df.empty:
+            return df[self.analysis_cols]
+
+        # Prepare for merging: drop original transactions that have splits, and add split rows
+        split_ids = set(split_df['transaction_id'])
+        mask = df[self.id_col].isin(split_ids)
+        base_df = df[~mask].copy()
+
+        # For each split, get the original transaction row, update amount/category/tag, and append
+        split_rows = []
+        for id_, split_group in split_df.groupby(self.split_repo.id_col):
+            orig_row = df[df[self.id_col] == id_]
+            if orig_row.empty:
+                continue
+            for _, split in split_group.iterrows():
+                split_row = orig_row.copy()
+                split_row[self.amount_col] = split[self.split_repo.amount_col]
+                split_row[self.category_col] = split[self.split_repo.category_col]
+                split_row[self.tag_col] = split[self.split_repo.tag_col]
+                split_rows.append(split_row)
+
+        if split_rows:
+            split_rows_df = pd.DataFrame(split_rows)
+            result_df = pd.concat([base_df, split_rows_df], ignore_index=True)
+        else:
+            result_df = base_df
+        
+        return result_df[self.analysis_cols].reset_index(drop=True)
 
 
 class ServiceRepository:
