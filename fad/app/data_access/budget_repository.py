@@ -20,7 +20,7 @@ class BudgetRepository:
     month_col = MONTH
 
     def __init__(self, conn: SQLConnection = get_db_connection()):
-        self.conn = get_db_connection()
+        self.conn = conn
         self.assure_table_exists()
 
     def get_data(self) -> pd.DataFrame:
@@ -106,15 +106,6 @@ class MonthlyBudgetRepository(BudgetRepository):
         rules = super(MonthlyBudgetRepository, self).get_all_rules()
         rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
         return rules
-
-    def delete_project(self, project_name: str) -> None:
-        with self.conn.session as s:
-            cmd = sa.text(f"""
-                DELETE FROM {Tables.BUDGET_RULES.value}
-                WHERE category = :category AND year IS NULL AND month IS NULL
-            """)
-            s.execute(cmd, {CATEGORY: project_name})
-            s.commit()
 
     def delete_rules_by_month(self, year: int, month: int) -> None:
         with self.conn.session as s:
