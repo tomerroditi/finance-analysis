@@ -4,6 +4,7 @@ from typing import Literal
 import streamlit as st
 from streamlit.connections import SQLConnection
 
+from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
@@ -57,7 +58,8 @@ class CategoriesTagsService:
 
         Loads the categories and tags from the TaggingRepository.
         """
-        self.categories_and_tags = TaggingRepository.get_categories_and_tags()
+        self.tagging_repository = TaggingRepository()
+        self.categories_and_tags = self.tagging_repository.get_categories_and_tags()
 
     def add_category(self, category: str) -> bool:
         """
@@ -216,7 +218,7 @@ class AutomaticTaggerService:
     transactions_repo : TransactionsRepository
         Repository for transaction data operations.
     """
-    def __init__(self, conn: SQLConnection):
+    def __init__(self, conn: SQLConnection = get_db_connection()):
         """
         Initialize the AutomaticTaggerService.
 

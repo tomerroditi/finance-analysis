@@ -4,11 +4,12 @@ from typing import Literal
 import pandas as pd
 from streamlit.connections import SQLConnection
 
+from fad.app.data_access import get_db_connection
 from fad.app.data_access.transactions_repository import TransactionsRepository
 
 
 class TransactionsService:
-    def __init__(self, conn: SQLConnection):
+    def __init__(self, conn: SQLConnection = get_db_connection()):
         self.transactions_repository = TransactionsRepository(conn)
 
     def get_table_columns_for_display(self) -> List[str]:

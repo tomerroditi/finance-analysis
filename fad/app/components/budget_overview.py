@@ -7,13 +7,11 @@ from fad.app.components.month_selector import (
     select_next_month,
     select_custom_month
 )
-from fad.app.data_access import get_db_connection
-from fad.app.data_access.budget_repository import BudgetRepository
-from fad.app.data_access.tagging_repository import TaggingRepository
+
+from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
+from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
     ALL_TAGS, YEAR, MONTH
-from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService
-
 
 class BudgetUI:
     """
@@ -21,9 +19,9 @@ class BudgetUI:
     """
     def __init__(self):
         self.budget_rules: pd.DataFrame = pd.DataFrame()
+        self.budget_service = BudgetService()
         self.monthly_budget_service = MonthlyBudgetService()
-        self.budget_repository = BudgetRepository(get_db_connection())
-        self.tagging_repository = TaggingRepository()
+        self.tagging_service = CategoriesTagsService()
 
     def render_rule_ui_window(
         self,
@@ -102,7 +100,7 @@ class BudgetUI:
         Simple confirmation dialog to delete a rule.
         """
         if st.button("Yes"):
-            self.monthly_budget_service.monthly_budget_repository.delete_rule(rule_id)
+            self.budget_service.budget_repository.delete_rule(rule_id)
             st.success("Rule deleted.")
             st.rerun()
         if st.button("No"):
@@ -123,7 +121,7 @@ class BudgetUI:
         amount = st.number_input("Amount", value=rule[AMOUNT], key=f"edit_{rule[ID]}_amount")
 
         if st.button("Update Rule", key=f"edit_{rule[ID]}_submit"):
-            is_valid, msg = self.monthly_budget_service.validate_rule_inputs(
+            is_valid, msg = self.budget_service.validate_rule_inputs(
                 self.budget_rules, name, category, tags, amount,
                 rule[YEAR], rule[MONTH], rule[ID]
             )
@@ -131,12 +129,12 @@ class BudgetUI:
                 st.error(msg)
                 return
 
-            self.budget_repository.update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
+            self.budget_service.update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
             st.success("Rule updated.")
             st.rerun()
 
     def _edit_rule_ui(self, rule: pd.Series) -> tuple[str, str, list[str]]:
-        cat_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
+        cat_n_tags = self.tagging_service.tagging_repository.get_categories_and_tags(copy=True)
         is_project = pd.isnull(rule[YEAR]) and pd.isnull(rule[MONTH])
 
         name = st.text_input("Name", rule[NAME], key=f"edit_{rule[ID]}_name", disabled=is_project)
@@ -167,6 +165,7 @@ class MonthlyBudgetUI(BudgetUI):
     """
     def __init__(self):
         super().__init__()
+        self.monthly_budget_service = MonthlyBudgetService()
         self.budget_rules = self.monthly_budget_service.monthly_budget_repository.get_all_rules()
         self.year = st.session_state.setdefault("year", pd.Timestamp.now().year)
         self.month = st.session_state.setdefault("month", pd.Timestamp.now().month)

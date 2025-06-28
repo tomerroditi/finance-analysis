@@ -3,10 +3,11 @@ from fad.app.data_access.scraping_repository import ScrapingRepository
 from fad import DB_PATH
 import streamlit as st
 from datetime import datetime
+from streamlit.connections import SQLConnection
 
+from fad.app.data_access import get_db_connection
 from fad.scraper import Scraper, get_scraper
 from fad import DB_PATH
-
 
 
 class ScrapingService:
@@ -28,7 +29,7 @@ class ScrapingService:
     scraping_status : dict
         Dictionary tracking the status of scraping operations.
     """
-    def __init__(self, conn):
+    def __init__(self, conn: SQLConnection = get_db_connection()):
         """
         Initialize the ScrapingService.
 

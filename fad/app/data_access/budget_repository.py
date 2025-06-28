@@ -8,8 +8,6 @@ from streamlit.connections import SQLConnection
 from fad.app.data_access import get_db_connection
 from fad.app.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH
 
-conn = get_db_connection()
-
 
 class BudgetRepository:
     table = Tables.BUDGET_RULES.value
@@ -21,8 +19,8 @@ class BudgetRepository:
     year_col = YEAR
     month_col = MONTH
 
-    def __init__(self, conn: SQLConnection):
-        self.conn = conn
+    def __init__(self, conn: SQLConnection = get_db_connection()):
+        self.conn = get_db_connection()
         self.assure_table_exists()
 
     def get_data(self) -> pd.DataFrame:
@@ -40,6 +38,12 @@ class BudgetRepository:
         rules = self.get_data()
         rules[self.tags_col] = rules[self.tags_col].apply(lambda x: x.split(";") if isinstance(x, str) else [])
         return rules
+    
+    def delete_rule(self, id_: int) -> None:
+        with self.conn.session as s:
+            cmd = sa.text(f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE id = :id")
+            s.execute(cmd, {ID: id_})
+            s.commit()
 
     def add_rule(self, name: str, amount: float, category: str, tags: str | list[str], month: Optional[int], year: Optional[int]) -> None:
         with self.conn.session as s:
@@ -102,12 +106,6 @@ class MonthlyBudgetRepository(BudgetRepository):
         rules = super(MonthlyBudgetRepository, self).get_all_rules()
         rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
         return rules
-
-    def delete_rule(self, id_: int) -> None:
-        with self.conn.session as s:
-            cmd = sa.text(f"DELETE FROM {Tables.BUDGET_RULES.value} WHERE id = :id")
-            s.execute(cmd, {ID: id_})
-            s.commit()
 
     def delete_project(self, project_name: str) -> None:
         with self.conn.session as s:
@@ -174,7 +172,7 @@ class ProjectBudgetRepository(BudgetRepository):
             s.commit()
 
     def get_rules_for_project(self, category: str) -> pd.DataFrame:
-        rules = get_table(self.conn, Tables.BUDGET_RULES.value)
+        rules = self.get_all_rules()
         rules = rules.loc[
             (rules[CATEGORY] == category) &
             (rules[YEAR].isnull()) &

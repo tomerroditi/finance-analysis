@@ -5,7 +5,6 @@ import pandas as pd
 import streamlit as st
 import streamlit_antd_components as sac
 
-from fad.app.data_access import get_db_connection
 from fad.app.naming_conventions import NonExpensesCategories
 from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
 from fad.app.services.transactions_service import TransactionsService
@@ -297,7 +296,7 @@ class AutomaticTaggerComponent:
         Creates an instance of AutomaticTaggerService and retrieves the categories
         and tags from the session state.
         """
-        self.service = AutomaticTaggerService(get_db_connection())
+        self.service = AutomaticTaggerService()
         self.categories_and_tags = st.session_state['categories_and_tags']
 
     def render(self) -> None:
@@ -613,8 +612,8 @@ class ManuallyTaggingComponent:
         and split transactions.
         """
         self.categories_tags_service = CategoriesTagsService()
-        self.transactions_service = TransactionsService(get_db_connection())
-        self.split_transactions_service = SplitTransactionsService(get_db_connection())
+        self.transactions_service = TransactionsService()
+        self.split_transactions_service = SplitTransactionsService()
 
     def render(self) -> None:
         """

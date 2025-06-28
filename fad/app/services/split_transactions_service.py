@@ -3,6 +3,7 @@ from typing import List, Literal, Dict, Any
 import pandas as pd
 from streamlit.connections import SQLConnection
 
+from fad.app.data_access import get_db_connection
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 
@@ -22,7 +23,7 @@ class SplitTransactionsService:
         Repository for managing transaction data.
     """
 
-    def __init__(self, conn: SQLConnection):
+    def __init__(self, conn: SQLConnection = get_db_connection()):
         """
         Initialize the SplitTransactionsService.
 

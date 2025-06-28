@@ -18,7 +18,7 @@ with settings_tab:
 
 with credentials_tab:
     # fetch credentials
-    credentials = CredentialsRepository().load_credentials()
+    credentials = CredentialsRepository().load_credentials()  # TODO: switch with credentials service
 
     # open a tab for each service
     cards_tab, banks_tab, insurance_tab = st.tabs(['Credit Cards', 'Banks', 'Insurance'])

@@ -28,6 +28,9 @@ class CredentialsService:
         """
         self.creds_access = CredentialsRepository()
         self.credentials = self.creds_access.credentials
+    
+    def save_credentials(self, credentials: dict):
+        self.creds_access.save_credentials(credentials)
 
     def get_available_data_sources(self) -> list[str]:
         """
@@ -161,3 +164,4 @@ class CredentialsService:
         """
         del credentials[service][provider][account]
         self.creds_access.save_credentials(credentials)
+

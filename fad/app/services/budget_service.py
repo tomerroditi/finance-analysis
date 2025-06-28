@@ -1,134 +1,23 @@
 from typing import Optional
 
+from streamlit.connections import SQLConnection
 import pandas as pd
 
 from fad.app.data_access import get_db_connection
-from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository
+from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository, BudgetRepository
 from fad.app.data_access.tagging_repository import TaggingRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, \
     TransactionsTableFields, NonExpensesCategories
 
 
-class MonthlyBudgetService:
-    """
-    Service for managing monthly budget rules and calculations.
+class BudgetService:
+    def __init__(self, conn: SQLConnection = get_db_connection()):
+        self.conn = conn
+        self.budget_repository = BudgetRepository(conn)
 
-    This class provides static methods for creating, retrieving, validating, and
-    analyzing monthly budget rules. It handles operations such as copying rules
-    from previous months, validating rule inputs, and generating budget views.
-    """
-    def __init__(self):
-        self.conn = get_db_connection()
-        self.monthly_budget_repository = MonthlyBudgetRepository(self.conn)
-        self.transactions_repository = TransactionsRepository(self.conn)
-        self.tagging_repository = TaggingRepository()
-
-    def get_available_tags_for_each_category(self, budget_rules: pd.DataFrame) -> dict[str, list[str]]:
-        """
-        Get available tags for each category that are not already used in budget rules.
-
-        Filters out tags that are already used in budget rules, and removes categories
-        that have no available tags or have a rule with ALL_TAGS.
-
-        Parameters
-        ----------
-        budget_rules : pd.DataFrame
-            DataFrame containing budget rules.
-
-        Returns
-        -------
-        dict[str, list[str]]
-            Dictionary mapping category names to lists of available tags.
-        """
-        cats_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
-        for _, rule in budget_rules.iterrows():
-            used_tags = rule[TAGS]
-            if used_tags == [ALL_TAGS]:
-                cats_n_tags.pop(rule[CATEGORY], None)
-                continue
-
-            available_tags = cats_n_tags.get(rule[CATEGORY], [])
-            available_tags = [tag for tag in available_tags if tag not in used_tags]
-            if not available_tags:
-                cats_n_tags.pop(rule[CATEGORY], None)
-            else:
-                cats_n_tags[rule[CATEGORY]] = available_tags
-
-        return cats_n_tags
-
-    def copy_last_month_rules(self, year: int, month: int, budget_rules: pd.DataFrame) -> Optional[str]:
-        """
-        Copy budget rules from the previous month into the selected month.
-
-        Identifies the previous month (accounting for year boundaries), retrieves
-        its rules, and copies them to the specified month after deleting any
-        existing rules for that month.
-
-        Parameters
-        ----------
-        year : int
-            The year of the target month.
-        month : int
-            The month to copy rules to (1-12).
-        budget_rules : pd.DataFrame
-            DataFrame containing all budget rules.
-
-        Returns
-        -------
-        Optional[str]
-            A success message with the number of rules copied if successful,
-            or None if no rules were found for the previous month.
-        """
-        last_month = month - 1 if month != 1 else 12
-        last_year = year if month != 1 else year - 1
-
-        rules_to_copy = budget_rules[
-            (budget_rules[YEAR] == last_year) & (budget_rules[MONTH] == last_month)
-        ]
-
-        if rules_to_copy.empty:
-            return None
-
-        self.monthly_budget_repository.delete_rules_by_month(year, month)
-
-        for _, rule in rules_to_copy.iterrows():
-            self.monthly_budget_repository.add_rule(
-                name=rule[NAME],
-                amount=rule[AMOUNT],
-                category=rule[CATEGORY],
-                tags=rule[TAGS],
-                month=month,
-                year=year
-            )
-
-        return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
-
-    @staticmethod
-    def get_month_rules(year: int, month: int, budget_rules: pd.DataFrame) -> pd.DataFrame:
-        """
-        Fetch all budget rules for a specific month and year.
-
-        Filters the budget rules DataFrame to return only the rules that apply
-        to the specified month and year.
-
-        Parameters
-        ----------
-        year : int
-            The year to filter rules for.
-        month : int
-            The month to filter rules for (1-12).
-        budget_rules : pd.DataFrame
-            DataFrame containing all budget rules.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame containing only the rules for the specified month and year.
-        """
-        return budget_rules[
-            (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
-        ]
+    def update_rule(self, id_: int, **fields):
+        self.budget_repository.update_rule(id_, **fields)
 
     @staticmethod
     def validate_rule_inputs(
@@ -249,6 +138,127 @@ class MonthlyBudgetService:
                 return False, f"You cannot have a rule with {ALL_TAGS} for a category that already has rules with specific tags"
 
         return True, ""
+
+
+class MonthlyBudgetService(BudgetService):
+    """
+    Service for managing monthly budget rules and calculations.
+
+    This class provides static methods for creating, retrieving, validating, and
+    analyzing monthly budget rules. It handles operations such as copying rules
+    from previous months, validating rule inputs, and generating budget views.
+    """
+    def __init__(self, conn: SQLConnection = get_db_connection()):
+        self.conn = conn
+        self.monthly_budget_repository = MonthlyBudgetRepository(self.conn)
+        self.transactions_repository = TransactionsRepository(self.conn)
+        self.tagging_repository = TaggingRepository()
+
+    def get_available_tags_for_each_category(self, budget_rules: pd.DataFrame) -> dict[str, list[str]]:
+        """
+        Get available tags for each category that are not already used in budget rules.
+
+        Filters out tags that are already used in budget rules, and removes categories
+        that have no available tags or have a rule with ALL_TAGS.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing budget rules.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Dictionary mapping category names to lists of available tags.
+        """
+        cats_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
+        for _, rule in budget_rules.iterrows():
+            used_tags = rule[TAGS]
+            if used_tags == [ALL_TAGS]:
+                cats_n_tags.pop(rule[CATEGORY], None)
+                continue
+
+            available_tags = cats_n_tags.get(rule[CATEGORY], [])
+            available_tags = [tag for tag in available_tags if tag not in used_tags]
+            if not available_tags:
+                cats_n_tags.pop(rule[CATEGORY], None)
+            else:
+                cats_n_tags[rule[CATEGORY]] = available_tags
+
+        return cats_n_tags
+
+    def copy_last_month_rules(self, year: int, month: int, budget_rules: pd.DataFrame) -> Optional[str]:
+        """
+        Copy budget rules from the previous month into the selected month.
+
+        Identifies the previous month (accounting for year boundaries), retrieves
+        its rules, and copies them to the specified month after deleting any
+        existing rules for that month.
+
+        Parameters
+        ----------
+        year : int
+            The year of the target month.
+        month : int
+            The month to copy rules to (1-12).
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        Optional[str]
+            A success message with the number of rules copied if successful,
+            or None if no rules were found for the previous month.
+        """
+        last_month = month - 1 if month != 1 else 12
+        last_year = year if month != 1 else year - 1
+
+        rules_to_copy = budget_rules[
+            (budget_rules[YEAR] == last_year) & (budget_rules[MONTH] == last_month)
+        ]
+
+        if rules_to_copy.empty:
+            return None
+
+        self.monthly_budget_repository.delete_rules_by_month(year, month)
+
+        for _, rule in rules_to_copy.iterrows():
+            self.monthly_budget_repository.add_rule(
+                name=rule[NAME],
+                amount=rule[AMOUNT],
+                category=rule[CATEGORY],
+                tags=rule[TAGS],
+                month=month,
+                year=year
+            )
+
+        return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
+
+    @staticmethod
+    def get_month_rules(year: int, month: int, budget_rules: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fetch all budget rules for a specific month and year.
+
+        Filters the budget rules DataFrame to return only the rules that apply
+        to the specified month and year.
+
+        Parameters
+        ----------
+        year : int
+            The year to filter rules for.
+        month : int
+            The month to filter rules for (1-12).
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing only the rules for the specified month and year.
+        """
+        return budget_rules[
+            (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
+        ]
 
     def get_monthly_budget_view(self, year: int, month: int) -> Optional[list[dict]]:
         """

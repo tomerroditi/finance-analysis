@@ -3,7 +3,6 @@ from streamlit_phone_number import st_phone_number
 from typing import Literal
 
 from fad.app.services.credentials_service import CredentialsService
-from fad.app.data_access.credentials_repository import CredentialsRepository
 from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
 
 
@@ -35,11 +34,9 @@ class CredentialsComponents:
         credential operations and data persistence.
         """
         self.credentials_service = CredentialsService()
-        self.credentials_repository = CredentialsRepository()
 
-    @staticmethod
     @st.fragment
-    def edit_delete_credentials(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
+    def edit_delete_credentials(self, credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
         """
         Render UI components for editing or deleting existing credentials.
 
@@ -57,7 +54,6 @@ class CredentialsComponents:
         -------
         None
         """
-        repo: CredentialsRepository = CredentialsRepository()  # Create an instance for saving
         for provider, accounts in credentials[service].items():
             for account, creds in accounts.items():
                 with st.expander(f"{provider} - {account}"):
@@ -67,7 +63,7 @@ class CredentialsComponents:
                     if cont_buttons.button(
                             'Save',
                             key=f'{service}_{provider}_{account}_edit_credentials__save',
-                            on_click=repo.save_credentials,
+                            on_click=self.credentials_service.save_credentials,
                             args=(credentials,)
                     ):
                         cont_success.success('Credentials saved successfully')

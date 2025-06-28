@@ -4,7 +4,6 @@ import streamlit as st
 from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.tagging_service import AutomaticTaggerService
-from fad.app.data_access import get_db_connection
 from fad.scraper.scrapers import Scraper
 
 
@@ -35,9 +34,9 @@ class DataScrapingComponent:
 
         Creates instances of required services and initializes state variables.
         """
-        self.scraping_service = st.session_state.setdefault("scraping_service", ScrapingService(get_db_connection()))
+        self.scraping_service = st.session_state.setdefault("scraping_service", ScrapingService())
         self.creds_service = CredentialsService()
-        self.auto_tagging_service = AutomaticTaggerService(get_db_connection())
+        self.auto_tagging_service = AutomaticTaggerService()
         self.start_date = None
         self.selected_scrapers = []
 
