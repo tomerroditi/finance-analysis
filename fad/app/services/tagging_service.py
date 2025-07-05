@@ -6,6 +6,7 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
+from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
@@ -230,6 +231,7 @@ class AutomaticTaggerService:
         """
         self.conn = conn
         self.auto_tagger_repo = AutoTaggerRepository(conn)
+        self.transactions_repo = TransactionsRepository(conn)
         self.transactions_service = TransactionsService(conn)
 
     def get_cc_without_rules(self) -> List[str]:
@@ -246,7 +248,7 @@ class AutomaticTaggerService:
         """
         # get all credit card transactions that do not apear in the auto tagger rules table
         auto_tagger_table = self.auto_tagger_repo.get_table("credit_card")
-        cc_table = self.transactions_service.get_table("credit_card")
+        cc_table = self.transactions_repo.get_table("credit_card")
 
         desc_col = TransactionsTableFields.DESCRIPTION.value
         cc_without_rules = cc_table.loc[~cc_table[desc_col].isin(auto_tagger_table[name_col]), desc_col].unique().tolist()
