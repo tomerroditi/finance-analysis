@@ -23,9 +23,6 @@ class CredentialsComponents:
     credentials_service : CredentialsService
         An instance of `CredentialsService` used for credential
         operations like saving and deleting accounts.
-    credentials_repository : CredentialsRepository
-        An instance of `CredentialsRepository` used for
-        interacting with the persistence layer.
     """
     def __init__(self):
         """
@@ -35,9 +32,10 @@ class CredentialsComponents:
         credential operations and data persistence.
         """
         self.credentials_service = CredentialsService()
+        self.credentials = self.credentials_service.credentials
 
     @st.fragment
-    def edit_delete_credentials(self, credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
+    def edit_delete_credentials(self, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
         """
         Render UI components for editing or deleting existing credentials.
 
@@ -46,8 +44,6 @@ class CredentialsComponents:
 
         Parameters
         ----------
-        credentials : dict
-            Dictionary containing all user credentials organized by service, provider, and account.
         service : {'credit_cards', 'banks', 'insurances'}
             The type of service for which to display credentials.
 
@@ -55,7 +51,7 @@ class CredentialsComponents:
         -------
         None
         """
-        for provider, accounts in credentials[service].items():
+        for provider, accounts in self.credentials[service].items():
             for account, creds in accounts.items():
                 with st.expander(f"{provider} - {account}"):
                     CredentialsComponents._generate_text_input_widgets(provider, account, creds)
@@ -65,11 +61,11 @@ class CredentialsComponents:
                             'Save',
                             key=f'{service}_{provider}_{account}_edit_credentials__save',
                             on_click=self.credentials_service.save_credentials,
-                            args=(credentials,)
+                            args=(self.credentials,)
                     ):
                         cont_success.success('Credentials saved successfully')
                     if cont_buttons.button('Delete', key=f'{provider}_{account}_delete', type='primary'):
-                        CredentialsComponents._delete_account_dialog(credentials, service, provider, account)
+                        CredentialsComponents._delete_account_dialog(self.credentials, service, provider, account)
 
     @staticmethod
     @st.fragment
@@ -137,9 +133,8 @@ class CredentialsComponents:
         if st.button('Cancel', key=f'cancel_delete_{service}_{provider}_{account}'):
             st.rerun()
 
-    @staticmethod
     @st.fragment
-    def add_new_data_source(credentials: dict, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
+    def add_new_data_source(self, service: Literal['credit_cards', 'banks', 'insurances']) -> None:
         """
         Render UI components for adding a new data source (account).
 
@@ -148,8 +143,6 @@ class CredentialsComponents:
 
         Parameters
         ----------
-        credentials : dict
-            Dictionary containing all user credentials.
         service : {'credit_cards', 'banks', 'insurances'}
             The type of service for which to add a new account.
 
@@ -171,15 +164,15 @@ class CredentialsComponents:
                                 key=f'select_{service}_provider')
         provider = provider.lower() if provider is not None else None
 
-        if provider not in list(credentials[service].keys()):
-            credentials[service][provider] = {}
+        if provider not in list(self.credentials[service].keys()):
+            self.credentials[service][provider] = {}
 
         account_name = st.text_input(
             'Account name (how would you like to call the account)',
             key=f'new_{service}_account_name',
             on_change=CredentialsService().check_accounts_duplication,
             args=(
-                credentials,
+                self.credentials,
                 service,
                 provider,
                 st.session_state.get(f'new_{service}_account_name', '')
@@ -192,7 +185,7 @@ class CredentialsComponents:
                 st.rerun()
             return
 
-        credentials[service][provider][account_name] = {}
+        self.credentials[service][provider][account_name] = {}
         for field in LoginFields.get_fields(provider):
             label = DisplayFields.get_display(field)
             if 'phone' in label.lower():
@@ -203,9 +196,9 @@ class CredentialsComponents:
                         st.error('Please enter a valid Israeli phone number')
                         st.stop()
                     else:
-                        credentials[service][provider][account_name][field] = number
+                        self.credentials[service][provider][account_name][field] = number
             else:
-                credentials[service][provider][account_name][field] = (
+                self.credentials[service][provider][account_name][field] = (
                     st.text_input(
                         label,
                         key=f'new_{service}_{field}',
@@ -214,7 +207,7 @@ class CredentialsComponents:
                 )
 
         if st.button('Save new account', key=f'save_new_{service}_data_source_button'):
-            CredentialsService().save_new_data_source(credentials, service, provider, account_name)
+            self.credentials_service.save_new_data_source(self.credentials, service, provider, account_name)
             st.rerun()
 
         if st.button('Cancel', key=f'cancel_add_new_{service}'):
