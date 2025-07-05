@@ -1,16 +1,13 @@
 import os
-from copy import deepcopy
 from typing import Dict, List
 from typing import Literal, Optional
 
 import pandas as pd
 import sqlalchemy as sa
-import streamlit as st
 import yaml
 from sqlalchemy.sql import text
 from streamlit.connections import SQLConnection
 
-from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
@@ -19,32 +16,39 @@ from fad.app.naming_conventions import (
 
 
 class TaggingRepository:
-    @staticmethod
-    def get_categories_and_tags(copy: bool = False) -> dict[str, list[str]]:
-        """Load categories and tags from the YAML file."""
-        if 'categories_and_tags' not in st.session_state:
-            if not os.path.exists(CATEGORIES_PATH):
-                os.makedirs(os.path.dirname(CATEGORIES_PATH), exist_ok=True)
-                with open(os.path.join(SRC_PATH, 'resources', 'default_categories.yaml'), 'r') as file:
-                    default_categories = yaml.load(file, Loader=yaml.FullLoader)
-                with open(CATEGORIES_PATH, 'w') as file:
-                    yaml.dump(default_categories, file)
-
-            with open(CATEGORIES_PATH, 'r') as file:
-                st.session_state['categories_and_tags'] = yaml.load(file, Loader=yaml.FullLoader)
-
-        if copy:
-            return deepcopy(st.session_state['categories_and_tags'])
-        return st.session_state['categories_and_tags']
+    """
+    Repository for basic CRUD operations on tagging data.
+    Contains only data access logic, no business logic.
+    """
 
     @staticmethod
-    def save_categories_and_tags(categories_and_tags: Dict[str, List[str]]) -> None:
-        """Save categories and tags to the YAML file."""
-        with open(CATEGORIES_PATH, 'w') as file:
+    def load_categories_from_file(file_path: str) -> dict[str, list[str]]:
+        """Load categories and tags from a YAML file."""
+        with open(file_path, 'r') as file:
+            return yaml.load(file, Loader=yaml.FullLoader)
+
+    @staticmethod
+    def save_categories_to_file(categories_and_tags: Dict[str, List[str]], file_path: str) -> None:
+        """Save categories and tags to a YAML file."""
+        with open(file_path, 'w') as file:
             yaml.dump(categories_and_tags, file)
+
+    @staticmethod
+    def file_exists(file_path: str) -> bool:
+        """Check if a file exists."""
+        return os.path.exists(file_path)
+
+    @staticmethod
+    def create_directory(dir_path: str) -> None:
+        """Create directory if it doesn't exist."""
+        os.makedirs(dir_path, exist_ok=True)
 
 
 class AutoTaggerRepository:
+    """
+    Repository for basic CRUD operations on auto tagger data.
+    Contains only data access logic, no business logic.
+    """
     table = Tables.AUTO_TAGGER.value
     category_col = AutoTaggerTableFields.CATEGORY.value
     tag_col = AutoTaggerTableFields.TAG.value
@@ -140,15 +144,8 @@ class AutoTaggerRepository:
             s.execute(query, params)
             s.commit()
 
-    def update_raw_data_by_rules(self, service: Literal['credit_card', 'bank']) -> None:
-        """Update raw data based on auto tagger rules"""
-        if service == 'credit_card':
-            self._update_raw_data_by_rules_credit_card()
-        else:
-            self._update_raw_data_by_rules_bank()
-
-    def _update_raw_data_by_rules_credit_card(self) -> None:
-        """Update credit card raw data based on auto tagger rules"""
+    def update_credit_card_transactions_by_rules(self) -> None:
+        """Update credit card raw data based on auto tagger rules - Pure SQL operation"""
         with self.conn.session as s:
             query = sa.text(f"""
                 UPDATE {Tables.CREDIT_CARD.value}
@@ -162,8 +159,8 @@ class AutoTaggerRepository:
             s.execute(query)
             s.commit()
 
-    def _update_raw_data_by_rules_bank(self) -> None:
-        """Update bank raw data based on auto tagger rules"""
+    def update_bank_transactions_by_rules(self) -> None:
+        """Update bank raw data based on auto tagger rules - Pure SQL operation"""
         with self.conn.session as s:
             query = sa.text(f"""
                 UPDATE {Tables.BANK.value}

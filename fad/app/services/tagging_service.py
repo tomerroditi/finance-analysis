@@ -1,18 +1,19 @@
 from typing import List, Tuple
 from typing import Literal
+import os
 
 import streamlit as st
 from streamlit.connections import SQLConnection
 
+from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
-from fad.app.data_access.transactions_repository import TransactionsRepository
+from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
     TransactionsTableFields,
 )
-from fad.app.services.transactions_service import TransactionsService
 
 tags_table = Tables.AUTO_TAGGER.value
 credit_card_table = Tables.CREDIT_CARD.value
@@ -58,10 +59,42 @@ class CategoriesTagsService:
         """
         Initialize the CategoriesTagsService.
 
-        Loads the categories and tags from the TaggingRepository.
+        Loads the categories and tags using business logic for file management,
+        session state management, and default loading.
         """
-        self.tagging_repository = TaggingRepository()
-        self.categories_and_tags = self.tagging_repository.get_categories_and_tags()
+        self.categories_and_tags = self.get_categories_and_tags()
+
+    def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
+        """
+        Load categories and tags with business logic for file and session state management.
+
+        This method contains the business logic that was moved from TaggingRepository.
+        It handles file existence checking, default loading, and session state management.
+        """
+        if 'categories_and_tags' not in st.session_state:
+            if not TaggingRepository.file_exists(CATEGORIES_PATH):
+                TaggingRepository.create_directory(os.path.dirname(CATEGORIES_PATH))
+                default_categories = TaggingRepository.load_categories_from_file(
+                    os.path.join(SRC_PATH, 'resources', 'default_categories.yaml')
+                )
+                TaggingRepository.save_categories_to_file(default_categories, CATEGORIES_PATH)
+
+            st.session_state['categories_and_tags'] = TaggingRepository.load_categories_from_file(CATEGORIES_PATH)
+
+        if copy:
+            from copy import deepcopy
+            return deepcopy(st.session_state['categories_and_tags'])
+        return st.session_state['categories_and_tags']
+
+    def save_categories_and_tags(self) -> None:
+        """
+        Save categories and tags with business logic for session state and file management.
+
+        This method contains the business logic that was moved from TaggingRepository.
+        Uses the class property categories_and_tags directly.
+        """
+        st.session_state['categories_and_tags'] = self.categories_and_tags
+        TaggingRepository.save_categories_to_file(self.categories_and_tags, CATEGORIES_PATH)
 
     def add_category(self, category: str) -> bool:
         """
@@ -83,7 +116,7 @@ class CategoriesTagsService:
         if category.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
             return False
         self.categories_and_tags[category] = []
-        self._save()
+        self.save_categories_and_tags()
         return True
 
     def delete_category(self, category: str, protected_categories: List[str]) -> bool:
@@ -108,7 +141,7 @@ class CategoriesTagsService:
             return False
         if category in self.categories_and_tags:
             del self.categories_and_tags[category]
-            self._save()
+            self.save_categories_and_tags()
             return True
         return False
 
@@ -138,7 +171,7 @@ class CategoriesTagsService:
         self.categories_and_tags[old_category] = [t for t in self.categories_and_tags[old_category] if t not in tags]
         # Add tags to new category (avoid duplicates)
         self.categories_and_tags[new_category] = _sorted_unique(self.categories_and_tags[new_category] + tags)
-        self._save()
+        self.save_categories_and_tags()
         return True
 
     def add_tag(self, category: str, tag: str) -> bool:
@@ -163,7 +196,7 @@ class CategoriesTagsService:
         if tag in self.categories_and_tags[category]:
             return False
         self.categories_and_tags[category].append(tag)
-        self._save()
+        self.save_categories_and_tags()
         return True
 
     def delete_tag(self, category: str, tag: str) -> bool:
@@ -190,18 +223,8 @@ class CategoriesTagsService:
         if tag not in self.categories_and_tags[category]:
             return False
         self.categories_and_tags[category].remove(tag)
-        self._save()
+        self.save_categories_and_tags()
         return True
-
-    def _save(self):
-        """
-        Save the categories and tags to the session state and persistent storage.
-
-        Updates the session state with the current categories_and_tags dictionary
-        and saves the data to persistent storage using the TaggingRepository.
-        """
-        st.session_state['categories_and_tags'] = self.categories_and_tags
-        TaggingRepository.save_categories_and_tags(self.categories_and_tags)
 
 
 class AutomaticTaggerService:
@@ -231,7 +254,6 @@ class AutomaticTaggerService:
         """
         self.conn = conn
         self.auto_tagger_repo = AutoTaggerRepository(conn)
-        self.transactions_repo = TransactionsRepository(conn)
         self.transactions_service = TransactionsService(conn)
 
     def get_cc_without_rules(self) -> List[str]:
@@ -246,9 +268,9 @@ class AutomaticTaggerService:
         List[str]
             A list of unique transaction descriptions without associated tagging rules.
         """
-        # get all credit card transactions that do not apear in the auto tagger rules table
+        # Use repository methods instead of deprecated get_table function
         auto_tagger_table = self.auto_tagger_repo.get_table("credit_card")
-        cc_table = self.transactions_repo.get_table("credit_card")
+        cc_table = self.transactions_service.transactions_repository.get_table("credit_card")
 
         desc_col = TransactionsTableFields.DESCRIPTION.value
         cc_without_rules = cc_table.loc[~cc_table[desc_col].isin(auto_tagger_table[name_col]), desc_col].unique().tolist()
@@ -268,8 +290,9 @@ class AutomaticTaggerService:
             A list of tuples containing bank transactions without rules, 
             where each tuple is (description, account_number).
         """
+        # Use repository methods instead of deprecated get_table function
         auto_tagger_table = self.auto_tagger_repo.get_table("bank")
-        bank_table = self.transactions_repo.get_table("bank")
+        bank_table = self.transactions_service.transactions_repository.get_table("bank")
 
         desc_col = TransactionsTableFields.DESCRIPTION.value
         bank_account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
@@ -400,8 +423,8 @@ class AutomaticTaggerService:
         """
         Apply automatic tagging rules to all untagged raw transaction data.
 
-        This method applies the rules from the auto tagger table to both credit card
-        and bank transactions that don't have tags yet.
+        This method contains the business logic that was moved from AutoTaggerRepository.
+        It orchestrates the application of rules to both credit card and bank transactions.
         """
-        self.auto_tagger_repo.update_raw_data_by_rules('credit_card')
-        self.auto_tagger_repo.update_raw_data_by_rules('bank')
+        self.auto_tagger_repo.update_credit_card_transactions_by_rules()
+        self.auto_tagger_repo.update_bank_transactions_by_rules()
