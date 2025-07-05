@@ -103,7 +103,7 @@ class DataScrapingComponent:
             self.scraping_service.clear_scraping_status()
             self.scraping_service.clear_waiting_for_2fa_scrapers()
             self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
-            self.auto_tagging_service.update_raw_data_by_rules()  # move this to within the service
+            self.auto_tagging_service.update_raw_data_by_rules()
 
         self.tfa_fragments()
         self.display_scraping_status()
