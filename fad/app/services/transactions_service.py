@@ -72,6 +72,24 @@ class TransactionsService:
         else:
             raise ValueError(f"Unknown table name: {table_name}")
 
+    def get_table_data_for_analysis(self, table_name: str) -> pd.DataFrame:
+        """
+        Get table data for analysis purposes.
+
+        Parameters
+        ----------
+        table_name : str
+            The name of the table to retrieve data from.
+
+        Returns
+        -------
+        pd.DataFrame
+            The table data formatted for analysis.
+        """
+        table_name: Literal["credit_card", "bank"] = table_name.lower().replace(' ', '_')  # noqa
+        table = self.transactions_repository.get_table_for_analysis(table_name)
+        return table
+
     def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
                        account_number: str | None = None) -> None:
         """
