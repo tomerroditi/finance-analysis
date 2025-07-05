@@ -6,8 +6,8 @@ import pandas as pd
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository, BudgetRepository
 from fad.app.services.tagging_service import CategoriesTagsService
-from fad.app.data_access.transactions_repository import TransactionsRepository
-from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, \
+from fad.app.services.transactions_service import TransactionsService
+from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, \
     TransactionsTableFields, NonExpensesCategories
 
 
@@ -150,9 +150,9 @@ class MonthlyBudgetService(BudgetService):
     from previous months, validating rule inputs, and generating budget views.
     """
     def __init__(self, conn: SQLConnection = get_db_connection()):
-        self.conn = conn
+        super().__init__(conn)
         self.monthly_budget_repository = MonthlyBudgetRepository(self.conn)
-        self.transactions_repository = TransactionsRepository(self.conn)
+        self.transactions_service = TransactionsService(self.conn)
 
     def get_available_tags_for_each_category(self, budget_rules: pd.DataFrame) -> dict[str, list[str]]:
         """
@@ -288,18 +288,17 @@ class MonthlyBudgetService(BudgetService):
         """
         # TODO: split this function into smaller functions
         budget_rules = self.monthly_budget_repository.get_all_rules()
-        # Fetch all transaction data TODO: move to a separate function in data access layer
-        bank_data = self.transactions_repository.get_table_for_analysis("bank")
-        credit_data = self.transactions_repository.get_table_for_analysis("credit_card")
+        bank_data = self.transactions_service.get_table_for_analysis("bank")
+        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
         all_data = pd.concat([credit_data, bank_data])
 
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
-            ~all_data[self.transactions_repository.category_col]
+            ~all_data[self.transactions_service.transactions_repository.category_col]
             .isin([c.value for c in NonExpensesCategories])
         ].copy()
-        expenses[self.transactions_repository.date_col] = pd.to_datetime(
-            expenses[self.transactions_repository.date_col]
+        expenses[self.transactions_service.transactions_repository.date_col] = pd.to_datetime(
+            expenses[self.transactions_service.transactions_repository.date_col]
         )
 
         # Exclude project categories
@@ -308,9 +307,9 @@ class MonthlyBudgetService(BudgetService):
         ][CATEGORY].unique()
 
         month_data = expenses.loc[
-            (expenses[self.transactions_repository.date_col].dt.year == year) &
-            (expenses[self.transactions_repository.date_col].dt.month == month) &
-            ~expenses[self.transactions_repository.category_col].isin(projects)
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
+            ~expenses[self.transactions_service.transactions_repository.category_col].isin(projects)
         ]
 
         # Budget rules for selected month
@@ -323,7 +322,7 @@ class MonthlyBudgetService(BudgetService):
         # Total budget
         total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
         if not total_rule.empty:
-            total = month_data[self.transactions_repository.amount_col].sum() * -1
+            total = month_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
             view.append({
                 "rule": total_rule.iloc[0],
                 "current_amount": total,
@@ -337,12 +336,12 @@ class MonthlyBudgetService(BudgetService):
         remaining_data = month_data.copy()
         for _, rule in rules.iterrows():
             tags = rule[TAGS]
-            cat_data = remaining_data[remaining_data[self.transactions_repository.category_col] == rule[CATEGORY]]
+            cat_data = remaining_data[remaining_data[self.transactions_service.transactions_repository.category_col] == rule[CATEGORY]]
 
             if tags != [ALL_TAGS]:
-                cat_data = cat_data[cat_data[self.transactions_repository.tag_col].isin(tags)]
+                cat_data = cat_data[cat_data[self.transactions_service.transactions_repository.tag_col].isin(tags)]
 
-            amt = cat_data[self.transactions_repository.amount_col].sum() * -1
+            amt = cat_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
             view.append({
                 "rule": rule,
                 "current_amount": amt,
@@ -366,7 +365,7 @@ class MonthlyBudgetService(BudgetService):
                     TAGS: "Other Expenses",
                     ID: f"{year}{month}_Other_Expenses"
                 }),
-                "current_amount": remaining_data[self.transactions_repository.amount_col].sum() * -1,
+                "current_amount": remaining_data[self.transactions_service.transactions_repository.amount_col].sum() * -1,
                 "data": remaining_data,
                 "allow_edit": False,
                 "allow_delete": False
@@ -386,7 +385,7 @@ class ProjectBudgetService:
     def __init__(self):
         self.conn = get_db_connection()
         self.project_budget_repository = ProjectBudgetRepository(self.conn)
-        self.transactions_repository = TransactionsRepository(self.conn)
+        self.transactions_service = TransactionsService(self.conn)
         self.categories_tags_service = CategoriesTagsService()
 
     def create_project(self, category: str, total_budget: float) -> None:
@@ -494,8 +493,9 @@ class ProjectBudgetService:
         pd.DataFrame
             DataFrame containing all transactions for the specified project.
         """
-        bank_data = self.transactions_repository.get_table_for_analysis("bank")
-        credit_data = self.transactions_repository.get_table_for_analysis("credit_card")
+        # Use the service layer instead of repository for getting analysis data
+        bank_data = self.transactions_service.get_table_for_analysis("bank")
+        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
         all_data = pd.concat([credit_data, bank_data])
         transactions = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         return transactions
