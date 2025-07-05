@@ -166,7 +166,7 @@ class MonthlyBudgetUI(BudgetUI):
     def __init__(self):
         super().__init__()
         self.monthly_budget_service = MonthlyBudgetService()
-        self.budget_rules = self.monthly_budget_service.monthly_budget_repository.get_all_rules()
+        self.budget_rules = self.monthly_budget_service.get_all_rules()
         self.year = st.session_state.setdefault("year", pd.Timestamp.now().year)
         self.month = st.session_state.setdefault("month", pd.Timestamp.now().month)
         self.month_rules = self.monthly_budget_service.get_month_rules(self.year, self.month, self.budget_rules)
@@ -312,7 +312,7 @@ class ProjectBudgetUI(BudgetUI):
     def __init__(self):
         super().__init__()
         self.project_budget_service = ProjectBudgetService()
-        self.budget_rules = self.project_budget_service.project_budget_repository.get_all_rules()
+        self.budget_rules = self.project_budget_service.get_all_rules()
         self.project_name = None
         self.project_rules = None
 

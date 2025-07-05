@@ -4,7 +4,7 @@ from streamlit.connections import SQLConnection
 import pandas as pd
 
 from fad.app.data_access import get_db_connection
-from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository, BudgetRepository
+from fad.app.data_access.budget_repository import BudgetRepository
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, \
@@ -16,9 +16,35 @@ class BudgetService:
         self.conn = conn
         self.budget_repository = BudgetRepository(conn)
         self.categories_tags_service = CategoriesTagsService()
+        self.transactions_service = TransactionsService(self.conn)
+
+    def get_all_rules(self) -> pd.DataFrame:
+        """Get all budget rules with parsed tags."""
+        rules = self.budget_repository.read_all()
+        if not rules.empty:
+            rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        return rules
+
+    def add_rule(self, name: str, amount: float, category: str, tags: str | list[str], month: Optional[int] = None, year: Optional[int] = None) -> None:
+        """Add a new budget rule with tag conversion."""
+        tags_str = ";".join(tags) if isinstance(tags, list) else tags
+        self.budget_repository.add(name, amount, category, tags_str, month, year)
 
     def update_rule(self, id_: int, **fields):
-        self.budget_repository.update_rule(id_, **fields)
+        """Update a budget rule with validation and tag conversion."""
+        # Validate fields
+        valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
+        assert all(k in valid_fields for k in fields), f"Invalid fields for update. Valid fields: {valid_fields}"
+
+        # Convert tags list to string if needed
+        if TAGS in fields and isinstance(fields[TAGS], list):
+            fields[TAGS] = ";".join(fields[TAGS])
+
+        self.budget_repository.update(id_, **fields)
+
+    def delete_rule(self, id_: int) -> None:
+        """Delete a budget rule by ID."""
+        self.budget_repository.delete(id_)
 
     @staticmethod
     def validate_rule_inputs(
@@ -145,14 +171,26 @@ class MonthlyBudgetService(BudgetService):
     """
     Service for managing monthly budget rules and calculations.
 
-    This class provides static methods for creating, retrieving, validating, and
+    This class provides methods for creating, retrieving, validating, and
     analyzing monthly budget rules. It handles operations such as copying rules
     from previous months, validating rule inputs, and generating budget views.
     """
-    def __init__(self, conn: SQLConnection = get_db_connection()):
-        super().__init__(conn)
-        self.monthly_budget_repository = MonthlyBudgetRepository(self.conn)
-        self.transactions_service = TransactionsService(self.conn)
+    def get_all_rules(self) -> pd.DataFrame:
+        rules = super().get_all_rules()
+        rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
+        return rules
+
+    def get_monthly_rules(self) -> pd.DataFrame:
+        """Get all monthly budget rules (rules with year and month specified)."""
+        rules = self.budget_repository.read_all()
+        if not rules.empty:
+            rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
+            rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        return rules
+
+    def delete_rules_by_month(self, year: int, month: int) -> None:
+        """Delete all budget rules for a specific month."""
+        self.budget_repository.delete_by_month(year, month)
 
     def get_available_tags_for_each_category(self, budget_rules: pd.DataFrame) -> dict[str, list[str]]:
         """
@@ -220,10 +258,10 @@ class MonthlyBudgetService(BudgetService):
         if rules_to_copy.empty:
             return None
 
-        self.monthly_budget_repository.delete_rules_by_month(year, month)
+        self.delete_rules_by_month(year, month)
 
         for _, rule in rules_to_copy.iterrows():
-            self.monthly_budget_repository.add_rule(
+            self.add_rule(
                 name=rule[NAME],
                 amount=rule[AMOUNT],
                 category=rule[CATEGORY],
@@ -287,7 +325,7 @@ class MonthlyBudgetService(BudgetService):
             Returns None if no rules exist for the specified month.
         """
         # TODO: split this function into smaller functions
-        budget_rules = self.monthly_budget_repository.get_all_rules()
+        budget_rules = self.get_monthly_rules()
         bank_data = self.transactions_service.get_table_for_analysis("bank")
         credit_data = self.transactions_service.get_table_for_analysis("credit_card")
         all_data = pd.concat([credit_data, bank_data])
@@ -374,58 +412,119 @@ class MonthlyBudgetService(BudgetService):
         return view
 
 
-class ProjectBudgetService:
+class ProjectBudgetService(BudgetService):
     """
     Service for managing project-based budget rules and calculations.
 
-    This class provides static methods for creating, retrieving, updating, and
+    This class provides methods for creating, retrieving, updating, and
     deleting project budget rules. Projects are special categories with their
     own budget rules that span across months.
     """
-    def __init__(self):
-        self.conn = get_db_connection()
-        self.project_budget_repository = ProjectBudgetRepository(self.conn)
-        self.transactions_service = TransactionsService(self.conn)
-        self.categories_tags_service = CategoriesTagsService()
+    def get_all_rules(self) -> pd.DataFrame:
+        rules = super().get_all_rules()
+        rules = rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
+        return rules
+
+    def get_project_rules(self) -> pd.DataFrame:
+        """Get all project budget rules (rules with null year and month)."""
+        rules = self.budget_repository.read_all()
+        if not rules.empty:
+            rules = rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
+            rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
+        return rules
+
+    def get_rules_for_project(self, category: str) -> pd.DataFrame:
+        """Get all budget rules for a specific project category."""
+        rules = self.get_project_rules()
+        if not rules.empty:
+            rules = rules.loc[rules[CATEGORY] == category]
+        return rules
 
     def create_project(self, category: str, total_budget: float) -> None:
         """
         Create a new project budget with the specified category and total budget.
 
         Adds a new rule with ALL_TAGS to represent the total budget for the project.
-
-        Parameters
-        ----------
-        category : str
-            The category name for the new project.
-        total_budget : float
-            The total budget amount for the project.
-
-        Returns
-        -------
-        None
         """
-        self.project_budget_repository.add_rule(
-            category=category,
+        self.budget_repository.add(
             name=TOTAL_BUDGET,
+            amount=total_budget,
+            category=category,
             tags=ALL_TAGS,
-            amount=total_budget
+            month=None,
+            year=None
         )
 
     def delete_project(self, category: str) -> None:
+        """Delete all budget rules for a project."""
+        self.budget_repository.delete_by_category(category)
+
+    def delete_project_tag_rule(self, category: str, tag: str) -> None:
+        """Delete a specific tag rule from a project."""
+        self.budget_repository.delete_by_category_and_tags(category, tag)
+
+    def update_project_rules(self, project: str, project_rules: pd.DataFrame) -> bool:
         """
-        Delete all budget rules for a project.
+        Update project rules to match available tags for the project category.
+
+        Synchronizes the project budget rules with the current tags available for
+        the project category. Adds rules for new tags and removes rules for tags
+        that no longer exist.
 
         Parameters
         ----------
-        category : str
-            The category name of the project to delete.
+        project : str
+            The name of the project to update rules for.
+        project_rules : pd.DataFrame
+            DataFrame containing the current project rules.
 
         Returns
         -------
-        None
+        bool
+            True if any updates were made, False otherwise.
         """
-        self.project_budget_repository.delete_project_rules(category)
+        cat_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
+        tags = cat_n_tags.get(project, [])
+        existing_tags = project_rules[TAGS].tolist()
+        existing_tags = [tag[0] if isinstance(tag, list) else tag for tag in existing_tags]
+
+        updates = False
+        for tag in tags:
+            if tag not in existing_tags:
+                self.add_rule(
+                    category=project, name=tag, tags=tag, amount=1
+                )
+                updates = True
+
+        for tag in existing_tags:
+            if tag not in tags + [ALL_TAGS]:
+                self.delete_project_tag_rule(project, tag)
+                updates = True
+
+        return updates
+
+    def get_available_categories(self, budget_rules: pd.DataFrame) -> list[str]:
+        """
+        Get categories that are available to be used as projects.
+
+        Returns a list of categories that are not already being used as projects.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            DataFrame containing all budget rules.
+
+        Returns
+        -------
+        list[str]
+            List of category names that are available to be used as projects.
+        """
+        avail_cats = list(
+            set(list(self.categories_tags_service.categories_and_tags.keys())) -
+            set(self.get_project_names(budget_rules))
+        )
+
+        return avail_cats
 
     @staticmethod
     def get_project_names(budget_rules: pd.DataFrame) -> list[str]:
@@ -500,65 +599,3 @@ class ProjectBudgetService:
         transactions = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         return transactions
 
-    def update_project_rules(self, project: str, project_rules: pd.DataFrame) -> bool:
-        """
-        Update project rules to match available tags for the project category.
-
-        Synchronizes the project budget rules with the current tags available for
-        the project category. Adds rules for new tags and removes rules for tags
-        that no longer exist.
-
-        Parameters
-        ----------
-        project : str
-            The name of the project to update rules for.
-        project_rules : pd.DataFrame
-            DataFrame containing the current project rules.
-
-        Returns
-        -------
-        bool
-            True if any updates were made, False otherwise.
-        """
-        cat_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
-        tags = cat_n_tags.get(project, [])
-        existing_tags = project_rules[TAGS].tolist()
-        existing_tags = [tag[0] for tag in existing_tags]
-
-        updates = False
-        for tag in tags:
-            if tag not in existing_tags:
-                self.project_budget_repository.add_rule(
-                    category=project, name=tag, tags=tag, amount=1
-                )
-                updates = True
-
-        for tag in existing_tags:
-            if tag not in tags + [ALL_TAGS]:
-                self.project_budget_repository.delete_project_tag_rule(project, tag)
-                updates = True
-
-        return updates
-
-    def get_available_categories(self, budget_rules: pd.DataFrame) -> list[str]:
-        """
-        Get categories that are available to be used as projects.
-
-        Returns a list of categories that are not already being used as projects.
-
-        Parameters
-        ----------
-        budget_rules : pd.DataFrame
-            DataFrame containing all budget rules.
-
-        Returns
-        -------
-        list[str]
-            List of category names that are available to be used as projects.
-        """
-        avail_cats = list(
-            set(list(self.categories_tags_service.get_categories_and_tags().keys())) -
-            set(self.get_project_names(budget_rules))
-        )
-
-        return avail_cats
