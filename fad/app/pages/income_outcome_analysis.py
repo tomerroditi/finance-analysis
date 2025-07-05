@@ -63,19 +63,23 @@ with categories_tab:
         filtered_data_ctgs.loc[filtered_data_ctgs[category_col].isnull(), category_col] = "Uncategorized"
 
     st.plotly_chart(
-        bar_plot_by_categories(filtered_data_ctgs, amount_col, category_col)
+        bar_plot_by_categories(filtered_data_ctgs, amount_col, category_col),
+        key="bar_plot_by_categories"
     )
     st.plotly_chart(
-        pie_plot_by_categories(filtered_data_ctgs, amount_col, category_col)
+        pie_plot_by_categories(filtered_data_ctgs, amount_col, category_col),
+        key="pie_plot_by_categories"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1YE")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1YE"),
+        key="bar_plot_by_categories_over_time_1Y"
     )
     st.plotly_chart(
-        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1ME")
+        bar_plot_by_categories_over_time(filtered_data_ctgs, amount_col, category_col, date_col, "1ME"),
+        key="bar_plot_by_categories_over_time_1M"
     )
 
-with tags_tab:  # TODO: fix issue with empty current month and year results
+with tags_tab:
     st.caption("<p style='font-size:20px;'>"
                "Analysis of your expenses by tags.<br>"
                "</p>",
@@ -103,7 +107,8 @@ with tags_tab:  # TODO: fix issue with empty current month and year results
         filtered_data_tags.loc[filtered_data_tags[tag_col].isnull(), tag_col] = "No tag"
 
     st.plotly_chart(
-        bar_plot_by_categories(filtered_data_tags, amount_col, tag_col), key="bar_plot_by_tags"
+        bar_plot_by_categories(filtered_data_tags, amount_col, tag_col),
+        key="bar_plot_by_tags"
     )
     st.plotly_chart(
         bar_plot_by_categories_over_time(filtered_data_tags, amount_col, tag_col, date_col, "1YE"),
