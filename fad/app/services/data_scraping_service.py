@@ -1,7 +1,10 @@
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.scraping_repository import ScrapingRepository
-from fad import DB_PATH
+from fad.app.services.transactions_service import TransactionsService
 import streamlit as st
+from streamlit.connections import SQLConnection
+from fad.app.data_access import get_db_connection
+
 from datetime import datetime
 from streamlit.connections import SQLConnection
 
@@ -40,6 +43,7 @@ class ScrapingService:
         """
         self.conn = conn
         self.transactions_repo = TransactionsRepository(conn)
+        self.transactions_service = TransactionsService(conn)
         self.scraping_repo = ScrapingRepository()
         self.scraping_status = st.session_state.setdefault("scraping_status", {"success": {}, "failed": {}, "waiting for 2fa": {}})
 
@@ -52,7 +56,7 @@ class ScrapingService:
         datetime.date
             The latest date for which data exists in the database.
         """
-        return self.transactions_repo.get_latest_data_date()
+        return self.transactions_service.get_latest_data_date()
 
     def get_scraping_results(self):
         """

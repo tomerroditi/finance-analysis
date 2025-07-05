@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 import pandas as pd
@@ -49,66 +49,6 @@ class TransactionsRepository:
         self.bank_repo = BankRepository(conn)
         self.split_repo = SplitTransactionsRepository(conn)
 
-    def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
-                       account_number: str | None = None) -> None:
-        """
-        update the tags of the raw data in the credit card and bank tables. If overwrite is True, all occurrences of the
-        transaction with the name supplied will be updated. If overwrite is False, only transactions without a tag will
-        be updated.
-
-        Parameters
-        ----------
-        name : str
-            the name of the transaction
-        category : str
-            the category to tag the transaction with
-        tag : str
-            the tag to tag the transaction with
-        service : str
-            the service of the transaction, should be one of 'credit_card' or 'bank'
-        account_number : str | None
-            the account number of the transaction, only used for bank transactions. If None, all transactions with the
-            name supplied will be updated
-
-        Returns
-        -------
-        None
-        """
-        assert service in ['credit_card', 'bank'], "service must be either 'credit_card' or 'bank'"
-
-        if service == 'credit_card':
-            self.cc_repo.update_tagging_by_name(name, category, tag)
-        else:
-            if account_number is None:
-                raise ValueError("account_number should be provided for bank transactions tagging")
-            self.bank_repo.update_tagging_by_name_and_account_number(name, account_number, category, tag)
-
-    def update_tagging_by_id(self, id_: int, category: str, tag: str, service: Literal['credit_card', 'bank']) -> None:
-        """
-        Update the tags of the raw data in the credit card and bank tables by transaction ID.
-
-        Parameters
-        ----------
-        id_ : int
-            The ID of the transaction.
-        category : str
-            The category to tag the transaction with.
-        tag : str
-            The tag to tag the transaction with.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
-
-        Returns
-        -------
-        None
-        """
-        assert service in ['credit_card', 'bank'], f"service must be either 'credit_card' or 'bank'. Got '{service}'"
-
-        if service == 'credit_card':
-            self.cc_repo.update_tagging_by_id(id_, category, tag)
-        else:
-            self.bank_repo.update_tagging_by_id(id_, category, tag)
-
     def get_table(self, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
         """
         Get the transactions table for the specified service.
@@ -123,34 +63,43 @@ class TransactionsRepository:
         pd.DataFrame
             The transactions table as a DataFrame.
         """
-        assert service in ['credit_card', 'bank'], f"service must be either 'credit_card' or 'bank'. Got '{service}'"
-
         if service == 'credit_card':
             return self.cc_repo.get_table()
-        else:
+        elif service == 'bank':
             return self.bank_repo.get_table()
+        else:
+            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
-    def get_latest_data_date(self) -> datetime:
+    def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         """
-        Get the latest date of transactions for the specified service.
+        Get the latest date from a specific table.
+
+        Parameters
+        ----------
+        table_name : str
+            The name of the table to query.
 
         Returns
         -------
-        datetime
-            The latest date of transactions across all tables.
+        datetime | None
+            The latest date from the table, or None if no data exists.
         """
-        latest_dates = []
+        query = f'SELECT MAX({self.date_col}) FROM {table_name}'
+        result = self.conn.query(query, ttl=0).iloc[0, 0]
+        if result is not None:
+            return datetime.strptime(result, '%Y-%m-%d')
+        return None
 
-        for table in self.tables:
-            query = f'SELECT MAX({self.date_col}) FROM {table}'
-            latest_date = self.conn.query(query, ttl=0).iloc[0, 0]
-            if latest_date is not None:
-                latest_dates.append(datetime.strptime(latest_date, '%Y-%m-%d'))
-            else:
-                latest_dates.append(pd.Timestamp(datetime.today() - timedelta(days=365)))
+    def get_all_table_names(self) -> list[str]:
+        """
+        Get all transaction table names.
 
-        latest_date = min(latest_dates)
-        return latest_date
+        Returns
+        -------
+        list[str]
+            List of all transaction table names.
+        """
+        return self.tables.copy()
 
     def get_table_for_analysis(self, service: Literal['credit_card', 'bank'] = 'credit_card') -> pd.DataFrame:
         """
@@ -197,7 +146,7 @@ class TransactionsRepository:
             result_df = pd.concat([base_df, split_rows_df], ignore_index=True)
         else:
             result_df = base_df
-        
+
         return result_df[self.analysis_cols].reset_index(drop=True)
 
 

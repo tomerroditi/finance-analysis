@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 from typing import Literal
 
 import streamlit as st
@@ -6,10 +6,11 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
-from fad.app.data_access.transactions_repository import TransactionsRepository
+from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
+    TransactionsTableFields,
 )
 
 tags_table = Tables.AUTO_TAGGER.value
@@ -215,8 +216,8 @@ class AutomaticTaggerService:
         Database connection object.
     auto_tagger_repo : AutoTaggerRepository
         Repository for automatic tagging operations.
-    transactions_repo : TransactionsRepository
-        Repository for transaction data operations.
+    transactions_service : TransactionsService
+        Service for transaction operations.
     """
     def __init__(self, conn: SQLConnection = get_db_connection()):
         """
@@ -229,7 +230,7 @@ class AutomaticTaggerService:
         """
         self.conn = conn
         self.auto_tagger_repo = AutoTaggerRepository(conn)
-        self.transactions_repo = TransactionsRepository(conn)
+        self.transactions_service = TransactionsService(conn)
 
     def get_cc_without_rules(self) -> List[str]:
         """
@@ -245,9 +246,9 @@ class AutomaticTaggerService:
         """
         # get all credit card transactions that do not apear in the auto tagger rules table
         auto_tagger_table = self.auto_tagger_repo.get_table("credit_card")
-        cc_table = self.transactions_repo.get_table("credit_card")
+        cc_table = self.transactions_service.get_table("credit_card")
 
-        desc_col = self.transactions_repo.desc_col
+        desc_col = TransactionsTableFields.DESCRIPTION.value
         cc_without_rules = cc_table.loc[~cc_table[desc_col].isin(auto_tagger_table[name_col]), desc_col].unique().tolist()
 
         return cc_without_rules
@@ -268,8 +269,8 @@ class AutomaticTaggerService:
         auto_tagger_table = self.auto_tagger_repo.get_table("bank")
         bank_table = self.transactions_repo.get_table("bank")
 
-        desc_col = self.transactions_repo.desc_col
-        bank_account_number_col = self.transactions_repo.account_number_col
+        desc_col = TransactionsTableFields.DESCRIPTION.value
+        bank_account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
         name_col = self.auto_tagger_repo.name_col
         auto_tagger_account_number_col = self.auto_tagger_repo.account_number_col
 
@@ -300,8 +301,8 @@ class AutomaticTaggerService:
             A tuple containing (account_name, provider_name).
             Returns (None, None) if the account number is not found.
         """
-        provider_col = self.transactions_repo.provider_col
-        account_number_col = self.transactions_repo.account_number_col
+        provider_col = TransactionsTableFields.PROVIDER.value
+        account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
 
         account_name_and_provider = self.conn.query(
             f"""
@@ -354,7 +355,7 @@ class AutomaticTaggerService:
         self.auto_tagger_repo.add_to_table(name, category, tag, service, account_number)
 
         if method == 'All':
-            self.transactions_repo.update_tagging(name, category, tag, service, account_number)
+            self.transactions_service.update_tagging(name, category, tag, service, account_number)
         elif method == 'From now on':
             pass  # do nothing
         else:
@@ -387,7 +388,7 @@ class AutomaticTaggerService:
         self.auto_tagger_repo.update_table(name, category, tag, service, account_number)
 
         if method == 'All':
-            self.transactions_repo.update_tagging(name, category, tag, service, account_number)
+            self.transactions_service.update_tagging(name, category, tag, service, account_number)
         elif method == 'From now on':
             pass  # No additional action needed
         else:
