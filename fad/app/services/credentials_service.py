@@ -1,8 +1,11 @@
 from copy import deepcopy
+from typing import Dict
 
 import streamlit as st
 
+from fad import CREDENTIALS_PATH
 from fad.app.data_access.credentials_repository import CredentialsRepository
+from fad.app.naming_conventions import LoginFields
 
 
 class CredentialsService:
@@ -11,11 +14,11 @@ class CredentialsService:
 
     This class provides methods for retrieving, filtering, saving, and deleting
     credential information for different financial services like banks, credit cards,
-    and insurance companies.
+    and insurance companies. Contains all business logic for credential management.
 
     Attributes
     ----------
-    creds_access : CredentialsRepository
+    creds_repository : CredentialsRepository
         Repository instance for accessing and persisting credentials.
     credentials : dict
         Dictionary containing all user credentials.
@@ -26,11 +29,146 @@ class CredentialsService:
 
         Creates an instance of CredentialsRepository and loads the credentials.
         """
-        self.creds_access = CredentialsRepository()
-        self.credentials = self.creds_access.credentials
-    
-    def save_credentials(self, credentials: dict):
-        self.creds_access.save_credentials(credentials)
+        self.creds_repository = CredentialsRepository()
+        self.credentials = self.load_credentials()
+
+    def generate_keyring_key(self, service: str, provider: str, account: str, field: str) -> str:
+        """
+        Generate a unique key for storing credentials in the keyring.
+
+        Creates a colon-separated string that uniquely identifies a credential field.
+
+        Parameters
+        ----------
+        service : str
+            The type of service (e.g., 'banks', 'credit_cards', 'insurances').
+        provider : str
+            The name of the service provider.
+        account : str
+            The name of the account.
+        field : str
+            The specific credential field (e.g., 'password', 'username').
+
+        Returns
+        -------
+        str
+            A unique key string in the format "service:provider:account:field".
+        """
+        return f"{service}:{provider}:{account}:{field}"
+
+    def load_credentials(self) -> Dict:
+        """
+        Load credentials with complete business logic.
+
+        Reads credentials from the YAML file, ensuring the file exists and has the correct
+        structure. Creates a default file if none exists. Retrieves passwords from the
+        system keyring and injects them into the credentials dictionary.
+
+        Returns
+        -------
+        Dict
+            A dictionary containing all user credentials with the structure:
+            {service: {provider: {account: {field: value}}}}
+        """
+        # Read existing credentials or create default
+        credentials = self.creds_repository.read_credentials_file()
+
+        if credentials is None:
+            # Create default credentials file
+            credentials = self.creds_repository.read_default_credentials()
+            self.creds_repository.write_credentials_file(credentials)
+            self.creds_repository.set_file_permissions(CREDENTIALS_PATH)
+
+        # Ensure all expected login fields are present and inject passwords from keyring
+        for service, providers in credentials.items():
+            for provider, accounts in providers.items():
+                for account, fields in accounts.items():
+                    # Get expected login fields for this provider
+                    expected_fields = LoginFields.get_fields(provider)
+                    for field in expected_fields:
+                        if field not in fields:
+                            fields[field] = ""
+                        if 'password' in field.lower():
+                            key = self.generate_keyring_key(service, provider, account, field)
+                            password = self.creds_repository.get_password_from_keyring(key)
+                            fields[field] = password or ""
+
+        return credentials
+
+    def save_credentials(self, credentials: Dict) -> None:
+        """
+        Save credentials with complete business logic.
+
+        Cleans up the credentials dictionary by removing empty entries, securely stores
+        passwords in the system keyring, and saves the non-sensitive parts to the YAML file.
+        Sets appropriate file permissions on the saved file.
+
+        Parameters
+        ----------
+        credentials : Dict
+            The credentials dictionary to save, with the structure:
+            {service: {provider: {account: {field: value}}}}
+        """
+        # Clean up empty entries
+        credentials = self._cleanup_empty_entries(credentials)
+
+        # Store passwords in keyring, save placeholder in YAML
+        credentials_to_save = {}
+        for service, providers in credentials.items():
+            credentials_to_save.setdefault(service, {})
+            for provider, accounts in providers.items():
+                credentials_to_save[service].setdefault(provider, {})
+                for account, fields in accounts.items():
+                    credentials_to_save[service][provider].setdefault(account, {})
+                    for field, value in fields.items():
+                        if 'password' in field.lower():
+                            key = self.generate_keyring_key(service, provider, account, field)
+                            self.creds_repository.set_password_in_keyring(key, value or "")
+                            credentials_to_save[service][provider][account][field] = "your password is safely stored"
+                        else:
+                            credentials_to_save[service][provider][account][field] = value
+
+        # Save to file and set permissions
+        self.creds_repository.write_credentials_file(credentials_to_save)
+        self.creds_repository.set_file_permissions(CREDENTIALS_PATH)
+
+    def _cleanup_empty_entries(self, credentials: Dict) -> Dict:
+        """
+        Remove empty accounts and providers from credentials.
+
+        Parameters
+        ----------
+        credentials : Dict
+            The credentials dictionary to clean up.
+
+        Returns
+        -------
+        Dict
+            The cleaned credentials dictionary.
+        """
+        # Create a copy to avoid modifying during iteration
+        cleaned_credentials = deepcopy(credentials)
+
+        # Remove empty accounts/providers
+        while True:
+            deleted = False
+            for service, providers in cleaned_credentials.items():
+                if providers == {}:
+                    continue
+                for provider, accounts in list(providers.items()):
+                    if len(accounts) == 0:
+                        del cleaned_credentials[service][provider]
+                        deleted = True
+                        break
+                    for account, fields in list(accounts.items()):
+                        if len(fields) == 0:
+                            del cleaned_credentials[service][provider][account]
+                            deleted = True
+                            break
+            if not deleted:
+                break
+
+        return cleaned_credentials
 
     def get_available_data_sources(self) -> list[str]:
         """
@@ -136,7 +274,7 @@ class CredentialsService:
         ):
             st.error("Please fill all the displayed fields.", icon="🚨")
             st.stop()
-        self.creds_access.save_credentials(credentials)
+        self.save_credentials(credentials)
         st.session_state.clear()
 
     def delete_account(
@@ -163,5 +301,4 @@ class CredentialsService:
         None
         """
         del credentials[service][provider][account]
-        self.creds_access.save_credentials(credentials)
-
+        self.save_credentials(credentials)
