@@ -1,7 +1,7 @@
 import streamlit as st
 
 from fad.app.components.credentials_components import CredentialsComponents
-from fad.app.data_access.credentials_repository import CredentialsRepository
+from fad.app.services.credentials_service import CredentialsService
 
 ############################################################################################################
 # UI
@@ -18,19 +18,20 @@ with settings_tab:
 
 with credentials_tab:
     # fetch credentials
-    credentials = CredentialsRepository().load_credentials()  # TODO: switch with credentials service
+    credentials = CredentialsService().credentials
+    credentials_ui = CredentialsComponents()
 
     # open a tab for each service
     cards_tab, banks_tab, insurance_tab = st.tabs(['Credit Cards', 'Banks', 'Insurance'])
 
     with cards_tab:
-        CredentialsComponents.edit_delete_credentials(credentials, 'credit_cards')
-        CredentialsComponents.add_new_data_source(credentials, 'credit_cards')
+        credentials_ui.edit_delete_credentials('credit_cards')
+        credentials_ui.add_new_data_source('credit_cards')
 
     with banks_tab:
-        CredentialsComponents.edit_delete_credentials(credentials, 'banks')
-        CredentialsComponents.add_new_data_source(credentials, 'banks')
+        credentials_ui.edit_delete_credentials('banks')
+        credentials_ui.add_new_data_source('banks')
 
     with insurance_tab:
-        CredentialsComponents.edit_delete_credentials(credentials, 'insurances')
-        CredentialsComponents.add_new_data_source(credentials, 'insurances')
+        credentials_ui.edit_delete_credentials('insurances')
+        credentials_ui.add_new_data_source('insurances')
