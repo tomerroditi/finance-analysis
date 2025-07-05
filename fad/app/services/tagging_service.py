@@ -6,12 +6,12 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
-from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import (
     Tables,
     AutoTaggerTableFields,
     TransactionsTableFields,
 )
+from fad.app.services.transactions_service import TransactionsService
 
 tags_table = Tables.AUTO_TAGGER.value
 credit_card_table = Tables.CREDIT_CARD.value

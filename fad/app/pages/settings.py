@@ -1,7 +1,7 @@
 import streamlit as st
 
-from fad.app.data_access.credentials_repository import CredentialsRepository
 from fad.app.components.credentials_components import CredentialsComponents
+from fad.app.data_access.credentials_repository import CredentialsRepository
 
 ############################################################################################################
 # UI

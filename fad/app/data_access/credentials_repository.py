@@ -1,9 +1,10 @@
 import os
-import yaml
 import stat
-from fad import CREDENTIALS_PATH, SRC_PATH
 
 import keyring
+import yaml
+
+from fad import CREDENTIALS_PATH, SRC_PATH
 from fad.app.naming_conventions import LoginFields
 
 _KEYRING_SERVICE = "finance-analysis-app"

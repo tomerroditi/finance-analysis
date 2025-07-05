@@ -6,9 +6,9 @@ import streamlit as st
 import streamlit_antd_components as sac
 
 from fad.app.naming_conventions import NonExpensesCategories
+from fad.app.services.split_transactions_service import SplitTransactionsService
 from fad.app.services.tagging_service import CategoriesTagsService, AutomaticTaggerService
 from fad.app.services.transactions_service import TransactionsService
-from fad.app.services.split_transactions_service import SplitTransactionsService
 from fad.app.utils.widgets import PandasFilterWidgets
 
 

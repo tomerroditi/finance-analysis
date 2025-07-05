@@ -1,17 +1,14 @@
-from fad.app.data_access.transactions_repository import TransactionsRepository
-from fad.app.data_access.scraping_repository import ScrapingRepository
-from fad.app.services.transactions_service import TransactionsService
+from datetime import datetime
+
 import streamlit as st
 from streamlit.connections import SQLConnection
-from fad.app.data_access import get_db_connection
 
-from datetime import datetime
-from streamlit.connections import SQLConnection
-
-from fad.app.data_access import get_db_connection
-from fad.scraper import Scraper, get_scraper
 from fad import DB_PATH
-
+from fad.app.data_access import get_db_connection
+from fad.app.data_access.scraping_repository import ScrapingRepository
+from fad.app.data_access.transactions_repository import TransactionsRepository
+from fad.app.services.transactions_service import TransactionsService
+from fad.scraper import Scraper, get_scraper
 
 class ScrapingService:
     """

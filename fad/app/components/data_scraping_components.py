@@ -1,8 +1,10 @@
 import datetime as dt
+
 import streamlit as st
 
-from fad.app.services.data_scraping_service import ScrapingService
+from fad.app.data_access import get_db_connection
 from fad.app.services.credentials_service import CredentialsService
+from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.tagging_service import AutomaticTaggerService
 from fad.scraper.scrapers import Scraper
 

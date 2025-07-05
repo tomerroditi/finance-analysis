@@ -6,7 +6,6 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.transactions_repository import TransactionsRepository
-from fad.app.data_access import get_db_connection
 
 
 class TransactionsService:

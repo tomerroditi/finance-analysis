@@ -1,9 +1,10 @@
-import streamlit as st
-from streamlit_phone_number import st_phone_number
 from typing import Literal
 
-from fad.app.services.credentials_service import CredentialsService
+import streamlit as st
+from streamlit_phone_number import st_phone_number
+
 from fad.app.naming_conventions import Banks, CreditCards, Insurances, LoginFields, DisplayFields
+from fad.app.services.credentials_service import CredentialsService
 
 
 class CredentialsComponents:
