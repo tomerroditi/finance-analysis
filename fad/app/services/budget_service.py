@@ -5,7 +5,7 @@ import pandas as pd
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.budget_repository import MonthlyBudgetRepository, ProjectBudgetRepository, BudgetRepository
-from fad.app.data_access.tagging_repository import TaggingRepository
+from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, Tables, \
     TransactionsTableFields, NonExpensesCategories
@@ -15,6 +15,7 @@ class BudgetService:
     def __init__(self, conn: SQLConnection = get_db_connection()):
         self.conn = conn
         self.budget_repository = BudgetRepository(conn)
+        self.categories_tags_service = CategoriesTagsService()
 
     def update_rule(self, id_: int, **fields):
         self.budget_repository.update_rule(id_, **fields)
@@ -152,7 +153,6 @@ class MonthlyBudgetService(BudgetService):
         self.conn = conn
         self.monthly_budget_repository = MonthlyBudgetRepository(self.conn)
         self.transactions_repository = TransactionsRepository(self.conn)
-        self.tagging_repository = TaggingRepository()
 
     def get_available_tags_for_each_category(self, budget_rules: pd.DataFrame) -> dict[str, list[str]]:
         """
@@ -171,7 +171,7 @@ class MonthlyBudgetService(BudgetService):
         dict[str, list[str]]
             Dictionary mapping category names to lists of available tags.
         """
-        cats_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
+        cats_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
         for _, rule in budget_rules.iterrows():
             used_tags = rule[TAGS]
             if used_tags == [ALL_TAGS]:
@@ -387,7 +387,7 @@ class ProjectBudgetService:
         self.conn = get_db_connection()
         self.project_budget_repository = ProjectBudgetRepository(self.conn)
         self.transactions_repository = TransactionsRepository(self.conn)
-        self.tagging_repository = TaggingRepository()
+        self.categories_tags_service = CategoriesTagsService()
 
     def create_project(self, category: str, total_budget: float) -> None:
         """
@@ -520,7 +520,7 @@ class ProjectBudgetService:
         bool
             True if any updates were made, False otherwise.
         """
-        cat_n_tags = self.tagging_repository.get_categories_and_tags(copy=True)
+        cat_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
         tags = cat_n_tags.get(project, [])
         existing_tags = project_rules[TAGS].tolist()
         existing_tags = [tag[0] for tag in existing_tags]
@@ -557,7 +557,7 @@ class ProjectBudgetService:
             List of category names that are available to be used as projects.
         """
         avail_cats = list(
-            set(list(self.tagging_repository.get_categories_and_tags().keys())) -
+            set(list(self.categories_tags_service.get_categories_and_tags().keys())) -
             set(self.get_project_names(budget_rules))
         )
 
