@@ -134,7 +134,7 @@ class BudgetUI:
             st.rerun()
 
     def _edit_rule_ui(self, rule: pd.Series) -> tuple[str, str, list[str]]:
-        cat_n_tags = self.tagging_service.tagging_repository.get_categories_and_tags(copy=True)
+        cat_n_tags = self.tagging_service.get_categories_and_tags(copy=True)
         is_project = pd.isnull(rule[YEAR]) and pd.isnull(rule[MONTH])
 
         name = st.text_input("Name", rule[NAME], key=f"edit_{rule[ID]}_name", disabled=is_project)
