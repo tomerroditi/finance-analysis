@@ -12,6 +12,29 @@ ALL_TAGS = 'all_tags'
 
 TOTAL_BUDGET = 'Total Budget'
 
+cc_providers = [
+    'amex',
+    'behatsdaa',
+    'beyahad bishvilha',
+    'isracard',
+    'max',
+    'visa_cal',
+]
+
+bank_providers = [
+    'beinleumi',
+    'discount',
+    'hapoalim',
+    'leumi',
+    'massad',
+    'mercantile',
+    'mizrahi',
+    'onezero',
+    'otsar_hahayal',
+    'union',
+    'yahav',
+]
+
 
 class Tables(Enum):
     """
@@ -70,7 +93,7 @@ fields = [
     ('TAG', 'tag'),
 ]
 
-TransactionsTableFields = create_enum('TransactionsTableFields', fields)  # TODO: change to expenses table fields
+TransactionsTableFields = create_enum('TransactionsTableFields', fields)
 CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
 
