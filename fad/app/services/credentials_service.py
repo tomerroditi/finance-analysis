@@ -302,3 +302,42 @@ class CredentialsService:
         """
         del credentials[service][provider][account]
         self.save_credentials(credentials)
+
+    def get_scraper_credentials(self, service, provider, account):
+        """
+        Fetch credentials for a specific scraper or multiple scrapers.
+
+        Parameters
+        ----------
+        service : str or list[str]
+            The service name(s) (e.g., 'banks', 'credit_cards', etc.).
+        provider : str or list[str]
+            The provider name(s).
+        account : str or list[str]
+            The account name(s).
+
+        Returns
+        -------
+        dict
+            A credentials dictionary containing only the requested credentials, structured as:
+            {service: {provider: {account: {fields...}}}}
+        """
+        # Normalize to lists
+        if isinstance(service, str):
+            service = [service]
+        if isinstance(provider, str):
+            provider = [provider]
+        if isinstance(account, str):
+            account = [account]
+        result = {}
+        for s in service:
+            if s not in self.credentials:
+                continue
+            for p in provider:
+                if p not in self.credentials[s]:
+                    continue
+                for a in account:
+                    if a not in self.credentials[s][p]:
+                        continue
+                    result.setdefault(s, {}).setdefault(p, {})[a] = self.credentials[s][p][a]
+        return result

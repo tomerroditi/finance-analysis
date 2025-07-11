@@ -441,9 +441,16 @@ class Scraper(ABC):
             )
         }
 
+        # Ensure error is a string
+        if not isinstance(error, str):
+            error = str(error)
+
         # Check for error prefixes from Node.js scripts
         for et in ErrorType:
-            if error.startswith(et.value):
+            et_value = et.value
+            if not isinstance(et_value, str):
+                et_value = str(et_value)
+            if error.startswith(et_value):
                 error_type = et
                 break
         else:

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-import streamlit as st
+# Removed: import streamlit as st
 from streamlit.connections import SQLConnection
 
 from fad import DB_PATH
@@ -28,6 +28,8 @@ class ScrapingService:
         Repository for scraping operations.
     scraping_status : dict
         Dictionary tracking the status of scraping operations.
+    tfa_scrapers_waiting : dict
+        Dictionary of scrapers currently waiting for 2FA input.
     """
     def __init__(self, conn: SQLConnection = get_db_connection()):
         """
@@ -42,7 +44,8 @@ class ScrapingService:
         self.transactions_repo = TransactionsRepository(conn)
         self.transactions_service = TransactionsService(conn)
         self.scraping_repo = ScrapingRepository()
-        self.scraping_status = st.session_state.setdefault("scraping_status", {"success": {}, "failed": {}, "waiting for 2fa": {}})
+        self.scraping_status = {"success": {}, "failed": {}, "waiting_for_2fa": {}}
+        self.tfa_scrapers_waiting = {}  # {name: (scraper, thread)}
 
     def get_latest_data_date(self):
         """
@@ -79,7 +82,6 @@ class ScrapingService:
         db_path : str
             The path to the database file. If None, the database file will be created in the folder of fad package
             with the name 'data.db'
-
         """
         normal_scraper, tfa_scrapers = self._collect_scrapers(credentials)
         self._scrape_normal_scrapers(normal_scraper, start_date, db_path)
@@ -116,7 +118,6 @@ class ScrapingService:
                         tfa_scrapers[resource_name] = scraper
                     else:
                         normal_scrapers[resource_name] = scraper
-
         return normal_scrapers, tfa_scrapers
 
     def _scrape_normal_scrapers(self, scrapers: dict, start_date, db_path):
@@ -131,13 +132,8 @@ class ScrapingService:
             The date from which to start pulling the data.
         db_path : str
             The path to the database file.
-
-        Returns
-        -------
-        dict
-            Dictionary containing success and failure statuses.
         """
-        for resource_name, scraper in scrapers.items():
+        for _, scraper in scrapers.items():
             scraper.pull_data_to_db(start_date, db_path)
             self.update_scrapers_status(scraper)
 
@@ -153,16 +149,17 @@ class ScrapingService:
             The date from which to start pulling the data.
         db_path : str
             The path to the database file.
-
-        Returns
-        -------
-        dict
-            Dictionary containing success and failure statuses.
         """
-        for resource_name, scraper in scrapers.items():
-            status = self.scraping_repo.pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path)
-            for status_type in status:
-                self.scraping_status[status_type].update(status[status_type])
+        for _, scraper in scrapers.items():
+            result = self.scraping_repo.pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path)
+            if "waiting_for_2fa" in result:
+                info = result["waiting_for_2fa"]
+                self.tfa_scrapers_waiting[info["name"]] = (info["scraper"], info["thread"])
+                self.scraping_status["waiting_for_2fa"][info["name"]] = f"{info['name']} - waiting for 2fa input"
+            elif "status" in result:
+                status = result["status"]
+                for status_type in status:
+                    self.scraping_status[status_type].update(status[status_type])
 
     def update_scrapers_status(self, scraper: Scraper):
         """
@@ -174,9 +171,8 @@ class ScrapingService:
             The scraper that has completed its operation.
         """
         name = f"{scraper.service_name} - {scraper.provider_name} - {scraper.account_name}"
-        for type_, messages in self.scraping_status.items():
-            messages.pop(name, None)
-
+        for type_ in self.scraping_status:
+            self.scraping_status[type_].pop(name, None)
         status = self.scraping_repo.get_scraper_status(scraper)
         for status_type in status:
             self.scraping_status[status_type].update(status[status_type])
@@ -191,23 +187,83 @@ class ScrapingService:
         -------
         None
         """
-        self.scraping_status = {"success": {}, "failed": {}, "waiting for 2fa": {}}
+        self.scraping_status = {"success": {}, "failed": {}, "waiting_for_2fa": {}}
 
     def clear_waiting_for_2fa_scrapers(self):
         """
         Clear the list of scrapers waiting for 2FA input.
 
         Terminates any active threads of scrapers waiting for two-factor authentication
-        and removes them from the session state.
+        and removes them from the waiting list.
 
         Returns
         -------
         None
         """
-        # terminate the threads of scrapers waiting for 2FA input
-        for scraper_name, (scraper, thread) in st.session_state.get("tfa_scrapers_waiting", {}).items():
+        for scraper_name, (scraper, thread) in self.tfa_scrapers_waiting.items():
             if thread.is_alive():
                 self.scraping_repo.handle_2fa_code(scraper, thread, "cancel")
                 thread.join()
+        self.tfa_scrapers_waiting = {}
 
-        st.session_state["tfa_scrapers_waiting"] = {}
+    def get_tfa_scrapers_waiting(self):
+        """
+        Get the dictionary of scrapers currently waiting for 2FA input.
+
+        Returns
+        -------
+        dict
+            Dictionary of scrapers waiting for 2FA input.
+        """
+        return self.tfa_scrapers_waiting
+
+    def handle_2fa_code(self, scraper_name, code):
+        """
+        Handle the submission of a 2FA code for a waiting scraper.
+
+        Parameters
+        ----------
+        scraper_name : str
+            The name of the scraper waiting for 2FA.
+        code : str
+            The 2FA code to submit (or 'cancel' to abort).
+        Returns
+        -------
+        None
+        """
+        if scraper_name not in self.tfa_scrapers_waiting:
+            return
+        scraper, thread = self.tfa_scrapers_waiting[scraper_name]
+        self.scraping_repo.handle_2fa_code(scraper, thread, code)
+        # After 2FA, update status and remove from waiting
+        self.update_scrapers_status(scraper)
+        del self.tfa_scrapers_waiting[scraper_name]
+
+    def clear_scraper_status(self, scraper_name):
+        """
+        Clear the scraping status for a single scraper.
+
+        Parameters
+        ----------
+        scraper_name : str
+            The name of the scraper (service - provider - account).
+        Returns
+        -------
+        None
+        """
+        for type_ in self.scraping_status:
+            self.scraping_status[type_].pop(scraper_name, None)
+
+    def clear_waiting_for_2fa_scraper(self, scraper_name):
+        """
+        Clear the waiting for 2FA state for a single scraper.
+
+        Parameters
+        ----------
+        scraper_name : str
+            The name of the scraper (service - provider - account).
+        Returns
+        -------
+        None
+        """
+        self.tfa_scrapers_waiting.pop(scraper_name, None)

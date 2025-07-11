@@ -2,7 +2,7 @@ from datetime import datetime
 from threading import Thread
 from time import sleep
 
-import streamlit as st
+# Removed: import streamlit as st
 
 from fad.scraper import Scraper
 
@@ -15,7 +15,7 @@ class ScrapingRepository:
     @staticmethod
     def pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path):
         """
-        Fetch the data from the scraper and save it to the database
+        Fetch the data from the scraper and save it to the database.
 
         Parameters
         ----------
@@ -30,7 +30,8 @@ class ScrapingRepository:
         Returns
         -------
         dict
-            Dictionary containing success/failure/waiting statuses for the scraper
+            If 2FA is required, returns a dict with key 'waiting_for_2fa' and a dict containing the name, scraper, and thread.
+            Otherwise, returns a dict with key 'status' and the status dictionary.
         """
         thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
         thread.start()
@@ -38,28 +39,39 @@ class ScrapingRepository:
 
         while thread.is_alive():
             if scraper.otp_code == "waiting for input":
-                st.session_state.setdefault("tfa_scrapers_waiting", {})[name] = (scraper, thread)
-                return {"waiting for 2fa": {name: f"{name} - waiting for 2fa input"}}
+                # Return status indicating 2FA is required, along with scraper and thread
+                return {"waiting_for_2fa": {"name": name, "scraper": scraper, "thread": thread}}
             if scraper.otp_code == "not required":
                 thread.join()
             sleep(1)  # Sleep to avoid busy waiting
 
         status = ScrapingRepository.get_scraper_status(scraper)
-        return status
+        return {"status": status}
 
     @staticmethod
     def handle_2fa_code(scraper, thread, code):
-        if code is None or code == '':
-            st.error('Please enter a valid code')
-            st.stop()
-        st.write("Code submitted. Fetching data, please wait...")
+        """
+        Handle the submission of a 2FA code to the scraper and wait for the thread to finish.
+
+        Parameters
+        ----------
+        scraper : Scraper
+            The scraper object waiting for 2FA.
+        thread : Thread
+            The thread running the scraping operation.
+        code : str
+            The 2FA code to submit (or 'cancel' to abort).
+        Returns
+        -------
+        None
+        """
         scraper.set_otp_code(code)
         thread.join()
 
     @staticmethod
     def get_scraper_status(scraper):
         """
-        Create a result dictionary based on the scraper's state
+        Create a result dictionary based on the scraper's state.
 
         Parameters
         ----------

@@ -36,7 +36,9 @@ class DataScrapingComponent:
 
         Creates instances of required services and initializes state variables.
         """
-        self.scraping_service = st.session_state.setdefault("scraping_service", ScrapingService())
+        if "scraping_service" not in st.session_state:
+            st.session_state["scraping_service"] = ScrapingService()
+        self.scraping_service = st.session_state["scraping_service"]
         self.creds_service = CredentialsService()
         self.auto_tagging_service = AutomaticTaggerService()
         self.start_date = None
@@ -61,7 +63,6 @@ class DataScrapingComponent:
         if start_date > dt.date.today():
             st.warning("You cannot set a start date in the future. Please select a valid date.")
             start_date = dt.date.today()
-
         self.start_date = start_date
 
     def select_services_to_scrape(self) -> None:
@@ -104,6 +105,8 @@ class DataScrapingComponent:
             self.scraping_service.clear_waiting_for_2fa_scrapers()
             self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
             self.auto_tagging_service.update_raw_data_by_rules()
+            st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
+            st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
 
         self.tfa_fragments()
         self.display_scraping_status()
@@ -123,10 +126,10 @@ class DataScrapingComponent:
         """
         tfa_scrapers_waiting: dict = st.session_state.get("tfa_scrapers_waiting", {})
         for name, (scraper, thread) in tfa_scrapers_waiting.items():
-            self.tfa_code_input(scraper, thread)
+            self.tfa_code_input(name, scraper, thread)
 
     @st.fragment
-    def tfa_code_input(self, scraper: Scraper, thread: object) -> None:
+    def tfa_code_input(self, name: str, scraper: Scraper, thread: object) -> None:
         """
         Display a dialog for the user to enter the OTP code for the given provider.
 
@@ -134,9 +137,13 @@ class DataScrapingComponent:
         authentication. The dialog will stop the script until the user submits the code
         or cancels. If the user cancels the 2FA, the script will rerun. If the user
         submits a code, it will be passed to the scraper and the script will rerun.
+        Also provides a button to resend the code, which reruns the scraping command
+        for the relevant scraper to trigger a new code to be sent.
 
         Parameters
         ----------
+        name : str
+            The name of the scraper (service - provider - account).
         scraper : Scraper
             The scraper object for which to handle two-factor authentication.
             Contains service_name, provider_name, and account_name attributes.
@@ -149,22 +156,39 @@ class DataScrapingComponent:
             Updates the session state and triggers a rerun when appropriate.
         """
         with st.container(border=True):
-            name = f"{scraper.service_name} - {scraper.provider_name} - {scraper.account_name}"
             st.subheader(name)
-
             code = st.text_input('Code', key=f'tfa_code_input_{name}', label_visibility="hidden",
                                  placeholder='Enter two factor authentication code here')
-            col_1, col_2, _ = st.columns([1, 1, 8])
+            col_1, col_2, col_3, _ = st.columns([1, 1, 1, 7])
             if col_1.button('Submit', key=f"two_fa_dialog_submit_{name}"):
-                self.scraping_service.scraping_repo.handle_2fa_code(scraper, thread, code)
-                st.session_state["tfa_scrapers_waiting"].pop(name, None)  # remove the scraper from the waiting list`
-                self.scraping_service.update_scrapers_status(scraper)
+                if not code:
+                    st.error('Please enter a valid code')
+                    st.stop()
+                self.scraping_service.handle_2fa_code(name, code)
                 self.auto_tagging_service.update_raw_data_by_rules()
+                st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
+                st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
                 st.rerun()
             if col_2.button('Cancel', key=f"two_fa_dialog_cancel_{name}"):
-                self.scraping_service.scraping_repo.handle_2fa_code(scraper, thread, "cancel")
-                st.session_state["tfa_scrapers_waiting"].pop(name, None)  # remove the scraper from the waiting list
+                self.scraping_service.handle_2fa_code(name, "cancel")
+                st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
+                st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
                 st.rerun()
+            if col_3.button('Resend Code', key=f"two_fa_dialog_resend_{name}"):
+                # Resend code by rerunning the scraping command for this scraper only
+                # Use get_scraper_credentials to fetch only the relevant credentials
+                try:
+                    service, provider, account = [x.strip() for x in name.split("-")]
+                    single_creds = self.creds_service.get_scraper_credentials(service, provider, account)
+                    start_date = self.start_date if self.start_date else dt.date.today()
+                    self.scraping_service.clear_scraper_status(name)
+                    self.scraping_service.clear_waiting_for_2fa_scraper(name)
+                    self.scraping_service.pull_data_from_scrapers_to_db(start_date, single_creds)
+                    st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
+                    st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not resend code: {e}")
 
     def display_scraping_status(self) -> None:
         """
@@ -179,8 +203,9 @@ class DataScrapingComponent:
         None
             Displays status messages in the UI.
         """
-        for type_, messages in self.scraping_service.scraping_status.items():
-            if type_ in ['failed', 'waiting for 2fa']:
+        scraping_status = st.session_state.get("scraping_status", self.scraping_service.get_scraping_results())
+        for type_, messages in scraping_status.items():
+            if type_ in ['failed', 'waiting_for_2fa']:
                 for msg in messages.values():
                     st.warning(msg, icon="⚠️")
             else:

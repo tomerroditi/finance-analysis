@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+# Docstring Preservation and Update
+
+- Always preserve existing docstrings verbatim unless the function’s parameters, return values, or behavior are changed.
+- If the function’s signature or behavior is changed, update the docstring to accurately describe the new parameters, return values, and behavior.
+- Never remove or shorten docstrings unless they are clearly obsolete or misleading due to code changes.
+
+**Rationale:**
+Docstrings are essential for code readability, maintainability, and for generating documentation. Preserving them ensures that future developers (and yourself) can understand the purpose and usage of each function or class.
