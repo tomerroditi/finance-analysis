@@ -112,6 +112,13 @@ class TransactionsRepository:
         self.cc_repo.update_category_for_tag(old_category, new_category, tag)
         self.bank_repo.update_category_for_tag(old_category, new_category, tag)
 
+    def nullify_category(self, category: str) -> None:
+        """
+        Set category and tag to NULL for all transactions with the specified category.
+        """
+        self.cc_repo.nullify_category(category)
+        self.bank_repo.nullify_category(category)
+
 
 class ServiceRepository:
     """
@@ -344,6 +351,20 @@ class CreditCardRepository(ServiceRepository):
             )
             s.commit()
 
+    def nullify_category(self, category: str) -> None:
+        """
+        Set category and tag to NULL for all credit card transactions with the specified category.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val
+            """
+            params = {'category_val': category}
+            s.execute(text(my_query), params)
+            s.commit()
+
 
 class BankRepository(ServiceRepository):
     table = Tables.BANK.value
@@ -443,4 +464,18 @@ class BankRepository(ServiceRepository):
                      f');'
                 )
             )
+            s.commit()
+
+    def nullify_category(self, category: str) -> None:
+        """
+        Set category and tag to NULL for all bank transactions with the specified category.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val
+            """
+            params = {'category_val': category}
+            s.execute(text(my_query), params)
             s.commit()

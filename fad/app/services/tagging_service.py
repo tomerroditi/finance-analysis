@@ -142,7 +142,10 @@ class CategoriesTagsService:
             True if the category was successfully deleted, False otherwise.
             Returns False if the category is protected or doesn't exist.
         """
-        # TODO: delete category from db data
+        # Delete category from db data
+        self.transactions_repo.nullify_category(category)
+        self.split_transactions_repo.nullify_category(category)
+        self.auto_tagger_repo.delete_by_category(category)
         if category in protected_categories:
             return False
         if category in self.categories_and_tags:

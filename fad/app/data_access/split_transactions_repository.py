@@ -230,6 +230,20 @@ class SplitTransactionsRepository:
             s.execute(text(query), params)
             s.commit()
 
+    def nullify_category(self, category: str) -> None:
+        """
+        Set category and tag to NULL for all splits with the specified category.
+        """
+        with self.conn.session as s:
+            query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val
+            """
+            params = {'category_val': category}
+            s.execute(text(query), params)
+            s.commit()
+
     def assure_table_exists(self):
         """
         Ensure that the split transactions table exists in the database.
