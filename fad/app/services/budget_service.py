@@ -95,7 +95,6 @@ class BudgetService:
             - str: Error message if invalid, empty string if valid
         """
         # TODO: split this function into smaller functions
-        # TODO: add a check for the rule name to be unique
         if id_ is not None:
             rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
             # if no change just return
@@ -104,6 +103,30 @@ class BudgetService:
                     and rule[CATEGORY] == category
                     and rule[TAGS] == tags):
                 return True, ""
+
+        # Unique name check (ignore current rule if updating)
+        if pd.isnull(year) and pd.isnull(month):
+            # Project rule: name must be unique among project rules (same category, null year/month)
+            duplicate = budget_rules.loc[
+                (budget_rules[YEAR].isnull()) &
+                (budget_rules[MONTH].isnull()) &
+                (budget_rules[NAME] == name)
+            ]
+            if id_ is not None:
+                duplicate = duplicate.loc[duplicate[ID] != id_]
+            if not duplicate.empty:
+                return False, f"A project rule with the name '{name}' already exists. Rule names must be unique."
+        else:
+            # Monthly rule: name must be unique for the same year/month
+            duplicate = budget_rules.loc[
+                (budget_rules[YEAR] == year) &
+                (budget_rules[MONTH] == month) &
+                (budget_rules[NAME] == name)
+            ]
+            if id_ is not None:
+                duplicate = duplicate.loc[duplicate[ID] != id_]
+            if not duplicate.empty:
+                return False, f"A rule with the name '{name}' already exists for this month. Rule names must be unique."
 
         if name == "":
             return False, "Please enter a name"
