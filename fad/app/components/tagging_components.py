@@ -49,6 +49,11 @@ class CategoriesTagsEditor:
     protected_categories : list[str]
         List of category names that cannot be deleted.
     """
+    # List of (category, tag) pairs that cannot be deleted
+    PROTECTED_CATEGORY_TAGS = [
+        ("Other", "No tag"),
+        # Add more (category, tag) pairs here as needed
+    ]
     def __init__(self):
         """
         Initialize the CategoriesTagsEditor.
@@ -147,6 +152,8 @@ class CategoriesTagsEditor:
             format_func=lambda tag: f"🔖 {tag.title()}",  # Add an icon and format tags to title case
             key=f'{category}_tags'
         )
+        # Determine which tags are protected for this category
+        protected_tags = [tag for (cat, tag) in self.PROTECTED_CATEGORY_TAGS if cat == category]
         # Align buttons in the same row
         edit_col, realloc_col, add_col, delete_col, _ = st.columns([1, 1.5, 1, 1.5, 9])
         with edit_col:
@@ -165,11 +172,16 @@ class CategoriesTagsEditor:
             if st.button('Add Tag', key=f'add_{category}_tag'):
                 self._add_tag_dialog(category)
         with delete_col:
-            if st.button('Delete Tag', key=f'delete_{category}_tag'):
+            # Disable delete if any selected tag is protected
+            protected_selected_tags = [tag for tag in selected_tags if (category, tag) in self.PROTECTED_CATEGORY_TAGS]
+            disable_delete = bool(protected_selected_tags)
+            if st.button('Delete Tag', key=f'delete_{category}_tag', disabled=disable_delete):
                 if selected_tags:
                     self._delete_tag_dialog(category, selected_tags)
                 else:
                     st.session_state['warning_message'] = 'No tags selected for deletion.'
+            if disable_delete and selected_tags:
+                st.info(f"The following selected tags are protected and cannot be deleted: {', '.join(protected_selected_tags)}")
 
         # Display warning message in a separate container
         if 'warning_message' in st.session_state:
