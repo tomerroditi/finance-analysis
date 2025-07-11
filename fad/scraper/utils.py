@@ -31,14 +31,33 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
     """
     assert isinstance(data, str), 'data should be a string'
 
-    data = data.split('\n')
-    data = [line for line in data if line.startswith("account number:")]
-    if not data:
+    lines = data.strip().split('\n')
+    if not lines or lines[0].startswith('found 0 transactions'):
         return pd.DataFrame()
-    data = [line.split('| ') for line in data]
-    col_names = [item.split(': ')[0].replace(' ', '_') for item in data[0]]
-    data = [[item.split(': ')[1] for item in line] for line in data]
-    df = pd.DataFrame(data, columns=col_names)
+    # Skip the first line (summary), process the rest
+    data_lines = lines[1:]
+    if not data_lines or all(not line.strip() for line in data_lines):
+        return pd.DataFrame()
+    # Split each line into key-value pairs
+    parsed = []
+    for line in data_lines:
+        if not line.strip():
+            continue
+        try:
+            items = [item for item in line.split('|') if item.strip()]
+            row = {}
+            for item in items:
+                key_val = item.split(': ', 1)
+                if len(key_val) != 2:
+                    continue  # skip malformed
+                key, val = key_val
+                row[key.replace(' ', '_')] = val
+            parsed.append(row)
+        except Exception:
+            continue  # skip malformed lines
+    if not parsed:
+        return pd.DataFrame()
+    df = pd.DataFrame(parsed)
 
     amount_col = TransactionsTableFields.AMOUNT.value
     date_col = TransactionsTableFields.DATE.value

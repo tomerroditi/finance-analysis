@@ -62,13 +62,15 @@ class CredentialsService:
 
         Reads credentials from the YAML file, ensuring the file exists and has the correct
         structure. Creates a default file if none exists. Retrieves passwords from the
-        system keyring and injects them into the credentials dictionary.
+        system keyring and injects a placeholder ("***") into the credentials dictionary
+        for password fields, unless explicitly needed for authentication.
 
         Returns
         -------
         Dict
             A dictionary containing all user credentials with the structure:
             {service: {provider: {account: {field: value}}}}
+            Password fields are set to '***' for security.
         """
         # Read existing credentials or create default
         credentials = self.creds_repository.read_credentials_file()
@@ -79,7 +81,7 @@ class CredentialsService:
             self.creds_repository.write_credentials_file(credentials)
             self.creds_repository.set_file_permissions(CREDENTIALS_PATH)
 
-        # Ensure all expected login fields are present and inject passwords from keyring
+        # Ensure all expected login fields are present and inject password placeholders
         for service, providers in credentials.items():
             for provider, accounts in providers.items():
                 for account, fields in accounts.items():
@@ -89,9 +91,8 @@ class CredentialsService:
                         if field not in fields:
                             fields[field] = ""
                         if 'password' in field.lower():
-                            key = self.generate_keyring_key(service, provider, account, field)
-                            password = self.creds_repository.get_password_from_keyring(key)
-                            fields[field] = password or ""
+                            # Do not inject the real password, use a placeholder
+                            fields[field] = "***"
 
         return credentials
 
