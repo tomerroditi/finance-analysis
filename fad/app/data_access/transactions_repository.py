@@ -90,6 +90,20 @@ class TransactionsRepository:
             List of all transaction table names.
         """
         return self.tables.copy()
+    
+    def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """
+        Set category and tag to NULL for all transactions with the specified category and tag.
+
+        Parameters
+        ----------
+        category : str
+            The category to nullify.
+        tag : str
+            The tag to nullify.
+        """
+        self.cc_repo.nullify_category_and_tag(category, tag)
+        self.bank_repo.nullify_category_and_tag(category, tag)
 
 
 class ServiceRepository:
@@ -250,6 +264,23 @@ class CreditCardRepository(ServiceRepository):
             s.execute(text(my_query), params)
             s.commit()
 
+    def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """
+        Set category and tag to NULL for all credit card transactions with the specified category and tag.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
+            """
+            params = {
+                'category_val': category,
+                'tag_val': tag
+            }
+            s.execute(text(my_query), params)
+            s.commit()
+
     def assure_table_exists(self):
         with self.conn.session as s:
             s.execute(
@@ -312,6 +343,23 @@ class BankRepository(ServiceRepository):
                 'tag_val': tag,
                 'name_val': name,
                 'account_number_val': account_number
+            }
+            s.execute(text(my_query), params)
+            s.commit()
+
+    def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """
+        Set category and tag to NULL for all bank transactions with the specified category and tag (optionally filtered by account_number).
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
+            """
+            params = {
+                'category_val': category,
+                'tag_val': tag
             }
             s.execute(text(my_query), params)
             s.commit()

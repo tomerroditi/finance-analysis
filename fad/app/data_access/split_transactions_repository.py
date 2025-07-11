@@ -202,6 +202,20 @@ class SplitTransactionsRepository:
             s.execute(text(query), params)
             s.commit()
 
+    def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """
+        Set category and tag to NULL for all splits with the specified category and tag (optionally filtered by service).
+        """
+        with self.conn.session as s:
+            query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = NULL, {self.tag_col} = NULL
+                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
+            """
+            params = {'category_val': category, 'tag_val': tag}
+            s.execute(text(query), params)
+            s.commit()
+
     def assure_table_exists(self):
         """
         Ensure that the split transactions table exists in the database.

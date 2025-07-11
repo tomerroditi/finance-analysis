@@ -8,6 +8,8 @@ from streamlit.connections import SQLConnection
 from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
+from fad.app.data_access.transactions_repository import TransactionsRepository
+from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import (
     Tables,
@@ -216,7 +218,19 @@ class CategoriesTagsService:
             True if the tag was successfully deleted, False otherwise.
             Returns False if the category doesn't exist or the tag doesn't exist in the category.
         """
-        # TODO: delete tag from db data
+        conn = get_db_connection()
+        transactions_repo = TransactionsRepository(conn)
+        split_transactions_repo = SplitTransactionsRepository(conn)
+        auto_tagger_repo = AutoTaggerRepository(conn)
+
+        # 1. Set category and tag to null in transactions table (credit_card and bank)
+        transactions_repo.nullify_category_and_tag(category, tag)
+
+        # 2. Set category and tag to null in split transactions table (both services)
+        split_transactions_repo.nullify_category_and_tag(category, tag)
+
+        # 3. Remove the row with the specified category and tag from the auto tagger table (for both services)
+        auto_tagger_repo.delete_by_category_and_tag(category, tag)
 
         if category not in self.categories_and_tags:
             return False

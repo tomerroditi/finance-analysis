@@ -144,6 +144,19 @@ class AutoTaggerRepository:
             s.execute(query, params)
             s.commit()
 
+    def delete_by_category_and_tag(self, category: str, tag: str) -> None:
+        """
+        Delete auto tagger rules with the specified category and tag (optionally filtered by service and account_number).
+        """
+        with self.conn.session as s:
+            query = sa.text(f"""
+                DELETE FROM {self.table}
+                WHERE {self.category_col} = :category AND {self.tag_col} = :tag
+            """)
+            params = {'category': category, 'tag': tag}
+            s.execute(query, params)
+            s.commit()
+
     def update_credit_card_transactions_by_rules(self) -> None:
         """Update credit card raw data based on auto tagger rules - Pure SQL operation"""
         with self.conn.session as s:
