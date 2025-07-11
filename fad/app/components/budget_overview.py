@@ -8,10 +8,11 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 
+from fad.app.components.tagging_components import ManuallyTaggingComponent
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
-    ALL_TAGS, YEAR, MONTH
+    ALL_TAGS, YEAR, MONTH, cc_providers, bank_providers
 
 class BudgetUI:
     """
@@ -57,10 +58,12 @@ class BudgetUI:
             """
         )
 
-        # Expandable raw data
+        # Expandable raw data with editable option
         if expand_col.toggle("Expand", key=f"expand_{rule[ID]}", label_visibility="collapsed"):
-            st.dataframe(
-                raw_data.sort_values(by=[TransactionsTableFields.DATE.value], ascending=False),
+            # Use st.dataframe with row selection
+            sorted_data = raw_data.sort_values(by=[TransactionsTableFields.DATE.value], ascending=False).reset_index(drop=True)
+            event = st.dataframe(
+                sorted_data,
                 column_order=[
                     TransactionsTableFields.PROVIDER.value,
                     TransactionsTableFields.ACCOUNT_NAME.value,
@@ -72,8 +75,23 @@ class BudgetUI:
                     TransactionsTableFields.TAG.value,
                     TransactionsTableFields.STATUS.value,
                     TransactionsTableFields.ID.value
-                ]
+                ],
+                key=f"raw_data_table_{rule[ID]}",
+                selection_mode="single-row",
+                on_select="rerun"
             )
+            # Editable section: show editor if a row is selected
+            selected_rows = event["selection"]["rows"] if "selection" in event else []
+            if selected_rows:
+                idx = selected_rows[0]
+                row = sorted_data.iloc[idx]
+                manual = ManuallyTaggingComponent()
+                provider = row.get(TransactionsTableFields.PROVIDER.value)
+                if provider in cc_providers:
+                    service = "credit_card"
+                elif provider in bank_providers:
+                    service = "bank"
+                manual._manual_tagger_editing_window(row, service=service)
 
         # Buttons
         edit_col.button(
