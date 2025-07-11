@@ -18,7 +18,7 @@ cc_providers = [
     'beyahad bishvilha',
     'isracard',
     'max',
-    'visa_cal',
+    'visa cal',
 ]
 
 bank_providers = [
@@ -30,7 +30,7 @@ bank_providers = [
     'mercantile',
     'mizrahi',
     'onezero',
-    'otsar_hahayal',
+    'otsar hahayal',
     'union',
     'yahav',
 ]
