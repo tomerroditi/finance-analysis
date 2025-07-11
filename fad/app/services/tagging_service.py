@@ -65,6 +65,10 @@ class CategoriesTagsService:
         session state management, and default loading.
         """
         self.categories_and_tags = self.get_categories_and_tags()
+        conn = get_db_connection()
+        self.transactions_repo = TransactionsRepository(conn)
+        self.split_transactions_repo = SplitTransactionsRepository(conn)
+        self.auto_tagger_repo = AutoTaggerRepository(conn)
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
         """
@@ -166,9 +170,11 @@ class CategoriesTagsService:
             True if the tags were successfully reallocated, False otherwise.
             Returns False if either category doesn't exist.
         """
-        # TODO: update tags within the database
-        if old_category not in self.categories_and_tags or new_category not in self.categories_and_tags:
-            return False
+        # Update category for the specified tags in all relevant tables
+        for tag in tags:
+            self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
+            self.split_transactions_repo.update_category_for_tag(old_category, new_category, tag)
+            self.auto_tagger_repo.update_category_for_tag(old_category, new_category, tag)
         # Remove tags from old category
         self.categories_and_tags[old_category] = [t for t in self.categories_and_tags[old_category] if t not in tags]
         # Add tags to new category (avoid duplicates)
@@ -218,19 +224,14 @@ class CategoriesTagsService:
             True if the tag was successfully deleted, False otherwise.
             Returns False if the category doesn't exist or the tag doesn't exist in the category.
         """
-        conn = get_db_connection()
-        transactions_repo = TransactionsRepository(conn)
-        split_transactions_repo = SplitTransactionsRepository(conn)
-        auto_tagger_repo = AutoTaggerRepository(conn)
-
         # 1. Set category and tag to null in transactions table (credit_card and bank)
-        transactions_repo.nullify_category_and_tag(category, tag)
+        self.transactions_repo.nullify_category_and_tag(category, tag)
 
         # 2. Set category and tag to null in split transactions table (both services)
-        split_transactions_repo.nullify_category_and_tag(category, tag)
+        self.split_transactions_repo.nullify_category_and_tag(category, tag)
 
         # 3. Remove the row with the specified category and tag from the auto tagger table (for both services)
-        auto_tagger_repo.delete_by_category_and_tag(category, tag)
+        self.auto_tagger_repo.delete_by_category_and_tag(category, tag)
 
         if category not in self.categories_and_tags:
             return False

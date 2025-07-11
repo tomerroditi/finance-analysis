@@ -105,6 +105,13 @@ class TransactionsRepository:
         self.cc_repo.nullify_category_and_tag(category, tag)
         self.bank_repo.nullify_category_and_tag(category, tag)
 
+    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """
+        Update the category to new_category for all transactions with the specified old_category and tag.
+        """
+        self.cc_repo.update_category_for_tag(old_category, new_category, tag)
+        self.bank_repo.update_category_for_tag(old_category, new_category, tag)
+
 
 class ServiceRepository:
     """
@@ -216,6 +223,24 @@ class ServiceRepository:
             s.execute(text(my_query), params)
             s.commit()
 
+    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """
+        Update the category to new_category for all transactions with the specified old_category and tag.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = :new_category
+                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
+            """
+            params = {
+                'new_category': new_category,
+                'old_category': old_category,
+                'tag': tag
+            }
+            s.execute(text(my_query), params)
+            s.commit()
+
 
 class CreditCardRepository(ServiceRepository):
     table = Tables.CREDIT_CARD.value
@@ -277,6 +302,24 @@ class CreditCardRepository(ServiceRepository):
             params = {
                 'category_val': category,
                 'tag_val': tag
+            }
+            s.execute(text(my_query), params)
+            s.commit()
+
+    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """
+        Update the category to new_category for all credit card transactions with the specified old_category and tag.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = :new_category
+                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
+            """
+            params = {
+                'new_category': new_category,
+                'old_category': old_category,
+                'tag': tag
             }
             s.execute(text(my_query), params)
             s.commit()
@@ -360,6 +403,24 @@ class BankRepository(ServiceRepository):
             params = {
                 'category_val': category,
                 'tag_val': tag
+            }
+            s.execute(text(my_query), params)
+            s.commit()
+
+    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """
+        Update the category to new_category for all bank transactions with the specified old_category and tag.
+        """
+        with self.conn.session as s:
+            my_query = f"""
+                UPDATE {self.table}
+                SET {self.category_col} = :new_category
+                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
+            """
+            params = {
+                'new_category': new_category,
+                'old_category': old_category,
+                'tag': tag
             }
             s.execute(text(my_query), params)
             s.commit()

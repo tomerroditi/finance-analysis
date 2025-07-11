@@ -157,6 +157,20 @@ class AutoTaggerRepository:
             s.execute(query, params)
             s.commit()
 
+    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """
+        Update the category to new_category for all auto tagger rules with the specified old_category and tag.
+        """
+        with self.conn.session as s:
+            query = sa.text(f"""
+                UPDATE {self.table}
+                SET {self.category_col} = :new_category
+                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
+            """)
+            params = {'new_category': new_category, 'old_category': old_category, 'tag': tag}
+            s.execute(query, params)
+            s.commit()
+
     def update_credit_card_transactions_by_rules(self) -> None:
         """Update credit card raw data based on auto tagger rules - Pure SQL operation"""
         with self.conn.session as s:
