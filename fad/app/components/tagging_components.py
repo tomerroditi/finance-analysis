@@ -762,6 +762,10 @@ class ManuallyTaggingComponent:
                 st.markdown("<br>", unsafe_allow_html=True)  # Add space before button
                 if st.button('Save', key=f'save_{row[name_col]}'):
                     self.transactions_service.update_tagging_by_id(row[id_col], category, tag, service)
+                    # Clear the filter widget cache to force data refresh
+                    filter_key = f"manual_tagging_filter_widgets_{service}"
+                    if filter_key in st.session_state:
+                        del st.session_state[filter_key]
                     st.rerun()
 
     @st.fragment
@@ -785,6 +789,8 @@ class ManuallyTaggingComponent:
         name_col = self.transactions_service.transactions_repository.desc_col
         amount_col = self.transactions_service.transactions_repository.amount_col
         id_col = self.transactions_service.transactions_repository.id_col
+        category_col = self.transactions_service.transactions_repository.category_col
+        tag_col = self.transactions_service.transactions_repository.tag_col
 
         # Get existing splits if any
         existing_splits = self.split_transactions_service.get_splits_for_transaction(row[id_col], service)
@@ -904,7 +910,8 @@ class ManuallyTaggingComponent:
                 st.rerun()
 
         with col_cancel_split:
-            if st.button("Cancel Split"):
+            activate_button = row[category_col] == NonExpensesCategories.IGNORE.value and row[tag_col] == "splitted"
+            if st.button("Cancel Split", disabled=not activate_button):
                 # Delete all splits and reset original transaction's category and tag to None
                 self.split_transactions_service.cancel_split(row[id_col], service)
                 self.transactions_service.update_tagging_by_id(
