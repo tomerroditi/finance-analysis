@@ -761,7 +761,7 @@ class ManuallyTaggingComponent:
             with col_save:
                 st.markdown("<br>", unsafe_allow_html=True)  # Add space before button
                 if st.button('Save', key=f'save_{row[name_col]}'):
-                    self.transactions_service.update_data_table(service, row[id_col], category, tag)
+                    self.transactions_service.update_tagging_by_id(row[id_col], category, tag, service)
                     st.rerun()
 
     @st.fragment
@@ -885,11 +885,11 @@ class ManuallyTaggingComponent:
                         splits=st.session_state[f"splits_{service}"]
                     )
                     # Update the original transaction to category 'Ignore' and tag 'splitted'
-                    self.transactions_service.update_data_table(
-                        service=service,
+                    self.transactions_service.update_tagging_by_id(
                         id_=row[id_col],
                         category=NonExpensesCategories.IGNORE.value,
-                        tag="splitted"
+                        tag="splitted",
+                        service=service
                     )
                     # Clear session state
                     del st.session_state[f"splits_{service}"]
@@ -907,11 +907,11 @@ class ManuallyTaggingComponent:
             if st.button("Cancel Split"):
                 # Delete all splits and reset original transaction's category and tag to None
                 self.split_transactions_service.cancel_split(row[id_col], service)
-                self.transactions_service.update_data_table(
-                    service=service,
+                self.transactions_service.update_tagging_by_id(
                     id_=row[id_col],
                     category=None,
-                    tag=None
+                    tag=None,
+                    service=service
                 )
                 if f"splits_{service}" in st.session_state:
                     del st.session_state[f"splits_{service}"]
