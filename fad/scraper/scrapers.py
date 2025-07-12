@@ -244,7 +244,6 @@ class Scraper(ABC):
         self.data = self.data.sort_values(by=self.sort_by_columns)
         self.data = self._add_account_name_and_provider_columns(self.data)
         self.data = self._add_missing_columns(self.data)
-        # TODO: improve the saving protocol, make the id column the primary key and add a check for duplicates
         save_to_db(self.data, self.table_name, db_path=db_path)
 
         self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
@@ -340,7 +339,6 @@ class Scraper(ABC):
         df : pd.DataFrame
             The DataFrame to add the missing columns to
         """
-        # TODO: is this necessary?
         pass
 
     def _handle_error(self, error: str):
@@ -543,8 +541,11 @@ class CreditCardScraper(Scraper, ABC):
         df : pd.DataFrame
             The DataFrame to add the missing columns to
         """
-        cols_to_add = [CreditCardTableFields.ID.value, CreditCardTableFields.STATUS.value,
-                       CreditCardTableFields.CATEGORY.value, CreditCardTableFields.TAG.value]
+        cols_to_add = [
+            CreditCardTableFields.STATUS.value,
+            CreditCardTableFields.CATEGORY.value, 
+            CreditCardTableFields.TAG.value
+        ]
 
         for col in cols_to_add:
             if col not in df.columns:
@@ -707,8 +708,11 @@ class BankScraper(Scraper, ABC):
         df : pd.DataFrame
             The DataFrame to add the missing columns to
         """
-        cols_to_add = [BankTableFields.ID.value, BankTableFields.STATUS.value,
-                       BankTableFields.CATEGORY.value, BankTableFields.TAG.value]
+        cols_to_add = [
+            BankTableFields.STATUS.value,
+            BankTableFields.CATEGORY.value, 
+            BankTableFields.TAG.value
+        ]
 
         for col in cols_to_add:
             if col not in df.columns:

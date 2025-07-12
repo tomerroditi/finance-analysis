@@ -65,6 +65,7 @@ def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = DB_PATH) -> Non
     db_path: str
         the path to the database file. default to the global variable DB_PATH.
     """
+    # TODO: improve the saving protocol, make the id column the primary key and add a check for duplicates
     assert isinstance(df, pd.DataFrame), 'df should be a pandas DataFrame object'
     assert isinstance(table_name, str), 'table_name should be a string'
 

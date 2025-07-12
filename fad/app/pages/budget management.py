@@ -28,12 +28,11 @@ from fad.app.components.budget_overview import (
 monthly_tab, project_tab = st.tabs(["Monthly Budget Management", "Project Budget Management"])
 
 with monthly_tab:
-    # TODO: make the raw data editable from here as well
     monthly_ui = MonthlyBudgetUI()
     monthly_ui.select_month()
     monthly_ui.add_or_copy_rules_ui()
     monthly_ui.monthly_budget_overview()
-with project_tab:  # TODO: fix issue with "None" project name (instead of no projects)
+with project_tab: 
     project_ui = ProjectBudgetUI()
     project_ui.project_budget_buttons_bar()
     project_ui.project_budget_overview()
