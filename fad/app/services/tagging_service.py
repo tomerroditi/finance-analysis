@@ -346,10 +346,11 @@ class AutomaticTaggerService:
         """
         provider_col = TransactionsTableFields.PROVIDER.value
         account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
+        account_name_col = TransactionsTableFields.ACCOUNT_NAME.value
 
         account_name_and_provider = self.conn.query(
             f"""
-            SELECT {account_number_col}, {provider_col} 
+            SELECT {account_name_col}, {provider_col} 
             FROM {bank_table} 
             WHERE {account_number_col}=:account_number 
             LIMIT 1;
@@ -358,7 +359,7 @@ class AutomaticTaggerService:
             ttl=0
         )
         if not account_name_and_provider.empty:
-            return account_name_and_provider.iloc[0][account_number_col], account_name_and_provider.iloc[0][provider_col]
+            return account_name_and_provider.iloc[0][account_name_col], account_name_and_provider.iloc[0][provider_col]
         return None, None
 
     def add_rule(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
@@ -436,6 +437,14 @@ class AutomaticTaggerService:
             pass  # No additional action needed
         else:
             raise ValueError(f"Invalid update method: {method}")
+
+    def update_rule_by_id(self, id_: int, category: str, tag: str) -> None:
+        """Update an auto tagger rule by its id."""
+        self.auto_tagger_repo.update_by_id(id_, category, tag)
+
+    def delete_rule_by_id(self, id_: int) -> None:
+        """Delete an auto tagger rule by its id."""
+        self.auto_tagger_repo.delete_by_id(id_)
 
     def update_raw_data_by_rules(self) -> None:
         """

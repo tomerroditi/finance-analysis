@@ -126,6 +126,7 @@ class AutoTaggerTableFields(Enum):
     ACCOUNT_NUMBER : str
         Field name for the account number.
     """
+    ID = 'id'
     NAME = 'name'
     CATEGORY = 'category'
     TAG = 'tag'

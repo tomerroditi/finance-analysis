@@ -55,6 +55,7 @@ class AutoTaggerRepository:
     name_col = AutoTaggerTableFields.NAME.value
     service_col = AutoTaggerTableFields.SERVICE.value
     account_number_col = AutoTaggerTableFields.ACCOUNT_NUMBER.value
+    id_col = AutoTaggerTableFields.ID.value
 
     def __init__(self, conn: SQLConnection):
         self.conn = conn
@@ -66,7 +67,8 @@ class AutoTaggerRepository:
             s.execute(
                 text(
                     f'CREATE TABLE IF NOT EXISTS {self.table} ('
-                    f'{self.name_col} TEXT PRIMARY KEY, '
+                    f'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+                    f'{self.name_col} TEXT, '
                     f'{self.category_col} TEXT, '
                     f'{self.tag_col} TEXT, '
                     f'{self.service_col} TEXT, '
@@ -89,12 +91,22 @@ class AutoTaggerRepository:
         return table
 
     def add_to_table(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
-                     account_number: Optional[str] = None) -> None:
-        """Add a new auto tagger rule to the database"""
+                     account_number: Optional[str] = None) -> int:
+        """Add a new auto tagger rule to the database. Returns the new row id."""
         if service == "bank" and account_number is None:
             raise ValueError("account_number is required for bank transactions")
 
+        # Optionally check for duplicates (by name, service, account_number)
         with self.conn.session as s:
+            check_query = sa.text(f"""
+                SELECT id FROM {self.table}
+                WHERE {self.name_col} = :name AND {self.service_col} = :service AND {self.account_number_col} IS :account_number
+            """)
+            result = s.execute(check_query, {'name': name, 'service': service, 'account_number': account_number})
+            row = result.fetchone()
+            if row:
+                return row[0]  # Return existing id
+
             params = {
                 'name': name,
                 'category': category,
@@ -102,24 +114,36 @@ class AutoTaggerRepository:
                 'service': service,
                 'account_number': account_number
             }
-
             query = sa.text(f"""
-                INSERT INTO {Tables.AUTO_TAGGER.value} ({AutoTaggerTableFields.NAME.value}, 
-                    {AutoTaggerTableFields.CATEGORY.value}, {AutoTaggerTableFields.TAG.value}, 
-                    {AutoTaggerTableFields.SERVICE.value}, {AutoTaggerTableFields.ACCOUNT_NUMBER.value})
+                INSERT INTO {self.table} ({self.name_col}, {self.category_col}, {self.tag_col}, {self.service_col}, {self.account_number_col})
                 VALUES (:name, :category, :tag, :service, :account_number)
-                ON CONFLICT ({AutoTaggerTableFields.NAME.value}, {AutoTaggerTableFields.SERVICE.value}) 
-                DO UPDATE SET {AutoTaggerTableFields.CATEGORY.value} = :category, 
-                              {AutoTaggerTableFields.TAG.value} = :tag,
-                              {AutoTaggerTableFields.ACCOUNT_NUMBER.value} = :account_number
             """)
+            result = s.execute(query, params)
+            s.commit()
+            return result.lastrowid
 
+    def update_by_id(self, id_: int, category: str, tag: str) -> None:
+        """Update auto tagger rule by id."""
+        with self.conn.session as s:
+            params = {'id': id_, 'category': category, 'tag': tag}
+            query = sa.text(f"""
+                UPDATE {self.table}
+                SET {self.category_col} = :category, {self.tag_col} = :tag
+                WHERE id = :id
+            """)
             s.execute(query, params)
+            s.commit()
+
+    def delete_by_id(self, id_: int) -> None:
+        """Delete auto tagger rule by id."""
+        with self.conn.session as s:
+            query = sa.text(f"DELETE FROM {self.table} WHERE id = :id")
+            s.execute(query, {'id': id_})
             s.commit()
 
     def update_table(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
                      account_number: Optional[str] = None) -> None:
-        """Update auto tagger rule in the database"""
+        """Update auto tagger rule in the database (legacy, not id-based)."""
         if service == "bank" and account_number is None:
             raise ValueError("account_number is required for bank transactions")
 
@@ -133,12 +157,12 @@ class AutoTaggerRepository:
             }
 
             query = sa.text(f"""
-                UPDATE {Tables.AUTO_TAGGER.value}
-                SET {AutoTaggerTableFields.CATEGORY.value} = :category,
-                    {AutoTaggerTableFields.TAG.value} = :tag
-                WHERE {AutoTaggerTableFields.NAME.value} = :name
-                AND {AutoTaggerTableFields.SERVICE.value} = :service
-                AND {AutoTaggerTableFields.ACCOUNT_NUMBER.value} = :account_number
+                UPDATE {self.table}
+                SET {self.category_col} = :category,
+                    {self.tag_col} = :tag
+                WHERE {self.name_col} = :name
+                AND {self.service_col} = :service
+                AND {self.account_number_col} IS :account_number
             """)
 
             s.execute(query, params)

@@ -378,8 +378,8 @@ class AutomaticTaggerComponent:
         # to provide a better user experience. it also prevents aggregating unused widgets in the session state.
         prev_index = 0
         for key in st.session_state.keys():
-            if key.startswith(f'select_transaction_to_set_rule_{service}'):
-                if key == f'select_transaction_to_set_rule_{service}_{len(names)}':
+            if key.startswith(f'select_transaction_to_set_rule_{service}_{account_number}'):
+                if key == f'select_transaction_to_set_rule_{service}_{account_number}_{len(names)}':
                     continue
                 prev_index = st.session_state[key]
                 if prev_index >= len(names):
@@ -387,9 +387,7 @@ class AutomaticTaggerComponent:
                 del st.session_state[key]
                 break
 
-        widget_key = f'select_transaction_to_set_rule_{service}_{len(names)}'
-        if account_number is not None:
-            widget_key += f'_{account_number}'
+        widget_key = f'select_transaction_to_set_rule_{service}_{account_number}_{len(names)}'
 
         idx = sac.buttons(
             items=names,
@@ -492,6 +490,7 @@ class AutomaticTaggerComponent:
         category_col = self.service.auto_tagger_repo.category_col
         tag_col = self.service.auto_tagger_repo.tag_col
         account_number_col = self.service.auto_tagger_repo.account_number_col
+        id_col = self.service.auto_tagger_repo.id_col
 
         df_tags = self.service.auto_tagger_repo.get_table(service=service)
         st.subheader(f'Edit auto tagger rules')
@@ -502,29 +501,44 @@ class AutomaticTaggerComponent:
 
         df_tags = df_tags.sort_values(by=name_col)
         if service == 'credit_card':
-            cols = [name_col, category_col, tag_col]
+            cols = [id_col, name_col, category_col, tag_col]
+            changes = st.dataframe(
+                df_tags,
+                on_select='rerun',
+                selection_mode='single-row',
+                column_order=cols,
+                hide_index=True,
+                use_container_width=True
+            )
+            for idx in changes['selection']['rows']:
+                row = df_tags.iloc[idx]
+                self._auto_tagger_editing_window(row[id_col], row[name_col], service, row[account_number_col], row[category_col], row[tag_col])
         elif service == 'bank':
-            cols = [name_col, account_number_col, category_col, tag_col]
+            cols = [id_col, name_col, account_number_col, category_col, tag_col]
+            for account_number in sorted(df_tags[account_number_col].unique()):
+                account_rules = df_tags[df_tags[account_number_col] == account_number]
+                # Get account name and provider for the title
+                account_name, provider = self.service.get_bank_account_details(account_number)
+                st.markdown(f"### {account_name} - {provider}: {account_number}")
+                changes = st.dataframe(
+                    account_rules,
+                    on_select='rerun',
+                    selection_mode='single-row',
+                    column_order=cols,
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f'edit_rules_table_{account_number}'
+                )
+                for idx in changes['selection']['rows']:
+                    row = account_rules.iloc[idx]
+                    self._auto_tagger_editing_window(row[id_col], row[name_col], service, row[account_number_col], row[category_col], row[tag_col])
         else:
             raise ValueError(f"Invalid service name: {service}")
-
-        changes = st.dataframe(
-            df_tags,
-            on_select='rerun',
-            selection_mode='single-row',
-            column_order=cols,
-            hide_index=True,
-            use_container_width=True
-        )
-
-        for idx in changes['selection']['rows']:
-            row = df_tags.iloc[idx]
-            self._auto_tagger_editing_window(row[name_col], service, row[account_number_col], row[category_col],
-                                             row[tag_col])
 
     @st.fragment
     def _auto_tagger_editing_window(
             self,
+            id_: int,
             description: str,
             service: Literal['credit_card', 'bank'],
             account_number: str,
@@ -532,26 +546,10 @@ class AutomaticTaggerComponent:
             default_tag: str | None = None,
     ):
         """
-        a fragment to tag new data for the auto tagger. The fragment displays the description of the transaction and
-        allow the user to select the category and tag for the transaction. it contains a save button to save the
-        selection.
-
-        Parameters
-        ----------
-        description : str
-            the description of the transaction
-        service : Literal['credit_card', 'bank']
-            the service of the transaction. Should be one of 'credit_card' or 'bank'.
-        account_number : str | None
-            the account number of the transaction. If None, the transaction is a credit card transaction. If not None,
-            the transaction is a bank transaction
-
-        Returns
-        -------
-        None
+        Edit a rule for the auto tagger by id. Allows updating or deleting the rule.
         """
         # Columns for layout
-        catg_col_, tag_col_, update_method_col_, save_col_ = st.columns([0.2, 0.2, 0.2, 0.2])
+        catg_col_, tag_col_, update_method_col_, save_col_, delete_col_ = st.columns([0.18, 0.18, 0.18, 0.18, 0.18])
 
         with catg_col_:
             categories = list(self.categories_and_tags.keys())
@@ -561,23 +559,23 @@ class AutomaticTaggerComponent:
                 options=categories,
                 index=None if default_category is None else categories.index(default_category),
                 placeholder='Category',
-                key=f'select_category_{description}_{service}_{account_number}_auto_tagger'
+                key=f'select_category_{id_}_auto_tagger'
             )
 
         with tag_col_:
             tags = self.categories_and_tags.get(category, [])
             try:
-                default_tag = tags.index(default_tag)
+                default_tag_idx = tags.index(default_tag)
             except ValueError:
-                default_tag = None
+                default_tag_idx = None
 
             tag = st.selectbox(
                 label="Select a Tag",
                 label_visibility="hidden",
                 options=tags,
-                index=default_tag,
+                index=default_tag_idx,
                 placeholder='Tag',
-                key=f'select_tag_{description}_{service}_{account_number}_auto_tagger'
+                key=f'select_tag_{id_}_auto_tagger'
             )
 
         with update_method_col_:
@@ -587,16 +585,26 @@ class AutomaticTaggerComponent:
                 options=["All", "From now on"],
                 index=0,
                 placeholder="How to update",
-                key=f'select_method_{description}_{service}_{account_number}_auto_tagger',
+                key=f'select_method_{id_}_auto_tagger',
                 help="Select 'All' to tag all of this transaction's occurrences. Select 'From now on'"
                      " to keep old tags and tag only future occurrences.")
 
         with save_col_:
             st.markdown("<br>", unsafe_allow_html=True)  # Add space before button
-            if st.button('Save', key=f'save_{description}_{service}_{account_number}_auto_tagger'):
+            if st.button('Save', key=f'save_{id_}_auto_tagger'):
                 if category is None or tag is None:
                     st.error('Please select both a category and a tag before saving.')
-                self.service.update_rule(description, category, tag, service, method, account_number)
+                self.service.update_rule_by_id(id_, category, tag)
+                if method == 'All':
+                    # Optionally update all matching transactions
+                    pass  # Add logic if needed
+                st.rerun()
+
+        with delete_col_:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button('Delete', key=f'delete_{id_}_auto_tagger'):
+                self.service.delete_rule_by_id(int(id_))
+                st.success("Rule deleted successfully.")
                 st.rerun()
 
 
