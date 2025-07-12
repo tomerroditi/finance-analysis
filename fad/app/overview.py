@@ -33,7 +33,11 @@ for service, providers in creds.items():
     for provider, accounts in providers.items():
         for account, cred in accounts.items():
             if f"{service} - {provider} - {account}" in scrapers_to_pull_from:
-                creds_to_use.update({service: {provider: {account: cred}}})
+                if service not in creds_to_use:
+                    creds_to_use[service] = {}
+                if provider not in creds_to_use[service]:
+                    creds_to_use[service][provider] = {}
+                creds_to_use[service][provider][account] = cred
 
 if st.button("Fetch Data") or st.session_state.get("current_pulled_resources") is not None:  # continue after 2fa scraping
     pull_data_from_all_scrapers_to_db(start_date, creds_to_use, DB_PATH)
