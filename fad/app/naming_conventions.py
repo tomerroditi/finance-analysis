@@ -272,6 +272,26 @@ class Insurances(Enum):
     HAFENIX = 'hafenix'
 
 
+class SavingsAndInvestmentsCategories(Enum):
+    """
+    Enum defining categories that are considered savings and investments.
+    """
+    SAVINGS = 'Savings'
+    INVESTMENTS = 'Investments'
+
+
+class IncomeCategories(Enum):
+    """
+    Enum defining categories that are considered income.
+    """
+    SALARY = 'Salary'
+    OTHER_INCOME = 'Other Income'
+
+
+class LiabilitiesCategories(Enum):
+    LIABILITIES = 'Liabilities'
+
+
 class NonExpensesCategories(Enum):
     """
     Enum defining categories that are not considered expenses.
@@ -295,11 +315,11 @@ class NonExpensesCategories(Enum):
         Payments related to liabilities.
     """
     IGNORE = 'Ignore'
-    SALARY = 'Salary'
-    SAVINGS = 'Savings'
-    INVESTMENTS = 'Investments'
-    OTHER_INCOME = 'Other Income'
-    LIABILITIES = 'Liabilities'
+    SAVINGS = SavingsAndInvestmentsCategories.SAVINGS.value
+    INVESTMENTS = SavingsAndInvestmentsCategories.INVESTMENTS.value
+    SALARY = IncomeCategories.SALARY.value
+    OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
+    LIABILITIES = LiabilitiesCategories.LIABILITIES.value
 
 
 class Fields(Enum):
