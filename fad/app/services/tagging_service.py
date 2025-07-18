@@ -291,7 +291,8 @@ class AutomaticTaggerService:
         cc_table = self.transactions_service.transactions_repository.get_table("credit_card")
 
         desc_col = TransactionsTableFields.DESCRIPTION.value
-        cc_without_rules = cc_table.loc[~cc_table[desc_col].isin(auto_tagger_table[name_col]), desc_col].unique().tolist()
+        mask = ~cc_table[desc_col].isin(auto_tagger_table[name_col]) & cc_table[category_col].isnull()
+        cc_without_rules = cc_table.loc[mask, desc_col].unique().tolist()
 
         return cc_without_rules
 
@@ -311,6 +312,7 @@ class AutomaticTaggerService:
         # Use repository methods instead of deprecated get_table function
         auto_tagger_table = self.auto_tagger_repo.get_table("bank")
         bank_table = self.transactions_service.transactions_repository.get_table("bank")
+        bank_table = bank_table.loc[bank_table[category_col].isnull()]
 
         desc_col = TransactionsTableFields.DESCRIPTION.value
         bank_account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
