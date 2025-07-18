@@ -309,6 +309,7 @@ class AutomaticTaggerComponent:
         and tags from the session state.
         """
         self.service = AutomaticTaggerService()
+        self.transactions_service = TransactionsService()
         self.categories_and_tags = st.session_state['categories_and_tags']
 
     def render(self) -> None:
@@ -483,6 +484,10 @@ class AutomaticTaggerComponent:
                     st.error('Please select both a category and a tag before saving.')
                 self.service.add_rule(description, category, tag, service, method, account_number)
                 st.rerun()
+
+        # display the transactions of that description
+        data = self.transactions_service.get_data_by_description(description, service)
+        st.dataframe(data)
 
     def edit_rules(self, service: Literal['credit_card', 'bank']):
         """edit the auto tagger rules"""
