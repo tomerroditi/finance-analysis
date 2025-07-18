@@ -236,8 +236,10 @@ class TransactionsService:
                 continue
             for _, split in split_group.iterrows():
                 split_row = orig_row.copy()
-                split_row[self.transactions_repository.amount_col] = split[self.split_transactions_repository.amount_col]
-                split_row[self.transactions_repository.category_col] = split[self.split_transactions_repository.category_col]
+                split_row[self.transactions_repository.amount_col] = split[
+                    self.split_transactions_repository.amount_col]
+                split_row[self.transactions_repository.category_col] = split[
+                    self.split_transactions_repository.category_col]
                 split_row[self.transactions_repository.tag_col] = split[self.split_transactions_repository.tag_col]
                 split_rows.append(split_row)
 
@@ -249,30 +251,6 @@ class TransactionsService:
 
         return result_df[analysis_cols].reset_index(drop=True)
 
-    def split_data_by_category_types(self, df: pd.DataFrame) -> dict:
-        """
-        Split the given DataFrame into expenses, savings, income, and liabilities DataFrames.
-        Savings amounts are flipped to positive.
-        """
-        category_col = TransactionsTableFields.CATEGORY.value
-        amount_col = TransactionsTableFields.AMOUNT.value
-        savings_categories = [e.value for e in SavingsAndInvestmentsCategories]
-        income_categories = [e.value for e in IncomeCategories]
-        liabilities_categories = [e.value for e in LiabilitiesCategories]
-        non_expenses_categories = [e.value for e in NonExpensesCategories]
-        expenses_data = df[~df[category_col].isin(non_expenses_categories)]
-        savings_data = df[df[category_col].isin(savings_categories)].copy()
-        income_data = df[df[category_col].isin(income_categories)]
-        liabilities_data = df[df[category_col].isin(liabilities_categories)]
-        # Flip sign for savings/investments (so they are positive contributions)
-        savings_data[amount_col] = savings_data[amount_col] * -1
-        return {
-            'expenses': expenses_data,
-            'savings': savings_data,
-            'income': income_data,
-            'liabilities': liabilities_data
-        }
-
     def get_kpis(self, df: pd.DataFrame) -> dict:
         """
         Calculate KPIs for the given DataFrame (should be filtered by user selection).
@@ -281,27 +259,49 @@ class TransactionsService:
         amount_col = TransactionsTableFields.AMOUNT.value
         category_col = TransactionsTableFields.CATEGORY.value
         period_income = data['income'][amount_col].sum()
-        period_expenses = data['expenses'][amount_col].sum()
-        period_savings = data['savings'][amount_col].sum()
-        period_liabilities_paid = data['liabilities'][data['liabilities'][amount_col] < 0][amount_col].sum()
+        period_expenses = data['expenses'][amount_col].sum() * -1 + 0  # add 0 to avoid -0 printing later on
+        period_savings = data['savings'][amount_col].sum() * -1 + 0
+        period_liabilities_paid = data['liabilities'][data['liabilities'][amount_col] < 0][amount_col].sum() * -1 + 0
         period_liabilities_received = data['liabilities'][data['liabilities'][amount_col] > 0][amount_col].sum()
-        net_savings = period_income + period_expenses + period_savings
-        actual_savings_rate = (period_savings / period_income * 100) if period_income != 0 else 0
+        bank_balance_increase = period_income - period_expenses - period_liabilities_paid - period_savings
+        total_savings = bank_balance_increase + period_savings
+        actual_savings_rate = (total_savings / period_income * 100) if period_income != 0 else 0
         largest_expense_cat = (
             data['expenses'].groupby(category_col)[amount_col].sum().abs().sort_values(ascending=False)
         )
         largest_expense_cat_name = largest_expense_cat.index[0] if not largest_expense_cat.empty else "-"
         largest_expense_cat_val = largest_expense_cat.iloc[0] if not largest_expense_cat.empty else 0
         return {
-            'total_income': period_income,
-            'total_expenses': period_expenses,
-            'total_savings': period_savings,
-            'net_savings': net_savings,
-            'actual_savings_rate': actual_savings_rate,
-            'liabilities_paid': abs(period_liabilities_paid),
-            'liabilities_received': abs(period_liabilities_received),
+            'income': period_income,
+            'expenses': period_expenses,
+            'savings_and_investments': period_savings,
+            'bank_balance_increase': bank_balance_increase,
+            'savings_rate': actual_savings_rate,
+            'liabilities_paid': period_liabilities_paid,
+            'liabilities_received': period_liabilities_received,
             'largest_expense_cat_name': largest_expense_cat_name,
             'largest_expense_cat_val': largest_expense_cat_val
+        }
+
+    def split_data_by_category_types(self, df: pd.DataFrame) -> dict:
+        """
+        Split the given DataFrame into expenses, savings, income, and liabilities DataFrames.
+        Savings amounts are flipped to positive.
+        """
+        category_col = TransactionsTableFields.CATEGORY.value
+        savings_categories = [e.value for e in SavingsAndInvestmentsCategories]
+        income_categories = [e.value for e in IncomeCategories]
+        liabilities_categories = [e.value for e in LiabilitiesCategories]
+        non_expenses_categories = [e.value for e in NonExpensesCategories]
+        expenses_data = df[~df[category_col].isin(non_expenses_categories)]
+        savings_data = df[df[category_col].isin(savings_categories)].copy()
+        income_data = df[df[category_col].isin(income_categories)]
+        liabilities_data = df[df[category_col].isin(liabilities_categories)]
+        return {
+            'expenses': expenses_data,
+            'savings': savings_data,
+            'income': income_data,
+            'liabilities': liabilities_data
         }
 
     def get_liabilities_summary(self, filtered_df: pd.DataFrame) -> dict:
@@ -321,15 +321,15 @@ class TransactionsService:
         net_change = total_received - total_paid
         # Per-tag breakdown (filtered)
         tag_summary = filtered_liabilities.groupby(tag_col)[amount_col].agg([
-            lambda x: abs(x[x < 0].sum()),  # Paid
             lambda x: abs(x[x > 0].sum()),  # Received
+            lambda x: abs(x[x < 0].sum()),  # Paid
             lambda x: abs(x.sum())  # Net (always positive)
         ]).reset_index()
-        tag_summary.columns = ['tag', 'Paid', 'Received', 'Net']
+        tag_summary.columns = ['Name', 'Received', 'Paid', 'Outstanding Balance']
         return {
             'total_received': abs(total_received),
             'total_paid': abs(total_paid),
-            'net_change': abs(net_change),
+            'outstanding_balance': abs(net_change),
             'tag_summary': tag_summary,
             'filtered_liabilities': filtered_liabilities
         }
