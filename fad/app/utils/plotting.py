@@ -143,7 +143,7 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
     fig = make_subplots(
         rows=1, cols=2,
         specs=[[{'type': 'pie'}, {'type': 'pie'}]],
-        subplot_titles=['Outcome [₪]', 'Refunds & Paybacks [₪]']
+        subplot_titles=['Expense [₪]', 'Refunds & Paybacks [₪]']
     )
 
     fig.add_trace(
@@ -152,7 +152,7 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
             values=df_pos[values_col] if not df_pos.empty else [1],
             textinfo='label+percent',
             hole=0.3,
-            name="Outcome"
+            name="Expense"
         ),
         row=1, col=1
     )
@@ -169,7 +169,10 @@ def pie_plot_by_categories(df: pd.DataFrame, values_col: str, category_col: str)
     )
 
     fig.update_layout(
-        title_text='Expenses Recap',
+        annotations=[
+            dict(x=0.2, y=1.1, font_size=20, showarrow=False),
+            dict(x=0.7, y=1.1, font_size=20, showarrow=False)
+        ]
     )
 
     return fig
