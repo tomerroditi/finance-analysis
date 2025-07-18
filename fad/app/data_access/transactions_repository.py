@@ -119,6 +119,29 @@ class TransactionsRepository:
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)
 
+    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+        """
+        Get transactions data by description for the specified service.
+
+        Parameters
+        ----------
+        description : str
+            The description to filter transactions by.
+        service : str
+            The service of the transactions, should be one of 'credit_card' or 'bank'.
+
+        Returns
+        -------
+        pd.DataFrame
+            The filtered transactions data as a DataFrame.
+        """
+        if service == 'credit_card':
+            return self.cc_repo.get_data_by_description(description)
+        elif service == 'bank':
+            return self.bank_repo.get_data_by_description(description)
+        else:
+            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
+
 
 class ServiceRepository:
     """
@@ -365,6 +388,26 @@ class CreditCardRepository(ServiceRepository):
             s.execute(text(my_query), params)
             s.commit()
 
+    def get_data_by_description(self, description: str) -> pd.DataFrame:
+        """
+        Get credit card transactions data by description.
+
+        Parameters
+        ----------
+        description : str
+            The description to filter transactions by.
+
+        Returns
+        -------
+        pd.DataFrame
+            The filtered credit card transactions data as a DataFrame.
+        """
+        with self.conn.session as s:
+            query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
+            params = {'description': description}
+            result = s.execute(text(query), params).fetchall()
+            return pd.DataFrame(result)
+
 
 class BankRepository(ServiceRepository):
     table = Tables.BANK.value
@@ -479,3 +522,23 @@ class BankRepository(ServiceRepository):
             params = {'category_val': category}
             s.execute(text(my_query), params)
             s.commit()
+
+    def get_data_by_description(self, description: str) -> pd.DataFrame:
+        """
+        Get bank transactions data by description.
+
+        Parameters
+        ----------
+        description : str
+            The description to filter transactions by.
+
+        Returns
+        -------
+        pd.DataFrame
+            The filtered bank transactions data as a DataFrame.
+        """
+        with self.conn.session as s:
+            query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
+            params = {'description': description}
+            result = s.execute(text(query), params).fetchall()
+            return pd.DataFrame(result)
