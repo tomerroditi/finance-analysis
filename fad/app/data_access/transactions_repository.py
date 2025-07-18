@@ -119,7 +119,7 @@ class TransactionsRepository:
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)
 
-    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank'], account_number: str = None) -> pd.DataFrame:
         """
         Get transactions data by description for the specified service.
 
@@ -129,6 +129,8 @@ class TransactionsRepository:
             The description to filter transactions by.
         service : str
             The service of the transactions, should be one of 'credit_card' or 'bank'.
+        account_number : str, optional
+            The account number to filter transactions by (only applicable for bank transactions).
 
         Returns
         -------
@@ -138,7 +140,7 @@ class TransactionsRepository:
         if service == 'credit_card':
             return self.cc_repo.get_data_by_description(description)
         elif service == 'bank':
-            return self.bank_repo.get_data_by_description(description)
+            return self.bank_repo.get_data_by_description(description, account_number)
         else:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
@@ -523,7 +525,7 @@ class BankRepository(ServiceRepository):
             s.execute(text(my_query), params)
             s.commit()
 
-    def get_data_by_description(self, description: str) -> pd.DataFrame:
+    def get_data_by_description(self, description: str, account_number: str = None) -> pd.DataFrame:
         """
         Get bank transactions data by description.
 
@@ -531,6 +533,8 @@ class BankRepository(ServiceRepository):
         ----------
         description : str
             The description to filter transactions by.
+        account_number : str, optional
+            The account number to filter transactions by (if provided, filters by account number as well).
 
         Returns
         -------
@@ -538,7 +542,11 @@ class BankRepository(ServiceRepository):
             The filtered bank transactions data as a DataFrame.
         """
         with self.conn.session as s:
-            query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
-            params = {'description': description}
+            if account_number:
+                query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description AND {self.account_number_col} = :account_number'
+                params = {'description': description, 'account_number': account_number}
+            else:
+                query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
+                params = {'description': description}
             result = s.execute(text(query), params).fetchall()
             return pd.DataFrame(result)

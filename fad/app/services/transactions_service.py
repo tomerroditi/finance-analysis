@@ -334,7 +334,7 @@ class TransactionsService:
             'filtered_liabilities': filtered_liabilities
         }
 
-    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank'], account_number: str = None) -> pd.DataFrame:
         """
         Get transactions by description for a specific service.
 
@@ -344,11 +344,13 @@ class TransactionsService:
             The description to filter transactions by.
         service : Literal['credit_card', 'bank']
             The service to filter transactions from.
+        account_number : str, optional
+            The account number to filter transactions by (only for bank service).
 
         Returns
         -------
         pd.DataFrame
             DataFrame containing transactions matching the description.
         """
-        return self.transactions_repository.get_data_by_description(description, service)
+        return self.transactions_repository.get_data_by_description(description, service, account_number)
 

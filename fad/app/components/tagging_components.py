@@ -486,7 +486,7 @@ class AutomaticTaggerComponent:
                 st.rerun()
 
         # display the transactions of that description
-        data = self.transactions_service.get_data_by_description(description, service)
+        data = self.transactions_service.get_data_by_description(description, service, account_number)
         st.dataframe(data)
 
     def edit_rules(self, service: Literal['credit_card', 'bank']):
