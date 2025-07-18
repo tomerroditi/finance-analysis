@@ -335,7 +335,10 @@ class AutomaticTaggerComponent:
 
         with bank_tab:
             names = self.service.get_bank_without_rules()
-            names, account_numbers = zip(*names)
+            if names:
+                names, account_numbers = zip(*names)
+            else:
+                names, account_numbers = [], []
             self.add_rules('bank', names, account_numbers)
 
             st.divider()
@@ -354,6 +357,10 @@ class AutomaticTaggerComponent:
         account_numbers : list[str] | None
             A list of account numbers corresponding to the names, required if service is 'bank'. Defaults to None.
         """
+        if not names:
+            st.write("No transactions to set new rules to")
+            return
+
         if service == 'credit_card':
             self._add_rules_container(names, service=service)
         elif service == 'bank':
@@ -367,10 +374,6 @@ class AutomaticTaggerComponent:
             raise ValueError(f"Invalid service name: {service}")
 
     def _add_rules_container(self, names: list[str], service: Literal['credit_card', 'bank'], account_number: str = None) -> None:
-        if not names:
-            st.write("No transactions to set new rules to")
-            return
-
         st.subheader(f'Set new rules')
 
         names = sorted(names)
