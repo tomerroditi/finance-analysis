@@ -5,6 +5,8 @@ from datetime import datetime
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.sql import text
+from sqlalchemy.engine import Result
+from sqlalchemy.orm import Session
 from streamlit.connections import SQLConnection
 
 from fad.app.naming_conventions import (
@@ -203,10 +205,6 @@ class TaggingRulesRepository:
             s.commit()
             return result.rowcount
 
-    def get_rules_for_migration(self) -> pd.DataFrame:
-        """Get all rules for migration purposes (includes inactive rules)"""
-        return self.get_all_rules(active_only=False)
-
     def apply_rules_to_transactions(self, service: Literal['credit_card', 'bank']) -> int:
         """
         Apply all active rules to untagged transactions for the specified service.
@@ -214,87 +212,149 @@ class TaggingRulesRepository:
 
         This method uses a priority-based approach where higher priority rules are applied first.
         """
-        transaction_table = Tables.CREDIT_CARD.value if service == 'credit_card' else Tables.BANK.value
-
         with self.conn.session as s:
-            # Get all active rules for this service, ordered by priority
-            rules_query = f"""
-                SELECT * FROM {self.table} 
-                WHERE {self.service_col} = :service AND {self.is_active_col} = 1
-                ORDER BY {self.priority_col} DESC, {self.id_col}
-            """
-            rules_result = s.execute(text(rules_query), {'service': service})
-            rules = rules_result.fetchall()
-
+            rules = self._get_active_rules_for_service(s, service)
             total_tagged = 0
 
             for rule in rules:
-                conditions = json.loads(rule[self.conditions_col])
-                category = rule[self.category_col]
-                tag = rule[self.tag_col]
-                account_number = rule[self.account_number_col]
-
-                # Build WHERE clause for this rule's conditions
-                where_conditions = [f"{TransactionsTableFields.CATEGORY.value} IS NULL"]
-                params = {'category': category, 'tag': tag}
-
-                # Add account number condition for bank transactions
-                if service == 'bank' and account_number:
-                    where_conditions.append(f"{TransactionsTableFields.ACCOUNT_NUMBER.value} = :account_number")
-                    params['account_number'] = account_number
-
-                # Add rule conditions
-                for i, condition in enumerate(conditions):
-                    field = condition['field']
-                    operator = condition['operator']
-                    value = condition['value']
-                    param_name = f'cond_{i}'
-
-                    if field == 'description':
-                        db_field = TransactionsTableFields.DESCRIPTION.value
-                    elif field == 'amount':
-                        db_field = TransactionsTableFields.AMOUNT.value
-                    elif field == 'provider':
-                        db_field = TransactionsTableFields.PROVIDER.value
-                    elif field == 'account_name':
-                        db_field = TransactionsTableFields.ACCOUNT_NAME.value
-                    elif field == 'account_number':
-                        db_field = TransactionsTableFields.ACCOUNT_NUMBER.value
-                    else:
-                        continue  # Skip unknown fields
-
-                    if operator == 'contains':
-                        where_conditions.append(f"{db_field} LIKE :{param_name}")
-                        params[param_name] = f'%{value}%'
-                    elif operator == 'equals':
-                        where_conditions.append(f"{db_field} = :{param_name}")
-                        params[param_name] = value
-                    elif operator == 'starts_with':
-                        where_conditions.append(f"{db_field} LIKE :{param_name}")
-                        params[param_name] = f'{value}%'
-                    elif operator == 'ends_with':
-                        where_conditions.append(f"{db_field} LIKE :{param_name}")
-                        params[param_name] = f'%{value}'
-                    elif operator in ['gt', 'lt', 'gte', 'lte']:
-                        op_map = {'gt': '>', 'lt': '<', 'gte': '>=', 'lte': '<='}
-                        where_conditions.append(f"{db_field} {op_map[operator]} :{param_name}")
-                        params[param_name] = float(value)
-                    elif operator == 'between':
-                        if isinstance(value, list) and len(value) == 2:
-                            where_conditions.append(f"{db_field} BETWEEN :{param_name}_min AND :{param_name}_max")
-                            params[f'{param_name}_min'] = float(value[0])
-                            params[f'{param_name}_max'] = float(value[1])
-
-                # Execute the update
-                update_query = f"""
-                    UPDATE {transaction_table}
-                    SET {TransactionsTableFields.CATEGORY.value} = :category,
-                        {TransactionsTableFields.TAG.value} = :tag
-                    WHERE {' AND '.join(where_conditions)}
-                """
-
-                result = s.execute(text(update_query), params)
-                total_tagged += result.rowcount
+                tagged_count = self._apply_single_rule(s, rule, service)
+                total_tagged += tagged_count
 
             s.commit()
             return total_tagged
+
+    def _get_active_rules_for_service(self, session: Session, service: Literal['credit_card', 'bank']) -> List[sa.Row]:
+        """
+        Get all active rules for the specified service, ordered by priority.
+
+        Args:
+            session: Database session
+            service: Transaction service type
+
+        Returns:
+            List of rule records ordered by priority (highest first) then by ID
+        """
+        rules_query = f"""
+            SELECT * FROM {self.table} 
+            WHERE {self.service_col} = :service AND {self.is_active_col} = 1
+            ORDER BY {self.priority_col} DESC, {self.id_col}
+        """
+        rules_result = session.execute(text(rules_query), {'service': service})
+        return list(rules_result.fetchall())
+
+    def _apply_single_rule(self, session: Session, rule: sa.Row, service: Literal['credit_card', 'bank']) -> int:
+        """
+        Apply a single rule to untagged transactions.
+
+        Args:
+            session: Database session
+            rule: Rule record from database
+            service: Transaction service type
+
+        Returns:
+            Number of transactions that were tagged by this rule
+        """
+        transaction_table = Tables.CREDIT_CARD.value if service == 'credit_card' else Tables.BANK.value
+
+        where_conditions, params = self._build_rule_where_clause(rule, service)
+
+        update_query = f"""
+            UPDATE {transaction_table}
+            SET {TransactionsTableFields.CATEGORY.value} = :category,
+                {TransactionsTableFields.TAG.value} = :tag
+            WHERE {' AND '.join(where_conditions)}
+        """
+
+        result = session.execute(text(update_query), params)
+        return result.rowcount
+
+    def _build_rule_where_clause(self, rule: sa.Row, service: Literal['credit_card', 'bank']) -> tuple[List[str], Dict[str, Any]]:
+        """
+        Build complete WHERE clause and parameters for a rule.
+
+        Args:
+            rule: Rule record from database
+            service: Transaction service type
+
+        Returns:
+            Tuple of WHERE conditions list and parameters dictionary
+        """
+        conditions = json.loads(rule[self.conditions_col])
+        category = rule[self.category_col]
+        tag = rule[self.tag_col]
+        account_number = rule[self.account_number_col]
+
+        where_conditions = [f"{TransactionsTableFields.CATEGORY.value} IS NULL"]
+        params = {'category': category, 'tag': tag}
+
+        # Add account number condition for bank transactions
+        if service == 'bank' and account_number:
+            where_conditions.append(f"{TransactionsTableFields.ACCOUNT_NUMBER.value} = :account_number")
+            params['account_number'] = account_number
+
+        # Add rule conditions
+        for i, condition in enumerate(conditions):
+            param_name = f'cond_{i}'
+            self._build_condition_clause(condition, param_name, where_conditions, params)
+
+        return where_conditions, params
+
+    def _build_condition_clause(self, condition: Dict[str, Any], param_name: str,
+                                where_conditions: List[str], params: Dict[str, Any]) -> None:
+        """
+        Build WHERE clause and parameters for a single rule condition.
+
+        Args:
+            condition: Rule condition with field, operator, and value
+            param_name: Unique parameter name for this condition
+            where_conditions: List to append WHERE clause to (modified in place)
+            params: Dictionary to add parameters to (modified in place)
+        """
+        field = condition['field']
+        operator = condition['operator']
+        value = condition['value']
+
+        db_field = self._map_field_to_db_column(field)
+        if not db_field:
+            return  # Skip unknown fields
+
+        if operator == 'contains':
+            where_conditions.append(f"{db_field} LIKE :{param_name}")
+            params[param_name] = f'%{value}%'
+        elif operator == 'equals':
+            where_conditions.append(f"{db_field} = :{param_name}")
+            params[param_name] = value
+        elif operator == 'starts_with':
+            where_conditions.append(f"{db_field} LIKE :{param_name}")
+            params[param_name] = f'{value}%'
+        elif operator == 'ends_with':
+            where_conditions.append(f"{db_field} LIKE :{param_name}")
+            params[param_name] = f'%{value}'
+        elif operator in ['gt', 'lt', 'gte', 'lte']:
+            op_map = {'gt': '>', 'lt': '<', 'gte': '>=', 'lte': '<='}
+            where_conditions.append(f"{db_field} {op_map[operator]} :{param_name}")
+            params[param_name] = float(value)
+        elif operator == 'between':
+            if isinstance(value, list) and len(value) == 2:
+                where_conditions.append(f"{db_field} BETWEEN :{param_name}_min AND :{param_name}_max")
+                params[f'{param_name}_min'] = float(value[0])
+                params[f'{param_name}_max'] = float(value[1])
+
+    def _map_field_to_db_column(self, field: str) -> Optional[str]:
+        """
+        Map a rule condition field to its corresponding database column.
+
+        Args:
+            field: Field name from rule condition
+
+        Returns:
+            Database column name or None if field is unknown
+        """
+        field_mapping = {
+            'description': TransactionsTableFields.DESCRIPTION.value,
+            'amount': TransactionsTableFields.AMOUNT.value,
+            'provider': TransactionsTableFields.PROVIDER.value,
+            'account_name': TransactionsTableFields.ACCOUNT_NAME.value,
+            'account_number': TransactionsTableFields.ACCOUNT_NUMBER.value,
+        }
+        return field_mapping.get(field)
