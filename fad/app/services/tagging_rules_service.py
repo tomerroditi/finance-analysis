@@ -169,9 +169,9 @@ class TaggingRulesService:
         self.rules_repo = TaggingRulesRepository(self.conn)
         self.transactions_repo = TransactionsRepository(self.conn)
 
-    def get_all_rules(self, service: Optional[Literal['credit_card', 'bank']] = None) -> pd.DataFrame:
-        """Get all active rules, optionally filtered by service."""
-        return self.rules_repo.get_all_rules(service=service, active_only=True)
+    def get_all_rules(self, service: Optional[Literal['credit_card', 'bank']] = None, active_only: bool = True) -> pd.DataFrame:
+        """Get all rules, optionally filtered by service and active status."""
+        return self.rules_repo.get_all_rules(service=service, active_only=active_only)
 
     def get_rule_by_id(self, rule_id: int) -> Optional[Dict[str, Any]]:
         """Get a rule by ID and parse its conditions."""
@@ -456,3 +456,68 @@ class TaggingRulesService:
                         errors.append(f"Condition {i+1}: Amount comparisons require numeric values")
 
         return errors
+
+    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str,
+                service: Literal['credit_card', 'bank'], priority: int = 1,
+                account_number: Optional[str] = None) -> int:
+        """
+        Add a new tagging rule. Alias for create_rule for backward compatibility.
+
+        Returns
+        -------
+        int
+            ID of the created rule.
+        """
+        return self.create_rule(
+            name=name,
+            conditions=conditions,
+            category=category,
+            tag=tag,
+            service=service,
+            priority=priority,
+            account_number=account_number
+        )
+
+    def test_rule(self, rule_id: int) -> pd.DataFrame:
+        """
+        Test a rule against transactions to see what would match.
+
+        Parameters
+        ----------
+        rule_id : int
+            ID of the rule to test.
+
+        Returns
+        -------
+        pd.DataFrame
+            Transactions that would match the rule.
+        """
+        rule = self.get_rule_by_id(rule_id)
+        if not rule:
+            return pd.DataFrame()
+
+        conditions = rule['conditions']
+        service = rule['service']
+        account_number = rule.get('account_number')
+
+        return self.test_rule_against_transactions(
+            conditions=conditions,
+            service=service,
+            account_number=account_number
+        )
+
+    def apply_all_rules(self, service: Literal['credit_card', 'bank']) -> int:
+        """
+        Apply all active rules to untagged transactions for a service.
+
+        Parameters
+        ----------
+        service : Literal['credit_card', 'bank']
+            Service to apply rules to.
+
+        Returns
+        -------
+        int
+            Number of transactions that were tagged.
+        """
+        return self.apply_rules_to_transactions(service)

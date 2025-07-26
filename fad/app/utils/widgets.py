@@ -37,6 +37,8 @@ class PandasFilterWidgets:
             match widget_type:
                 case 'text':
                     self.widgets_returns[column] = self.create_text_widget(column)
+                case 'text_contains':
+                    self.widgets_returns[column] = self.create_text_contains_widget(column)
                 case 'select':
                     self.widgets_returns[column] = self.create_select_widget(column, multi=False)
                 case 'multiselect':
@@ -79,6 +81,11 @@ class PandasFilterWidgets:
     def create_text_widget(self, column: str) -> str | None:
         name = column.replace('_', ' ').title()
         text_ = st.text_input(name, key=f"{self.keys_prefix}_{column}_text")
+        return text_
+
+    def create_text_contains_widget(self, column: str) -> str | None:
+        name = column.replace('_', ' ').title()
+        text_ = st.text_input(f"Contains {name}", key=f"{self.keys_prefix}_{column}_text_contains")
         return text_
 
     def create_date_range_widget(self, column: str) -> tuple[datetime.date, datetime.date]:
@@ -138,6 +145,8 @@ class PandasFilterWidgets:
             match self.widgets_map[column]:
                 case 'text':
                     res = self.filter_string(res, column, widget_return)
+                case 'text_contains':
+                    res = self.filter_text_contains(res, column, widget_return)
                 case 'select':
                     res = self.filter_select(res, column, widget_return)
                 case 'multiselect':
@@ -150,7 +159,14 @@ class PandasFilterWidgets:
 
     @staticmethod
     def filter_string(df: pd.DataFrame, column: str, text: str | None) -> pd.DataFrame:
-        if text is not None:
+        if text is None or text == "":
+            return df
+        df = df.loc[df[column].str.equals(text, case=False, na=False), :]
+        return df
+
+    @staticmethod
+    def filter_text_contains(df: pd.DataFrame, column: str, text: str | None) -> pd.DataFrame:
+        if text is None or text == "":
             return df
         df = df.loc[df[column].str.contains(text, case=False, na=False), :]
         return df

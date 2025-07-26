@@ -255,23 +255,51 @@ class ServiceRepository:
             s.execute(text(my_query), params)
             s.commit()
 
-    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
+    def update_transaction_by_id(self, transaction_id: int, updates: dict) -> bool:
         """
-        Update the category to new_category for all transactions with the specified old_category and tag.
+        Update a transaction by ID with the given field updates.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The ID of the transaction to update.
+        updates : dict
+            Dictionary of field names and their new values.
+
+        Returns
+        -------
+        bool
+            True if the update was successful, False otherwise.
         """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = :new_category
-                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
-            """
-            params = {
-                'new_category': new_category,
-                'old_category': old_category,
-                'tag': tag
-            }
-            s.execute(text(my_query), params)
-            s.commit()
+        if not updates:
+            return False
+
+        try:
+            with self.conn.session as s:
+                # Build the SET clause dynamically
+                set_clauses = []
+                params = {'id_val': transaction_id}
+
+                for field, value in updates.items():
+                    if value is not None:  # Only update non-None values
+                        param_name = f"{field}_val"
+                        set_clauses.append(f"{field} = :{param_name}")
+                        params[param_name] = value
+
+                if not set_clauses:
+                    return False
+
+                my_query = f"""
+                    UPDATE {self.table}
+                    SET {', '.join(set_clauses)}
+                    WHERE {self.id_col} = :id_val
+                """
+
+                result = s.execute(text(my_query), params)
+                s.commit()
+                return result.rowcount > 0
+        except Exception:
+            return False
 
 
 class CreditCardRepository(ServiceRepository):

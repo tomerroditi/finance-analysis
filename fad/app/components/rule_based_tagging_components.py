@@ -89,7 +89,7 @@ class RuleBasedTaggingComponent:
         """Render the transaction tagging interface with rule creation."""
         st.markdown("### Tag Transactions")
         st.markdown(
-            "Select transactions to tag manually and optionally create rules for automatic tagging of similar transactions."
+            "Select transactions to tag manually, edit transaction data, and optionally create rules for automatic tagging of similar transactions."
         )
 
         # Service selection
@@ -100,26 +100,311 @@ class RuleBasedTaggingComponent:
             key="tagging_service_selector"
         )
 
+        # Mode selection for enhanced functionality
+        mode = st.radio(
+            "Select mode:",
+            options=["manual_tagging", "bulk_tagging", "edit_transactions"],
+            format_func=lambda x: {
+                "manual_tagging": "🏷️ Manual Tagging",
+                "bulk_tagging": "📋 Bulk Tagging",
+                "edit_transactions": "✏️ Edit Transaction Data"
+            }[x],
+            horizontal=True,
+            key="tagging_mode"
+        )
+
+        if mode == "manual_tagging":
+            self._render_manual_tagging_mode(service)
+        elif mode == "bulk_tagging":
+            self._render_bulk_tagging_mode(service)
+        elif mode == "edit_transactions":
+            self._render_transaction_editing_mode(service)
+
+    def _render_manual_tagging_mode(self, service: str) -> None:
+        """Render manual tagging mode for individual transactions."""
         # Get untagged transactions
         untagged_transactions = self.rules_service.get_untagged_transactions(service)
 
         if untagged_transactions.empty:
-            st.info("No untagged transactions found. All transactions have been categorized!")
+            st.info("🎉 No untagged transactions found. All transactions have been categorized!")
+
+            # Option to view and retag existing transactions
+            if st.checkbox("Show already tagged transactions for re-tagging", key="show_tagged"):
+                all_transactions = self.transactions_service.get_all_transactions(service)
+                if not all_transactions.empty:
+                    st.info(f"Showing all {len(all_transactions)} transactions for re-tagging")
+                    self._render_transaction_filter(all_transactions, service, show_tagged=True)
             return
 
         # Filter interface
         self._render_transaction_filter(untagged_transactions, service)
 
-    def _render_transaction_filter(self, transactions: pd.DataFrame, service: str) -> None:
+    def _render_bulk_tagging_mode(self, service: str) -> None:
+        """Render bulk tagging mode for multiple transactions."""
+        st.markdown("#### Bulk Tag Multiple Transactions")
+
+        # Get all transactions
+        all_transactions = self.transactions_service.get_all_transactions(service)
+
+        if all_transactions.empty:
+            st.info("No transactions found.")
+            return
+
+        # Filter for bulk operations
+        filter_col, bulk_col = st.columns([0.4, 0.6])
+
+        with filter_col:
+            st.markdown("**Filter Transactions**")
+
+            # Create filter widgets for bulk operations
+            widgets_map = {
+                TransactionsTableFields.AMOUNT.value: 'number_range',
+                TransactionsTableFields.DATE.value: 'date_range',
+                TransactionsTableFields.PROVIDER.value: 'multiselect',
+                TransactionsTableFields.DESCRIPTION.value: 'text_contains',
+                TransactionsTableFields.CATEGORY.value: 'multiselect',
+                TransactionsTableFields.TAG.value: 'multiselect',
+            }
+
+            if f"bulk_filter_widgets_{service}" not in st.session_state:
+                df_filter = PandasFilterWidgets(all_transactions, widgets_map, keys_prefix=f"bulk_{service}")
+                st.session_state[f"bulk_filter_widgets_{service}"] = df_filter
+            else:
+                df_filter = st.session_state[f"bulk_filter_widgets_{service}"]
+
+            df_filter.display_widgets()
+            filtered_transactions = df_filter.filter_df()
+
+            st.info(f"Found {len(filtered_transactions)} matching transactions")
+
+        with bulk_col:
+            if filtered_transactions.empty:
+                st.info("No transactions match the current filters.")
+                return
+
+            # Bulk tagging controls
+            st.markdown("**Bulk Actions**")
+
+            col_cat, col_tag = st.columns(2)
+            with col_cat:
+                categories = list(self.categories_and_tags.keys())
+                bulk_category = st.selectbox(
+                    "Category to apply:",
+                    options=[None] + categories,
+                    format_func=lambda x: "Select category..." if x is None else x,
+                    key=f'bulk_category_{service}'
+                )
+
+            with col_tag:
+                tags = self.categories_and_tags.get(bulk_category, []) if bulk_category else []
+                bulk_tag = st.selectbox(
+                    "Tag to apply:",
+                    options=[None] + tags,
+                    format_func=lambda x: "Select tag..." if x is None else x,
+                    key=f'bulk_tag_{service}'
+                )
+
+            # Preview and apply
+            if bulk_category and bulk_tag:
+                if st.button(f"Apply {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions",
+                           type="primary", key=f"bulk_apply_{service}"):
+                    self._apply_bulk_tagging(filtered_transactions, service, bulk_category, bulk_tag)
+                    st.success(f"Applied {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions!")
+                    # Clear cache and rerun
+                    if f"bulk_filter_widgets_{service}" in st.session_state:
+                        del st.session_state[f"bulk_filter_widgets_{service}"]
+                    st.rerun()
+
+            # Preview table
+            if not filtered_transactions.empty:
+                st.markdown("**Preview Transactions**")
+                columns_order = self.transactions_service.get_table_columns_for_display()
+                st.dataframe(
+                    filtered_transactions.head(10),
+                    column_order=columns_order,
+                    hide_index=True,
+                    height=300
+                )
+                if len(filtered_transactions) > 10:
+                    st.info(f"Showing first 10 of {len(filtered_transactions)} transactions")
+
+    def _render_transaction_editing_mode(self, service: str) -> None:
+        """Render transaction data editing mode."""
+        st.markdown("#### Edit Transaction Data")
+        st.markdown("Select a transaction to edit its details (description, amount, provider, etc.)")
+
+        # Get all transactions for editing
+        all_transactions = self.transactions_service.get_all_transactions(service)
+
+        if all_transactions.empty:
+            st.info("No transactions found.")
+            return
+
+        # Search and filter interface
+        search_col, filter_col = st.columns([0.5, 0.5])
+
+        with search_col:
+            search_term = st.text_input(
+                "Search transactions (description, provider):",
+                key=f"edit_search_{service}"
+            )
+
+        with filter_col:
+            date_range = st.date_input(
+                "Date range:",
+                value=None,
+                key=f"edit_date_range_{service}"
+            )
+
+        # Filter transactions based on search and date
+        filtered_transactions = all_transactions.copy()
+
+        if search_term:
+            desc_col = TransactionsTableFields.DESCRIPTION.value
+            provider_col = TransactionsTableFields.PROVIDER.value
+            mask = (
+                filtered_transactions[desc_col].str.contains(search_term, case=False, na=False) |
+                filtered_transactions[provider_col].str.contains(search_term, case=False, na=False)
+            )
+            filtered_transactions = filtered_transactions[mask]
+
+        if date_range and len(date_range) == 2:
+            date_col = TransactionsTableFields.DATE.value
+            filtered_transactions = filtered_transactions[
+                (pd.to_datetime(filtered_transactions[date_col]).dt.date >= date_range[0]) &
+                (pd.to_datetime(filtered_transactions[date_col]).dt.date <= date_range[1])
+            ]
+
+        # Display transactions for editing
+        if filtered_transactions.empty:
+            st.info("No transactions match the search criteria.")
+            return
+
+        st.info(f"Found {len(filtered_transactions)} transactions")
+
+        # Transaction selection
+        columns_order = self.transactions_service.get_table_columns_for_display()
+
+        selections = st.dataframe(
+            filtered_transactions,
+            key=f'{service}_edit_dataframe',
+            column_order=columns_order,
+            hide_index=False,
+            on_select='rerun',
+            selection_mode='single-row',
+            height=400
+        )
+
+        # Handle selected transaction for editing
+        indices = selections['selection']['rows']
+        if indices:
+            idx = indices[0]
+            selected_transaction = filtered_transactions.iloc[idx]
+            self._render_transaction_editor(selected_transaction, service)
+
+    def _render_transaction_editor(self, transaction: pd.Series, service: str) -> None:
+        """Render the transaction editor interface."""
+        st.markdown("---")
+        st.markdown("#### Edit Transaction Details")
+
+        id_col = TransactionsTableFields.ID.value
+        transaction_id = transaction[id_col]
+
+        # Create editing form
+        with st.form(f"edit_transaction_{transaction_id}"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Editable fields
+                new_description = st.text_input(
+                    "Description:",
+                    value=transaction[TransactionsTableFields.DESCRIPTION.value],
+                    key=f"edit_desc_{transaction_id}"
+                )
+
+                new_amount = st.number_input(
+                    "Amount:",
+                    value=float(transaction[TransactionsTableFields.AMOUNT.value]),
+                    format="%.2f",
+                    key=f"edit_amount_{transaction_id}"
+                )
+
+                new_provider = st.text_input(
+                    "Provider:",
+                    value=transaction[TransactionsTableFields.PROVIDER.value] or "",
+                    key=f"edit_provider_{transaction_id}"
+                )
+
+            with col2:
+                # Category and tag editing
+                categories = list(self.categories_and_tags.keys())
+                current_category = transaction.get(TransactionsTableFields.CATEGORY.value)
+
+                new_category = st.selectbox(
+                    "Category:",
+                    options=[None] + categories,
+                    index=categories.index(current_category) + 1 if current_category in categories else 0,
+                    format_func=lambda x: "No category" if x is None else x,
+                    key=f"edit_category_{transaction_id}"
+                )
+
+                tags = self.categories_and_tags.get(new_category, []) if new_category else []
+                current_tag = transaction.get(TransactionsTableFields.TAG.value)
+
+                new_tag = st.selectbox(
+                    "Tag:",
+                    options=[None] + tags,
+                    index=tags.index(current_tag) + 1 if current_tag in tags else 0,
+                    format_func=lambda x: "No tag" if x is None else x,
+                    key=f"edit_tag_{transaction_id}"
+                )
+
+            # Save button
+            submitted = st.form_submit_button("💾 Save Changes", type="primary")
+
+            if submitted:
+                # Update transaction
+                updates = {
+                    TransactionsTableFields.DESCRIPTION.value: new_description,
+                    TransactionsTableFields.AMOUNT.value: new_amount,
+                    TransactionsTableFields.PROVIDER.value: new_provider,
+                    TransactionsTableFields.CATEGORY.value: new_category,
+                    TransactionsTableFields.TAG.value: new_tag,
+                }
+
+                service_literal: Literal['credit_card', 'bank'] = service
+                success = self.transactions_service.update_transaction_by_id(
+                    transaction_id, updates, service_literal
+                )
+
+                if success:
+                    st.success("✅ Transaction updated successfully!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to update transaction")
+
+    def _apply_bulk_tagging(self, transactions: pd.DataFrame, service: str, category: str, tag: str) -> None:
+        """Apply bulk tagging to multiple transactions."""
+        service_literal: Literal['credit_card', 'bank'] = service
+        id_col = TransactionsTableFields.ID.value
+
+        for _, transaction in transactions.iterrows():
+            self.transactions_service.update_tagging_by_id(
+                transaction[id_col], category, tag, service_literal
+            )
+
+    def _render_transaction_filter(self, transactions: pd.DataFrame, service: str, show_tagged: bool = False) -> None:
         """Render transaction filtering and selection interface."""
-        st.markdown(f"#### Untagged {service.replace('_', ' ').title()} Transactions ({len(transactions)})")
+        tag_status = "tagged" if show_tagged else "untagged"
+        st.markdown(f"#### {tag_status.title()} {service.replace('_', ' ').title()} Transactions ({len(transactions)})")
 
         # Filter widgets
         filter_col, data_col = st.columns([0.3, 0.7])
 
         with filter_col:
             # Create filter widgets
-            if f"tagging_filter_widgets_{service}" not in st.session_state:
+            filter_key = f"tagging_filter_widgets_{service}_{tag_status}"
+            if filter_key not in st.session_state:
                 widgets_map = {
                     TransactionsTableFields.AMOUNT.value: 'number_range',
                     TransactionsTableFields.DATE.value: 'date_range',
@@ -129,10 +414,10 @@ class RuleBasedTaggingComponent:
                     TransactionsTableFields.DESCRIPTION.value: 'multiselect',
                 }
 
-                df_filter = PandasFilterWidgets(transactions, widgets_map, keys_prefix=f"tagging_{service}")
-                st.session_state[f"tagging_filter_widgets_{service}"] = df_filter
+                df_filter = PandasFilterWidgets(transactions, widgets_map, keys_prefix=f"tagging_{service}_{tag_status}")
+                st.session_state[filter_key] = df_filter
             else:
-                df_filter = st.session_state[f"tagging_filter_widgets_{service}"]
+                df_filter = st.session_state[filter_key]
 
             df_filter.display_widgets()
             filtered_transactions = df_filter.filter_df()
@@ -147,7 +432,7 @@ class RuleBasedTaggingComponent:
 
             selections = st.dataframe(
                 filtered_transactions,
-                key=f'{service}_tagging_dataframe',
+                key=f'{service}_tagging_dataframe_{tag_status}',
                 column_order=columns_order,
                 hide_index=False,
                 on_select='rerun',
@@ -180,7 +465,7 @@ class RuleBasedTaggingComponent:
 
         # Check if transaction has splits
         id_col = TransactionsTableFields.ID.value
-        service_literal: Literal['credit_card', 'bank'] = service  # Type assertion for proper typing
+        service_literal: Literal['credit_card', 'bank'] = service
         has_splits = self.split_transactions_service.has_splits(transaction[id_col], service_literal)
 
         if has_splits:
@@ -235,9 +520,13 @@ class RuleBasedTaggingComponent:
                         transaction[id_col], category, tag, service_literal
                     )
                     # Clear filter cache
-                    filter_key = f"tagging_filter_widgets_{service}"
-                    if filter_key in st.session_state:
-                        del st.session_state[filter_key]
+                    filter_keys = [
+                        f"tagging_filter_widgets_{service}_untagged",
+                        f"tagging_filter_widgets_{service}_tagged"
+                    ]
+                    for filter_key in filter_keys:
+                        if filter_key in st.session_state:
+                            del st.session_state[filter_key]
                     st.success("Transaction tagged successfully!")
                     st.rerun()
                 else:
@@ -253,13 +542,16 @@ class RuleBasedTaggingComponent:
         if st.session_state.get(f'show_split_{transaction[id_col]}', False):
             self._render_split_transaction_ui(transaction, service)
 
+    def _render_split_transaction_ui(self, transaction: pd.Series, service: str) -> None:
+        """Render split transaction interface."""
+        st.markdown("#### Split Transaction")
+        st.info("Split transaction functionality would be implemented here.")
+        # This would integrate with the split transactions service
+        # For now, just provide a placeholder
+
     def _render_rule_creation_interface(self, transaction: pd.Series, service: str) -> None:
         """Render interface for creating rules based on a transaction."""
         st.markdown("Create a rule to automatically tag similar transactions in the future.")
-
-        # Get rule suggestions
-        service_literal: Literal['credit_card', 'bank'] = service
-        suggestions = self.rules_service.get_rule_suggestions(transaction, service_literal)
 
         # Rule name
         desc_col = TransactionsTableFields.DESCRIPTION.value
@@ -295,493 +587,274 @@ class RuleBasedTaggingComponent:
                 st.rerun()
 
         with col2:
-            if suggestions and st.button("🎯 Add Suggested Condition", key=f"add_suggested_{transaction[TransactionsTableFields.ID.value]}"):
-                # Add the first suggestion
-                suggestion = suggestions[0]
+            if st.button("🎯 Add Suggested Condition", key=f"add_suggested_{transaction[TransactionsTableFields.ID.value]}"):
+                # Add a suggested condition based on transaction description
                 st.session_state[conditions_key].append({
-                    'field': suggestion['field'],
-                    'operator': suggestion['operator'],
-                    'value': suggestion['value']
+                    'field': RuleFields.DESCRIPTION.value,
+                    'operator': RuleOperators.CONTAINS.value,
+                    'value': transaction[desc_col][:20]  # First 20 characters
                 })
                 st.rerun()
 
-        # Show suggestions
-        if suggestions:
-            st.markdown("**Suggestions:**")
-            for i, suggestion in enumerate(suggestions[:3]):  # Show top 3
-                if st.button(
-                    f"📋 {suggestion['description']}",
-                    key=f"suggestion_{i}_{transaction[TransactionsTableFields.ID.value]}"
-                ):
-                    st.session_state[conditions_key].append({
-                        'field': suggestion['field'],
-                        'operator': suggestion['operator'],
-                        'value': suggestion['value']
-                    })
-                    st.rerun()
-
         # Category and tag selection for rule
-        if conditions:
-            col_cat, col_tag, col_priority = st.columns([1, 1, 1])
+        col_cat, col_tag = st.columns(2)
+        with col_cat:
+            categories = list(self.categories_and_tags.keys())
+            rule_category = st.selectbox(
+                "Category for rule:",
+                options=categories,
+                key=f'rule_category_{transaction[TransactionsTableFields.ID.value]}'
+            )
 
-            with col_cat:
-                categories = list(self.categories_and_tags.keys())
-                rule_category = st.selectbox(
-                    "Rule Category",
-                    options=categories,
-                    key=f'rule_category_{transaction[TransactionsTableFields.ID.value]}'
-                )
+        with col_tag:
+            tags = self.categories_and_tags.get(rule_category, []) if rule_category else []
+            rule_tag = st.selectbox(
+                "Tag for rule:",
+                options=tags,
+                key=f'rule_tag_{transaction[TransactionsTableFields.ID.value]}'
+            )
 
-            with col_tag:
-                rule_tags = self.categories_and_tags.get(rule_category, []) if rule_category else []
-                rule_tag = st.selectbox(
-                    "Rule Tag",
-                    options=rule_tags,
-                    key=f'rule_tag_{transaction[TransactionsTableFields.ID.value]}'
-                )
+        # Create rule button
+        if st.button("🚀 Create Rule", key=f"create_rule_{transaction[TransactionsTableFields.ID.value]}"):
+            if rule_name and conditions and rule_category and rule_tag:
+                service_literal: Literal['credit_card', 'bank'] = service
+                try:
+                    rule_id = self.rules_service.add_rule(
+                        name=rule_name,
+                        conditions=conditions,
+                        category=rule_category,
+                        tag=rule_tag,
+                        service=service_literal,
+                        account_number=transaction.get(TransactionsTableFields.ACCOUNT_NUMBER.value) if service == 'bank' else None
+                    )
+                    st.success(f"✅ Rule created successfully! (ID: {rule_id})")
+                    # Clear the conditions
+                    st.session_state[conditions_key] = []
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to create rule: {str(e)}")
+            else:
+                st.error("Please provide rule name, at least one condition, category, and tag.")
 
-            with col_priority:
-                rule_priority = st.number_input(
-                    "Priority",
-                    min_value=1,
-                    max_value=100,
-                    value=10,
-                    help="Higher numbers have higher priority",
-                    key=f'rule_priority_{transaction[TransactionsTableFields.ID.value]}'
-                )
-
-            # Preview matching transactions
-            if st.button("🔍 Preview Matches", key=f"preview_{transaction[TransactionsTableFields.ID.value]}"):
-                account_number = transaction.get(TransactionsTableFields.ACCOUNT_NUMBER.value) if service == 'bank' else None
-                matching_transactions = self.rules_service.test_rule_against_transactions(
-                    conditions, service_literal, account_number, limit=10
-                )
-
-                if not matching_transactions.empty:
-                    st.success(f"Found {len(matching_transactions)} matching transactions")
-                    st.dataframe(matching_transactions[[
-                        TransactionsTableFields.DESCRIPTION.value,
-                        TransactionsTableFields.AMOUNT.value,
-                        TransactionsTableFields.DATE.value
-                    ]])
-                else:
-                    st.warning("No matching transactions found")
-
-            # Create rule button
-            col_create, col_apply = st.columns([1, 1])
-            with col_create:
-                if st.button("💾 Create Rule", key=f"create_rule_{transaction[TransactionsTableFields.ID.value]}"):
-                    if rule_name and rule_category and rule_tag and conditions:
-                        # Validate conditions
-                        errors = self.rules_service.validate_conditions(conditions)
-                        if errors:
-                            st.error("Rule validation failed:")
-                            for error in errors:
-                                st.error(f"• {error}")
-                        else:
-                            # Create the rule
-                            account_number = transaction.get(TransactionsTableFields.ACCOUNT_NUMBER.value) if service == 'bank' else None
-                            rule_id = self.rules_service.create_rule(
-                                name=rule_name,
-                                conditions=conditions,
-                                category=rule_category,
-                                tag=rule_tag,
-                                service=service_literal,
-                                priority=rule_priority,
-                                account_number=account_number
-                            )
-                            st.success(f"Rule created successfully! (ID: {rule_id})")
-
-                            # Clear conditions
-                            st.session_state[conditions_key] = []
-                    else:
-                        st.error("Please provide rule name, category, tag, and at least one condition.")
-
-            with col_apply:
-                if st.button("💾 Create & Apply Now", key=f"create_apply_{transaction[TransactionsTableFields.ID.value]}"):
-                    if rule_name and rule_category and rule_tag and conditions:
-                        errors = self.rules_service.validate_conditions(conditions)
-                        if errors:
-                            st.error("Rule validation failed:")
-                            for error in errors:
-                                st.error(f"• {error}")
-                        else:
-                            # Create rule and apply to transactions
-                            account_number = transaction.get(TransactionsTableFields.ACCOUNT_NUMBER.value) if service == 'bank' else None
-                            rule_id = self.rules_service.create_rule(
-                                name=rule_name,
-                                conditions=conditions,
-                                category=rule_category,
-                                tag=rule_tag,
-                                service=service_literal,
-                                priority=rule_priority,
-                                account_number=account_number
-                            )
-
-                            # Apply rules
-                            tagged_count = self.rules_service.apply_rules_to_transactions(service_literal)
-
-                            st.success(f"Rule created and applied! Tagged {tagged_count} transactions.")
-
-                            # Clear conditions and refresh
-                            st.session_state[conditions_key] = []
-                            if f"tagging_filter_widgets_{service}" in st.session_state:
-                                del st.session_state[f"tagging_filter_widgets_{service}"]
-                            st.rerun()
-                    else:
-                        st.error("Please provide rule name, category, tag, and at least one condition.")
-
-    def _render_condition_editor(self, index: int, condition: Dict[str, Any], conditions_key: str) -> None:
-        """Render editor for a single rule condition."""
-        col1, col2, col3, col4 = st.columns([0.2, 0.2, 0.4, 0.2])
+    def _render_condition_editor(self, index: int, condition: dict, conditions_key: str) -> None:
+        """Render a single condition editor."""
+        col1, col2, col3, col4 = st.columns([0.25, 0.25, 0.4, 0.1])
 
         with col1:
-            field_options = [field.value for field in RuleFields]
-            field_labels = {
-                RuleFields.DESCRIPTION.value: "Description",
-                RuleFields.AMOUNT.value: "Amount",
-                RuleFields.PROVIDER.value: "Provider",
-                RuleFields.ACCOUNT_NAME.value: "Account Name",
-                RuleFields.ACCOUNT_NUMBER.value: "Account Number",
-            }
-
             field = st.selectbox(
                 "Field",
-                options=field_options,
-                format_func=lambda x: field_labels.get(x, x),
-                index=field_options.index(condition['field']) if condition['field'] in field_options else 0,
-                key=f"condition_field_{index}_{conditions_key}"
+                options=[e.value for e in RuleFields],
+                index=[e.value for e in RuleFields].index(condition['field']),
+                key=f"field_{conditions_key}_{index}"
             )
-            condition['field'] = field
 
         with col2:
-            # Operator options depend on field type
-            if field == RuleFields.AMOUNT.value:
-                operator_options = [
-                    RuleOperators.EQUALS.value,
-                    RuleOperators.GREATER_THAN.value,
-                    RuleOperators.LESS_THAN.value,
-                    RuleOperators.GREATER_THAN_EQUAL.value,
-                    RuleOperators.LESS_THAN_EQUAL.value,
-                    RuleOperators.BETWEEN.value,
-                ]
-            else:
-                operator_options = [
-                    RuleOperators.CONTAINS.value,
-                    RuleOperators.EQUALS.value,
-                    RuleOperators.STARTS_WITH.value,
-                    RuleOperators.ENDS_WITH.value,
-                ]
-
-            operator_labels = {
-                RuleOperators.CONTAINS.value: "Contains",
-                RuleOperators.EQUALS.value: "Equals",
-                RuleOperators.STARTS_WITH.value: "Starts with",
-                RuleOperators.ENDS_WITH.value: "Ends with",
-                RuleOperators.GREATER_THAN.value: ">",
-                RuleOperators.LESS_THAN.value: "<",
-                RuleOperators.GREATER_THAN_EQUAL.value: "≥",
-                RuleOperators.LESS_THAN_EQUAL.value: "≤",
-                RuleOperators.BETWEEN.value: "Between",
-            }
-
             operator = st.selectbox(
                 "Operator",
-                options=operator_options,
-                format_func=lambda x: operator_labels.get(x, x),
-                index=operator_options.index(condition['operator']) if condition['operator'] in operator_options else 0,
-                key=f"condition_operator_{index}_{conditions_key}"
+                options=[e.value for e in RuleOperators],
+                index=[e.value for e in RuleOperators].index(condition['operator']),
+                key=f"operator_{conditions_key}_{index}"
             )
-            condition['operator'] = operator
 
         with col3:
-            # Value input depends on operator
-            if operator == RuleOperators.BETWEEN.value:
-                val_col1, val_col2 = st.columns(2)
-                with val_col1:
-                    min_val = st.number_input(
-                        "Min",
-                        value=float(condition['value'][0]) if isinstance(condition.get('value'), list) and len(condition['value']) >= 1 else 0.0,
-                        key=f"condition_value_min_{index}_{conditions_key}"
-                    )
-                with val_col2:
-                    max_val = st.number_input(
-                        "Max",
-                        value=float(condition['value'][1]) if isinstance(condition.get('value'), list) and len(condition['value']) >= 2 else 100.0,
-                        key=f"condition_value_max_{index}_{conditions_key}"
-                    )
-                condition['value'] = [min_val, max_val]
-            elif field == RuleFields.AMOUNT.value and operator != RuleOperators.BETWEEN.value:
-                value = st.number_input(
-                    "Value",
-                    value=float(condition.get('value', 0)) if condition.get('value') else 0.0,
-                    key=f"condition_value_{index}_{conditions_key}"
-                )
-                condition['value'] = value
-            else:
-                value = st.text_input(
-                    "Value",
-                    value=str(condition.get('value', '')),
-                    key=f"condition_value_{index}_{conditions_key}"
-                )
-                condition['value'] = value
+            value = st.text_input(
+                "Value",
+                value=str(condition['value']),
+                key=f"value_{conditions_key}_{index}"
+            )
 
         with col4:
-            if st.button("🗑️", key=f"remove_condition_{index}_{conditions_key}", help="Remove condition"):
+            if st.button("🗑️", key=f"delete_{conditions_key}_{index}"):
                 st.session_state[conditions_key].pop(index)
                 st.rerun()
 
-    def _render_split_transaction_ui(self, transaction: pd.Series, service: str) -> None:
-        """Render split transaction interface."""
-        st.markdown("#### Split Transaction")
-        st.info("Split transaction functionality will be implemented here. For now, you can manually split transactions using the existing split transaction service.")
-
-        # For now, show basic info and provide a way to close the split UI
-        if st.button("Close Split Interface", key=f"close_split_{transaction[TransactionsTableFields.ID.value]}"):
-            st.session_state[f'show_split_{transaction[TransactionsTableFields.ID.value]}'] = False
-            st.rerun()
+        # Update the condition in session state
+        st.session_state[conditions_key][index] = {
+            'field': field,
+            'operator': operator,
+            'value': value
+        }
 
     def _render_rule_management(self) -> None:
         """Render the rule management interface."""
         st.markdown("### Rule Management")
+        st.markdown("Manage your tagging rules: view, edit, delete, and prioritize them.")
 
         # Service filter
-        col1, col2, col3 = st.columns([1, 1, 2])
-        with col1:
-            service_filter = st.selectbox(
-                "Filter by service:",
-                options=[None, "credit_card", "bank"],
-                format_func=lambda x: "All Services" if x is None else ("Credit Card" if x == "credit_card" else "Bank"),
-                key="rules_service_filter"
-            )
-
-        with col2:
-            if st.button("🔄 Apply All Rules", type="primary"):
-                results = self.rules_service.apply_rules_to_all_services()
-                total_tagged = sum(results.values())
-                st.success(f"Applied rules! Tagged {total_tagged} transactions.")
-                for service, count in results.items():
-                    st.info(f"{service.replace('_', ' ').title()}: {count} transactions")
-
-        # Get rules
-        rules_df = self.rules_service.get_all_rules(service=service_filter)
-
-        if rules_df.empty:
-            st.info("No rules found. Create your first rule in the Transaction Tagging tab!")
-            return
-
-        # Display rules table
-        st.markdown("#### Existing Rules")
-
-        # Format rules for display
-        display_rules = rules_df.copy()
-        display_rules['conditions_summary'] = display_rules['conditions'].apply(self._format_conditions_summary)
-        display_rules['service_display'] = display_rules['service'].apply(lambda x: x.replace('_', ' ').title())
-
-        display_columns = ['id', 'name', 'priority', 'conditions_summary', 'category', 'tag', 'service_display', 'is_active']
-        column_labels = {
-            'id': 'ID',
-            'name': 'Name',
-            'priority': 'Priority',
-            'conditions_summary': 'Conditions',
-            'category': 'Category',
-            'tag': 'Tag',
-            'service_display': 'Service',
-            'is_active': 'Active'
-        }
-
-        selections = st.dataframe(
-            display_rules[display_columns],
-            column_config={col: st.column_config.Column(label) for col, label in column_labels.items()},
-            on_select='rerun',
-            selection_mode='single-row',
-            hide_index=True,
-            use_container_width=True
+        service_filter = st.selectbox(
+            "Filter by service:",
+            options=[None, "credit_card", "bank"],
+            format_func=lambda x: "All Services" if x is None else ("Credit Card" if x == "credit_card" else "Bank"),
+            key="rule_mgmt_service_filter"
         )
 
-        # Handle rule selection
-        selected_indices = selections['selection']['rows']
-        if selected_indices:
-            selected_rule_id = display_rules.iloc[selected_indices[0]]['id']
-            self._render_rule_editor(selected_rule_id)
+        # Get rules
+        rules_df = self.rules_service.get_all_rules(service=service_filter, active_only=False)
 
-    def _format_conditions_summary(self, conditions_json: str) -> str:
-        """Format rule conditions for display in the table."""
-        try:
-            conditions = json.loads(conditions_json)
-            if not conditions:
-                return "No conditions"
-
-            summaries = []
-            for condition in conditions[:2]:  # Show first 2 conditions
-                field = condition.get('field', '')
-                operator = condition.get('operator', '')
-                value = condition.get('value', '')
-
-                if operator == 'between' and isinstance(value, list):
-                    value_str = f"{value[0]}-{value[1]}"
-                else:
-                    value_str = str(value)[:20]
-
-                summaries.append(f"{field} {operator} {value_str}")
-
-            result = "; ".join(summaries)
-            if len(conditions) > 2:
-                result += f" (+{len(conditions) - 2} more)"
-
-            return result
-        except (json.JSONDecodeError, KeyError):
-            return "Invalid conditions"
-
-    def _render_rule_editor(self, rule_id: int) -> None:
-        """Render interface for editing a specific rule."""
-        st.markdown("---")
-        st.markdown("#### Edit Rule")
-
-        rule = self.rules_service.get_rule_by_id(rule_id)
-        if not rule:
-            st.error("Rule not found!")
+        if rules_df.empty:
+            st.info("No rules found. Create some rules in the Transaction Tagging tab!")
             return
 
-        col1, col2 = st.columns([2, 1])
+        # Rules table
+        col1, col2 = st.columns([0.6, 0.4])
 
         with col1:
-            # Rule details
-            updated_name = st.text_input("Rule Name", value=rule['name'], key=f"edit_name_{rule_id}")
-            updated_priority = st.number_input(
-                "Priority",
-                min_value=1,
-                max_value=100,
-                value=rule['priority'],
-                key=f"edit_priority_{rule_id}"
+            st.markdown("#### All Rules")
+
+            # Display rules table
+            display_columns = ['id', 'name', 'service', 'category', 'tag', 'priority', 'is_active']
+            selections = st.dataframe(
+                rules_df[display_columns],
+                key="rules_management_table",
+                on_select="rerun",
+                selection_mode="single-row",
+                hide_index=True,
+                height=400
             )
-            updated_is_active = st.checkbox("Active", value=bool(rule['is_active']), key=f"edit_active_{rule_id}")
-
-            # Conditions editor
-            st.markdown("**Conditions:**")
-            conditions = rule['conditions'].copy()
-
-            for i, condition in enumerate(conditions):
-                self._render_condition_editor(i, condition, f"edit_rule_{rule_id}")
-
-            if st.button("➕ Add Condition", key=f"add_condition_edit_{rule_id}"):
-                conditions.append({
-                    'field': RuleFields.DESCRIPTION.value,
-                    'operator': RuleOperators.CONTAINS.value,
-                    'value': ''
-                })
-                rule['conditions'] = conditions
 
         with col2:
-            # Actions
-            st.markdown("**Actions:**")
+            # Rule editor
+            selected_rows = selections['selection']['rows']
+            if selected_rows:
+                selected_rule_id = rules_df.iloc[selected_rows[0]]['id']
+                self._render_rule_editor(selected_rule_id)
+            else:
+                st.info("Select a rule from the table to edit it.")
 
-            if st.button("💾 Save Changes", key=f"save_rule_{rule_id}", type="primary"):
-                success = self.rules_service.update_rule(
-                    rule_id,
-                    name=updated_name,
-                    conditions=conditions,
-                    priority=updated_priority,
-                    is_active=updated_is_active
-                )
+    def _render_rule_editor(self, rule_id: int) -> None:
+        """Render the rule editor interface."""
+        st.markdown("#### Edit Rule")
 
-                if success:
-                    st.success("Rule updated successfully!")
-                    st.rerun()
-                else:
-                    st.error("Failed to update rule.")
+        try:
+            rule = self.rules_service.get_rule_by_id(rule_id)
+            if rule is None:
+                st.error("Rule not found!")
+                return
 
-            if st.button("🗑️ Delete Rule", key=f"delete_rule_{rule_id}"):
-                if st.session_state.get(f"confirm_delete_{rule_id}", False):
-                    success = self.rules_service.delete_rule(rule_id)
-                    if success:
-                        st.success("Rule deleted successfully!")
-                        st.rerun()
-                    else:
-                        st.error("Failed to delete rule.")
-                else:
-                    st.session_state[f"confirm_delete_{rule_id}"] = True
-                    st.warning("Click again to confirm deletion.")
+            # Rule details form
+            with st.form(f"edit_rule_{rule_id}"):
+                new_name = st.text_input("Rule Name:", value=rule['name'])
 
-            if st.button("🔍 Test Rule", key=f"test_rule_{rule_id}"):
-                service = rule['service']
-                account_number = rule.get('account_number')
-                matching_transactions = self.rules_service.test_rule_against_transactions(
-                    conditions, service, account_number, limit=10
-                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    categories = list(self.categories_and_tags.keys())
+                    new_category = st.selectbox(
+                        "Category:",
+                        options=categories,
+                        index=categories.index(rule['category']) if rule['category'] in categories else 0
+                    )
 
-                if not matching_transactions.empty:
-                    st.success(f"Found {len(matching_transactions)} matching transactions")
-                    st.dataframe(matching_transactions[[
-                        TransactionsTableFields.DESCRIPTION.value,
-                        TransactionsTableFields.AMOUNT.value,
-                        TransactionsTableFields.DATE.value
-                    ]])
-                else:
-                    st.info("No matching transactions found")
+                with col2:
+                    tags = self.categories_and_tags.get(new_category, [])
+                    new_tag = st.selectbox(
+                        "Tag:",
+                        options=tags,
+                        index=tags.index(rule['tag']) if rule['tag'] in tags else 0
+                    )
+
+                new_priority = st.number_input("Priority:", value=int(rule['priority']), min_value=1, max_value=10)
+                new_is_active = st.checkbox("Active", value=bool(rule['is_active']))
+
+                # Conditions (read-only for now)
+                st.markdown("**Conditions:**")
+                conditions = json.loads(rule['conditions'])
+                for i, condition in enumerate(conditions):
+                    st.text(f"{i+1}. {condition['field']} {condition['operator']} '{condition['value']}'")
+
+                # Action buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.form_submit_button("💾 Save Changes"):
+                        success = self.rules_service.update_rule(
+                            rule_id=rule_id,
+                            name=new_name,
+                            category=new_category,
+                            tag=new_tag,
+                            priority=new_priority,
+                            is_active=new_is_active
+                        )
+                        if success:
+                            st.success("✅ Rule updated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to update rule")
+
+                with col2:
+                    if st.form_submit_button("🗑️ Delete Rule"):
+                        success = self.rules_service.delete_rule(rule_id)
+                        if success:
+                            st.success("✅ Rule deleted successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete rule")
+
+                with col3:
+                    if st.form_submit_button("🧪 Test Rule"):
+                        # Test the rule against transactions
+                        test_results = self.rules_service.test_rule(rule_id)
+                        st.info(f"Rule would match {len(test_results)} transactions")
+
+        except Exception as e:
+            st.error(f"Error loading rule: {str(e)}")
 
     def _render_rule_testing(self) -> None:
         """Render the rule testing interface."""
         st.markdown("### Rule Testing")
-        st.markdown("Test rule conditions against existing transactions to see what would match.")
+        st.markdown("Test your rules against transactions to see how they would perform.")
 
         # Service selection
         service = st.selectbox(
-            "Select service:",
+            "Select service to test:",
             options=["credit_card", "bank"],
             format_func=lambda x: "Credit Card" if x == "credit_card" else "Bank",
             key="test_service_selector"
         )
 
-        # Conditions builder for testing
-        st.markdown("**Test Conditions:**")
+        # Get active rules for the service
+        rules_df = self.rules_service.get_all_rules(service=service, active_only=True)
 
-        # Initialize test conditions
-        test_conditions_key = "test_rule_conditions"
-        if test_conditions_key not in st.session_state:
-            st.session_state[test_conditions_key] = []
+        if rules_df.empty:
+            st.info(f"No active rules found for {service.replace('_', ' ').title()} service.")
+            return
 
-        conditions = st.session_state[test_conditions_key]
+        # Rule selection
+        rule_options = [(row['id'], f"{row['name']} ({row['category']}/{row['tag']})")
+                       for _, row in rules_df.iterrows()]
 
-        # Display conditions
-        for i, condition in enumerate(conditions):
-            self._render_condition_editor(i, condition, test_conditions_key)
+        selected_rule_id = st.selectbox(
+            "Select rule to test:",
+            options=[r[0] for r in rule_options],
+            format_func=lambda x: next(r[1] for r in rule_options if r[0] == x),
+            key="test_rule_selector"
+        )
 
-        # Add condition button
-        if st.button("➕ Add Condition", key="add_test_condition"):
-            st.session_state[test_conditions_key].append({
-                'field': RuleFields.DESCRIPTION.value,
-                'operator': RuleOperators.CONTAINS.value,
-                'value': ''
-            })
-            st.rerun()
+        if st.button("🧪 Test Rule", key="test_rule_btn"):
+            # Test the selected rule
+            matching_transactions = self.rules_service.test_rule(selected_rule_id)
 
-        # Test button
-        if conditions and st.button("🔍 Test Conditions", type="primary"):
-            service_literal: Literal['credit_card', 'bank'] = service
-            matching_transactions = self.rules_service.test_rule_against_transactions(
-                conditions, service_literal, limit=50
-            )
-
-            if not matching_transactions.empty:
-                st.success(f"Found {len(matching_transactions)} matching transactions")
-
-                # Display results
-                display_columns = [
-                    TransactionsTableFields.DESCRIPTION.value,
-                    TransactionsTableFields.AMOUNT.value,
-                    TransactionsTableFields.DATE.value,
-                    TransactionsTableFields.PROVIDER.value,
-                    TransactionsTableFields.CATEGORY.value,
-                    TransactionsTableFields.TAG.value
-                ]
-
-                st.dataframe(
-                    matching_transactions[display_columns],
-                    use_container_width=True
-                )
+            if matching_transactions.empty:
+                st.info("No transactions match this rule.")
             else:
-                st.info("No matching transactions found with the current conditions.")
+                st.success(f"Found {len(matching_transactions)} matching transactions:")
 
-        if not conditions:
-            st.info("Add conditions above to test them against your transactions.")
+                # Display matching transactions
+                columns_order = self.transactions_service.get_table_columns_for_display()
+                st.dataframe(
+                    matching_transactions,
+                    column_order=columns_order,
+                    hide_index=True,
+                    height=400
+                )
+
+        # Bulk rule application
+        st.markdown("---")
+        st.markdown("#### Apply All Rules")
+        st.markdown("Apply all active rules to untagged transactions.")
+
+        if st.button(f"🚀 Apply All {service.replace('_', ' ').title()} Rules", key="apply_all_rules"):
+            tagged_count = self.rules_service.apply_all_rules(service)
+            if tagged_count > 0:
+                st.success(f"✅ Tagged {tagged_count} transactions!")
+            else:
+                st.info("No transactions were tagged. All may already be categorized or no rules matched.")
+            st.rerun()

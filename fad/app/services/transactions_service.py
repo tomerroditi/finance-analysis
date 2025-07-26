@@ -132,19 +132,18 @@ class TransactionsService:
 
     def update_tagging_by_id(self, id_: int, category: str, tag: str, service: Literal['credit_card', 'bank']) -> None:
         """
-        Update the tags of the raw data in the credit card and bank tables by transaction ID.
-        Business logic for routing tagging operations by ID.
+        Update the category and tag for a transaction by ID.
 
         Parameters
         ----------
         id_ : int
-            The ID of the transaction.
+            The ID of the transaction to update.
         category : str
-            The category to tag the transaction with.
+            The new category for the transaction.
         tag : str
-            The tag to tag the transaction with.
+            The new tag for the transaction.
         service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
+            The service for which to update the transaction.
 
         Returns
         -------
@@ -157,6 +156,54 @@ class TransactionsService:
             self.transactions_repository.cc_repo.update_tagging_by_id(id_, category, tag)
         else:
             self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
+
+    def update_transaction_by_id(self, transaction_id: int, updates: dict, service: Literal['credit_card', 'bank']) -> bool:
+        """
+        Update a transaction by ID with the given field updates.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The ID of the transaction to update.
+        updates : dict
+            Dictionary of field names and their new values.
+        service : Literal['credit_card', 'bank']
+            The service for which to update the transaction.
+
+        Returns
+        -------
+        bool
+            True if the update was successful, False otherwise.
+        """
+        if service not in ['credit_card', 'bank']:
+            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
+
+        try:
+            if service == 'credit_card':
+                return self.transactions_repository.cc_repo.update_transaction_by_id(transaction_id, updates)
+            else:
+                return self.transactions_repository.bank_repo.update_transaction_by_id(transaction_id, updates)
+        except Exception:
+            return False
+
+    def get_all_transactions(self, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+        """
+        Get all transactions for the specified service.
+
+        Parameters
+        ----------
+        service : Literal['credit_card', 'bank']
+            The service for which to get transactions.
+
+        Returns
+        -------
+        pd.DataFrame
+            All transactions for the specified service.
+        """
+        if service not in ['credit_card', 'bank']:
+            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
+
+        return self.transactions_repository.get_table(service)
 
     def get_latest_data_date(self) -> datetime:
         """
@@ -353,4 +400,3 @@ class TransactionsService:
             DataFrame containing transactions matching the description.
         """
         return self.transactions_repository.get_data_by_description(description, service, account_number)
-
