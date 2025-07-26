@@ -1,5 +1,4 @@
-from typing import List, Tuple
-from typing import Literal
+from typing import List
 import os
 
 import streamlit as st
@@ -7,25 +6,10 @@ from streamlit.connections import SQLConnection
 
 from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.data_access import get_db_connection
-from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
+from fad.app.data_access.tagging_repository import TaggingRepository
 from fad.app.data_access.tagging_rules_repository import TaggingRulesRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
-from fad.app.services.transactions_service import TransactionsService
-from fad.app.naming_conventions import (
-    Tables,
-    AutoTaggerTableFields,
-    TransactionsTableFields,
-)
-
-tags_table = Tables.AUTO_TAGGER.value
-credit_card_table = Tables.CREDIT_CARD.value
-bank_table = Tables.BANK.value
-category_col = AutoTaggerTableFields.CATEGORY.value
-tag_col = AutoTaggerTableFields.TAG.value
-name_col = AutoTaggerTableFields.NAME.value
-service_col = AutoTaggerTableFields.SERVICE.value
-account_number_col = AutoTaggerTableFields.ACCOUNT_NUMBER.value
 
 
 def _sorted_unique(lst):
@@ -69,7 +53,6 @@ class CategoriesTagsService:
         conn = get_db_connection()
         self.transactions_repo = TransactionsRepository(conn)
         self.split_transactions_repo = SplitTransactionsRepository(conn)
-        self.auto_tagger_repo = AutoTaggerRepository(conn)
         self.tagging_rules_repo = TaggingRulesRepository(conn)
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
@@ -147,7 +130,6 @@ class CategoriesTagsService:
         # Delete category from db data
         self.transactions_repo.nullify_category(category)
         self.split_transactions_repo.nullify_category(category)
-        self.auto_tagger_repo.delete_by_category(category)
         self.tagging_rules_repo.delete_rules_by_category(category)
         if category in protected_categories:
             return False
@@ -180,7 +162,6 @@ class CategoriesTagsService:
         for tag in tags:
             self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
             self.split_transactions_repo.update_category_for_tag(old_category, new_category, tag)
-            self.auto_tagger_repo.update_category_for_tag(old_category, new_category, tag)
             self.tagging_rules_repo.update_category_for_tag(old_category, new_category, tag)
         # Remove tags from old category
         self.categories_and_tags[old_category] = [t for t in self.categories_and_tags[old_category] if t not in tags]
@@ -237,10 +218,7 @@ class CategoriesTagsService:
         # 2. Set category and tag to null in split transactions table (both services)
         self.split_transactions_repo.nullify_category_and_tag(category, tag)
 
-        # 3. Remove the row with the specified category and tag from the auto tagger table (for both services)
-        self.auto_tagger_repo.delete_by_category_and_tag(category, tag)
-
-        # 4. Remove rules with the specified category and tag from the tagging rules table
+        # 3. Remove rules with the specified category and tag from the tagging rules table
         self.tagging_rules_repo.delete_rules_by_category_and_tag(category, tag)
 
         if category not in self.categories_and_tags:
@@ -251,223 +229,3 @@ class CategoriesTagsService:
         self.save_categories_and_tags()
         return True
 
-
-class AutomaticTaggerService:
-    """
-    Service for managing automatic tagging rules for financial transactions.
-
-    This class provides methods for retrieving transactions without rules,
-    adding and updating tagging rules, and applying rules to untagged transactions.
-
-    Attributes
-    ----------
-    conn : SQLConnection
-        Database connection object.
-    auto_tagger_repo : AutoTaggerRepository
-        Repository for automatic tagging operations.
-    transactions_service : TransactionsService
-        Service for transaction operations.
-    """
-    def __init__(self, conn: SQLConnection = get_db_connection()):
-        """
-        Initialize the AutomaticTaggerService.
-
-        Parameters
-        ----------
-        conn : SQLConnection
-            The connection to the database.
-        """
-        self.conn = conn
-        self.auto_tagger_repo = AutoTaggerRepository(conn)
-        self.transactions_service = TransactionsService(conn)
-
-    def get_cc_without_rules(self) -> List[str]:
-        """
-        Get credit card transactions that do not have rules associated with them.
-
-        Retrieves unique transaction descriptions from the credit card table that
-        do not appear in the automatic tagging rules table.
-
-        Returns
-        -------
-        List[str]
-            A list of unique transaction descriptions without associated tagging rules.
-        """
-        # Use repository methods instead of deprecated get_table function
-        auto_tagger_table = self.auto_tagger_repo.get_table("credit_card")
-        cc_table = self.transactions_service.transactions_repository.get_table("credit_card")
-
-        desc_col = TransactionsTableFields.DESCRIPTION.value
-        mask = ~cc_table[desc_col].isin(auto_tagger_table[name_col]) & cc_table[category_col].isnull()
-        cc_without_rules = cc_table.loc[mask, desc_col].unique().tolist()
-
-        return cc_without_rules
-
-    def get_bank_without_rules(self) -> List[Tuple[str, str]]:
-        """
-        Get bank transactions that do not have rules associated with them.
-
-        Retrieves unique combinations of transaction descriptions and account numbers
-        from the bank table that do not appear in the automatic tagging rules table.
-
-        Returns
-        -------
-        List[Tuple[str, str]]
-            A list of tuples containing bank transactions without rules, 
-            where each tuple is (description, account_number).
-        """
-        # Use repository methods instead of deprecated get_table function
-        auto_tagger_table = self.auto_tagger_repo.get_table("bank")
-        bank_table = self.transactions_service.transactions_repository.get_table("bank")
-        bank_table = bank_table.loc[bank_table[category_col].isnull()]
-
-        desc_col = TransactionsTableFields.DESCRIPTION.value
-        bank_account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
-        name_col = self.auto_tagger_repo.name_col
-        auto_tagger_account_number_col = self.auto_tagger_repo.account_number_col
-
-        bank_ids = bank_table[[desc_col, bank_account_number_col]].drop_duplicates()
-        auto_ids = auto_tagger_table[[name_col, auto_tagger_account_number_col]].drop_duplicates()
-
-        bank_set: set[Tuple[str, str]] = set(map(tuple, bank_ids.values))  # noqa
-        auto_set: set[Tuple[str, str]] = set(map(tuple, auto_ids.values))  # noqa
-
-        result = sorted(bank_set - auto_set)
-        return result
-
-    def get_bank_account_details(self, account_number: str) -> tuple[str, str]:
-        """
-        Get account name and provider details for a given bank account number.
-
-        Queries the bank transactions table to retrieve the account name and provider
-        associated with the specified account number.
-
-        Parameters
-        ----------
-        account_number : str
-            The bank account number to look up.
-
-        Returns
-        -------
-        tuple
-            A tuple containing (account_name, provider_name).
-            Returns (None, None) if the account number is not found.
-        """
-        provider_col = TransactionsTableFields.PROVIDER.value
-        account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
-        account_name_col = TransactionsTableFields.ACCOUNT_NAME.value
-
-        account_name_and_provider = self.conn.query(
-            f"""
-            SELECT {account_name_col}, {provider_col} 
-            FROM {bank_table} 
-            WHERE {account_number_col}=:account_number 
-            LIMIT 1;
-            """,
-            params={'account_number': account_number},
-            ttl=0
-        )
-        if not account_name_and_provider.empty:
-            return account_name_and_provider.iloc[0][account_name_col], account_name_and_provider.iloc[0][provider_col]
-        return None, None
-
-    def add_rule(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
-                 method: Literal['All', 'From now on'], account_number: str | None = None) -> None:
-        """
-        Add a new automatic tagging rule to the database.
-
-        Creates a new rule in the auto tagger table and optionally updates existing
-        transactions based on the specified method.
-
-        Parameters
-        ----------
-        name : str
-            The name/description of the transaction.
-        category : str
-            The category to assign.
-        tag : str
-            The tag to assign.
-        service : Literal['credit_card', 'bank']
-            The service type ('credit_card' or 'bank').
-        method : Literal['All', 'From now on']
-            The update method:
-            - 'All': Update all existing transactions matching the rule
-            - 'From now on': Only apply the rule to new transactions
-        account_number : str | None, optional
-            The account number for bank transactions (required for bank, optional for credit card).
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        ValueError
-            If an invalid update method is provided.
-        """
-        self.auto_tagger_repo.add_to_table(name, category, tag, service, account_number)
-
-        if method == 'All':
-            self.transactions_service.update_tagging(name, category, tag, service, account_number)
-        elif method == 'From now on':
-            pass  # do nothing
-        else:
-            raise ValueError(f"Invalid auto tagger update method: {method}")
-
-    def update_rule(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
-                    method: Literal['All', 'From now on'], account_number: str | None = None) -> None:
-        """
-        Update an existing auto tagger rule in the database.
-
-        Parameters
-        ----------
-        name : str
-            The name/description of the transaction.
-        category : str
-            The category to assign.
-        tag : str
-            The tag to assign.
-        service : Literal['credit_card', 'bank']
-            The service type ('credit_card' or 'bank').
-        method : Literal['All', 'From now on']
-            The update method ('All' or 'From now on').
-        account_number : str | None
-            The account number for bank transactions (optional for credit card).
-
-        Returns
-        -------
-        None
-        """
-        self.auto_tagger_repo.update_table(name, category, tag, service, account_number)
-
-        if method == 'All':
-            self.transactions_service.update_tagging(name, category, tag, service, account_number)
-        elif method == 'From now on':
-            pass  # No additional action needed
-        else:
-            raise ValueError(f"Invalid update method: {method}")
-
-    def update_rule_by_id(self, id_: int, category: str, tag: str) -> None:
-        """Update an auto tagger rule by its id."""
-        self.auto_tagger_repo.update_by_id(id_, category, tag)
-
-    def delete_rule_by_id(self, id_: int) -> None:
-        """Delete an auto tagger rule by its id."""
-        self.auto_tagger_repo.delete_by_id(id_)
-
-    def update_raw_data_by_rules(self) -> None:
-        """
-        Apply automatic tagging rules to all untagged raw transaction data.
-
-        This method contains the business logic that was moved from AutoTaggerRepository.
-        It orchestrates the application of rules to both credit card and bank transactions.
-        Now also applies the new rule-based tagging system.
-        """
-        # Apply old auto-tagger rules first for backward compatibility
-        self.auto_tagger_repo.update_credit_card_transactions_by_rules()
-        self.auto_tagger_repo.update_bank_transactions_by_rules()
-
-        # Apply new rule-based tagging system
-        from fad.app.services.tagging_rules_service import TaggingRulesService
-        rules_service = TaggingRulesService(self.conn)
-        rules_service.apply_rules_to_all_services()

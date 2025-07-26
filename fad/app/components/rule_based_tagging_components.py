@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 import json
 
 import pandas as pd
@@ -46,7 +46,6 @@ class RuleBasedTaggingComponent:
     1. Rule management (create, edit, delete, prioritize)
     2. Transaction tagging with automatic rule creation
     3. Rule testing and preview
-    4. Migration from old auto-tagger system
     """
 
     def __init__(self):
@@ -65,14 +64,11 @@ class RuleBasedTaggingComponent:
         - Rule Management: View, edit, delete, and prioritize rules
         - Rule Testing: Test rules against transactions
         """
-        st.subheader("Rule-Based Transaction Tagging")
+        st.subheader("Transaction Tagging & Rule Management")
         st.markdown(
-            "This system allows you to create intelligent rules that automatically tag transactions. "
-            "Rules can match on description, amount, provider, and other transaction fields using various operators."
+            "This system allows you to tag transactions manually and create intelligent rules that automatically tag similar transactions. "
+            "Rules can match on description, amount, provider, and other transaction fields using various operators like 'contains', 'greater than', etc."
         )
-
-        # Check if migration is needed
-        self._check_migration_status()
 
         tagging_tab, rules_tab, testing_tab = st.tabs([
             "Transaction Tagging",
@@ -88,38 +84,6 @@ class RuleBasedTaggingComponent:
 
         with testing_tab:
             self._render_rule_testing()
-
-    def _check_migration_status(self) -> None:
-        """Check if migration from old auto-tagger is needed and offer migration."""
-        if st.session_state.get('rules_migration_complete', False):
-            return
-
-        # Check if there are old auto-tagger rules
-        from fad.app.data_access.tagging_repository import AutoTaggerRepository
-        from fad.app.data_access import get_db_connection
-
-        auto_tagger_repo = AutoTaggerRepository(get_db_connection())
-        old_rules = auto_tagger_repo.get_table()
-
-        if not old_rules.empty:
-            with st.expander("🔄 Migration Available", expanded=True):
-                st.warning(
-                    f"Found {len(old_rules)} old auto-tagger rules. "
-                    "Would you like to migrate them to the new rule-based system?"
-                )
-
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.button("Migrate Rules", type="primary"):
-                        migrated_count = self.rules_service.migrate_from_auto_tagger()
-                        st.success(f"Successfully migrated {migrated_count} rules!")
-                        st.session_state['rules_migration_complete'] = True
-                        st.rerun()
-
-                with col2:
-                    if st.button("Skip Migration"):
-                        st.session_state['rules_migration_complete'] = True
-                        st.rerun()
 
     def _render_transaction_tagging(self) -> None:
         """Render the transaction tagging interface with rule creation."""
@@ -216,7 +180,7 @@ class RuleBasedTaggingComponent:
 
         # Check if transaction has splits
         id_col = TransactionsTableFields.ID.value
-        service_literal = "credit_card" if service == "credit_card" else "bank"
+        service_literal: Literal['credit_card', 'bank'] = service  # Type assertion for proper typing
         has_splits = self.split_transactions_service.has_splits(transaction[id_col], service_literal)
 
         if has_splits:
@@ -266,7 +230,7 @@ class RuleBasedTaggingComponent:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button('Save', key=f'save_manual_{transaction[id_col]}'):
                 if category and tag:
-                    service_literal = "credit_card" if service == "credit_card" else "bank"
+                    service_literal: Literal['credit_card', 'bank'] = service
                     self.transactions_service.update_tagging_by_id(
                         transaction[id_col], category, tag, service_literal
                     )
@@ -294,7 +258,7 @@ class RuleBasedTaggingComponent:
         st.markdown("Create a rule to automatically tag similar transactions in the future.")
 
         # Get rule suggestions
-        service_literal = "credit_card" if service == "credit_card" else "bank"
+        service_literal: Literal['credit_card', 'bank'] = service
         suggestions = self.rules_service.get_rule_suggestions(transaction, service_literal)
 
         # Rule name
@@ -568,13 +532,14 @@ class RuleBasedTaggingComponent:
                 st.rerun()
 
     def _render_split_transaction_ui(self, transaction: pd.Series, service: str) -> None:
-        """Render split transaction interface (similar to existing implementation)."""
-        # This would be similar to the existing split transaction UI
-        # For brevity, I'll reference the existing implementation
-        from fad.app.components.tagging_components import ManuallyTaggingComponent
-        manual_component = ManuallyTaggingComponent()
-        service_literal = "credit_card" if service == "credit_card" else "bank"
-        manual_component._split_transaction_ui(transaction, service_literal)
+        """Render split transaction interface."""
+        st.markdown("#### Split Transaction")
+        st.info("Split transaction functionality will be implemented here. For now, you can manually split transactions using the existing split transaction service.")
+
+        # For now, show basic info and provide a way to close the split UI
+        if st.button("Close Split Interface", key=f"close_split_{transaction[TransactionsTableFields.ID.value]}"):
+            st.session_state[f'show_split_{transaction[TransactionsTableFields.ID.value]}'] = False
+            st.rerun()
 
     def _render_rule_management(self) -> None:
         """Render the rule management interface."""
@@ -793,8 +758,9 @@ class RuleBasedTaggingComponent:
 
         # Test button
         if conditions and st.button("🔍 Test Conditions", type="primary"):
+            service_literal: Literal['credit_card', 'bank'] = service
             matching_transactions = self.rules_service.test_rule_against_transactions(
-                conditions, service, limit=50
+                conditions, service_literal, limit=50
             )
 
             if not matching_transactions.empty:
@@ -819,7 +785,3 @@ class RuleBasedTaggingComponent:
 
         if not conditions:
             st.info("Add conditions above to test them against your transactions.")
-
-
-# Keep the existing CategoriesTagsEditor class unchanged
-from fad.app.components.tagging_components import CategoriesTagsEditor

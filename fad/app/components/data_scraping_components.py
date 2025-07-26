@@ -5,7 +5,7 @@ import streamlit as st
 from fad.app.data_access import get_db_connection
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.data_scraping_service import ScrapingService
-from fad.app.services.tagging_service import AutomaticTaggerService
+from fad.app.services.tagging_rules_service import TaggingRulesService
 from fad.scraper.scrapers import Scraper
 
 
@@ -23,8 +23,8 @@ class DataScrapingComponent:
         Service for handling data scraping operations.
     creds_service : CredentialsService
         Service for managing user credentials.
-    auto_tagging_service : AutomaticTaggerService
-        Service for automatically tagging transactions.
+    tagging_rules_service : TaggingRulesService
+        Service for automatically applying tagging rules to transactions.
     start_date : datetime.date or None
         The start date from which to scrape data.
     selected_scrapers : list[str]
@@ -40,7 +40,7 @@ class DataScrapingComponent:
             st.session_state["scraping_service"] = ScrapingService()
         self.scraping_service = st.session_state["scraping_service"]
         self.creds_service = CredentialsService()
-        self.auto_tagging_service = AutomaticTaggerService()
+        self.tagging_rules_service = TaggingRulesService()
         self.start_date = None
         self.selected_scrapers = []
 
@@ -104,12 +104,26 @@ class DataScrapingComponent:
             self.scraping_service.clear_scraping_status()
             self.scraping_service.clear_waiting_for_2fa_scrapers()
             self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
-            self.auto_tagging_service.update_raw_data_by_rules()
+            self._apply_tagging_rules()
+
             st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
             st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
 
         self.tfa_fragments()
         self.display_scraping_status()
+
+    def _apply_tagging_rules(self) -> None:
+        """
+        Apply tagging rules to all services after data scraping.
+        This replaces the old AutomaticTaggerService functionality.
+        """
+        try:
+            results = self.tagging_rules_service.apply_rules_to_all_services()
+            total_tagged = sum(results.values())
+            if total_tagged > 0:
+                st.success(f"Applied tagging rules! Tagged {total_tagged} transactions.")
+        except Exception as e:
+            st.warning(f"Failed to apply some tagging rules: {str(e)}")
 
     def tfa_fragments(self) -> None:
         """
@@ -165,7 +179,8 @@ class DataScrapingComponent:
                     st.error('Please enter a valid code')
                     st.stop()
                 self.scraping_service.handle_2fa_code(name, code)
-                self.auto_tagging_service.update_raw_data_by_rules()
+                self._apply_tagging_rules()
+
                 st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
                 st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
                 st.rerun()

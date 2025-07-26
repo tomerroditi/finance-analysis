@@ -7,7 +7,6 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_rules_repository import TaggingRulesRepository
-from fad.app.data_access.tagging_repository import AutoTaggerRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
     RuleOperators,
@@ -169,7 +168,6 @@ class TaggingRulesService:
         self.conn = conn or get_db_connection()
         self.rules_repo = TaggingRulesRepository(self.conn)
         self.transactions_repo = TransactionsRepository(self.conn)
-        self.auto_tagger_repo = AutoTaggerRepository(self.conn)
 
     def get_all_rules(self, service: Optional[Literal['credit_card', 'bank']] = None) -> pd.DataFrame:
         """Get all active rules, optionally filtered by service."""
@@ -333,43 +331,6 @@ class TaggingRulesService:
 
         return untagged
 
-    def migrate_from_auto_tagger(self) -> int:
-        """
-        Migrate existing auto tagger rules to the new rule-based system.
-
-        Returns
-        -------
-        int
-            Number of rules migrated.
-        """
-        auto_tagger_rules = self.auto_tagger_repo.get_table()
-        migrated_count = 0
-
-        for _, rule in auto_tagger_rules.iterrows():
-            # Convert simple name-based rule to new condition format
-            conditions = [{
-                'field': RuleFields.DESCRIPTION.value,
-                'operator': RuleOperators.EQUALS.value,
-                'value': rule[self.auto_tagger_repo.name_col]
-            }]
-
-            try:
-                self.create_rule(
-                    name=f"Migrated: {rule[self.auto_tagger_repo.name_col]}",
-                    conditions=conditions,
-                    category=rule[self.auto_tagger_repo.category_col],
-                    tag=rule[self.auto_tagger_repo.tag_col],
-                    service=rule[self.auto_tagger_repo.service_col],
-                    priority=1,
-                    account_number=rule[self.auto_tagger_repo.account_number_col]
-                )
-                migrated_count += 1
-            except Exception:
-                # Skip rules that fail to migrate
-                continue
-
-        return migrated_count
-
     def get_rule_suggestions(self, transaction: pd.Series,
                            service: Literal['credit_card', 'bank']) -> List[Dict[str, Any]]:
         """
@@ -380,74 +341,62 @@ class TaggingRulesService:
         transaction : pd.Series
             Transaction to base suggestions on.
         service : Literal['credit_card', 'bank']
-            Service type.
+            Service type for the transaction.
 
         Returns
         -------
         List[Dict[str, Any]]
-            List of suggested conditions.
+            List of suggested rule conditions with description, field, operator, and value.
         """
         suggestions = []
 
         # Description-based suggestions
-        desc_col = TransactionsTableFields.DESCRIPTION.value
-        if desc_col in transaction.index and pd.notna(transaction[desc_col]):
-            desc = str(transaction[desc_col])
-
-            # Exact match
-            suggestions.append({
-                'field': RuleFields.DESCRIPTION.value,
-                'operator': RuleOperators.EQUALS.value,
-                'value': desc,
-                'description': f'Description equals "{desc}"'
-            })
-
-            # Contains (for partial matches)
-            words = desc.split()
-            if len(words) > 1:
-                # Suggest using first few words
-                partial = ' '.join(words[:2])
-                suggestions.append({
+        desc = transaction.get(TransactionsTableFields.DESCRIPTION.value, '')
+        if desc:
+            suggestions.extend([
+                {
+                    'description': f'Description equals "{desc}"',
+                    'field': RuleFields.DESCRIPTION.value,
+                    'operator': RuleOperators.EQUALS.value,
+                    'value': desc
+                },
+                {
+                    'description': f'Description contains "{desc[:20]}..."',
                     'field': RuleFields.DESCRIPTION.value,
                     'operator': RuleOperators.CONTAINS.value,
-                    'value': partial,
-                    'description': f'Description contains "{partial}"'
-                })
+                    'value': desc[:20] if len(desc) > 20 else desc
+                }
+            ])
 
         # Amount-based suggestions
-        amount_col = TransactionsTableFields.AMOUNT.value
-        if amount_col in transaction.index and pd.notna(transaction[amount_col]):
-            amount = float(transaction[amount_col])
-
-            # Exact amount
-            suggestions.append({
-                'field': RuleFields.AMOUNT.value,
-                'operator': RuleOperators.EQUALS.value,
-                'value': amount,
-                'description': f'Amount equals {amount}'
-            })
-
-            # Amount range (±10%)
-            margin = abs(amount * 0.1)
-            suggestions.append({
-                'field': RuleFields.AMOUNT.value,
-                'operator': RuleOperators.BETWEEN.value,
-                'value': [amount - margin, amount + margin],
-                'description': f'Amount between {amount - margin:.2f} and {amount + margin:.2f}'
-            })
+        amount = transaction.get(TransactionsTableFields.AMOUNT.value)
+        if amount is not None:
+            suggestions.extend([
+                {
+                    'description': f'Amount equals {amount}',
+                    'field': RuleFields.AMOUNT.value,
+                    'operator': RuleOperators.EQUALS.value,
+                    'value': amount
+                },
+                {
+                    'description': f'Amount greater than {amount * 0.9:.2f}',
+                    'field': RuleFields.AMOUNT.value,
+                    'operator': RuleOperators.GREATER_THAN.value,
+                    'value': amount * 0.9
+                }
+            ])
 
         # Provider-based suggestions
-        provider_col = TransactionsTableFields.PROVIDER.value
-        if provider_col in transaction.index and pd.notna(transaction[provider_col]):
-            provider = str(transaction[provider_col])
+        provider = transaction.get(TransactionsTableFields.PROVIDER.value, '')
+        if provider:
             suggestions.append({
+                'description': f'Provider equals "{provider}"',
                 'field': RuleFields.PROVIDER.value,
                 'operator': RuleOperators.EQUALS.value,
-                'value': provider,
-                'description': f'Provider equals "{provider}"'
+                'value': provider
             })
 
-        return suggestions
+        return suggestions[:5]  # Return top 5 suggestions
 
     def validate_conditions(self, conditions: List[Dict[str, Any]]) -> List[str]:
         """
