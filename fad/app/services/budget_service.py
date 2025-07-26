@@ -434,6 +434,53 @@ class MonthlyBudgetService(BudgetService):
 
         return view
 
+    def get_monthly_project_transactions(self, year: int, month: int) -> Optional[pd.DataFrame]:
+        """
+        Get project-related transactions for a specific month.
+
+        Parameters
+        ----------
+        year : int
+            The year to get project transactions for.
+        month : int
+            The month to get project transactions for.
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            DataFrame containing project transactions for the month, or None if no project transactions exist.
+        """
+        budget_rules = self.budget_repository.read_all()
+        bank_data = self.transactions_service.get_table_for_analysis("bank")
+        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
+        all_data = pd.concat([credit_data, bank_data])
+
+        # Only expenses (exclude income, liabilities, etc.)
+        expenses = all_data.loc[
+            ~all_data[self.transactions_service.transactions_repository.category_col]
+            .isin([c.value for c in NonExpensesCategories])
+        ].copy()
+        expenses[self.transactions_service.transactions_repository.date_col] = pd.to_datetime(
+            expenses[self.transactions_service.transactions_repository.date_col]
+        )
+
+        # Get project categories
+        project_categories = budget_rules[
+            budget_rules[YEAR].isnull() & budget_rules[MONTH].isnull()
+        ][CATEGORY].unique()
+
+        if len(project_categories) == 0:
+            return None
+
+        # Filter for project transactions in the specified month
+        project_transactions = expenses.loc[
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
+            expenses[self.transactions_service.transactions_repository.category_col].isin(project_categories)
+        ]
+
+        return project_transactions if not project_transactions.empty else None
+
 
 class ProjectBudgetService(BudgetService):
     """
@@ -622,3 +669,16 @@ class ProjectBudgetService(BudgetService):
         transactions = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         return transactions
 
+    def get_all_projects_names(self):
+        """
+        Get all project names from the budget rules.
+
+        Returns a list of unique project names (categories with null year and month).
+
+        Returns
+        -------
+        list[str]
+            List of unique project category names.
+        """
+        budget_rules = self.get_project_rules()
+        return self.get_project_names(budget_rules)
