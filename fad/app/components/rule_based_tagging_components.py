@@ -1,4 +1,4 @@
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, List
 import json
 
 import pandas as pd
@@ -711,10 +711,18 @@ class RuleBasedTaggingComponent:
             )
 
         with col2:
+            # Get available operators based on field type
+            available_operators = self._get_operators_for_field(field)
+
+            # Ensure current operator is valid for the field, otherwise use first available
+            current_operator = condition['operator']
+            if current_operator not in available_operators:
+                current_operator = available_operators[0]
+
             operator = st.selectbox(
                 "Operator",
-                options=[e.value for e in RuleOperators],
-                index=[e.value for e in RuleOperators].index(condition['operator']),
+                options=available_operators,
+                index=available_operators.index(current_operator) if current_operator in available_operators else 0,
                 key=f"operator_{conditions_key}_{index}"
             )
 
@@ -917,10 +925,18 @@ class RuleBasedTaggingComponent:
             )
 
         with col2:
+            # Get available operators based on field type
+            available_operators = self._get_operators_for_field(field)
+
+            # Ensure current operator is valid for the field, otherwise use first available
+            current_operator = condition['operator']
+            if current_operator not in available_operators:
+                current_operator = available_operators[0]
+
             operator = st.selectbox(
                 f"Operator {index + 1}",
-                options=[e.value for e in RuleOperators],
-                index=[e.value for e in RuleOperators].index(condition['operator']) if condition['operator'] in [e.value for e in RuleOperators] else 0,
+                options=available_operators,
+                index=available_operators.index(current_operator) if current_operator in available_operators else 0,
                 key=f"edit_operator_{rule_id}_{index}"
             )
 
@@ -937,6 +953,35 @@ class RuleBasedTaggingComponent:
             'operator': operator,
             'value': value
         }
+
+    def _get_operators_for_field(self, field: str) -> List[str]:
+        """Get available operators for a specific field type."""
+        text_operators = [
+            RuleOperators.CONTAINS.value,
+            RuleOperators.EQUALS.value,
+            RuleOperators.STARTS_WITH.value,
+            RuleOperators.ENDS_WITH.value
+        ]
+
+        numeric_operators = [
+            RuleOperators.EQUALS.value,
+            RuleOperators.GREATER_THAN.value,
+            RuleOperators.LESS_THAN.value,
+            RuleOperators.GREATER_THAN_EQUAL.value,
+            RuleOperators.LESS_THAN_EQUAL.value,
+            RuleOperators.BETWEEN.value
+        ]
+
+        # Map fields to their operator types
+        field_operator_map = {
+            RuleFields.DESCRIPTION.value: text_operators,
+            RuleFields.PROVIDER.value: text_operators,
+            RuleFields.ACCOUNT_NAME.value: text_operators,
+            RuleFields.ACCOUNT_NUMBER.value: text_operators,
+            RuleFields.AMOUNT.value: numeric_operators
+        }
+
+        return field_operator_map.get(field, text_operators)
 
     def _render_rule_testing(self) -> None:
         """Render the rule testing interface."""
