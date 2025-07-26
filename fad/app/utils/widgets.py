@@ -59,6 +59,19 @@ class PandasFilterWidgets:
         else:
             max_val = float(df[column].max())
             min_val = float(df[column].min())
+
+        # Handle case where all values are the same
+        if min_val == max_val:
+            # Create a small range around the single value
+            if min_val == 0:
+                min_val = -1.0
+                max_val = 1.0
+            else:
+                # Add/subtract 10% of the absolute value, minimum of 1
+                offset = max(abs(min_val) * 0.1, 1.0)
+                min_val = min_val - offset
+                max_val = max_val + offset
+
         name = column.replace('_', ' ').title()
         lower_bound, upper_bound = st.slider(
             name, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'

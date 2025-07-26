@@ -204,12 +204,25 @@ class RuleBasedTaggingComponent:
                     key=f'bulk_tag_{service}'
                 )
 
-            # Preview and apply
-            if bulk_category and bulk_tag:
-                if st.button(f"Apply {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions",
-                           type="primary", key=f"bulk_apply_{service}"):
-                    self._apply_bulk_tagging(filtered_transactions, service, bulk_category, bulk_tag)
-                    st.success(f"Applied {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions!")
+            # Action buttons
+            col_apply, col_remove = st.columns(2)
+
+            with col_apply:
+                if bulk_category and bulk_tag:
+                    if st.button(f"Apply {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions",
+                               type="primary", key=f"bulk_apply_{service}"):
+                        self._apply_bulk_tagging(filtered_transactions, service, bulk_category, bulk_tag)
+                        st.success(f"Applied {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions!")
+                        # Clear cache and rerun
+                        if f"bulk_filter_widgets_{service}" in st.session_state:
+                            del st.session_state[f"bulk_filter_widgets_{service}"]
+                        st.rerun()
+
+            with col_remove:
+                if st.button(f"Remove all tags from {len(filtered_transactions)} transactions",
+                           type="secondary", key=f"bulk_remove_{service}"):
+                    self._apply_bulk_tag_removal(filtered_transactions, service)
+                    st.success(f"Removed tags from {len(filtered_transactions)} transactions!")
                     # Clear cache and rerun
                     if f"bulk_filter_widgets_{service}" in st.session_state:
                         del st.session_state[f"bulk_filter_widgets_{service}"]
@@ -393,6 +406,16 @@ class RuleBasedTaggingComponent:
                 transaction[id_col], category, tag, service_literal
             )
 
+    def _apply_bulk_tag_removal(self, transactions: pd.DataFrame, service: str) -> None:
+        """Remove tags from multiple transactions."""
+        service_literal: Literal['credit_card', 'bank'] = service
+        id_col = TransactionsTableFields.ID.value
+
+        for _, transaction in transactions.iterrows():
+            self.transactions_service.update_tagging_by_id(
+                transaction[id_col], None, None, service_literal
+            )
+
     def _render_transaction_filter(self, transactions: pd.DataFrame, service: str, show_tagged: bool = False) -> None:
         """Render transaction filtering and selection interface."""
         tag_status = "tagged" if show_tagged else "untagged"
@@ -491,14 +514,15 @@ class RuleBasedTaggingComponent:
         current_category = transaction.get(category_col)
         current_tag = transaction.get(tag_col)
 
-        col_cat, col_tag, col_save, col_split = st.columns([0.25, 0.25, 0.25, 0.25])
+        col_cat, col_tag, col_save, col_remove, col_split = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
 
         with col_cat:
             categories = list(self.categories_and_tags.keys())
             category = st.selectbox(
                 "Category",
-                options=categories,
-                index=categories.index(current_category) if current_category in categories else None,
+                options=[None] + categories,
+                index=categories.index(current_category) + 1 if current_category in categories else 0,
+                format_func=lambda x: "No category" if x is None else x,
                 key=f'manual_category_{transaction[id_col]}'
             )
 
@@ -506,8 +530,9 @@ class RuleBasedTaggingComponent:
             tags = self.categories_and_tags.get(category, []) if category else []
             tag = st.selectbox(
                 "Tag",
-                options=tags,
-                index=tags.index(current_tag) if current_tag in tags else None,
+                options=[None] + tags,
+                index=tags.index(current_tag) + 1 if current_tag in tags and category else 0,
+                format_func=lambda x: "No tag" if x is None else x,
                 key=f'manual_tag_{transaction[id_col]}'
             )
 
@@ -531,6 +556,24 @@ class RuleBasedTaggingComponent:
                     st.rerun()
                 else:
                     st.error("Please select both category and tag.")
+
+        with col_remove:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button('Remove Tags', key=f'remove_tags_{transaction[id_col]}', type="secondary"):
+                service_literal: Literal['credit_card', 'bank'] = service
+                self.transactions_service.update_tagging_by_id(
+                    transaction[id_col], None, None, service_literal
+                )
+                # Clear filter cache
+                filter_keys = [
+                    f"tagging_filter_widgets_{service}_untagged",
+                    f"tagging_filter_widgets_{service}_tagged"
+                ]
+                for filter_key in filter_keys:
+                    if filter_key in st.session_state:
+                        del st.session_state[filter_key]
+                st.success("Transaction tags removed!")
+                st.rerun()
 
         with col_split:
             st.markdown("<br>", unsafe_allow_html=True)
