@@ -819,8 +819,7 @@ class RuleBasedTaggingComponent:
 
                 # Conditions (read-only for now)
                 st.markdown("**Conditions:**")
-                conditions = json.loads(rule['conditions'])
-                for i, condition in enumerate(conditions):
+                for i, condition in enumerate(rule['conditions']):
                     st.text(f"{i+1}. {condition['field']} {condition['operator']} '{condition['value']}'")
 
                 # Action buttons
