@@ -24,6 +24,24 @@
 - Keep dev dependencies separate
 - Python 3.12+ required
 
+## Clean Code Guidelines
+
+### Code Comments & Documentation
+- **Avoid obvious comments** that just restate what the code does
+- **No "change log" comments** explaining what was modified or when
+- **Focus on WHY, not WHAT** - explain business logic and complex decisions
+- **Remove TODO comments** once tasks are completed
+- **Use meaningful variable/function names** instead of explaining with comments
+- **Document complex algorithms** and non-obvious business rules only
+- **Keep docstrings concise** and focused on usage, not implementation details
+
+### Code Quality
+- Prefer self-documenting code over comments
+- Remove dead/commented-out code
+- Eliminate redundant imports and variables
+- Use type hints consistently
+- Keep functions focused and single-purpose
+
 ## Common Tasks & Patterns
 
 ### Adding a New Financial Provider
