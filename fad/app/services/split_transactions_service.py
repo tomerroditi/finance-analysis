@@ -106,7 +106,7 @@ class SplitTransactionsService:
         total_split_amount = sum(split['amount'] for split in splits)
 
         # Validate that the total amount of the splits equals the original transaction amount
-        if abs(total_split_amount - original_amount) != 0:
+        if abs(total_split_amount - original_amount) > 1e-6:  # Allow a small tolerance for floating point errors
             raise ValueError(
                 f"Total split amount ({total_split_amount}) does not equal original transaction amount ({original_amount})."
             )
