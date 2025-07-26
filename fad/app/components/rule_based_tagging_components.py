@@ -793,6 +793,11 @@ class RuleBasedTaggingComponent:
                 st.error("Rule not found!")
                 return
 
+            # Initialize conditions in session state for editing
+            conditions_key = f"edit_rule_conditions_{rule_id}"
+            if conditions_key not in st.session_state:
+                st.session_state[conditions_key] = rule['conditions'].copy()
+
             # Rule details form
             with st.form(f"edit_rule_{rule_id}"):
                 new_name = st.text_input("Rule Name:", value=rule['name'])
@@ -817,46 +822,121 @@ class RuleBasedTaggingComponent:
                 new_priority = st.number_input("Priority:", value=int(rule['priority']), min_value=1, max_value=10)
                 new_is_active = st.checkbox("Active", value=bool(rule['is_active']))
 
-                # Conditions (read-only for now)
-                st.markdown("**Conditions:**")
-                for i, condition in enumerate(rule['conditions']):
-                    st.text(f"{i+1}. {condition['field']} {condition['operator']} '{condition['value']}'")
+                # Editable conditions section
+                st.markdown("**Conditions (all must match):**")
+
+                # Display existing conditions with edit capability
+                conditions = st.session_state[conditions_key]
+                for i, condition in enumerate(conditions):
+                    self._render_condition_editor_in_form(i, condition, conditions_key, rule_id)
+
+                # Buttons to add/remove conditions
+                col_add, col_remove = st.columns(2)
+                with col_add:
+                    add_condition = st.form_submit_button("➕ Add Condition")
+                    if add_condition:
+                        st.session_state[conditions_key].append({
+                            'field': RuleFields.DESCRIPTION.value,
+                            'operator': RuleOperators.CONTAINS.value,
+                            'value': ''
+                        })
+                        st.rerun()
+
+                with col_remove:
+                    if len(conditions) > 1:  # Keep at least one condition
+                        remove_last = st.form_submit_button("➖ Remove Last Condition")
+                        if remove_last:
+                            st.session_state[conditions_key].pop()
+                            st.rerun()
 
                 # Action buttons
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.form_submit_button("💾 Save Changes"):
+                    save_submitted = st.form_submit_button("💾 Save Changes", type="primary")
+                    if save_submitted:
+                        # Update rule with new conditions
                         success = self.rules_service.update_rule(
                             rule_id=rule_id,
                             name=new_name,
                             category=new_category,
                             tag=new_tag,
                             priority=new_priority,
-                            is_active=new_is_active
+                            is_active=new_is_active,
+                            conditions=st.session_state[conditions_key]
                         )
                         if success:
                             st.success("✅ Rule updated successfully!")
+                            # Clear the session state for conditions
+                            del st.session_state[conditions_key]
                             st.rerun()
                         else:
                             st.error("❌ Failed to update rule")
 
                 with col2:
-                    if st.form_submit_button("🗑️ Delete Rule"):
+                    delete_submitted = st.form_submit_button("🗑️ Delete Rule", type="secondary")
+                    if delete_submitted:
                         success = self.rules_service.delete_rule(rule_id)
                         if success:
                             st.success("✅ Rule deleted successfully!")
+                            # Clear the session state for conditions
+                            if conditions_key in st.session_state:
+                                del st.session_state[conditions_key]
                             st.rerun()
                         else:
                             st.error("❌ Failed to delete rule")
 
                 with col3:
-                    if st.form_submit_button("🧪 Test Rule"):
-                        # Test the rule against transactions
-                        test_results = self.rules_service.test_rule(rule_id)
+                    test_submitted = st.form_submit_button("🧪 Test Rule")
+                    if test_submitted:
+                        # Test with current conditions from session state
+                        mock_rule = {
+                            'conditions': st.session_state[conditions_key],
+                            'service': rule['service'],
+                            'account_number': rule.get('account_number')
+                        }
+                        test_results = self.rules_service.test_rule_against_transactions(
+                            conditions=mock_rule['conditions'],
+                            service=mock_rule['service'],
+                            account_number=mock_rule.get('account_number')
+                        )
                         st.info(f"Rule would match {len(test_results)} transactions")
 
         except Exception as e:
             st.error(f"Error loading rule: {str(e)}")
+
+    def _render_condition_editor_in_form(self, index: int, condition: dict, conditions_key: str, rule_id: int) -> None:
+        """Render a condition editor within a form context."""
+        col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+
+        with col1:
+            field = st.selectbox(
+                f"Field {index + 1}",
+                options=[e.value for e in RuleFields],
+                index=[e.value for e in RuleFields].index(condition['field']) if condition['field'] in [e.value for e in RuleFields] else 0,
+                key=f"edit_field_{rule_id}_{index}"
+            )
+
+        with col2:
+            operator = st.selectbox(
+                f"Operator {index + 1}",
+                options=[e.value for e in RuleOperators],
+                index=[e.value for e in RuleOperators].index(condition['operator']) if condition['operator'] in [e.value for e in RuleOperators] else 0,
+                key=f"edit_operator_{rule_id}_{index}"
+            )
+
+        with col3:
+            value = st.text_input(
+                f"Value {index + 1}",
+                value=str(condition['value']),
+                key=f"edit_value_{rule_id}_{index}"
+            )
+
+        # Update the condition in session state
+        st.session_state[conditions_key][index] = {
+            'field': field,
+            'operator': operator,
+            'value': value
+        }
 
     def _render_rule_testing(self) -> None:
         """Render the rule testing interface."""
