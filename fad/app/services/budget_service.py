@@ -203,14 +203,6 @@ class MonthlyBudgetService(BudgetService):
         rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
         return rules
 
-    def get_monthly_rules(self) -> pd.DataFrame:
-        """Get all monthly budget rules (rules with year and month specified)."""
-        rules = self.budget_repository.read_all()
-        if not rules.empty:
-            rules = rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
-            rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
-        return rules
-
     def delete_rules_by_month(self, year: int, month: int) -> None:
         """Delete all budget rules for a specific month."""
         self.budget_repository.delete_by_month(year, month)
@@ -348,7 +340,7 @@ class MonthlyBudgetService(BudgetService):
             Returns None if no rules exist for the specified month.
         """
         # TODO: split this function into smaller functions
-        budget_rules = self.get_monthly_rules()
+        budget_rules = self.get_all_rules()
         bank_data = self.transactions_service.get_table_for_analysis("bank")
         credit_data = self.transactions_service.get_table_for_analysis("credit_card")
         all_data = pd.concat([credit_data, bank_data])
@@ -363,10 +355,7 @@ class MonthlyBudgetService(BudgetService):
         )
 
         # Exclude project categories
-        projects = budget_rules[
-            budget_rules[YEAR].isnull() & budget_rules[MONTH].isnull()
-        ][CATEGORY].unique()
-
+        projects = ProjectBudgetService().get_all_projects_names()
         month_data = expenses.loc[
             (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
             (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
