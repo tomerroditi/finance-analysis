@@ -77,6 +77,7 @@
 - Maintain consistent layout across pages
 - Support wide layout mode
 - Provide clear navigation structure
+- **Always use unique keys for widgets**: Every Streamlit widget (st.selectbox, st.button, st.text_input, etc.) must have a unique `key` parameter
 
 ## Error Handling
 - Custom exception hierarchy in `scraper/exceptions.py`
