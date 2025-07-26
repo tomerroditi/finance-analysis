@@ -8,7 +8,7 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 
-from fad.app.components.tagging_components import ManuallyTaggingComponent
+from fad.app.components.rule_based_tagging_components import RuleBasedTaggingComponent
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
@@ -85,13 +85,18 @@ class BudgetUI:
             if selected_rows:
                 idx = selected_rows[0]
                 row = sorted_data.iloc[idx]
-                manual = ManuallyTaggingComponent()
+                # Use the new rule-based tagging component for comprehensive transaction editing
+                rule_based_tagger = RuleBasedTaggingComponent()
                 provider = row.get(TransactionsTableFields.PROVIDER.value)
                 if provider in cc_providers:
                     service = "credit_card"
                 elif provider in bank_providers:
                     service = "bank"
-                manual._manual_tagger_editing_window(row, service=service)
+                else:
+                    raise ValueError(f"Unknown provider: {provider}")
+
+                # Render the comprehensive transaction tagger interface
+                rule_based_tagger.render_transaction_tagger(row, service)
 
         # Buttons
         edit_col.button(
@@ -181,6 +186,7 @@ class MonthlyBudgetUI(BudgetUI):
     """
     UI for the monthly budget overview.
     """
+    # TODO: make a separate section in the monthly budget for transactions that are related to project budget manager, do not consider these expenses when calculating the total budget
     def __init__(self):
         super().__init__()
         self.monthly_budget_service = MonthlyBudgetService()
