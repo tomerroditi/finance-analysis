@@ -1,19 +1,12 @@
 import streamlit as st
 
-from fad.app.components.tagging_components import (
-    CategoriesTagsEditor,
-    AutomaticTaggerComponent,
-    ManuallyTaggingComponent
-)
+from fad.app.components.tagging_components import CategoriesTagsEditor
+from fad.app.components.rule_based_tagging_components import RuleBasedTaggingComponent
 
-tab_tags, tab_auto_tagger, tab_manually_tag = st.tabs(["Categories & Tags", "Automatic Tagger", "Manually Tagging"])
+tab_tags, tab_tagging = st.tabs(["Categories & Tags", "Tagging"])
 
 with tab_tags:
     CategoriesTagsEditor().render()
 
-with tab_auto_tagger:
-    AutomaticTaggerComponent().render()
-
-
-with (tab_manually_tag):
-    ManuallyTaggingComponent().render()
+with tab_tagging:
+    RuleBasedTaggingComponent().render()

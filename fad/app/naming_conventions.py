@@ -48,6 +48,8 @@ class Tables(Enum):
         Name of the table storing bank transactions.
     AUTO_TAGGER : str
         Name of the table storing automatic tagging rules.
+    TAGGING_RULES : str
+        Name of the table storing rule-based tagging rules.
     BUDGET_RULES : str
         Name of the table storing budget rules.
     SPLIT_TRANSACTIONS : str
@@ -56,6 +58,7 @@ class Tables(Enum):
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
     AUTO_TAGGER = 'automatic_tagger'
+    TAGGING_RULES = 'tagging_rules'
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
 
@@ -162,6 +165,71 @@ class BudgetRulesTableFields(Enum):
     TAGS = 'tags'
     NAME = 'name'
     AMOUNT = 'amount'
+
+
+class TaggingRulesTableFields(Enum):
+    """
+    Enum defining field names for the tagging rules table.
+
+    Attributes
+    ----------
+    ID : str
+        Field name for the unique identifier.
+    NAME : str
+        Field name for the rule name.
+    PRIORITY : str
+        Field name for the rule priority (higher number = higher priority).
+    CONDITIONS : str
+        Field name for the rule conditions (JSON format).
+    CATEGORY : str
+        Field name for the category to assign.
+    TAG : str
+        Field name for the tag to assign.
+    SERVICE : str
+        Field name for the service type (credit_card, bank).
+    ACCOUNT_NUMBER : str
+        Field name for the account number (optional, for bank rules).
+    IS_ACTIVE : str
+        Field name for whether the rule is active.
+    CREATED_DATE : str
+        Field name for when the rule was created.
+    """
+    ID = 'id'
+    NAME = 'name'
+    PRIORITY = 'priority'
+    CONDITIONS = 'conditions'
+    CATEGORY = 'category'
+    TAG = 'tag'
+    SERVICE = 'service'
+    ACCOUNT_NUMBER = 'account_number'
+    IS_ACTIVE = 'is_active'
+    CREATED_DATE = 'created_date'
+
+
+class RuleOperators(Enum):
+    """
+    Enum defining operators for rule conditions.
+    """
+    CONTAINS = 'contains'
+    EQUALS = 'equals'
+    STARTS_WITH = 'starts_with'
+    ENDS_WITH = 'ends_with'
+    GREATER_THAN = 'gt'
+    LESS_THAN = 'lt'
+    GREATER_THAN_EQUAL = 'gte'
+    LESS_THAN_EQUAL = 'lte'
+    BETWEEN = 'between'
+
+
+class RuleFields(Enum):
+    """
+    Enum defining fields that can be used in rule conditions.
+    """
+    DESCRIPTION = 'description'
+    AMOUNT = 'amount'
+    PROVIDER = 'provider'
+    ACCOUNT_NAME = 'account_name'
+    ACCOUNT_NUMBER = 'account_number'
 
 
 class Services(Enum):

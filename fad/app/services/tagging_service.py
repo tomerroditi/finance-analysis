@@ -8,6 +8,7 @@ from streamlit.connections import SQLConnection
 from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.tagging_repository import AutoTaggerRepository, TaggingRepository
+from fad.app.data_access.tagging_rules_repository import TaggingRulesRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 from fad.app.services.transactions_service import TransactionsService
@@ -69,6 +70,7 @@ class CategoriesTagsService:
         self.transactions_repo = TransactionsRepository(conn)
         self.split_transactions_repo = SplitTransactionsRepository(conn)
         self.auto_tagger_repo = AutoTaggerRepository(conn)
+        self.tagging_rules_repo = TaggingRulesRepository(conn)
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
         """
@@ -146,6 +148,7 @@ class CategoriesTagsService:
         self.transactions_repo.nullify_category(category)
         self.split_transactions_repo.nullify_category(category)
         self.auto_tagger_repo.delete_by_category(category)
+        self.tagging_rules_repo.delete_rules_by_category(category)
         if category in protected_categories:
             return False
         if category in self.categories_and_tags:
@@ -178,6 +181,7 @@ class CategoriesTagsService:
             self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
             self.split_transactions_repo.update_category_for_tag(old_category, new_category, tag)
             self.auto_tagger_repo.update_category_for_tag(old_category, new_category, tag)
+            self.tagging_rules_repo.update_category_for_tag(old_category, new_category, tag)
         # Remove tags from old category
         self.categories_and_tags[old_category] = [t for t in self.categories_and_tags[old_category] if t not in tags]
         # Add tags to new category (avoid duplicates)
@@ -235,6 +239,9 @@ class CategoriesTagsService:
 
         # 3. Remove the row with the specified category and tag from the auto tagger table (for both services)
         self.auto_tagger_repo.delete_by_category_and_tag(category, tag)
+
+        # 4. Remove rules with the specified category and tag from the tagging rules table
+        self.tagging_rules_repo.delete_rules_by_category_and_tag(category, tag)
 
         if category not in self.categories_and_tags:
             return False
@@ -454,6 +461,13 @@ class AutomaticTaggerService:
 
         This method contains the business logic that was moved from AutoTaggerRepository.
         It orchestrates the application of rules to both credit card and bank transactions.
+        Now also applies the new rule-based tagging system.
         """
+        # Apply old auto-tagger rules first for backward compatibility
         self.auto_tagger_repo.update_credit_card_transactions_by_rules()
         self.auto_tagger_repo.update_bank_transactions_by_rules()
+
+        # Apply new rule-based tagging system
+        from fad.app.services.tagging_rules_service import TaggingRulesService
+        rules_service = TaggingRulesService(self.conn)
+        rules_service.apply_rules_to_all_services()
