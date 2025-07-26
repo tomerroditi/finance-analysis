@@ -71,14 +71,24 @@ class TaggingRulesRepository:
 
         where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-        query = f'SELECT * FROM {self.table} {where_clause} ORDER BY {self.priority_col} DESC, {self.id_col};'
-        return self.conn.query(query, params=params, ttl=0)
+        with self.conn.session as s:
+            query = f'SELECT * FROM {self.table} {where_clause} ORDER BY {self.priority_col} DESC, {self.id_col};'
+            result = s.execute(text(query), params).fetchall()
+        return pd.DataFrame(result)
 
     def get_rule_by_id(self, rule_id: int) -> Optional[pd.Series]:
         """Get a specific rule by ID"""
-        query = f'SELECT * FROM {self.table} WHERE {self.id_col} = :id;'
-        result = self.conn.query(query, params={'id': rule_id}, ttl=0)
-        return result.iloc[0] if not result.empty else None
+        with self.conn.session as s:
+            query = f'SELECT * FROM {self.table} WHERE {self.id_col} = :id;'
+            params = {'id': int(rule_id)}
+            result = s.execute(text(query), params).fetchall()
+
+        # Convert to DataFrame after fetching
+        df_result = pd.DataFrame(result)
+
+        if not df_result.empty:
+            return df_result.iloc[0]
+        return None
 
     def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str,
                  service: Literal['credit_card', 'bank'], priority: int = 1,
@@ -115,7 +125,7 @@ class TaggingRulesRepository:
                     is_active: bool = None) -> bool:
         """Update an existing rule. Only updates provided fields."""
         updates = []
-        params = {'id': rule_id}
+        params = {'id': int(rule_id)}
 
         if name is not None:
             updates.append(f'{self.name_col} = :name')
@@ -154,7 +164,7 @@ class TaggingRulesRepository:
         """Delete a rule by ID"""
         with self.conn.session as s:
             query = sa.text(f"DELETE FROM {self.table} WHERE {self.id_col} = :id")
-            result = s.execute(query, {'id': rule_id})
+            result = s.execute(query, {'id': int(rule_id)})
             s.commit()
             return result.rowcount > 0
 
