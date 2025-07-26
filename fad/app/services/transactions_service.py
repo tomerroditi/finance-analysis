@@ -130,13 +130,13 @@ class TransactionsService:
                 name, account_number, category, tag
             )
 
-    def update_tagging_by_id(self, id_: int, category: str, tag: str, service: Literal['credit_card', 'bank']) -> None:
+    def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None, service: Literal['credit_card', 'bank']) -> None:
         """
         Update the category and tag for a transaction by ID.
 
         Parameters
         ----------
-        id_ : int
+        id_ : str
             The ID of the transaction to update.
         category : str
             The new category for the transaction.
@@ -157,13 +157,13 @@ class TransactionsService:
         else:
             self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
 
-    def update_transaction_by_id(self, transaction_id: int, updates: dict, service: Literal['credit_card', 'bank']) -> bool:
+    def update_transaction_by_id(self, transaction_id: str, updates: dict, service: Literal['credit_card', 'bank']) -> bool:
         """
         Update a transaction by ID with the given field updates.
 
         Parameters
         ----------
-        transaction_id : int
+        transaction_id : str
             The ID of the transaction to update.
         updates : dict
             Dictionary of field names and their new values.

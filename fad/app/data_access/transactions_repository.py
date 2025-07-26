@@ -224,13 +224,13 @@ class ServiceRepository:
             self.tag_col
         ]
 
-    def update_tagging_by_id(self, id_: int, category: str, tag: str) -> None:
+    def update_tagging_by_id(self, id_: str, category: str, tag: str) -> None:
         """
         Update the tags of bank transactions in the database by transaction ID.
 
         Parameters
         ----------
-        id_ : int
+        id_ : str
             The ID of the transaction.
         category : str
             The category to tag the transaction with.
@@ -255,13 +255,13 @@ class ServiceRepository:
             s.execute(text(my_query), params)
             s.commit()
 
-    def update_transaction_by_id(self, transaction_id: int, updates: dict) -> bool:
+    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
         """
         Update a transaction by ID with the given field updates.
 
         Parameters
         ----------
-        transaction_id : int
+        transaction_id : str
             The ID of the transaction to update.
         updates : dict
             Dictionary of field names and their new values.
