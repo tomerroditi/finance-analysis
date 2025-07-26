@@ -125,18 +125,24 @@ class RuleBasedTaggingComponent:
         # Get untagged transactions
         untagged_transactions = self.rules_service.get_untagged_transactions(service)
 
-        if untagged_transactions.empty:
-            st.info("🎉 No untagged transactions found. All transactions have been categorized!")
+        # Always show option to view tagged transactions for re-tagging
+        show_tagged = st.checkbox("Show already tagged transactions for re-tagging", key="show_tagged")
 
-            # Option to view and retag existing transactions
-            if st.checkbox("Show already tagged transactions for re-tagging", key="show_tagged"):
-                all_transactions = self.transactions_service.get_all_transactions(service)
-                if not all_transactions.empty:
-                    st.info(f"Showing all {len(all_transactions)} transactions for re-tagging")
-                    self._render_transaction_filter(all_transactions, service, show_tagged=True)
+        if show_tagged:
+            all_transactions = self.transactions_service.get_all_transactions(service)
+            if not all_transactions.empty:
+                st.info(f"Showing all {len(all_transactions)} transactions for re-tagging")
+                self._render_transaction_filter(all_transactions, service, show_tagged=True)
+            else:
+                st.info("No transactions found.")
             return
 
-        # Filter interface
+        if untagged_transactions.empty:
+            st.info("🎉 No untagged transactions found. All transactions have been categorized!")
+            st.info("Use the checkbox above to view and edit already tagged transactions.")
+            return
+
+        # Filter interface for untagged transactions
         self._render_transaction_filter(untagged_transactions, service)
 
     def _render_bulk_tagging_mode(self, service: str) -> None:
@@ -204,29 +210,42 @@ class RuleBasedTaggingComponent:
                     key=f'bulk_tag_{service}'
                 )
 
-            # Action buttons
-            col_apply, col_remove = st.columns(2)
+            # Action selection
+            st.markdown("**Select Action**")
+            action_type = st.radio(
+                "Action:",
+                options=["apply_tags", "remove_tags"],
+                format_func=lambda x: "Apply selected category/tag" if x == "apply_tags" else "Remove all tags",
+                key=f"bulk_action_{service}"
+            )
 
-            with col_apply:
-                if bulk_category and bulk_tag:
-                    if st.button(f"Apply {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions",
-                               type="primary", key=f"bulk_apply_{service}"):
-                        self._apply_bulk_tagging(filtered_transactions, service, bulk_category, bulk_tag)
-                        st.success(f"Applied {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions!")
-                        # Clear cache and rerun
-                        if f"bulk_filter_widgets_{service}" in st.session_state:
-                            del st.session_state[f"bulk_filter_widgets_{service}"]
-                        st.rerun()
+            # Preview and confirm
+            if action_type == "apply_tags" and bulk_category and bulk_tag:
+                st.success(f"Ready to apply **{bulk_category}/{bulk_tag}** to {len(filtered_transactions)} transactions")
 
-            with col_remove:
-                if st.button(f"Remove all tags from {len(filtered_transactions)} transactions",
-                           type="secondary", key=f"bulk_remove_{service}"):
-                    self._apply_bulk_tag_removal(filtered_transactions, service)
-                    st.success(f"Removed tags from {len(filtered_transactions)} transactions!")
+                if st.button(f"💾 Save - Apply {bulk_category}/{bulk_tag}",
+                           type="primary", key=f"bulk_save_apply_{service}"):
+                    self._apply_bulk_tagging(filtered_transactions, service, bulk_category, bulk_tag)
+                    st.success(f"✅ Applied {bulk_category}/{bulk_tag} to {len(filtered_transactions)} transactions!")
                     # Clear cache and rerun
                     if f"bulk_filter_widgets_{service}" in st.session_state:
                         del st.session_state[f"bulk_filter_widgets_{service}"]
                     st.rerun()
+
+            elif action_type == "remove_tags":
+                st.warning(f"Ready to remove all tags from {len(filtered_transactions)} transactions")
+
+                if st.button(f"💾 Save - Remove All Tags",
+                           type="secondary", key=f"bulk_save_remove_{service}"):
+                    self._apply_bulk_tag_removal(filtered_transactions, service)
+                    st.success(f"✅ Removed tags from {len(filtered_transactions)} transactions!")
+                    # Clear cache and rerun
+                    if f"bulk_filter_widgets_{service}" in st.session_state:
+                        del st.session_state[f"bulk_filter_widgets_{service}"]
+                    st.rerun()
+
+            elif action_type == "apply_tags":
+                st.info("Please select both category and tag to proceed.")
 
             # Preview table
             if not filtered_transactions.empty:
