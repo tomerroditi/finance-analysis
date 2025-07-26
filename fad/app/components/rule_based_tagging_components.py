@@ -1,6 +1,4 @@
-from typing import Dict, Any, Literal, List
-import json
-
+from typing import Literal, List
 import pandas as pd
 import streamlit as st
 
@@ -272,67 +270,60 @@ class RuleBasedTaggingComponent:
             st.info("No transactions found.")
             return
 
-        # Search and filter interface
-        search_col, filter_col = st.columns([0.5, 0.5])
-
-        with search_col:
-            search_term = st.text_input(
-                "Search transactions (description, provider):",
-                key=f"edit_search_{service}"
-            )
+        # Filter interface using comprehensive widgets
+        filter_col, data_col = st.columns([0.3, 0.7])
 
         with filter_col:
-            date_range = st.date_input(
-                "Date range:",
-                value=None,
-                key=f"edit_date_range_{service}"
+            st.markdown("**Filter Transactions**")
+
+            # Create filter widgets for editing operations
+            filter_key = f"edit_filter_widgets_{service}"
+            if filter_key not in st.session_state:
+                widgets_map = {
+                    TransactionsTableFields.AMOUNT.value: 'number_range',
+                    TransactionsTableFields.DATE.value: 'date_range',
+                    TransactionsTableFields.PROVIDER.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+                    TransactionsTableFields.DESCRIPTION.value: 'multiselect',
+                    TransactionsTableFields.CATEGORY.value: 'multiselect',
+                    TransactionsTableFields.TAG.value: 'multiselect',
+                }
+
+                df_filter = PandasFilterWidgets(all_transactions, widgets_map, keys_prefix=f"edit_{service}")
+                st.session_state[filter_key] = df_filter
+            else:
+                df_filter = st.session_state[filter_key]
+
+            df_filter.display_widgets()
+            filtered_transactions = df_filter.filter_df()
+
+            st.info(f"Found {len(filtered_transactions)} transactions")
+
+        with data_col:
+            if filtered_transactions.empty:
+                st.info("No transactions match the current filters.")
+                return
+
+            # Transaction selection
+            columns_order = self.transactions_service.get_table_columns_for_display()
+
+            selections = st.dataframe(
+                filtered_transactions,
+                key=f'{service}_edit_dataframe',
+                column_order=columns_order,
+                hide_index=False,
+                on_select='rerun',
+                selection_mode='single-row',
+                height=400
             )
 
-        # Filter transactions based on search and date
-        filtered_transactions = all_transactions.copy()
-
-        if search_term:
-            desc_col = TransactionsTableFields.DESCRIPTION.value
-            provider_col = TransactionsTableFields.PROVIDER.value
-            mask = (
-                filtered_transactions[desc_col].str.contains(search_term, case=False, na=False) |
-                filtered_transactions[provider_col].str.contains(search_term, case=False, na=False)
-            )
-            filtered_transactions = filtered_transactions[mask]
-
-        if date_range and len(date_range) == 2:
-            date_col = TransactionsTableFields.DATE.value
-            filtered_transactions = filtered_transactions[
-                (pd.to_datetime(filtered_transactions[date_col]).dt.date >= date_range[0]) &
-                (pd.to_datetime(filtered_transactions[date_col]).dt.date <= date_range[1])
-            ]
-
-        # Display transactions for editing
-        if filtered_transactions.empty:
-            st.info("No transactions match the search criteria.")
-            return
-
-        st.info(f"Found {len(filtered_transactions)} transactions")
-
-        # Transaction selection
-        columns_order = self.transactions_service.get_table_columns_for_display()
-
-        selections = st.dataframe(
-            filtered_transactions,
-            key=f'{service}_edit_dataframe',
-            column_order=columns_order,
-            hide_index=False,
-            on_select='rerun',
-            selection_mode='single-row',
-            height=400
-        )
-
-        # Handle selected transaction for editing
-        indices = selections['selection']['rows']
-        if indices:
-            idx = indices[0]
-            selected_transaction = filtered_transactions.iloc[idx]
-            self._render_transaction_editor(selected_transaction, service)
+            # Handle selected transaction for editing
+            indices = selections['selection']['rows']
+            if indices:
+                idx = indices[0]
+                selected_transaction = filtered_transactions.iloc[idx]
+                self._render_transaction_editor(selected_transaction, service)
 
     def _render_transaction_editor(self, transaction: pd.Series, service: str) -> None:
         """Render the transaction editor interface."""
@@ -342,78 +333,80 @@ class RuleBasedTaggingComponent:
         id_col = TransactionsTableFields.ID.value
         transaction_id = transaction[id_col]
 
-        # Create editing form
-        with st.form(f"edit_transaction_{transaction_id}"):
-            col1, col2 = st.columns(2)
+        with st.container(border=True):
+            self._transaction_editor_fragment(transaction, service, transaction_id)
 
-            with col1:
-                # Editable fields
-                new_description = st.text_input(
-                    "Description:",
-                    value=transaction[TransactionsTableFields.DESCRIPTION.value],
-                    key=f"edit_desc_{transaction_id}"
-                )
+    @st.fragment
+    def _transaction_editor_fragment(self, transaction: pd.Series, service: str, transaction_id: str) -> None:
+        """Fragment for transaction editing form."""
+        col1, col2 = st.columns(2)
 
-                new_amount = st.number_input(
-                    "Amount:",
-                    value=float(transaction[TransactionsTableFields.AMOUNT.value]),
-                    format="%.2f",
-                    key=f"edit_amount_{transaction_id}"
-                )
+        with col1:
+            # Editable fields
+            new_description = st.text_input(
+                "Description:",
+                value=transaction[TransactionsTableFields.DESCRIPTION.value],
+                key=f"edit_desc_{transaction_id}"
+            )
 
-                new_provider = st.text_input(
-                    "Provider:",
-                    value=transaction[TransactionsTableFields.PROVIDER.value] or "",
-                    key=f"edit_provider_{transaction_id}"
-                )
+            new_amount = st.number_input(
+                "Amount:",
+                value=float(transaction[TransactionsTableFields.AMOUNT.value]),
+                format="%.2f",
+                key=f"edit_amount_{transaction_id}"
+            )
 
-            with col2:
-                # Category and tag editing
-                categories = list(self.categories_and_tags.keys())
-                current_category = transaction.get(TransactionsTableFields.CATEGORY.value)
+            new_provider = st.text_input(
+                "Provider:",
+                value=transaction[TransactionsTableFields.PROVIDER.value] or "",
+                key=f"edit_provider_{transaction_id}"
+            )
 
-                new_category = st.selectbox(
-                    "Category:",
-                    options=[None] + categories,
-                    index=categories.index(current_category) + 1 if current_category in categories else 0,
-                    format_func=lambda x: "No category" if x is None else x,
-                    key=f"edit_category_{transaction_id}"
-                )
+        with col2:
+            # Category and tag editing
+            categories = list(self.categories_and_tags.keys())
+            current_category = transaction.get(TransactionsTableFields.CATEGORY.value)
 
-                tags = self.categories_and_tags.get(new_category, []) if new_category else []
-                current_tag = transaction.get(TransactionsTableFields.TAG.value)
+            new_category = st.selectbox(
+                "Category:",
+                options=[None] + categories,
+                index=categories.index(current_category) + 1 if current_category in categories else 0,
+                format_func=lambda x: "No category" if x is None else x,
+                key=f"edit_category_{transaction_id}"
+            )
 
-                new_tag = st.selectbox(
-                    "Tag:",
-                    options=[None] + tags,
-                    index=tags.index(current_tag) + 1 if current_tag in tags else 0,
-                    format_func=lambda x: "No tag" if x is None else x,
-                    key=f"edit_tag_{transaction_id}"
-                )
+            tags = self.categories_and_tags.get(new_category, []) if new_category else []
+            current_tag = transaction.get(TransactionsTableFields.TAG.value)
 
-            # Save button
-            submitted = st.form_submit_button("💾 Save Changes", type="primary")
+            new_tag = st.selectbox(
+                "Tag:",
+                options=[None] + tags,
+                index=tags.index(current_tag) + 1 if current_tag in tags else 0,
+                format_func=lambda x: "No tag" if x is None else x,
+                key=f"edit_tag_{transaction_id}"
+            )
 
-            if submitted:
-                # Update transaction
-                updates = {
-                    TransactionsTableFields.DESCRIPTION.value: new_description,
-                    TransactionsTableFields.AMOUNT.value: new_amount,
-                    TransactionsTableFields.PROVIDER.value: new_provider,
-                    TransactionsTableFields.CATEGORY.value: new_category,
-                    TransactionsTableFields.TAG.value: new_tag,
-                }
+        # Save button
+        if st.button("💾 Save Changes", type="primary", key=f"save_transaction_{transaction_id}"):
+            # Update transaction
+            updates = {
+                TransactionsTableFields.DESCRIPTION.value: new_description,
+                TransactionsTableFields.AMOUNT.value: new_amount,
+                TransactionsTableFields.PROVIDER.value: new_provider,
+                TransactionsTableFields.CATEGORY.value: new_category,
+                TransactionsTableFields.TAG.value: new_tag,
+            }
 
-                service_literal: Literal['credit_card', 'bank'] = service
-                success = self.transactions_service.update_transaction_by_id(
-                    transaction_id, updates, service_literal
-                )
+            service_literal: Literal['credit_card', 'bank'] = service
+            success = self.transactions_service.update_transaction_by_id(
+                transaction_id, updates, service_literal
+            )
 
-                if success:
-                    st.success("✅ Transaction updated successfully!")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to update transaction")
+            if success:
+                st.success("✅ Transaction updated successfully!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to update transaction")
 
     def _apply_bulk_tagging(self, transactions: pd.DataFrame, service: str, category: str, tag: str) -> None:
         """Apply bulk tagging to multiple transactions."""
@@ -485,9 +478,9 @@ class RuleBasedTaggingComponent:
             indices = selections['selection']['rows']
             for idx in indices:
                 row = filtered_transactions.iloc[idx]
-                self._render_transaction_tagger(row, service)
+                self.render_transaction_tagger(row, service)
 
-    def _render_transaction_tagger(self, transaction: pd.Series, service: str) -> None:
+    def render_transaction_tagger(self, transaction: pd.Series, service: str) -> None:
         """Render the interface for tagging a single transaction and creating rules."""
         st.markdown("---")
         st.markdown("#### Tag Selected Transaction")
@@ -787,9 +780,10 @@ class RuleBasedTaggingComponent:
             selected_rows = selections['selection']['rows']
             if selected_rows:
                 selected_rule_id = rules_df.iloc[selected_rows[0]]['id']
-                self._render_rule_editor(selected_rule_id)
+                with st.container(border=True, key=f"rule_editor_{selected_rule_id}"):
+                    self._render_rule_editor(selected_rule_id)
             else:
-                st.info("Select a rule from the table to edit it.")
+                st.info("Please select a rule from the table to edit it.")
 
     def _render_rule_editor(self, rule_id: int) -> None:
         """Render the rule editor interface."""
@@ -806,114 +800,114 @@ class RuleBasedTaggingComponent:
             if conditions_key not in st.session_state:
                 st.session_state[conditions_key] = rule['conditions'].copy()
 
-            # Rule details form
-            with st.form(f"edit_rule_{rule_id}"):
-                new_name = st.text_input("Rule Name:", value=rule['name'])
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    categories = list(self.categories_and_tags.keys())
-                    new_category = st.selectbox(
-                        "Category:",
-                        options=categories,
-                        index=categories.index(rule['category']) if rule['category'] in categories else 0
-                    )
-
-                with col2:
-                    tags = self.categories_and_tags.get(new_category, [])
-                    new_tag = st.selectbox(
-                        "Tag:",
-                        options=tags,
-                        index=tags.index(rule['tag']) if rule['tag'] in tags else 0
-                    )
-
-                new_priority = st.number_input("Priority:", value=int(rule['priority']), min_value=1, max_value=10)
-                new_is_active = st.checkbox("Active", value=bool(rule['is_active']))
-
-                # Editable conditions section
-                st.markdown("**Conditions (all must match):**")
-
-                # Display existing conditions with edit capability
-                conditions = st.session_state[conditions_key]
-                for i, condition in enumerate(conditions):
-                    self._render_condition_editor_in_form(i, condition, conditions_key, rule_id)
-
-                # Buttons to add/remove conditions
-                col_add, col_remove = st.columns(2)
-                with col_add:
-                    add_condition = st.form_submit_button("➕ Add Condition")
-                    if add_condition:
-                        st.session_state[conditions_key].append({
-                            'field': RuleFields.DESCRIPTION.value,
-                            'operator': RuleOperators.CONTAINS.value,
-                            'value': ''
-                        })
-                        st.rerun()
-
-                with col_remove:
-                    if len(conditions) > 1:  # Keep at least one condition
-                        remove_last = st.form_submit_button("➖ Remove Last Condition")
-                        if remove_last:
-                            st.session_state[conditions_key].pop()
-                            st.rerun()
-
-                # Action buttons
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    save_submitted = st.form_submit_button("💾 Save Changes", type="primary")
-                    if save_submitted:
-                        # Update rule with new conditions
-                        success = self.rules_service.update_rule(
-                            rule_id=rule_id,
-                            name=new_name,
-                            category=new_category,
-                            tag=new_tag,
-                            priority=new_priority,
-                            is_active=new_is_active,
-                            conditions=st.session_state[conditions_key]
-                        )
-                        if success:
-                            st.success("✅ Rule updated successfully!")
-                            # Clear the session state for conditions
-                            del st.session_state[conditions_key]
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to update rule")
-
-                with col2:
-                    delete_submitted = st.form_submit_button("🗑️ Delete Rule", type="secondary")
-                    if delete_submitted:
-                        success = self.rules_service.delete_rule(rule_id)
-                        if success:
-                            st.success("✅ Rule deleted successfully!")
-                            # Clear the session state for conditions
-                            if conditions_key in st.session_state:
-                                del st.session_state[conditions_key]
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to delete rule")
-
-                with col3:
-                    test_submitted = st.form_submit_button("🧪 Test Rule")
-                    if test_submitted:
-                        # Test with current conditions from session state
-                        mock_rule = {
-                            'conditions': st.session_state[conditions_key],
-                            'service': rule['service'],
-                            'account_number': rule.get('account_number')
-                        }
-                        test_results = self.rules_service.test_rule_against_transactions(
-                            conditions=mock_rule['conditions'],
-                            service=mock_rule['service'],
-                            account_number=mock_rule.get('account_number')
-                        )
-                        st.info(f"Rule would match {len(test_results)} transactions")
+            self._rule_editor_fragment(rule, rule_id, conditions_key)
 
         except Exception as e:
             st.error(f"Error loading rule: {str(e)}")
 
-    def _render_condition_editor_in_form(self, index: int, condition: dict, conditions_key: str, rule_id: int) -> None:
-        """Render a condition editor within a form context."""
+    @st.fragment
+    def _rule_editor_fragment(self, rule: dict, rule_id: int, conditions_key: str) -> None:
+        """Fragment for rule editing form."""
+        new_name = st.text_input("Rule Name:", value=rule['name'], key=f"tagging_edit_name_{rule_id}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            categories = list(self.categories_and_tags.keys())
+            new_category = st.selectbox(
+                "Category:",
+                options=categories,
+                index=categories.index(rule['category']) if rule['category'] in categories else 0,
+                key=f"tagging_edit_category_{rule_id}"
+            )
+
+        with col2:
+            tags = self.categories_and_tags.get(new_category, [])
+            new_tag = st.selectbox(
+                "Tag:",
+                options=tags,
+                index=tags.index(rule['tag']) if rule['tag'] in tags else 0,
+                key=f"tagging_edit_tag_{rule_id}"
+            )
+
+        new_priority = st.number_input("Priority:", value=int(rule['priority']), min_value=1, max_value=10, key=f"priority_{rule_id}")
+        new_is_active = st.checkbox("Active", value=bool(rule['is_active']), key=f"active_{rule_id}")
+
+        # Editable conditions section
+        st.markdown("**Conditions (all must match):**")
+
+        # Display existing conditions with edit capability
+        conditions = st.session_state[conditions_key]
+        for i, condition in enumerate(conditions):
+            self._render_condition_editor_fragment(i, condition, conditions_key, rule_id)
+
+        # Buttons to add/remove conditions
+        col_add, col_remove = st.columns(2)
+        with col_add:
+            if st.button("➕ Add Condition", key=f"add_condition_{rule_id}"):
+                st.session_state[conditions_key].append({
+                    'field': RuleFields.DESCRIPTION.value,
+                    'operator': RuleOperators.CONTAINS.value,
+                    'value': ''
+                })
+                st.rerun()
+
+        with col_remove:
+            if len(conditions) > 1:  # Keep at least one condition
+                if st.button("➖ Remove Last Condition", key=f"remove_condition_{rule_id}"):
+                    st.session_state[conditions_key].pop()
+                    st.rerun()
+
+        # Action buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💾 Save Changes", key=f"save_rule_{rule_id}", type="primary"):
+                # Update rule with new conditions
+                success = self.rules_service.update_rule(
+                    rule_id=rule_id,
+                    name=new_name,
+                    category=new_category,
+                    tag=new_tag,
+                    priority=new_priority,
+                    is_active=new_is_active,
+                    conditions=st.session_state[conditions_key]
+                )
+                if success:
+                    st.success("✅ Rule updated successfully!")
+                    # Clear the session state for conditions
+                    del st.session_state[conditions_key]
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to update rule")
+
+        with col2:
+            if st.button("🗑️ Delete Rule", key=f"delete_rule_{rule_id}", type="secondary"):
+                success = self.rules_service.delete_rule(rule_id)
+                if success:
+                    st.success("✅ Rule deleted successfully!")
+                    # Clear the session state for conditions
+                    if conditions_key in st.session_state:
+                        del st.session_state[conditions_key]
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to delete rule")
+
+        with col3:
+            if st.button("🧪 Test Rule", key=f"test_rule_{rule_id}"):
+                # Test with current conditions from session state
+                mock_rule = {
+                    'conditions': st.session_state[conditions_key],
+                    'service': rule['service'],
+                    'account_number': rule.get('account_number')
+                }
+                test_results = self.rules_service.test_rule_against_transactions(
+                    conditions=mock_rule['conditions'],
+                    service=mock_rule['service'],
+                    account_number=mock_rule.get('account_number')
+                )
+                st.info(f"Rule would match {len(test_results)} transactions")
+
+    def _render_condition_editor_fragment(self, index: int, condition: dict, conditions_key: str, rule_id: int) -> None:
+        """Render a condition editor for use within fragments."""
         col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
 
         with col1:
