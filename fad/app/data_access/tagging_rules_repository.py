@@ -279,10 +279,13 @@ class TaggingRulesRepository:
         Returns:
             Tuple of WHERE conditions list and parameters dictionary
         """
-        conditions = json.loads(rule[self.conditions_col])
-        category = rule[self.category_col]
-        tag = rule[self.tag_col]
-        account_number = rule[self.account_number_col]
+        # Access row data using _mapping to get column values by name
+        rule_data = rule._mapping
+        
+        conditions = json.loads(rule_data[self.conditions_col])
+        category = rule_data[self.category_col]
+        tag = rule_data[self.tag_col]
+        account_number = rule_data[self.account_number_col]
 
         where_conditions = [f"{TransactionsTableFields.CATEGORY.value} IS NULL"]
         params = {'category': category, 'tag': tag}
