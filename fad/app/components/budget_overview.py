@@ -8,7 +8,7 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 
-from fad.app.components.tagging_components import RuleBasedTaggingComponent
+from fad.app.components.tagging_components import RuleBasedTaggingComponent, TransactionsTaggingComponent
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
@@ -86,7 +86,7 @@ class BudgetUI:
                 idx = selected_rows[0]
                 row = sorted_data.iloc[idx]
                 # Use the new rule-based tagging component for comprehensive transaction editing
-                rule_based_tagger = RuleBasedTaggingComponent()
+                rule_based_tagger = TransactionsTaggingComponent()
                 provider = row.get(TransactionsTableFields.PROVIDER.value)
                 if provider in cc_providers:
                     service = "credit_card"
