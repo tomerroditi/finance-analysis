@@ -8,7 +8,7 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 
-from fad.app.components.rule_based_tagging_components import RuleBasedTaggingComponent
+from fad.app.components.tagging_components import RuleBasedTaggingComponent
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
