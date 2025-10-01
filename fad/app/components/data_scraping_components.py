@@ -48,18 +48,18 @@ class DataScrapingComponent:
         """
         Set the start date for scraping data.
 
-        Creates a date input widget with a default value of two weeks before the latest
-        data date. Validates that the selected date is not in the future.
+        Creates a date input widget with a default value of one year ago. Validates
+        the selected date to ensure it is not in the future. Updates the start_date
+        attribute with the selected date.
 
         Returns
         -------
         None
             Updates the start_date attribute with the selected date.
         """
-        latest_data_date = self.scraping_service.get_latest_data_date() - dt.timedelta(days=14)
         start_date = st.date_input("Set the date from which to start fetching your data "
-                                   "(Defaults to 2 weeks previously to the latest date in your data).",
-                                   value=latest_data_date)
+                                   "(Defaults to 1 year ago - which is the max range for most banks and credit cards)",
+                                   value=dt.date.today() - dt.timedelta(days=365),)
         if start_date > dt.date.today():
             st.warning("You cannot set a start date in the future. Please select a valid date.")
             start_date = dt.date.today()
