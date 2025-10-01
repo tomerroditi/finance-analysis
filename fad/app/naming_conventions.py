@@ -54,6 +54,8 @@ class Tables(Enum):
         Name of the table storing budget rules.
     SPLIT_TRANSACTIONS : str
         Name of the table storing split transactions.
+    SCRAPING_HISTORY : str
+        Name of the table storing scraping history and daily limits.
     """
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
@@ -61,6 +63,7 @@ class Tables(Enum):
     TAGGING_RULES = 'tagging_rules'
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
+    SCRAPING_HISTORY = 'scraping_history'
 
 
 def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -110,6 +113,33 @@ split_fields = [
 ]
 
 SplitTransactionsTableFields = create_enum('SplitTransactionsTableFields', split_fields)
+
+
+class ScrapingHistoryTableFields(Enum):
+    """
+    Enum defining field names for the scraping history table.
+
+    Attributes
+    ----------
+    ID : str
+        Field name for the unique identifier.
+    SERVICE_NAME : str
+        Field name for the service type (banks, credit_cards).
+    PROVIDER_NAME : str
+        Field name for the provider name (hapoalim, isracard, etc.).
+    ACCOUNT_NAME : str
+        Field name for the account name.
+    LAST_SCRAPED : str
+        Field name for the last scraping timestamp.
+    STATUS : str
+        Field name for the last scraping status (success, failed).
+    """
+    ID = 'id'
+    SERVICE_NAME = 'service_name'
+    PROVIDER_NAME = 'provider_name'
+    ACCOUNT_NAME = 'account_name'
+    LAST_SCRAPED = 'last_scraped'
+    STATUS = 'status'
 
 
 class AutoTaggerTableFields(Enum):

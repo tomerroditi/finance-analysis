@@ -6,6 +6,7 @@ from streamlit.connections import SQLConnection
 from fad import DB_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.scraping_repository import ScrapingRepository
+from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.services.transactions_service import TransactionsService
 from fad.scraper import Scraper, get_scraper
@@ -26,6 +27,8 @@ class ScrapingService:
         Repository for transaction data operations.
     scraping_repo : ScrapingRepository
         Repository for scraping operations.
+    scraping_history_repo : ScrapingHistoryRepository
+        Repository for scraping history operations.
     scraping_status : dict
         Dictionary tracking the status of scraping operations.
     tfa_scrapers_waiting : dict
@@ -44,6 +47,7 @@ class ScrapingService:
         self.transactions_repo = TransactionsRepository(conn)
         self.transactions_service = TransactionsService(conn)
         self.scraping_repo = ScrapingRepository()
+        self.scraping_history_repo = ScrapingHistoryRepository(conn)
         self.scraping_status = {"success": {}, "failed": {}, "waiting_for_2fa": {}}
         self.tfa_scrapers_waiting = {}  # {name: (scraper, thread)}
 
@@ -83,11 +87,62 @@ class ScrapingService:
             The path to the database file. If None, the database file will be created in the folder of fad package
             with the name 'data.db'
         """
-        normal_scraper, tfa_scrapers = self._collect_scrapers(credentials)
+        filtered_credentials = self._filter_scrapable_accounts(credentials)
+
+        if not filtered_credentials:
+            return
+
+        normal_scraper, tfa_scrapers = self._collect_scrapers(filtered_credentials)
         self._scrape_normal_scrapers(normal_scraper, start_date, db_path)
         self._scrape_tfa_scrapers(tfa_scrapers, start_date, db_path)
 
-    def _collect_scrapers(self, credentials):
+    def _filter_scrapable_accounts(self, credentials):
+        """
+        Filter credentials to only include accounts that can be scraped today.
+
+        Parameters
+        ----------
+        credentials : dict
+            Dictionary containing credentials for various services, providers, and accounts.
+
+        Returns
+        -------
+        dict
+            Filtered credentials dictionary containing only accounts that haven't been scraped today.
+        """
+        filtered_credentials = {}
+
+        for service, providers in credentials.items():
+            for provider, accounts in providers.items():
+                for account, account_credentials in accounts.items():
+                    # Check if this account can be scraped today
+                    if self.scraping_history_repo.can_scrape_today(service, provider, account):
+                        # Add to filtered credentials
+                        if service not in filtered_credentials:
+                            filtered_credentials[service] = {}
+                        if provider not in filtered_credentials[service]:
+                            filtered_credentials[service][provider] = {}
+                        filtered_credentials[service][provider][account] = account_credentials
+                    else:
+                        # Add to status as already scraped today
+                        account_key = f"{service} - {provider} - {account}"
+                        self.scraping_status["failed"][account_key] = f"{account_key} - already scraped today"
+
+        return filtered_credentials
+
+    def get_accounts_scraped_today(self):
+        """
+        Get a summary of accounts that were scraped today.
+
+        Returns
+        -------
+        dict
+            Summary of today's scraping activity.
+        """
+        return self.scraping_history_repo.get_todays_scraping_summary()
+
+    @staticmethod
+    def _collect_scrapers(credentials):
         """
         Collect and categorize scrapers based on whether they require 2FA.
 
@@ -266,4 +321,8 @@ class ScrapingService:
         -------
         None
         """
-        self.tfa_scrapers_waiting.pop(scraper_name, None)
+        if scraper_name in self.tfa_scrapers_waiting:
+            scraper, thread = self.tfa_scrapers_waiting.pop(scraper_name)
+            if thread.is_alive():
+                self.scraping_repo.handle_2fa_code(scraper, thread, "cancel")
+                thread.join()

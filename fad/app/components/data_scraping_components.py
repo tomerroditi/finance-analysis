@@ -2,7 +2,6 @@ import datetime as dt
 
 import streamlit as st
 
-from fad.app.data_access import get_db_connection
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.tagging_rules_service import TaggingRulesService
@@ -100,7 +99,8 @@ class DataScrapingComponent:
             Initiates data scraping and displays results.
         """
         credentials: dict = self.creds_service.get_data_sources_credentials(self.selected_scrapers)
-        if st.button("Fetch Data"):
+
+        if st.button("Fetch Data", key="fetch_data_main_button"):
             self.scraping_service.clear_scraping_status()
             self.scraping_service.clear_waiting_for_2fa_scrapers()
             self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
@@ -109,8 +109,35 @@ class DataScrapingComponent:
             st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
             st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
 
+        self._display_scraping_summary()
         self.tfa_fragments()
         self.display_scraping_status()
+
+    def _display_scraping_summary(self) -> None:
+        """
+        Display a summary of today's scraping activity and account availability.
+
+        Shows which accounts have already been scraped today and provides
+        information about the daily scraping restriction policy.
+        """
+        summary = self.scraping_service.get_accounts_scraped_today()
+
+        if summary['count'] > 0:
+            with st.expander(f"📊 Daily Scraping Summary - {summary['count']} account(s) already scraped today", expanded=False):
+                st.info("**Accounts already scraped today (will be skipped):**")
+
+                # Display each account in a more readable format
+                for account in summary['scraped_today']:
+                    st.write(f"• **{account}**")
+
+                st.markdown("---")
+                st.markdown("""
+                💡 **Daily Scraping Policy:**
+                - Each account can only be scraped **once per day**
+                - This helps comply with financial institutions' usage policies
+                - Restrictions reset automatically at midnight
+                - Previously scraped accounts will show as "already scraped today" in the status
+                """)
 
     def _apply_tagging_rules(self) -> None:
         """

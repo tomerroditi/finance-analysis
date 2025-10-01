@@ -16,6 +16,8 @@ from fad.scraper.exceptions import (
 from fad.scraper import NODE_JS_SCRIPTS_DIR
 from fad.scraper.utils import save_to_db, scraped_data_to_df
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
+from fad.app.data_access import get_db_connection
+from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
 from fad import CREDENTIALS_PATH, DB_PATH
 
 
@@ -136,6 +138,8 @@ class Scraper(ABC):
         self.otp_code = None
         self.otp_event = Event()
 
+        self.history_repo = ScrapingHistoryRepository(get_db_connection())
+
     @property
     @abstractmethod
     def service_name(self) -> str:
@@ -233,6 +237,8 @@ class Scraper(ABC):
             return
 
         print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} finished', flush=True)
+
+        self._record_scraping_history()
 
         if self.data.empty:
             if self.otp_code == self.CANCEL:
@@ -493,6 +499,25 @@ class Scraper(ABC):
         self.otp_code = otp_code
         self.otp_event.set()  # Notify that the OTP code is available
 
+    def _record_scraping_history(self):
+        """
+        Record the scraping attempt in the history database.
+        """
+        # Determine the status based on whether we have data and no errors
+        if self.data is not None and not self.data.empty and not self.error:
+            status = self.history_repo.SUCCESS
+        elif self.otp_code == self.CANCEL:
+            status = self.history_repo.CANCELED
+        else:
+            status = self.history_repo.FAILED
+
+        self.history_repo.record_scraping_attempt(
+            service_name=self.service_name,
+            provider_name=self.provider_name,
+            account_name=self.account_name,
+            status=status
+        )
+
 
 ############################################
 # Credit Card Scrapers
@@ -582,12 +607,6 @@ class MaxScraper(CreditCardScraper):
         ----------
         start_date : str
             The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
-        username : str
-            The username to log in to the website
-        password : str
-            The password to log in to the website
-        kwargs : dict
-            Additional arguments, not used in this function
         """
         args = (self.credentials["username"], self.credentials["password"])
         self.data = self._scrape_data(start_date, *args)
@@ -774,7 +793,7 @@ class OneZeroScraper(BankScraper):
 
         # wait for the OTP code to be requested, and then send it
         start_time = datetime.datetime.now()
-        max_wait_time = 30  # Maximum time to wait for OTP prompt or data in seconds
+        max_wait_time = 300  # Maximum time to wait for OTP prompt or data in seconds
 
         while True:
             # Check if we've been waiting too long
@@ -785,10 +804,9 @@ class OneZeroScraper(BankScraper):
 
             output = process.stdout.readline()
             if output:
-                print(f"DEBUG: {self.provider_name}: Process output: {output.strip()}", flush=True)
                 if 'Enter OTP code:' in output:
                     self.otp_code = "waiting for input"
-                    if not self.otp_event.wait(timeout=120):
+                    if not self.otp_event.wait(timeout=max_wait_time):
                         raise LoginError('Timeout: OTP code was not provided for 2FA')
                     if self.otp_code == self.CANCEL:
                         process.kill()
