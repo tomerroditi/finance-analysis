@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "israeli-bank-scrapers": "^6.1.4"
+    "israeli-bank-scrapers": "^6.2.3"
   }
 }
