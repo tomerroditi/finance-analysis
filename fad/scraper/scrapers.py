@@ -235,10 +235,10 @@ class Scraper(ABC):
             print(f'DEBUG: Unexpected error details: {str(e)}', flush=True)
             self.error = error_msg
             return
+        finally:
+            self._record_scraping_history()
 
         print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} finished', flush=True)
-
-        self._record_scraping_history()
 
         if self.data.empty:
             if self.otp_code == self.CANCEL:
