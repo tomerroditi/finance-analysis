@@ -11,7 +11,6 @@ class SplitTransactionsRepository:
     table = Tables.SPLIT_TRANSACTIONS.value
     id_col = SplitTransactionsTableFields.ID.value
     transaction_id_col = SplitTransactionsTableFields.TRANSACTION_ID.value
-    service_col = SplitTransactionsTableFields.SERVICE.value
     amount_col = SplitTransactionsTableFields.AMOUNT.value
     category_col = SplitTransactionsTableFields.CATEGORY.value
     tag_col = SplitTransactionsTableFields.TAG.value
@@ -68,7 +67,7 @@ class SplitTransactionsRepository:
                 df.columns = result.keys()
             return df
 
-    def add_split(self, transaction_id: int, service: Literal['credit_card', 'bank'], amount: float, category: str, tag: str) -> int:
+    def add_split(self, transaction_id: int, amount: float, category: str, tag: str) -> int:
         """
         Add a new split for a transaction.
 
@@ -76,8 +75,6 @@ class SplitTransactionsRepository:
         ----------
         transaction_id : int
             The ID of the transaction.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
         amount : float
             The amount of the split.
         category : str
@@ -93,15 +90,14 @@ class SplitTransactionsRepository:
         with self.conn.session as s:
             query = f"""
                 INSERT INTO {self.table} (
-                    {self.transaction_id_col}, {self.service_col}, {self.amount_col}, {self.category_col}, {self.tag_col}
+                    {self.transaction_id_col}, {self.amount_col}, {self.category_col}, {self.tag_col}
                 ) VALUES (
-                    :transaction_id_val, :service_val, :amount_val, :category_val, :tag_val
+                    :transaction_id_val, :amount_val, :category_val, :tag_val
                 )
                 RETURNING {self.id_col}
             """
             params = {
                 'transaction_id_val': transaction_id,
-                'service_val': service,
                 'amount_val': amount,
                 'category_val': category,
                 'tag_val': tag
@@ -169,7 +165,7 @@ class SplitTransactionsRepository:
             s.execute(text(query), params)
             s.commit()
 
-    def delete_all_splits_for_transaction(self, transaction_id: int, service: Literal['credit_card', 'bank']) -> None:
+    def delete_all_splits_for_transaction(self, transaction_id: int) -> None:
         """
         Delete all splits for a specific transaction.
 
@@ -177,8 +173,6 @@ class SplitTransactionsRepository:
         ----------
         transaction_id : int
             The ID of the transaction.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
 
         Returns
         -------
@@ -188,18 +182,16 @@ class SplitTransactionsRepository:
             query = f"""
                 DELETE FROM {self.table}
                 WHERE {self.transaction_id_col} = :transaction_id_val
-                AND {self.service_col} = :service_val
             """
             params = {
                 'transaction_id_val': transaction_id,
-                'service_val': service
             }
             s.execute(text(query), params)
             s.commit()
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
         """
-        Set category and tag to NULL for all splits with the specified category and tag (optionally filtered by service).
+        Set category and tag to NULL for all splits with the specified category and tag.
         """
         with self.conn.session as s:
             query = f"""
@@ -253,7 +245,6 @@ class SplitTransactionsRepository:
                 text(f'CREATE TABLE IF NOT EXISTS {self.table} ('
                      f'{self.id_col} INTEGER PRIMARY KEY, '
                      f'{self.transaction_id_col} INTEGER, '
-                     f'{self.service_col} TEXT, '
                      f'{self.amount_col} REAL, '
                      f'{self.category_col} TEXT, '
                      f'{self.tag_col} TEXT'

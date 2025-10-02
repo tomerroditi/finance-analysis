@@ -147,6 +147,27 @@ class TransactionsRepository:
         else:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
+    def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
+        """
+        Get a transaction by its ID.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The ID of the transaction.
+
+        Returns
+        -------
+        pd.Series
+            The transaction data.
+        """
+        df = self.get_table()
+        transaction = df[df[self.id_col] == transaction_id]
+        if transaction.empty:
+            raise ValueError(f"Transaction with ID {transaction_id} not found in transactions.")
+        elif len(transaction) > 1:
+            raise ValueError(f"Multiple transactions found with ID {transaction_id}.")
+        return transaction.iloc[0]
 
 class ServiceRepository:
     """

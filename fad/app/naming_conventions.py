@@ -106,7 +106,6 @@ BankTableFields = create_enum('BankTableFields', fields)
 split_fields = [
     ('ID', 'id'),
     ('TRANSACTION_ID', 'transaction_id'),
-    ('SERVICE', 'service'),
     ('AMOUNT', 'amount'),
     ('CATEGORY', 'category'),
     ('TAG', 'tag'),
