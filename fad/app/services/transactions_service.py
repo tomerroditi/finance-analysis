@@ -12,7 +12,10 @@ from fad.app.naming_conventions import (
     NonExpensesCategories,
     SavingsAndInvestmentsCategories,
     IncomeCategories,
-    LiabilitiesCategories
+    LiabilitiesCategories,
+    CreditCards,
+    Banks,
+    Services
 )
 
 
@@ -95,8 +98,7 @@ class TransactionsService:
         bank_data = self.get_table_for_analysis('bank')
         return pd.concat([cc_data, bank_data])
 
-    def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'],
-                       account_number: str | None = None) -> None:
+    def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'], account_number: str | None = None) -> None:
         """
         Update the tags of the raw data in the credit card and bank tables.
         Business logic for routing tagging operations based on service type.
@@ -130,7 +132,7 @@ class TransactionsService:
                 name, account_number, category, tag
             )
 
-    def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None, service: Literal['credit_card', 'bank']) -> None:
+    def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None) -> None:
         """
         Update the category and tag for a transaction by ID.
 
@@ -142,22 +144,15 @@ class TransactionsService:
             The new category for the transaction.
         tag : str
             The new tag for the transaction.
-        service : Literal['credit_card', 'bank']
-            The service for which to update the transaction.
 
         Returns
         -------
         None
         """
-        if service not in ['credit_card', 'bank']:
-            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
+        self.transactions_repository.cc_repo.update_tagging_by_id(id_, category, tag)
+        self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
 
-        if service == 'credit_card':
-            self.transactions_repository.cc_repo.update_tagging_by_id(id_, category, tag)
-        else:
-            self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
-
-    def update_transaction_by_id(self, transaction_id: str, updates: dict, service: Literal['credit_card', 'bank']) -> bool:
+    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
         """
         Update a transaction by ID with the given field updates.
 
@@ -167,24 +162,15 @@ class TransactionsService:
             The ID of the transaction to update.
         updates : dict
             Dictionary of field names and their new values.
-        service : Literal['credit_card', 'bank']
-            The service for which to update the transaction.
 
         Returns
         -------
         bool
             True if the update was successful, False otherwise.
         """
-        if service not in ['credit_card', 'bank']:
-            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
-
-        try:
-            if service == 'credit_card':
-                return self.transactions_repository.cc_repo.update_transaction_by_id(transaction_id, updates)
-            else:
-                return self.transactions_repository.bank_repo.update_transaction_by_id(transaction_id, updates)
-        except Exception:
-            return False
+        cc_res = self.transactions_repository.cc_repo.update_transaction_by_id(transaction_id, updates)
+        bank_res = self.transactions_repository.bank_repo.update_transaction_by_id(transaction_id, updates)
+        return cc_res or bank_res
 
     def get_all_transactions(self, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
         """
@@ -401,3 +387,29 @@ class TransactionsService:
             DataFrame containing transactions matching the description.
         """
         return self.transactions_repository.get_data_by_description(description, service, account_number)
+
+    def get_service_from_provider(self, provider: str) -> str:
+        """
+        Get the service type ('credit_card' or 'bank') based on the provider name.
+
+        Parameters
+        ----------
+        provider : str
+            The provider name to look up.
+
+        Returns
+        -------
+        str
+            The service type corresponding to the provider. either 'credit_card' or 'bank'.
+
+        Raises
+        ------
+        ValueError
+            If the provider is not found in either service.
+        """
+        if provider in [e.value for e in CreditCards]:
+            return Services.CREDIT_CARD.value
+        elif provider in [e.value for e in Banks]:
+            return Services.BANK.value
+        else:
+            raise ValueError(f"Provider '{provider}' not found in either credit card or bank services.")
