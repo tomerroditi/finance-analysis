@@ -259,6 +259,7 @@ class RuleFields(Enum):
     PROVIDER = 'provider'
     ACCOUNT_NAME = 'account_name'
     ACCOUNT_NUMBER = 'account_number'
+    SERVICE = 'service'
 
 
 class Services(Enum):
