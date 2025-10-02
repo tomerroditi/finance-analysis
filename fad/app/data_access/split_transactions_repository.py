@@ -41,7 +41,7 @@ class SplitTransactionsRepository:
                 df.columns = result.keys()
             return df
         
-    def get_splits_for_transaction(self, transaction_id: int, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+    def get_splits_for_transaction(self, transaction_id: int) -> pd.DataFrame:
         """
         Get all splits for a specific transaction.
 
@@ -49,8 +49,6 @@ class SplitTransactionsRepository:
         ----------
         transaction_id : int
             The ID of the transaction.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
 
         Returns
         -------
@@ -61,11 +59,9 @@ class SplitTransactionsRepository:
             query = f"""
                 SELECT * FROM {self.table}
                 WHERE {self.transaction_id_col} = :transaction_id_val
-                AND {self.service_col} = :service_val
             """
             params = {
                 'transaction_id_val': transaction_id,
-                'service_val': service
             }
             result = s.execute(text(query), params)
             df = pd.DataFrame(result.fetchall())

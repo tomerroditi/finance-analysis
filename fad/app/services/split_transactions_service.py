@@ -57,7 +57,7 @@ class SplitTransactionsService:
             raise ValueError(f"Transaction with ID {transaction_id} not found in {service} transactions.")
         return transaction.iloc[0]
 
-    def get_splits_for_transaction(self, transaction_id: int, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+    def get_splits_for_transaction(self, transaction_id: int) -> pd.DataFrame:
         """
         Get all splits for a specific transaction.
 
@@ -65,15 +65,13 @@ class SplitTransactionsService:
         ----------
         transaction_id : int
             The ID of the transaction.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
 
         Returns
         -------
         pd.DataFrame
             A DataFrame containing all splits for the transaction.
         """
-        return self.split_transactions_repository.get_splits_for_transaction(transaction_id, service)
+        return self.split_transactions_repository.get_splits_for_transaction(transaction_id)
 
     def split_transaction(self, transaction_id: int, service: Literal['credit_card', 'bank'], 
                          splits: List[Dict[str, Any]]) -> None:
@@ -141,7 +139,7 @@ class SplitTransactionsService:
         """
         self.split_transactions_repository.delete_all_splits_for_transaction(transaction_id, service)
 
-    def has_splits(self, transaction_id: int, service: Literal['credit_card', 'bank']) -> bool:
+    def has_splits(self, transaction_id: int) -> bool:
         """
         Check if a transaction has any splits.
 
@@ -149,13 +147,11 @@ class SplitTransactionsService:
         ----------
         transaction_id : int
             The ID of the transaction.
-        service : Literal['credit_card', 'bank']
-            The service of the transaction, should be one of 'credit_card' or 'bank'.
 
         Returns
         -------
         bool
             True if the transaction has splits, False otherwise.
         """
-        splits = self.get_splits_for_transaction(transaction_id, service)
+        splits = self.get_splits_for_transaction(transaction_id)
         return not splits.empty
