@@ -141,6 +141,17 @@ class ScrapingService:
         """
         return self.scraping_history_repo.get_todays_scraping_summary()
 
+    def get_max_failed_scraping_attempts(self):
+        """
+        Get the maximum number of allowed failed scraping attempts per account.
+
+        Returns
+        -------
+        int
+            Maximum number of allowed failed scraping attempts.
+        """
+        return self.scraping_history_repo.MAX_FAILED_ATTEMPTS_PER_DAY
+
     @staticmethod
     def _collect_scrapers(credentials):
         """

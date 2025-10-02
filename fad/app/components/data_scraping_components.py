@@ -121,23 +121,38 @@ class DataScrapingComponent:
         information about the daily scraping restriction policy.
         """
         summary = self.scraping_service.get_accounts_scraped_today()
+        with st.expander(f"📊 Daily Scraping Summary - {len(summary["unavailable_to_scrape"])} account(s) already scraped today", expanded=False):
+            st.info("**Accounts already scraped today (will be skipped)**")
 
-        if summary['count'] > 0:
-            with st.expander(f"📊 Daily Scraping Summary - {summary['count']} account(s) already scraped today", expanded=False):
-                st.info("**Accounts already scraped today (will be skipped):**")
-
-                # Display each account in a more readable format
-                for account in summary['scraped_today']:
+            # Display each account in a more readable format
+            if len(summary['succeed_today']) > 0:
+                st.markdown("**Succeed to scrape today:**")
+                for account in summary['succeed_today']:
                     st.write(f"• **{account}**")
 
-                st.markdown("---")
-                st.markdown("""
-                💡 **Daily Scraping Policy:**
-                - Each account can only be scraped **once per day**
-                - This helps comply with financial institutions' usage policies
-                - Restrictions reset automatically at midnight
-                - Previously scraped accounts will show as "already scraped today" in the status
-                """)
+            if len(summary['failed_today']) > 0:
+                st.markdown(f"**Faild to scrape today (max {self.scraping_service.get_max_failed_scraping_attempts()} retries per account):**")
+                for account, count in summary['failed_today'].items():
+                    if account in summary["succeed_today"]:
+                        continue  # Skip accounts that succeeded
+                    st.write(f"• **{account}** (Failed attempts: {count})")
+
+            if len(summary['canceled_today']) > 0:
+                st.markdown("**Canceled attempts today (max 3 retries per account):**")
+                for account, count in summary['canceled_today'].items():
+                    if account in summary["succeed_today"]:
+                        continue  # Skip accounts that succeeded
+                    st.write(f"• **{account}** (Canceled attempts: {count})")
+
+            st.markdown("---")
+            st.markdown("""
+            💡 **Daily Scraping Policy:**
+            - Each account can only be successfully scraped once per day
+            - Failed attempts can be retried up to 3 times per day
+            - Canceled attempts (e.g., due to 2FA cancellation) can be retried up to 3 times per day
+            - This helps comply with financial institutions' usage policies
+            - Restrictions reset automatically at midnight
+            """)
 
     def _apply_tagging_rules(self) -> None:
         """

@@ -175,6 +175,29 @@ class ScrapingHistoryRepository:
             if fail_count >= self.MAX_FAILED_ATTEMPTS_PER_DAY:
                 return False
 
+            canceled_result = s.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*) FROM {Tables.SCRAPING_HISTORY.value}
+                    WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
+                        AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
+                        AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
+                        AND DATE({ScrapingHistoryTableFields.LAST_SCRAPED.value}) = DATE(:date)
+                        AND {ScrapingHistoryTableFields.STATUS.value} = :canceled
+                    """
+                ),
+                {
+                    "service_name": service_name,
+                    "provider_name": provider_name,
+                    "account_name": account_name,
+                    "date": date.today().isoformat(),
+                    "canceled": self.CANCELED
+                }
+            )
+            canceled_count = canceled_result.scalar() or 0
+            if canceled_count >= self.MAX_FAILED_ATTEMPTS_PER_DAY:
+                return False
+
             return True
 
     def get_scraping_history(self) -> pd.DataFrame:
@@ -200,14 +223,19 @@ class ScrapingHistoryRepository:
                 df.columns = result.keys()
             return df
 
-    def get_todays_scraping_summary(self) -> Dict[str, List[str]]:
+    def get_todays_scraping_summary(self) -> Dict[str, List[str] | Dict[str, int]]:
         """
         Get a summary of accounts scraped today.
 
         Returns
         -------
-        Dict[str, List[str]]
-            Dictionary with 'scraped_today' and 'available_to_scrape' lists.
+        Dict[str, List[str] | Dict[str, int]]
+            Dictionary with keys:
+            - 'scraped_today': List of accounts successfully scraped today.
+            - 'failed_today': Dict of accounts that failed today with failure counts.
+            - 'canceled_today': Dict of accounts that were canceled today with counts.
+            - 'available_to_scrape': List of accounts still available to scrape today.
+            - 'unavailable_to_scrape': List of accounts that cannot be scraped today.
         """
         with self.conn.session as s:
             result = s.execute(
@@ -229,7 +257,9 @@ class ScrapingHistoryRepository:
             if not df.empty:
                 df.columns = result.keys()
 
-            scraped_today = []
+            successful_scraped_today = []
+            failed_scraped_today = {}
+            canceled_scraped_today = {}
             available_to_scrape = []
 
             if not df.empty:
@@ -237,15 +267,27 @@ class ScrapingHistoryRepository:
                     account_id = f"{row[ScrapingHistoryTableFields.SERVICE_NAME.value]} - " \
                                  f"{row[ScrapingHistoryTableFields.PROVIDER_NAME.value]} - " \
                                  f"{row[ScrapingHistoryTableFields.ACCOUNT_NAME.value]}"
-                    if row[ScrapingHistoryTableFields.STATUS.value] in [self.SUCCESS, self.FAILED]:
-                        scraped_today.append(account_id)
-                    else:
-                        available_to_scrape.append(account_id)
+                    if row[ScrapingHistoryTableFields.STATUS.value] == self.SUCCESS:
+                        successful_scraped_today.append(account_id)
+                    elif row[ScrapingHistoryTableFields.STATUS.value] == self.FAILED:
+                        failed_scraped_today[account_id] = failed_scraped_today.get(account_id, 0) + 1
+                    elif row[ScrapingHistoryTableFields.STATUS.value] == self.CANCELED:
+                        canceled_scraped_today[account_id] = canceled_scraped_today.get(account_id, 0) + 1
 
+            all_accounts = set(df.apply(
+                lambda row: f"{row[ScrapingHistoryTableFields.SERVICE_NAME.value]} - "
+                            f"{row[ScrapingHistoryTableFields.PROVIDER_NAME.value]} - "
+                            f"{row[ScrapingHistoryTableFields.ACCOUNT_NAME.value]}",
+                axis=1
+            ).tolist())
+            scraped_accounts = set(successful_scraped_today) | set({k: v for k, v in failed_scraped_today.items() if v >= self.MAX_FAILED_ATTEMPTS_PER_DAY}.keys())
+            available_to_scrape = list(all_accounts - scraped_accounts)
             return {
-                "scraped_today": scraped_today,
-                "count": len(scraped_today),
-                "available_to_scrape": available_to_scrape
+                "succeed_today": successful_scraped_today,
+                "failed_today": failed_scraped_today,
+                "canceled_today": canceled_scraped_today,
+                "available_to_scrape": available_to_scrape,
+                "unavailable_to_scrape": list(scraped_accounts)
             }
 
     def clear_old_records(self, days_to_keep: int = 30) -> None:
