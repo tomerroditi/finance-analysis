@@ -109,7 +109,7 @@ class PandasFilterWidgets:
             min_val = datetime.today().date()
         else:
             max_val = datetime.today().date()
-            min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d')).min().date()
+            min_val = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d') if isinstance(x, str) else x).min().date()
 
         st.markdown("<br>", unsafe_allow_html=True)
         selection = sac.buttons(
@@ -186,7 +186,7 @@ class PandasFilterWidgets:
 
     @staticmethod
     def filter_date(df: pd.DataFrame, column: str, start_date: datetime.date, end_date: datetime.date) -> pd.DataFrame:
-        df[column] = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date())
+        df[column] = df[column].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date() if isinstance(x, str) else x.date())
         df = df.loc[(df[column] >= start_date) & (df[column] <= end_date), :]
         return df
 
