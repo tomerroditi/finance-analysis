@@ -8,7 +8,7 @@ from fad.app.components.month_selector import (
     select_custom_month
 )
 
-from fad.app.components.tagging_components import RuleBasedTaggingComponent, TransactionsTaggingComponent
+from fad.app.components.tagging_components import TransactionsTaggingComponent
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
@@ -18,11 +18,13 @@ class BudgetUI:
     """
     Base class for budget UI components.
     """
-    def __init__(self):
+    def __init__(self, key_suffix: str = ''):
+        self.key_suffix = key_suffix
         self.budget_rules: pd.DataFrame = pd.DataFrame()
         self.budget_service = BudgetService()
         self.monthly_budget_service = MonthlyBudgetService()
         self.tagging_service = CategoriesTagsService()
+        self.transactions_tagger = TransactionsTaggingComponent(key_suffix=f"{key_suffix}")
 
     def render_rule_ui_window(
         self,
@@ -62,41 +64,7 @@ class BudgetUI:
         if expand_col.toggle("Expand", key=f"expand_{rule[ID]}", label_visibility="collapsed"):
             # Use st.dataframe with row selection
             sorted_data = raw_data.sort_values(by=[TransactionsTableFields.DATE.value], ascending=False).reset_index(drop=True)
-            event = st.dataframe(
-                sorted_data,
-                column_order=[
-                    TransactionsTableFields.PROVIDER.value,
-                    TransactionsTableFields.ACCOUNT_NAME.value,
-                    TransactionsTableFields.ACCOUNT_NUMBER.value,
-                    TransactionsTableFields.DATE.value,
-                    TransactionsTableFields.DESCRIPTION.value,
-                    TransactionsTableFields.AMOUNT.value,
-                    TransactionsTableFields.CATEGORY.value,
-                    TransactionsTableFields.TAG.value,
-                    TransactionsTableFields.STATUS.value,
-                    TransactionsTableFields.ID.value
-                ],
-                key=f"raw_data_table_{rule[ID]}",
-                selection_mode="single-row",
-                on_select="rerun"
-            )
-            # Editable section: show editor if a row is selected
-            selected_rows = event["selection"]["rows"] if "selection" in event else []
-            if selected_rows:
-                idx = selected_rows[0]
-                row = sorted_data.iloc[idx]
-                # Use the new rule-based tagging component for comprehensive transaction editing
-                rule_based_tagger = TransactionsTaggingComponent()
-                provider = row.get(TransactionsTableFields.PROVIDER.value)
-                if provider in cc_providers:
-                    service = "credit_card"
-                elif provider in bank_providers:
-                    service = "bank"
-                else:
-                    raise ValueError(f"Unknown provider: {provider}")
-
-                # Render the comprehensive transaction tagger interface
-                rule_based_tagger.render_transaction_tagger(row, service)
+            self.transactions_tagger.render_transactions_table_for_tagging(sorted_data, key_suffix=self.key_suffix + f"_{rule[ID]}")
 
         # Buttons
         edit_col.button(
@@ -186,8 +154,8 @@ class MonthlyBudgetUI(BudgetUI):
     """
     UI for the monthly budget overview.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, key_suffix: str = 'monthly_budget_ui'):
+        super().__init__(key_suffix=key_suffix)
         self.monthly_budget_service = MonthlyBudgetService()
         self.project_budget_service = ProjectBudgetService()
         self.budget_rules = self.monthly_budget_service.get_all_rules()
@@ -335,79 +303,25 @@ class MonthlyBudgetUI(BudgetUI):
         Render a separate section for project-related transactions that are excluded from the monthly budget.
         """
         project_transactions = self.monthly_budget_service.get_monthly_project_transactions(self.year, self.month)
+        st.markdown("---")
 
         if project_transactions is not None and not project_transactions.empty:
-            st.markdown("---")
-            st.markdown("### 📋 Project Transactions (Excluded from Monthly Budget)")
-            st.info(f"These transactions are related to project budgets and are not included in the monthly budget calculations above.")
-
-            # Calculate total project spending for the month
             total_project_spending = project_transactions[TransactionsTableFields.AMOUNT.value].sum() * -1
-
-            # Display summary
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Project Spending", f"{total_project_spending:.2f}")
-            with col2:
-                st.metric("Number of Transactions", len(project_transactions))
-
-            # Group by project category for better organization
-            project_categories = project_transactions.groupby(TransactionsTableFields.CATEGORY.value)
-
-            for category, category_data in project_categories:
-                category_spending = category_data[TransactionsTableFields.AMOUNT.value].sum() * -1
-
-                st.title(f"{category} - {category_spending:.2f} ({len(category_data)} transactions)")
-                # Display transactions with selection capability
-                sorted_data = category_data.sort_values(by=[TransactionsTableFields.DATE.value], ascending=False).reset_index(drop=True)
-                event = st.dataframe(
-                    sorted_data,
-                    column_order=[
-                        TransactionsTableFields.PROVIDER.value,
-                        TransactionsTableFields.ACCOUNT_NAME.value,
-                        TransactionsTableFields.ACCOUNT_NUMBER.value,
-                        TransactionsTableFields.DATE.value,
-                        TransactionsTableFields.DESCRIPTION.value,
-                        TransactionsTableFields.AMOUNT.value,
-                        TransactionsTableFields.CATEGORY.value,
-                        TransactionsTableFields.TAG.value,
-                        TransactionsTableFields.STATUS.value,
-                        TransactionsTableFields.ID.value
-                    ],
-                    key=f"project_transactions_{category}_{self.year}_{self.month}",
-                    selection_mode="single-row",
-                    on_select="rerun"
-                )
-
-                # Show transaction editor if a row is selected
-                selected_rows = event["selection"]["rows"] if "selection" in event else []
-                if selected_rows:
-                    idx = selected_rows[0]
-                    row = sorted_data.iloc[idx]
-                    # Use the new rule-based tagging component for comprehensive transaction editing
-                    rule_based_tagger = RuleBasedTaggingComponent()
-                    provider = row.get(TransactionsTableFields.PROVIDER.value)
-                    if provider in cc_providers:
-                        service = "credit_card"
-                    elif provider in bank_providers:
-                        service = "bank"
-                    else:
-                        service = "bank"  # Default fallback
-
-                    rule_based_tagger.render_transaction_tagger(row, service)
+            st.markdown(f"### 📋 Projects Transactions (Excluded from Monthly Budget) - Total: {total_project_spending:.2f}")
+            project_transactions = project_transactions.sort_values(by=[TransactionsTableFields.CATEGORY.value, TransactionsTableFields.TAG.value, TransactionsTableFields.DATE.value], ascending=[True, True, False])
+            self.transactions_tagger.render_transactions_table_for_tagging(project_transactions, key_suffix=self.key_suffix + f"_projects_{self.year}_{self.month}")
         else:
             projects = self.project_budget_service.get_all_projects_names()
-            if len(projects) > 0:
-                st.markdown("---")
-                st.markdown("### 📋 Project Transactions (Excluded from Monthly Budget)")
-                st.info(f"No project transactions found for {self.year}-{self.month}. Active projects: {', '.join(projects)}")
+            st.markdown("### 📋 Project Transactions (Excluded from Monthly Budget) - Total: 0")
+            st.info(f"No project transactions found for {self.year}-{self.month}. Active projects: {', '.join(projects) if projects else 'None'}.")
+
 
 class ProjectBudgetUI(BudgetUI):
     """
     UI for the project budget overview.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, key_suffix: str = 'project_budget_ui'):
+        super().__init__(key_suffix=key_suffix)
         self.project_budget_service = ProjectBudgetService()
         self.budget_rules = self.project_budget_service.get_all_rules()
         self.project_name = None
