@@ -266,11 +266,12 @@ class TransactionsService:
         ]
 
         # Get all splits for this service
-        split_df = self.split_transactions_repository.get_data(service)
+        split_df = self.split_transactions_repository.get_data()
         if split_df.empty:
             return df[analysis_cols]
 
         # Prepare for merging: drop original transactions that have splits, and add split rows
+        split_df = split_df[split_df['transaction_id'].isin(df[self.transactions_repository.id_col])]  # filter out unneeded splits
         split_ids = set(split_df['transaction_id'])
         mask = df[self.transactions_repository.id_col].isin(split_ids)
         base_df = df[~mask].copy()
