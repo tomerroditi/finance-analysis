@@ -6,7 +6,11 @@ import streamlit_antd_components as sac
 
 
 class PandasFilterWidgets:
-    def __init__(self, df: pd.DataFrame, widgets_map: dict[str, str] = None, keys_prefix: str = None):
+
+    BASE_STREAMLIT_KEY = 'pandas_filter_widgets'
+    widget_keys = ["slider", "select", "multiselect", "text", "date_input", "buttons", "text_contains"]
+
+    def __init__(self, df: pd.DataFrame, widgets_map: dict[str, str] = None, key_suffix: str = None):
         """
         This class will create widgets for filtering a Pandas DataFrame and return the filtered DataFrame.
 
@@ -18,15 +22,36 @@ class PandasFilterWidgets:
             A dictionary whose keys are the column names of the DataFrame and whose values are the type of widget
             to create for that column. Only the columns in this dictionary will be used to create the widgets.
             Optional widgets are: 'text', 'select', 'multiselect', 'number_range', 'date_range'.
-        keys_prefix: str
+        key_suffix: str
             A prefix to add to the keys of the widgets. This is useful when using multiple instances of this class in
             the same script.
         """
         self.df = df.copy()
         self.widgets_map = widgets_map if widgets_map is not None else {}
-        self.keys_prefix = f'pandas_filter_widgets_{keys_prefix if keys_prefix is not None else ""}'
+        self.keys_suffix = f'{self.BASE_STREAMLIT_KEY}_{key_suffix if key_suffix is not None else ""}'
         self.widgets_returns = {}
         self._dates = {}
+
+    def __new__(cls, *args, **kwargs):
+        key = f"{cls.BASE_STREAMLIT_KEY}_{kwargs.get('key_suffix', '')}"  # equivalent to self.keys_suffix
+        if key in st.session_state:
+            return st.session_state[key]
+        instance = super(PandasFilterWidgets, cls).__new__(cls)
+        st.session_state[key] = instance
+        return instance
+
+    def delete_session_state(self):
+        """
+        This function will remove all the keys from the session state that were created by this instance of the class.
+        It also removes the instance itself from the session state.
+        It is useful when the DataFrame or the widgets_map change, and we want to reset the widgets.
+        """
+        for widget_key in self.widget_keys:
+            key = f"{widget_key}_{self.keys_suffix}_"
+            keys_to_remove = [k for k in st.session_state.keys() if k.startswith(key)]
+            for k in keys_to_remove:
+                del st.session_state[k]
+        del st.session_state[self.keys_suffix]
 
     def display_widgets(self):
         """
@@ -74,7 +99,7 @@ class PandasFilterWidgets:
 
         name = column.replace('_', ' ').title()
         lower_bound, upper_bound = st.slider(
-            name, min_val, max_val, (min_val, max_val), 50.0, key=f'{self.keys_prefix}_{column}_slider'
+            name, min_val, max_val, (min_val, max_val), 50.0, key=f'slider_{self.keys_suffix}_{column}'
         )
         return lower_bound, upper_bound
 
@@ -85,20 +110,20 @@ class PandasFilterWidgets:
         options.sort()
         name = column.replace('_', ' ').title()
         if multi:
-            selected_list = st.multiselect(name, options, key=f'{self.keys_prefix}_{column}_multiselect')
+            selected_list = st.multiselect(name, options, key=f'multiselect_{self.keys_suffix}_{column}')
             return selected_list
         else:
-            selected_item = st.selectbox(name, options, key=f'{self.keys_prefix}_{column}_select')
+            selected_item = st.selectbox(name, options, key=f'select_{self.keys_suffix}_{column}')
             return selected_item
 
     def create_text_widget(self, column: str) -> str | None:
         name = column.replace('_', ' ').title()
-        text_ = st.text_input(name, key=f"{self.keys_prefix}_{column}_text")
+        text_ = st.text_input(name, key=f"text_{self.keys_suffix}_{column}")
         return text_
 
     def create_text_contains_widget(self, column: str) -> str | None:
         name = column.replace('_', ' ').title()
-        text_ = st.text_input(f"Contains {name}", key=f"{self.keys_prefix}_{column}_text_contains")
+        text_ = st.text_input(f"Contains {name}", key=f"text_contains_{self.keys_suffix}_{column}")
         return text_
 
     def create_date_range_widget(self, column: str) -> tuple[datetime.date, datetime.date]:
@@ -119,12 +144,12 @@ class PandasFilterWidgets:
             color=None,
             index=0,
             direction='horizontal',
-            key=f'{self.keys_prefix}_{column}_buttons'
+            key=f'buttons_{self.keys_suffix}_{column}'
         )
         if selection == "Custom Date":
             name = column.replace('_', ' ').title()
             _dates = st.date_input(
-                name, (min_val, datetime.today()), min_val, max_val, key=f'{self.keys_prefix}_{column}_date_input',
+                name, (min_val, datetime.today()), min_val, max_val, key=f'date_input_{self.keys_suffix}_{column}',
             )
             self._dates[column] = _dates
         elif selection == "Current Month":
