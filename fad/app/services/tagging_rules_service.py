@@ -260,8 +260,7 @@ class TaggingRulesService:
         """
         return self.rules_repo.apply_rules_to_transactions(service)
 
-    def get_untagged_transactions(self, service: Literal['credit_card', 'bank'],
-                                 account_number: Optional[str] = None) -> pd.DataFrame:
+    def get_untagged_transactions(self, service: Literal['credit_card', 'bank'], account_number: Optional[str] = None) -> pd.DataFrame:
         """
         Get transactions that don't have categories assigned.
 
@@ -348,7 +347,7 @@ class TaggingRulesService:
 
         return errors
 
-    def test_rule(self, rule_id: int) -> pd.DataFrame:
+    def test_rule_by_id(self, rule_id: int, limit: int | None = None) -> (int, pd.DataFrame):
         """
         Test a rule against transactions to see what would match.
 
@@ -356,9 +355,13 @@ class TaggingRulesService:
         ----------
         rule_id : int
             ID of the rule to test.
+        limit : int | None
+            Maximum number of results to return.
 
         Returns
         -------
+        int
+            Number of matching transactions.
         pd.DataFrame
             Transactions that would match the rule.
         """
@@ -373,13 +376,14 @@ class TaggingRulesService:
         return self.test_rule_against_transactions(
             conditions=conditions,
             service=service,
-            account_number=account_number
+            account_number=account_number,
+            limit=limit
         )
 
     def test_rule_against_transactions(self, conditions: List[Dict[str, Any]],
                                      service: Literal['credit_card', 'bank'],
                                      account_number: Optional[str] = None,
-                                     limit: int = 100) -> pd.DataFrame:
+                                     limit: int | None = None) -> (int, pd.DataFrame):
         """
         Test rule conditions against existing transactions to see what would match.
 
@@ -391,11 +395,13 @@ class TaggingRulesService:
             Service to test against.
         account_number : Optional[str]
             Account number filter for bank transactions.
-        limit : int
+        limit : int | None
             Maximum number of results to return.
 
         Returns
         -------
+        int
+            Number of matching transactions.
         pd.DataFrame
             Transactions that would match the rule.
         """
@@ -412,10 +418,12 @@ class TaggingRulesService:
             mock_rule = pd.Series({'conditions': json.dumps(conditions)})
             if RuleEngine.evaluate_rule(transaction, mock_rule):
                 matching_transactions.append(transaction)
-                if len(matching_transactions) >= limit:
-                    break
 
-        return pd.DataFrame(matching_transactions) if matching_transactions else pd.DataFrame()
+        data = pd.DataFrame(matching_transactions)
+        if limit is not None:
+            data = data.head(limit)
+
+        return len(matching_transactions), data
 
     def apply_all_rules(self, service: Literal['credit_card', 'bank']) -> int:
         """
