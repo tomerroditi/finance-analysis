@@ -53,9 +53,6 @@ class ScrapingHistoryRepository:
                         {ScrapingHistoryTableFields.ACCOUNT_NAME.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.LAST_SCRAPED.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL,
-                        PRIMARY KEY ({ScrapingHistoryTableFields.SERVICE_NAME.value},
-                                     {ScrapingHistoryTableFields.PROVIDER_NAME.value},
-                                     {ScrapingHistoryTableFields.ACCOUNT_NAME.value})
                     )
                     """
                 )
