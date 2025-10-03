@@ -387,21 +387,29 @@ class TransactionsTaggingComponent:
         None
         """
         info_container = st.container()
-        filter_col, data_col = st.columns([0.3, 0.7], border=True)
+        show_filters = st.checkbox("Show Filters", key=f"show_filters_{self.key_suffix}_{key_suffix}", value=False)
+        if show_filters:
+            data_col, filter_col = st.columns([0.7, 0.3], border=True)
+        else:
+            data_col = st.container(border=True)
+            filter_col = None
 
-        with filter_col:
-            # Create filter widgets
-            widgets_map = {
-                TransactionsTableFields.AMOUNT.value: 'number_range',
-                TransactionsTableFields.DATE.value: 'date_range',
-                TransactionsTableFields.PROVIDER.value: 'multiselect',
-                TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
-                TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
-                TransactionsTableFields.DESCRIPTION.value: 'multiselect',
-            }
-            df_filter = PandasFilterWidgets(transactions, widgets_map, key_suffix=f"{self.key_suffix}_{key_suffix}")
-            df_filter.display_widgets()
-            filtered_transactions = df_filter.filter_df()
+        if filter_col is None:
+            filtered_transactions = transactions
+        else:
+            with filter_col:
+                # Create filter widgets
+                widgets_map = {
+                    TransactionsTableFields.AMOUNT.value: 'number_range',
+                    TransactionsTableFields.DATE.value: 'date_range',
+                    TransactionsTableFields.PROVIDER.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+                    TransactionsTableFields.DESCRIPTION.value: 'multiselect',
+                }
+                df_filter = PandasFilterWidgets(transactions, widgets_map, key_suffix=f"{self.key_suffix}_{key_suffix}")
+                df_filter.display_widgets()
+                filtered_transactions = df_filter.filter_df()
 
         info_container.info(f"Found {len(filtered_transactions)} transactions")
 
@@ -421,6 +429,7 @@ class TransactionsTaggingComponent:
                 hide_index=False,
                 on_select='rerun',
                 selection_mode='multi-row',
+                use_container_width=True
             )
 
             # Handle selected transaction
