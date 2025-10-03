@@ -7,7 +7,8 @@ from fad.app.naming_conventions import NonExpensesCategories
 from fad.app.naming_conventions import (
     RuleOperators,
     RuleFields,
-    TransactionsTableFields
+    TransactionsTableFields,
+    TaggingRulesTableFields
 )
 from fad.app.services.split_transactions_service import SplitTransactionsService
 from fad.app.services.tagging_rules_service import TaggingRulesService
@@ -880,27 +881,17 @@ class RuleBasedTaggingComponent:
             "Rules use operators like 'contains', 'greater than', etc., to match transactions."
         )
 
-        self._render_existing_rules()
+        self.render_existing_rules()
         if st.button("➕ Create New Rule", key=f"create_new_rule_btn_{self.key_suffix}", type="secondary"):
             self.render_rule_creation_interface()
 
-    def _render_existing_rules(self) -> None:
+    def render_existing_rules(self) -> None:
         """Render the rule management interface."""
         st.markdown("### Edit Existing Rules")
         st.markdown("Manage your tagging rules: view, edit, delete, and prioritize them.")
 
-        # Service filter
-        service_filter = st.pills(
-            "Filter by service:",
-            options=[None, "credit_card", "bank"],
-            default=None,
-            format_func=lambda x: "All Services" if x is None else x.replace('_', ' ').title(),
-            selection_mode="single",
-            key=f"rule_mgmt_service_filter_{self.key_suffix}"
-        )
-
         # Get rules
-        rules_df = self.rules_service.get_all_rules(service=service_filter, active_only=False)
+        rules_df = self.rules_service.get_all_rules(active_only=False)
 
         if rules_df.empty:
             st.info("No rules found. Create some rules in the Transaction Tagging tab!")
@@ -910,7 +901,13 @@ class RuleBasedTaggingComponent:
         st.markdown("#### All Rules")
 
         # Display rules table
-        display_columns = ['name', 'service', 'category', 'tag', 'priority', 'is_active']
+        display_columns = [
+            TaggingRulesTableFields.NAME.value,
+            TaggingRulesTableFields.CATEGORY.value,
+            TaggingRulesTableFields.TAG.value,
+            TaggingRulesTableFields.PRIORITY.value,
+            TaggingRulesTableFields.IS_ACTIVE.value
+        ]
         selections = st.dataframe(
             rules_df[display_columns],
             key=f"rules_management_table_{self.key_suffix}",
@@ -978,12 +975,13 @@ class RuleBasedTaggingComponent:
         # Display existing conditions with edit capability
         conditions = st.session_state[conditions_key]
         for i, condition in enumerate(conditions):
-            self._render_condition_editor(i, condition, conditions_key)
+            self._render_condition_editor(i, condition, conditions_key, conditions)
 
-        if st.button("➕ Add Condition", key=f"add_condition_{rule_id}_{self.key_suffix}"):
+        enable_more_conditions = [e.value for e in RuleFields if e.value not in [c['field'] for c in conditions]]
+        if st.button("➕ Add Condition", key=f"add_condition_{rule_id}_{self.key_suffix}", disabled=not enable_more_conditions):
                 st.session_state[conditions_key].append({
-                    'field': RuleFields.DESCRIPTION.value,
-                    'operator': RuleOperators.CONTAINS.value,
+                    'field': enable_more_conditions[0],
+                    'operator': self.rules_service.get_operators_for_field(enable_more_conditions[0])[0],
                     'value': ''
                 })
                 st.rerun()
@@ -992,6 +990,12 @@ class RuleBasedTaggingComponent:
         col1, col2, col3, _ = st.columns([1, 1, 1, 5])
         with col1:
             if st.button("💾 Save Changes", key=f"save_rule_{rule_id}_{self.key_suffix}", type="primary"):
+                # Validate conditions
+                conditions_errors = self.rules_service.validate_conditions(st.session_state[conditions_key])
+                if conditions_errors:
+                    st.error(f"❌ Invalid conditions found:\n{conditions_errors}")
+                    return
+
                 # Update rule with new conditions
                 success = self.rules_service.update_rule(
                     rule_id=rule_id,
@@ -1027,8 +1031,6 @@ class RuleBasedTaggingComponent:
                 # Test with current conditions from session state
                 count, test_results = self.rules_service.test_rule_against_transactions(
                     conditions=st.session_state[conditions_key],
-                    service=rule['service'],
-                    account_number=rule.get('account_number')
                 )
             else:
                 test_results = None
@@ -1061,26 +1063,19 @@ class RuleBasedTaggingComponent:
         conditions_key = f"new_rule_conditions"
         conditions = st.session_state.setdefault(conditions_key, [])
         for i, condition in enumerate(conditions):
-            self._render_condition_editor(i, condition, conditions_key)
+            self._render_condition_editor(i, condition, conditions_key, conditions)
 
-        if st.button("➕ Add Condition", key=f"add_rule_condition_{self.key_suffix}"):
+        enable_more_conditions = [e.value for e in RuleFields if e.value not in [c['field'] for c in conditions]]
+        if st.button("➕ Add Condition", key=f"add_rule_condition_{self.key_suffix}", disabled=not enable_more_conditions):
             st.session_state[conditions_key].append({
-                'field': RuleFields.DESCRIPTION.value,
-                'operator': RuleOperators.CONTAINS.value,
+                'field': enable_more_conditions[0],
+                'operator': self.rules_service.get_operators_for_field(enable_more_conditions[0])[0],
                 'value': ''
             })
             st.rerun(scope="fragment")
 
         # Category and tag selection for rule
-        col_service, col_cat, col_tag = st.columns(3)
-
-        with col_service:
-            service = st.selectbox(
-                "Service for rule:",
-                options=["credit_card", "bank"],
-                format_func=lambda x: "Credit Card" if x == "credit_card" else "Bank",
-                key=f'rule_service_{self.key_suffix}'
-            )
+        col_cat, col_tag = st.columns(2)
 
         with col_cat:
             categories = list(self.categories_and_tags.keys())
@@ -1098,7 +1093,6 @@ class RuleBasedTaggingComponent:
                 key=f'rule_tag_{self.key_suffix}'
             )
 
-        # Create rule button
         col_create, col_test, _ = st.columns([1, 1, 3])
 
         with col_create:
@@ -1106,26 +1100,25 @@ class RuleBasedTaggingComponent:
             dont_allow_buttons = not (rule_name and not empty_conditions and rule_category and rule_tag)
             dont_allow_txt = "Please provide rule name, at least one condition, category, and tag."
             if st.button("🚀 Create Rule", key=f"create_rule_{self.key_suffix}", disabled=dont_allow_buttons, help=dont_allow_txt):
+                conditions_errors = self.rules_service.validate_conditions(conditions)
+                if conditions_errors:
+                    st.error(f"❌ Invalid conditions found:\n{conditions_errors}")
+                    return
+
                 rule_id = self.rules_service.add_rule(
                     name=rule_name,
                     conditions=conditions,
                     category=rule_category,
                     tag=rule_tag,
-                    service=service,
-                    account_number=None
                 )
                 st.success(f"✅ Rule created successfully! (ID: {rule_id})")
                 # Clear the conditions
                 st.session_state[conditions_key] = []
 
-                results = self.rules_service.apply_rules_to_all_services()
-                total_tagged = sum(results.values())
+                total_tagged = self.rules_service.apply_rules()
 
                 if total_tagged > 0:
                     st.success(f"✅ Tagged {total_tagged} transactions total!")
-                    for service_name, count in results.items():
-                        if count > 0:
-                            st.info(f"  • {service_name.replace('_', ' ').title()}: {count} transactions")
                 else:
                     st.info("No transactions were tagged. All may already be categorized or no rules matched.")
 
@@ -1135,8 +1128,6 @@ class RuleBasedTaggingComponent:
             if st.button("🧪 Test Rule", key=f"test_new_rule_{self.key_suffix}", disabled=dont_allow_buttons, help=dont_allow_txt):
                 count, matched_transactions = self.rules_service.test_rule_against_transactions(
                     conditions=conditions,
-                    service=service,
-                    account_number=None
                 )
             else:
                 matched_transactions = None
@@ -1147,31 +1138,41 @@ class RuleBasedTaggingComponent:
             if count > 0:
                 st.data_editor(matched_transactions, disabled=True, column_order=self.transactions_service.get_table_columns_for_display(), hide_index=True, use_container_width=True)
 
-    def _render_condition_editor(self, index: int, condition: dict, conditions_key: str) -> None:
+    def _render_condition_editor(self, index: int, condition: dict, conditions_key: str, conditions: List[dict]) -> None:
         """Render a single condition editor."""
         col1, col2, col3, col4 = st.columns([0.25, 0.25, 0.4, 0.1])
 
+        taken_fields = [
+            st.session_state[f"field_{conditions_key}_{i}_{self.key_suffix}"]
+            if f"field_{conditions_key}_{i}_{self.key_suffix}" in st.session_state
+            else c['field']
+            for i, c in enumerate(conditions)
+            if i != index
+        ]
+
         with col1:
+            available_fields = [e.value for e in RuleFields if e.value not in taken_fields]
             field = st.selectbox(
                 f"Field {index + 1}",
-                options=[e.value for e in RuleFields],
-                index=[e.value for e in RuleFields].index(condition['field']),
+                options=available_fields,
+                index=available_fields.index(st.session_state.get(f"field_{conditions_key}_{index}_{self.key_suffix}", condition['field'])),
                 key=f"field_{conditions_key}_{index}_{self.key_suffix}"
             )
 
         with col2:
             # Get available operators based on field type
-            available_operators = self._get_operators_for_field(field)
+            available_operators = self.rules_service.get_operators_for_field(field)
 
             # Ensure current operator is valid for the field, otherwise use first available
             current_operator = condition['operator']
             if current_operator not in available_operators:
                 current_operator = available_operators[0]
 
+            default = st.session_state.get(f"operator_{conditions_key}_{index}_{self.key_suffix}", current_operator)
             operator = st.selectbox(
                 f"Operator {index + 1}",
                 options=available_operators,
-                index=available_operators.index(current_operator) if current_operator in available_operators else 0,
+                index=available_operators.index(default) if default in available_operators else 0,
                 key=f"operator_{conditions_key}_{index}_{self.key_suffix}"
             )
 
@@ -1180,22 +1181,36 @@ class RuleBasedTaggingComponent:
                 value = st.selectbox(
                     f"Value {index + 1}",
                     options=["credit_card", "bank"],
-                    index=["credit_card", "bank"].index(condition['value']) if condition['value'] in ["credit_card", "bank"] else 0,
-                    format_func=lambda x: "Credit Card" if x == "credit_card" else "Bank",
-                    key=f"edit_value_{index}_{self.key_suffix}"
+                    format_func=lambda x: x.replace('_', ' ').title(),
+                    key=f"edit_value_{conditions_key}_{index}_{self.key_suffix}"
+                )
+            elif field == RuleFields.PROVIDER.value:
+                service_condition_value = [
+                    st.session_state.get(f"edit_value_{conditions_key}_{i}_{self.key_suffix}", c['value']) for i, c in
+                    enumerate(conditions) if st.session_state.get(f"field_{conditions_key}_{i}_{self.key_suffix}") == RuleFields.SERVICE.value or c['field'] == RuleFields.SERVICE.value]
+                if service_condition_value:
+                    service = service_condition_value[0]
+                    if service not in ["credit_card", "bank"]:
+                        # in case the index of the service condition is greater than the provider condition and the service default value is not set yet (defaults to credit_card)
+                        service = "credit_card"
+                    providers = self.transactions_service.get_providers_for_service(service)
+                else:
+                    providers = self.transactions_service.get_all_providers()
+                value = st.selectbox(
+                    f"Value {index + 1}",
+                    options=providers,
+                    key=f"edit_value_{conditions_key}_{index}_{self.key_suffix}"
                 )
             elif field == RuleFields.AMOUNT.value:
                 value = st.number_input(
                     f"Value {index + 1}",
-                    value=float(condition['value']) if isinstance(condition['value'], (int, float)) else 0.0,
                     format="%.2f",
-                    key=f"edit_value_{index}_{self.key_suffix}"
+                    key=f"edit_value_{conditions_key}_{index}_{self.key_suffix}"
                 )
             else:
                 value = st.text_input(
                     f"Value {index + 1}",
-                    value=str(condition['value']),
-                    key=f"value_{conditions_key}_{index}_{self.key_suffix}"
+                    key=f"edit_value_{conditions_key}_{index}_{self.key_suffix}"
                 )
 
         with col4:
@@ -1211,33 +1226,6 @@ class RuleBasedTaggingComponent:
             'value': value
         }
 
-    def _get_operators_for_field(self, field: str) -> List[str]:
-        """Get available operators for a specific field type."""
-        text_operators = [
-            RuleOperators.CONTAINS.value,
-            RuleOperators.EQUALS.value,
-            RuleOperators.STARTS_WITH.value,
-            RuleOperators.ENDS_WITH.value
-        ]
-
-        numeric_operators = [
-            RuleOperators.EQUALS.value,
-            RuleOperators.GREATER_THAN.value,
-            RuleOperators.LESS_THAN.value,
-            RuleOperators.GREATER_THAN_EQUAL.value,
-            RuleOperators.LESS_THAN_EQUAL.value,
-            RuleOperators.BETWEEN.value
-        ]
-
-        # Map fields to their operator types
-        # TODO: make provider, account name, account number restricted to dropdowns of existing values
-        field_operator_map = {
-            RuleFields.DESCRIPTION.value: text_operators,
-            RuleFields.PROVIDER.value: text_operators,
-            RuleFields.ACCOUNT_NAME.value: text_operators,
-            RuleFields.ACCOUNT_NUMBER.value: text_operators,
-            RuleFields.AMOUNT.value: numeric_operators,
-            RuleFields.SERVICE.value: [RuleOperators.EQUALS.value],  # special case, selecting from dropdown
-        }
-
-        return field_operator_map.get(field, text_operators)
+        if field != condition['field']:
+            # If field changed, rerun to update previous condition editors
+            st.rerun(scope="fragment")
