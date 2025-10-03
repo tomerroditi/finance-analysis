@@ -46,8 +46,6 @@ class Tables(Enum):
         Name of the table storing credit card transactions.
     BANK : str
         Name of the table storing bank transactions.
-    AUTO_TAGGER : str
-        Name of the table storing automatic tagging rules.
     TAGGING_RULES : str
         Name of the table storing rule-based tagging rules.
     BUDGET_RULES : str
@@ -59,7 +57,6 @@ class Tables(Enum):
     """
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
-    AUTO_TAGGER = 'automatic_tagger'
     TAGGING_RULES = 'tagging_rules'
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
