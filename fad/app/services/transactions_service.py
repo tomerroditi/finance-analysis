@@ -6,7 +6,7 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
-from fad.app.data_access.transactions_repository import TransactionsRepository
+from fad.app.data_access.transactions_repository import TransactionsRepository, CashTransaction
 from fad.app.naming_conventions import (
     TransactionsTableFields,
     NonExpensesCategories,
@@ -48,42 +48,6 @@ class TransactionsService:
         ]
         return cols
 
-    def get_table_names_for_display(self) -> List[str]:
-        """
-        Get the names of the transactions tables.
-
-        Returns
-        -------
-        List[str]
-            A list of table names.
-        """
-        tables = self.transactions_repository.get_all_table_names()
-        tables = [name.replace('_', ' ').title() for name in tables]
-        return tables
-
-    def get_table_data_for_display(self, table_name: str) -> pd.DataFrame:
-        """
-        Get table data for display purposes.
-
-        Parameters
-        ----------
-        table_name : str
-            The name of the table to retrieve data from.
-
-        Returns
-        -------
-        pd.DataFrame
-            The table data formatted for display.
-        """
-        # Convert display name back to internal format
-        service_name = table_name.lower().replace(' ', '_')
-        if service_name == 'credit_card':
-            return self.transactions_repository.get_table('credit_card')
-        elif service_name == 'bank':
-            return self.transactions_repository.get_table('bank')
-        else:
-            raise ValueError(f"Unknown table name: {table_name}")
-
     def get_data_for_analysis(self) -> pd.DataFrame:
         """
         Get table data for analysis purposes.
@@ -97,40 +61,6 @@ class TransactionsService:
         cc_data = self.get_table_for_analysis('credit_card')
         bank_data = self.get_table_for_analysis('bank')
         return pd.concat([cc_data, bank_data])
-
-    def update_tagging(self, name: str, category: str, tag: str, service: Literal['credit_card', 'bank'], account_number: str | None = None) -> None:
-        """
-        Update the tags of the raw data in the credit card and bank tables.
-        Business logic for routing tagging operations based on service type.
-
-        Parameters
-        ----------
-        name : str
-            The name of the transaction
-        category : str
-            The category to tag the transaction with
-        tag : str
-            The tag to tag the transaction with
-        service : str
-            The service of the transaction, should be one of 'credit_card' or 'bank'
-        account_number : str | None
-            The account number of the transaction, only used for bank transactions
-
-        Returns
-        -------
-        None
-        """
-        if service not in ['credit_card', 'bank']:
-            raise ValueError("service must be either 'credit_card' or 'bank'")
-
-        if service == 'credit_card':
-            self.transactions_repository.cc_repo.update_tagging_by_name(name, category, tag)
-        else:
-            if account_number is None:
-                raise ValueError("account_number should be provided for bank transactions tagging")
-            self.transactions_repository.bank_repo.update_tagging_by_name_and_account_number(
-                name, account_number, category, tag
-            )
 
     def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None) -> None:
         """
@@ -345,7 +275,8 @@ class TransactionsService:
             'largest_expense_cat_val': largest_expense_cat_val
         }
 
-    def split_data_by_category_types(self, df: pd.DataFrame) -> dict:
+    @staticmethod
+    def split_data_by_category_types(df: pd.DataFrame) -> dict:
         """
         Split the given DataFrame into expenses, savings, income, and liabilities DataFrames.
         Savings amounts are flipped to positive.
@@ -395,53 +326,6 @@ class TransactionsService:
             'tag_summary': tag_summary,
             'filtered_liabilities': filtered_liabilities
         }
-
-    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank'], account_number: str = None) -> pd.DataFrame:
-        """
-        Get transactions by description for a specific service.
-
-        Parameters
-        ----------
-        description : str
-            The description to filter transactions by.
-        service : Literal['credit_card', 'bank']
-            The service to filter transactions from.
-        account_number : str, optional
-            The account number to filter transactions by (only for bank service).
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame containing transactions matching the description.
-        """
-        return self.transactions_repository.get_data_by_description(description, service, account_number)
-
-    @staticmethod
-    def get_service_from_provider(provider: str) -> str:
-        """
-        Get the service type ('credit_card' or 'bank') based on the provider name.
-
-        Parameters
-        ----------
-        provider : str
-            The provider name to look up.
-
-        Returns
-        -------
-        str
-            The service type corresponding to the provider. either 'credit_card' or 'bank'.
-
-        Raises
-        ------
-        ValueError
-            If the provider is not found in either service.
-        """
-        if provider in [e.value for e in CreditCards]:
-            return Services.CREDIT_CARD.value
-        elif provider in [e.value for e in Banks]:
-            return Services.BANK.value
-        else:
-            raise ValueError(f"Provider '{provider}' not found in either credit card or bank services.")
 
     @staticmethod
     def get_providers_for_service(service: Literal['credit_card', 'bank']) -> List[str]:
