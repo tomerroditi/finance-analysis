@@ -257,7 +257,6 @@ class ScrapingHistoryRepository:
             successful_scraped_today = []
             failed_scraped_today = {}
             canceled_scraped_today = {}
-            available_to_scrape = []
 
             if not df.empty:
                 for _, row in df.iterrows():
@@ -276,7 +275,7 @@ class ScrapingHistoryRepository:
                             f"{row[ScrapingHistoryTableFields.PROVIDER_NAME.value]} - "
                             f"{row[ScrapingHistoryTableFields.ACCOUNT_NAME.value]}",
                 axis=1
-            ).tolist())
+            ).values)
             scraped_accounts = set(successful_scraped_today) | set({k: v for k, v in failed_scraped_today.items() if v >= self.MAX_FAILED_ATTEMPTS_PER_DAY}.keys())
             available_to_scrape = list(all_accounts - scraped_accounts)
             return {
