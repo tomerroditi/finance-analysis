@@ -288,9 +288,9 @@ class ServiceRepository:
             The number of rows updated.
         """
         with self.conn.session as s:
-            s.execute(text(query), query_params)
+            result = s.execute(text(query), query_params)
             s.commit()
-            return s.rowcount
+            return result.rowcount
 
     def get_table_columns(self) -> list[str]:
         """
