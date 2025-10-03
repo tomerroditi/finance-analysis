@@ -287,6 +287,9 @@ class ServiceRepository:
         int
             The number of rows updated.
         """
+        if not query.strip().lower().startswith('update'):
+            raise ValueError("The query must be an UPDATE statement.")
+
         with self.conn.session as s:
             result = s.execute(text(query), query_params)
             s.commit()
