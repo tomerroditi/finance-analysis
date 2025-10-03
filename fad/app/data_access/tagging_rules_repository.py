@@ -28,8 +28,6 @@ class TaggingRulesRepository:
     conditions_col = TaggingRulesTableFields.CONDITIONS.value
     category_col = TaggingRulesTableFields.CATEGORY.value
     tag_col = TaggingRulesTableFields.TAG.value
-    service_col = TaggingRulesTableFields.SERVICE.value
-    account_number_col = TaggingRulesTableFields.ACCOUNT_NUMBER.value
     is_active_col = TaggingRulesTableFields.IS_ACTIVE.value
     created_date_col = TaggingRulesTableFields.CREATED_DATE.value
 
@@ -49,8 +47,6 @@ class TaggingRulesRepository:
                     f'{self.conditions_col} TEXT NOT NULL, '
                     f'{self.category_col} TEXT NOT NULL, '
                     f'{self.tag_col} TEXT NOT NULL, '
-                    f'{self.service_col} TEXT NOT NULL, '
-                    f'{self.account_number_col} TEXT, '
                     f'{self.is_active_col} INTEGER DEFAULT 1, '
                     f'{self.created_date_col} TEXT DEFAULT CURRENT_TIMESTAMP'
                     f');'
@@ -58,23 +54,18 @@ class TaggingRulesRepository:
             )
             s.commit()
 
-    def get_all_rules(self, service: Optional[Literal['credit_card', 'bank']] = None,
-                      active_only: bool = True) -> pd.DataFrame:
-        """Get all tagging rules, optionally filtered by service and active status"""
+    def get_all_rules(self, active_only: bool = True) -> pd.DataFrame:
+        """Get all tagging rules, optionally filtered by active status"""
         where_clauses = []
         params = {}
-
-        if service:
-            where_clauses.append(f'{self.service_col} = :service')
-            params['service'] = service
 
         if active_only:
             where_clauses.append(f'{self.is_active_col} = 1')
 
-        where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        where_clause = f" WHERE {' AND '.join(where_clauses)} " if where_clauses else " "
 
         with self.conn.session as s:
-            query = f'SELECT * FROM {self.table} {where_clause} ORDER BY {self.priority_col} DESC, {self.id_col};'
+            query = f'SELECT * FROM {self.table}{where_clause}ORDER BY {self.priority_col} DESC, {self.id_col};'
             result = s.execute(text(query), params).fetchall()
         return pd.DataFrame(result)
 
@@ -92,13 +83,8 @@ class TaggingRulesRepository:
             return df_result.iloc[0]
         return None
 
-    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str,
-                 service: Literal['credit_card', 'bank'], priority: int = 1,
-                 account_number: Optional[str] = None, is_active: bool = True) -> int:
+    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str, priority: int = 1, is_active: bool = True) -> int:
         """Add a new tagging rule to the database. Returns the new rule ID."""
-        if service == "bank" and account_number is None:
-            raise ValueError("account_number is required for bank transaction rules")
-
         with self.conn.session as s:
             params = {
                 'name': name,
@@ -106,28 +92,23 @@ class TaggingRulesRepository:
                 'conditions': json.dumps(conditions),
                 'category': category,
                 'tag': tag,
-                'service': service,
-                'account_number': account_number,
                 'is_active': 1 if is_active else 0,
                 'created_date': datetime.now().isoformat()
             }
 
             query = sa.text(f"""
                 INSERT INTO {self.table} ({self.name_col}, {self.priority_col}, {self.conditions_col}, 
-                                         {self.category_col}, {self.tag_col}, {self.service_col}, 
-                                         {self.account_number_col}, {self.is_active_col}, {self.created_date_col})
-                VALUES (:name, :priority, :conditions, :category, :tag, :service, :account_number, :is_active, :created_date)
+                                         {self.category_col}, {self.tag_col}, {self.is_active_col}, {self.created_date_col})
+                VALUES (:name, :priority, :conditions, :category, :tag, :is_active, :created_date)
             """)
             result = s.execute(query, params)
             s.commit()
             return result.lastrowid
 
-    def update_rule(self, rule_id: int, name: str = None, conditions: List[Dict[str, Any]] = None,
-                    category: str = None, tag: str = None, priority: int = None,
-                    is_active: bool = None) -> bool:
+    def update_rule(self, rule_id: int, name: str = None, conditions: List[Dict[str, Any]] = None, category: str = None, tag: str = None, priority: int = None, is_active: bool = None) -> bool:
         """Update an existing rule. Only updates provided fields."""
         updates = []
-        params = {'id': int(rule_id)}
+        params = {}
 
         if name is not None:
             updates.append(f'{self.name_col} = :name')
@@ -158,7 +139,7 @@ class TaggingRulesRepository:
 
         with self.conn.session as s:
             query = sa.text(f"UPDATE {self.table} SET {', '.join(updates)} WHERE {self.id_col} = :id")
-            result = s.execute(query, params)
+            result = s.execute(query, {**params, 'id': int(rule_id)})
             s.commit()
             return result.rowcount > 0
 
@@ -205,121 +186,140 @@ class TaggingRulesRepository:
             s.commit()
             return result.rowcount
 
-    def apply_rules_to_transactions(self, service: Literal['credit_card', 'bank']) -> int:
+    def apply_rules_to_transactions(self) -> int:
         """
-        Apply all active rules to untagged transactions for the specified service.
+        Apply all active rules to untagged transactions.
         Returns the number of transactions that were tagged.
 
         This method uses a priority-based approach where higher priority rules are applied first.
         """
         with self.conn.session as s:
-            rules = self._get_active_rules_for_service(s, service)
+            rules_query = f"""
+                SELECT * FROM {self.table} 
+                WHERE {self.is_active_col} = 1
+                ORDER BY {self.priority_col} DESC, {self.id_col}
+            """
+            rules_result = s.execute(text(rules_query))
+            rules = list(rules_result.fetchall())
             total_tagged = 0
 
             for rule in rules:
-                tagged_count = self._apply_single_rule(s, rule, service)
+                tagged_count = self._apply_single_rule(s, rule)
                 total_tagged += tagged_count
 
             s.commit()
             return total_tagged
 
-    def _get_active_rules_for_service(self, session: Session, service: Literal['credit_card', 'bank']) -> List[sa.Row]:
-        """
-        Get all active rules for the specified service, ordered by priority.
-
-        Args:
-            session: Database session
-            service: Transaction service type
-
-        Returns:
-            List of rule records ordered by priority (highest first) then by ID
-        """
-        rules_query = f"""
-            SELECT * FROM {self.table} 
-            WHERE {self.service_col} = :service AND {self.is_active_col} = 1
-            ORDER BY {self.priority_col} DESC, {self.id_col}
-        """
-        rules_result = session.execute(text(rules_query), {'service': service})
-        return list(rules_result.fetchall())
-
-    def _apply_single_rule(self, session: Session, rule: sa.Row, service: Literal['credit_card', 'bank']) -> int:
+    def _apply_single_rule(self, session: Session, rule: sa.Row) -> int:
         """
         Apply a single rule to untagged transactions.
 
         Args:
             session: Database session
             rule: Rule record from database
-            service: Transaction service type
 
         Returns:
             Number of transactions that were tagged by this rule
         """
-        transaction_table = Tables.CREDIT_CARD.value if service == 'credit_card' else Tables.BANK.value
 
-        where_conditions, params = self._build_rule_where_clause(rule, service)
+        rule = rule._mapping
+        conditions = json.loads(rule[self.conditions_col])
+        where_conditions, params = self._build_rule_where_clause_conditions(conditions)
+        tables = self._get_tables_names_for_rule_application_from_conditions(conditions)
 
-        update_query = f"""
-            UPDATE {transaction_table}
-            SET {TransactionsTableFields.CATEGORY.value} = :category,
-                {TransactionsTableFields.TAG.value} = :tag
-            WHERE {' AND '.join(where_conditions)}
+        row_count = 0
+        for table in tables:
+            update_query = f"""
+                UPDATE {table}
+                SET {TransactionsTableFields.CATEGORY.value} = :category,
+                    {TransactionsTableFields.TAG.value} = :tag
+                WHERE {where_conditions}
+            """
+
+            result = session.execute(text(update_query), {"category": rule[self.category_col], "tag": rule[self.tag_col], **params})
+            row_count += result.rowcount
+        return row_count
+
+    @staticmethod
+    def _get_tables_names_for_rule_application_from_conditions(conditions: List[Dict[str, Any]]) -> List[str]:
         """
+        Determine which transaction tables to apply the rule to based on its 'service' condition.
+        If no 'service' condition is found, return all transaction tables.
 
-        result = session.execute(text(update_query), params)
-        return result.rowcount
+        Parameters:
+        ----------
+        conditions : List[Dict[str, Any]]
+            List of rule conditions, each with 'field', 'operator', and 'value'.
 
-    def _build_rule_where_clause(self, rule: sa.Row, service: Literal['credit_card', 'bank']) -> tuple[List[str], Dict[str, Any]]:
+        Returns:
+        List[str]
+            List of table names to apply the rule to. either Tables.CREDIT_CARD.value, Tables.BANK.value, or both.
+        """
+        tables = [Tables.CREDIT_CARD.value, Tables.BANK.value]
+        for condition in conditions:
+            field = condition['field']
+            if field == 'service':
+                if condition["value"].lower().replace(" ", "_") == "credit_card":
+                    tables = [Tables.CREDIT_CARD.value]
+                elif condition["value"].lower().replace(" ", "_") == "bank":
+                    tables = [Tables.BANK.value]
+                break
+
+        return tables
+
+    def _build_rule_where_clause_conditions(self, conditions: List[Dict[str, Any]]) -> (str, Dict[str, Any]):
         """
         Build complete WHERE clause and parameters for a rule.
 
-        Args:
-            rule: Rule record from database
-            service: Transaction service type
+        Parameters:
+        ----------
+        conditions : List[Dict[str, Any]]
+            List of rule conditions, each with 'field', 'operator', and 'value'.
 
         Returns:
-            Tuple of WHERE conditions list and parameters dictionary
+        -------
+        where_conditions : List[str]
+            List of SQL WHERE clause conditions.
+        params : Dict[str, Any]
+            Dictionary of parameters for the SQL query.
         """
-        # Access row data using _mapping to get column values by name
-        rule_data = rule._mapping
-        
-        conditions = json.loads(rule_data[self.conditions_col])
-        category = rule_data[self.category_col]
-        tag = rule_data[self.tag_col]
-        account_number = rule_data[self.account_number_col]
-
-        where_conditions = [f"{TransactionsTableFields.CATEGORY.value} IS NULL"]
-        params = {'category': category, 'tag': tag}
-
-        # Add account number condition for bank transactions
-        if service == 'bank' and account_number:
-            where_conditions.append(f"{TransactionsTableFields.ACCOUNT_NUMBER.value} = :account_number")
-            params['account_number'] = account_number
+        where_conditions = []
+        params = {}
 
         # Add rule conditions
         for i, condition in enumerate(conditions):
             param_name = f'cond_{i}'
-            self._build_condition_clause(condition, param_name, where_conditions, params)
+            self._add_condition_clause(where_conditions, param_name, condition, params)
+
+        if where_conditions:
+            where_conditions = ' AND '.join(where_conditions)
+        else:
+            raise ValueError(f"No valid conditions found in the rule. conditions: {conditions}")
 
         return where_conditions, params
 
-    def _build_condition_clause(self, condition: Dict[str, Any], param_name: str,
-                                where_conditions: List[str], params: Dict[str, Any]) -> None:
+    def _add_condition_clause(self, where_conditions: List[str], param_name: str, condition: Dict[str, Any], params: Dict[str, Any]) -> None:
         """
         Build WHERE clause and parameters for a single rule condition.
 
-        Args:
-            condition: Rule condition with field, operator, and value
-            param_name: Unique parameter name for this condition
-            where_conditions: List to append WHERE clause to (modified in place)
-            params: Dictionary to add parameters to (modified in place)
+        Parameters:
+        ----------
+        where_conditions : List[str]
+            List to append WHERE clause to (modified in place).
+        param_name : str
+            Unique parameter name for this condition.
+        condition : Dict[str, Any]
+            Rule condition with 'field', 'operator', and 'value'.
+        params : Dict[str, Any]
+            Dictionary to add parameters to (modified in place).
         """
         field = condition['field']
         operator = condition['operator']
         value = condition['value']
 
         db_field = self._map_field_to_db_column(field)
-        if not db_field:
-            return  # Skip unknown fields
+        if db_field is None:
+            return  # Skip unknown/unneeded fields
 
         if operator == 'contains':
             where_conditions.append(f"{db_field} LIKE :{param_name}")
@@ -343,15 +343,20 @@ class TaggingRulesRepository:
                 params[f'{param_name}_min'] = float(value[0])
                 params[f'{param_name}_max'] = float(value[1])
 
-    def _map_field_to_db_column(self, field: str) -> Optional[str]:
+    @staticmethod
+    def _map_field_to_db_column(field: str) -> Optional[str]:
         """
         Map a rule condition field to its corresponding database column.
 
-        Args:
-            field: Field name from rule condition
+        Parameters:
+        ----------
+        field : str
+            Rule condition field name.
 
         Returns:
-            Database column name or None if field is unknown
+        -------
+        db_column : Optional[str]
+            Corresponding database column name, or None if field is unknown/unneeded.
         """
         field_mapping = {
             'description': TransactionsTableFields.DESCRIPTION.value,
@@ -359,5 +364,6 @@ class TaggingRulesRepository:
             'provider': TransactionsTableFields.PROVIDER.value,
             'account_name': TransactionsTableFields.ACCOUNT_NAME.value,
             'account_number': TransactionsTableFields.ACCOUNT_NUMBER.value,
+            'service': None,  # Handled separately in table selection
         }
         return field_mapping.get(field)
