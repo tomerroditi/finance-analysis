@@ -335,7 +335,7 @@ class TransactionsTaggingComponent:
             self.render_transactions_tagging()
 
         with edit_tab:
-            self._render_transaction_editing()
+            self.render_transaction_editing()
 
     def render_transactions_tagging(self) -> None:
         """Render the manual tagging interface."""
@@ -708,15 +708,18 @@ class TransactionsTaggingComponent:
         df_filter = st.session_state[f"{PandasFilterWidgets.BASE_STREAMLIT_KEY}_{self.key_suffix}_{key_suffix}"]
         df_filter.delete_session_state()
 
-    def _render_transaction_editing(self) -> None:
+    def render_transaction_editing(self) -> None:
         """Render transaction data editing interface."""
         st.markdown("Select a transaction to edit its details (description, amount, provider, etc.)")
 
+        self.create_new_transaction_button()
+
         # Service selection
-        service = st.selectbox(
+        service = st.pills(
             "Select transaction type:",
             options=["credit_card", "bank"],
-            format_func=lambda x: "Credit Card" if x == "credit_card" else "Bank",
+            default="credit_card",
+            format_func=lambda x: x.replace('_', ' ').title(),
             key="edit_service_selector"
         )
 
@@ -729,25 +732,33 @@ class TransactionsTaggingComponent:
 
         # Filter interface using comprehensive widgets
         info_container = st.container()
-        filter_col, data_col = st.columns([0.3, 0.7])
+        show_filters = st.checkbox("Show Filters", key=f"show_filters_{self.key_suffix}_edit", value=True)
+        if show_filters:
+            data_col, filter_col = st.columns([0.7, 0.3], border=True)
+        else:
+            data_col = st.container(border=True)
+            filter_col = None
 
-        with filter_col:
-            st.markdown("**Filter Transactions**")
+        if filter_col is None:
+            filtered_transactions = all_transactions
+        else:
+            with filter_col:
+                st.markdown("**Filter Transactions**")
 
-            # Create filter widgets for editing operations
-            widgets_map = {
-                TransactionsTableFields.AMOUNT.value: 'number_range',
-                TransactionsTableFields.DATE.value: 'date_range',
-                TransactionsTableFields.PROVIDER.value: 'multiselect',
-                TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
-                TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
-                TransactionsTableFields.DESCRIPTION.value: 'multiselect',
-                TransactionsTableFields.CATEGORY.value: 'multiselect',
-                TransactionsTableFields.TAG.value: 'multiselect',
-            }
-            df_filter = PandasFilterWidgets(all_transactions, widgets_map, key_suffix=f"{self.key_suffix}_{service}")
-            df_filter.display_widgets()
-            filtered_transactions = df_filter.filter_df()
+                # Create filter widgets for editing operations
+                widgets_map = {
+                    TransactionsTableFields.AMOUNT.value: 'number_range',
+                    TransactionsTableFields.DATE.value: 'date_range',
+                    TransactionsTableFields.PROVIDER.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NAME.value: 'multiselect',
+                    TransactionsTableFields.ACCOUNT_NUMBER.value: 'multiselect',
+                    TransactionsTableFields.DESCRIPTION.value: 'multiselect',
+                    TransactionsTableFields.CATEGORY.value: 'multiselect',
+                    TransactionsTableFields.TAG.value: 'multiselect',
+                }
+                df_filter = PandasFilterWidgets(all_transactions, widgets_map, key_suffix=f"{self.key_suffix}_{service}")
+                df_filter.display_widgets()
+                filtered_transactions = df_filter.filter_df()
 
         info_container.info(f"Found {len(filtered_transactions)} transactions")
 
@@ -767,7 +778,8 @@ class TransactionsTaggingComponent:
                 hide_index=False,
                 on_select='rerun',
                 selection_mode='single-row',
-                height=400
+                height=400,
+                use_container_width=True
             )
 
             # Handle selected transaction for editing
