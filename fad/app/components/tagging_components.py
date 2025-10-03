@@ -364,7 +364,7 @@ class TransactionsTaggingComponent:
             else:
                 self.render_transactions_table_for_tagging(all_transactions, key_suffix="manual_tagging_tagged")
         else:
-            untagged_transactions = self.rules_service.get_untagged_transactions(service)
+            untagged_transactions = self.transactions_service.get_untagged_transactions(service)
             if untagged_transactions.empty:
                 st.info("🎉 No untagged transactions found. All transactions have been categorized!")
                 st.info("Use the checkbox above to view and edit already tagged transactions.")

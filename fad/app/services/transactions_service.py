@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import pandas as pd
 from streamlit.connections import SQLConnection
@@ -190,6 +190,34 @@ class TransactionsService:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
         return self.transactions_repository.get_table(service)
+
+    def get_untagged_transactions(self, service: Literal['credit_card', 'bank'], account_number: Optional[str] = None) -> pd.DataFrame:
+        """
+        Get transactions that don't have categories assigned.
+
+        Parameters
+        ----------
+        service : Literal['credit_card', 'bank']
+            Service to get transactions from.
+        account_number : Optional[str]
+            Account number filter for bank transactions.
+
+        Returns
+        -------
+        pd.DataFrame
+            Untagged transactions.
+        """
+        transactions = self.transactions_repository.get_table(service)
+        category_col = TransactionsTableFields.CATEGORY.value
+
+        # Filter for untagged transactions
+        untagged = transactions[transactions[category_col].isna()]
+
+        if account_number and service == 'bank':
+            account_col = TransactionsTableFields.ACCOUNT_NUMBER.value
+            untagged = untagged[untagged[account_col] == account_number]
+
+        return untagged
 
     def get_latest_data_date(self) -> datetime:
         """
