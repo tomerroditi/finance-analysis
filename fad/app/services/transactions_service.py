@@ -416,7 +416,8 @@ class TransactionsService:
         """
         return self.transactions_repository.get_data_by_description(description, service, account_number)
 
-    def get_service_from_provider(self, provider: str) -> str:
+    @staticmethod
+    def get_service_from_provider(provider: str) -> str:
         """
         Get the service type ('credit_card' or 'bank') based on the provider name.
 
@@ -441,3 +442,44 @@ class TransactionsService:
             return Services.BANK.value
         else:
             raise ValueError(f"Provider '{provider}' not found in either credit card or bank services.")
+
+    @staticmethod
+    def get_providers_for_service(service: Literal['credit_card', 'bank']) -> List[str]:
+        """
+        Get a list of providers for the specified service.
+
+        Parameters
+        ----------
+        service : Literal['credit_card', 'bank']
+            The service to get providers for.
+
+        Returns
+        -------
+        List[str]
+            A list of provider names for the specified service.
+
+        Raises
+        ------
+        ValueError
+            If the service is not recognized.
+        """
+        if service == Services.CREDIT_CARD.value:
+            return [e.value for e in CreditCards]
+        elif service == Services.BANK.value:
+            return [e.value for e in Banks]
+        else:
+            raise ValueError(f"Service must be either 'credit_card' or 'bank'. Got '{service}'")
+
+    @staticmethod
+    def get_all_providers() -> List[str]:
+        """
+        Get a list of all providers across both credit card and bank services.
+
+        Returns
+        -------
+        List[str]
+            A list of all provider names.
+        """
+        cc_providers = [e.value for e in CreditCards]
+        bank_providers = [e.value for e in Banks]
+        return cc_providers + bank_providers
