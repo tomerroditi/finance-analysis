@@ -241,7 +241,7 @@ class MonthlyBudgetUI(BudgetUI):
                 st.error(message)
                 st.stop()
 
-            self.monthly_budget_service.monthly_budget_repository.add_rule(
+            self.monthly_budget_service.add_rule(
                 name=name,
                 amount=amount,
                 category=category,
@@ -264,7 +264,7 @@ class MonthlyBudgetUI(BudgetUI):
 
         col_set.markdown("<br>", unsafe_allow_html=True)
         if col_set.button("Set Total Budget", key="set_total_budget_button", use_container_width=True):
-            self.monthly_budget_service.monthly_budget_repository.add_rule(
+            self.monthly_budget_service.add_rule(
                 name=TOTAL_BUDGET,
                 amount=total_budget,
                 category=TOTAL_BUDGET,
