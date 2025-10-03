@@ -39,7 +39,7 @@ class TransactionsRepository:
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
 
-    def get_table(self, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None) -> pd.DataFrame:
+    def get_table(self, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None, query: str | None = None, query_params: dict | None = None) -> pd.DataFrame:
         """
         Get the transactions table for the specified service.
 
@@ -55,11 +55,11 @@ class TransactionsRepository:
             The transactions table as a DataFrame.
         """
         if service is None:
-            return pd.concat([self.cc_repo.get_table(), self.bank_repo.get_table()], ignore_index=True)
+            return pd.concat([self.cc_repo.get_table(query, query_params), self.bank_repo.get_table(query, query_params)], ignore_index=True)
         elif service == 'credit_card' or service == Tables.CREDIT_CARD.value:
-            return self.cc_repo.get_table()
+            return self.cc_repo.get_table(query, query_params)
         elif service == 'bank' or service == Tables.BANK.value:
-            return self.bank_repo.get_table()
+            return self.bank_repo.get_table(query, query_params)
         else:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
@@ -220,11 +220,27 @@ class ServiceRepository:
             s.execute(text(my_query))
             s.commit()
 
-    def get_table(self) -> pd.DataFrame:
+    def get_table(self, query: str | None = None, params: dict | None = None) -> pd.DataFrame:
         """
         Get the transactions table as a DataFrame.
+
+        Parameters
+        ----------
+        query : str, optional
+            An optional SQL query to filter the transactions. must comply with SQLAlchemy text() requirements.
+        params : dict, optional
+            parameters for the SQL query. must comply with the query parameters.
+
+        Returns
+        -------
+        pd.DataFrame
+            The transactions table as a DataFrame.
         """
-        table = self.conn.query(f'SELECT * FROM {self.table};', ttl=0)
+        if query:
+            result = self.conn.session.execute(text(query), params)
+            table = pd.DataFrame(result.fetchall())
+        else:
+            table = self.conn.query(f'SELECT * FROM {self.table};', ttl=0)
         return table
 
     def get_table_columns(self) -> list[str]:
