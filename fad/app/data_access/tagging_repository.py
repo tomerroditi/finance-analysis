@@ -1,18 +1,8 @@
 import os
 from typing import Dict, List
-from typing import Literal, Optional
 
-import pandas as pd
-import sqlalchemy as sa
 import yaml
-from sqlalchemy.sql import text
-from streamlit.connections import SQLConnection
 
-from fad.app.naming_conventions import (
-    Tables,
-    AutoTaggerTableFields,
-    TransactionsTableFields,
-)
 
 
 class TaggingRepository:

@@ -138,31 +138,6 @@ class ScrapingHistoryTableFields(Enum):
     STATUS = 'status'
 
 
-class AutoTaggerTableFields(Enum):
-    """
-    Enum defining field names for the automatic tagger table.
-
-    Attributes
-    ----------
-    NAME : str
-        Field name for the transaction name/description.
-    CATEGORY : str
-        Field name for the transaction category.
-    TAG : str
-        Field name for the transaction tag.
-    SERVICE : str
-        Field name for the service type (e.g., bank, credit card).
-    ACCOUNT_NUMBER : str
-        Field name for the account number.
-    """
-    ID = 'id'
-    NAME = 'name'
-    CATEGORY = 'category'
-    TAG = 'tag'
-    SERVICE = 'service'
-    ACCOUNT_NUMBER = 'account_number'
-
-
 class BudgetRulesTableFields(Enum):
     """
     Enum defining field names for the budget rules table.
