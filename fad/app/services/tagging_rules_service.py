@@ -147,9 +147,9 @@ class TaggingRulesService:
         self.rules_repo = TaggingRulesRepository(self.conn)
         self.transactions_repo = TransactionsRepository(self.conn)
 
-    def get_all_rules(self, service: Optional[Literal['credit_card', 'bank']] = None, active_only: bool = True) -> pd.DataFrame:
-        """Get all rules, optionally filtered by service and active status."""
-        return self.rules_repo.get_all_rules(service=service, active_only=active_only)
+    def get_all_rules(self, active_only: bool = True) -> pd.DataFrame:
+        """Get all rules, optionally filtered active status."""
+        return self.rules_repo.get_all_rules(active_only=active_only)
 
     def get_rule_by_id(self, rule_id: int) -> Optional[Dict[str, Any]]:
         """Get a rule by ID and parse its conditions."""
@@ -163,9 +163,7 @@ class TaggingRulesService:
             return rule_dict
         return None
 
-    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str,
-                service: Literal['credit_card', 'bank'], priority: int = 1,
-                account_number: Optional[str] = None) -> int:
+    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str, priority: int = 1) -> int:
         """
         Add a new tagging rule. Alias for create_rule for backward compatibility.
 
@@ -174,92 +172,37 @@ class TaggingRulesService:
         int
             ID of the created rule.
         """
-        return self.create_rule(
+        rule_id = self.rules_repo.add_rule(
             name=name,
             conditions=conditions,
             category=category,
             tag=tag,
-            service=service,
             priority=priority,
-            account_number=account_number
         )
-
-    def create_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str,
-                   service: Literal['credit_card', 'bank'], priority: int = 1,
-                   account_number: Optional[str] = None) -> int:
-        """
-        Create a new tagging rule.
-
-        Parameters
-        ----------
-        name : str
-            Human-readable name for the rule.
-        conditions : List[Dict[str, Any]]
-            List of conditions that must all match.
-        category : str
-            Category to assign when rule matches.
-        tag : str
-            Tag to assign when rule matches.
-        service : Literal['credit_card', 'bank']
-            Service type this rule applies to.
-        priority : int
-            Rule priority (higher number = higher priority).
-        account_number : Optional[str]
-            Account number for bank rules.
-
-        Returns
-        -------
-        int
-            ID of the created rule.
-        """
-        return self.rules_repo.add_rule(
-            name=name,
-            conditions=conditions,
-            category=category,
-            tag=tag,
-            service=service,
-            priority=priority,
-            account_number=account_number
-        )
+        self.apply_rules()
+        return rule_id
 
     def update_rule(self, rule_id: int, **kwargs) -> bool:
         """Update an existing rule with provided fields."""
-        return self.rules_repo.update_rule(rule_id, **kwargs)
+        updated = self.rules_repo.update_rule(rule_id, **kwargs)
+        if updated:
+            self.apply_rules()
+        return updated
 
     def delete_rule(self, rule_id: int) -> bool:
         """Delete a rule by ID."""
         return self.rules_repo.delete_rule(rule_id)
 
-    def apply_rules_to_all_services(self) -> Dict[str, int]:
+    def apply_rules(self) -> int:
         """
         Apply rules to all services and return counts.
 
         Returns
         -------
-        Dict[str, int]
-            Dictionary with service names as keys and tagged counts as values.
-        """
-        results = {}
-        for service in ['credit_card', 'bank']:
-            results[service] = self.apply_rules_to_transactions(service)
-        return results
-
-    def apply_rules_to_transactions(self, service: Literal['credit_card', 'bank']) -> int:
-        """
-        Apply all active rules to untagged transactions.
-
-        Parameters
-        ----------
-        service : Literal['credit_card', 'bank']
-            Service to apply rules to.
-
-        Returns
-        -------
         int
-            Number of transactions that were tagged.
+            Number of transactions updated.
         """
-        return self.rules_repo.apply_rules_to_transactions(service)
-
+        return self.rules_repo.apply_rules_to_transactions()
 
     def validate_conditions(self, conditions: List[Dict[str, Any]]) -> List[str]:
         """
@@ -282,8 +225,8 @@ class TaggingRulesService:
             return errors
 
         valid_fields = [field.value for field in RuleFields]
-        valid_operators = [op.value for op in RuleOperators]
 
+        # within condition issues
         for i, condition in enumerate(conditions):
             if not isinstance(condition, dict):
                 errors.append(f"Condition {i+1}: Must be a dictionary")
@@ -296,8 +239,10 @@ class TaggingRulesService:
             if field not in valid_fields:
                 errors.append(f"Condition {i+1}: Invalid field '{field}'")
 
-            if operator not in valid_operators:
-                errors.append(f"Condition {i+1}: Invalid operator '{operator}'")
+            if field in valid_fields:
+                valid_operators = self.get_operators_for_field(field) if field in valid_fields else []
+                if operator not in valid_operators:
+                    errors.append(f"Condition {i+1}: Invalid operator '{operator}', for field '{field}' select from {valid_operators}")
 
             if value is None:
                 errors.append(f"Condition {i+1}: Value is required")
@@ -318,45 +263,46 @@ class TaggingRulesService:
                     except (ValueError, TypeError):
                         errors.append(f"Condition {i+1}: Amount comparisons require numeric values")
 
+        # cross-condition issues
+        fields = [cond.get('field') for cond in conditions if isinstance(cond, dict)]
+        if len(fields) != len(set(fields)):
+            duplicated_fields = set([f for f in fields if fields.count(f) > 1])
+            errors.append(f"Each field can only be used once in the conditions. Duplicate fields found: {duplicated_fields}")
+
         return errors
 
-    def test_rule_by_id(self, rule_id: int, limit: int | None = None) -> (int, pd.DataFrame):
-        """
-        Test a rule against transactions to see what would match.
+    def get_operators_for_field(self, field: str) -> List[str]:
+        """Get available operators for a specific field type."""
+        text_operators = [
+            RuleOperators.CONTAINS.value,
+            RuleOperators.EQUALS.value,
+            RuleOperators.STARTS_WITH.value,
+            RuleOperators.ENDS_WITH.value
+        ]
 
-        Parameters
-        ----------
-        rule_id : int
-            ID of the rule to test.
-        limit : int | None
-            Maximum number of results to return.
+        numeric_operators = [
+            RuleOperators.EQUALS.value,
+            RuleOperators.GREATER_THAN.value,
+            RuleOperators.LESS_THAN.value,
+            RuleOperators.GREATER_THAN_EQUAL.value,
+            RuleOperators.LESS_THAN_EQUAL.value,
+            RuleOperators.BETWEEN.value
+        ]
 
-        Returns
-        -------
-        int
-            Number of matching transactions.
-        pd.DataFrame
-            Transactions that would match the rule.
-        """
-        rule = self.get_rule_by_id(rule_id)
-        if not rule:
-            return pd.DataFrame()
+        # Map fields to their operator types
+        # TODO: make provider, account name, account number restricted to dropdowns of existing values
+        field_operator_map = {
+            RuleFields.DESCRIPTION.value: text_operators,
+            RuleFields.PROVIDER.value: text_operators,
+            RuleFields.ACCOUNT_NAME.value: text_operators,
+            RuleFields.ACCOUNT_NUMBER.value: text_operators,
+            RuleFields.AMOUNT.value: numeric_operators,
+            RuleFields.SERVICE.value: [RuleOperators.EQUALS.value],  # special case, selecting from dropdown
+        }
 
-        conditions = rule['conditions']
-        service = rule['service']
-        account_number = rule.get('account_number')
+        return field_operator_map.get(field, text_operators)
 
-        return self.test_rule_against_transactions(
-            conditions=conditions,
-            service=service,
-            account_number=account_number,
-            limit=limit
-        )
-
-    def test_rule_against_transactions(self, conditions: List[Dict[str, Any]],
-                                     service: Literal['credit_card', 'bank'],
-                                     account_number: Optional[str] = None,
-                                     limit: int | None = None) -> (int, pd.DataFrame):
+    def test_rule_against_transactions(self, conditions: List[Dict[str, Any]], limit: int | None = None) -> (int, pd.DataFrame):
         """
         Test rule conditions against existing transactions to see what would match.
 
@@ -364,10 +310,6 @@ class TaggingRulesService:
         ----------
         conditions : List[Dict[str, Any]]
             Rule conditions to test.
-        service : Literal['credit_card', 'bank']
-            Service to test against.
-        account_number : Optional[str]
-            Account number filter for bank transactions.
         limit : int | None
             Maximum number of results to return.
 
@@ -378,14 +320,11 @@ class TaggingRulesService:
         pd.DataFrame
             Transactions that would match the rule.
         """
-        transactions = self.transactions_repo.get_table(service)
-
-        if account_number and service == 'bank':
-            account_col = TransactionsTableFields.ACCOUNT_NUMBER.value
-            transactions = transactions[transactions[account_col] == account_number]
+        # TODO: simplify this with a query builder (functionality exists at repo level)
+        tables = self.rules_repo._get_tables_names_for_rule_application_from_conditions(conditions)
+        transactions = self.transactions_repo.get_table(tables if len(tables) == 1 else None)
 
         matching_transactions = []
-
         for _, transaction in transactions.iterrows():
             # Create a mock rule to test conditions
             mock_rule = pd.Series({'conditions': json.dumps(conditions)})
@@ -397,19 +336,3 @@ class TaggingRulesService:
             data = data.head(limit)
 
         return len(matching_transactions), data
-
-    def apply_all_rules(self, service: Literal['credit_card', 'bank']) -> int:
-        """
-        Apply all active rules to untagged transactions for a service.
-
-        Parameters
-        ----------
-        service : Literal['credit_card', 'bank']
-            Service to apply rules to.
-
-        Returns
-        -------
-        int
-            Number of transactions that were tagged.
-        """
-        return self.apply_rules_to_transactions(service)
