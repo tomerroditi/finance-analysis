@@ -1,11 +1,27 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Dict
+from dataclasses import dataclass
 
 import pandas as pd
 from sqlalchemy import text
 from streamlit.connections import SQLConnection
 
-from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, TransactionsTableFields
+from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, CashTableFields, TransactionsTableFields, Services
+
+
+@dataclass
+class CashTransaction:
+    date: datetime
+    provider: str
+    account_name: str
+    account_number: str
+    description: str
+    amount: float
+    category: str | None = None
+    tag: str | None = None
+
+
+T_service = Literal[Services.CREDIT_CARD, Services.BANK, Services.CASH, Tables.CREDIT_CARD, Tables.BANK, Tables.CASH]
 
 
 class TransactionsRepository:
@@ -13,7 +29,7 @@ class TransactionsRepository:
     Repository for basic CRUD operations on transactions data.
     Contains only data access logic, no business logic.
     """
-    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value]
+    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value, Tables.CASH.value]
     account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
     type_col = TransactionsTableFields.TYPE.value
     id_col = TransactionsTableFields.ID.value
@@ -38,16 +54,43 @@ class TransactionsRepository:
         self.conn = conn
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
+        self.cash_repo = CashRepository(conn)
 
-    def get_table(self, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None, query: str | None = None, query_params: dict | None = None) -> pd.DataFrame:
+    def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> None:
+        """
+        Add a new transaction to the database.
+
+        Parameters
+        ----------
+        transaction : CashTransaction
+            The transaction to add.
+        service : str
+            The service of the transaction, should be "cash" (for future use).
+
+        Returns
+        -------
+        None
+        """
+        if service == Services.CASH.value:
+            repo = self.cash_repo
+        else:
+            raise ValueError(f"service must be 'cash'. Got '{service}'")
+
+        repo.add_transaction(transaction)
+
+    def get_table(self, service: T_service | None = None, query: str | None = None, query_params: dict | None = None) -> pd.DataFrame:
         """
         Get the transactions table for the specified service.
 
         Parameters
         ----------
         service : Literal['credit_card', 'bank'] | None
-            The service of the transactions, should be one of 'credit_card' or 'bank'. if not specified, returns all
-            transactions
+            The service of the transactions, should be one of 'credit_card', 'bank' or 'cash'. if not specified, returns
+            all transactions
+        query : str, optional
+            An optional SQL query to filter the transactions. must comply with SQLAlchemy text() requirements.
+        query_params : dict, optional
+            parameters for the SQL query. must comply with the query parameters.
 
         Returns
         -------
@@ -55,15 +98,24 @@ class TransactionsRepository:
             The transactions table as a DataFrame.
         """
         if service is None:
-            return pd.concat([self.cc_repo.get_table(query, query_params), self.bank_repo.get_table(query, query_params)], ignore_index=True)
-        elif service == 'credit_card' or service == Tables.CREDIT_CARD.value:
+            return pd.concat(
+                [
+                    self.cc_repo.get_table(query, query_params),
+                    self.bank_repo.get_table(query, query_params),
+                    self.cash_repo.get_table(query, query_params)
+                ],
+                ignore_index=True
+            )
+        elif service == Services.CREDIT_CARD.value or service == Tables.CREDIT_CARD.value:
             return self.cc_repo.get_table(query, query_params)
-        elif service == 'bank' or service == Tables.BANK.value:
+        elif service == Services.BANK.value or service == Tables.BANK.value:
             return self.bank_repo.get_table(query, query_params)
+        elif service == Services.CASH.value or service == Tables.CASH.value:
+            return self.cash_repo.get_table(query, query_params)
         else:
-            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
+            raise ValueError(f"service must be either 'credit_card', 'bank' or 'cash'. Got '{service}'")
 
-    def update_with_query(self, query: str, query_params: dict | None = None, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None) -> int:
+    def update_with_query(self, query: str, query_params: dict | None = None, service: T_service | None = None) -> int:
         """
         Update the tags of transactions in the database based on a custom SQL query.
 
@@ -73,6 +125,8 @@ class TransactionsRepository:
             The SQL query to filter the transactions to update. must comply with SQLAlchemy text() requirements.
         query_params : dict, optional
             parameters for the SQL query. must comply with the query parameters.
+        service : Literal['credit_card', 'bank'] | None
+            The service of the transactions, should be one of 'credit_card', 'bank' or 'cash'. if not specified, updates all transactions
 
         Returns
         -------
@@ -83,10 +137,15 @@ class TransactionsRepository:
         if service is None:
             updated_rows += self.cc_repo.update_with_query(query, query_params)
             updated_rows += self.bank_repo.update_with_query(query, query_params)
-        elif service == 'credit_card' or service == Tables.CREDIT_CARD.value:
+            updated_rows += self.cash_repo.update_with_query(query, query_params)
+        elif service == Services.CREDIT_CARD.value or service == Tables.CREDIT_CARD.value:
             updated_rows += self.cc_repo.update_with_query(query, query_params)
-        elif service == 'bank' or service == Tables.BANK.value:
+        elif service == Services.BANK.value or service == Tables.BANK.value:
             updated_rows += self.bank_repo.update_with_query(query, query_params)
+        elif service == Services.CASH.value or service == Tables.CASH.value:
+            updated_rows += self.cash_repo.update_with_query(query, query_params)
+        else:
+            raise ValueError(f"service must be either 'credit_card', 'bank' or 'cash'. Got '{service}'")
 
         return updated_rows
 
@@ -149,31 +208,6 @@ class TransactionsRepository:
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)
 
-    def get_data_by_description(self, description: str, service: Literal['credit_card', 'bank'], account_number: str = None) -> pd.DataFrame:
-        """
-        Get transactions data by description for the specified service.
-
-        Parameters
-        ----------
-        description : str
-            The description to filter transactions by.
-        service : str
-            The service of the transactions, should be one of 'credit_card' or 'bank'.
-        account_number : str, optional
-            The account number to filter transactions by (only applicable for bank transactions).
-
-        Returns
-        -------
-        pd.DataFrame
-            The filtered transactions data as a DataFrame.
-        """
-        if service == 'credit_card':
-            return self.cc_repo.get_data_by_description(description)
-        elif service == 'bank':
-            return self.bank_repo.get_data_by_description(description, account_number)
-        else:
-            raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
-
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
         """
         Get a transaction by its ID.
@@ -213,6 +247,8 @@ class ServiceRepository:
     account_name_col: str
     account_number_col: str
     amount_col: str
+    type_col: str
+    status_col: str
 
     def __init__(self, conn: SQLConnection):
         """
@@ -241,8 +277,10 @@ class ServiceRepository:
                     {self.account_number_col} TEXT,
                     {self.desc_col} TEXT,
                     {self.amount_col} REAL,
-                    {self.category_col} TEXT,
-                    {self.tag_col} TEXT
+                    {self.category_col} TEXT DEFAULT NULL,
+                    {self.tag_col} TEXT DEFAULT NULL,
+                    {self.type_col} TEXT DEFAULT 'normal',
+                    {self.status_col} TEXT DEFAULT 'completed'
                 )
             """
             s.execute(text(my_query))
@@ -393,109 +431,6 @@ class ServiceRepository:
         except Exception:
             return False
 
-
-class CreditCardRepository(ServiceRepository):
-    table = Tables.CREDIT_CARD.value
-    desc_col = CreditCardTableFields.DESCRIPTION.value
-    tag_col = CreditCardTableFields.TAG.value
-    category_col = CreditCardTableFields.CATEGORY.value
-    name_col = CreditCardTableFields.DESCRIPTION.value
-    id_col = CreditCardTableFields.ID.value
-    date_col = CreditCardTableFields.DATE.value
-    provider_col = CreditCardTableFields.PROVIDER.value
-    account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
-    account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
-    amount_col = CreditCardTableFields.AMOUNT.value
-    type_col = CreditCardTableFields.TYPE.value
-    status_col = CreditCardTableFields.STATUS.value
-
-    def update_tagging_by_name(self, name: str, category: str, tag: str) -> None:
-        """
-        Update the tags of credit card transactions in the database.
-
-        Parameters
-        ----------
-        name : str
-            The name of the transaction.
-        category : str
-            The category to tag the transaction with.
-        tag : str
-            The tag to tag the transaction with.
-
-
-        Returns
-        -------
-        None
-        """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = :category_val, {self.tag_col} = :tag_val
-                WHERE {self.desc_col} = :name_val
-            """
-            params = {
-                'category_val': category,
-                'tag_val': tag,
-                'name_val': name
-            }
-            s.execute(text(my_query), params)
-            s.commit()
-
-    def nullify_category_and_tag(self, category: str, tag: str) -> None:
-        """
-        Set category and tag to NULL for all credit card transactions with the specified category and tag.
-        """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = NULL, {self.tag_col} = NULL
-                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
-            """
-            params = {
-                'category_val': category,
-                'tag_val': tag
-            }
-            s.execute(text(my_query), params)
-            s.commit()
-
-    def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
-        """
-        Update the category to new_category for all credit card transactions with the specified old_category and tag.
-        """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = :new_category
-                WHERE {self.category_col} = :old_category AND {self.tag_col} = :tag
-            """
-            params = {
-                'new_category': new_category,
-                'old_category': old_category,
-                'tag': tag
-            }
-            s.execute(text(my_query), params)
-            s.commit()
-
-    def assure_table_exists(self):
-        with self.conn.session as s:
-            s.execute(
-                text(f'CREATE TABLE IF NOT EXISTS {self.table} ('
-                     f'{self.id_col} INTEGER PRIMARY KEY, '
-                     f'{self.date_col} TEXT, '
-                     f'{self.amount_col} REAL, '
-                     f'{self.desc_col} TEXT, '
-                     f'{self.tag_col} TEXT, '
-                     f'{self.category_col} TEXT, '
-                     f'{self.provider_col} TEXT, '
-                     f'{self.account_name_col} TEXT, '
-                     f'{self.account_number_col} TEXT, '
-                     f'{self.status_col} TEXT, '
-                     f'{self.type_col} TEXT'
-                     f');'
-                )
-            )
-            s.commit()
-
     def nullify_category(self, category: str) -> None:
         """
         Set category and tag to NULL for all credit card transactions with the specified category.
@@ -507,89 +442,6 @@ class CreditCardRepository(ServiceRepository):
                 WHERE {self.category_col} = :category_val
             """
             params = {'category_val': category}
-            s.execute(text(my_query), params)
-            s.commit()
-
-    def get_data_by_description(self, description: str) -> pd.DataFrame:
-        """
-        Get credit card transactions data by description.
-
-        Parameters
-        ----------
-        description : str
-            The description to filter transactions by.
-
-        Returns
-        -------
-        pd.DataFrame
-            The filtered credit card transactions data as a DataFrame.
-        """
-        with self.conn.session as s:
-            query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
-            params = {'description': description}
-            result = s.execute(text(query), params).fetchall()
-            return pd.DataFrame(result)
-
-
-class BankRepository(ServiceRepository):
-    table = Tables.BANK.value
-    desc_col = BankTableFields.DESCRIPTION.value
-    tag_col = BankTableFields.TAG.value
-    category_col = BankTableFields.CATEGORY.value
-    name_col = BankTableFields.DESCRIPTION.value
-    id_col = BankTableFields.ID.value
-    account_number_col = BankTableFields.ACCOUNT_NUMBER.value
-    date_col = BankTableFields.DATE.value
-    provider_col = BankTableFields.PROVIDER.value
-    account_name_col = BankTableFields.ACCOUNT_NAME.value
-    amount_col = BankTableFields.AMOUNT.value
-    type_col = BankTableFields.TYPE.value
-    status_col = BankTableFields.STATUS.value
-
-    def update_tagging_by_name_and_account_number(self, name: str, account_number: str, category: str, tag: str) -> None:
-        """
-        Update the tags of bank transactions in the database.
-
-        Parameters
-        ----------
-        name : str
-            The name of the transaction.
-        account_number : str
-            The account number of the transaction.
-        category : str
-            The category to tag the transaction with.
-        tag : str
-            The tag to tag the transaction with.
-        """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = :category_val, {self.tag_col} = :tag_val
-                WHERE {self.desc_col} = :name_val AND {self.account_number_col} = :account_number_val
-            """
-            params = {
-                'category_val': category,
-                'tag_val': tag,
-                'name_val': name,
-                'account_number_val': account_number
-            }
-            s.execute(text(my_query), params)
-            s.commit()
-
-    def nullify_category_and_tag(self, category: str, tag: str) -> None:
-        """
-        Set category and tag to NULL for all bank transactions with the specified category and tag (optionally filtered by account_number).
-        """
-        with self.conn.session as s:
-            my_query = f"""
-                UPDATE {self.table}
-                SET {self.category_col} = NULL, {self.tag_col} = NULL
-                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
-            """
-            params = {
-                'category_val': category,
-                'tag_val': tag
-            }
             s.execute(text(my_query), params)
             s.commit()
 
@@ -611,62 +463,103 @@ class BankRepository(ServiceRepository):
             s.execute(text(my_query), params)
             s.commit()
 
-    def assure_table_exists(self):
-        with self.conn.session as s:
-            s.execute(
-                text(f'CREATE TABLE IF NOT EXISTS {self.table} ('
-                     f'{self.id_col} INTEGER PRIMARY KEY, '
-                     f'{self.date_col} TEXT, '
-                     f'{self.amount_col} REAL, '
-                     f'{self.desc_col} TEXT, '
-                     f'{self.tag_col} TEXT, '
-                     f'{self.category_col} TEXT, '
-                     f'{self.provider_col} TEXT, '
-                     f'{self.account_name_col} TEXT, '
-                     f'{self.account_number_col} TEXT, '
-                     f'{self.status_col} TEXT, '
-                     f'{self.type_col} TEXT'
-                     f');'
-                )
-            )
-            s.commit()
-
-    def nullify_category(self, category: str) -> None:
+    def nullify_category_and_tag(self, category: str, tag: str) -> None:
         """
-        Set category and tag to NULL for all bank transactions with the specified category.
+        Set category and tag to NULL for all credit card transactions with the specified category and tag.
         """
         with self.conn.session as s:
             my_query = f"""
                 UPDATE {self.table}
                 SET {self.category_col} = NULL, {self.tag_col} = NULL
-                WHERE {self.category_col} = :category_val
+                WHERE {self.category_col} = :category_val AND {self.tag_col} = :tag_val
             """
-            params = {'category_val': category}
+            params = {
+                'category_val': category,
+                'tag_val': tag
+            }
             s.execute(text(my_query), params)
             s.commit()
 
-    def get_data_by_description(self, description: str, account_number: str = None) -> pd.DataFrame:
-        """
-        Get bank transactions data by description.
 
-        Parameters
-        ----------
-        description : str
-            The description to filter transactions by.
-        account_number : str, optional
-            The account number to filter transactions by (if provided, filters by account number as well).
+class CreditCardRepository(ServiceRepository):
+    table = Tables.CREDIT_CARD.value
+    desc_col = CreditCardTableFields.DESCRIPTION.value
+    tag_col = CreditCardTableFields.TAG.value
+    category_col = CreditCardTableFields.CATEGORY.value
+    name_col = CreditCardTableFields.DESCRIPTION.value
+    id_col = CreditCardTableFields.ID.value
+    date_col = CreditCardTableFields.DATE.value
+    provider_col = CreditCardTableFields.PROVIDER.value
+    account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
+    account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
+    amount_col = CreditCardTableFields.AMOUNT.value
+    type_col = CreditCardTableFields.TYPE.value
+    status_col = CreditCardTableFields.STATUS.value
 
-        Returns
-        -------
-        pd.DataFrame
-            The filtered bank transactions data as a DataFrame.
-        """
+
+class BankRepository(ServiceRepository):
+    table = Tables.BANK.value
+    desc_col = BankTableFields.DESCRIPTION.value
+    tag_col = BankTableFields.TAG.value
+    category_col = BankTableFields.CATEGORY.value
+    name_col = BankTableFields.DESCRIPTION.value
+    id_col = BankTableFields.ID.value
+    account_number_col = BankTableFields.ACCOUNT_NUMBER.value
+    date_col = BankTableFields.DATE.value
+    provider_col = BankTableFields.PROVIDER.value
+    account_name_col = BankTableFields.ACCOUNT_NAME.value
+    amount_col = BankTableFields.AMOUNT.value
+    type_col = BankTableFields.TYPE.value
+    status_col = BankTableFields.STATUS.value
+
+
+class CashRepository(ServiceRepository):
+    table = Tables.CASH.value
+    desc_col = CashTableFields.DESCRIPTION.value
+    tag_col = CashTableFields.TAG.value
+    category_col = CashTableFields.CATEGORY.value
+    name_col = CashTableFields.DESCRIPTION.value
+    id_col = CashTableFields.ID.value
+    account_number_col = CashTableFields.ACCOUNT_NUMBER.value
+    date_col = CashTableFields.DATE.value
+    provider_col = CashTableFields.PROVIDER.value
+    account_name_col = CashTableFields.ACCOUNT_NAME.value
+    amount_col = CashTableFields.AMOUNT.value
+    type_col = CashTableFields.TYPE.value
+    status_col = CashTableFields.STATUS.value
+
+    def add_transaction(self, transaction: CashTransaction) -> None:
         with self.conn.session as s:
-            if account_number:
-                query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description AND {self.account_number_col} = :account_number'
-                params = {'description': description, 'account_number': account_number}
-            else:
-                query = f'SELECT * FROM {self.table} WHERE {self.desc_col} = :description'
-                params = {'description': description}
-            result = s.execute(text(query), params).fetchall()
-            return pd.DataFrame(result)
+            my_query = f"""
+                INSERT INTO {self.table} (
+                    {self.date_col},
+                    {self.provider_col},
+                    {self.account_name_col},
+                    {self.account_number_col},
+                    {self.desc_col},
+                    {self.amount_col},
+                    {self.category_col},
+                    {self.tag_col},
+                ) VALUES (
+                    :date_val,
+                    :provider_val,
+                    :account_name_val,
+                    :account_number_val,
+                    :desc_val,
+                    :amount_val,
+                    :category_val,
+                    :tag_val,
+                )
+            """
+            params = {
+                'date_val': transaction.date.strftime('%Y-%m-%d'),
+                'provider_val': transaction.provider,
+                'account_name_val': transaction.account_name,
+                'account_number_val': transaction.account_number,
+                'desc_val': transaction.description,
+                'amount_val': transaction.amount,
+                'category_val': transaction.category,
+                'tag_val': transaction.tag
+            }
+            s.execute(text(my_query), params)
+            s.commit()
