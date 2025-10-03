@@ -51,26 +51,3 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
         except ValueError:
             df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date())
     return df
-
-
-def save_to_db(df: pd.DataFrame, table_name: str, db_path: str = DB_PATH) -> None:
-    """
-    Save the data to the database
-
-    Parameters
-    ----------
-    df: pd.DataFrame
-        the data to save to the database
-    table_name: str
-        the name of the table to save the data to
-    db_path: str
-        the path to the database file. default to the global variable DB_PATH.
-    """
-    # TODO: improve the saving protocol, make the id column the primary key and add a check for duplicates
-    assert isinstance(df, pd.DataFrame), 'df should be a pandas DataFrame object'
-    assert isinstance(table_name, str), 'table_name should be a string'
-
-    conn = sqlite3.connect(db_path)
-    df.to_sql(table_name, conn, if_exists='append', index=False)
-    conn.commit()
-    conn.close()

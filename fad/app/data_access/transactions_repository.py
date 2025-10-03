@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Dict
+from typing import Literal
 from dataclasses import dataclass
 
 import pandas as pd
@@ -55,6 +55,43 @@ class TransactionsRepository:
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
         self.cash_repo = CashRepository(conn)
+
+    def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
+        """
+        Save the data to the database
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+            the data to save to the database
+        table_name: str
+            the name of the table to save the data to
+        """
+
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError('df should be a pandas DataFrame object')
+        if table_name not in self.tables:
+            raise ValueError(f"table_name should be one of {self.tables}")
+
+        # remove rows that are in the database already by full comparison (id is not guaranteed to be unique since we scrape from multiple sources)
+        existing_data = self.conn.query(f'SELECT * FROM {table_name};', ttl=0)
+        if not existing_data.empty:
+            df = pd.merge(df, existing_data, how='outer', indicator=True).query('_merge == "left_only"').drop(columns=['_merge'])
+        if df.empty:
+            return
+
+        # handle duplicated ids
+        while True:
+            ids = df[self.id_col].tolist()
+            existing_ids = self.conn.query(f'SELECT {self.id_col} FROM {table_name} WHERE {self.id_col} IN ({",".join(["?"]*len(ids))});', params=ids, ttl=0)[self.id_col].tolist()
+            if existing_ids:
+                df[df[self.id_col].isin(existing_ids)] = df[df[self.id_col].isin(existing_ids)].apply(lambda x: f"{x}_1")
+            else:
+                break
+
+        with self.conn.session as s:
+            df.to_sql(table_name, s.bind, if_exists='append', index=False)
+            s.commit()
 
     def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> None:
         """

@@ -11,6 +11,7 @@ import yaml
 
 from fad import CREDENTIALS_PATH, DB_PATH
 from fad.app.data_access import get_db_connection
+from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
 from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
 from fad.scraper import NODE_JS_SCRIPTS_DIR
@@ -19,7 +20,7 @@ from fad.scraper.exceptions import (
     ConnectionError, TimeoutError, DataError, AccountError,
     ServiceError, SecurityError, RateLimitError, PasswordChangeError
 )
-from fad.scraper.utils import save_to_db, scraped_data_to_df
+from fad.scraper.utils import scraped_data_to_df
 
 
 def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict):
@@ -97,22 +98,27 @@ class Scraper(ABC):
 
     Attributes
     ----------
-    service_name : str
-        The name of the service of the scraper. banks, credit_cards, insurance, etc.
-    provider_name : str
-        The name of the provider of the scraper. isracard, hapoalim, max, etc.
     account_name : str
-        The name of the account to log the data into the database. used to allow multiple accounts for the same provider
+        The name of the account to use to log data into the database
     credentials : dict
         A dictionary containing the credentials to log in to the websites
-    script_path : str
-        The path to the Node.js script to scrape the data
-    table_name : str
-        The name of the table to save the data to in the database
-    table_unique_key : str
-        The unique key in the table which is used to identify duplicated rows
-    sort_by_columns : list[str]
-        The columns to sort the data by in the database to maintain consistency
+    result : str
+        The result of the scraping process
+    error : str
+        The error message if an error occurs during the scraping process
+    data : pd.DataFrame
+        The scraped data as a pandas DataFrame. empty DataFrame is returned if no data was found
+    otp_code : str
+        The OTP (One-Time Password) code to be used for the 2FA process. entering "cancel" will cancel the scraping
+        process.
+    otp_event : Event
+        An event to notify when the OTP code is available
+    history_repo : ScrapingHistoryRepository
+        A repository to record the scraping history
+    requires_2fa : bool
+        A flag to indicate if the scraper requires 2FA (Two-Factor Authentication)
+    CANCEL : str
+        A constant to indicate that the scraping process was canceled
     """
     requires_2fa = False
     CANCEL = "cancel"
@@ -140,6 +146,7 @@ class Scraper(ABC):
         self.otp_event = Event()
 
         self.history_repo = ScrapingHistoryRepository(get_db_connection())
+        self.transactions_repo = TransactionsRepository(get_db_connection())
 
     @property
     @abstractmethod
@@ -251,7 +258,7 @@ class Scraper(ABC):
         self.data = self.data.sort_values(by=self.sort_by_columns)
         self.data = self._add_account_name_and_provider_columns(self.data)
         self.data = self._add_missing_columns(self.data)
-        save_to_db(self.data, self.table_name, db_path=db_path)
+        self.transactions_repo.add_scraped_transactions(self.data, self.table_name)
 
         self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
 
