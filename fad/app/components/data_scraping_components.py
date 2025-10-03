@@ -77,11 +77,12 @@ class DataScrapingComponent:
             Updates the selected_scrapers attribute with the selected services.
         """
         available_service: list[str] = self.creds_service.get_available_data_sources()
-        self.selected_scrapers = st.multiselect(
+        self.selected_scrapers = st.pills(
             "Select the services to scrape data from",
             options=available_service,
             default=available_service,
-            key="selected_services"
+            key="selected_services",
+            selection_mode="multi",
         )
 
     def fetch_and_process_data(self) -> None:
