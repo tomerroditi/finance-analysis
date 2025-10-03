@@ -947,8 +947,8 @@ class RuleBasedTaggingComponent:
         """Fragment for rule editing form."""
         new_name = st.text_input("Rule Name:", value=rule['name'], key=f"edit_name_{rule_id}_{self.key_suffix}")
 
-        col1, col2 = st.columns(2)
-        with col1:
+        save_col, delete_col = st.columns(2)
+        with save_col:
             categories = list(self.categories_and_tags.keys())
             new_category = st.selectbox(
                 "Category:",
@@ -957,7 +957,7 @@ class RuleBasedTaggingComponent:
                 key=f"edit_category_{rule_id}_{self.key_suffix}"
             )
 
-        with col2:
+        with delete_col:
             tags = self.categories_and_tags.get(new_category, [])
             new_tag = st.selectbox(
                 "Tag:",
@@ -987,8 +987,8 @@ class RuleBasedTaggingComponent:
                 st.rerun()
 
         # Action buttons
-        col1, col2, col3, _ = st.columns([1, 1, 1, 5])
-        with col1:
+        save_col, delete_col, test_col, _ = st.columns([1, 1, 1, 5])
+        with save_col:
             if st.button("💾 Save Changes", key=f"save_rule_{rule_id}_{self.key_suffix}", type="primary"):
                 # Validate conditions
                 conditions_errors = self.rules_service.validate_conditions(st.session_state[conditions_key])
@@ -1014,7 +1014,7 @@ class RuleBasedTaggingComponent:
                 else:
                     st.error("❌ Failed to update rule")
 
-        with col2:
+        with delete_col:
             if st.button("🗑️ Delete Rule", key=f"delete_rule_{rule_id}_{self.key_suffix}", type="secondary"):
                 success = self.rules_service.delete_rule(rule_id)
                 if success:
@@ -1026,7 +1026,7 @@ class RuleBasedTaggingComponent:
                 else:
                     st.error("❌ Failed to delete rule")
 
-        with col3:
+        with test_col:
             if st.button("🧪 Test Rule", key=f"test_rule_{rule_id}_{self.key_suffix}"):
                 # Test with current conditions from session state
                 count, test_results = self.rules_service.test_rule_against_transactions(
