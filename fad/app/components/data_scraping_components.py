@@ -160,8 +160,7 @@ class DataScrapingComponent:
         This replaces the old AutomaticTaggerService functionality.
         """
         try:
-            results = self.tagging_rules_service.apply_rules_to_all_services()
-            total_tagged = sum(results.values())
+            total_tagged = self.tagging_rules_service.apply_rules()
             if total_tagged > 0:
                 st.success(f"Applied tagging rules! Tagged {total_tagged} transactions.")
         except Exception as e:
