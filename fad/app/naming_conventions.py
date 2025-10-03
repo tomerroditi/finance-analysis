@@ -57,6 +57,7 @@ class Tables(Enum):
     """
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
+    CASH = 'cash_transactions'
     TAGGING_RULES = 'tagging_rules'
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
@@ -99,6 +100,7 @@ fields = [
 TransactionsTableFields = create_enum('TransactionsTableFields', fields)
 CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
+CashTableFields = create_enum('CashTableFields', fields)
 
 split_fields = [
     ('ID', 'id'),
@@ -250,6 +252,7 @@ class Services(Enum):
     CREDIT_CARD = 'credit_card'
     BANK = 'bank'
     INSURANCE = 'insurance'
+    CASH = 'cash'
 
 
 class CreditCards(Enum):
