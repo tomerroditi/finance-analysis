@@ -51,8 +51,8 @@ class ScrapingHistoryRepository:
                         {ScrapingHistoryTableFields.SERVICE_NAME.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.PROVIDER_NAME.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.ACCOUNT_NAME.value} TEXT NOT NULL,
-                        {ScrapingHistoryTableFields.LAST_SCRAPED.value} TEXT NOT NULL,
-                        {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL,
+                        {ScrapingHistoryTableFields.DATE.value} TEXT NOT NULL,
+                        {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL
                     )
                     """
                 )
@@ -89,7 +89,7 @@ class ScrapingHistoryRepository:
                     ({ScrapingHistoryTableFields.SERVICE_NAME.value},
                      {ScrapingHistoryTableFields.PROVIDER_NAME.value},
                      {ScrapingHistoryTableFields.ACCOUNT_NAME.value},
-                     {ScrapingHistoryTableFields.LAST_SCRAPED.value},
+                     {ScrapingHistoryTableFields.DATE.value},
                      {ScrapingHistoryTableFields.STATUS.value})
                     VALUES (:service_name, :provider_name, :account_name, :last_scraped, :status)
                     """
@@ -132,7 +132,7 @@ class ScrapingHistoryRepository:
                     WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
                         AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
                         AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                        AND DATE({ScrapingHistoryTableFields.LAST_SCRAPED.value}) = DATE(:date)
+                        AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
                         AND {ScrapingHistoryTableFields.STATUS.value} = :success
                     LIMIT 1
                     """
@@ -156,7 +156,7 @@ class ScrapingHistoryRepository:
                     WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
                         AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
                         AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                        AND DATE({ScrapingHistoryTableFields.LAST_SCRAPED.value}) = DATE(:date)
+                        AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
                         AND {ScrapingHistoryTableFields.STATUS.value} = :failed
                     """
                 ),
@@ -179,7 +179,7 @@ class ScrapingHistoryRepository:
                     WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
                         AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
                         AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                        AND DATE({ScrapingHistoryTableFields.LAST_SCRAPED.value}) = DATE(:date)
+                        AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
                         AND {ScrapingHistoryTableFields.STATUS.value} = :canceled
                     """
                 ),
@@ -211,7 +211,7 @@ class ScrapingHistoryRepository:
                 text(
                     f"""
                     SELECT * FROM {Tables.SCRAPING_HISTORY.value}
-                    ORDER BY {ScrapingHistoryTableFields.LAST_SCRAPED.value} DESC
+                    ORDER BY {ScrapingHistoryTableFields.DATE.value} DESC
                     """
                 )
             )
@@ -242,10 +242,10 @@ class ScrapingHistoryRepository:
                         {ScrapingHistoryTableFields.SERVICE_NAME.value},
                         {ScrapingHistoryTableFields.PROVIDER_NAME.value},
                         {ScrapingHistoryTableFields.ACCOUNT_NAME.value},
-                        {ScrapingHistoryTableFields.LAST_SCRAPED.value},
+                        {ScrapingHistoryTableFields.DATE.value},
                         {ScrapingHistoryTableFields.STATUS.value}
                     FROM {Tables.SCRAPING_HISTORY.value}
-                    WHERE DATE({ScrapingHistoryTableFields.LAST_SCRAPED.value}) = DATE(:date)
+                    WHERE DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
                     """
                 ),
                 {"date": date.today().isoformat()}
@@ -302,7 +302,7 @@ class ScrapingHistoryRepository:
                 text(
                     f"""
                     DELETE FROM {Tables.SCRAPING_HISTORY.value}
-                    WHERE {ScrapingHistoryTableFields.LAST_SCRAPED.value} < :cutoff_date
+                    WHERE {ScrapingHistoryTableFields.DATE.value} < :cutoff_date
                     """
                 ),
                 {"cutoff_date": cutoff_date.isoformat()}

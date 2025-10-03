@@ -125,7 +125,7 @@ class ScrapingHistoryTableFields(Enum):
         Field name for the provider name (hapoalim, isracard, etc.).
     ACCOUNT_NAME : str
         Field name for the account name.
-    LAST_SCRAPED : str
+    DATE : str
         Field name for the last scraping timestamp.
     STATUS : str
         Field name for the last scraping status (success, failed).
@@ -134,7 +134,7 @@ class ScrapingHistoryTableFields(Enum):
     SERVICE_NAME = 'service_name'
     PROVIDER_NAME = 'provider_name'
     ACCOUNT_NAME = 'account_name'
-    LAST_SCRAPED = 'last_scraped'
+    DATE = 'date'
     STATUS = 'status'
 
 
