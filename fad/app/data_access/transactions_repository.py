@@ -63,6 +63,33 @@ class TransactionsRepository:
         else:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
+    def update_with_query(self, query: str, query_params: dict | None = None, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None) -> int:
+        """
+        Update the tags of transactions in the database based on a custom SQL query.
+
+        Parameters
+        ----------
+        query : str
+            The SQL query to filter the transactions to update. must comply with SQLAlchemy text() requirements.
+        query_params : dict, optional
+            parameters for the SQL query. must comply with the query parameters.
+
+        Returns
+        -------
+        int
+            The number of rows updated.
+        """
+        updated_rows = 0
+        if service is None:
+            updated_rows += self.cc_repo.update_with_query(query, query_params)
+            updated_rows += self.bank_repo.update_with_query(query, query_params)
+        elif service == 'credit_card' or service == Tables.CREDIT_CARD.value:
+            updated_rows += self.cc_repo.update_with_query(query, query_params)
+        elif service == 'bank' or service == Tables.BANK.value:
+            updated_rows += self.bank_repo.update_with_query(query, query_params)
+
+        return updated_rows
+
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         """
         Get the latest date from a specific table.
@@ -169,6 +196,7 @@ class TransactionsRepository:
             raise ValueError(f"Multiple transactions found with ID {transaction_id}.")
         return transaction.iloc[0]
 
+
 class ServiceRepository:
     """
     Abstract base class for repositories that handle transactions data.
@@ -242,6 +270,27 @@ class ServiceRepository:
         else:
             table = self.conn.query(f'SELECT * FROM {self.table};', ttl=0)
         return table
+
+    def update_with_query(self, query: str, query_params: dict | None = None) -> int:
+        """
+        Update the tags of transactions in the database based on a custom SQL query.
+
+        Parameters
+        ----------
+        query : str
+            The SQL query to filter the transactions to update. must comply with SQLAlchemy text() requirements.
+        query_params : dict, optional
+            parameters for the SQL query. must comply with the query parameters.
+
+        Returns
+        -------
+        int
+            The number of rows updated.
+        """
+        with self.conn.session as s:
+            s.execute(text(query), query_params)
+            s.commit()
+            return s.rowcount
 
     def get_table_columns(self) -> list[str]:
         """
