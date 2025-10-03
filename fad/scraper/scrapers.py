@@ -1,24 +1,25 @@
-import os
-import subprocess
-import pandas as pd
 import datetime
+import os
 import sqlite3
+import subprocess
+from abc import ABC, abstractmethod
+from threading import Event
+from time import sleep
+
+import pandas as pd
 import yaml
 
-from time import sleep
-from threading import Event
-from abc import ABC, abstractmethod
-from fad.scraper.exceptions import (
-    ErrorType, ScraperError, LoginError, CredentialsError, 
-    ConnectionError, TimeoutError, DataError, AccountError, 
-    ServiceError, SecurityError, RateLimitError, PasswordChangeError
-)
-from fad.scraper import NODE_JS_SCRIPTS_DIR
-from fad.scraper.utils import save_to_db, scraped_data_to_df
-from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
+from fad import CREDENTIALS_PATH, DB_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
-from fad import CREDENTIALS_PATH, DB_PATH
+from fad.app.naming_conventions import CreditCardTableFields, BankTableFields, Tables
+from fad.scraper import NODE_JS_SCRIPTS_DIR
+from fad.scraper.exceptions import (
+    ErrorType, ScraperError, LoginError, CredentialsError,
+    ConnectionError, TimeoutError, DataError, AccountError,
+    ServiceError, SecurityError, RateLimitError, PasswordChangeError
+)
+from fad.scraper.utils import save_to_db, scraped_data_to_df
 
 
 def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict):

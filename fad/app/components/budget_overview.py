@@ -7,12 +7,12 @@ from fad.app.components.month_selector import (
     select_next_month,
     select_custom_month
 )
-
 from fad.app.components.tagging_components import TransactionsTaggingComponent
+from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
+    ALL_TAGS, YEAR, MONTH
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
 from fad.app.services.tagging_service import CategoriesTagsService
-from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
-    ALL_TAGS, YEAR, MONTH, cc_providers, bank_providers
+
 
 class BudgetUI:
     """

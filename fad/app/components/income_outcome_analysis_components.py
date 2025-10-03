@@ -1,10 +1,11 @@
 import pandas as pd
-import streamlit as st
-import plotly.graph_objs as go
 import plotly.express as px
+import plotly.graph_objs as go
+import streamlit as st
 from plotly.subplots import make_subplots
-from fad.app.services.transactions_service import TransactionsService
+
 from fad.app.naming_conventions import TransactionsTableFields
+from fad.app.services.transactions_service import TransactionsService
 from fad.app.utils.plotting import bar_plot_by_categories, pie_plot_by_categories, bar_plot_by_categories_over_time
 
 provider_col = TransactionsTableFields.PROVIDER.value

@@ -1,7 +1,5 @@
 import os
 
-import pandas as pd
-import sqlalchemy
 import streamlit as st
 from streamlit.connections import SQLConnection
 

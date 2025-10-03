@@ -2,8 +2,6 @@ from datetime import datetime
 from threading import Thread
 from time import sleep
 
-# Removed: import streamlit as st
-
 from fad.scraper import Scraper
 
 

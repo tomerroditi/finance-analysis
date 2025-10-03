@@ -1,11 +1,10 @@
-from typing import Literal, List
+from typing import List
 
 import pandas as pd
 import streamlit as st
 
 from fad.app.naming_conventions import NonExpensesCategories
 from fad.app.naming_conventions import (
-    RuleOperators,
     RuleFields,
     TransactionsTableFields,
     TaggingRulesTableFields

@@ -1,14 +1,14 @@
 from typing import Optional
 
-from streamlit.connections import SQLConnection
 import pandas as pd
+from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.budget_repository import BudgetRepository
-from fad.app.services.tagging_service import CategoriesTagsService
-from fad.app.services.transactions_service import TransactionsService
 from fad.app.naming_conventions import NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH, ALL_TAGS, ID, TOTAL_BUDGET, \
     TransactionsTableFields, NonExpensesCategories
+from fad.app.services.tagging_service import CategoriesTagsService
+from fad.app.services.transactions_service import TransactionsService
 
 
 class BudgetService:

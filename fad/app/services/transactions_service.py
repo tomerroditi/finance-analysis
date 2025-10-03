@@ -5,8 +5,8 @@ import pandas as pd
 from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
-from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
+from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
     TransactionsTableFields,
     NonExpensesCategories,

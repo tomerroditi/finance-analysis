@@ -1,7 +1,8 @@
-import pandas as pd
 import sqlite3
-
 from datetime import datetime
+
+import pandas as pd
+
 from fad import DB_PATH
 from fad.app.naming_conventions import TransactionsTableFields
 

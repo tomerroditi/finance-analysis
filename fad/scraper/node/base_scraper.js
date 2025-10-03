@@ -1,4 +1,4 @@
-import {CompanyTypes, createScraper} from 'israeli-bank-scrapers';
+import {createScraper} from 'israeli-bank-scrapers';
 import readline from "readline";
 
 /**

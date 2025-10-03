@@ -7,7 +7,6 @@ import yaml
 
 from fad import CREDENTIALS_PATH, SRC_PATH
 
-
 _KEYRING_SERVICE = "finance-analysis-app"
 
 

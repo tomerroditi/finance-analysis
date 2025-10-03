@@ -1,4 +1,4 @@
-from typing import List, Literal, Dict, Any
+from typing import List, Dict, Any
 
 import pandas as pd
 from streamlit.connections import SQLConnection

@@ -4,7 +4,6 @@ from fad.app.components.tagging_components import (
     CategoriesTagsEditor, TransactionsTaggingComponent
 )
 
-
 # Main tabs for the tagging page
 tab_tags, tab_transactions = st.tabs([
     "Categories & Tags", 

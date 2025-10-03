@@ -1,18 +1,15 @@
 import json
-from typing import Dict, List, Literal, Optional, Any
 from datetime import datetime
+from typing import Dict, List, Optional, Any
 
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.sql import text
-from sqlalchemy.engine import Result
-from sqlalchemy.orm import Session
 from streamlit.connections import SQLConnection
 
 from fad.app.naming_conventions import (
     Tables,
     TaggingRulesTableFields,
-    TransactionsTableFields,
 )
 
 

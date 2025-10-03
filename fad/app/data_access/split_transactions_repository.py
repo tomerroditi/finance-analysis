@@ -1,5 +1,3 @@
-from typing import Literal
-
 import pandas as pd
 from sqlalchemy import text
 from streamlit.connections import SQLConnection

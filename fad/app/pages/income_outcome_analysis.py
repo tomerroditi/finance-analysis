@@ -7,7 +7,7 @@ this page should display the incomes and outcomes of a user, and an interactive 
 - paychecks analysis - total income, net income, pension, taxes, etc.
 """
 import streamlit as st
-import pandas as pd
+
 from fad.app.components.income_outcome_analysis_components import IncomeOutcomeAnalysisComponent
 from fad.app.naming_conventions import TransactionsTableFields
 from fad.app.utils.widgets import PandasFilterWidgets

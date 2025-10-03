@@ -1,15 +1,14 @@
-from typing import List
 import os
+from typing import List
 
 import streamlit as st
-from streamlit.connections import SQLConnection
 
 from fad import CATEGORIES_PATH, SRC_PATH
 from fad.app.data_access import get_db_connection
+from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 from fad.app.data_access.tagging_repository import TaggingRepository
 from fad.app.data_access.tagging_rules_repository import TaggingRulesRepository
 from fad.app.data_access.transactions_repository import TransactionsRepository
-from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
 
 
 def _sorted_unique(lst):
