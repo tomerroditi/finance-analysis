@@ -39,7 +39,7 @@ class TransactionsRepository:
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
 
-    def get_table(self, service: Literal['credit_card', 'bank'] | None = None) -> pd.DataFrame:
+    def get_table(self, service: Literal['credit_card', 'bank', Tables.CREDIT_CARD.value, Tables.BANK.value] | None = None) -> pd.DataFrame:
         """
         Get the transactions table for the specified service.
 
@@ -56,9 +56,9 @@ class TransactionsRepository:
         """
         if service is None:
             return pd.concat([self.cc_repo.get_table(), self.bank_repo.get_table()], ignore_index=True)
-        elif service == 'credit_card':
+        elif service == 'credit_card' or service == Tables.CREDIT_CARD.value:
             return self.cc_repo.get_table()
-        elif service == 'bank':
+        elif service == 'bank' or service == Tables.BANK.value:
             return self.bank_repo.get_table()
         else:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
