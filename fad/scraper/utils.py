@@ -43,11 +43,11 @@ def scraped_data_to_df(data: str) -> pd.DataFrame:
 
     amount_col = TransactionsTableFields.AMOUNT.value
     date_col = TransactionsTableFields.DATE.value
-    if amount_col in df.columns:
+    if amount_col in df.columns:  # convert to float
         df[amount_col] = df[amount_col].astype(float)
-    if date_col in df.columns:
+    if date_col in df.columns:  # convert to string of format 'YYYY-MM-DD'
         try:
-            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').date())
+            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d'))
         except ValueError:
-            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').date())
+            df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').strftime('%Y-%m-%d'))
     return df
