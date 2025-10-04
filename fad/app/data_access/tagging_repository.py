@@ -3,6 +3,8 @@ from typing import Dict, List
 
 import yaml
 
+from fad import SRC_PATH
+
 
 class TaggingRepository:
     """
@@ -31,3 +33,65 @@ class TaggingRepository:
     def create_directory(dir_path: str) -> None:
         """Create directory if it doesn't exist."""
         os.makedirs(dir_path, exist_ok=True)
+
+    @staticmethod
+    def get_categories_icons() -> Dict[str, str]:
+        """
+        Get the icon for a given category.
+        If the category does not have an icon, returns None.
+
+        Parameters:
+        ----------
+        category: str
+            The category to get the icon for.
+        file_path: str
+            The path to the file where icons are stored.
+
+        Returns:
+        str
+            The icon for the category, or None if the category does not have an icon.
+        """
+        file_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
+        if not os.path.exists(file_path):
+            return {}
+
+        with open(file_path, 'r') as file:
+            icons = yaml.load(file, Loader=yaml.FullLoader)
+        return icons
+
+    @staticmethod
+    def update_category_icon(category: str, icon: str) -> bool:
+        """
+        Set the icon for a given category.
+
+        Parameters:
+        ----------
+        category: str
+            The category to set the icon for.
+        icon: str
+            The icon to set for the category.
+        file_path: str
+            The path to the file where icons are stored.
+            
+        Returns:
+        --------
+        bool
+            True if the new icon is different from the old one, False otherwise.
+        """
+        file_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
+
+        if not os.path.exists(os.path.dirname(file_path)):
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        icons = {}
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as file:
+                icons = yaml.load(file, Loader=yaml.FullLoader) or {}
+
+        if category in icons and icons[category] == icon:
+            return False  # No change
+
+        icons[category] = icon
+        with open(file_path, 'w') as file:
+            yaml.dump(icons, file)
+        return True
