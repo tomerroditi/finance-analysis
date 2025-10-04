@@ -83,7 +83,13 @@ class TransactionsRepository:
         # handle duplicated ids
         while True:
             ids = df[self.id_col].tolist()
-            existing_ids = self.conn.query(f'SELECT {self.id_col} FROM {table_name} WHERE {self.id_col} IN ({",".join(["?"]*len(ids))});', params=ids, ttl=0)[self.id_col].tolist()
+            placeholders = ",".join([f":id_{i}" for i in range(len(ids))])
+            params_dict = {f"id_{i}": id_val for i, id_val in enumerate(ids)}
+            existing_ids = self.conn.query(
+                f'SELECT {self.id_col} FROM {table_name} WHERE {self.id_col} IN ({placeholders});',
+                params=params_dict,
+                ttl=0
+            )[self.id_col].tolist()
             if existing_ids:
                 df[df[self.id_col].isin(existing_ids)] = df[df[self.id_col].isin(existing_ids)].apply(lambda x: f"{x}_1")
             else:
