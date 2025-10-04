@@ -42,6 +42,8 @@ class TransactionsRepository:
     category_col = TransactionsTableFields.CATEGORY.value
     tag_col = TransactionsTableFields.TAG.value
 
+    unique_columns = [id_col, provider_col, date_col, amount_col]
+
     def __init__(self, conn: SQLConnection):
         """
         Initializes the TransactionsRepository with a database connection.
@@ -67,37 +69,25 @@ class TransactionsRepository:
         table_name: str
             the name of the table to save the data to
         """
-
         if not isinstance(df, pd.DataFrame):
             raise ValueError('df should be a pandas DataFrame object')
         if table_name not in self.tables:
             raise ValueError(f"table_name should be one of {self.tables}")
 
         # remove rows that are in the database already by full comparison (id is not guaranteed to be unique since we scrape from multiple sources)
-        existing_data = self.conn.query(f'SELECT * FROM {table_name};', ttl=0)
+        existing_data = self.conn.query(f'SELECT {", ".join(self.unique_columns)} FROM {table_name}')
+        df = df.astype({col: str for col in self.unique_columns})
+        existing_data = existing_data.astype({col: str for col in self.unique_columns})
         if not existing_data.empty:
-            df = pd.merge(df, existing_data, how='outer', indicator=True).query('_merge == "left_only"').drop(columns=['_merge'])
-        if df.empty:
+            merged_df = df.merge(existing_data, on=self.unique_columns, how='left', indicator=True)
+            new_rows = merged_df[merged_df['_merge'] == 'left_only'].drop(columns='_merge')
+        else:
+            new_rows = df
+
+        if new_rows.empty:
             return
 
-        # handle duplicated ids
-        while True:
-            ids = df[self.id_col].tolist()
-            placeholders = ",".join([f":id_{i}" for i in range(len(ids))])
-            params_dict = {f"id_{i}": id_val for i, id_val in enumerate(ids)}
-            existing_ids = self.conn.query(
-                f'SELECT {self.id_col} FROM {table_name} WHERE {self.id_col} IN ({placeholders});',
-                params=params_dict,
-                ttl=0
-            )[self.id_col].tolist()
-            if existing_ids:
-                df[df[self.id_col].isin(existing_ids)] = df[df[self.id_col].isin(existing_ids)].apply(lambda x: f"{x}_1")
-            else:
-                break
-
-        with self.conn.session as s:
-            df.to_sql(table_name, s.bind, if_exists='append', index=False)
-            s.commit()
+        new_rows.to_sql(table_name, self.conn.session.bind, if_exists='append', index=False)
 
     def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> bool:
         """
@@ -281,18 +271,20 @@ class ServiceRepository:
     This class defines the common interface for repositories that manage transactions data.
     """
     table: str
-    desc_col: str
-    tag_col: str
-    category_col: str
-    name_col: str
-    id_col: str
-    date_col: str
-    provider_col: str
-    account_name_col: str
-    account_number_col: str
-    amount_col: str
-    type_col: str
-    status_col: str
+    unique_id_col = 'unique_id'
+    account_number_col = TransactionsTableFields.ACCOUNT_NUMBER.value
+    type_col = TransactionsTableFields.TYPE.value
+    id_col = TransactionsTableFields.ID.value
+    date_col = TransactionsTableFields.DATE.value
+    desc_col = TransactionsTableFields.DESCRIPTION.value
+    amount_col = TransactionsTableFields.AMOUNT.value
+    status_col = TransactionsTableFields.STATUS.value
+    account_name_col = TransactionsTableFields.ACCOUNT_NAME.value
+    provider_col = TransactionsTableFields.PROVIDER.value
+    category_col = TransactionsTableFields.CATEGORY.value
+    tag_col = TransactionsTableFields.TAG.value
+
+    unique_columns = [id_col, provider_col, date_col, amount_col]
 
     def __init__(self, conn: SQLConnection):
         """
@@ -314,8 +306,9 @@ class ServiceRepository:
         with self.conn.session as s:
             my_query = f"""
                 CREATE TABLE IF NOT EXISTS {self.table} (
-                    {self.id_col} INTEGER PRIMARY KEY AUTOINCREMENT,
-                    {self.date_col} DATE,
+                    {self.unique_id_col} INTEGER PRIMARY KEY AUTOINCREMENT,
+                    {self.id_col} TEXT,
+                    {self.date_col} TEXT,
                     {self.provider_col} TEXT,
                     {self.account_name_col} TEXT,
                     {self.account_number_col} TEXT,
@@ -324,7 +317,8 @@ class ServiceRepository:
                     {self.category_col} TEXT DEFAULT NULL,
                     {self.tag_col} TEXT DEFAULT NULL,
                     {self.type_col} TEXT DEFAULT 'normal',
-                    {self.status_col} TEXT DEFAULT 'completed'
+                    {self.status_col} TEXT DEFAULT 'completed',
+                    UNIQUE ({', '.join(self.unique_columns)})
                 )
             """
             s.execute(text(my_query))
@@ -452,13 +446,12 @@ class ServiceRepository:
             with self.conn.session as s:
                 # Build the SET clause dynamically
                 set_clauses = []
-                params = {'id_val': transaction_id}
+                params = {'id_val': int(transaction_id)}  # Ensure transaction_id is an integer (and not int64 or str)
 
                 for field, value in updates.items():
-                    if value is not None:  # Only update non-None values
-                        param_name = f"{field}_val"
-                        set_clauses.append(f"{field} = :{param_name}")
-                        params[param_name] = value
+                    param_name = f"{field}_val"
+                    set_clauses.append(f"{field} = :{param_name}")
+                    params[param_name] = value
 
                 if not set_clauses:
                     return False
@@ -466,7 +459,7 @@ class ServiceRepository:
                 my_query = f"""
                     UPDATE {self.table}
                     SET {', '.join(set_clauses)}
-                    WHERE {self.id_col} = :id_val
+                    WHERE {self.unique_id_col} = :id_val
                 """
 
                 result = s.execute(text(my_query), params)
@@ -530,7 +523,6 @@ class CreditCardRepository(ServiceRepository):
     desc_col = CreditCardTableFields.DESCRIPTION.value
     tag_col = CreditCardTableFields.TAG.value
     category_col = CreditCardTableFields.CATEGORY.value
-    name_col = CreditCardTableFields.DESCRIPTION.value
     id_col = CreditCardTableFields.ID.value
     date_col = CreditCardTableFields.DATE.value
     provider_col = CreditCardTableFields.PROVIDER.value
@@ -546,7 +538,6 @@ class BankRepository(ServiceRepository):
     desc_col = BankTableFields.DESCRIPTION.value
     tag_col = BankTableFields.TAG.value
     category_col = BankTableFields.CATEGORY.value
-    name_col = BankTableFields.DESCRIPTION.value
     id_col = BankTableFields.ID.value
     account_number_col = BankTableFields.ACCOUNT_NUMBER.value
     date_col = BankTableFields.DATE.value
@@ -562,7 +553,6 @@ class CashRepository(ServiceRepository):
     desc_col = CashTableFields.DESCRIPTION.value
     tag_col = CashTableFields.TAG.value
     category_col = CashTableFields.CATEGORY.value
-    name_col = CashTableFields.DESCRIPTION.value
     id_col = CashTableFields.ID.value
     account_number_col = CashTableFields.ACCOUNT_NUMBER.value
     date_col = CashTableFields.DATE.value

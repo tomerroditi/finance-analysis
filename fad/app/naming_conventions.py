@@ -84,6 +84,7 @@ def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
 
 
 fields = [
+    ('UNIQUE_ID', 'unique_id'),
     ('ACCOUNT_NUMBER', 'account_number'),
     ('TYPE', 'type'),
     ('ID', 'id'),
