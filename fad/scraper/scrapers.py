@@ -196,7 +196,7 @@ class Scraper(ABC):
         """
         pass
 
-    def pull_data_to_db(self, start_date: datetime.date | str, db_path: str = DB_PATH):
+    def pull_data_to_db(self, start_date: datetime.date | str):
         """
         Pull data from the specified provider and save it to the database
 
@@ -259,8 +259,6 @@ class Scraper(ABC):
         self.data = self._add_account_name_and_provider_columns(self.data)
         self.data = self._add_missing_columns(self.data)
         self.transactions_repo.add_scraped_transactions(self.data, self.table_name)
-
-        self._drop_duplicates(db_path=db_path, id_col=self.table_unique_key)
 
     @abstractmethod
     def scrape_data(self, start_date: str) -> pd.DataFrame:
@@ -327,21 +325,6 @@ class Scraper(ABC):
         df[account_name_col] = self.account_name
         df[provider_col] = self.provider_name
         return df
-
-    def _drop_duplicates(self, db_path: str, id_col: str):
-        """
-        Drop duplicates in the database
-
-        Parameters
-        ----------
-        db_path : str
-            The path to the database file.
-        """
-        conn = sqlite3.connect(db_path)
-        df = pd.read_sql_query(f"SELECT * FROM {self.table_name}", conn)
-        df_unique = df.drop_duplicates(subset=id_col)
-        df_unique.to_sql(self.table_name, conn, if_exists='replace', index=False)
-        conn.close()
 
     @abstractmethod
     def _add_missing_columns(self, df: pd.DataFrame) -> pd.DataFrame:

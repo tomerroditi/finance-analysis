@@ -11,7 +11,7 @@ class ScrapingRepository:
     Manages the actual data fetching operations and database interactions.
     """
     @staticmethod
-    def pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path):
+    def pull_data_from_2fa_scraper_to_db(scraper, start_date):
         """
         Fetch the data from the scraper and save it to the database.
 
@@ -21,9 +21,6 @@ class ScrapingRepository:
             The scraper to use for fetching the data
         start_date : datetime | str
             The date from which to start fetching the data
-        db_path : str
-            The path to the database file. If None the database file will be created in the folder of fad package
-            with the name 'data.db'
 
         Returns
         -------
@@ -31,7 +28,7 @@ class ScrapingRepository:
             If 2FA is required, returns a dict with key 'waiting_for_2fa' and a dict containing the name, scraper, and thread.
             Otherwise, returns a dict with key 'status' and the status dictionary.
         """
-        thread = Thread(target=scraper.pull_data_to_db, args=(start_date, db_path))
+        thread = Thread(target=scraper.pull_data_to_db, args=(start_date,))
         thread.start()
         name = f"{scraper.service_name} - {scraper.provider_name} - {scraper.account_name}"
 

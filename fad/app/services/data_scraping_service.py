@@ -74,7 +74,7 @@ class ScrapingService:
         """
         return self.scraping_status
 
-    def pull_data_from_scrapers_to_db(self, start_date, credentials, db_path: str = DB_PATH):
+    def pull_data_from_scrapers_to_db(self, start_date, credentials):
         """
         Pull data from the provided data sources from the given date to present and save it to the database file.
 
@@ -84,9 +84,6 @@ class ScrapingService:
             The date from which to start pulling the data
         credentials : dict
             The credential dictionary
-        db_path : str
-            The path to the database file. If None, the database file will be created in the folder of fad package
-            with the name 'data.db'
         """
         filtered_credentials = self._filter_scrapable_accounts(credentials)
 
@@ -94,8 +91,8 @@ class ScrapingService:
             return
 
         normal_scraper, tfa_scrapers = self._collect_scrapers(filtered_credentials)
-        self._scrape_normal_scrapers(normal_scraper, start_date, db_path)
-        self._scrape_tfa_scrapers(tfa_scrapers, start_date, db_path)
+        self._scrape_normal_scrapers(normal_scraper, start_date)
+        self._scrape_tfa_scrapers(tfa_scrapers, start_date)
 
     def _filter_scrapable_accounts(self, credentials):
         """
@@ -187,7 +184,7 @@ class ScrapingService:
                         normal_scrapers[resource_name] = scraper
         return normal_scrapers, tfa_scrapers
 
-    def _scrape_normal_scrapers(self, scrapers: dict, start_date, db_path):
+    def _scrape_normal_scrapers(self, scrapers: dict, start_date):
         """
         Scrape data from normal scrapers (without 2FA) and save to the database.
 
@@ -197,14 +194,12 @@ class ScrapingService:
             Dictionary of normal scrapers to scrape.
         start_date : datetime | str
             The date from which to start pulling the data.
-        db_path : str
-            The path to the database file.
         """
         for _, scraper in scrapers.items():
-            scraper.pull_data_to_db(start_date, db_path)
+            scraper.pull_data_to_db(start_date)
             self.update_scrapers_status(scraper)
 
-    def _scrape_tfa_scrapers(self, scrapers: dict, start_date, db_path):
+    def _scrape_tfa_scrapers(self, scrapers: dict, start_date):
         """
         Scrape data from scrapers that require 2FA and save to the database.
 
@@ -214,11 +209,9 @@ class ScrapingService:
             Dictionary of scrapers that require 2FA.
         start_date : datetime | str
             The date from which to start pulling the data.
-        db_path : str
-            The path to the database file.
         """
         for _, scraper in scrapers.items():
-            result = self.scraping_repo.pull_data_from_2fa_scraper_to_db(scraper, start_date, db_path)
+            result = self.scraping_repo.pull_data_from_2fa_scraper_to_db(scraper, start_date)
             if "waiting_for_2fa" in result:
                 info = result["waiting_for_2fa"]
                 self.tfa_scrapers_waiting[info["name"]] = (info["scraper"], info["thread"])
