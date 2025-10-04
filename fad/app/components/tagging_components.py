@@ -70,29 +70,6 @@ class CategoriesTagsEditor:
         """
         self.service = CategoriesTagsService()
         self.protected_categories = [e.value for e in NonExpensesCategories]
-    #     # Call the static method to inject CSS
-    #     self.inject_css_for_pills()
-
-    # @staticmethod
-    # def inject_css_for_pills():
-    #     # Generate CSS for all pills widgets using their keys
-    #     for category in st.session_state['categories_and_tags'].keys():
-    #         widget_key = f"{category}_tags"
-    #         st.markdown(
-    #             f"""
-    #             <style>
-    #             .st-key-{widget_key} p {{
-    #                 color: #007BFF; /* Blue color */
-    #                 font-size: 18px; /* Adjust the font size */
-    #             }}
-    #             /* Exclude label text from color changes */
-    #             .st-key-{widget_key} label div {{
-    #                 color: inherit; /* Inherit the default color */
-    #             }}
-    #             </style>
-    #             """,
-    #             unsafe_allow_html=True
-    #         )
 
     def render(self) -> None:
         """
@@ -120,12 +97,32 @@ class CategoriesTagsEditor:
         with realloc_col:
             st.button('Reallocate Tags', key='reallocate_tags_button', on_click=self._reallocate_tags_dialog)
         # Sort categories alphabetically
-        for category in sorted(self.service.categories_and_tags.keys()):
-            tags = sorted(self.service.categories_and_tags[category])
-            self._view_and_edit_tags(category, tags)
-            disable = category in self.protected_categories
-            st.button(f'Delete {category}', key=f'delete_{category}', disabled=disable,
-                      on_click=self._delete_category_dialog, args=(category,))
+        left_col, right_col = st.columns(2)
+        categories_icons = self.service.get_categories_icons()
+        for i, category in enumerate(sorted(self.service.categories_and_tags.keys())):
+            col = left_col if i % 2 == 0 else right_col
+            with col:
+                title = category if category not in categories_icons else f"{categories_icons[category]} {category}"
+                with st.expander(title, expanded=False):
+                    tags = sorted(self.service.categories_and_tags[category])
+                    self._view_and_edit_tags(category, tags)
+                    icon = st.selectbox(
+                        'Category Icon',
+                        options=['💲', '💵', '💰', '💳', '🎯', '🎨', '📊', '📈', '🕙', '💼', '🍔', '🍕', '🏠', '🏦', '🚗', '✈️', '🛍️', '🛒', '🎉', '💡', '📚', '💉', '💊', '🎓', '⚽', '🎵', '📱', '💻', '🛠️', '🌐', '🎁', '🎬', '📝', '📦', '🌍', '🚫', '🐶', '💏', '👫', '🙅'],
+                        index=None,
+                        key=f'icon_{category}_selectbox',
+                        label_visibility="hidden",
+                        placeholder="Select an Icon",
+                    )
+                    if icon is not None:
+                        changed = self.service.update_category_icon(category, icon)
+                        if changed:
+                            st.success("Category icon updated.")
+                            sleep(1)
+                            st.rerun()
+                    disable = category in self.protected_categories
+                    st.button(f'Delete {category}', key=f'delete_{category}', disabled=disable,
+                              on_click=self._delete_category_dialog, args=(category,))
 
     @st.fragment
     def _view_and_edit_tags(self, category: str, tags: List[str]) -> None:
@@ -162,7 +159,7 @@ class CategoriesTagsEditor:
         # Determine which tags are protected for this category
         protected_tags = [tag for (cat, tag) in self.PROTECTED_CATEGORY_TAGS if cat == category]
         # Align buttons in the same row
-        edit_col, realloc_col, add_col, delete_col, _ = st.columns([1, 1.5, 1, 1.5, 9])
+        edit_col, realloc_col, add_col, delete_col, _ = st.columns([1, 1.5, 1, 1.5, 2])
         with edit_col:
             if st.button('Edit Tag', key=f'edit_{category}_tag'):
                 if selected_tags:
