@@ -86,6 +86,36 @@ class CategoriesTagsService:
         st.session_state['categories_and_tags'] = self.categories_and_tags
         TaggingRepository.save_categories_to_file(self.categories_and_tags, CATEGORIES_PATH)
 
+    def get_categories_icons(self) -> dict[str, str]:
+        """
+        Load category icons.
+
+        Returns
+        -------
+        dict[str, str]
+            A dictionary mapping category names to their associated icon strings.
+            If a category does not have an associated icon, it will not be included in the dictionary.
+        """
+        return TaggingRepository.get_categories_icons()
+
+    def update_category_icon(self, category: str, icon: str) -> bool:
+        """
+        Set or update the icon for a specific category.
+
+        Parameters
+        ----------
+        category : str
+            The name of the category for which to set the icon.
+        icon : str
+            The icon string to associate with the category.
+
+        Returns
+        -------
+        bool
+            True if the icon has been changed, False if the icon is the same as the current one.
+        """
+        return TaggingRepository.update_category_icon(category, icon)
+
     def add_category(self, category: str) -> bool:
         """
         Add a new category to the categories and tags dictionary.
