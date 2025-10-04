@@ -12,11 +12,11 @@ from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableF
 @dataclass
 class CashTransaction:
     date: datetime
-    provider: str
     account_name: str
-    account_number: str
-    description: str
+    desc: str
     amount: float
+    provider: str | None = None
+    account_number: str | None = None
     category: str | None = None
     tag: str | None = None
 
@@ -93,7 +93,7 @@ class TransactionsRepository:
             df.to_sql(table_name, s.bind, if_exists='append', index=False)
             s.commit()
 
-    def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> None:
+    def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> bool:
         """
         Add a new transaction to the database.
 
@@ -106,14 +106,15 @@ class TransactionsRepository:
 
         Returns
         -------
-        None
+        bool
+            True if the transaction was added successfully, False otherwise.
         """
         if service == Services.CASH.value:
             repo = self.cash_repo
         else:
             raise ValueError(f"service must be 'cash'. Got '{service}'")
 
-        repo.add_transaction(transaction)
+        return repo.add_transaction(transaction)
 
     def get_table(self, service: T_service | None = None, query: str | None = None, query_params: dict | None = None) -> pd.DataFrame:
         """
@@ -565,38 +566,55 @@ class CashRepository(ServiceRepository):
     type_col = CashTableFields.TYPE.value
     status_col = CashTableFields.STATUS.value
 
-    def add_transaction(self, transaction: CashTransaction) -> None:
-        with self.conn.session as s:
-            my_query = f"""
-                INSERT INTO {self.table} (
-                    {self.date_col},
-                    {self.provider_col},
-                    {self.account_name_col},
-                    {self.account_number_col},
-                    {self.desc_col},
-                    {self.amount_col},
-                    {self.category_col},
-                    {self.tag_col},
-                ) VALUES (
-                    :date_val,
-                    :provider_val,
-                    :account_name_val,
-                    :account_number_val,
-                    :desc_val,
-                    :amount_val,
-                    :category_val,
-                    :tag_val,
-                )
-            """
-            params = {
-                'date_val': transaction.date.strftime('%Y-%m-%d'),
-                'provider_val': transaction.provider,
-                'account_name_val': transaction.account_name,
-                'account_number_val': transaction.account_number,
-                'desc_val': transaction.description,
-                'amount_val': transaction.amount,
-                'category_val': transaction.category,
-                'tag_val': transaction.tag
-            }
-            s.execute(text(my_query), params)
-            s.commit()
+    def add_transaction(self, transaction: CashTransaction) -> bool:
+        """
+        Add a new cash transaction to the database.
+
+        Parameters
+        ----------
+        transaction : CashTransaction
+            The cash transaction to add.
+
+        Returns
+        -------
+        bool
+            True if the transaction was added successfully, False otherwise.
+        """
+        my_query = f"""
+            INSERT INTO {self.table} (
+                {self.date_col},
+                {self.provider_col},
+                {self.account_name_col},
+                {self.account_number_col},
+                {self.desc_col},
+                {self.amount_col},
+                {self.category_col},
+                {self.tag_col}
+            ) VALUES (
+                :date_val,
+                :provider_val,
+                :account_name_val,
+                :account_number_val,
+                :desc_val,
+                :amount_val,
+                :category_val,
+                :tag_val
+            )
+        """
+        params = {
+            'date_val': transaction.date.strftime('%Y-%m-%d'),
+            'provider_val': transaction.provider,
+            'account_name_val': transaction.account_name,
+            'account_number_val': transaction.account_number,
+            'desc_val': transaction.desc,
+            'amount_val': transaction.amount,
+            'category_val': transaction.category,
+            'tag_val': transaction.tag
+        }
+        try:
+            with self.conn.session as s:
+                s.execute(text(my_query), params)
+                s.commit()
+                return True
+        except Exception:
+            return False
