@@ -328,15 +328,15 @@ class TransactionsTaggingComponent:
         - Bulk Tagging: Multiple transaction operations
         - Edit Transactions: Transaction data editing
         """
-        st.subheader("Transaction Tagging & Editing")
+        st.subheader("Transactions Tagging & Editing")
         st.markdown(
             "Tag transactions manually, perform bulk operations, and edit transaction data. "
             "Create intelligent rules while tagging to automate future similar transactions."
         )
 
         manual_tab, edit_tab = st.tabs([
-            "Tag Transactions",
-            "Edit Transactions"
+            "Tag",
+            "Edit"
         ])
 
         with manual_tab:
