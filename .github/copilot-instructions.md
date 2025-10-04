@@ -98,12 +98,9 @@
 - Update README for major changes
 
 ## Future Features (TODOs)
-- mark multiple rows when tagging transactions
-- update data after adding a new rule (apply rule at creation)
-- manually add transactions (cash, etc.)
-- rearrange app layout to be more intuitive
-- User authentication system
-- Multi-user support with shared accounts
+- add conflicting rules finder to prevent overlapping tagging rules
+- User login and authentication system
+- Multi-user support with shared accounts (low priority)
 - Forecasting capabilities
 - PDF salary slip processing
 - Enhanced data visualization
