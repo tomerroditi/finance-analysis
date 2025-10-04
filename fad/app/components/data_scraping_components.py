@@ -5,7 +5,7 @@ import streamlit as st
 from fad.app.services.credentials_service import CredentialsService
 from fad.app.services.data_scraping_service import ScrapingService
 from fad.app.services.tagging_rules_service import TaggingRulesService
-from fad.scraper.scrapers import Scraper
+from fad.app.naming_conventions import Services
 
 
 class DataScrapingComponent:
@@ -40,29 +40,23 @@ class DataScrapingComponent:
         self.scraping_service = st.session_state["scraping_service"]
         self.creds_service = CredentialsService()
         self.tagging_rules_service = TaggingRulesService()
-        self.start_date = None
+        self.start_date = dt.date.today() - dt.timedelta(days=365)
         self.selected_scrapers = []
 
-    def set_scraping_start_date(self) -> None:
+    def render_data_scraping(self):
         """
-        Set the start date for scraping data.
+        Render the data scraping UI components.
 
-        Creates a date input widget with a default value of one year ago. Validates
-        the selected date to ensure it is not in the future. Updates the start_date
-        attribute with the selected date.
+        This method sets up the UI for selecting services to scrape data from and initiating the data fetching process.
 
         Returns
         -------
         None
-            Updates the start_date attribute with the selected date.
         """
-        start_date = st.date_input("Set the date from which to start fetching your data "
-                                   "(Defaults to 1 year ago - which is the max range for most banks and credit cards)",
-                                   value=dt.date.today() - dt.timedelta(days=365),)
-        if start_date > dt.date.today():
-            st.warning("You cannot set a start date in the future. Please select a valid date.")
-            start_date = dt.date.today()
-        self.start_date = start_date
+        st.title("Data Scraping")
+        self.select_services_to_scrape()
+        self.display_scraping_summary()
+        self.fetch_and_process_data()
 
     def select_services_to_scrape(self) -> None:
         """
@@ -76,45 +70,35 @@ class DataScrapingComponent:
         None
             Updates the selected_scrapers attribute with the selected services.
         """
-        available_service: list[str] = self.creds_service.get_available_data_sources()
-        self.selected_scrapers = st.pills(
-            "Select the services to scrape data from",
-            options=available_service,
-            default=available_service,
-            key="selected_services",
+        available_accounts = self.creds_service.get_available_data_sources()
+        credit_cards_accounts = [account for account in available_accounts if account.lower().startswith(Services.CREDIT_CARD.value)]
+        banks_accounts = [account for account in available_accounts if account.lower().startswith(Services.BANK.value)]
+
+        if not credit_cards_accounts and not banks_accounts:
+            st.page_link("fad/app/pages/my_accounts.py", label="No accounts found. Click here to add accounts.", icon="⚙️")
+            return
+
+        selected_banks = st.pills(
+            "Select banks to scrape data from",
+            options=banks_accounts,
+            default=banks_accounts,
+            format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
+            key="selected_banks",
             selection_mode="multi",
         )
 
-    def fetch_and_process_data(self) -> None:
-        """
-        Fetch and process financial data from selected services.
+        selected_credit_cards = st.pills(
+            "Select credit cards to scrape data from",
+            options=credit_cards_accounts,
+            default=credit_cards_accounts,
+            format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
+            key="selected_credit_cards",
+            selection_mode="multi",
+        )
 
-        Creates a button to initiate data scraping. When clicked, it clears previous
-        scraping status, initiates data scraping from selected sources, and applies
-        automatic tagging rules to the fetched data. Also handles two-factor authentication
-        and displays scraping status messages.
+        self.selected_scrapers = selected_banks + selected_credit_cards
 
-        Returns
-        -------
-        None
-            Initiates data scraping and displays results.
-        """
-        credentials: dict = self.creds_service.get_data_sources_credentials(self.selected_scrapers)
-
-        if st.button("Fetch Data", key="fetch_data_main_button"):
-            self.scraping_service.clear_scraping_status()
-            self.scraping_service.clear_waiting_for_2fa_scrapers()
-            self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
-            self._apply_tagging_rules()
-
-            st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
-            st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
-
-        self._display_scraping_summary()
-        self.tfa_fragments()
-        self.display_scraping_status()
-
-    def _display_scraping_summary(self) -> None:
+    def display_scraping_summary(self) -> None:
         """
         Display a summary of today's scraping activity and account availability.
 
@@ -155,6 +139,34 @@ class DataScrapingComponent:
             - Restrictions reset automatically at midnight
             """)
 
+    def fetch_and_process_data(self) -> None:
+        """
+        Fetch and process financial data from selected services.
+
+        Creates a button to initiate data scraping. When clicked, it clears previous
+        scraping status, initiates data scraping from selected sources, and applies
+        automatic tagging rules to the fetched data. Also handles two-factor authentication
+        and displays scraping status messages.
+
+        Returns
+        -------
+        None
+            Initiates data scraping and displays results.
+        """
+        credentials: dict = self.creds_service.get_data_sources_credentials(self.selected_scrapers)
+
+        if st.button("Fetch Data", key="fetch_data_main_button"):
+            self.scraping_service.clear_scraping_status()
+            self.scraping_service.clear_waiting_for_2fa_scrapers()
+            self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
+            self._apply_tagging_rules()
+
+            st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
+            st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
+
+        self.tfa_fragments()
+        self.display_scraping_status()
+
     def _apply_tagging_rules(self) -> None:
         """
         Apply tagging rules to all services after data scraping.
@@ -181,11 +193,11 @@ class DataScrapingComponent:
             Creates UI components for 2FA input.
         """
         tfa_scrapers_waiting: dict = st.session_state.get("tfa_scrapers_waiting", {})
-        for name, (scraper, thread) in tfa_scrapers_waiting.items():
-            self.tfa_code_input(name, scraper, thread)
+        for name in tfa_scrapers_waiting.keys():
+            self.tfa_code_input(name)
 
     @st.fragment
-    def tfa_code_input(self, name: str, scraper: Scraper, thread: object) -> None:
+    def tfa_code_input(self, name: str) -> None:
         """
         Display a dialog for the user to enter the OTP code for the given provider.
 
@@ -200,11 +212,6 @@ class DataScrapingComponent:
         ----------
         name : str
             The name of the scraper (service - provider - account).
-        scraper : Scraper
-            The scraper object for which to handle two-factor authentication.
-            Contains service_name, provider_name, and account_name attributes.
-        thread : object
-            The thread object that is running the scraping operation.
 
         Returns
         -------
@@ -237,10 +244,9 @@ class DataScrapingComponent:
                 try:
                     service, provider, account = [x.strip() for x in name.split("-")]
                     single_creds = self.creds_service.get_scraper_credentials(service, provider, account)
-                    start_date = self.start_date if self.start_date else dt.date.today()
                     self.scraping_service.clear_scraper_status(name)
                     self.scraping_service.clear_waiting_for_2fa_scraper(name)
-                    self.scraping_service.pull_data_from_scrapers_to_db(start_date, single_creds)
+                    self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, single_creds)
                     st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
                     st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
                     st.rerun()
