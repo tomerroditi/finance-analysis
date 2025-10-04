@@ -847,8 +847,8 @@ class TransactionsTaggingComponent:
         st.markdown("---")
         st.markdown("#### Edit Transaction Details")
 
-        id_col = TransactionsTableFields.ID.value
-        transaction_id = transaction[id_col]
+        unique_id_col = TransactionsTableFields.UNIQUE_ID.value
+        transaction_id = transaction[unique_id_col]
 
         with st.container(border=True):
             self._transaction_editor_fragment(transaction, transaction_id)
@@ -936,7 +936,7 @@ class RuleBasedTaggingComponent:
 
     def __init__(self, key_suffix: str):
         self.key_suffix = key_suffix
-        self.rules_service = TaggingRulesService()
+        self.tagging_rules_service = TaggingRulesService()
         self.categories_tags_service = CategoriesTagsService()
         self.transactions_service = TransactionsService()
         self.categories_and_tags = st.session_state['categories_and_tags']
@@ -965,7 +965,7 @@ class RuleBasedTaggingComponent:
         st.markdown("Manage your tagging rules: view, edit, delete, and prioritize them.")
 
         # Get rules
-        rules_df = self.rules_service.get_all_rules(active_only=False)
+        rules_df = self.tagging_rules_service.get_all_rules(active_only=False)
 
         if rules_df.empty:
             st.info("No rules found. Create some rules in the Transaction Tagging tab!")
@@ -1004,7 +1004,7 @@ class RuleBasedTaggingComponent:
         """Render the rule editor interface."""
         st.markdown("#### Edit Rule")
 
-        rule = self.rules_service.get_rule_by_id(rule_id)
+        rule = self.tagging_rules_service.get_rule_by_id(rule_id)
         if rule is None:
             st.error("Rule not found!")
             return
@@ -1055,23 +1055,24 @@ class RuleBasedTaggingComponent:
         if st.button("➕ Add Condition", key=f"add_condition_{rule_id}_{self.key_suffix}", disabled=not enable_more_conditions):
                 st.session_state[conditions_key].append({
                     'field': enable_more_conditions[0],
-                    'operator': self.rules_service.get_operators_for_field(enable_more_conditions[0])[0],
+                    'operator': self.tagging_rules_service.get_operators_for_field(enable_more_conditions[0])[0],
                     'value': ''
                 })
                 st.rerun()
 
         # Action buttons
+        msg_container = st.container()
         save_col, delete_col, test_col, _ = st.columns([1, 1, 1, 5])
         with save_col:
             if st.button("💾 Save Changes", key=f"save_rule_{rule_id}_{self.key_suffix}", type="primary"):
                 # Validate conditions
-                conditions_errors = self.rules_service.validate_conditions(st.session_state[conditions_key])
+                conditions_errors = self.tagging_rules_service.validate_conditions(st.session_state[conditions_key])
                 if conditions_errors:
-                    st.error(f"❌ Invalid conditions found:\n{conditions_errors}")
+                    msg_container.error(f"❌ Invalid conditions found:\n{conditions_errors}")
                     return
 
                 # Update rule with new conditions
-                success = self.rules_service.update_rule(
+                n_tagged = self.tagging_rules_service.update_rule(
                     rule_id=rule_id,
                     name=new_name,
                     category=new_category,
@@ -1080,18 +1081,17 @@ class RuleBasedTaggingComponent:
                     is_active=new_is_active,
                     conditions=st.session_state[conditions_key]
                 )
-                if success:
-                    st.success("✅ Rule updated successfully!")
-                    # Clear the session state for conditions
-                    del st.session_state[conditions_key]
-                    sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to update rule")
+
+                msg_container.success("✅ Rule updated successfully!")
+                # Clear the session state for conditions
+                del st.session_state[conditions_key]
+                msg_container.success(f"✅ Tagged {n_tagged} transactions!")
+                sleep(1)
+                st.rerun()
 
         with delete_col:
             if st.button("🗑️ Delete Rule", key=f"delete_rule_{rule_id}_{self.key_suffix}", type="secondary"):
-                success = self.rules_service.delete_rule(rule_id)
+                success = self.tagging_rules_service.delete_rule(rule_id)
                 if success:
                     st.success("✅ Rule deleted successfully!")
                     # Clear the session state for conditions
@@ -1105,7 +1105,7 @@ class RuleBasedTaggingComponent:
         with test_col:
             if st.button("🧪 Test Rule", key=f"test_rule_{rule_id}_{self.key_suffix}"):
                 # Test with current conditions from session state
-                count, test_results = self.rules_service.test_rule_against_transactions(
+                count, test_results = self.tagging_rules_service.test_rule_against_transactions(
                     conditions=st.session_state[conditions_key],
                 )
             else:
@@ -1145,7 +1145,7 @@ class RuleBasedTaggingComponent:
         if st.button("➕ Add Condition", key=f"add_rule_condition_{self.key_suffix}", disabled=not enable_more_conditions):
             st.session_state[conditions_key].append({
                 'field': enable_more_conditions[0],
-                'operator': self.rules_service.get_operators_for_field(enable_more_conditions[0])[0],
+                'operator': self.tagging_rules_service.get_operators_for_field(enable_more_conditions[0])[0],
                 'value': ''
             })
             st.rerun(scope="fragment")
@@ -1176,12 +1176,12 @@ class RuleBasedTaggingComponent:
             dont_allow_buttons = not (rule_name and not empty_conditions and rule_category and rule_tag)
             dont_allow_txt = "Please provide rule name, at least one condition, category, and tag."
             if st.button("🚀 Create Rule", key=f"create_rule_{self.key_suffix}", disabled=dont_allow_buttons, help=dont_allow_txt):
-                conditions_errors = self.rules_service.validate_conditions(conditions)
+                conditions_errors = self.tagging_rules_service.validate_conditions(conditions)
                 if conditions_errors:
                     st.error(f"❌ Invalid conditions found:\n{conditions_errors}")
                     return
 
-                rule_id = self.rules_service.add_rule(
+                rule_id = self.tagging_rules_service.add_rule(
                     name=rule_name,
                     conditions=conditions,
                     category=rule_category,
@@ -1191,7 +1191,7 @@ class RuleBasedTaggingComponent:
                 # Clear the conditions
                 st.session_state[conditions_key] = []
 
-                total_tagged = self.rules_service.apply_rules()
+                total_tagged = self.tagging_rules_service.apply_rules()
 
                 if total_tagged > 0:
                     st.success(f"✅ Tagged {total_tagged} transactions total!")
@@ -1202,7 +1202,7 @@ class RuleBasedTaggingComponent:
 
         with col_test:
             if st.button("🧪 Test Rule", key=f"test_new_rule_{self.key_suffix}", disabled=dont_allow_buttons, help=dont_allow_txt):
-                count, matched_transactions = self.rules_service.test_rule_against_transactions(
+                count, matched_transactions = self.tagging_rules_service.test_rule_against_transactions(
                     conditions=conditions,
                 )
             else:
@@ -1237,7 +1237,7 @@ class RuleBasedTaggingComponent:
 
         with col2:
             # Get available operators based on field type
-            available_operators = self.rules_service.get_operators_for_field(field)
+            available_operators = self.tagging_rules_service.get_operators_for_field(field)
 
             # Ensure current operator is valid for the field, otherwise use first available
             current_operator = condition['operator']
