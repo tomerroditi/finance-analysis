@@ -1,3 +1,4 @@
+from time import sleep
 from typing import List
 
 import pandas as pd
@@ -14,6 +15,7 @@ from fad.app.services.tagging_rules_service import TaggingRulesService
 from fad.app.services.tagging_service import CategoriesTagsService
 from fad.app.services.transactions_service import TransactionsService
 from fad.app.utils.widgets import PandasFilterWidgets
+from fad.app.utils.streamlit import clear_session_state
 
 
 def format_category_or_tag_strings(s: str) -> str:
@@ -788,6 +790,50 @@ class TransactionsTaggingComponent:
                 idx = indices[0]
                 selected_transaction = filtered_transactions.iloc[idx]
                 self._render_transaction_editor(selected_transaction)
+
+    def create_new_transaction_button(self) -> None:
+        """Render the button to create a new transaction."""
+        if st.button("➕ Create New Transaction", key=f"create_btn_new_transaction_{self.key_suffix}"):
+            self._render_create_transaction_dialog()
+
+    @st.dialog("Create New Transaction")
+    def _render_create_transaction_dialog(self) -> None:
+        """Render the dialog to create a new transaction."""
+        service = st.selectbox("Type:", options=["cash"], index=0, format_func=lambda x: x.replace('_', ' ').title(), key=f"type_new_transaction_{self.key_suffix}")
+        date = st.date_input("Date:", key=f"new_transaction_date_{self.key_suffix}", value=pd.Timestamp.now().date())
+        description = st.text_input("Description:", key=f"description_new_transaction_{self.key_suffix}")
+        amount = st.number_input("Amount (negative for expenses):", format="%.2f", key=f"amount_new_transaction_{self.key_suffix}")
+        account_name = st.text_input("Account Name:", key=f"account_name_new_transaction_{self.key_suffix}")
+
+        if st.button("Save Transaction", key=f"save_btn_new_transaction_{self.key_suffix}"):
+            if not description or amount == 0 or not account_name:
+                st.error("Please fill in all required fields (Description, Amount, Account Name).")
+                return
+
+            new_transaction = {
+                TransactionsTableFields.DATE.value: pd.Timestamp(date),
+                TransactionsTableFields.DESCRIPTION.value: description,
+                TransactionsTableFields.AMOUNT.value: amount,
+                TransactionsTableFields.ACCOUNT_NAME.value: account_name,
+                TransactionsTableFields.PROVIDER.value: None,
+                TransactionsTableFields.ACCOUNT_NUMBER.value: None,
+                TransactionsTableFields.CATEGORY.value: None,
+                TransactionsTableFields.TAG.value: None,
+            }
+
+            success = self.transactions_service.add_transaction(new_transaction, service)
+
+            if success:
+                st.success("✅ Transaction created successfully!")
+                clear_session_state(ends_with=[f"_new_transaction_{self.key_suffix}"])
+                sleep(1)  # slight delay for better UX
+                st.rerun()
+            else:
+                st.error("❌ Failed to create transaction. Please try again.")
+
+        if st.button("Cancel", key="cancel_create_transaction_btn"):
+            clear_session_state(ends_with=[f"_new_transaction_{self.key_suffix}"])
+            st.rerun()
 
     def _render_transaction_editor(self, transaction: pd.Series) -> None:
         """Render the transaction editor interface."""
