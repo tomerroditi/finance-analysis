@@ -24,6 +24,27 @@ class TransactionsService:
         self.transactions_repository = TransactionsRepository(conn)
         self.split_transactions_repository = SplitTransactionsRepository(conn)
 
+    def add_transaction(self, transaction: dict, service: Literal['cash']) -> bool:
+        """
+        Add a new transaction to the specified service table.
+
+        Parameters
+        ----------
+        transaction : dict
+            A dictionary representing the transaction to add.
+        service : Literal['cash']
+            The service to which the transaction belongs.
+
+        Returns
+        -------
+        bool
+            True if the transaction was added successfully, False otherwise.
+        """
+        if service != 'cash':
+            raise ValueError("Currently, only 'cash' service is supported for manually adding transactions.")
+        transaction = CashTransaction(**transaction)
+        return self.transactions_repository.add_transaction(transaction, service)
+
     def get_table_columns_for_display(self) -> List[str]:
         """
         Get the columns of the transactions table.
