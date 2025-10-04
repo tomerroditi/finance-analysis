@@ -1,3 +1,5 @@
+from time import sleep
+
 import pandas as pd
 import streamlit as st
 
@@ -93,6 +95,7 @@ class BudgetUI:
         if st.button("Yes"):
             self.budget_service.budget_repository.delete_rule(rule_id)
             st.success("Rule deleted.")
+            sleep(1)  # pause to allow the user to see the message
             st.rerun()
         if st.button("No"):
             st.rerun()
@@ -122,6 +125,7 @@ class BudgetUI:
 
             self.budget_service.update_rule(rule[ID], name=name, amount=amount, category=category, tags=tags)
             st.success("Rule updated.")
+            sleep(1)  # pause to allow the user to see the message
             st.rerun()
 
     def _edit_rule_ui(self, rule: pd.Series) -> tuple[str, str, list[str]]:
@@ -208,6 +212,7 @@ class MonthlyBudgetUI(BudgetUI):
                 st.success(msg)
             else:
                 st.info("No rules found in last month.")
+            sleep(1)  # pause to allow the user to see the message
             st.rerun()
 
     @st.dialog("Add New Rule")
@@ -250,6 +255,7 @@ class MonthlyBudgetUI(BudgetUI):
                 year=self.year
             )
             st.success("Rule added successfully.")
+            sleep(1)  # pause to allow the user to see the message
             st.rerun()
 
     @st.dialog("Set Total Budget")
@@ -426,6 +432,7 @@ class ProjectBudgetUI(BudgetUI):
             self.set_project_name(category)
             st.session_state["project_selection"] = category
             st.success(f"Project '{category}' created.")
+            sleep(1)  # pause to allow the user to see the message
             st.rerun()
 
     @st.dialog("Delete Project")
@@ -436,6 +443,9 @@ class ProjectBudgetUI(BudgetUI):
         if st.button("Yes"):
             self.project_budget_service.delete_project(self.project_name)
             st.success(f"Project '{self.project_name}' deleted.")
+            sleep(1)  # pause to allow the user to see the message
+            self.project_name = None
+            self.project_rules = None
             st.rerun()
         if st.button("No"):
             st.rerun()

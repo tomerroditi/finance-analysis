@@ -209,6 +209,7 @@ class CategoriesTagsEditor:
                         success = False
             if success:
                 st.success("All tags updated successfully.")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("Failed to update some tags.")
@@ -221,6 +222,7 @@ class CategoriesTagsEditor:
         if st.button('Add', key=f'add_new_{category}_tag'):
             if self.service.add_tag(category, new_tag):
                 st.success(f"Tag '{new_tag}' added.")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("Failed to add tag.")
@@ -235,6 +237,7 @@ class CategoriesTagsEditor:
             formatted_category = format_category_or_tag_strings(new_category)
             if self.service.add_category(formatted_category):
                 st.success(f"Category '{formatted_category}' added successfully.")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("Invalid category name or category already exists.")
@@ -257,6 +260,7 @@ class CategoriesTagsEditor:
                     formatted_tags = sorted([format_category_or_tag_strings(tag) for tag in tags_to_reallocate])
                     if self.service.reallocate_tags(old_category, new_category, formatted_tags):
                         st.success("Tags reallocated successfully.")
+                        sleep(1)
                         st.rerun()
                     else:
                         st.error("Failed to reallocate tags.")
@@ -270,6 +274,7 @@ class CategoriesTagsEditor:
         if st.button('Yes', key=f'confirm_delete_{category}'):
             if self.service.delete_category(category, self.protected_categories):
                 st.success(f"Category '{category}' deleted successfully.")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("Cannot delete this category.")
@@ -286,6 +291,7 @@ class CategoriesTagsEditor:
                     success = False
             if success:
                 st.success("Tags deleted successfully.")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("Failed to delete some tags.")
@@ -530,6 +536,7 @@ class TransactionsTaggingComponent:
                         )
                     self._clear_data_and_filters_session_state(key_suffix)
                     st.success("Transaction tagged successfully!")
+                    sleep(1)
                     st.rerun()
                 else:
                     st.error("Please select both category and tag.")
@@ -543,6 +550,7 @@ class TransactionsTaggingComponent:
                     )
                 self._clear_data_and_filters_session_state(key_suffix)
                 st.success("Transaction tags removed!")
+                sleep(1)
                 st.rerun()
 
         with col_split:
@@ -680,6 +688,7 @@ class TransactionsTaggingComponent:
                     del st.session_state[f"splits_{self.key_suffix}_{key_suffix}"]
                     self._clear_data_and_filters_session_state(key_suffix)
                     st.success("Transaction split successfully!")
+                    sleep(1)
                     st.rerun()
 
         with col_cancel:
@@ -703,6 +712,7 @@ class TransactionsTaggingComponent:
                     del st.session_state[f"splits_{self.key_suffix}_{key_suffix}"]
                 self._clear_data_and_filters_session_state(key_suffix)
                 st.success("Split cancelled and transaction restored.")
+                sleep(1)
                 st.rerun()
 
     def _clear_data_and_filters_session_state(self, key_suffix: str) -> None:
@@ -911,6 +921,7 @@ class TransactionsTaggingComponent:
 
             if success:
                 st.success("✅ Transaction updated successfully!")
+                sleep(1)
                 st.rerun()
             else:
                 st.error("❌ Failed to update transaction")
@@ -1076,6 +1087,7 @@ class RuleBasedTaggingComponent:
                     st.success("✅ Rule updated successfully!")
                     # Clear the session state for conditions
                     del st.session_state[conditions_key]
+                    sleep(1)
                     st.rerun()
                 else:
                     st.error("❌ Failed to update rule")
@@ -1088,6 +1100,7 @@ class RuleBasedTaggingComponent:
                     # Clear the session state for conditions
                     if conditions_key in st.session_state:
                         del st.session_state[conditions_key]
+                    sleep(1)
                     st.rerun()
                 else:
                     st.error("❌ Failed to delete rule")
@@ -1187,7 +1200,7 @@ class RuleBasedTaggingComponent:
                     st.success(f"✅ Tagged {total_tagged} transactions total!")
                 else:
                     st.info("No transactions were tagged. All may already be categorized or no rules matched.")
-
+                sleep(1)
                 st.rerun()
 
         with col_test:
