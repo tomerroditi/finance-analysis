@@ -112,7 +112,7 @@ class TaggingRulesService:
                 UPDATE {table}
                 SET {self.rules_repo.category_col} = :category,
                     {self.rules_repo.tag_col} = :tag
-                WHERE {where_conditions} AND {self.rules_repo.category_col} != :category AND {self.rules_repo.tag_col} != :tag
+                WHERE {where_conditions} AND ({self.rules_repo.category_col} != :category OR {self.rules_repo.category_col} is null) AND ({self.rules_repo.tag_col} != :tag OR {self.rules_repo.tag_col} is null)
             """
             params = {'category': rule[self.rules_repo.category_col], 'tag': rule[self.rules_repo.tag_col], **params}
             row_count +=self.transactions_repo.update_with_query(update_query, params, service=table)
