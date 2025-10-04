@@ -29,15 +29,16 @@ class TaggingRulesService:
         """Get all rules, optionally filtered active status."""
         return self.rules_repo.get_all_rules(active_only=active_only)
 
-    def get_rule_by_id(self, rule_id: int) -> Optional[Dict[str, Any]]:
+    def get_rule_by_id(self, rule_id: int, json_load_conditions: bool = True) -> Optional[Dict[str, Any]]:
         """Get a rule by ID and parse its conditions."""
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if rule is not None:
             rule_dict = rule.to_dict()
-            try:
-                rule_dict['conditions'] = json.loads(rule_dict['conditions'])
-            except json.JSONDecodeError:
-                rule_dict['conditions'] = []
+            if json_load_conditions:
+                try:
+                    rule_dict['conditions'] = json.loads(rule_dict['conditions'])
+                except json.JSONDecodeError:
+                    rule_dict['conditions'] = []
             return rule_dict
         return None
 
@@ -60,12 +61,13 @@ class TaggingRulesService:
         self.apply_rules()
         return rule_id
 
-    def update_rule(self, rule_id: int, **kwargs) -> bool:
+    def update_rule(self, rule_id: int, **kwargs) -> int:
         """Update an existing rule with provided fields."""
         updated = self.rules_repo.update_rule(rule_id, **kwargs)
+        n_tagged = 0
         if updated:
-            self.apply_rules()
-        return updated
+            n_tagged = self.apply_rule_by_id(rule_id)
+        return n_tagged
 
     def delete_rule(self, rule_id: int) -> bool:
         """Delete a rule by ID."""
@@ -91,6 +93,26 @@ class TaggingRulesService:
             total_tagged += self._apply_single_rule(rule)
 
         return total_tagged
+
+    def apply_rule_by_id(self, rule_id: int) -> int:
+        """
+        Apply a single rule by ID to all services and return count of tagged transactions.
+
+        Parameters
+        ----------
+        rule_id : int
+            ID of the rule to apply.
+
+        Returns
+        -------
+        int
+            Number of transactions updated.
+        """
+        rule = self.get_rule_by_id(rule_id, json_load_conditions=False)
+        if rule is None:
+            raise ValueError(f"Rule with ID {rule_id} not found.")
+
+        return self._apply_single_rule(rule)
 
     def _apply_single_rule(self, rule: Dict) -> int:
         """
