@@ -15,9 +15,9 @@ pg = st.navigation(
         st.Page("fad/app/pages/income_outcome_analysis.py", title="Income/Outcome Analysis"),
         st.Page("fad/app/pages/paycheks.py", title="Paychecks"),
         st.Page("fad/app/pages/savings and investments.py", title="Savings & Investments"),
-        st.Page("fad/app/pages/tagging.py", title="Categories & Tags"),
         st.Page("fad/app/pages/my_data.py", title="My Data"),
         st.Page("fad/app/pages/my_accounts.py", title="My Accounts"),
+        st.Page("fad/app/pages/cat_and_tags.py", title="Categories & Tags"),
         st.Page("fad/app/pages/settings.py", title="Settings"),
 
     ]
