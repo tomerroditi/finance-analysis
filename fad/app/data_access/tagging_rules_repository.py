@@ -86,7 +86,7 @@ class TaggingRulesRepository:
             params = {
                 'name': name,
                 'priority': priority,
-                'conditions': json.dumps(conditions),
+                'conditions': json.dumps(conditions, ensure_ascii=False),
                 'category': category,
                 'tag': tag,
                 'is_active': 1 if is_active else 0,
