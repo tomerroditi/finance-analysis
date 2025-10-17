@@ -1,6 +1,5 @@
 import datetime
 import os
-import sqlite3
 import subprocess
 from abc import ABC, abstractmethod
 from threading import Event
@@ -9,7 +8,7 @@ from time import sleep
 import pandas as pd
 import yaml
 
-from fad import CREDENTIALS_PATH, DB_PATH
+from fad import CREDENTIALS_PATH
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.transactions_repository import TransactionsRepository
 from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
@@ -209,7 +208,7 @@ class Scraper(ABC):
         """
         start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
 
-        print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} started', flush=True)
+        print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({start_date}) started', flush=True)
         try:
             self.scrape_data(start_date)
         except CredentialsError as e:
@@ -246,7 +245,7 @@ class Scraper(ABC):
         finally:
             self._record_scraping_history()
 
-        print(f'{self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} finished', flush=True)
+        print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({start_date}) finished', flush=True)
 
         if self.data.empty:
             if self.otp_code == self.CANCEL:
@@ -284,7 +283,7 @@ class Scraper(ABC):
             Additional arguments to pass to the scraping script
         """
         args = ['node', self.script_path, *args, start_date]
-        timeout = 60
+        timeout = 300  # seconds
         try:
             result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', timeout=timeout)
         except subprocess.TimeoutExpired as e:
@@ -495,7 +494,7 @@ class Scraper(ABC):
         Record the scraping attempt in the history database.
         """
         # Determine the status based on whether we have data and no errors
-        if self.data is not None and not self.data.empty and not self.error:
+        if self.data is not None and not self.error:
             status = self.history_repo.SUCCESS
         elif self.otp_code == self.CANCEL:
             status = self.history_repo.CANCELED
