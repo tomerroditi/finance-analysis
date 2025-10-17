@@ -1,4 +1,4 @@
-from fad.app.components.tagging_components import TransactionsTaggingComponent
+from fad.app.components.tagging_components import TransactionsTaggingAndEditingComponent
 from fad.app.components.data_scraping_components import DataScrapingComponent
 
 scraping_ui = DataScrapingComponent()

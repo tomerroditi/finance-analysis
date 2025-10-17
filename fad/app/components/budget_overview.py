@@ -9,7 +9,7 @@ from fad.app.components.month_selector import (
     select_next_month,
     select_custom_month
 )
-from fad.app.components.tagging_components import TransactionsTaggingComponent
+from fad.app.components.tagging_components import TransactionsTaggingAndEditingComponent
 from fad.app.naming_conventions import TransactionsTableFields, NAME, CATEGORY, TAGS, AMOUNT, ID, TOTAL_BUDGET, \
     ALL_TAGS, YEAR, MONTH
 from fad.app.services.budget_service import MonthlyBudgetService, ProjectBudgetService, BudgetService
@@ -26,7 +26,7 @@ class BudgetUI:
         self.budget_service = BudgetService()
         self.monthly_budget_service = MonthlyBudgetService()
         self.tagging_service = CategoriesTagsService()
-        self.transactions_tagger = TransactionsTaggingComponent(key_suffix=f"{key_suffix}")
+        self.transactions_tagger = TransactionsTaggingAndEditingComponent(key_suffix=f"{key_suffix}")
 
     def render_rule_ui_window(
         self,

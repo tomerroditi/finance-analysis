@@ -297,7 +297,7 @@ class CategoriesTagsEditor:
 
 
 # TODO: in edit transactions, add an option to cancel splits cleaning up the split entries and resetting the original transaction's category and tag to None
-class TransactionsTaggingComponent:
+class TransactionsTaggingAndEditingComponent:
     """
     Component for manual transaction tagging, bulk editing, and transaction data editing.
 
