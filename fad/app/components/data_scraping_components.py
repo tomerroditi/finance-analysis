@@ -53,7 +53,6 @@ class DataScrapingComponent:
         -------
         None
         """
-        st.title("Data Scraping")
         self.display_scraping_summary()
         self.select_scraping_dates()
         self.select_services_to_scrape()
@@ -184,7 +183,7 @@ class DataScrapingComponent:
         """
         credentials: dict = self.creds_service.get_data_sources_credentials(self.selected_scrapers)
 
-        if st.button("Fetch Data", key="fetch_data_main_button"):
+        if st.button("Scrape Data", key="scrape_data_main_button"):
             self.scraping_service.clear_scraping_status()
             self.scraping_service.clear_waiting_for_2fa_scrapers()
             self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
