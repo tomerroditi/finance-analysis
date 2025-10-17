@@ -54,9 +54,37 @@ class DataScrapingComponent:
         None
         """
         st.title("Data Scraping")
-        self.select_services_to_scrape()
         self.display_scraping_summary()
+        self.select_scraping_dates()
+        self.select_services_to_scrape()
         self.fetch_and_process_data()
+
+    def select_scraping_dates(self) -> None:
+        """
+        Select the date range for data scraping.
+
+        Creates a date input widget allowing the user to select the start date
+        for data scraping. The default start date is set to one year ago from today.
+
+        Returns
+        -------
+        None
+            Updates the start_date attribute with the selected date.
+        """
+        with st.container(border=True):
+            st.pills(
+                "Select the start date for data scraping",
+                options=[1, 3, 6, 12],
+                format_func=lambda months: f"{months} month(s) ago",
+                default=12,
+                on_change=lambda: setattr(
+                    self,
+                    "start_date",
+                    dt.date.today() - dt.timedelta(days=st.session_state.get("scraping_start_date", 12) * 30),
+                ),
+                key="scraping_start_date",
+                selection_mode="single",
+            )
 
     def select_services_to_scrape(self) -> None:
         """
@@ -78,23 +106,24 @@ class DataScrapingComponent:
             st.page_link("fad/app/pages/my_accounts.py", label="No accounts found. Click here to add accounts.", icon="⚙️")
             return
 
-        selected_banks = st.pills(
-            "Select banks to scrape data from",
-            options=banks_accounts,
-            default=banks_accounts,
-            format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
-            key="selected_banks",
-            selection_mode="multi",
-        )
+        with st.container(border=True):
+            selected_banks = st.pills(
+                "Select banks to scrape data from",
+                options=banks_accounts,
+                default=banks_accounts,
+                format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
+                key="selected_banks",
+                selection_mode="multi",
+            )
 
-        selected_credit_cards = st.pills(
-            "Select credit cards to scrape data from",
-            options=credit_cards_accounts,
-            default=credit_cards_accounts,
-            format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
-            key="selected_credit_cards",
-            selection_mode="multi",
-        )
+            selected_credit_cards = st.pills(
+                "Select credit cards to scrape data from",
+                options=credit_cards_accounts,
+                default=credit_cards_accounts,
+                format_func=lambda account: account.split(" - ", 1)[-1],  # provider - account
+                key="selected_credit_cards",
+                selection_mode="multi",
+            )
 
         self.selected_scrapers = selected_banks + selected_credit_cards
 
