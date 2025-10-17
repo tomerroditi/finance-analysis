@@ -174,7 +174,7 @@ class PandasFilterWidgets:
 
         return start_date, end_date
 
-    def filter_df(self):
+    def filter_df(self) -> pd.DataFrame:
         """
         This function will take the input dataframe and all the widgets generated from
         Streamlit Pandas. It will then return a filtered DataFrame based on the changes
