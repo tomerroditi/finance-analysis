@@ -35,7 +35,12 @@ class PandasFilterWidgets:
     def __new__(cls, *args, **kwargs):
         key = f"{cls.BASE_STREAMLIT_KEY}_{kwargs.get('key_suffix', '')}"  # equivalent to self.keys_suffix
         if key in st.session_state:
-            return st.session_state[key]
+            instance = st.session_state[key]
+            new_df = args[0] if args else kwargs.get('df', None)
+            if new_df is None:
+                raise ValueError("DataFrame must be provided as a positional or keyword argument.")
+            instance.df = new_df.copy()
+            return instance
         instance = super(PandasFilterWidgets, cls).__new__(cls)
         st.session_state[key] = instance
         return instance
