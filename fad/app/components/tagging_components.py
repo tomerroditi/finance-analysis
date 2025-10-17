@@ -531,7 +531,6 @@ class TransactionsTaggingComponent:
                         self.transactions_service.update_tagging_by_id(
                             transaction[id_col], category, tag
                         )
-                    self._clear_data_and_filters_session_state(key_suffix)
                     st.success("Transaction tagged successfully!")
                     sleep(1)
                     st.rerun()
@@ -545,7 +544,6 @@ class TransactionsTaggingComponent:
                     self.transactions_service.update_tagging_by_id(
                         transaction[id_col], None, None
                     )
-                self._clear_data_and_filters_session_state(key_suffix)
                 st.success("Transaction tags removed!")
                 sleep(1)
                 st.rerun()
@@ -683,7 +681,6 @@ class TransactionsTaggingComponent:
                     )
                     # Clear session state
                     del st.session_state[f"splits_{self.key_suffix}_{key_suffix}"]
-                    self._clear_data_and_filters_session_state(key_suffix)
                     st.success("Transaction split successfully!")
                     sleep(1)
                     st.rerun()
@@ -707,15 +704,9 @@ class TransactionsTaggingComponent:
                 )
                 if f"splits_{self.key_suffix}_{key_suffix}" in st.session_state:
                     del st.session_state[f"splits_{self.key_suffix}_{key_suffix}"]
-                self._clear_data_and_filters_session_state(key_suffix)
                 st.success("Split cancelled and transaction restored.")
                 sleep(1)
                 st.rerun()
-
-    def _clear_data_and_filters_session_state(self, key_suffix: str) -> None:
-        """Clear session state of displayed data to make sure updated data is shown."""
-        df_filter = st.session_state[f"{PandasFilterWidgets.BASE_STREAMLIT_KEY}_{self.key_suffix}_{key_suffix}"]
-        df_filter.delete_session_state()
 
     def render_transaction_editing(self) -> None:
         """Render transaction data editing interface."""
