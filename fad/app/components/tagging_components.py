@@ -316,36 +316,10 @@ class TransactionsTaggingAndEditingComponent:
         self.auto_tagger_rules_component = RuleBasedTaggingComponent(key_suffix)
         self.categories_and_tags = self.categories_tags_service.get_categories_and_tags()
 
-    def render_tagging_page(self) -> None:
-        """
-        Render the transactions tagging component UI.
-
-        Creates tabs for different aspects of transaction tagging:
-        - Manual Tagging: Individual transaction tagging with rule creation
-        - Bulk Tagging: Multiple transaction operations
-        - Edit Transactions: Transaction data editing
-        """
-        st.subheader("Transactions Tagging & Editing")
-        st.markdown(
-            "Tag transactions manually, perform bulk operations, and edit transaction data. "
-            "Create intelligent rules while tagging to automate future similar transactions."
-        )
-
-        manual_tab, edit_tab = st.tabs([
-            "Tag",
-            "Edit"
-        ])
-
-        with manual_tab:
-            self.render_transactions_tagging()
-
-        with edit_tab:
-            self.render_transaction_editing()
-
     def render_transactions_tagging(self) -> None:
         """Render the manual tagging interface."""
         st.markdown(
-            "Select transactions to tag or create rules for automatic tagging."
+            "Tag transactions manually, perform bulk operations, and set up rules to automate future tagging."
         )
 
         # Service selection
@@ -710,7 +684,7 @@ class TransactionsTaggingAndEditingComponent:
 
     def render_transaction_editing(self) -> None:
         """Render transaction data editing interface."""
-        st.markdown("Select a transaction to edit its details (description, amount, provider, etc.)")
+        st.markdown("Select a transaction to edit its details.")
 
         self.create_new_transaction_button()
 
