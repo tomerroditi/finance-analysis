@@ -563,8 +563,8 @@ class TransactionsTaggingComponent:
         ----------
         transaction : pd.Series
             the row of the transaction
-        service : Literal['credit_card', 'bank']
-            the service of the transaction. Should be one of 'credit_card' or 'bank'.
+        key_suffix : str
+            A suffix to ensure unique Streamlit keys.
 
         Returns
         -------
