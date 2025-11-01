@@ -341,9 +341,7 @@ class MonthlyBudgetService(BudgetService):
         """
         # TODO: split this function into smaller functions
         budget_rules = self.get_all_rules()
-        bank_data = self.transactions_service.get_table_for_analysis("bank")
-        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
-        all_data = pd.concat([credit_data, bank_data])
+        all_data = self.transactions_service.get_data_for_analysis()
 
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
@@ -440,9 +438,7 @@ class MonthlyBudgetService(BudgetService):
             DataFrame containing project transactions for the month, or None if no project transactions exist.
         """
         budget_rules = self.budget_repository.read_all()
-        bank_data = self.transactions_service.get_table_for_analysis("bank")
-        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
-        all_data = pd.concat([credit_data, bank_data])
+        all_data = self.transactions_service.get_data_for_analysis()
 
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
@@ -652,9 +648,7 @@ class ProjectBudgetService(BudgetService):
             DataFrame containing all transactions for the specified project.
         """
         # Use the service layer instead of repository for getting analysis data
-        bank_data = self.transactions_service.get_table_for_analysis("bank")
-        credit_data = self.transactions_service.get_table_for_analysis("credit_card")
-        all_data = pd.concat([credit_data, bank_data])
+        all_data = self.transactions_service.get_data_for_analysis()
         transactions = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         return transactions
 
