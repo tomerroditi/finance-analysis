@@ -325,7 +325,7 @@ class TransactionsTaggingAndEditingComponent:
         # Service selection
         service = st.pills(
             "Select transaction type:",
-            options=["credit_card", "bank"],
+            options=["credit_card", "bank", "cash"],
             default="credit_card",
             selection_mode="single",
             format_func=lambda x: x.replace('_', ' ').title(),
@@ -691,7 +691,7 @@ class TransactionsTaggingAndEditingComponent:
         # Service selection
         service = st.pills(
             "Select transaction type:",
-            options=["credit_card", "bank"],
+            options=["credit_card", "bank", "cash"],
             default="credit_card",
             format_func=lambda x: x.replace('_', ' ').title(),
             key="edit_service_selector"
@@ -752,7 +752,6 @@ class TransactionsTaggingAndEditingComponent:
                 hide_index=False,
                 on_select='rerun',
                 selection_mode='single-row',
-                height=400,
                 use_container_width=True
             )
 

@@ -118,7 +118,7 @@ class TransactionsRepository:
 
         Parameters
         ----------
-        service : Literal['credit_card', 'bank'] | None
+        service : Literal['credit_card', 'bank', 'cash'] | None
             The service of the transactions, should be one of 'credit_card', 'bank' or 'cash'. if not specified, returns
             all transactions
         query : str, optional

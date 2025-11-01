@@ -123,7 +123,7 @@ class TransactionsService:
         bank_res = self.transactions_repository.bank_repo.update_transaction_by_id(transaction_id, updates)
         return cc_res or bank_res
 
-    def get_all_transactions(self, service: Literal['credit_card', 'bank']) -> pd.DataFrame:
+    def get_all_transactions(self, service: Literal['credit_card', 'bank', 'cash']) -> pd.DataFrame:
         """
         Get all transactions for the specified service.
 
@@ -137,7 +137,7 @@ class TransactionsService:
         pd.DataFrame
             All transactions for the specified service.
         """
-        if service not in ['credit_card', 'bank']:
+        if service not in ['credit_card', 'bank', 'cash']:
             raise ValueError(f"service must be either 'credit_card' or 'bank'. Got '{service}'")
 
         return self.transactions_repository.get_table(service)
