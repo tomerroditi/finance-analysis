@@ -132,6 +132,8 @@ class ScrapingHistoryTableFields(Enum):
         Field name for the last scraping timestamp.
     STATUS : str
         Field name for the last scraping status (success, failed).
+    START_DATE : str
+        Field name for the date used for scraping.
     """
     ID = 'id'
     SERVICE_NAME = 'service_name'
@@ -139,6 +141,7 @@ class ScrapingHistoryTableFields(Enum):
     ACCOUNT_NAME = 'account_name'
     DATE = 'date'
     STATUS = 'status'
+    START_DATE = 'start_date'
 
 
 class BudgetRulesTableFields(Enum):

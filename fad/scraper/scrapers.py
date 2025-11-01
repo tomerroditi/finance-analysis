@@ -243,7 +243,7 @@ class Scraper(ABC):
             self.error = error_msg
             return
         finally:
-            self._record_scraping_history()
+            self._record_scraping_history(start_date)
 
         print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({start_date}) finished', flush=True)
 
@@ -489,9 +489,14 @@ class Scraper(ABC):
         self.otp_code = otp_code
         self.otp_event.set()  # Notify that the OTP code is available
 
-    def _record_scraping_history(self):
+    def _record_scraping_history(self, start_date: str | datetime.date):
         """
         Record the scraping attempt in the history database.
+
+        Parameters
+        ----------
+        start_date : str | datetime.date
+            The date from which to start pulling the data
         """
         # Determine the status based on whether we have data and no errors
         if self.data is not None and not self.error:
@@ -505,7 +510,8 @@ class Scraper(ABC):
             service_name=self.service_name,
             provider_name=self.provider_name,
             account_name=self.account_name,
-            status=status
+            status=status,
+            start_date=start_date
         )
 
 

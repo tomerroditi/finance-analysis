@@ -53,7 +53,8 @@ class ScrapingHistoryRepository:
                         {ScrapingHistoryTableFields.PROVIDER_NAME.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.ACCOUNT_NAME.value} TEXT NOT NULL,
                         {ScrapingHistoryTableFields.DATE.value} TEXT NOT NULL,
-                        {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL
+                        {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL,
+                        {ScrapingHistoryTableFields.START_DATE.value} TEXT
                     )
                     """
                 )
@@ -61,9 +62,9 @@ class ScrapingHistoryRepository:
             s.commit()
 
     def record_scraping_attempt(self, service_name: str, provider_name: str,
-                              account_name: str, status: str) -> None:
+                                account_name: str, status: str, start_date: str | date = None) -> None:
         """
-        Record a scraping attempt for an account.
+        Record a scraping attempt for an account, including the used_date.
 
         Parameters
         ----------
@@ -75,13 +76,14 @@ class ScrapingHistoryRepository:
             The account name.
         status : Literal['success', 'failed', 'cancelled']
             The scraping status.
+        start_date : str, optional
+            The date used for scraping (ISO format).
         """
         if status not in [self.SUCCESS, self.FAILED, self.CANCELED]:
             raise ValueError(f"Invalid status: {status}. Must be one of "
                              f"'{self.SUCCESS}', '{self.FAILED}', '{self.CANCELED}'.")
 
         current_time = datetime.now()
-
         with self.conn.session as s:
             s.execute(
                 text(
@@ -91,8 +93,9 @@ class ScrapingHistoryRepository:
                      {ScrapingHistoryTableFields.PROVIDER_NAME.value},
                      {ScrapingHistoryTableFields.ACCOUNT_NAME.value},
                      {ScrapingHistoryTableFields.DATE.value},
-                     {ScrapingHistoryTableFields.STATUS.value})
-                    VALUES (:service_name, :provider_name, :account_name, :last_scraped, :status)
+                     {ScrapingHistoryTableFields.STATUS.value},
+                     {ScrapingHistoryTableFields.START_DATE.value})
+                    VALUES (:service_name, :provider_name, :account_name, :last_scraped, :status, :start_date)
                     """
                 ),
                 {
@@ -100,7 +103,8 @@ class ScrapingHistoryRepository:
                     "provider_name": provider_name,
                     "account_name": account_name,
                     "last_scraped": current_time.isoformat(),
-                    "status": status
+                    "status": status,
+                    "start_date": start_date.isoformat() if isinstance(start_date, date) else start_date
                 }
             )
             s.commit()
@@ -349,4 +353,3 @@ class ScrapingHistoryRepository:
             )
             row = result.first()
             return row[0] if row else None
-
