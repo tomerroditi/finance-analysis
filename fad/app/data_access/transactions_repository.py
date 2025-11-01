@@ -286,6 +286,21 @@ class ServiceRepository:
 
     unique_columns = [id_col, provider_col, date_col, amount_col]
 
+    col_type_mapping = {
+        unique_id_col: "INTEGER PRIMARY KEY AUTOINCREMENT",
+        id_col: "TEXT",
+        date_col: "TEXT",
+        provider_col: "TEXT",
+        account_name_col: "TEXT",
+        account_number_col: "TEXT",
+        desc_col: "TEXT",
+        amount_col: "REAL",
+        category_col: "TEXT DEFAULT NULL",
+        tag_col: "TEXT DEFAULT NULL",
+        type_col: "TEXT DEFAULT 'normal'",
+        status_col: "TEXT DEFAULT 'completed'"
+    }
+
     def __init__(self, conn: SQLConnection):
         """
         Initializes the repository with a database connection.
@@ -306,18 +321,18 @@ class ServiceRepository:
         with self.conn.session as s:
             my_query = f"""
                 CREATE TABLE IF NOT EXISTS {self.table} (
-                    {self.unique_id_col} INTEGER PRIMARY KEY AUTOINCREMENT,
-                    {self.id_col} TEXT,
-                    {self.date_col} TEXT,
-                    {self.provider_col} TEXT,
-                    {self.account_name_col} TEXT,
-                    {self.account_number_col} TEXT,
-                    {self.desc_col} TEXT,
-                    {self.amount_col} REAL,
-                    {self.category_col} TEXT DEFAULT NULL,
-                    {self.tag_col} TEXT DEFAULT NULL,
-                    {self.type_col} TEXT DEFAULT 'normal',
-                    {self.status_col} TEXT DEFAULT 'completed',
+                    {self.unique_id_col} {self.col_type_mapping[self.unique_id_col]},
+                    {self.id_col} {self.col_type_mapping[self.id_col]},
+                    {self.date_col} {self.col_type_mapping[self.date_col]},
+                    {self.provider_col} {self.col_type_mapping[self.provider_col]},
+                    {self.account_name_col} {self.col_type_mapping[self.account_name_col]},
+                    {self.account_number_col} {self.col_type_mapping[self.account_number_col]},
+                    {self.desc_col} {self.col_type_mapping[self.desc_col]},
+                    {self.amount_col} {self.col_type_mapping[self.amount_col]},
+                    {self.category_col} {self.col_type_mapping[self.category_col]},
+                    {self.tag_col} {self.col_type_mapping[self.tag_col]},
+                    {self.type_col} {self.col_type_mapping[self.type_col]},
+                    {self.status_col} {self.col_type_mapping[self.status_col]},
                     UNIQUE ({', '.join(self.unique_columns)})
                 )
             """
@@ -585,7 +600,8 @@ class CashRepository(ServiceRepository):
                 {self.desc_col},
                 {self.amount_col},
                 {self.category_col},
-                {self.tag_col}
+                {self.tag_col},
+                {self.id_col}
             ) VALUES (
                 :date_val,
                 :provider_val,
@@ -594,7 +610,8 @@ class CashRepository(ServiceRepository):
                 :desc_val,
                 :amount_val,
                 :category_val,
-                :tag_val
+                :tag_val,
+                :id_val
             )
         """
         params = {
@@ -609,8 +626,39 @@ class CashRepository(ServiceRepository):
         }
         try:
             with self.conn.session as s:
+                max_id = s.execute(
+                    text(f'SELECT MAX({self.id_col}) FROM {self.table}')
+                ).scalar()
+                params['id_val'] = (max_id + 1) if max_id is not None else 1
                 s.execute(text(my_query), params)
                 s.commit()
                 return True
+        except Exception:
+            return False
+
+    def delete_transaction_by_id(self, transaction_id: str) -> bool:
+        """
+        Delete a cash transaction by its ID.
+
+        Parameters
+        ----------
+        transaction_id : str
+            The ID of the transaction to delete.
+
+        Returns
+        -------
+        bool
+            True if the transaction was deleted successfully, False otherwise.
+        """
+        my_query = f"""
+            DELETE FROM {self.table}
+            WHERE {self.unique_id_col} = :id_val
+        """
+        params = {'id_val': int(transaction_id)}  # Ensure transaction_id is an integer (and not int64 or str)
+        try:
+            with self.conn.session as s:
+                result = s.execute(text(my_query), params)
+                s.commit()
+                return result.rowcount > 0
         except Exception:
             return False
