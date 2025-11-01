@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, date
 
 # Removed: import streamlit as st
 from streamlit.connections import SQLConnection
@@ -74,25 +74,58 @@ class ScrapingService:
         """
         return self.scraping_status
 
-    def pull_data_from_scrapers_to_db(self, start_date, credentials):
+    def build_scraper_start_dates(self, credentials: dict) -> dict:
         """
-        Pull data from the provided data sources from the given date to present and save it to the database file.
+        Build a mapping from (service, provider, account) to the correct start date for scraping.
+        If an account has never been scraped, set the date to 1 year before today.
+        Otherwise, set it to 1 week before the last successful scrape.
 
         Parameters
         ----------
-        start_date : datetime | str
-            The date from which to start pulling the data
+        credentials : dict
+            The credential dictionary, structured as {service: {provider: {account: ...}}}
+
+        Returns
+        -------
+        dict
+            Mapping of (service, provider, account) to start date (date)
+        """
+        start_dates = {}
+        for service, providers in credentials.items():
+            for provider, accounts in providers.items():
+                for account in accounts:
+                    last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
+                        service, provider, account
+                    )
+                    if last_scrape:
+                        try:
+                            last_scrape_date = datetime.fromisoformat(last_scrape).date()
+                            start_date = last_scrape_date - timedelta(days=7)
+                        except Exception:
+                            print(f"Error parsing date {last_scrape} for {service} - {provider} - {account}", flush=True)
+                            start_date = date.today() - timedelta(days=365)
+                    else:
+                        start_date = date.today() - timedelta(days=365)
+                    start_dates[(service, provider, account)] = start_date
+        return start_dates
+
+    def pull_data_from_scrapers_to_db(self, start_dates: dict[tuple, date], credentials: dict):
+        """
+        Pull data from the provided data sources using per-account start dates.
+
+        Parameters
+        ----------
+        start_dates : dict
+            Mapping of (service, provider, account) to start date (date)
         credentials : dict
             The credential dictionary
         """
         filtered_credentials = self._filter_scrapable_accounts(credentials)
-
         if not filtered_credentials:
             return
-
         normal_scraper, tfa_scrapers = self._collect_scrapers(filtered_credentials)
-        self._scrape_normal_scrapers(normal_scraper, start_date)
-        self._scrape_tfa_scrapers(tfa_scrapers, start_date)
+        self._scrape_normal_scrapers(normal_scraper, start_dates)
+        self._scrape_tfa_scrapers(tfa_scrapers, start_dates)
 
     def _filter_scrapable_accounts(self, credentials):
         """
@@ -184,33 +217,37 @@ class ScrapingService:
                         normal_scrapers[resource_name] = scraper
         return normal_scrapers, tfa_scrapers
 
-    def _scrape_normal_scrapers(self, scrapers: dict, start_date):
+    def _scrape_normal_scrapers(self, scrapers: dict[str, Scraper], start_dates: dict[tuple, date]):
         """
         Scrape data from normal scrapers (without 2FA) and save to the database.
 
         Parameters
         ----------
-        scrapers : dict
+        scrapers : dict[str, Scraper]
             Dictionary of normal scrapers to scrape.
-        start_date : datetime | str
-            The date from which to start pulling the data.
+        start_dates : dict[tuple, date]
+            Mapping of (service, provider, account) to start date (date)
         """
         for _, scraper in scrapers.items():
+            key = (scraper.service_name, scraper.provider_name, scraper.account_name)
+            start_date = start_dates.get(key)
             scraper.pull_data_to_db(start_date)
             self.update_scrapers_status(scraper)
 
-    def _scrape_tfa_scrapers(self, scrapers: dict, start_date):
+    def _scrape_tfa_scrapers(self, scrapers: dict[str, Scraper], start_dates: dict[tuple, date]):
         """
         Scrape data from scrapers that require 2FA and save to the database.
 
         Parameters
         ----------
-        scrapers : dict
+        scrapers : dict[str, Scraper]
             Dictionary of scrapers that require 2FA.
-        start_date : datetime | str
-            The date from which to start pulling the data.
+        start_dates : dict[tuple, date]
+            Mapping of (service, provider, account) to start date (date)
         """
         for _, scraper in scrapers.items():
+            key = (scraper.service_name, scraper.provider_name, scraper.account_name)
+            start_date = start_dates.get(key)
             result = self.scraping_repo.pull_data_from_2fa_scraper_to_db(scraper, start_date)
             if "waiting_for_2fa" in result:
                 info = result["waiting_for_2fa"]

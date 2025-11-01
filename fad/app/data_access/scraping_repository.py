@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from threading import Thread
 from time import sleep
 
@@ -11,7 +11,7 @@ class ScrapingRepository:
     Manages the actual data fetching operations and database interactions.
     """
     @staticmethod
-    def pull_data_from_2fa_scraper_to_db(scraper, start_date):
+    def pull_data_from_2fa_scraper_to_db(scraper: Scraper, start_date: date | str):
         """
         Fetch the data from the scraper and save it to the database.
 
@@ -19,7 +19,7 @@ class ScrapingRepository:
         ----------
         scraper : Scraper
             The scraper to use for fetching the data
-        start_date : datetime | str
+        start_date : date | str
             The date from which to start fetching the data
 
         Returns

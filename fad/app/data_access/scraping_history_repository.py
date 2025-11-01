@@ -308,3 +308,45 @@ class ScrapingHistoryRepository:
                 {"cutoff_date": cutoff_date.isoformat()}
             )
             s.commit()
+
+    def get_last_successful_scrape_date(self, service_name: str, provider_name: str, account_name: str) -> str | None:
+        """
+        Get the last successful scraping date for a given service, provider, and account.
+
+        Parameters
+        ----------
+        service_name : str
+            The service name (banks, credit_cards).
+        provider_name : str
+            The provider name (hapoalim, isracard, etc.).
+        account_name : str
+            The account name.
+
+        Returns
+        -------
+        str | None
+            The ISO date string of the last successful scrape, or None if never scraped successfully.
+        """
+        with self.conn.session as s:
+            result = s.execute(
+                text(
+                    f"""
+                    SELECT {ScrapingHistoryTableFields.DATE.value} FROM {Tables.SCRAPING_HISTORY.value}
+                    WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
+                        AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
+                        AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
+                        AND {ScrapingHistoryTableFields.STATUS.value} = :success
+                    ORDER BY {ScrapingHistoryTableFields.DATE.value} DESC
+                    LIMIT 1
+                    """
+                ),
+                {
+                    "service_name": service_name,
+                    "provider_name": provider_name,
+                    "account_name": account_name,
+                    "success": self.SUCCESS
+                }
+            )
+            row = result.first()
+            return row[0] if row else None
+

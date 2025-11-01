@@ -54,36 +54,8 @@ class DataScrapingComponent:
         None
         """
         self.display_scraping_summary()
-        self.select_scraping_dates()
         self.select_services_to_scrape()
         self.fetch_and_process_data()
-
-    def select_scraping_dates(self) -> None:
-        """
-        Select the date range for data scraping.
-
-        Creates a date input widget allowing the user to select the start date
-        for data scraping. The default start date is set to one year ago from today.
-
-        Returns
-        -------
-        None
-            Updates the start_date attribute with the selected date.
-        """
-        with st.container(border=True):
-            st.pills(
-                "Select the start date for data scraping",
-                options=[1, 3, 6, 12],
-                format_func=lambda months: f"{months} month(s) ago",
-                default=12,
-                on_change=lambda: setattr(
-                    self,
-                    "start_date",
-                    dt.date.today() - dt.timedelta(days=st.session_state.get("scraping_start_date", 12) * 30),
-                ),
-                key="scraping_start_date",
-                selection_mode="single",
-            )
 
     def select_services_to_scrape(self) -> None:
         """
@@ -186,7 +158,8 @@ class DataScrapingComponent:
         if st.button("Scrape Data", key="scrape_data_main_button"):
             self.scraping_service.clear_scraping_status()
             self.scraping_service.clear_waiting_for_2fa_scrapers()
-            self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, credentials)
+            start_dates = self.scraping_service.build_scraper_start_dates(credentials)
+            self.scraping_service.pull_data_from_scrapers_to_db(start_dates, credentials)
             self._apply_tagging_rules()
 
             st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
@@ -274,7 +247,8 @@ class DataScrapingComponent:
                     single_creds = self.creds_service.get_scraper_credentials(service, provider, account)
                     self.scraping_service.clear_scraper_status(name)
                     self.scraping_service.clear_waiting_for_2fa_scraper(name)
-                    self.scraping_service.pull_data_from_scrapers_to_db(self.start_date, single_creds)
+                    start_date = self.scraping_service.build_scraper_start_dates(single_creds)
+                    self.scraping_service.pull_data_from_scrapers_to_db(start_date, single_creds)
                     st.session_state["scraping_status"] = self.scraping_service.get_scraping_results()
                     st.session_state["tfa_scrapers_waiting"] = self.scraping_service.get_tfa_scrapers_waiting()
                     st.rerun()
