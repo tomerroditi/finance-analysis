@@ -760,7 +760,7 @@ class TransactionsTaggingAndEditingComponent:
             if indices:
                 idx = indices[0]
                 selected_transaction = filtered_transactions.iloc[idx]
-                self._render_transaction_editor(selected_transaction)
+                self._render_transaction_editor(selected_transaction, allow_delete=service == "cash")
 
     def create_new_transaction_button(self) -> None:
         """Render the button to create a new transaction."""
@@ -806,7 +806,7 @@ class TransactionsTaggingAndEditingComponent:
             clear_session_state(ends_with=[f"_new_transaction_{self.key_suffix}"])
             st.rerun()
 
-    def _render_transaction_editor(self, transaction: pd.Series) -> None:
+    def _render_transaction_editor(self, transaction: pd.Series, allow_delete: bool = False) -> None:
         """Render the transaction editor interface."""
         st.markdown("---")
         st.markdown("#### Edit Transaction Details")
@@ -815,10 +815,10 @@ class TransactionsTaggingAndEditingComponent:
         transaction_id = transaction[unique_id_col]
 
         with st.container(border=True):
-            self._transaction_editor_fragment(transaction, transaction_id)
+            self._transaction_editor_fragment(transaction, transaction_id, allow_delete=allow_delete)
 
     @st.fragment
-    def _transaction_editor_fragment(self, transaction: pd.Series, transaction_id: str) -> None:
+    def _transaction_editor_fragment(self, transaction: pd.Series, transaction_id: str, allow_delete: bool) -> None:
         """Fragment for transaction editing form."""
         col1, col2 = st.columns(2)
 
@@ -887,6 +887,24 @@ class TransactionsTaggingAndEditingComponent:
             else:
                 st.error("❌ Failed to update transaction")
 
+        if st.button("Delete", type="secondary", key=f"delete_transaction_{transaction_id}", disabled=not allow_delete):
+            self._confirm_delete_dialog(transaction_id)
+
+    @st.dialog("Confirm Deletion")
+    def _confirm_delete_dialog(self, transaction_id: str) -> None:
+        """Dialog to confirm transaction deletion."""
+        st.write("Are you sure you want to delete this transaction?")
+        if st.button("Yes", key=f"confirm_delete_yes_{transaction_id}"):
+            success = self.transactions_service.delete_transaction_by_id(transaction_id)
+            if success:
+                st.success("✅ Transaction deleted successfully!")
+                sleep(1)
+                st.rerun()
+            else:
+                st.error("❌ Failed to delete transaction")
+            st.rerun()
+        if st.button("No", key=f"confirm_delete_no_{transaction_id}"):
+            st.rerun()
 
 class RuleBasedTaggingComponent:
     """
