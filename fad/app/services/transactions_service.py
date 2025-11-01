@@ -81,7 +81,8 @@ class TransactionsService:
         # Convert display name back to internal format
         cc_data = self.get_table_for_analysis('credit_card')
         bank_data = self.get_table_for_analysis('bank')
-        return pd.concat([cc_data, bank_data])
+        cash_data = self.get_table_for_analysis('cash')
+        return pd.concat([cc_data, bank_data, cash_data], ignore_index=True)
 
     def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None) -> None:
         """
@@ -102,6 +103,7 @@ class TransactionsService:
         """
         self.transactions_repository.cc_repo.update_tagging_by_id(id_, category, tag)
         self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
+        self.transactions_repository.cash_repo.update_tagging_by_id(id_, category, tag)
 
     def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
         """
@@ -121,7 +123,25 @@ class TransactionsService:
         """
         cc_res = self.transactions_repository.cc_repo.update_transaction_by_id(transaction_id, updates)
         bank_res = self.transactions_repository.bank_repo.update_transaction_by_id(transaction_id, updates)
-        return cc_res or bank_res
+        cash_res = self.transactions_repository.cash_repo.update_transaction_by_id(transaction_id, updates)
+        return cc_res or bank_res or cash_res
+
+    def delete_transaction_by_id(self, transaction_id: str) -> bool:
+        """
+        Delete a transaction by ID. supports cash transactions only.
+
+        Parameters
+        ----------
+        transaction_id : str
+            The ID of the transaction to delete.
+
+        Returns
+        -------
+        bool
+            True if the deletion was successful, False otherwise.
+        """
+        cash_res = self.transactions_repository.cash_repo.delete_transaction_by_id(transaction_id)
+        return cash_res
 
     def get_all_transactions(self, service: Literal['credit_card', 'bank', 'cash']) -> pd.DataFrame:
         """
@@ -194,7 +214,7 @@ class TransactionsService:
         # Return the minimum date (earliest of the latest dates)
         return min(latest_dates) if latest_dates else datetime.today() - timedelta(days=365)
 
-    def get_table_for_analysis(self, service: Literal['credit_card', 'bank'] = 'credit_card') -> pd.DataFrame:
+    def get_table_for_analysis(self, service: Literal['credit_card', 'bank', 'cash'] = 'credit_card') -> pd.DataFrame:
         """
         Returns the transactions table for the specified service, replacing rows with split transactions by their splits.
 
