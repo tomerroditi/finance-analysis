@@ -499,10 +499,10 @@ class Scraper(ABC):
             The date from which to start pulling the data
         """
         # Determine the status based on whether we have data and no errors
-        if self.data is not None and not self.error:
-            status = self.history_repo.SUCCESS
-        elif self.otp_code == self.CANCEL:
+        if self.otp_code == self.CANCEL:  # 2fa canceled by the user (self.data is an empty df)
             status = self.history_repo.CANCELED
+        elif self.data is not None and not self.error:
+            status = self.history_repo.SUCCESS
         else:
             status = self.history_repo.FAILED
 
