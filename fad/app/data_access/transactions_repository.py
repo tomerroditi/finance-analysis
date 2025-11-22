@@ -1,12 +1,18 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 from dataclasses import dataclass
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import text, sa
 from streamlit.connections import SQLConnection
 
-from fad.app.naming_conventions import Tables, CreditCardTableFields, BankTableFields, CashTableFields, TransactionsTableFields, Services
+from fad.app.naming_conventions import (
+    Tables, CreditCardTableFields, BankTableFields, CashTableFields, TransactionsTableFields, Services,
+    ManualInvestmentTransactionsTableFields
+)
+
+DEPOSIT_TYPE = 'deposit'
+WITHDRAWAL_TYPE = 'withdrawal'
 
 
 @dataclass
@@ -21,7 +27,23 @@ class CashTransaction:
     tag: str | None = None
 
 
-T_service = Literal[Services.CREDIT_CARD, Services.BANK, Services.CASH, Tables.CREDIT_CARD, Tables.BANK, Tables.CASH]
+@dataclass
+class ManualInvestmentTransaction:
+    date: datetime
+    account_name: str
+    desc: str
+    amount: float
+    transaction_type: Literal[DEPOSIT_TYPE, WITHDRAWAL_TYPE]
+    provider: str
+    account_number: str
+    category: str
+    tag: str
+
+
+T_service = Literal[
+    Services.CREDIT_CARD, Services.BANK, Services.CASH, Services.MANUAL_INVESTMENTS,
+    Tables.CREDIT_CARD, Tables.BANK, Tables.CASH, Tables.MANUAL_INVESTMENT_TRANSACTIONS
+]
 
 
 class TransactionsRepository:
@@ -57,6 +79,7 @@ class TransactionsRepository:
         self.cc_repo = CreditCardRepository(conn)
         self.bank_repo = BankRepository(conn)
         self.cash_repo = CashRepository(conn)
+        self.manual_investments_repo = ManualInvestmentTransactionsRepository(conn)
 
     def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
         """
@@ -89,16 +112,16 @@ class TransactionsRepository:
 
         new_rows.to_sql(table_name, self.conn.session.bind, if_exists='append', index=False)
 
-    def add_transaction(self, transaction: CashTransaction, service: str = Services.CASH.value) -> bool:
+    def add_transaction(self, transaction: CashTransaction | ManualInvestmentTransaction, service: str) -> bool:
         """
         Add a new transaction to the database.
 
         Parameters
         ----------
-        transaction : CashTransaction
+        transaction : CashTransaction | ManualInvestmentTransaction
             The transaction to add.
         service : str
-            The service of the transaction, should be "cash" (for future use).
+            The service of the transaction, should be "cash" or "manual_investments".
 
         Returns
         -------
@@ -107,6 +130,8 @@ class TransactionsRepository:
         """
         if service == Services.CASH.value:
             repo = self.cash_repo
+        elif service == Services.MANUAL_INVESTMENTS.value:
+            repo = self.manual_investments_repo
         else:
             raise ValueError(f"service must be 'cash'. Got '{service}'")
 
@@ -146,6 +171,8 @@ class TransactionsRepository:
             return self.bank_repo.get_table(query, query_params)
         elif service == Services.CASH.value or service == Tables.CASH.value:
             return self.cash_repo.get_table(query, query_params)
+        elif service == Services.MANUAL_INVESTMENTS.value or service == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
+            return self.manual_investments_repo.get_table(query, query_params)
         else:
             raise ValueError(f"service must be either 'credit_card', 'bank' or 'cash'. Got '{service}'")
 
@@ -178,6 +205,8 @@ class TransactionsRepository:
             updated_rows += self.bank_repo.update_with_query(query, query_params)
         elif service == Services.CASH.value or service == Tables.CASH.value:
             updated_rows += self.cash_repo.update_with_query(query, query_params)
+        elif service == Services.MANUAL_INVESTMENTS.value or service == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
+            updated_rows += self.manual_investments_repo.update_with_query(query, query_params)
         else:
             raise ValueError(f"service must be either 'credit_card', 'bank' or 'cash'. Got '{service}'")
 
@@ -532,58 +561,13 @@ class ServiceRepository:
             s.execute(text(my_query), params)
             s.commit()
 
-
-class CreditCardRepository(ServiceRepository):
-    table = Tables.CREDIT_CARD.value
-    desc_col = CreditCardTableFields.DESCRIPTION.value
-    tag_col = CreditCardTableFields.TAG.value
-    category_col = CreditCardTableFields.CATEGORY.value
-    id_col = CreditCardTableFields.ID.value
-    date_col = CreditCardTableFields.DATE.value
-    provider_col = CreditCardTableFields.PROVIDER.value
-    account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
-    account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
-    amount_col = CreditCardTableFields.AMOUNT.value
-    type_col = CreditCardTableFields.TYPE.value
-    status_col = CreditCardTableFields.STATUS.value
-
-
-class BankRepository(ServiceRepository):
-    table = Tables.BANK.value
-    desc_col = BankTableFields.DESCRIPTION.value
-    tag_col = BankTableFields.TAG.value
-    category_col = BankTableFields.CATEGORY.value
-    id_col = BankTableFields.ID.value
-    account_number_col = BankTableFields.ACCOUNT_NUMBER.value
-    date_col = BankTableFields.DATE.value
-    provider_col = BankTableFields.PROVIDER.value
-    account_name_col = BankTableFields.ACCOUNT_NAME.value
-    amount_col = BankTableFields.AMOUNT.value
-    type_col = BankTableFields.TYPE.value
-    status_col = BankTableFields.STATUS.value
-
-
-class CashRepository(ServiceRepository):
-    table = Tables.CASH.value
-    desc_col = CashTableFields.DESCRIPTION.value
-    tag_col = CashTableFields.TAG.value
-    category_col = CashTableFields.CATEGORY.value
-    id_col = CashTableFields.ID.value
-    account_number_col = CashTableFields.ACCOUNT_NUMBER.value
-    date_col = CashTableFields.DATE.value
-    provider_col = CashTableFields.PROVIDER.value
-    account_name_col = CashTableFields.ACCOUNT_NAME.value
-    amount_col = CashTableFields.AMOUNT.value
-    type_col = CashTableFields.TYPE.value
-    status_col = CashTableFields.STATUS.value
-
-    def add_transaction(self, transaction: CashTransaction) -> bool:
+    def add_transaction(self, transaction: CashTransaction | ManualInvestmentTransaction) -> bool:
         """
         Add a new cash transaction to the database.
 
         Parameters
         ----------
-        transaction : CashTransaction
+        transaction : CashTransaction | ManualInvestmentTransaction
             The cash transaction to add.
 
         Returns
@@ -636,6 +620,51 @@ class CashRepository(ServiceRepository):
         except Exception:
             return False
 
+
+class CreditCardRepository(ServiceRepository):
+    table = Tables.CREDIT_CARD.value
+    desc_col = CreditCardTableFields.DESCRIPTION.value
+    tag_col = CreditCardTableFields.TAG.value
+    category_col = CreditCardTableFields.CATEGORY.value
+    id_col = CreditCardTableFields.ID.value
+    date_col = CreditCardTableFields.DATE.value
+    provider_col = CreditCardTableFields.PROVIDER.value
+    account_name_col = CreditCardTableFields.ACCOUNT_NAME.value
+    account_number_col = CreditCardTableFields.ACCOUNT_NUMBER.value
+    amount_col = CreditCardTableFields.AMOUNT.value
+    type_col = CreditCardTableFields.TYPE.value
+    status_col = CreditCardTableFields.STATUS.value
+
+
+class BankRepository(ServiceRepository):
+    table = Tables.BANK.value
+    desc_col = BankTableFields.DESCRIPTION.value
+    tag_col = BankTableFields.TAG.value
+    category_col = BankTableFields.CATEGORY.value
+    id_col = BankTableFields.ID.value
+    account_number_col = BankTableFields.ACCOUNT_NUMBER.value
+    date_col = BankTableFields.DATE.value
+    provider_col = BankTableFields.PROVIDER.value
+    account_name_col = BankTableFields.ACCOUNT_NAME.value
+    amount_col = BankTableFields.AMOUNT.value
+    type_col = BankTableFields.TYPE.value
+    status_col = BankTableFields.STATUS.value
+
+
+class CashRepository(ServiceRepository):
+    table = Tables.CASH.value
+    desc_col = CashTableFields.DESCRIPTION.value
+    tag_col = CashTableFields.TAG.value
+    category_col = CashTableFields.CATEGORY.value
+    id_col = CashTableFields.ID.value
+    account_number_col = CashTableFields.ACCOUNT_NUMBER.value
+    date_col = CashTableFields.DATE.value
+    provider_col = CashTableFields.PROVIDER.value
+    account_name_col = CashTableFields.ACCOUNT_NAME.value
+    amount_col = CashTableFields.AMOUNT.value
+    type_col = CashTableFields.TYPE.value
+    status_col = CashTableFields.STATUS.value
+
     def delete_transaction_by_id(self, transaction_id: str) -> bool:
         """
         Delete a cash transaction by its ID.
@@ -662,3 +691,41 @@ class CashRepository(ServiceRepository):
                 return result.rowcount > 0
         except Exception:
             return False
+
+
+class ManualInvestmentTransactionsRepository(CashRepository):
+    """
+    Repository for managing manual investment transaction records.
+
+    Handles CRUD operations for manual transactions that cannot be scraped,
+    such as old transactions or transactions from unsupported sources.
+    """
+    table = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
+    desc_col = ManualInvestmentTransactionsTableFields.DESCRIPTION.value
+    tag_col = ManualInvestmentTransactionsTableFields.TAG.value
+    category_col = ManualInvestmentTransactionsTableFields.CATEGORY.value
+    id_col = ManualInvestmentTransactionsTableFields.ID.value
+    date_col = ManualInvestmentTransactionsTableFields.DATE.value
+    provider_col = ManualInvestmentTransactionsTableFields.PROVIDER.value
+    account_name_col = ManualInvestmentTransactionsTableFields.ACCOUNT_NAME.value
+    account_number_col = ManualInvestmentTransactionsTableFields.ACCOUNT_NUMBER.value
+    amount_col = ManualInvestmentTransactionsTableFields.AMOUNT.value
+    type_col = ManualInvestmentTransactionsTableFields.TRANSACTION_TYPE.value
+    status_col = ManualInvestmentTransactionsTableFields.STATUS.value
+
+    def add_transaction(self, transaction: ManualInvestmentTransaction) -> bool:
+        """
+        Add a new cash transaction to the database.
+
+        Parameters
+        ----------
+        transaction : ManualInvestmentTransaction
+            The cash transaction to add.
+
+        Returns
+        -------
+        bool
+            True if the transaction was added successfully, False otherwise.
+        """
+        transaction.amount = transaction.amount * -1 if transaction.transaction_type == DEPOSIT_TYPE else transaction.amount
+        super().add_transaction(transaction)
