@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from dataclasses import dataclass
 
 import pandas as pd
-from sqlalchemy import text, sa
+from sqlalchemy import text
 from streamlit.connections import SQLConnection
 
 from fad.app.naming_conventions import (
@@ -710,7 +710,6 @@ class ManualInvestmentTransactionsRepository(CashRepository):
     account_name_col = ManualInvestmentTransactionsTableFields.ACCOUNT_NAME.value
     account_number_col = ManualInvestmentTransactionsTableFields.ACCOUNT_NUMBER.value
     amount_col = ManualInvestmentTransactionsTableFields.AMOUNT.value
-    type_col = ManualInvestmentTransactionsTableFields.TRANSACTION_TYPE.value
     status_col = ManualInvestmentTransactionsTableFields.STATUS.value
 
     def add_transaction(self, transaction: ManualInvestmentTransaction) -> bool:
