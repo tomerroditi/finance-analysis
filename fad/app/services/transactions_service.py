@@ -87,7 +87,7 @@ class TransactionsService:
         bank_data = self.get_table_for_analysis('bank')
         cash_data = self.get_table_for_analysis('cash')
         manual_investments_data = self.get_table_for_analysis('manual_investments')
-        return pd.concat([cc_data, bank_data, cash_data], ignore_index=True)
+        return pd.concat([cc_data, bank_data, cash_data, manual_investments_data], ignore_index=True)
 
     def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None) -> None:
         """
@@ -147,6 +147,34 @@ class TransactionsService:
         """
         cash_res = self.transactions_repository.cash_repo.delete_transaction_by_id(transaction_id)
         return cash_res
+
+    def get_transactions_by_tag(
+        self,
+        category: str,
+        tag: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Get all transactions related to a specific investment.
+
+        Parameters
+        ----------
+        category : str
+            Category to filter scraped transactions
+        tag : str, optional
+            Tag to filter scraped transactions
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing all relevant investment transactions.
+        """
+        df = self.get_data_for_analysis()
+        category_col = TransactionsTableFields.CATEGORY.value
+        tag_col = TransactionsTableFields.TAG.value
+        investment_df = df[df[category_col] == category]
+        if tag:
+            investment_df = investment_df[investment_df[tag_col] == tag]
+        return investment_df.reset_index(drop=True)
 
     def get_all_transactions(self, service: Literal['credit_card', 'bank', 'cash']) -> pd.DataFrame:
         """
