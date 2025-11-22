@@ -6,7 +6,7 @@ from streamlit.connections import SQLConnection
 
 from fad.app.data_access import get_db_connection
 from fad.app.data_access.split_transactions_repository import SplitTransactionsRepository
-from fad.app.data_access.transactions_repository import TransactionsRepository, CashTransaction
+from fad.app.data_access.transactions_repository import TransactionsRepository, CashTransaction, ManualInvestmentTransaction
 from fad.app.naming_conventions import (
     TransactionsTableFields,
     NonExpensesCategories,
@@ -40,9 +40,13 @@ class TransactionsService:
         bool
             True if the transaction was added successfully, False otherwise.
         """
-        if service != 'cash':
-            raise ValueError("Currently, only 'cash' service is supported for manually adding transactions.")
-        transaction = CashTransaction(**transaction)
+        if service == 'cash':
+            transaction = CashTransaction(**transaction)
+        elif service == 'manual_investments':
+            transaction = ManualInvestmentTransaction(**transaction)
+        else:
+            raise ValueError("Currently, only 'cash' and 'manual_investments' services are supported for manually adding transactions.")
+
         return self.transactions_repository.add_transaction(transaction, service)
 
     def get_table_columns_for_display(self) -> List[str]:
@@ -82,6 +86,7 @@ class TransactionsService:
         cc_data = self.get_table_for_analysis('credit_card')
         bank_data = self.get_table_for_analysis('bank')
         cash_data = self.get_table_for_analysis('cash')
+        manual_investments_data = self.get_table_for_analysis('manual_investments')
         return pd.concat([cc_data, bank_data, cash_data], ignore_index=True)
 
     def update_tagging_by_id(self, id_: str, category: str | None, tag: str | None) -> None:
@@ -214,7 +219,7 @@ class TransactionsService:
         # Return the minimum date (earliest of the latest dates)
         return min(latest_dates) if latest_dates else datetime.today() - timedelta(days=365)
 
-    def get_table_for_analysis(self, service: Literal['credit_card', 'bank', 'cash'] = 'credit_card') -> pd.DataFrame:
+    def get_table_for_analysis(self, service: Literal['credit_card', 'bank', 'cash', 'manual_investments'] = 'credit_card') -> pd.DataFrame:
         """
         Returns the transactions table for the specified service, replacing rows with split transactions by their splits.
 
