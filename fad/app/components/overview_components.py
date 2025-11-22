@@ -1,87 +1,51 @@
 import streamlit as st
 import plotly.express as px
-import pandas as pd
 
-from fad.app.services.transactions_service import TransactionsService
-from fad.app.naming_conventions import SavingsAndInvestmentsCategories
+from fad.app.services.overview_service import OverviewService
 
 
 class OverviewComponents:
     def __init__(self, key_suffix: str = ""):
         self.key_suffix = key_suffix
-        self.transactions_service = TransactionsService()
+        self.overview_service = OverviewService()
 
     def net_worth_over_time(self, frequency: str = "M") -> None:
-        """
-        Net Worth Over Time Component, which is calculated based on bank account transactions. we are excluding
-        savings and investments categories from the calculation since they are not an expense that reduces net worth.
-
-        Parameters
-        ----------
-        frequency : str
-            The frequency for resampling the net worth data. Default is "W" for weekly.
-
-        Returns
-        -------
-        None
-        """
+        """Display liquidity and investments over time charts."""
         st.markdown("Net Worth Over Time")
-        transactions = self.transactions_service.get_all_transactions("bank")
+
+        transactions = self.overview_service.get_bank_transactions_for_net_worth()
         if transactions.empty:
             st.info("No bank account transactions found.")
             return
-        transactions['date'] = pd.to_datetime(transactions['date'])
 
-        # calculate liquidity over time
-        transactions = transactions.sort_values(by='date')
-        balance = pd.DataFrame({"balance": transactions["amount"].cumsum(), "date": transactions["date"]})
-        balance = balance.resample(frequency, on="date").last().fillna(method='ffill').reset_index(names="date")
-        fig = px.line(balance, x="date", y='balance', title='Liquidity Over Time', markers=True)
+        self._display_liquidity_chart(transactions, frequency)
+        self._display_investments_chart(transactions, frequency)
+
+    def _display_liquidity_chart(self, transactions, frequency: str) -> None:
+        """Display cumulative balance over time chart."""
+        balance_df = self.overview_service.calculate_cumulative_balance(transactions, frequency)
+        fig = px.line(balance_df, x="date", y='balance', title='Liquidity Over Time', markers=True)
         st.plotly_chart(fig, use_container_width=True, key=f"liquidity_over_time_{self.key_suffix}")
 
-        # plot investments over time
-        investments_transactions = transactions[
-            transactions["category"] == SavingsAndInvestmentsCategories.INVESTMENTS.value
-        ]
-        investments_transactions['amount'] = investments_transactions['amount'] * -1  # invert amounts for investments
-        if not investments_transactions.empty:
-            cum_amount_per_tag = investments_transactions.groupby("tag")["amount"].cumsum()
-            investments_transactions = investments_transactions.assign(balance=cum_amount_per_tag)
+    def _display_investments_chart(self, transactions, frequency: str) -> None:
+        """Display investments balance over time by tag."""
+        investments_df = self.overview_service.get_investment_transactions(transactions)
+        if investments_df.empty:
+            return
 
-            # total investments line
-            total_investments = investments_transactions.copy()
-            total_investments["balance"] = total_investments['amount'].cumsum()
-            total_investments["tag"] = "Total"
-            total_investments = total_investments.drop_duplicates(subset=['date'], keep='last')
-            investments_transactions = pd.concat([investments_transactions, total_investments], ignore_index=True).sort_values(by='date')
-
-            # add a zero balance entry before the earliest date for each tag to ensure the line starts from zero
-            earliest_date = transactions['date'].min()
-            for tag in investments_transactions['tag'].unique():
-                entry_row = pd.DataFrame([{
-                    'date': earliest_date,
-                    'amount': 0,
-                    'category': SavingsAndInvestmentsCategories.INVESTMENTS.value,
-                    'tag': tag,
-                    'balance': 0
-                }])
-                investments_transactions = pd.concat([investments_transactions, entry_row], ignore_index=True)
-
-            # add missing dates per tag with forward fill
-            investments_transactions = investments_transactions.sort_values(by='date')
-            date_range = pd.date_range(start=earliest_date, end=pd.Timestamp.today(), freq=frequency)
-            investments_transactions = (
-                investments_transactions.set_index('date')
-                .groupby('tag')
-                .apply(lambda group: group.reindex(date_range, method='ffill'))
-                .reset_index(level=0, drop=True)
-                .reset_index()
-                .rename(columns={'index': 'date'})
-            )
-
-            fig_investments = px.line(investments_transactions, x="date", y='balance', color='tag', title='Investments Over Time', symbol='tag')
-            fig_investments.update_layout(legend=dict(orientation="h"))
-            st.plotly_chart(fig_investments, use_container_width=True, key=f"investments_over_time_{self.key_suffix}")
+        investments_df = self.overview_service.prepare_investments_over_time(
+            investments_df, transactions, frequency
+        )
+        fig = px.line(
+            investments_df,
+            x="date",
+            y='balance',
+            color='tag',
+            title='Investments Over Time',
+            symbol='tag'
+        )
+        fig.update_layout(legend=dict(orientation="h"))
+        st.plotly_chart(fig, use_container_width=True, key=f"investments_over_time_{self.key_suffix}")
 
     def retirement_savings_progress(self):
         st.markdown("Retirement Savings Progress")
