@@ -54,6 +54,8 @@ class Tables(Enum):
         Name of the table storing split transactions.
     SCRAPING_HISTORY : str
         Name of the table storing scraping history and daily limits.
+    MANUAL_INVESTMENT_TRANSACTIONS : str
+        Name of the table storing manual inserted investment transactions (for unreachable data).
     """
     CREDIT_CARD = 'credit_card_transactions'
     BANK = 'bank_transactions'
@@ -62,6 +64,7 @@ class Tables(Enum):
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
     SCRAPING_HISTORY = 'scraping_history'
+    MANUAL_INVESTMENT_TRANSACTIONS = 'manual_investment_transactions'
 
 
 def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -102,6 +105,7 @@ TransactionsTableFields = create_enum('TransactionsTableFields', fields)
 CreditCardTableFields = create_enum('CreditCardTableFields', fields)
 BankTableFields = create_enum('BankTableFields', fields)
 CashTableFields = create_enum('CashTableFields', fields)
+ManualInvestmentTransactionsTableFields = create_enum('ManualInvestmentTransactionsTableFields', fields)
 
 split_fields = [
     ('ID', 'id'),
@@ -257,6 +261,7 @@ class Services(Enum):
     BANK = 'bank'
     INSURANCE = 'insurance'
     CASH = 'cash'
+    MANUAL_INVESTMENTS = 'manual_investments'
 
 
 class CreditCards(Enum):
