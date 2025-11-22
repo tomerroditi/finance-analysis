@@ -54,6 +54,8 @@ class Tables(Enum):
         Name of the table storing split transactions.
     SCRAPING_HISTORY : str
         Name of the table storing scraping history and daily limits.
+    INVESTMENTS : str
+        Name of the table storing investment tracking data.
     MANUAL_INVESTMENT_TRANSACTIONS : str
         Name of the table storing manual inserted investment transactions (for unreachable data).
     """
@@ -64,6 +66,7 @@ class Tables(Enum):
     BUDGET_RULES = 'budget_rules'
     SPLIT_TRANSACTIONS = 'split_transactions'
     SCRAPING_HISTORY = 'scraping_history'
+    INVESTMENTS = 'investments'
     MANUAL_INVESTMENT_TRANSACTIONS = 'manual_investment_transactions'
 
 
@@ -116,6 +119,45 @@ split_fields = [
 ]
 
 SplitTransactionsTableFields = create_enum('SplitTransactionsTableFields', split_fields)
+
+
+class InvestmentsTableFields(Enum):
+    """
+    Enum defining field names for the investments tracking table.
+
+    Attributes
+    ----------
+    ID : str
+        Field name for the unique identifier.
+    CATEGORY : str
+        Field name for the investment category.
+    TAG : str
+        Field name for the investment tag.
+    NAME : str
+        Field name for the investment name.
+    CURRENT_BALANCE : str
+        Field name for the current balance/value.
+    LAST_BALANCE_UPDATE : str
+        Field name for when the balance was last updated.
+    IS_CLOSED : str
+        Field name for whether the investment is closed.
+    CREATED_DATE : str
+        Field name for when the investment tracking was created.
+    CLOSED_DATE : str
+        Field name for when the investment was closed.
+    NOTES : str
+        Field name for additional notes.
+    """
+    ID = 'id'
+    CATEGORY = 'category'
+    TAG = 'tag'
+    NAME = 'name'
+    CURRENT_BALANCE = 'current_balance'
+    LAST_BALANCE_UPDATE = 'last_balance_update'
+    IS_CLOSED = 'is_closed'
+    CREATED_DATE = 'created_date'
+    CLOSED_DATE = 'closed_date'
+    NOTES = 'notes'
 
 
 class ScrapingHistoryTableFields(Enum):
