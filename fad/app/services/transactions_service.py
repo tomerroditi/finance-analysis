@@ -24,7 +24,7 @@ class TransactionsService:
         self.transactions_repository = TransactionsRepository(conn)
         self.split_transactions_repository = SplitTransactionsRepository(conn)
 
-    def add_transaction(self, transaction: dict, service: Literal['cash']) -> bool:
+    def add_transaction(self, transaction: dict, service: Literal['cash', 'manual_investments']) -> bool:
         """
         Add a new transaction to the specified service table.
 
@@ -32,7 +32,7 @@ class TransactionsService:
         ----------
         transaction : dict
             A dictionary representing the transaction to add.
-        service : Literal['cash']
+        service : Literal['cash', 'manual_investments']
             The service to which the transaction belongs.
 
         Returns
