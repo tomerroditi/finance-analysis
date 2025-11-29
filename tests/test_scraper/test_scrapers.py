@@ -5,7 +5,7 @@ import sqlite3
 import os
 
 from tests.conftest import DataFixtures
-from fad.scraper.scrapers import CreditCardScraper, BankScraper
+from fad.scraper.scrapers import CreditCardScraper, BankScraper, Scraper
 
 
 last_month = datetime.datetime.now() - datetime.timedelta(days=30)
@@ -57,6 +57,31 @@ class TestCreditCardScraper(DataFixtures):
         credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
         assert credit_cards_data.shape == (13, 8)
 
+    @staticmethod
+    def test_scraped_data_to_df():
+        data = 'found 3 some other txt information bla blabla\n' \
+               'account number: 1| type: my_type| id: my_id| date: 2024-02-03T22:00:00.000Z| amount: -500| desc: shop name| status: my_status\n' \
+               'account number: 1| type: my_type| id: my_id_1| date: 2024-01-01T22:00:00.000Z| amount: -300| desc: some shop name| status: my_status\n' \
+               'account number: 1| type: my_type| id: my_id_2| date: 2024-01-01T22:00:00.000Z| amount: -200| desc: some other shop name| status: my_status\n'
+
+        df = Scraper._scraped_data_to_df(data)
+        assert df.shape == (3, 7)
+        assert df['amount'].sum() == -1000
+        assert df['type'].to_list() == ['my_type', 'my_type', 'my_type']
+        assert df['id'].to_list() == ['my_id', 'my_id_1', 'my_id_2']
+        assert df['date'].to_list() == [datetime.date(2024, 2, 3),
+                                        datetime.date(2024, 1, 1),
+                                        datetime.date(2024, 1, 1)]
+        assert df['desc'].to_list() == ['shop name', 'some shop name', 'some other shop name']
+        assert df['status'].to_list() == ['my_status', 'my_status', 'my_status']
+
+    @staticmethod
+    def test_scraped_data_to_df_no_transactions():
+        data = 'found 0 some other txt information bla blabla\n'
+
+        df = Scraper._scraped_data_to_df(data)
+        assert df.empty
+
 
 class TestBankScraper(DataFixtures):
     @staticmethod
@@ -94,3 +119,4 @@ class TestBankScraper(DataFixtures):
         conn = sqlite3.connect(db_path)
         credit_cards_data = pd.read_sql('SELECT * FROM credit_card_transactions', conn)
         assert credit_cards_data.shape == (5, 8)
+
