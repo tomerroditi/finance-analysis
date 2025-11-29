@@ -613,7 +613,7 @@ class ServiceRepository:
                 max_id = s.execute(
                     text(f'SELECT MAX({self.id_col}) FROM {self.table}')
                 ).scalar()
-                params['id_val'] = (max_id + 1) if max_id is not None else 1
+                params['id_val'] = (int(max_id) + 1) if max_id is not None else 1
                 s.execute(text(my_query), params)
                 s.commit()
                 return True
