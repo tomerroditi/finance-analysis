@@ -1,108 +1,267 @@
-## Development Guidelines
+# Finance Analysis Dashboard - Global Context
 
-### Adding New Features
-1. **New Pages**: Create in `fad/app/pages/` and register in `main.py` navigation
-2. **New Components**: Add to `fad/app/components/` for reusable UI elements
-3. **New Services**: Business logic goes in `fad/app/services/`
-4. **New Scrapers**: Add provider support in `fad/scraper/scrapers.py`
+## Project Overview
+Personal finance tracking and analysis system that automates data collection from Israeli financial institutions (banks, credit cards, insurance) and provides intelligent expense categorization, budgeting, project budget tracking, and investment tracking.
 
-### Database Changes
-- Update table enums in `naming_conventions.py`
-- Create/modify repositories in `data_access/`
-- Update corresponding services
-- Add migration logic if needed
+**Tech Stack:**
+- **UI:** Streamlit 1.42.2 + streamlit-antd-components
+- **Data:** SQLite (via SQLAlchemy 2.0.29) + Pandas 2.2.3
+- **Scraping:** Playwright (via israeli-bank-scrapers npm package)
+- **Package Manager:** Poetry
+- **Python:** 3.12+
+- **Testing:** pytest with custom `@pytest.mark.sensitive` for internet-dependent tests
 
-### Testing
-- Use pytest with custom markers
-- Mark sensitive tests that require internet access with `@pytest.mark.sensitive`
-- Mock external dependencies in unit tests
-- Test scrapers separately from business logic
+## Architecture Principles
 
-### Dependencies
-- Use Poetry for dependency management
-- Pin exact versions for stability
-- Keep dev dependencies separate
-- Python 3.12+ required
+### Layered Architecture (Strict Dependency Flow)
+```
+Pages (Thin) → Components (UI + Services interaction) → Services (Business Logic) → Repositories (Data Access) → Database
+```
 
-## Clean Code Guidelines
+**Key Rules:**
+- **Pages** are SLIM - they instantiate components and handle page-level layout only
+- **Components** contain UI implementation AND interact with services for data/actions
+- **Services** orchestrate business logic and call repositories
+- **Repositories** handle ALL database operations (Repository Pattern)
+- **Utils** contain pure helper functions only
 
-### Code Comments & Documentation
-- **Avoid obvious comments** that just restate what the code does
-- **No "change log" comments** explaining what was modified or when
-- **Focus on WHY, not WHAT** - explain business logic and complex decisions
-- **Remove TODO comments** once tasks are completed
-- **Use meaningful variable/function names** instead of explaining with comments
-- **Document complex algorithms** and non-obvious business rules only
-- **Keep docstrings concise** and focused on usage, not implementation details
+**Example Flow:**
+1. Page creates a component instance
+2. Component renders UI elements and calls services when user interacts
+3. Service processes business logic and calls repositories for data
+4. Repository executes database queries and returns DataFrames
+5. Component receives data and displays it
 
-### Code Quality
-- Prefer self-documenting code over comments
-- Remove dead/commented-out code
-- Eliminate redundant imports and variables
-- Use type hints consistently
-- Keep functions focused and single-purpose
+### Repository Pattern
+All database access goes through repository classes in `fad/app/data_access/`. Each repository:
+- Manages one primary table
+- Returns pandas DataFrames or primitives
+- Uses SQLAlchemy for queries
+- Never contains business logic
 
-## Common Tasks & Patterns
+## Key Business Concepts
 
-### Adding a New Financial Provider
-1. Add provider name to appropriate list in `naming_conventions.py`
-2. Create scraper class inheriting from base scraper
-3. Implement required scraping methods
-4. Add factory method in `get_scraper()`
-5. Update credentials configuration
-6. Add tests
+### 1. Transaction Amount Convention
+- **Negative amounts:** Money SPENT (expenses, outgoing payments)
+- **Positive amounts:** Money RECEIVED (income, refunds, deposits)
+- Always account for sign when implementing business logic (e.g., filtering expenses, calculating totals)
 
-### Creating New Analysis Features
-1. Add service method for data processing
-2. Create repository methods if new queries needed
-3. Build Streamlit components for UI
-4. Add plotting utilities in `utils/plotting.py`
-5. Create new page or add to existing page
+### 2. Tagging & Categorization
+- **Categories:** High-level grouping (e.g., "Food", "Transport", "Savings")
+- **Tags:** Sub-categories (e.g., "Groceries", "Restaurants" under "Food")
+- **Rule-Based System:** Automatic tagging via `tagging_rules` table with priority-based matching
+- **Priority-Based:** Higher priority number = evaluated first, overrides lower priority rules
+- **Manual Override:** Users can manually tag individual transactions
 
-### Data Categorization & Tagging
-- Use rule-based tagging system
-- Categories defined in enums
-- Support for manual overrides
-- Split transaction capability
+### 3. Split Transactions
+Single transaction can be split across multiple categories/tags with different amounts. Original transaction remains in main table, individual splits stored in `split_transactions` table.
+
+### 4. Budgets
+Two types of budgets:
+- **Regular Budgets:** Monthly spending limits per category or tag
+- **Project Budgets:** Time-limited budgets for specific projects (e.g., home renovation, wedding planning)
+- Tracked in `budget_rules` table
+- "Total Budget" is a special category for overall monthly spending limit
+
+### 5. Non-Expense Categories
+Categories excluded from expense analysis:
+- **Ignore:** Internal account transfers, credit card billing transactions (we scrape itemized card transactions directly, so bank's summary charge is ignored)
+- **Salary/Other Income:** Income sources (positive amounts)
+- **Savings/Investments:** Money allocated but not spent
+- **Liabilities:** Debt/loan payments
+
+### 6. Scraping Sessions
+- Daily scraping limits tracked in `scraping_history` table
+- 2FA automation via custom `two_fa.py` module
+- Israeli financial providers only (see `naming_conventions.py` for full list)
+
+### 7. Investment Tracking
+Manual tracking of investment portfolios (stocks, bonds, pension, crypto, real estate, etc.). Daily balance updates for liquid assets. See `InvestmentsType` enum for supported types.
+
+## Code Quality Standards
+
+### What NOT to Do
+- ❌ No "change log" comments explaining modifications
+- ❌ No obvious comments restating code
+- ❌ No TODO comments (create GitHub issues instead)
+- ❌ No dead/commented-out code
+- ❌ No direct database access outside repositories
+- ❌ No business logic in pages or components
+- ❌ No Streamlit widgets without unique `key` parameter
+
+### What TO Do
+- ✅ Self-documenting code with meaningful names
+- ✅ Type hints everywhere
+- ✅ NumPy-style docstrings for public methods
+- ✅ Minimal, focused functions (single responsibility)
+- ✅ Explain WHY in comments, not WHAT
+- ✅ **Unique widget keys** for ALL Streamlit widgets
+- ✅ Account for transaction sign (negative = expense, positive = income)
+
+### Docstring Example
+```python
+def calculate_monthly_budget(category: str, year: int, month: int) -> float:
+    """
+    Calculate total budget for a category in a specific month.
+    
+    Parameters
+    ----------
+    category : str
+        Budget category name.
+    year : int
+        Target year.
+    month : int
+        Target month (1-12).
+    
+    Returns
+    -------
+    float
+        Total budget amount in ILS.
+    """
+```
 
 ## Security & Credentials
-- Credentials stored in YAML files (not in git)
-- 2FA automation support built-in
-- Sensitive data handling in scrapers
-- Use environment variables for production
+
+### Credential Storage
+- **Passwords:** Stored securely in Windows Keyring (NOT in YAML files)
+- **YAML Files:** Store only non-sensitive configuration (usernames, account numbers, provider names)
+- **Default Templates:** `fad/resources/default_credentials.yaml`
+- **User Credentials:** `credentials.yaml` (created on first run, in `.gitignore`)
+- **2FA Codes:** Handled via automated SMS/email interception
+
+### Sensitive Data
+- Never log passwords or credentials
+- Use `@pytest.mark.sensitive` for tests accessing real accounts
+- Keep test credentials separate (`test_credentials.yaml`)
+
+## Adding New Features
+
+### New Financial Provider
+1. Add provider name to appropriate list in `naming_conventions.py` (CreditCards/Banks/Insurances enum)
+2. Add login fields to `LoginFields.providers_fields` dict
+3. Update `fad/scraper/scrapers.py` if israeli-bank-scrapers supports it
+4. Add to UI in `my_accounts.py` page
+
+### New Page
+1. Create file in `fad/app/pages/`
+2. Register in `main.py` navigation using `st.Page()`
+3. Use existing components from `fad/app/components/` or create new ones
+4. Keep page logic minimal - delegate to components
+
+### New Component
+1. Create in `fad/app/components/`
+2. Make reusable and focused on single UI concern
+3. Component calls services for data/actions
+4. Always use unique widget keys (pass prefix parameter if needed)
+
+### New Analysis Feature
+1. Add service method in `fad/app/services/`
+2. Create/update repository methods if new queries needed
+3. Build component in `fad/app/components/` for UI
+4. Add plotting utilities in `fad/app/utils/plotting.py` if visualization needed
+5. Integrate component into relevant page
+
+### Database Schema Changes
+1. Update table enum in `naming_conventions.py` (Tables enum)
+2. Update/create repository in `fad/app/data_access/`
+3. Update services that use affected tables
+4. Consider migration logic for existing user databases
+
+## Testing
+
+### Running Tests
+```bash
+# All tests except sensitive ones
+poetry run pytest -m "not sensitive"
+
+# All tests including sensitive (requires real credentials)
+poetry run pytest
+```
+
+### Test Guidelines
+- Unit tests for services, repositories, utils
+- Integration tests for scraping (marked `@pytest.mark.sensitive`)
+- Mock external dependencies in unit tests
+- Use Faker for test data generation
+- Current coverage is low - improvements welcome
+
+## Development Workflow
+
+### Setup
+```bash
+poetry install
+poetry run streamlit run main.py
+```
+
+### Commit Conventions
+- Using Commitizen for conventional commits
+- Automatic changelog generation on version bump
+- Semantic versioning via `poetry version`
+
+## Common Patterns
+
+### Streamlit Widget Keys
+Always provide unique keys to avoid state conflicts:
+```python
+# ✅ Good - unique keys prevent conflicts
+st.selectbox("Category", options, key=f"cat_selector_{page_id}_{row_id}")
+st.button("Save", key=f"save_btn_{transaction_id}")
+
+# ❌ Bad - can cause state conflicts across pages/components
+st.selectbox("Category", options)
+st.button("Save")
+```
+
+### Data Processing
+- Use pandas for transformations
+- Keep DataFrames immutable where possible
+- Return copies from repositories
+- Always check transaction sign when filtering/summing
 
 ## UI/UX Guidelines
 - Follow Streamlit best practices
 - Use streamlit-antd-components for enhanced UI
 - Maintain consistent layout across pages
-- Support wide layout mode
+- Support wide layout mode (set in `main.py`)
 - Provide clear navigation structure
-- **Always use unique keys for widgets**: Every Streamlit widget (st.selectbox, st.button, st.text_input, etc.) must have a unique `key` parameter
+- **Always use unique keys for widgets**
 
-## Error Handling
-- Custom exception hierarchy in `scraper/exceptions.py`
-- Specific error types: LoginError, CredentialsError, TimeoutError, etc.
-- Graceful degradation for scraping failures
-- User-friendly error messages in UI
+## File Structure
+```
+finance-analysis/
+├── .github/                  # GitHub configs, Copilot instructions
+├── fad/                      # Main application package
+│   ├── app/                  # Streamlit app
+│   │   ├── components/       # Reusable UI components (interact with services)
+│   │   ├── data_access/      # Repository pattern (DB access)
+│   │   ├── pages/            # Streamlit pages (SLIM - use components)
+│   │   ├── services/         # Business logic layer
+│   │   ├── utils/            # Helper functions (plotting, widgets, etc.)
+│   │   ├── naming_conventions.py  # Central enums & constants
+│   │   └── overview.py       # Main dashboard page
+│   ├── resources/            # YAML configs (credentials, categories, icons)
+│   └── scraper/              # Web scraping for Israeli financial providers
+├── tests/                    # pytest test suite
+├── main.py                   # Streamlit entry point
+└── pyproject.toml            # Poetry dependencies
+```
 
-## Performance Considerations
-- Use pandas for data processing
-- SQLite with proper indexing
-- Lazy loading for large datasets
-- Background processing for scraping operations
+## Future Enhancements (Backlog)
+- CSV import for manual transaction upload
+- Conflicting tagging rules detector
+- Multi-user authentication system
+- Shared accounts for families
+- Forecasting engine
+- PDF payslip parsing
+- Enhanced data visualizations
 
-## Documentation Standards
-- Use Google-style docstrings
-- Document all public methods
-- Include type hints
-- Update README for major changes
+---
 
-## Future Features (TODOs)
-- add conflicting rules finder to prevent overlapping tagging rules
-- User login and authentication system
-- Multi-user support with shared accounts (low priority)
-- Forecasting capabilities
-- PDF salary slip processing
-- Enhanced data visualization
-
-When working on this project, always consider the layered architecture, follow the repository pattern for data access, and maintain the separation between UI components, business logic, and data access layers.
+**When working on this project:**
+1. Respect the layered architecture (Pages → Components → Services → Repositories)
+2. Keep pages slim - UI logic goes in components
+3. Use repository pattern for ALL database access
+4. Keep business logic in services only
+5. Always use unique keys for Streamlit widgets
+6. Account for transaction sign (negative = expense, positive = income/refund)
+7. Store passwords in Windows Keyring, not YAML files
