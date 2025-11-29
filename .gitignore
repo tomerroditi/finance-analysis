@@ -38,6 +38,10 @@ npm-debug.log*
 # VSCode
 .vscode/
 
+# pyCharm
+.idea/
+.cadence/
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -52,7 +56,7 @@ $RECYCLE.BIN/
 *~
 
 # GitHub
-.github/
+.github/.secrets
 
 # Misc
 *.bak
