@@ -6,6 +6,7 @@ Personal finance tracking and analysis system that automates data collection fro
 **Tech Stack:**
 - **UI:** Streamlit 1.42.2 + streamlit-antd-components
 - **Data:** SQLite (via SQLAlchemy 2.0.29) + Pandas 2.2.3
+  - **Database Location:** `C:\Users\<username>\.finance-analysis\data.db`
 - **Scraping:** Playwright (via israeli-bank-scrapers npm package)
 - **Package Manager:** Poetry
 - **Python:** 3.12+
