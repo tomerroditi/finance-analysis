@@ -195,7 +195,7 @@ def update_budget(self, id: int, amount: float):
 
 ## Existing Services
 
-### 1. `TransactionsService`
+### 1. `TransactionsService` (at fad.app.services.transactions_service)
 **Purpose:** Manage transaction data across multiple sources (credit cards, banks, cash, manual investments).
 
 **Key Responsibilities:**
@@ -218,7 +218,7 @@ def update_budget(self, id: int, amount: float):
 - Filter out "Ignore" category transactions from analysis
 - Merge split transactions into original transaction data
 
-### 2. `CategoriesTagsService`
+### 2. `CategoriesTagsService` (at fad.app.services.tagging_service)
 **Purpose:** Manage category and tag configuration.
 
 **Key Responsibilities:**
@@ -239,7 +239,7 @@ def update_budget(self, id: int, amount: float):
 - Cannot delete category with existing transactions
 - Reallocating tags requires updating all affected transactions/rules
 
-### 3. `TaggingRulesService`
+### 3. `TaggingRulesService` (at fad.app.services.tagging_rules_service)
 **Purpose:** Manage automatic tagging rules with priority-based pattern matching.
 
 **Key Responsibilities:**
@@ -278,7 +278,7 @@ def update_budget(self, id: int, amount: float):
 }
 ```
 
-### 4. `BudgetService`
+### 4. `BudgetService` (at fad.app.services.budget_service)
 **Purpose:** Manage monthly and project budgets.
 
 **Key Responsibilities:**
@@ -301,7 +301,7 @@ def update_budget(self, id: int, amount: float):
 - **"Total Budget"** is special category for overall monthly spending limit
 - Tags stored as semicolon-separated string in DB (`"tag1;tag2;tag3"`)
 
-### 5. `SplitTransactionsService`
+### 5. `SplitTransactionsService` (at fad.app.services.split_transactions_service)
 **Purpose:** Manage transaction splitting across multiple categories.
 
 **Key Responsibilities:**
@@ -341,7 +341,7 @@ Splits:
 Result for Analysis: Two separate entries (food and household) instead of one uncategorized
 ```
 
-### 6. `ScrapingService` (DataScrapingService)
+### 6. `ScrapingService` (DataScrapingService) (at fad.app.services.data_scraping_service)
 **Purpose:** Orchestrate web scraping operations with 2FA handling.
 
 **Key Responsibilities:**
@@ -389,7 +389,7 @@ def get_credentials_with_passwords(self, credentials: dict) -> dict:
 5. User enters OTP → service calls `scraper.set_otp_code()`
 6. Scraper continues in background thread
 
-### 7. `CredentialsService`
+### 7. `CredentialsService` (at fad.app.services.credentials_service)
 **Purpose:** Manage user credentials for financial providers.
 
 **Key Responsibilities:**
@@ -424,7 +424,7 @@ credentials = {
 }
 ```
 
-### 8. `OverviewService`
+### 8. `OverviewService` (at fad.app.services.overview_service)
 **Purpose:** Provide dashboard-level aggregated data and insights.
 
 **Key Responsibilities:**
@@ -438,7 +438,7 @@ credentials = {
 - `get_category_breakdown()` - Spending by category
 - `get_trends()` - Month-over-month comparisons
 
-### 9. `InvestmentsService`
+### 9. `InvestmentsService` (at fad.app.services.investments_service)
 **Purpose:** Manage investment portfolio tracking.
 
 **Key Responsibilities:**
