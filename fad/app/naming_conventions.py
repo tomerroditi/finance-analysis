@@ -121,6 +121,66 @@ split_fields = [
 SplitTransactionsTableFields = create_enum('SplitTransactionsTableFields', split_fields)
 
 
+class InvestmentsType(Enum):
+    """
+    Enum defining types of investments.
+
+    Attributes
+    ----------
+    BROKERAGE_ACCOUNT : str
+        Identifier for brokerage account investments.
+    STOCKS : str
+        Identifier for stocks investments.
+    CRYPTO : str
+        Identifier for cryptocurrency investments.
+    BONDS : str
+        Identifier for bonds investments.
+    REAL_ESTATE : str
+        Identifier for real estate investments.
+    PENSION : str
+        Identifier for pension investments.
+    STUDY_FUNDS : str
+        Identifier for study funds investments (AKA Keren Hishtalmut).
+    P2P_LENDING : str
+        Identifier for peer-to-peer lending investments.
+    PAKAM : str
+        Identifier for Pakam investments.
+    OTHER : str
+        Identifier for other types of investments.
+    """
+    BROKERAGE_ACCOUNT = 'brokerage_account'  # no forecast feature
+    STOCKS = 'stocks'  # no forecast feature, daily value tracking
+    CRYPTO = 'crypto'  # no forecast feature, daily value tracking
+    BONDS = 'bonds'  # real forecast feature
+    REAL_ESTATE = 'real_estate'  # no forecast feature
+    PENSION = 'pension'  # estimated forecast feature
+    STUDY_FUNDS = 'study_funds'  # estimated forecast feature
+    P2P_LENDING = 'p2p_lending'  # estimate forecast feature
+    PAKAM = 'pakam'  # estimated forecast feature, daily value tracking
+    OTHER = 'other'  # no forecast feature
+
+    # notes:
+    # tax regulations
+    # interest rate
+    # commissions (both deposit and gaining for pension and keren hishtalmut)
+    # liquidity date
+
+
+class InterestRateType(Enum):
+    """
+    Enum defining types of interest rates for investments.
+    
+    Attributes
+    ----------
+    FIXED : str
+        Fixed/guaranteed interest rate.
+    EXPECTED : str
+        Expected/projected interest rate (not guaranteed).
+    """
+    FIXED = 'fixed'
+    EXPECTED = 'expected'
+
+
 class InvestmentsTableFields(Enum):
     """
     Enum defining field names for the investments tracking table.
@@ -133,12 +193,10 @@ class InvestmentsTableFields(Enum):
         Field name for the investment category.
     TAG : str
         Field name for the investment tag.
+    TYPE : str
+        Field name for the investment type (e.g., stocks, bonds).
     NAME : str
         Field name for the investment name.
-    CURRENT_BALANCE : str
-        Field name for the current balance/value.
-    LAST_BALANCE_UPDATE : str
-        Field name for when the balance was last updated.
     IS_CLOSED : str
         Field name for whether the investment is closed.
     CREATED_DATE : str
@@ -151,9 +209,8 @@ class InvestmentsTableFields(Enum):
     ID = 'id'
     CATEGORY = 'category'
     TAG = 'tag'
+    TYPE = 'type'
     NAME = 'name'
-    CURRENT_BALANCE = 'current_balance'
-    LAST_BALANCE_UPDATE = 'last_balance_update'
     IS_CLOSED = 'is_closed'
     CREATED_DATE = 'created_date'
     CLOSED_DATE = 'closed_date'
