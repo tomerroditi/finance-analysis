@@ -161,7 +161,8 @@ class TransactionsRepository:
                 [
                     self.cc_repo.get_table(query, query_params),
                     self.bank_repo.get_table(query, query_params),
-                    self.cash_repo.get_table(query, query_params)
+                    self.cash_repo.get_table(query, query_params),
+                    self.manual_investments_repo.get_table(query, query_params)
                 ],
                 ignore_index=True
             )
