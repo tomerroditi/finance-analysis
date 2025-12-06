@@ -13,7 +13,7 @@ class OverviewComponents:
         """Display liquidity and investments over time charts."""
         st.markdown("Net Worth Over Time")
 
-        transactions = self.overview_service.get_bank_transactions_for_net_worth()
+        transactions = self.overview_service.get_transactions_for_net_worth()
         if transactions.empty:
             st.info("No bank account transactions found.")
             return

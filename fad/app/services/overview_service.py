@@ -14,7 +14,7 @@ class OverviewService:
     def __init__(self, conn: SQLConnection = get_db_connection()):
         self.transactions_repository = TransactionsRepository(conn)
 
-    def get_bank_transactions_for_net_worth(self) -> pd.DataFrame:
+    def get_transactions_for_net_worth(self) -> pd.DataFrame:
         """
         Fetch bank transactions for net worth calculations.
 
@@ -23,7 +23,9 @@ class OverviewService:
         pd.DataFrame
             Bank transactions with datetime-converted date column.
         """
-        transactions = self.transactions_repository.get_table("bank")
+        transactions_bank = self.transactions_repository.get_table("bank")
+        transactions_manual_investments = self.transactions_repository.get_table("manual_investments")
+        transactions = pd.concat([transactions_bank, transactions_manual_investments], ignore_index=True)
         if not transactions.empty:
             transactions['date'] = pd.to_datetime(transactions['date'])
         return transactions
