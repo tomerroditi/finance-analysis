@@ -728,4 +728,4 @@ class ManualInvestmentTransactionsRepository(CashRepository):
             True if the transaction was added successfully, False otherwise.
         """
         transaction.amount = transaction.amount * -1 if transaction.transaction_type == DEPOSIT_TYPE else transaction.amount
-        super().add_transaction(transaction)
+        return super().add_transaction(transaction)
