@@ -113,7 +113,6 @@ class OverviewService:
 
         investments = self._add_cumulative_balance_per_tag(investments)
         investments = self._add_total_investments_line(investments)
-        investments = self._add_zero_baseline(investments, all_transactions)
         investments = self._resample_by_tag(investments, frequency, all_transactions)
         return investments
 
@@ -131,27 +130,6 @@ class OverviewService:
         total_line["category"] = "Total"
         total_line = total_line.drop_duplicates(subset=["date"], keep="last")
         return pd.concat([investments, total_line], ignore_index=True).sort_values(by="date")
-
-    def _add_zero_baseline(
-        self,
-        investments: pd.DataFrame,
-        all_transactions: pd.DataFrame
-    ) -> pd.DataFrame:
-        """Add zero balance entries before first transaction for each tag."""
-        earliest_date = all_transactions['date'].min() - pd.Timedelta(days=1)
-        zero_entries = []
-
-        for cat, tag in investments[['category', 'tag']].drop_duplicates().itertuples(index=False):
-            zero_entries.append({
-                'date': earliest_date,
-                'amount': 0,
-                'category': cat,
-                'tag': tag,
-                'balance': 0
-            })
-
-        zero_df = pd.DataFrame(zero_entries)
-        return pd.concat([investments, zero_df], ignore_index=True).sort_values(by='date')
 
     def _resample_by_tag(
         self,

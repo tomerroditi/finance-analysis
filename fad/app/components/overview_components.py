@@ -24,7 +24,7 @@ class OverviewComponents:
     def _display_liquidity_chart(self, transactions, frequency: str) -> None:
         """Display cumulative balance over time chart."""
         balance_df = self.overview_service.calculate_cumulative_balance(transactions, frequency)
-        fig = px.line(balance_df, x="date", y='balance', title='Liquidity Over Time', markers=True)
+        fig = px.line(balance_df, x="date", y='balance', title='Liquidity Over Time', markers=True, line_shape='hv')
         st.plotly_chart(fig, use_container_width=True, key=f"liquidity_over_time_{self.key_suffix}")
 
     def _display_investments_chart(self, transactions, frequency: str) -> None:
@@ -42,7 +42,8 @@ class OverviewComponents:
             y='balance',
             color='tag',
             title='Investments Over Time',
-            symbol='tag'
+            symbol='tag',
+            line_shape='hv',
         )
         fig.update_layout(legend=dict(orientation="h"))
         st.plotly_chart(fig, use_container_width=True, key=f"investments_over_time_{self.key_suffix}")
