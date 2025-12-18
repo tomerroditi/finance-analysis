@@ -1,9 +1,7 @@
-"""
-Scraping API routes.
+from datetime import date
+from typing import List, Optional, Dict, Any
 
-Provides endpoints for data scraping operations.
-"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,7 +11,11 @@ from backend.repositories.scraping_history_repository import ScrapingHistoryRepo
 router = APIRouter()
 
 
-class TwoFactorCode(BaseModel):
+class StartScrapingRequest(BaseModel):
+    service: Optional[str] = None
+
+
+class TFAFinishRequest(BaseModel):
     scraper_name: str
     code: str
 
@@ -22,56 +24,62 @@ class TwoFactorCode(BaseModel):
 async def get_scraping_history(
     db: Session = Depends(get_database)
 ):
-    """Get the complete scraping history."""
+    """Get the scraping history from the database."""
     repo = ScrapingHistoryRepository(db)
-    df = repo.get_scraping_history()
+    df = repo.get_history()
     return df.to_dict(orient="records")
 
 
-@router.get("/today")
-async def get_todays_summary(
+@router.post("/start")
+async def start_scraping(
+    data: Optional[StartScrapingRequest] = None,
     db: Session = Depends(get_database)
 ):
-    """Get summary of today's scraping activity."""
-    repo = ScrapingHistoryRepository(db)
-    return repo.get_todays_scraping_summary()
+    """Start scraping data from sources."""
+    from backend.services.scraping_service import ScrapingService
+    service = ScrapingService(db)
+    service.start_scraping(service_filter=data.service if data else None)
+    return {"status": "started"}
 
 
-@router.post("/start")
-async def start_scraping():
-    """
-    Start scraping for all configured accounts.
-    
-    Note: This is a placeholder - actual scraping logic requires
-    integration with the scraping service which manages Node.js processes.
-    """
-    # TODO: Implement scraping service integration
-    return {
-        "status": "not_implemented",
-        "message": "Scraping service integration pending"
-    }
+@router.get("/status")
+async def get_scraping_status(
+    db: Session = Depends(get_database)
+):
+    """Get the current scraping status."""
+    from backend.services.scraping_service import ScrapingService
+    service = ScrapingService(db)
+    return service.get_scraping_results()
 
 
 @router.post("/2fa")
-async def submit_2fa_code(data: TwoFactorCode):
-    """
-    Submit 2FA code for a waiting scraper.
-    
-    Note: This is a placeholder - actual 2FA handling requires
-    integration with the scraping service.
-    """
-    # TODO: Implement 2FA handling
-    return {
-        "status": "not_implemented",
-        "message": "2FA handling pending integration"
-    }
+async def handle_2fa(
+    data: TFAFinishRequest,
+    db: Session = Depends(get_database)
+):
+    """Submit a 2FA code."""
+    from backend.services.scraping_service import ScrapingService
+    service = ScrapingService(db)
+    service.handle_2fa_code(data.scraper_name, data.code)
+    return {"status": "success"}
 
 
-@router.get("/waiting-2fa")
-async def get_waiting_2fa_scrapers():
-    """
-    Get list of scrapers waiting for 2FA input.
-    
-    Note: This is a placeholder - actual state is managed by scraping service.
-    """
-    return {"waiting": []}
+@router.get("/summary")
+async def get_scraping_summary(
+    db: Session = Depends(get_database)
+):
+    """Get summary of today's scraping activity."""
+    from backend.services.scraping_service import ScrapingService
+    service = ScrapingService(db)
+    return service.get_todays_summary()
+
+
+@router.post("/clear")
+async def clear_scraping_status(
+    db: Session = Depends(get_database)
+):
+    """Clear the current scraping status."""
+    from backend.services.scraping_service import ScrapingService
+    service = ScrapingService(db)
+    service.clear_status()
+    return {"status": "cleared"}

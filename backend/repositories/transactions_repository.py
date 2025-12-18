@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from backend.repositories.split_transactions_repository import SplitTransactionsRepository
 
 # Import naming conventions from the original location
 # These don't have Streamlit dependencies
@@ -210,48 +211,39 @@ class ServiceRepository:
         self.db.execute(text(my_query), params)
         self.db.commit()
 
-    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
+    def delete_transaction_by_id(self, transaction_id: str) -> bool:
+        """Delete a transaction by its unique_id."""
+        my_query = f"""
+            DELETE FROM {self.table}
+            WHERE {self.unique_id_col} = :id_val
         """
-        Update a transaction by its unique ID.
-
-        Parameters
-        ----------
-        transaction_id : str
-            The unique_id of the transaction.
-        updates : dict
-            Field names and new values.
-
-        Returns
-        -------
-        bool
-            True if successful.
-        """
-        if not updates:
+        try:
+            result = self.db.execute(text(my_query), {'id_val': int(transaction_id)})
+            self.db.commit()
+            return result.rowcount > 0
+        except Exception:
+            self.db.rollback()
             return False
 
+    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
+        """Update a transaction by its unique_id."""
+        if not updates:
+            return True
+        
+        set_clause = ", ".join([f"{col} = :{col}" for col in updates.keys()])
+        my_query = f"""
+            UPDATE {self.table}
+            SET {set_clause}
+            WHERE {self.unique_id_col} = :id_val
+        """
+        params = {**updates, 'id_val': int(transaction_id)}
         try:
-            set_clauses = []
-            params = {'id_val': int(transaction_id)}
-
-            for field, value in updates.items():
-                param_name = f"{field}_val"
-                set_clauses.append(f"{field} = :{param_name}")
-                params[param_name] = value
-
-            if not set_clauses:
-                return False
-
-            my_query = f"""
-                UPDATE {self.table}
-                SET {', '.join(set_clauses)}
-                WHERE {self.unique_id_col} = :id_val
-            """
             result = self.db.execute(text(my_query), params)
             self.db.commit()
             return result.rowcount > 0
         except Exception:
+            self.db.rollback()
             return False
-
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for all transactions with the specified category."""
         my_query = f"""
@@ -387,20 +379,6 @@ class CashRepository(ServiceRepository):
     type_col = CashTableFields.TYPE.value
     status_col = CashTableFields.STATUS.value
 
-    def delete_transaction_by_id(self, transaction_id: str) -> bool:
-        """Delete a cash transaction by its unique_id."""
-        my_query = f"""
-            DELETE FROM {self.table}
-            WHERE {self.unique_id_col} = :id_val
-        """
-        try:
-            result = self.db.execute(text(my_query), {'id_val': int(transaction_id)})
-            self.db.commit()
-            return result.rowcount > 0
-        except Exception:
-            self.db.rollback()
-            return False
-
 
 class ManualInvestmentTransactionsRepository(CashRepository):
     """Repository for manual investment transactions."""
@@ -458,6 +436,7 @@ class TransactionsRepository:
         self.bank_repo = BankRepository(db)
         self.cash_repo = CashRepository(db)
         self.manual_investments_repo = ManualInvestmentTransactionsRepository(db)
+        self.split_repo = SplitTransactionsRepository(db)
 
     def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
         """
@@ -510,29 +489,154 @@ class TransactionsRepository:
         self, 
         service: T_service | None = None, 
         query: str | None = None, 
-        query_params: dict | None = None
+        query_params: dict | None = None,
+        include_split_parents: bool = False
     ) -> pd.DataFrame:
         """Get transactions from the specified service or all services."""
         if service is None:
-            return pd.concat(
-                [
-                    self.cc_repo.get_table(query, query_params),
-                    self.bank_repo.get_table(query, query_params),
-                    self.cash_repo.get_table(query, query_params),
-                    self.manual_investments_repo.get_table(query, query_params)
-                ],
-                ignore_index=True
-            )
+            dfs = [
+                self.cc_repo.get_table(query, query_params),
+                self.bank_repo.get_table(query, query_params),
+                self.cash_repo.get_table(query, query_params),
+                self.manual_investments_repo.get_table(query, query_params)
+            ]
+            df = pd.concat(dfs, ignore_index=True)
         elif service in (Services.CREDIT_CARD.value, Tables.CREDIT_CARD.value):
-            return self.cc_repo.get_table(query, query_params)
+            df = self.cc_repo.get_table(query, query_params)
         elif service in (Services.BANK.value, Tables.BANK.value):
-            return self.bank_repo.get_table(query, query_params)
+            df = self.bank_repo.get_table(query, query_params)
         elif service in (Services.CASH.value, Tables.CASH.value):
-            return self.cash_repo.get_table(query, query_params)
+            df = self.cash_repo.get_table(query, query_params)
         elif service in (Services.MANUAL_INVESTMENTS.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value):
-            return self.manual_investments_repo.get_table(query, query_params)
+            df = self.manual_investments_repo.get_table(query, query_params)
         else:
             raise ValueError(f"Invalid service: '{service}'")
+
+        if not include_split_parents and not df.empty and self.type_col in df.columns:
+            df = df[df[self.type_col] != 'split_parent']
+            
+        # Add split children
+        splits_df = self.split_repo.get_data()
+        if not splits_df.empty:
+            # Join splits with parents to get metadata
+            # This is complex because parents are across multiple tables.
+            # We already have the 'df' which contains (mostly) all transactions we might need.
+            # But 'df' might be filtered by service or split_parents.
+            # So we should probably fetch the full table for joining unless service is specified.
+            
+            # For each split, we need to find its parent in the appropriate table.
+            children = []
+            for _, split in splits_df.iterrows():
+                parent_id = split[self.split_repo.transaction_id_col]
+                source = split[self.split_repo.source_col]
+                
+                # Fetch parent to get metadata (date, desc, provider, account_name)
+                try:
+                    repo = self.get_repo_by_source(source)
+                    parent_result = self.db.execute(
+                        text(f"SELECT * FROM {repo.table} WHERE {repo.unique_id_col} = :id_val"),
+                        {'id_val': parent_id}
+                    ).fetchone()
+                    
+                    if parent_result:
+                        parent_cols = repo.col_type_mapping.keys()
+                        parent_dict = dict(zip(parent_cols, parent_result))
+                        
+                        # Create child dict
+                        child = parent_dict.copy()
+                        child['unique_id'] = f"split_{split[self.split_repo.id_col]}"
+                        child['amount'] = split[self.split_repo.amount_col]
+                        child['category'] = split[self.split_repo.category_col]
+                        child['tag'] = split[self.split_repo.tag_col]
+                        child['type'] = 'split_child'
+                        child['source'] = source
+                        children.append(child)
+                except Exception:
+                    continue
+            
+            if children:
+                children_df = pd.DataFrame(children)
+                # Ensure date object compatibility if needed, but dict to DF usually works
+                # Filtering by service if applicable
+                if service:
+                    children_df = children_df[children_df['source'] == service]
+                
+                if not children_df.empty:
+                    df = pd.concat([df, children_df], ignore_index=True)
+
+        return df
+
+    def split_transaction(self, unique_id: int, source: str, splits: list[dict]) -> bool:
+        """
+        Split a transaction into multiple parts.
+        
+        splits: list of {'amount': float, 'category': str, 'tag': str}
+        """
+        try:
+            repo = self.get_repo_by_source(source)
+            # 1. Mark parent
+            repo.update_transaction_by_id(str(unique_id), {self.type_col: 'split_parent'})
+            
+            # 2. Add children
+            self.split_repo.delete_all_splits_for_transaction(unique_id, source)
+            for split in splits:
+                self.split_repo.add_split(
+                    transaction_id=unique_id,
+                    source=source,
+                    amount=split['amount'],
+                    category=split['category'],
+                    tag=split['tag']
+                )
+            return True
+        except Exception:
+            self.db.rollback()
+            return False
+
+    def revert_split(self, unique_id: int, source: str) -> bool:
+        """Revert a transaction split."""
+        try:
+            repo = self.get_repo_by_source(source)
+            # 1. Unmark parent
+            repo.update_transaction_by_id(str(unique_id), {self.type_col: 'normal'})
+            
+            # 2. Delete children
+            self.split_repo.delete_all_splits_for_transaction(unique_id, source)
+            return True
+        except Exception:
+            self.db.rollback()
+            return False
+
+    def get_repo_by_source(self, source: str) -> ServiceRepository:
+        """Get the repository instance for a specific source."""
+        if source in (Services.CREDIT_CARD.value, Tables.CREDIT_CARD.value):
+            return self.cc_repo
+        elif source in (Services.BANK.value, Tables.BANK.value):
+            return self.bank_repo
+        elif source in (Services.CASH.value, Tables.CASH.value):
+            return self.cash_repo
+        elif source in (Services.MANUAL_INVESTMENTS.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value):
+            return self.manual_investments_repo
+        else:
+            raise ValueError(f"Invalid source: '{source}'")
+
+    def bulk_update_tagging(self, transactions: list[dict], category: Optional[str], tag: Optional[str]) -> None:
+        """
+        Update tagging for multiple transactions.
+        
+        Parameters
+        ----------
+        transactions : list[dict]
+            List of dicts with 'unique_id' and 'source'.
+        category : str, optional
+        tag : str, optional
+        """
+        for tx in transactions:
+            repo = self.get_repo_by_source(tx['source'])
+            # ServiceRepository update_transaction_by_id handles category/tag updates
+            repo.update_transaction_by_id(str(tx['unique_id']), {
+                self.category_col: category,
+                self.tag_col: tag
+            })
 
     def update_with_query(
         self, 
@@ -575,16 +679,22 @@ class TransactionsRepository:
         """Set category and tag to NULL for matching transactions."""
         self.cc_repo.nullify_category_and_tag(category, tag)
         self.bank_repo.nullify_category_and_tag(category, tag)
+        self.cash_repo.nullify_category_and_tag(category, tag)
+        self.manual_investments_repo.nullify_category_and_tag(category, tag)
 
     def update_category_for_tag(self, old_category: str, new_category: str, tag: str) -> None:
         """Update category for matching transactions."""
         self.cc_repo.update_category_for_tag(old_category, new_category, tag)
         self.bank_repo.update_category_for_tag(old_category, new_category, tag)
+        self.cash_repo.update_category_for_tag(old_category, new_category, tag)
+        self.manual_investments_repo.update_category_for_tag(old_category, new_category, tag)
 
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for all transactions with the category."""
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)
+        self.cash_repo.nullify_category(category)
+        self.manual_investments_repo.nullify_category(category)
 
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
         """Get a transaction by its ID."""

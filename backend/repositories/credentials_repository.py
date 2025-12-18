@@ -154,3 +154,48 @@ class CredentialsRepository:
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
         except Exception:
             pass  # Best effort on Windows
+
+    def save_credentials(self, service: str, provider: str, account_name: str, credentials: Dict) -> None:
+        """
+        Save credentials securely, using keyring for passwords.
+        """
+        all_creds = self.read_credentials_file() or {}
+        
+        if service not in all_creds:
+            all_creds[service] = {}
+        if provider not in all_creds[service]:
+            all_creds[service][provider] = {}
+        
+        # Non-sensitive info for YAML
+        yaml_info = {}
+        
+        for key, value in credentials.items():
+            if key == 'password' or key.endswith('_key') or key == 'secret':
+                # Store in keyring
+                keyring_key = f"{service}_{provider}_{account_name}_{key}"
+                self.set_password_in_keyring(keyring_key, value)
+            else:
+                yaml_info[key] = value
+        
+        all_creds[service][provider][account_name] = yaml_info
+        self.write_credentials_file(all_creds)
+
+    def get_credentials(self, service: str, provider: str, account_name: str) -> Dict:
+        """
+        Retrieve credentials, including passwords from keyring.
+        """
+        all_creds = self.read_credentials_file() or {}
+        try:
+            creds = all_creds[service][provider][account_name].copy()
+            
+            # Look for passwords in keyring
+            # Since we don't know the exact keys, we'll check common ones or use the LoginFields if available
+            # But for simplicity, we usually only have one 'password' or 'secret'
+            for key in ['password', 'secret', 'otp_key']:
+                keyring_key = f"{service}_{provider}_{account_name}_{key}"
+                pwd = self.get_password_from_keyring(keyring_key)
+                if pwd:
+                    creds[key] = pwd
+            return creds
+        except KeyError:
+            return {}

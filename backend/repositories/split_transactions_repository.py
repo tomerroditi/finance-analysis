@@ -19,6 +19,7 @@ class SplitTransactionsRepository:
     table = Tables.SPLIT_TRANSACTIONS.value
     id_col = SplitTransactionsTableFields.ID.value
     transaction_id_col = SplitTransactionsTableFields.TRANSACTION_ID.value
+    source_col = "source"  # Not in enum yet, adding manually or I could update the enum
     amount_col = SplitTransactionsTableFields.AMOUNT.value
     category_col = SplitTransactionsTableFields.CATEGORY.value
     tag_col = SplitTransactionsTableFields.TAG.value
@@ -42,6 +43,7 @@ class SplitTransactionsRepository:
                 CREATE TABLE IF NOT EXISTS {self.table} (
                     {self.id_col} INTEGER PRIMARY KEY,
                     {self.transaction_id_col} INTEGER,
+                    {self.source_col} TEXT,
                     {self.amount_col} REAL,
                     {self.category_col} TEXT,
                     {self.tag_col} TEXT
@@ -57,20 +59,21 @@ class SplitTransactionsRepository:
         data = result.fetchall()
         return pd.DataFrame(data, columns=columns)
 
-    def get_splits_for_transaction(self, transaction_id: int) -> pd.DataFrame:
+    def get_splits_for_transaction(self, transaction_id: int, source: str) -> pd.DataFrame:
         """Get all splits for a specific transaction."""
         result = self.db.execute(
             text(f"""
                 SELECT * FROM {self.table}
                 WHERE {self.transaction_id_col} = :transaction_id_val
+                AND {self.source_col} = :source_val
             """),
-            {'transaction_id_val': transaction_id}
+            {'transaction_id_val': transaction_id, 'source_val': source}
         )
         columns = result.keys()
         data = result.fetchall()
         return pd.DataFrame(data, columns=columns)
 
-    def add_split(self, transaction_id: int, amount: float, category: str, tag: str) -> int:
+    def add_split(self, transaction_id: int, source: str, amount: float, category: str, tag: str) -> int:
         """
         Add a new split for a transaction.
 
@@ -82,13 +85,14 @@ class SplitTransactionsRepository:
         result = self.db.execute(
             text(f"""
                 INSERT INTO {self.table} (
-                    {self.transaction_id_col}, {self.amount_col}, {self.category_col}, {self.tag_col}
+                    {self.transaction_id_col}, {self.source_col}, {self.amount_col}, {self.category_col}, {self.tag_col}
                 ) VALUES (
-                    :transaction_id_val, :amount_val, :category_val, :tag_val
+                    :transaction_id_val, :source_val, :amount_val, :category_val, :tag_val
                 )
             """),
             {
                 'transaction_id_val': transaction_id,
+                'source_val': source,
                 'amount_val': amount,
                 'category_val': category,
                 'tag_val': tag
@@ -124,11 +128,15 @@ class SplitTransactionsRepository:
         )
         self.db.commit()
 
-    def delete_all_splits_for_transaction(self, transaction_id: int) -> None:
+    def delete_all_splits_for_transaction(self, transaction_id: int, source: str) -> None:
         """Delete all splits for a specific transaction."""
         self.db.execute(
-            text(f"DELETE FROM {self.table} WHERE {self.transaction_id_col} = :transaction_id_val"),
-            {'transaction_id_val': transaction_id}
+            text(f"""
+                DELETE FROM {self.table} 
+                WHERE {self.transaction_id_col} = :transaction_id_val
+                AND {self.source_col} = :source_val
+            """),
+            {'transaction_id_val': transaction_id, 'source_val': source}
         )
         self.db.commit()
 

@@ -18,12 +18,24 @@ api.interceptors.response.use(
 
 // Transactions API
 export const transactionsApi = {
-    getAll: (service?: string) =>
-        api.get('/transactions', { params: { service } }),
+    getAll: (service?: string, includeSplitParents = false) =>
+        api.get('/transactions', { params: { service, include_split_parents: includeSplitParents } }),
     getById: (id: number) =>
         api.get(`/transactions/${id}`),
+    create: (data: any) =>
+        api.post('/transactions', data),
+    update: (uniqueId: string, data: any) =>
+        api.put(`/transactions/${uniqueId}`, data),
+    delete: (uniqueId: string, source: string) =>
+        api.delete(`/transactions/${uniqueId}`, { params: { source } }),
     updateTag: (id: string, category: string, tag: string, service: string) =>
         api.put(`/transactions/${id}/tag`, null, { params: { category, tag, service } }),
+    bulkTag: (data: { transaction_ids: number[], source: string, category?: string, tag?: string }) =>
+        api.post('/transactions/bulk-tag', data),
+    split: (id: number, data: { source: string, splits: { amount: number, category: string, tag: string }[] }) =>
+        api.post(`/transactions/${id}/split`, data),
+    revertSplit: (id: number, source: string) =>
+        api.delete(`/transactions/${id}/split`, { params: { source } }),
 };
 
 // Budget API
@@ -41,27 +53,47 @@ export const taggingApi = {
     getCategories: () => api.get('/tagging/categories'),
     createCategory: (name: string, tags?: string[]) =>
         api.post('/tagging/categories', { name, tags }),
+    deleteCategory: (name: string) =>
+        api.delete(`/tagging/categories/${name}`),
     createTag: (category: string, name: string) =>
         api.post('/tagging/tags', { category, name }),
+    deleteTag: (category: string, name: string) =>
+        api.delete(`/tagging/tags/${category}/${name}`),
+    relocateTag: (oldCategory: string, newCategory: string, tag: string) =>
+        api.post('/tagging/tags/relocate', { old_category: oldCategory, new_category: newCategory, tag }),
+    getIcons: () => api.get('/tagging/icons'),
     getRules: (activeOnly = true) =>
         api.get('/tagging/rules', { params: { active_only: activeOnly } }),
+    createRule: (rule: any) => api.post('/tagging/rules', rule),
+    updateRule: (id: number, rule: any) => api.put(`/tagging/rules/${id}`, rule),
+    deleteRule: (id: number) => api.delete(`/tagging/rules/${id}`),
+    applyRules: () => api.post('/tagging/rules/apply'),
+    testRule: (conditions: any[]) => api.post('/tagging/rules/test', conditions),
 };
 
 // Credentials API
 export const credentialsApi = {
     getAll: () => api.get('/credentials'),
     getAccounts: () => api.get('/credentials/accounts'),
-    delete: (service: string, provider: string, account: string) =>
-        api.delete(`/credentials/${service}/${provider}/${account}`),
+    getProviders: () => api.get('/credentials/providers'),
+    getFields: (provider: string) => api.get(`/credentials/fields/${provider}`),
+    create: (data: { service: string, provider: string, account_name: string, credentials: Record<string, string> }) =>
+        api.post('/credentials', data),
+    getAccountDetails: (service: string, provider: string, accountName: string) =>
+        api.get(`/credentials/${service}/${provider}/${accountName}`),
+    delete: (service: string, provider: string, account_name: string) =>
+        api.delete(`/credentials/${service}/${provider}/${account_name}`),
 };
 
 // Scraping API
 export const scrapingApi = {
     getHistory: () => api.get('/scraping/history'),
-    getTodaySummary: () => api.get('/scraping/today'),
-    start: () => api.post('/scraping/start'),
+    getSummary: () => api.get('/scraping/summary'),
+    getStatus: () => api.get('/scraping/status'),
+    start: (service?: string) => api.post('/scraping/start', { service }),
     submit2fa: (scraperName: string, code: string) =>
         api.post('/scraping/2fa', { scraper_name: scraperName, code }),
+    clearStatus: () => api.post('/scraping/clear'),
 };
 
 // Investments API
@@ -75,6 +107,9 @@ export const investmentsApi = {
         api.post(`/investments/${id}/close`, null, { params: { closed_date: closedDate } }),
     reopen: (id: number) => api.post(`/investments/${id}/reopen`),
     delete: (id: number) => api.delete(`/investments/${id}`),
+    getPortfolioAnalysis: () => api.get('/investments/analysis/portfolio'),
+    getInvestmentAnalysis: (id: number, startDate?: string, endDate?: string) =>
+        api.get(`/investments/${id}/analysis`, { params: { start_date: startDate, end_date: endDate } }),
 };
 
 // Analytics API
@@ -83,6 +118,7 @@ export const analyticsApi = {
     getIncomeOutcome: (year?: number, month?: number) =>
         api.get('/analytics/income-outcome', { params: { year, month } }),
     getByCategory: () => api.get('/analytics/by-category'),
+    getMonthlyTrend: () => api.get('/analytics/monthly-trend'),
 };
 
 export default api;

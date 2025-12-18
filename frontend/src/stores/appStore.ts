@@ -14,6 +14,10 @@ interface AppState {
     // Active service filter for transactions
     selectedService: 'all' | 'credit_card' | 'bank' | 'cash';
     setSelectedService: (service: 'all' | 'credit_card' | 'bank' | 'cash') => void;
+
+    // Global Search
+    searchOpen: boolean;
+    setSearchOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -30,4 +34,8 @@ export const useAppStore = create<AppState>((set) => ({
     // Service filter
     selectedService: 'all',
     setSelectedService: (service) => set({ selectedService: service }),
+
+    // Global Search
+    searchOpen: false,
+    setSearchOpen: (open) => set({ searchOpen: open }),
 }));

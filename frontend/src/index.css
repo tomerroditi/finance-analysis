@@ -1,11 +1,13 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
   --primary: #3b82f6;
   --primary-dark: #2563eb;
   --secondary: #10b981;
   --background: #0f172a;
   --surface: #1e293b;
+  --surface-base: #1e293b;
   --surface-light: #334155;
   --text: #f8fafc;
   --text-muted: #94a3b8;
@@ -20,6 +22,12 @@ body {
   background: var(--background);
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--text);
 }
 
 * {

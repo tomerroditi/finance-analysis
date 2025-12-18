@@ -58,6 +58,58 @@ async def get_accounts():
     return accounts
 
 
+@router.get("/{service}/{provider}/{account_name}")
+async def get_credential_details(service: str, provider: str, account_name: str):
+    """Get details for a specific credential."""
+    repo = CredentialsRepository()
+    creds = repo.get_credentials(service, provider, account_name)
+    if not creds:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    
+    # Sanitize for security - we return the real values but they should be used carefully
+    # In a real app, we might want to mask passwords here if this is just for "View",
+    # but for "Edit", the frontend might need them (though usually we just let the user overwrite them).
+    # For now, return them as is, because 'get_credentials' already does the keyring work.
+    return creds
+
+
+@router.get("/providers")
+async def get_providers():
+    """Get all supported providers."""
+    from fad.app.naming_conventions import bank_providers, cc_providers
+    return {
+        "bank": bank_providers,
+        "credit_card": cc_providers
+    }
+
+
+@router.post("/")
+async def create_credential(credential: CredentialCreate):
+    """Create or update a credential."""
+    repo = CredentialsRepository()
+    try:
+        repo.save_credentials(
+            service=credential.service,
+            provider=credential.provider,
+            account_name=credential.account_name,
+            credentials=credential.credentials
+        )
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/fields/{provider}")
+async def get_provider_fields(provider: str):
+    """Get the required fields for a provider login."""
+    from fad.app.naming_conventions import LoginFields
+    try:
+        fields = LoginFields.get_fields(provider)
+        return {"fields": fields}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Provider {provider} not found")
+
+
 @router.delete("/{service}/{provider}/{account_name}")
 async def delete_credential(
     service: str,
@@ -72,6 +124,7 @@ async def delete_credential(
         raise HTTPException(status_code=404, detail="No credentials found")
     
     try:
+        # Delete from YAML
         del credentials[service][provider][account_name]
         
         # Clean up empty structures
@@ -81,6 +134,12 @@ async def delete_credential(
             del credentials[service]
         
         repo.write_credentials_file(credentials)
+
+        # Delete from Keyring (best effort)
+        for key in ['password', 'secret', 'otp_key']:
+            keyring_key = f"{service}_{provider}_{account_name}_{key}"
+            repo.delete_password_from_keyring(keyring_key)
+
         return {"status": "success"}
     except KeyError:
         raise HTTPException(status_code=404, detail="Credential not found")
