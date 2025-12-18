@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/app/components/**
----
-
 # Components Layer - UI Implementation
 
 ## Purpose
@@ -687,3 +682,4 @@ component.render()
 - Simple validation in components, complex in services
 - Extract standalone components when used multiple times
 - Class-based components preferred for structure
+

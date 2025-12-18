@@ -1,9 +1,3 @@
----
-applyTo:
-  - fad/app/pages/**
-  - fad/app/overview.py
----
-
 # Pages Layer - App UI Structure
 
 ## Purpose
@@ -449,3 +443,4 @@ except Exception as e:
 - Pages should be independently testable (reload works)
 - Components handle session state management (preferred)
 - Keep pages simple - if it gets complex, extract to component
+

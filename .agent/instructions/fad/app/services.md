@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/app/services/**
----
-
 # Services Layer - Business Logic
 
 ## Purpose
@@ -649,3 +644,4 @@ data = service.business_method("param")
 - Tagging rules evaluated by priority (highest first, first match wins)
 - Connection parameter enables dependency injection for testing
 - Consider singleton pattern impacts before implementing
+

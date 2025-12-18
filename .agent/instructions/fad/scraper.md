@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/scraper/**
----
-
 # Scraper Module - Web Scraping for Israeli Financial Providers
 
 ## Purpose
@@ -388,3 +383,4 @@ self.data = self._add_missing_columns(self.data)
 - **Password management is service layer responsibility** - scrapers receive credentials dict
 - **Insurance scrapers planned** for future (pension, keren hishtalmut data)
 - Error mapping from Node.js stderr to Python exceptions happens in `_handle_error()` method
+

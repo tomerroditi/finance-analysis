@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/app/data_access/**
----
-
 # Data Access Layer - Repository Pattern
 
 ## Purpose
@@ -548,3 +543,4 @@ except yaml.YAMLError as e:
 - Repository composition (nested repos) used for multi-source data management
 - Always return pandas DataFrames for queries (except primitives for counts/booleans)
 - Transactions must be explicitly committed - no auto-commit
+

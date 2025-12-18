@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/resources/**
----
-
 # Resources Directory - Configuration & Static Data
 
 ## Purpose
@@ -191,3 +186,4 @@ icons_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
 - Icons are optional - categories work without them
 - Test credentials structure must mirror production credentials structure
 - User data directory (`~/.finance-analysis/`) is created automatically on first run
+

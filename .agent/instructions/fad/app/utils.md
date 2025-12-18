@@ -1,8 +1,3 @@
----
-applyTo:
-  - fad/app/utils/**
----
-
 # Utils Layer - Helper Functions
 
 ## Purpose
@@ -572,3 +567,4 @@ def is_positive_amount(amount: float) -> bool:
 - Test complex utilities
 - Extract to utils when used 3+ times
 - Prefer functions over classes unless stateful
+
