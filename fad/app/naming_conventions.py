@@ -95,13 +95,14 @@ fields = [
     ('TYPE', 'type'),
     ('ID', 'id'),
     ('DATE', 'date'),
-    ('DESCRIPTION', 'desc'),
+    ('DESCRIPTION', 'description'),
     ('AMOUNT', 'amount'),
     ('STATUS', 'status'),
     ('ACCOUNT_NAME', 'account_name'),
     ('PROVIDER', 'provider'),
     ('CATEGORY', 'category'),
     ('TAG', 'tag'),
+    ('SOURCE', 'source'),
 ]
 
 TransactionsTableFields = create_enum('TransactionsTableFields', fields)
