@@ -10,6 +10,8 @@ interface Transaction {
     date: string;
     category: string;
     tag: string;
+    provider?: string;
+    account_name?: string;
 }
 
 interface TransactionCollapsibleListProps {
@@ -44,6 +46,7 @@ export const TransactionCollapsibleList: React.FC<TransactionCollapsibleListProp
                     <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
                         <tr>
                             <th className="px-4 py-2">Date</th>
+                            <th className="px-4 py-2">Account</th>
                             <th className="px-4 py-2">Description</th>
                             <th className="px-4 py-2">Category</th>
                             <th className="px-4 py-2 text-right">Amount</th>
@@ -54,6 +57,14 @@ export const TransactionCollapsibleList: React.FC<TransactionCollapsibleListProp
                             <tr key={idx} className="hover:bg-[var(--surface-light)]/50 transition-colors">
                                 <td className="px-4 py-2 whitespace-nowrap text-[var(--text-muted)]">
                                     {new Date(tx.date).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-2 truncate max-w-[150px]" title={`${tx.provider || 'Manual'} - ${tx.account_name}`}>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
+                                            {tx.provider || (tx.source?.includes('cash') ? 'Cash' : 'Manual')}
+                                        </span>
+                                        <span className="truncate font-medium text-[var(--text-default)]">{tx.account_name}</span>
+                                    </div>
                                 </td>
                                 <td className="px-4 py-2 text-[var(--text-default)] font-medium truncate max-w-[200px]" title={tx.desc}>
                                     {tx.desc}
@@ -70,7 +81,7 @@ export const TransactionCollapsibleList: React.FC<TransactionCollapsibleListProp
                         ))}
                         {transactions.length === 0 && (
                             <tr>
-                                <td colSpan={4} className="px-4 py-4 text-center text-[var(--text-muted)]">
+                                <td colSpan={5} className="px-4 py-4 text-center text-[var(--text-muted)]">
                                     No transactions found.
                                 </td>
                             </tr>

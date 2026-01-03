@@ -10,7 +10,7 @@ interface TransactionEditorModalProps {
 }
 
 export function TransactionEditorModal({ transaction, onClose, onSuccess }: TransactionEditorModalProps) {
-    const isManual = transaction.source === 'cash' || transaction.source === 'manual_investment';
+    const isManual = transaction.source.includes('cash') || transaction.source.includes('manual_investment');
 
     const [formData, setFormData] = useState({
         date: transaction.date,

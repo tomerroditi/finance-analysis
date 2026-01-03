@@ -174,7 +174,7 @@ export function Transactions() {
     const handleBulkDelete = async () => {
         if (!window.confirm(`Delete ${selectedIds.size} transactions? Only manual entries will be removed.`)) return;
         const selectedTxs = transactions.filter((tx: any) => selectedIds.has(`${tx.source}_${tx.unique_id}`));
-        const manualTxs = selectedTxs.filter((tx: any) => tx.source === 'cash' || tx.source === 'manual_investment');
+        const manualTxs = selectedTxs.filter((tx: any) => tx.source.includes('cash') || tx.source.includes('manual_investment'));
 
         try {
             for (const tx of manualTxs) {
@@ -199,6 +199,7 @@ export function Transactions() {
     const headers = [
         { key: 'select', label: '', align: 'center', width: '50px', sortable: false },
         { key: 'date', label: 'Date', align: 'left', width: '120px', sortable: true },
+        { key: 'account_name', label: 'Account', align: 'left', width: '200px', sortable: true },
         { key: 'desc', label: 'Description', align: 'left', width: 'auto', sortable: true },
         { key: 'category', label: 'Category', align: 'left', width: '180px', sortable: true },
         { key: 'tag', label: 'Tag', align: 'left', width: '180px', sortable: true },
@@ -310,7 +311,7 @@ export function Transactions() {
                                     {paginatedTransactions.map((tx: any) => {
                                         const id = `${tx.source}_${tx.unique_id}`;
                                         const isSelected = selectedIds.has(id);
-                                        const isManual = tx.source === 'cash' || tx.source === 'manual_investment';
+                                        const isManual = tx.source.includes('cash') || tx.source.includes('manual_investment');
 
                                         return (
                                             <tr key={id} className={`hover:bg-[var(--surface-light)]/50 transition-colors ${isSelected ? 'bg-[var(--primary)]/5' : ''}`}>
@@ -323,6 +324,14 @@ export function Transactions() {
                                                     />
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-[var(--text-muted)] truncate">{tx.date}</td>
+                                                <td className="px-4 py-3 text-sm truncate" title={`${tx.provider || 'Manual'} - ${tx.account_name}`}>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
+                                                            {tx.provider || (tx.source.includes('cash') ? 'Cash' : 'Manual')}
+                                                        </span>
+                                                        <span className="truncate font-medium">{tx.account_name}</span>
+                                                    </div>
+                                                </td>
                                                 <td className="px-4 py-3 text-sm truncate" title={tx.desc}>{tx.desc}</td>
                                                 <td className="px-4 py-3 text-sm">
                                                     <span className="px-2 py-1 rounded-md bg-[var(--surface-light)] text-xs truncate max-w-full inline-block">

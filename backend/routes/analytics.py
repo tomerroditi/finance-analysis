@@ -5,6 +5,7 @@ Provides endpoints for financial analysis and reporting.
 """
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -138,7 +139,7 @@ async def get_monthly_trend(
         return []
     
     # Convert date to month-year
-    df['month'] = df['date'].dt.strftime('%Y-%m')
+    df['month'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m')
     
     # Calculate income and outcome per month respecting conventions
     trend = []
