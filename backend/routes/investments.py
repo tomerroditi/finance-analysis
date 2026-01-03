@@ -115,24 +115,21 @@ async def create_investment(
 ):
     """Create a new investment."""
     repo = InvestmentsRepository(db)
-    try:
-        repo.create_investment(
-            category=investment.category,
-            tag=investment.tag,
-            type_=investment.type,
-            name=investment.name,
-            interest_rate=investment.interest_rate,
-            interest_rate_type=investment.interest_rate_type,
-            commission_deposit=investment.commission_deposit,
-            commission_management=investment.commission_management,
-            commission_withdrawal=investment.commission_withdrawal,
-            liquidity_date=investment.liquidity_date,
-            maturity_date=investment.maturity_date,
-            notes=investment.notes
-        )
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    repo.create_investment(
+        category=investment.category,
+        tag=investment.tag,
+        type_=investment.type,
+        name=investment.name,
+        interest_rate=investment.interest_rate,
+        interest_rate_type=investment.interest_rate_type,
+        commission_deposit=investment.commission_deposit,
+        commission_management=investment.commission_management,
+        commission_withdrawal=investment.commission_withdrawal,
+        liquidity_date=investment.liquidity_date,
+        maturity_date=investment.maturity_date,
+        notes=investment.notes
+    )
+    return {"status": "success"}
 
 
 @router.put("/{investment_id}")
@@ -143,12 +140,9 @@ async def update_investment(
 ):
     """Update an investment."""
     repo = InvestmentsRepository(db)
-    try:
-        updates = {k: v for k, v in investment.dict().items() if v is not None}
-        repo.update_investment(investment_id, **updates)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    updates = {k: v for k, v in investment.dict().items() if v is not None}
+    repo.update_investment(investment_id, **updates)
+    return {"status": "success"}
 
 
 @router.post("/{investment_id}/close")
@@ -181,8 +175,5 @@ async def delete_investment(
 ):
     """Delete an investment."""
     repo = InvestmentsRepository(db)
-    try:
-        repo.delete_investment(investment_id)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    repo.delete_investment(investment_id)
+    return {"status": "success"}

@@ -8,6 +8,7 @@ from datetime import datetime
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from backend.errors import EntityNotFoundException
 
 from fad.app.naming_conventions import Tables, InvestmentsTableFields
 
@@ -186,7 +187,7 @@ class InvestmentsRepository:
         self.db.commit()
         
         if result.rowcount == 0:
-            raise ValueError(f"No investment found with ID {investment_id}")
+            raise EntityNotFoundException(f"No investment found with ID {investment_id}")
     
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """Close an investment by setting is_closed flag and closed_date."""
@@ -221,4 +222,4 @@ class InvestmentsRepository:
         self.db.commit()
         
         if result.rowcount == 0:
-            raise ValueError(f"No investment found with ID {investment_id}")
+            raise EntityNotFoundException(f"No investment found with ID {investment_id}")

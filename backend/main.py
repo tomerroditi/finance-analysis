@@ -17,6 +17,9 @@ from backend.routes import (
     investments,
     analytics,
 )
+from backend.errors import EntityNotFoundException, ValidationException
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 
 @asynccontextmanager
@@ -54,6 +57,22 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["Credent
 app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+
+
+@app.exception_handler(EntityNotFoundException)
+async def entity_not_found_exception_handler(request: Request, exc: EntityNotFoundException):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(ValidationException)
+async def validation_exception_handler(request: Request, exc: ValidationException):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.message},
+    )
 
 
 @app.get("/")
