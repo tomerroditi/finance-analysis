@@ -19,6 +19,7 @@ export function Transactions() {
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'date', direction: 'desc' });
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [includeSplitParents, setIncludeSplitParents] = useState(false);
+    const [onlyUntagged, setOnlyUntagged] = useState(false);
 
     // Modal state
     const [editingTransaction, setEditingTransaction] = useState<any>(null);
@@ -53,12 +54,18 @@ export function Transactions() {
         }
     });
 
-    // 1. Compute Sorted Transactions
-    const sortedTransactions = useMemo(() => {
+    // 1. Compute Filtered and Sorted Transactions
+    const filteredAndSortedTransactions = useMemo(() => {
         if (!transactions) return [];
-        if (!sortConfig.key || !sortConfig.direction) return transactions;
 
-        return [...transactions].sort((a, b) => {
+        let filtered = transactions;
+        if (onlyUntagged) {
+            filtered = filtered.filter((tx: any) => !tx.tag || tx.tag === '-');
+        }
+
+        if (!sortConfig.key || !sortConfig.direction) return filtered;
+
+        return [...filtered].sort((a, b) => {
             let aValue = a[sortConfig.key];
             let bValue = b[sortConfig.key];
 
@@ -74,13 +81,13 @@ export function Transactions() {
             const comparison = aValue < bValue ? -1 : 1;
             return sortConfig.direction === 'asc' ? comparison : -comparison;
         });
-    }, [transactions, sortConfig]);
+    }, [transactions, sortConfig, onlyUntagged]);
 
     // 2. Compute Paginated Transactions
     const paginatedTransactions = useMemo(() => {
         const startIndex = (currentPage - 1) * rowsPerPage;
-        return sortedTransactions.slice(startIndex, startIndex + rowsPerPage);
-    }, [sortedTransactions, currentPage, rowsPerPage]);
+        return filteredAndSortedTransactions.slice(startIndex, startIndex + rowsPerPage);
+    }, [filteredAndSortedTransactions, currentPage, rowsPerPage]);
 
     // 3. Selection Handlers (MUST be after paginatedTransactions)
     const toggleSelection = (id: string) => {
@@ -111,7 +118,7 @@ export function Transactions() {
     useEffect(() => {
         setCurrentPage(1);
         setSelectedIds(new Set());
-    }, [selectedService, sortConfig]);
+    }, [selectedService, sortConfig, onlyUntagged]);
 
     const handleSort = (key: string) => {
         let direction: 'asc' | 'desc' | null = 'asc';
@@ -122,9 +129,9 @@ export function Transactions() {
         setSortConfig({ key, direction });
     };
 
-    const totalPages = Math.ceil(sortedTransactions.length / rowsPerPage);
+    const totalPages = Math.ceil(filteredAndSortedTransactions.length / rowsPerPage);
     const startRow = (currentPage - 1) * rowsPerPage + 1;
-    const endRow = Math.min(currentPage * rowsPerPage, sortedTransactions.length);
+    const endRow = Math.min(currentPage * rowsPerPage, filteredAndSortedTransactions.length);
 
     const SortIcon = ({ columnKey }: { columnKey: string }) => {
         if (sortConfig.key !== columnKey || !sortConfig.direction) {
@@ -191,7 +198,7 @@ export function Transactions() {
 
     const headers = [
         { key: 'select', label: '', align: 'center', width: '50px', sortable: false },
-        { key: 'date', label: 'Date', align: 'left', width: '120px', sortable: true },
+        { key: 'date', label: 'Date', align: 'left', width: '150px', sortable: true },
         { key: 'desc', label: 'Description', align: 'left', width: 'auto', sortable: true },
         { key: 'category', label: 'Category', align: 'left', width: '180px', sortable: true },
         { key: 'tag', label: 'Tag', align: 'left', width: '180px', sortable: true },
@@ -213,6 +220,16 @@ export function Transactions() {
                                 type="checkbox"
                                 checked={includeSplitParents}
                                 onChange={(e) => setIncludeSplitParents(e.target.checked)}
+                                className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1 bg-[var(--surface-light)]/20 rounded-full border border-[var(--surface-light)]">
+                            <label className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none" htmlFor="untagged-only">Only Untagged</label>
+                            <input
+                                id="untagged-only"
+                                type="checkbox"
+                                checked={onlyUntagged}
+                                onChange={(e) => setOnlyUntagged(e.target.checked)}
                                 className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
                             />
                         </div>
@@ -255,7 +272,7 @@ export function Transactions() {
             <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
                 {isLoading ? (
                     <div className="p-8 text-center text-[var(--text-muted)]">Loading...</div>
-                ) : sortedTransactions?.length === 0 ? (
+                ) : filteredAndSortedTransactions?.length === 0 ? (
                     <div className="p-8 text-center text-[var(--text-muted)]">No transactions found</div>
                 ) : (
                     <>
@@ -335,7 +352,7 @@ export function Transactions() {
                         <div className="px-4 py-3 bg-[var(--surface-light)]/30 border-t border-[var(--surface-light)] flex items-center justify-between mt-auto">
                             <div className="flex items-center gap-4">
                                 <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">
-                                    Showing <span className="text-white font-medium">{startRow}</span> to <span className="text-white font-medium">{endRow}</span> of <span className="text-white font-medium">{sortedTransactions.length}</span>
+                                    Showing <span className="text-white font-medium">{startRow}</span> to <span className="text-white font-medium">{endRow}</span> of <span className="text-white font-medium">{filteredAndSortedTransactions.length}</span>
                                 </span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">Rows:</span>
