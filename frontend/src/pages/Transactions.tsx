@@ -198,7 +198,7 @@ export function Transactions() {
 
     const headers = [
         { key: 'select', label: '', align: 'center', width: '50px', sortable: false },
-        { key: 'date', label: 'Date', align: 'left', width: '150px', sortable: true },
+        { key: 'date', label: 'Date', align: 'left', width: '120px', sortable: true },
         { key: 'desc', label: 'Description', align: 'left', width: 'auto', sortable: true },
         { key: 'category', label: 'Category', align: 'left', width: '180px', sortable: true },
         { key: 'tag', label: 'Tag', align: 'left', width: '180px', sortable: true },

@@ -564,7 +564,7 @@ class TransactionsRepository:
                 if not children_df.empty:
                     df = pd.concat([df, children_df], ignore_index=True)
             
-        df['date'] = pd.to_datetime(df['date'])
+        df['date'] = pd.to_datetime(df['date']).dt.strftime(r'%Y-%m-%d')
         return df
 
     def split_transaction(self, unique_id: int, source: str, splits: list[dict]) -> bool:
