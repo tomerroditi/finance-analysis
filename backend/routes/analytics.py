@@ -151,14 +151,20 @@ async def get_monthly_trend(
     ]
     
     for month, group in df.groupby('month'):
-        income = group[group['amount'] > 0]['amount'].sum() if 'amount' in group.columns else 0
+        # Split income into Salary and Other Income
+        salary_mask = (group['amount'] > 0) & (group['category'] == IncomeCategories.SALARY.value)
+        salary = group[salary_mask]['amount'].sum() if 'amount' in group.columns else 0
+        
+        other_income_mask = (group['amount'] > 0) & (group['category'] != IncomeCategories.SALARY.value)
+        other_income = group[other_income_mask]['amount'].sum() if 'amount' in group.columns else 0
         
         outcome_mask = (group['amount'] < 0) & (~group['category'].isin(non_expense_vals))
         outcome = abs(group[outcome_mask]['amount'].sum()) if 'amount' in group.columns else 0
         
         trend.append({
             "month": month,
-            "income": float(income),
+            "salary": float(salary),
+            "other_income": float(other_income),
             "outcome": float(outcome)
         })
     

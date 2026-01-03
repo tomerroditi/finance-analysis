@@ -106,10 +106,17 @@ export function Dashboard() {
                             data={[
                                 {
                                     x: trendData?.map((d: any) => d.month),
-                                    y: trendData?.map((d: any) => d.income),
-                                    name: 'Income',
+                                    y: trendData?.map((d: any) => d.salary),
+                                    name: 'Salary',
                                     type: 'bar',
-                                    marker: { color: '#10b981' },
+                                    marker: { color: '#059669' },
+                                },
+                                {
+                                    x: trendData?.map((d: any) => d.month),
+                                    y: trendData?.map((d: any) => d.other_income),
+                                    name: 'Other Income',
+                                    type: 'bar',
+                                    marker: { color: '#34d399' },
                                 },
                                 {
                                     x: trendData?.map((d: any) => d.month),
