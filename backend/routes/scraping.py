@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.services.scraping_service import ScrapingService
 from backend.dependencies import get_database
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 
@@ -47,7 +48,6 @@ async def get_scraping_status(
     db: Session = Depends(get_database)
 ):
     """Get the current scraping status."""
-    from backend.services.scraping_service import ScrapingService
     service = ScrapingService(db)
     return service.get_scraping_results()
 
@@ -58,7 +58,6 @@ async def handle_2fa(
     db: Session = Depends(get_database)
 ):
     """Submit a 2FA code."""
-    from backend.services.scraping_service import ScrapingService
     service = ScrapingService(db)
     service.handle_2fa_code(data.scraper_name, data.code)
     return {"status": "success"}
@@ -69,7 +68,6 @@ async def get_scraping_summary(
     db: Session = Depends(get_database)
 ):
     """Get summary of today's scraping activity."""
-    from backend.services.scraping_service import ScrapingService
     service = ScrapingService(db)
     return service.get_todays_summary()
 
@@ -79,7 +77,6 @@ async def clear_scraping_status(
     db: Session = Depends(get_database)
 ):
     """Clear the current scraping status."""
-    from backend.services.scraping_service import ScrapingService
     service = ScrapingService(db)
     service.clear_status()
     return {"status": "cleared"}
