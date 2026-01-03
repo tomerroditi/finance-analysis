@@ -17,7 +17,7 @@ from backend.routes import (
     investments,
     analytics,
 )
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.errors import EntityNotFoundException, ValidationException, EntityAlreadyExistsException
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -63,6 +63,14 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 async def entity_not_found_exception_handler(request: Request, exc: EntityNotFoundException):
     return JSONResponse(
         status_code=404,
+        content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(EntityAlreadyExistsException)
+async def entity_already_exists_exception_handler(request: Request, exc: EntityAlreadyExistsException):
+    return JSONResponse(
+        status_code=409,
         content={"detail": exc.message},
     )
 

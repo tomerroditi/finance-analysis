@@ -14,6 +14,11 @@ class EntityNotFoundException(AppException):
     pass
 
 
+class EntityAlreadyExistsException(AppException):
+    """Raised when a record already exists."""
+    pass
+
+
 class ValidationException(AppException):
     """Raised for invalid inputs."""
     pass
