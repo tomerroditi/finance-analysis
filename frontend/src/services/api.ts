@@ -70,6 +70,8 @@ export const taggingApi = {
     relocateTag: (oldCategory: string, newCategory: string, tag: string) =>
         api.post('/tagging/tags/relocate', { old_category: oldCategory, new_category: newCategory, tag }),
     getIcons: () => api.get('/tagging/icons'),
+    updateIcon: (category: string, icon: string) =>
+        api.put(`/tagging/icons/${category}`, null, { params: { icon } }),
     getRules: (activeOnly = true) =>
         api.get('/tagging/rules', { params: { active_only: activeOnly } }),
     createRule: (rule: any) => api.post('/tagging/rules', rule),

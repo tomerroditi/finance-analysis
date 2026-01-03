@@ -128,6 +128,13 @@ async def get_category_icons():
     return TaggingRepository.get_categories_icons()
 
 
+@router.put("/icons/{category}")
+async def update_category_icon(category: str, icon: str):
+    """Update a category's icon."""
+    changed = TaggingRepository.update_category_icon(category, icon)
+    return {"status": "success", "changed": changed}
+
+
 @router.get("/rules")
 async def get_tagging_rules(
     active_only: bool = True,
