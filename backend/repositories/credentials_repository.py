@@ -189,13 +189,28 @@ class CredentialsRepository:
             creds = all_creds[service][provider][account_name].copy()
             
             # Look for passwords in keyring
-            # Since we don't know the exact keys, we'll check common ones or use the LoginFields if available
-            # But for simplicity, we usually only have one 'password' or 'secret'
-            for key in ['password', 'secret', 'otp_key']:
-                keyring_key = f"{service}_{provider}_{account_name}_{key}"
-                pwd = self.get_password_from_keyring(keyring_key)
-                if pwd:
-                    creds[key] = pwd
+            # We check typical sensitive keys. 
+            # Note: The usage of LoginFields could be dynamic here, but avoiding circular imports is better.
+            sensitive_keys = ['password', 'secret', 'otp_key']
+            
+            for key in creds.keys():
+                if key in sensitive_keys or 'password' in key.lower() or 'secret' in key.lower():
+                    # Try modern key format (underscores)
+                    keyring_key_new = f"{service}_{provider}_{account_name}_{key}"
+                    pwd = self.get_password_from_keyring(keyring_key_new)
+                    
+                    if not pwd:
+                        # Try legacy key format (colons) - used by previous Streamlit app
+                        keyring_key_old = f"{service}:{provider}:{account_name}:{key}"
+                        pwd = self.get_password_from_keyring(keyring_key_old)
+                    
+                    if pwd:
+                        creds[key] = pwd
+                    elif creds.get(key) == "your password is safely stored":
+                        # If we have the placeholder but couldn't find the real password, clear it
+                        # to avoid showing the placeholder to the user.
+                        creds[key] = ""
+                        
             return creds
         except KeyError:
             return {}

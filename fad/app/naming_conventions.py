@@ -95,7 +95,7 @@ fields = [
     ('TYPE', 'type'),
     ('ID', 'id'),
     ('DATE', 'date'),
-    ('DESCRIPTION', 'description'),
+    ('DESCRIPTION', 'desc'),
     ('AMOUNT', 'amount'),
     ('STATUS', 'status'),
     ('ACCOUNT_NAME', 'account_name'),
@@ -336,7 +336,7 @@ class RuleFields(Enum):
     """
     Enum defining fields that can be used in rule conditions.
     """
-    DESCRIPTION = 'description'
+    DESCRIPTION = 'desc'
     AMOUNT = 'amount'
     PROVIDER = 'provider'
     ACCOUNT_NAME = 'account_name'

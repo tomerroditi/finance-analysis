@@ -1,16 +1,18 @@
 """
 Budget API routes.
 
-Provides endpoints for budget rule management.
+Provides endpoints for budget rule management, analysis, and project management.
 """
-from typing import Optional
+from typing import Optional, List
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.repositories.budget_repository import BudgetRepository
+from backend.services.budget_service import BudgetService, MonthlyBudgetService, ProjectBudgetService
+from fad.app.naming_conventions import ALL_TAGS
 
 router = APIRouter()
 
@@ -19,7 +21,7 @@ class BudgetRuleCreate(BaseModel):
     name: str
     amount: float
     category: str
-    tags: str
+    tags: str | List[str]
     month: Optional[int] = None
     year: Optional[int] = None
 
@@ -28,7 +30,16 @@ class BudgetRuleUpdate(BaseModel):
     name: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
-    tags: Optional[str] = None
+    tags: Optional[str | List[str]] = None
+
+
+class ProjectCreate(BaseModel):
+    category: str
+    total_budget: float
+
+
+class ProjectUpdate(BaseModel):
+    total_budget: float
 
 
 @router.get("/rules")
@@ -36,8 +47,8 @@ async def get_budget_rules(
     db: Session = Depends(get_database)
 ):
     """Get all budget rules."""
-    repo = BudgetRepository(db)
-    df = repo.read_all()
+    service = BudgetService(db)
+    df = service.get_all_rules()
     return df.to_dict(orient="records")
 
 
@@ -48,8 +59,8 @@ async def get_budget_rules_by_month(
     db: Session = Depends(get_database)
 ):
     """Get budget rules for a specific month."""
-    repo = BudgetRepository(db)
-    df = repo.read_by_month(year, month)
+    service = MonthlyBudgetService(db)
+    df = service.get_month_rules(year, month)
     return df.to_dict(orient="records")
 
 
@@ -59,12 +70,28 @@ async def create_budget_rule(
     db: Session = Depends(get_database)
 ):
     """Create a new budget rule."""
-    repo = BudgetRepository(db)
+    service = MonthlyBudgetService(db)
     try:
-        repo.add(rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year)
+        # Validate first
+        # Note: In service add_rule calls repository directly, validation logic is separate static method.
+        # Ideally we should move logic to service instance method, but for now we follow existing pattern.
+        # We need validation here? The service validate_rule_inputs requires budget_rules df.
+        # For simplicity, we trust the frontend or basic constraints, or fully implement validation call.
+        
+        # Let's verify with service validation
+        budget_rules = service.get_all_rules()
+        is_valid, msg = service.validate_rule_inputs(
+            budget_rules, rule.name, rule.category, 
+            rule.tags.split(";") if isinstance(rule.tags, str) else rule.tags, 
+            rule.amount, rule.year, rule.month, None
+        )
+        if not is_valid:
+             raise ValueError(msg)
+
+        service.add_rule(rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year)
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/rules/{rule_id}")
@@ -74,13 +101,15 @@ async def update_budget_rule(
     db: Session = Depends(get_database)
 ):
     """Update a budget rule."""
-    repo = BudgetRepository(db)
+    service = BudgetService(db)
     try:
         updates = {k: v for k, v in rule.dict().items() if v is not None}
-        repo.update(rule_id, **updates)
+        service.update_rule(rule_id, **updates)
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/rules/{rule_id}")
@@ -89,6 +118,165 @@ async def delete_budget_rule(
     db: Session = Depends(get_database)
 ):
     """Delete a budget rule."""
-    repo = BudgetRepository(db)
-    repo.delete(rule_id)
+    service = BudgetService(db)
+    service.delete_rule(rule_id)
     return {"status": "success"}
+
+
+@router.post("/rules/{year}/{month}/copy")
+async def copy_previous_month_rules(
+    year: int,
+    month: int,
+    db: Session = Depends(get_database)
+):
+    """Copy budget rules from the previous month."""
+    service = MonthlyBudgetService(db)
+    try:
+        budget_rules = service.get_all_rules()
+        result = service.copy_last_month_rules(year, month, budget_rules)
+        if result is None:
+            raise HTTPException(status_code=404, detail="No rules found in the previous month to copy.")
+        return {"status": "success", "message": result}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- Analysis Endpoints ---
+
+@router.get("/analysis/{year}/{month}")
+async def get_monthly_analysis(
+    year: int,
+    month: int,
+    db: Session = Depends(get_database)
+):
+    """Get full monthly budget analysis."""
+    service = MonthlyBudgetService(db)
+    # view contains rules with their spending
+    view = service.get_monthly_budget_view(year, month)
+    # project summary
+    project_summary = service.get_monthly_project_spending_summary(year, month)
+    
+    # Calculate total budget vs actual for the month (excluding projects)
+    # The view already returns this but in a specific structure.
+    # We'll return the view as 'rules_breakdown' and maybe some high level stats if needed.
+    
+    return {
+        "rules": view if view else [],
+        "project_spending": project_summary
+    }
+
+
+# --- Project Endpoints ---
+
+@router.get("/projects")
+async def get_projects(
+    db: Session = Depends(get_database)
+):
+    """Get all project names."""
+    service = ProjectBudgetService(db)
+    return service.get_all_projects_names()
+
+
+@router.get("/projects/available")
+async def get_available_categories_for_new_project(
+    db: Session = Depends(get_database)
+):
+    """Get available categories for a new project."""
+    service = ProjectBudgetService(db)
+    return service.get_available_categories_for_new_project()
+
+
+@router.post("/projects")
+async def create_project(
+    project: ProjectCreate,
+    db: Session = Depends(get_database)
+):
+    """Create a new project."""
+    service = ProjectBudgetService(db)
+    try:
+        service.create_project(project.category, project.total_budget)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/projects/{name}")
+async def update_project(
+    name: str,
+    project: ProjectUpdate,
+    db: Session = Depends(get_database)
+):
+    """Update project total budget."""
+    service = ProjectBudgetService(db)
+    try:
+        service.update_project(name, project.total_budget)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/projects/{name}")
+async def delete_project(
+    name: str,
+    db: Session = Depends(get_database)
+):
+    """Delete a project."""
+    service = ProjectBudgetService(db)
+    service.delete_project(name)
+    return {"status": "success"}
+
+
+@router.get("/projects/{name}")
+async def get_project_details(
+    name: str,
+    db: Session = Depends(get_database)
+):
+    """Get project details including rules and transactions."""
+    service = ProjectBudgetService(db)
+    rules = service.get_rules_for_project(name)
+    transactions = service.get_project_transactions(name)
+    
+    view = []
+    
+    # Total Project Rule
+    total_rule = pd.DataFrame()
+    if not rules.empty:
+            # Find where tags == [ALL_TAGS]. 
+            total_rule = rules[rules['tags'].apply(lambda x: x == [ALL_TAGS])]
+    
+    # Ensure transactions is JSON serializable (handle NaNs)
+    transactions_processed = transactions.where(pd.notnull(transactions), None)
+    total_spent = transactions_processed['amount'].sum() * -1
+    
+    if not total_rule.empty:
+        view.append({
+            "rule": total_rule.iloc[0].to_dict(),
+            "current_amount": total_spent,
+            "data": transactions_processed.to_dict(orient="records"),
+            "allow_edit": True,
+            "allow_delete": False
+        })
+        rules = rules.drop(total_rule.index)
+
+    # Per tag rules
+    for _, rule in rules.iterrows():
+        tags = rule['tags']
+        # Filter transactions for these tags
+        tag_txns = transactions_processed[transactions_processed['tag'].isin(tags)]
+        spent = tag_txns['amount'].sum() * -1
+        
+        view.append({
+            "rule": rule.to_dict(),
+            "current_amount": spent,
+            "data": tag_txns.to_dict(orient="records"),
+            "allow_edit": True,
+            "allow_delete": True
+        })
+
+    return {
+        "name": name,
+        "rules": view,
+        "total_spent": total_spent
+    }

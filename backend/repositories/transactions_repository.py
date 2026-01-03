@@ -88,7 +88,7 @@ class ServiceRepository:
         'provider': "TEXT",
         'account_name': "TEXT",
         'account_number': "TEXT",
-        'description': "TEXT",
+        'desc': "TEXT",
         'amount': "REAL",
         'category': "TEXT DEFAULT NULL",
         'tag': "TEXT DEFAULT NULL",

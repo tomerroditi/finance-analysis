@@ -2,6 +2,44 @@
 This project aims to help individuals track their finance status, including savings and expenses, by automating data scraping and analyzing the findings. 
 
 
+# How to Run
+
+## Backend
+
+The backend is built with FastAPI and uses Poetry for dependency management.
+
+1.  **Install dependencies**:
+    ```bash
+    # From the project root
+    poetry install
+    ```
+
+2.  **Start the server**:
+    ```bash
+    poetry run uvicorn backend.main:app --reload
+    ```
+    The API will be available at [http://127.0.0.1:8000](http://127.0.0.1:8000). Documentation is available at [/docs](http://127.0.0.1:8000/docs).
+
+## Frontend
+
+The frontend is built with React and Vite.
+
+1.  **Navigate to the frontend directory**:
+    ```bash
+    cd frontend
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+
+3.  **Start the development server**:
+    ```bash
+    npm run dev
+    ```
+    The application will be available at [http://localhost:5173](http://localhost:5173).
+
 # goals
 - automate the process of scraping data from bank accounts, credit cards, and insurance companies
 - automate the process of labeling and categorizing expenses

@@ -46,6 +46,14 @@ export const budgetApi = {
     createRule: (rule: object) => api.post('/budget/rules', rule),
     updateRule: (id: number, rule: object) => api.put(`/budget/rules/${id}`, rule),
     deleteRule: (id: number) => api.delete(`/budget/rules/${id}`),
+    copyRules: (year: number, month: number) => api.post(`/budget/rules/${year}/${month}/copy`),
+    getAnalysis: (year: number, month: number) => api.get(`/budget/analysis/${year}/${month}`),
+    getProjects: () => api.get('/budget/projects'),
+    getAvailableProjects: () => api.get('/budget/projects/available'),
+    createProject: (project: { category: string, total_budget: number }) => api.post('/budget/projects', project),
+    updateProject: (name: string, data: { total_budget: number }) => api.put(`/budget/projects/${name}`, data),
+    getProjectDetails: (name: string) => api.get(`/budget/projects/${name}`),
+    deleteProject: (name: string) => api.delete(`/budget/projects/${name}`),
 };
 
 // Tagging API

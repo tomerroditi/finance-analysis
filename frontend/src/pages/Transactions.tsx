@@ -192,7 +192,7 @@ export function Transactions() {
     const headers = [
         { key: 'select', label: '', align: 'center', width: '50px', sortable: false },
         { key: 'date', label: 'Date', align: 'left', width: '120px', sortable: true },
-        { key: 'description', label: 'Description', align: 'left', width: 'auto', sortable: true },
+        { key: 'desc', label: 'Description', align: 'left', width: 'auto', sortable: true },
         { key: 'category', label: 'Category', align: 'left', width: '180px', sortable: true },
         { key: 'tag', label: 'Tag', align: 'left', width: '180px', sortable: true },
         { key: 'amount', label: 'Amount', align: 'right', width: '140px', sortable: true },
@@ -306,7 +306,7 @@ export function Transactions() {
                                                     />
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-[var(--text-muted)] truncate">{tx.date}</td>
-                                                <td className="px-4 py-3 text-sm truncate" title={tx.description}>{tx.description}</td>
+                                                <td className="px-4 py-3 text-sm truncate" title={tx.desc}>{tx.desc}</td>
                                                 <td className="px-4 py-3 text-sm">
                                                     <span className="px-2 py-1 rounded-md bg-[var(--surface-light)] text-xs truncate max-w-full inline-block">
                                                         {tx.category || '-'}

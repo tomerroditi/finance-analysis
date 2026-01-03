@@ -250,14 +250,13 @@ class MonthlyBudgetService(BudgetService):
         if not total_rule.empty:
             total = month_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
             view.append({
-                "rule": total_rule.iloc[0],
+                "rule": total_rule.iloc[0].to_dict(),
                 "current_amount": total,
-                "data": month_data.copy(),
+                "data": month_data.to_dict(orient="records"),
                 "allow_edit": True,
                 "allow_delete": False
             })
             rules = rules.loc[~rules.index.isin(total_rule.index)]
-
         remaining_data = month_data.copy()
         for _, rule in rules.iterrows():
             tags = rule[TAGS]
@@ -268,9 +267,9 @@ class MonthlyBudgetService(BudgetService):
 
             amt = cat_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
             view.append({
-                "rule": rule,
+                "rule": rule.to_dict(),
                 "current_amount": amt,
-                "data": cat_data.copy(),
+                "data": cat_data.to_dict(orient="records"),
                 "allow_edit": True,
                 "allow_delete": True
             })
@@ -281,20 +280,78 @@ class MonthlyBudgetService(BudgetService):
             total_alloc = rules[AMOUNT].sum()
             total_amt = total_rule.iloc[0][AMOUNT] - total_alloc
             view.append({
-                "rule": pd.Series({
+                "rule": {
                     NAME: "Other Expenses",
                     AMOUNT: total_amt,
                     CATEGORY: "Other Expenses",
                     TAGS: "Other Expenses",
                     ID: f"{year}{month}_Other_Expenses"
-                }),
+                },
                 "current_amount": remaining_data[self.transactions_service.transactions_repository.amount_col].sum() * -1,
-                "data": remaining_data,
+                "data": remaining_data.to_dict(orient="records"),
                 "allow_edit": False,
                 "allow_delete": False
             })
 
         return view
+
+    def get_monthly_project_transactions(self, year: int, month: int) -> Optional[pd.DataFrame]:
+        """
+        Get project-related transactions for a specific month.
+        """
+        budget_rules = self.budget_repository.read_all()
+        all_data = self.transactions_service.get_data_for_analysis()
+
+        # Only expenses (exclude income, liabilities, etc.)
+        expenses = all_data.loc[
+            ~all_data[self.transactions_service.transactions_repository.category_col]
+            .isin([c.value for c in NonExpensesCategories])
+        ].copy()
+        expenses[self.transactions_service.transactions_repository.date_col] = pd.to_datetime(
+            expenses[self.transactions_service.transactions_repository.date_col]
+        )
+
+        # Get project categories
+        project_categories = budget_rules[
+            budget_rules[YEAR].isnull() & budget_rules[MONTH].isnull()
+        ][CATEGORY].unique()
+
+        if len(project_categories) == 0:
+            return None
+
+        # Filter for project transactions in the specified month
+        project_transactions = expenses.loc[
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
+            (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
+            expenses[self.transactions_service.transactions_repository.category_col].isin(project_categories)
+        ]
+
+        return project_transactions if not project_transactions.empty else None
+
+    def get_monthly_project_spending_summary(self, year: int, month: int) -> dict:
+        """Get summary of project spending for a month, grouped by project."""
+        project_txns = self.get_monthly_project_transactions(year, month)
+        if project_txns is None or project_txns.empty:
+             return {"projects": []}
+             
+        cat_col = self.transactions_service.transactions_repository.category_col
+        amount_col = self.transactions_service.transactions_repository.amount_col
+        
+        projects_summary = []
+        for project_name, group in project_txns.groupby(cat_col):
+            # Handle NaNs for JSON serialization
+            group_processed = group.where(pd.notnull(group), None)
+            total_spent = group_processed[amount_col].sum() * -1
+            projects_summary.append({
+                "category": str(project_name),
+                "spent": float(total_spent),
+                "transactions": group_processed.to_dict(orient="records")
+            })
+            
+        return {
+            "projects": projects_summary,
+            "total_spent": float(project_txns[amount_col].sum() * -1)
+        }
 
 
 class ProjectBudgetService(BudgetService):
@@ -302,33 +359,46 @@ class ProjectBudgetService(BudgetService):
     
     def get_all_rules(self) -> pd.DataFrame:
         rules = super().get_all_rules()
-        return rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
-
-    def get_project_rules(self) -> pd.DataFrame:
-        """Get all project budget rules."""
-        rules = self.budget_repository.read_all()
-        if not rules.empty:
-            rules = rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()]
-            rules[TAGS] = rules[TAGS].apply(lambda x: x.split(";") if isinstance(x, str) else [])
-        return rules
+        return rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()].drop(columns=[YEAR, MONTH])
 
     def get_rules_for_project(self, category: str) -> pd.DataFrame:
         """Get all budget rules for a specific project."""
-        rules = self.get_project_rules()
-        if not rules.empty:
-            rules = rules.loc[rules[CATEGORY] == category]
+        rules = self.get_all_rules()
+        if rules.empty:
+            raise ValueError(f"Project {category} not found")
+
+        rules = rules.loc[rules[CATEGORY] == category]
         return rules
 
     def create_project(self, category: str, total_budget: float) -> None:
         """Create a new project budget."""
-        self.budget_repository.add(
+        self.add_rule(
             name=TOTAL_BUDGET,
             amount=total_budget,
             category=category,
-            tags=ALL_TAGS,
+            tags=[ALL_TAGS],
             month=None,
             year=None
         )
+
+        tags = self.categories_tags_service.get_categories_and_tags(copy=True)
+        tags = tags[category]
+        for tag in tags:
+            self.add_rule(
+                name=tag,
+                amount=0,
+                category=category,
+                tags=[tag],
+                month=None,
+                year=None
+            )
+
+    def update_project(self, category: str, total_budget: float) -> None:
+        """Update the total budget for a project."""
+        rules = self.get_rules_for_project(category)
+        total_rule = rules.loc[rules[TAGS] == [ALL_TAGS]]
+        rule_id = int(total_rule.iloc[0][ID])
+        self.update_rule(rule_id, amount=total_budget)
 
     def delete_project(self, category: str) -> None:
         """Delete all budget rules for a project."""
@@ -345,12 +415,11 @@ class ProjectBudgetService(BudgetService):
 
     def get_all_projects_names(self) -> list[str]:
         """Get all project names."""
-        budget_rules = self.get_project_rules()
-        return self.get_project_names(budget_rules)
+        rules = self.get_all_rules()
+        return rules[CATEGORY].unique().tolist()
 
-    @staticmethod
-    def get_project_names(budget_rules: pd.DataFrame) -> list[str]:
-        """Get unique project category names."""
-        return budget_rules.loc[
-            (budget_rules[YEAR].isnull()) & (budget_rules[MONTH].isnull())
-        ][CATEGORY].unique().tolist()
+    def get_available_categories_for_new_project(self) -> list[str]:
+        """Get available categories for a new project."""
+        current_projects = self.get_all_projects_names()
+        new_possible_projects = [cat for cat in self.categories_tags_service.get_categories_and_tags(copy=True).keys() if cat not in current_projects]
+        return new_possible_projects
