@@ -130,10 +130,7 @@ class InvestmentsService:
         """
         Calculate comprehensive profit/loss metrics.
         """
-        investment = self.investments_repo.get_by_id(investment_id)
-        if investment.empty:
-            return {}
-        
+        investment = self.investments_repo.get_by_id(investment_id)     
         inv = investment.iloc[0]
         transactions_df = self._get_all_transactions_for_investment(inv['category'], inv['tag'])
         
@@ -218,7 +215,7 @@ class InvestmentsService:
         transactions_df = transactions_df.copy()
         transactions_df['date'] = pd.to_datetime(transactions_df['date'])
         
-        filtered_df = transactions_df[transactions_df['date'].dt.date <= as_of_date]
+        filtered_df = transactions_df.loc[transactions_df['date'].dt.date <= as_of_date]
         
         if filtered_df.empty:
             return 0.0
@@ -226,11 +223,11 @@ class InvestmentsService:
         if 'amount' not in filtered_df.columns:
             return 0.0
             
-        filtered_df['amount'] = pd.to_numeric(filtered_df['amount'], errors='coerce').fillna(0.0)
+        filtered_df.loc[:, 'amount'] = pd.to_numeric(filtered_df.loc[:, 'amount'], errors='coerce').fillna(0.0)
         
         # Balance = -(sum of all transactions)
         # If I deposited -1000, balance is +1000.
         # If I withdrew +200, balance is -(-1000 + 200) = -(-800) = 800.
-        balance = -filtered_df['amount'].sum()
+        balance = -filtered_df.loc[:, 'amount'].sum()
         
         return float(balance)
