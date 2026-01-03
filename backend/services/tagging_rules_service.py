@@ -64,7 +64,10 @@ class TaggingRulesService:
 
     def delete_rule(self, rule_id: int) -> bool:
         """Delete a rule by ID."""
-        return self.rules_repo.delete_rule(rule_id)
+        sucess = self.rules_repo.delete_rule(rule_id)
+        if not sucess:
+            raise EntityNotFoundException(f"Rule with ID {rule_id} not found")
+        return sucess
 
     def apply_rules(self) -> int:
         """Apply all active rules."""

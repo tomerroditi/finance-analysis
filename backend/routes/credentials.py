@@ -8,6 +8,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.naming_conventions import LoginFields
 from backend.repositories.credentials_repository import CredentialsRepository
 
 router = APIRouter()
@@ -87,27 +88,20 @@ async def get_providers():
 async def create_credential(credential: CredentialCreate):
     """Create or update a credential."""
     repo = CredentialsRepository()
-    try:
-        repo.save_credentials(
-            service=credential.service,
-            provider=credential.provider,
-            account_name=credential.account_name,
-            credentials=credential.credentials
-        )
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    repo.save_credentials(
+        service=credential.service,
+        provider=credential.provider,
+        account_name=credential.account_name,
+        credentials=credential.credentials
+    )
+    return {"status": "success"}
 
 
 @router.get("/fields/{provider}")
 async def get_provider_fields(provider: str):
     """Get the required fields for a provider login."""
-    from fad.app.naming_conventions import LoginFields
-    try:
-        fields = LoginFields.get_fields(provider)
-        return {"fields": fields}
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Provider {provider} not found")
+    fields = LoginFields.get_fields(provider)
+    return {"fields": fields}
 
 
 @router.delete("/{service}/{provider}/{account_name}")
@@ -123,23 +117,20 @@ async def delete_credential(
     if credentials is None:
         raise HTTPException(status_code=404, detail="No credentials found")
     
-    try:
-        # Delete from YAML
-        del credentials[service][provider][account_name]
-        
-        # Clean up empty structures
-        if not credentials[service][provider]:
-            del credentials[service][provider]
-        if not credentials[service]:
-            del credentials[service]
-        
-        repo.write_credentials_file(credentials)
+    # Delete from YAML
+    del credentials[service][provider][account_name]
+    
+    # Clean up empty structures
+    if not credentials[service][provider]:
+        del credentials[service][provider]
+    if not credentials[service]:
+        del credentials[service]
+    
+    repo.write_credentials_file(credentials)
 
-        # Delete from Keyring (best effort)
-        for key in ['password', 'secret', 'otp_key']:
-            keyring_key = f"{service}_{provider}_{account_name}_{key}"
-            repo.delete_password_from_keyring(keyring_key)
+    # Delete from Keyring (best effort)
+    for key in ['password', 'secret', 'otp_key']:
+        keyring_key = f"{service}_{provider}_{account_name}_{key}"
+        repo.delete_password_from_keyring(keyring_key)
 
-        return {"status": "success"}
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Credential not found")
+    return {"status": "success"}

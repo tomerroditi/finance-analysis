@@ -157,7 +157,10 @@ class InvestmentsRepository:
         )
         columns = result.keys()
         data = result.fetchall()
-        return pd.DataFrame(data, columns=columns)
+        df = pd.DataFrame(data, columns=columns)
+        if df.empty:
+            raise EntityNotFoundException(f"No investment found with ID {investment_id}")
+        return df
     
     def get_by_category_tag(self, category: str, tag: str) -> pd.DataFrame:
         """Get an investment by category and tag."""

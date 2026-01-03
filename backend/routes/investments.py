@@ -59,8 +59,6 @@ async def get_investment(
     """Get a specific investment by ID."""
     repo = InvestmentsRepository(db)
     df = repo.get_by_id(investment_id)
-    if df.empty:
-        raise HTTPException(status_code=404, detail="Investment not found")
     df = df.replace({np.nan: None})
     return df.iloc[0].to_dict()
 
@@ -86,19 +84,13 @@ async def get_investment_analysis(
     Includes metrics (ROI, CAGR) and balance history.
     """
     service = InvestmentsService(db)
-    
-    # metrics
     metrics = service.calculate_profit_loss(investment_id)
-    if not metrics:
-        raise HTTPException(status_code=404, detail="Investment not found or no transaction data")
-        
-    # history
     if not start_date:
         # Default to first transaction date or 1 year ago
-        start_date = metrics.get('first_transaction_date') or (date.today().replace(year=date.today().year - 1).strftime('%Y-%m-%d'))
+        start_date = metrics.get('first_transaction_date') or (date.today().replace(year=date.today().year - 1).strftime(r'%Y-%m-%d'))
     
     if not end_date:
-        end_date = date.today().strftime('%Y-%m-%d')
+        end_date = date.today().strftime(r'%Y-%m-%d')
         
     history = service.calculate_balance_over_time(investment_id, start_date, end_date)
     

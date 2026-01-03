@@ -71,27 +71,17 @@ async def create_budget_rule(
 ):
     """Create a new budget rule."""
     service = MonthlyBudgetService(db)
-    try:
-        # Validate first
-        # Note: In service add_rule calls repository directly, validation logic is separate static method.
-        # Ideally we should move logic to service instance method, but for now we follow existing pattern.
-        # We need validation here? The service validate_rule_inputs requires budget_rules df.
-        # For simplicity, we trust the frontend or basic constraints, or fully implement validation call.
-        
-        # Let's verify with service validation
-        budget_rules = service.get_all_rules()
-        is_valid, msg = service.validate_rule_inputs(
-            budget_rules, rule.name, rule.category, 
-            rule.tags.split(";") if isinstance(rule.tags, str) else rule.tags, 
-            rule.amount, rule.year, rule.month, None
-        )
-        if not is_valid:
-             raise ValueError(msg)
+    budget_rules = service.get_all_rules()
+    is_valid, msg = service.validate_rule_inputs(
+        budget_rules, rule.name, rule.category, 
+        rule.tags.split(";") if isinstance(rule.tags, str) else rule.tags, 
+        rule.amount, rule.year, rule.month, None
+    )
+    if not is_valid:
+        raise ValueError(msg)
 
-        service.add_rule(rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service.add_rule(rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year)
+    return {"status": "success"}
 
 
 @router.put("/rules/{rule_id}")
@@ -102,14 +92,9 @@ async def update_budget_rule(
 ):
     """Update a budget rule."""
     service = BudgetService(db)
-    try:
-        updates = {k: v for k, v in rule.dict().items() if v is not None}
-        service.update_rule(rule_id, **updates)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    updates = {k: v for k, v in rule.dict().items() if v is not None}
+    service.update_rule(rule_id, **updates)
+    return {"status": "success"}
 
 
 @router.delete("/rules/{rule_id}")
@@ -131,14 +116,11 @@ async def copy_previous_month_rules(
 ):
     """Copy budget rules from the previous month."""
     service = MonthlyBudgetService(db)
-    try:
-        budget_rules = service.get_all_rules()
-        result = service.copy_last_month_rules(year, month, budget_rules)
-        if result is None:
-            raise HTTPException(status_code=404, detail="No rules found in the previous month to copy.")
-        return {"status": "success", "message": result}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    budget_rules = service.get_all_rules()
+    result = service.copy_last_month_rules(year, month, budget_rules)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No rules found in the previous month to copy.")
+    return {"status": "success", "message": result}
 
 
 # --- Analysis Endpoints ---
@@ -151,15 +133,8 @@ async def get_monthly_analysis(
 ):
     """Get full monthly budget analysis."""
     service = MonthlyBudgetService(db)
-    # view contains rules with their spending
     view = service.get_monthly_budget_view(year, month)
-    # project summary
     project_summary = service.get_monthly_project_spending_summary(year, month)
-    
-    # Calculate total budget vs actual for the month (excluding projects)
-    # The view already returns this but in a specific structure.
-    # We'll return the view as 'rules_breakdown' and maybe some high level stats if needed.
-    
     return {
         "rules": view if view else [],
         "project_spending": project_summary
@@ -193,11 +168,8 @@ async def create_project(
 ):
     """Create a new project."""
     service = ProjectBudgetService(db)
-    try:
-        service.create_project(project.category, project.total_budget)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service.create_project(project.category, project.total_budget)
+    return {"status": "success"}
 
 
 @router.put("/projects/{name}")
@@ -208,13 +180,8 @@ async def update_project(
 ):
     """Update project total budget."""
     service = ProjectBudgetService(db)
-    try:
-        service.update_project(name, project.total_budget)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service.update_project(name, project.total_budget)
+    return {"status": "success"}
 
 
 @router.delete("/projects/{name}")
