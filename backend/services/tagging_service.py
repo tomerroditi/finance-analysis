@@ -64,21 +64,7 @@ class CategoriesTagsService:
         global _categories_cache
         
         if _categories_cache is None:
-            if not TaggingRepository.file_exists(CATEGORIES_PATH):
-                TaggingRepository.create_directory(os.path.dirname(CATEGORIES_PATH))
-                # Try to load default categories
-                fad_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    'fad'
-                )
-                default_path = os.path.join(fad_path, 'resources', 'default_categories.yaml')
-                if TaggingRepository.file_exists(default_path):
-                    default_categories = TaggingRepository.load_categories_from_file(default_path)
-                    TaggingRepository.save_categories_to_file(default_categories, CATEGORIES_PATH)
-                else:
-                    TaggingRepository.save_categories_to_file({}, CATEGORIES_PATH)
-
-            _categories_cache = TaggingRepository.load_categories_from_file(CATEGORIES_PATH)
+            _categories_cache = TaggingRepository.get_categories()
 
         if copy:
             return deepcopy(_categories_cache)

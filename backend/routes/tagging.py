@@ -10,8 +10,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.repositories.tagging_repository import TaggingRepository, CATEGORIES_PATH
-from backend.repositories.tagging_rules_repository import TaggingRulesRepository
+from backend.repositories.tagging_repository import TaggingRepository
+from backend.services.tagging_rules_service import TaggingRulesService
+
 
 router = APIRouter()
 
@@ -61,27 +62,13 @@ class TagRelocate(BaseModel):
 @router.get("/categories")
 async def get_categories():
     """Get all categories and their tags."""
-    repo = TaggingRepository()
-    if repo.file_exists(CATEGORIES_PATH):
-        return repo.load_categories_from_file(CATEGORIES_PATH)
-    return {}
+    return TaggingRepository.get_categories()
 
 
 @router.post("/categories")
-async def create_category(category: CategoryCreate):
-    """Create a new category."""
-    repo = TaggingRepository()
-    categories = {}
-    if repo.file_exists(CATEGORIES_PATH):
-        categories = repo.load_categories_from_file(CATEGORIES_PATH)
-    
-    if category.name in categories:
-        # Update existing category tags if requested
-        categories[category.name] = list(set(categories[category.name] + category.tags))
-    else:
-        categories[category.name] = category.tags
-        
-    repo.save_categories_to_file(categories, CATEGORIES_PATH)
+async def add_category(category: CategoryCreate):
+    """Add a new category."""
+    TaggingRepository.add_category(category.name, category.tags)
     return {"status": "success"}
 
 
@@ -91,21 +78,10 @@ async def delete_category(
     db: Session = Depends(get_database)
 ):
     """Delete a category and its tags, nullifying them in the DB."""
-    repo = TaggingRepository()
-    categories = {}
-    if repo.file_exists(CATEGORIES_PATH):
-        categories = repo.load_categories_from_file(CATEGORIES_PATH)
+    TaggingRepository.delete_category(name)
     
-    if name not in categories:
-        raise HTTPException(status_code=404, detail="Category not found")
-    
-    # Update DB
     tx_repo = TransactionsRepository(db)
     tx_repo.nullify_category(name)
-    
-    # Update YAML
-    del categories[name]
-    repo.save_categories_to_file(categories, CATEGORIES_PATH)
     
     return {"status": "success"}
 
@@ -113,19 +89,7 @@ async def delete_category(
 @router.post("/tags")
 async def create_tag(tag: TagCreate):
     """Add a tag to a category."""
-    repo = TaggingRepository()
-    categories = {}
-    if repo.file_exists(CATEGORIES_PATH):
-        categories = repo.load_categories_from_file(CATEGORIES_PATH)
-    
-    if tag.category not in categories:
-        raise HTTPException(status_code=404, detail="Category not found")
-    
-    if tag.name in categories[tag.category]:
-        raise HTTPException(status_code=400, detail="Tag already exists in category")
-    
-    categories[tag.category].append(tag.name)
-    repo.save_categories_to_file(categories, CATEGORIES_PATH)
+    TaggingRepository.add_tag(tag.category, tag.name)
     return {"status": "success"}
 
 
@@ -136,21 +100,10 @@ async def delete_tag(
     db: Session = Depends(get_database)
 ):
     """Delete a tag from a category, nullifying it in the DB."""
-    repo = TaggingRepository()
-    categories = {}
-    if repo.file_exists(CATEGORIES_PATH):
-        categories = repo.load_categories_from_file(CATEGORIES_PATH)
-    
-    if category not in categories or name not in categories[category]:
-        raise HTTPException(status_code=404, detail="Tag not found")
-    
-    # Update DB
     tx_repo = TransactionsRepository(db)
     tx_repo.nullify_category_and_tag(category, name)
     
-    # Update YAML
-    categories[category].remove(name)
-    repo.save_categories_to_file(categories, CATEGORIES_PATH)
+    TaggingRepository.delete_tag(category, name)
     
     return {"status": "success"}
 
@@ -161,28 +114,10 @@ async def relocate_tag(
     db: Session = Depends(get_database)
 ):
     """Relocate a tag to a different category, reflecting in the DB."""
-    repo = TaggingRepository()
-    categories = {}
-    if repo.file_exists(CATEGORIES_PATH):
-        categories = repo.load_categories_from_file(CATEGORIES_PATH)
-    
-    if data.old_category not in categories or data.tag not in categories[data.old_category]:
-        raise HTTPException(status_code=404, detail="Source category or tag not found")
-    
-    if data.new_category not in categories:
-        raise HTTPException(status_code=404, detail="Destination category not found")
+    TaggingRepository.relocate_tag(data.tag, data.old_category, data.new_category)
 
-    if data.tag in categories[data.new_category]:
-        raise HTTPException(status_code=400, detail="Tag already exists in destination category")
-
-    # Update DB
     tx_repo = TransactionsRepository(db)
     tx_repo.update_category_for_tag(data.old_category, data.new_category, data.tag)
-    
-    # Update YAML
-    categories[data.old_category].remove(data.tag)
-    categories[data.new_category].append(data.tag)
-    repo.save_categories_to_file(categories, CATEGORIES_PATH)
     
     return {"status": "success"}
 
@@ -199,7 +134,6 @@ async def get_tagging_rules(
     db: Session = Depends(get_database)
 ):
     """Get all tagging rules."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
     df = service.get_all_rules(active_only=active_only)
     return df.to_dict(orient="records")
@@ -211,16 +145,15 @@ async def create_tagging_rule(
     db: Session = Depends(get_database)
 ):
     """Create a new tagging rule and apply it."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
-    rule_id = service.add_rule(
+    rule_id, n_tagged = service.add_rule(
         name=rule.name,
         conditions=rule.conditions,
         category=rule.category,
         tag=rule.tag,
         priority=rule.priority
     )
-    return {"status": "success", "id": rule_id}
+    return {"status": "success", "id": rule_id, "tagged_count": n_tagged}
 
 
 @router.put("/rules/{rule_id}")
@@ -230,10 +163,9 @@ async def update_tagging_rule(
     db: Session = Depends(get_database)
 ):
     """Update an existing tagging rule."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
-    success = service.update_rule(rule_id, **rule.model_dump(exclude_none=True))
-    return {"status": "success" if success else "no_changes"}
+    n_tagged = service.update_rule(rule_id, **rule.model_dump(exclude_none=True))
+    return {"status": "success", "tagged_count": n_tagged}
 
 
 @router.delete("/rules/{rule_id}")
@@ -242,11 +174,8 @@ async def delete_tagging_rule(
     db: Session = Depends(get_database)
 ):
     """Delete a tagging rule."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
-    success = service.delete_rule(rule_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Rule not found")
+    service.delete_rule(rule_id)
     return {"status": "success"}
 
 
@@ -255,7 +184,6 @@ async def apply_tagging_rules(
     db: Session = Depends(get_database)
 ):
     """Manually trigger application of all active rules."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
     count = service.apply_rules()
     return {"status": "success", "tagged_count": count}
@@ -267,7 +195,6 @@ async def test_tagging_rule(
     db: Session = Depends(get_database)
 ):
     """Test rule conditions against existing transactions."""
-    from backend.services.tagging_rules_service import TaggingRulesService
     service = TaggingRulesService(db)
     count, df = service.test_rule_against_transactions(conditions, limit=100)
     return {

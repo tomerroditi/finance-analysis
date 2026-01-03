@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException, EntityAlreadyExistsException
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from fad.app.naming_conventions import (
@@ -42,7 +43,7 @@ class TaggingRulesService:
             return rule_dict
         return None
 
-    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str, priority: int = 1) -> int:
+    def add_rule(self, name: str, conditions: List[Dict[str, Any]], category: str, tag: str, priority: int = 1) -> (int, int):
         """Add a new tagging rule and apply it."""
         rule_id = self.rules_repo.add_rule(
             name=name,
@@ -51,8 +52,8 @@ class TaggingRulesService:
             tag=tag,
             priority=priority,
         )
-        self.apply_rules()
-        return rule_id
+        n_tagged = self.apply_rule_by_id(rule_id)
+        return rule_id, n_tagged
 
     def update_rule(self, rule_id: int, **kwargs) -> int:
         """Update an existing rule and re-apply it."""
