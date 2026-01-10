@@ -11,6 +11,8 @@ from typing import Dict, Optional
 import keyring
 import yaml
 
+from backend.errors import EntityNotFoundException
+
 
 # Default paths - can be overridden via environment variables
 USER_DIR = os.environ.get('FAD_USER_DIR', os.path.join(os.path.expanduser('~'), '.finance-analysis'))
@@ -178,6 +180,11 @@ class CredentialsRepository:
         Retrieve credentials, including passwords from keyring.
         """
         all_creds = self.read_credentials_file() or {}
-        creds = all_creds[service][provider][account_name].copy()        
+
+        try:
+            creds = all_creds[service][provider][account_name].copy()
+        except KeyError:
+            raise EntityNotFoundException(f"Credentials for {service} {provider} {account_name} not found")
+
         creds['password'] = self.get_password_from_keyring(f"{service}_{provider}_{account_name}_password")
         return creds
