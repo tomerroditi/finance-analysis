@@ -40,32 +40,56 @@ export function Dashboard() {
     });
 
     const { data: overview, isLoading: overviewLoading } = useQuery({
-        queryKey: ['overview'],
-        queryFn: () => analyticsApi.getOverview().then(res => res.data),
+        queryKey: ['overview', dateRange.start, dateRange.end],
+        queryFn: async () => {
+            const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
+            const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
+            const res = await analyticsApi.getOverview(start, end);
+            return res.data;
+        },
+        enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)
     });
 
     const { data: incomeOutcome, isLoading: ioLoading } = useQuery({
         queryKey: ['income-outcome', dateRange.start, dateRange.end],
-        queryFn: () => analyticsApi.getIncomeOutcome().then(res => res.data),
-        // Note: You might want to pass date range to this API too if backend supports it
+        queryFn: async () => {
+            const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
+            const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
+            const res = await analyticsApi.getIncomeOutcome(start, end);
+            return res.data;
+        },
+        enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)
     });
 
     const { data: categoryData } = useQuery({
-        queryKey: ['analytics-category'],
-        queryFn: () => analyticsApi.getByCategory().then(res => res.data),
+        queryKey: ['analytics-category', dateRange.start, dateRange.end],
+        queryFn: async () => {
+            const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
+            const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
+            const res = await analyticsApi.getByCategory(start, end);
+            return res.data;
+        },
+        enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)
     });
 
     const { data: trendData } = useQuery({
-        queryKey: ['analytics-trend'],
-        queryFn: () => analyticsApi.getMonthlyTrend().then(res => res.data),
+        queryKey: ['analytics-trend', dateRange.start, dateRange.end],
+        queryFn: async () => {
+            const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
+            const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
+            const res = await analyticsApi.getMonthlyTrend(start, end);
+            return res.data;
+        },
+        enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)
     });
 
     const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
         queryKey: ['sankey', dateRange.start, dateRange.end],
-        queryFn: () => {
+        queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
-            return analyticsApi.getSankeyData(start, end).then(res => res.data);
+            const res = await analyticsApi.getSankeyData(start, end);
+            return res.data;
         },
         // Enable if both are null (All Time) OR if both are set (Specific Range)
         enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)

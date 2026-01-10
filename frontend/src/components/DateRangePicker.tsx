@@ -38,7 +38,6 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
         {
             label: 'Last Year',
             getValue: () => {
-                const lastYear = subMonths(new Date(), 12); // Actually subYears(1)
                 const d = new Date();
                 d.setFullYear(d.getFullYear() - 1);
                 return { start: startOfYear(d), end: endOfYear(d) };

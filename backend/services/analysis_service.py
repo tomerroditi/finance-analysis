@@ -14,23 +14,23 @@ class AnalysisService:
         self.db = db
         self.repo = TransactionsRepository(db)
 
-    def get_overview(self):
+    def get_overview(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
         """
         Get a financial overview including totals and latest data date.
         """
-        # Get latest dates
-        dates = []
-        for table in self.repo.tables:
-            date = self.repo.get_latest_date_from_table(table)
-            if date:
-                dates.append(date)
+        # Get latest dates (always base on all data for status check)
+        df = self.repo.get_table()
+        latest_date = df['date'].max()
         
-        # Get transaction counts
-        all_transactions = self.repo.get_table()
+        # Get transaction counts (optionally filtered)
+        if start_date:
+            df = df[df['date'] >= start_date]
+        if end_date:
+            df = df[df['date'] <= end_date]
         
         return {
-            "latest_data_date": max(dates).isoformat() if dates else None,
-            "total_transactions": len(all_transactions),
+            "latest_data_date": latest_date,
+            "total_transactions": len(df),
         }
 
     def get_total_income(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
@@ -49,11 +49,16 @@ class AnalysisService:
             df = df[df['date'] <= end_date]
         return abs(df[~df['category'].isin([c.value for c in NonExpensesCategories])]['amount'].sum())
 
-    def get_expenses_by_category(self):
+    def get_expenses_by_category(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
         """
         Get expenses grouped by category.
         """
         df = self.repo.get_table()
+        
+        if start_date:
+            df = df[df['date'] >= start_date]
+        if end_date:
+            df = df[df['date'] <= end_date]
         
         if df.empty:
             return []
@@ -72,12 +77,17 @@ class AnalysisService:
             for cat, amt in pos_grouped.items()
         ]}
 
-    def get_monthly_trend(self):
+    def get_monthly_trend(self, start_date: Optional[str] = None, end_date: Optional[str] = None):
         """
         Get monthly income and outcome trends.
         """
         df = self.repo.get_table()
         
+        if start_date:
+            df = df[df['date'] >= start_date]
+        if end_date:
+            df = df[df['date'] <= end_date]
+            
         if df.empty:
             return []
         

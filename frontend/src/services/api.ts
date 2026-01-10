@@ -124,11 +124,14 @@ export const investmentsApi = {
 
 // Analytics API
 export const analyticsApi = {
-    getOverview: () => api.get('/analytics/overview'),
-    getIncomeOutcome: (year?: number, month?: number) =>
-        api.get('/analytics/income-outcome', { params: { year, month } }),
-    getByCategory: () => api.get('/analytics/by-category'),
-    getMonthlyTrend: () => api.get('/analytics/monthly-trend'),
+    getOverview: (startDate?: string, endDate?: string) =>
+        api.get('/analytics/overview', { params: { start_date: startDate, end_date: endDate } }),
+    getIncomeOutcome: (startDate?: string, endDate?: string) =>
+        api.get('/analytics/income-outcome', { params: { start_date: startDate, end_date: endDate } }),
+    getByCategory: (startDate?: string, endDate?: string) =>
+        api.get('/analytics/by-category', { params: { start_date: startDate, end_date: endDate } }),
+    getMonthlyTrend: (startDate?: string, endDate?: string) =>
+        api.get('/analytics/monthly-trend', { params: { start_date: startDate, end_date: endDate } }),
     getSankeyData: (startDate?: string, endDate?: string) =>
         api.get('/analytics/sankey', { params: { start_date: startDate, end_date: endDate } }),
 };
