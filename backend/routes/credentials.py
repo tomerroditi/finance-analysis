@@ -66,11 +66,6 @@ async def get_credential_details(service: str, provider: str, account_name: str)
     creds = repo.get_credentials(service, provider, account_name)
     if not creds:
         raise HTTPException(status_code=404, detail="Credential not found")
-    
-    # Sanitize for security - we return the real values but they should be used carefully
-    # In a real app, we might want to mask passwords here if this is just for "View",
-    # but for "Edit", the frontend might need them (though usually we just let the user overwrite them).
-    # For now, return them as is, because 'get_credentials' already does the keyring work.
     return creds
 
 
