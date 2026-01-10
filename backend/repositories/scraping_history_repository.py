@@ -23,8 +23,7 @@ class ScrapingHistoryRepository:
     FAILED = 'failed'
     SUCCESS = 'success'
     CANCELED = 'canceled'
-
-    MAX_FAILED_ATTEMPTS_PER_DAY = 3
+    IN_PROGRESS = 'in_progress'
 
     def __init__(self, db: Session):
         """
@@ -54,16 +53,9 @@ class ScrapingHistoryRepository:
         )
         self.db.commit()
 
-    def record_scraping_attempt(
-        self, 
-        service_name: str, 
-        provider_name: str,
-        account_name: str, 
-        status: str, 
-        start_date: str | date = None
-    ) -> None:
+    def record_scrape_start(self, service_name: str, provider_name: str, account_name: str, start_date: datetime.date) -> int:
         """
-        Record a scraping attempt for an account.
+        Record a scrape start for an account and return the unique scrape id.
 
         Parameters
         ----------
@@ -73,16 +65,15 @@ class ScrapingHistoryRepository:
             The provider name.
         account_name : str
             The account name.
-        status : str
-            The scraping status ('success', 'failed', 'canceled').
-        start_date : str | date, optional
+        start_date : str
             The date used for scraping.
-        """
-        if status not in [self.SUCCESS, self.FAILED, self.CANCELED]:
-            raise ValueError(f"Invalid status: {status}")
 
-        current_time = datetime.now()
-        self.db.execute(
+        Returns
+        -------
+        int
+            The unique scrape id.
+        """
+        result = self.db.execute(
             text(f"""
                 INSERT OR REPLACE INTO {Tables.SCRAPING_HISTORY.value} 
                 ({ScrapingHistoryTableFields.SERVICE_NAME.value},
@@ -91,94 +82,50 @@ class ScrapingHistoryRepository:
                  {ScrapingHistoryTableFields.DATE.value},
                  {ScrapingHistoryTableFields.STATUS.value},
                  {ScrapingHistoryTableFields.START_DATE.value})
-                VALUES (:service_name, :provider_name, :account_name, :last_scraped, :status, :start_date)
+                VALUES (:service_name, :provider_name, :account_name, :date, :status, :start_date)
             """),
             {
                 "service_name": service_name,
                 "provider_name": provider_name,
                 "account_name": account_name,
-                "last_scraped": current_time.isoformat(),
+                "date": datetime.now().isoformat(),
+                "status": self.IN_PROGRESS,
+                "start_date": start_date.isoformat()
+            }
+        )
+        self.db.commit()
+        return result.lastrowid
+    
+    def record_scrape_end(self, scrape_id: int, status: str) -> None:
+        self.db.execute(
+            text(f"""
+                UPDATE {Tables.SCRAPING_HISTORY.value}
+                SET {ScrapingHistoryTableFields.STATUS.value} = :status
+                WHERE {ScrapingHistoryTableFields.ID.value} = :scrape_id
+            """),
+            {
                 "status": status,
-                "start_date": start_date.isoformat() if isinstance(start_date, date) else start_date
+                "scrape_id": scrape_id
             }
         )
         self.db.commit()
 
-    def can_scrape_today(self, service_name: str, provider_name: str, account_name: str) -> bool:
-        """
-        Check if an account can be scraped today.
-
-        Blocks if:
-        - Already scraped successfully today
-        - More than MAX_FAILED_ATTEMPTS_PER_DAY failed attempts today
-        """
-        today = date.today().isoformat()
-        
-        # Check for successful scrape today
-        success_result = self.db.execute(
+    def get_scraping_status(self, service_name: str, provider_name: str, account_name: str) -> str:
+        result = self.db.execute(
             text(f"""
-                SELECT 1 FROM {Tables.SCRAPING_HISTORY.value}
+                SELECT {ScrapingHistoryTableFields.STATUS.value} FROM {Tables.SCRAPING_HISTORY.value}
                 WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
                     AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
                     AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                    AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
-                    AND {ScrapingHistoryTableFields.STATUS.value} = :success
                 LIMIT 1
             """),
             {
                 "service_name": service_name,
                 "provider_name": provider_name,
                 "account_name": account_name,
-                "date": today,
-                "success": self.SUCCESS
             }
         )
-        if success_result.first() is not None:
-            return False
-
-        # Check failed attempts
-        fail_result = self.db.execute(
-            text(f"""
-                SELECT COUNT(*) FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
-                    AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
-                    AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                    AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
-                    AND {ScrapingHistoryTableFields.STATUS.value} = :failed
-            """),
-            {
-                "service_name": service_name,
-                "provider_name": provider_name,
-                "account_name": account_name,
-                "date": today,
-                "failed": self.FAILED
-            }
-        )
-        if (fail_result.scalar() or 0) >= self.MAX_FAILED_ATTEMPTS_PER_DAY:
-            return False
-
-        # Check canceled attempts
-        canceled_result = self.db.execute(
-            text(f"""
-                SELECT COUNT(*) FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
-                    AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
-                    AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                    AND DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
-                    AND {ScrapingHistoryTableFields.STATUS.value} = :canceled
-            """),
-            {
-                "service_name": service_name,
-                "provider_name": provider_name,
-                "account_name": account_name,
-                "date": today,
-                "canceled": self.CANCELED
-            }
-        )
-        if (canceled_result.scalar() or 0) >= self.MAX_FAILED_ATTEMPTS_PER_DAY:
-            return False
-
-        return True
+        return result.scalar()
 
     def get_scraping_history(self) -> pd.DataFrame:
         """Get the complete scraping history as a DataFrame."""
@@ -191,54 +138,6 @@ class ScrapingHistoryRepository:
         columns = result.keys()
         data = result.fetchall()
         return pd.DataFrame(data, columns=columns)
-
-    def get_todays_scraping_summary(self) -> Dict[str, List[str] | Dict[str, int]]:
-        """Get a summary of accounts scraped today."""
-        today = date.today().isoformat()
-        result = self.db.execute(
-            text(f"""
-                SELECT 
-                    {ScrapingHistoryTableFields.SERVICE_NAME.value},
-                    {ScrapingHistoryTableFields.PROVIDER_NAME.value},
-                    {ScrapingHistoryTableFields.ACCOUNT_NAME.value},
-                    {ScrapingHistoryTableFields.STATUS.value}
-                FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE DATE({ScrapingHistoryTableFields.DATE.value}) = DATE(:date)
-            """),
-            {"date": today}
-        )
-        columns = result.keys()
-        df = pd.DataFrame(result.fetchall(), columns=columns)
-
-        successful = []
-        failed = {}
-        canceled = {}
-
-        if not df.empty:
-            for _, row in df.iterrows():
-                account_id = (
-                    f"{row[ScrapingHistoryTableFields.SERVICE_NAME.value]} - "
-                    f"{row[ScrapingHistoryTableFields.PROVIDER_NAME.value]} - "
-                    f"{row[ScrapingHistoryTableFields.ACCOUNT_NAME.value]}"
-                )
-                status = row[ScrapingHistoryTableFields.STATUS.value]
-                if status == self.SUCCESS:
-                    successful.append(account_id)
-                elif status == self.FAILED:
-                    failed[account_id] = failed.get(account_id, 0) + 1
-                elif status == self.CANCELED:
-                    canceled[account_id] = canceled.get(account_id, 0) + 1
-
-        all_accounts = set(successful) | set(failed.keys()) | set(canceled.keys())
-        unavailable = set(successful) | {k for k, v in failed.items() if v >= self.MAX_FAILED_ATTEMPTS_PER_DAY}
-        
-        return {
-            "succeed_today": successful,
-            "failed_today": failed,
-            "canceled_today": canceled,
-            "available_to_scrape": list(all_accounts - unavailable),
-            "unavailable_to_scrape": list(unavailable)
-        }
 
     def get_last_successful_scrape_date(
         self, 

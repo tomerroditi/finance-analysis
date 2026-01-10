@@ -8,19 +8,20 @@ from time import sleep
 import pandas as pd
 import yaml
 
-from fad import CREDENTIALS_PATH
-from fad.app.data_access import get_db_connection
-from fad.app.data_access.transactions_repository import TransactionsRepository
-from fad.app.data_access.scraping_history_repository import ScrapingHistoryRepository
-from fad.app.naming_conventions import TransactionsTableFields, CreditCardTableFields, BankTableFields, Tables
-from fad.scraper import NODE_JS_SCRIPTS_DIR
-from fad.scraper.exceptions import (
+from backend.repositories.credentials_repository import CREDENTIALS_PATH
+from backend.database import get_db_context
+from backend.repositories.credentials_repository import CredentialsRepository
+from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.naming_conventions import TransactionsTableFields, CreditCardTableFields, BankTableFields, Tables
+from backend.scraper import NODE_JS_SCRIPTS_DIR
+from backend.scraper.exceptions import (
     ErrorType, ScraperError, LoginError, CredentialsError,
     ConnectionError, TimeoutError, DataError, AccountError,
     ServiceError, SecurityError, RateLimitError, PasswordChangeError
 )
 
-def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict):
+def get_scraper(service_name: str, provider_name: str, account_name: str, credentials: dict, start_date: datetime, process_id: int):
     """
     Get the scraper object for the specified service and provider
 
@@ -42,46 +43,46 @@ def get_scraper(service_name: str, provider_name: str, account_name: str, creden
     """
     if service_name == 'credit_cards':
         if provider_name == 'isracard':
-            return IsracardScraper(account_name, credentials)
+            return IsracardScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'max':
-            return MaxScraper(account_name, credentials)
+            return MaxScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'visa cal':
-            return VisaCalScraper(account_name, credentials)
+            return VisaCalScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'amex':
-            return AmexScraper(account_name, credentials)
+            return AmexScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'beyahad bishvilha':
-            return BeyahadBishvilhaScraper(account_name, credentials)
+            return BeyahadBishvilhaScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'behatsdaa':
-            return BehatsdaaScraper(account_name, credentials)
+            return BehatsdaaScraper(account_name, credentials, start_date, process_id)
     elif service_name == 'banks':
         if provider_name == 'onezero':
-            return OneZeroScraper(account_name, credentials)
+            return OneZeroScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'hapoalim':
-            return HapoalimScraper(account_name, credentials)
+            return HapoalimScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'leumi':
-            return LeumiScraper(account_name, credentials)
+            return LeumiScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'discount':
-            return DiscountScraper(account_name, credentials)
+            return DiscountScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'mizrahi':
-            return MizrahiScraper(account_name, credentials)
+            return MizrahiScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'mercantile':
-            return MercantileScraper(account_name, credentials)
+            return MercantileScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'otsar hahayal':
-            return OtsarHahayalScraper(account_name, credentials)
+            return OtsarHahayalScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'union':
-            return UnionScraper(account_name, credentials)
+            return UnionScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'beinleumi':
-            return BeinleumiScraper(account_name, credentials)
+            return BeinleumiScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'massad':
-            return MassadScraper(account_name, credentials)
+            return MassadScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'yahav':
-            return YahavScraper(account_name, credentials)
+            return YahavScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'dummy_tfa':
-            return DummyTFAScraper(account_name, credentials)
+            return DummyTFAScraper(account_name, credentials, start_date, process_id)
         elif provider_name == 'dummy_tfa_no_otp':
-            return DummyTFAScraperNoOTP(account_name, credentials)
+            return DummyTFAScraperNoOTP(account_name, credentials, start_date, process_id)
     elif service_name == 'insurance':
-        return InsuranceScraper(account_name, credentials)
+        return InsuranceScraper(account_name, credentials, start_date, process_id)
     else:
         raise ValueError(f'The service name {service_name} is not supported yet.')
 
@@ -120,7 +121,7 @@ class Scraper(ABC):
     requires_2fa = False
     CANCEL = "cancel"
 
-    def __init__(self, account_name: str, credentials: dict):
+    def __init__(self, account_name: str, credentials: dict, start_date: datetime.date, process_id: int):
         """
         Initialize the Scraper object with the credentials to be used to log in to the websites
 
@@ -134,6 +135,8 @@ class Scraper(ABC):
         """
         self.account_name = account_name
         self.credentials = credentials
+        self.process_id = process_id
+        self.start_date = start_date
         self.result = ''
         self.error = ''
         self.data = None
@@ -141,9 +144,6 @@ class Scraper(ABC):
         # 2fa related attributes
         self.otp_code = None
         self.otp_event = Event()
-
-        self.history_repo = ScrapingHistoryRepository(get_db_connection())
-        self.transactions_repo = TransactionsRepository(get_db_connection())
 
     @property
     @abstractmethod
@@ -193,22 +193,22 @@ class Scraper(ABC):
         """
         pass
 
-    def pull_data_to_db(self, start_date: datetime.date | str):
+    def pull_data_to_db(self):
         """
         Pull data from the specified provider and save it to the database
 
         Parameters
         ----------
-        start_date : datetime.datetime
-            The date from which to start pulling the data
-        db_path : str
-            The path to the database file. defaults to the global variable DB_PATH.
         """
-        start_date = start_date.strftime('%Y-%m-%d') if isinstance(start_date, datetime.date) else start_date
+        print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({self.start_date}) started', flush=True)
 
-        print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({start_date}) started', flush=True)
         try:
-            self.scrape_data(start_date)
+            self.scrape_data(self.start_date.strftime('%Y-%m-%d'))
+            if not self.data.empty:
+                self.data = self.data.sort_values(by=self.sort_by_columns)
+                self.data = self._add_account_name_and_provider_columns(self.data)
+                self.data = self._add_missing_columns(self.data)
+                self._save_scraped_transactions()
         except CredentialsError as e:
             print(f'{self.provider_name}: {self.account_name}: {self.error}', flush=True)
             print(f'DEBUG: Credentials error details: {e.original_error}', flush=True)
@@ -241,9 +241,9 @@ class Scraper(ABC):
             self.error = error_msg
             return
         finally:
-            self._record_scraping_history(start_date)
+            self._record_scraping_attempt(self.process_id)
 
-        print(f'[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({start_date}) finished', flush=True)
+        print(f'[{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({self.start_date}) finished', flush=True)
 
         if self.data.empty:
             if self.otp_code == self.CANCEL:
@@ -251,11 +251,6 @@ class Scraper(ABC):
             else:
                 print(f'{self.provider_name}: {self.account_name}: No transactions found')
             return
-
-        self.data = self.data.sort_values(by=self.sort_by_columns)
-        self.data = self._add_account_name_and_provider_columns(self.data)
-        self.data = self._add_missing_columns(self.data)
-        self.transactions_repo.add_scraped_transactions(self.data, self.table_name)
 
     @abstractmethod
     def scrape_data(self, start_date: str) -> pd.DataFrame:
@@ -289,7 +284,7 @@ class Scraper(ABC):
             error_msg = f'Timeout: The scraping process for {self.provider_name} - {self.account_name} took too long ({timeout} seconds) and was terminated'
             self.error = error_msg
             raise TimeoutError(error_msg, str(e))
-
+        
         self.result = result.stdout
         self._handle_error(result.stderr)
 
@@ -338,9 +333,9 @@ class Scraper(ABC):
         if date_col in df.columns:  # convert to string of format 'YYYY-MM-DD'
             try:
                 df[date_col] = df[date_col].apply(
-                    lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d'))
+                    lambda x: datetime.datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%fZ').strftime('%Y-%m-%d'))
             except ValueError:
-                df[date_col] = df[date_col].apply(lambda x: datetime.strptime(x, '%Y-%m-%d').strftime('%Y-%m-%d'))
+                df[date_col] = df[date_col].apply(lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').strftime('%Y-%m-%d'))
         return df
 
     def _add_account_name_and_provider_columns(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -505,17 +500,6 @@ class Scraper(ABC):
         if error:
             raise exception_class(user_message, original_error)
 
-    def _update_credentials_file(self):
-        """
-        Update the credentials file with the new OTP long-term token
-        """
-        with open(CREDENTIALS_PATH, 'r') as file:
-            credentials = yaml.safe_load(file)
-
-        credentials[self.service_name][self.provider_name][self.account_name] = self.credentials
-        with open(CREDENTIALS_PATH, 'w') as file:
-            yaml.dump(credentials, file)
-
     def set_otp_code(self, otp_code):
         """
         Set the OTP code to be used for the 2FA process. is used only by scrapers that require 2FA. calling this method
@@ -534,7 +518,7 @@ class Scraper(ABC):
         self.otp_code = otp_code
         self.otp_event.set()  # Notify that the OTP code is available
 
-    def _record_scraping_history(self, start_date: str | datetime.date):
+    def _record_scraping_attempt(self, id_: int):
         """
         Record the scraping attempt in the history database.
 
@@ -545,19 +529,24 @@ class Scraper(ABC):
         """
         # Determine the status based on whether we have data and no errors
         if self.otp_code == self.CANCEL:  # 2fa canceled by the user (self.data is an empty df)
-            status = self.history_repo.CANCELED
+            status = ScrapingHistoryRepository.CANCELED
         elif self.data is not None and not self.error:
-            status = self.history_repo.SUCCESS
+            status = ScrapingHistoryRepository.SUCCESS
         else:
-            status = self.history_repo.FAILED
+            status = ScrapingHistoryRepository.FAILED
 
-        self.history_repo.record_scraping_attempt(
-            service_name=self.service_name,
-            provider_name=self.provider_name,
-            account_name=self.account_name,
-            status=status,
-            start_date=start_date
-        )
+        with get_db_context() as db:
+            history_repo = ScrapingHistoryRepository(db)
+            history_repo.record_scrape_end(id_, status)
+
+    def _save_scraped_transactions(self):
+        """
+        Save the scraped transactions to the database.
+        Uses a fresh database session for clean session management.
+        """
+        with get_db_context() as db:
+            transactions_repo = TransactionsRepository(db)
+            transactions_repo.add_scraped_transactions(self.data, self.table_name)
 
 
 ############################################
@@ -873,7 +862,8 @@ class OneZeroScraper(BankScraper):
         for line in lines:
             if 'renewed long term token' in line:
                 self.credentials['otpLongTermToken'] = line.split(':', 1)[-1].strip()
-                self._update_credentials_file()
+                creds_repo = CredentialsRepository()
+                creds_repo.update_credentials(self.service_name, self.provider_name, self.account_name, self.credentials)
                 break
             elif 'long term token is valid' in line:
                 break
