@@ -169,8 +169,11 @@ class CredentialsRepository:
             all_creds[service][provider] = {}
         
         password = credentials.pop('password', None)
-        keyring_key = f"{service}_{provider}_{account_name}_password"
-        self.set_password_in_keyring(keyring_key, password)
+        long_term_token = credentials.pop('otpLongTermToken', None) # only one zero for now
+
+        for key, val in {"password": password, "otpLongTermToken": long_term_token}.items():
+            if val is not None:
+                self.set_password_in_keyring(f"{service}_{provider}_{account_name}_{key}", val)
         
         all_creds[service][provider][account_name] = credentials
         self.write_credentials_file(all_creds)
@@ -188,3 +191,9 @@ class CredentialsRepository:
 
         creds['password'] = self.get_password_from_keyring(f"{service}_{provider}_{account_name}_password")
         return creds
+
+    def update_credentials(self, service: str, provider: str, account_name: str, credentials: Dict) -> None:
+        """
+        Update credentials securely, using keyring for passwords.
+        """
+        self.save_credentials(service, provider, account_name, credentials)
