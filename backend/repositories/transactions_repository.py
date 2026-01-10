@@ -12,9 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from backend.repositories.split_transactions_repository import SplitTransactionsRepository
 
-# Import naming conventions from the original location
-# These don't have Streamlit dependencies
-from fad.app.naming_conventions import (
+from backend.naming_conventions import (
     Tables, CreditCardTableFields, BankTableFields, CashTableFields, 
     TransactionsTableFields, Services, ManualInvestmentTransactionsTableFields
 )

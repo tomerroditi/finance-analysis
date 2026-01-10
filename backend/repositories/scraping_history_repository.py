@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from fad.app.naming_conventions import Tables, ScrapingHistoryTableFields
+from backend.naming_conventions import Tables, ScrapingHistoryTableFields
 
 
 class ScrapingHistoryRepository:

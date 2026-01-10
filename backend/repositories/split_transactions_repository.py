@@ -7,7 +7,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from fad.app.naming_conventions import Tables, SplitTransactionsTableFields
+from backend.naming_conventions import Tables, SplitTransactionsTableFields
 
 
 class SplitTransactionsRepository:
