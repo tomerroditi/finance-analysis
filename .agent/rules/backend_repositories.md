@@ -1,3 +1,8 @@
+---
+trigger: glob
+globs: backend/repositories/**/*.py, backend/database.py
+---
+
 # Data Access Layer - Repository Pattern
 
 ## Purpose
@@ -543,4 +548,5 @@ except yaml.YAMLError as e:
 - Repository composition (nested repos) used for multi-source data management
 - Always return pandas DataFrames for queries (except primitives for counts/booleans)
 - Transactions must be explicitly committed - no auto-commit
+
 

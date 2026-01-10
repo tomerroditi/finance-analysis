@@ -1,3 +1,8 @@
+---
+trigger: glob
+globs: backend/services/**/*.py"
+---
+
 # Services Layer - Business Logic
 
 ## Purpose
