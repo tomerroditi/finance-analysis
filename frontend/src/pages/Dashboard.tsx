@@ -1,7 +1,11 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Wallet, PiggyBank } from 'lucide-react';
 import Plot from 'react-plotly.js';
+import { format } from 'date-fns';
 import { analyticsApi } from '../services/api';
+import { DateRangePicker, type DateRange } from '../components/DateRangePicker';
+import { SankeyChart } from '../components/SankeyChart';
 
 function StatCard({
     title,
@@ -30,14 +34,20 @@ function StatCard({
 }
 
 export function Dashboard() {
+    const [dateRange, setDateRange] = useState<DateRange>({
+        start: null,
+        end: null
+    });
+
     const { data: overview, isLoading: overviewLoading } = useQuery({
         queryKey: ['overview'],
         queryFn: () => analyticsApi.getOverview().then(res => res.data),
     });
 
     const { data: incomeOutcome, isLoading: ioLoading } = useQuery({
-        queryKey: ['income-outcome'],
+        queryKey: ['income-outcome', dateRange.start, dateRange.end],
         queryFn: () => analyticsApi.getIncomeOutcome().then(res => res.data),
+        // Note: You might want to pass date range to this API too if backend supports it
     });
 
     const { data: categoryData } = useQuery({
@@ -48,6 +58,17 @@ export function Dashboard() {
     const { data: trendData } = useQuery({
         queryKey: ['analytics-trend'],
         queryFn: () => analyticsApi.getMonthlyTrend().then(res => res.data),
+    });
+
+    const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
+        queryKey: ['sankey', dateRange.start, dateRange.end],
+        queryFn: () => {
+            const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
+            const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
+            return analyticsApi.getSankeyData(start, end).then(res => res.data);
+        },
+        // Enable if both are null (All Time) OR if both are set (Specific Range)
+        enabled: (dateRange.start === null && dateRange.end === null) || (!!dateRange.start && !!dateRange.end)
     });
 
     const formatCurrency = (val: number) =>
@@ -62,11 +83,14 @@ export function Dashboard() {
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div>
-                <h1 className="text-3xl font-bold">Dashboard</h1>
-                <p className="text-[var(--text-muted)] mt-1">
-                    Overview of your financial data
-                </p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold">Dashboard</h1>
+                    <p className="text-[var(--text-muted)] mt-1">
+                        Overview of your financial data
+                    </p>
+                </div>
+                <DateRangePicker value={dateRange} onChange={setDateRange} />
             </div>
 
             {/* Stats Grid */}
@@ -95,6 +119,17 @@ export function Dashboard() {
                     icon={PiggyBank}
                     color="bg-purple-500/20 text-purple-400"
                 />
+            </div>
+
+            {/* Sankey Flow Diagram */}
+            <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold">Cash Flow</h3>
+                    {sankeyLoading && <span className="text-sm text-[var(--text-muted)]">Loading...</span>}
+                </div>
+                <div className="h-[500px]">
+                    <SankeyChart data={sankeyData} height={500} />
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -138,32 +173,69 @@ export function Dashboard() {
                     </div>
                 </div>
 
-                {/* Category Pie Chart */}
+                {/* Category Breakdown Charts */}
                 <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-                    <h3 className="text-lg font-bold mb-4">Expenses by Category</h3>
-                    <div className="h-[350px]">
-                        <Plot
-                            data={[
-                                {
-                                    values: categoryData?.map((d: any) => d.amount),
-                                    labels: categoryData?.map((d: any) => d.category),
-                                    type: 'pie',
-                                    hole: 0.4,
-                                    marker: {
-                                        colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1']
-                                    },
-                                },
-                            ]}
-                            layout={{
-                                ...chartTheme,
-                                autosize: true,
-                                height: 350,
-                                showlegend: true,
-                                legend: { orientation: 'h', y: -0.2 }
-                            }}
-                            style={{ width: '100%', height: '100%' }}
-                            config={{ displayModeBar: false, responsive: true }}
-                        />
+                    <h3 className="text-lg font-bold mb-4">Category Breakdown</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
+                        {/* Expenses Chart */}
+                        <div className="relative">
+                            <p className="text-sm font-bold text-center text-red-400 mb-2 uppercase tracking-wider">Expenses</p>
+                            <div className="h-full">
+                                <Plot
+                                    data={[
+                                        {
+                                            values: categoryData?.expenses?.map((d: any) => d.amount) || [],
+                                            labels: categoryData?.expenses?.map((d: any) => d.category) || [],
+                                            type: 'pie',
+                                            hole: 0.4,
+                                            marker: {
+                                                colors: ['#ef4444', '#f87171', '#fca5a5', '#fecaca', '#fee2e2']
+                                            },
+                                            textinfo: 'label+percent',
+                                            hoverinfo: 'label+value+percent',
+                                        },
+                                    ]}
+                                    layout={{
+                                        ...chartTheme,
+                                        autosize: true,
+                                        showlegend: false,
+                                        margin: { t: 0, b: 0, l: 0, r: 0 },
+                                    }}
+                                    style={{ width: '95%', height: '95%' }}
+                                    config={{ displayModeBar: false, responsive: true }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Refunds Chart */}
+                        <div className="relative">
+                            <p className="text-sm font-bold text-center text-emerald-400 mb-2 uppercase tracking-wider">Refunds</p>
+                            <div className="h-full">
+                                <Plot
+                                    data={[
+                                        {
+                                            values: categoryData?.refunds?.map((d: any) => d.amount) || [],
+                                            labels: categoryData?.refunds?.map((d: any) => d.category) || [],
+                                            type: 'pie',
+                                            hole: 0.4,
+                                            marker: {
+                                                colors: ['#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#d1fae5']
+                                            },
+                                            textinfo: 'label+percent',
+                                            hoverinfo: 'label+value+percent',
+                                        },
+                                    ]}
+                                    layout={{
+                                        ...chartTheme,
+                                        autosize: true,
+                                        showlegend: false,
+                                        margin: { t: 0, b: 0, l: 0, r: 0 },
+                                    }}
+                                    style={{ width: '95%', height: '95%' }}
+                                    config={{ displayModeBar: false, responsive: true }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

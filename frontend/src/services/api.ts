@@ -129,6 +129,8 @@ export const analyticsApi = {
         api.get('/analytics/income-outcome', { params: { year, month } }),
     getByCategory: () => api.get('/analytics/by-category'),
     getMonthlyTrend: () => api.get('/analytics/monthly-trend'),
+    getSankeyData: (startDate?: string, endDate?: string) =>
+        api.get('/analytics/sankey', { params: { start_date: startDate, end_date: endDate } }),
 };
 
 export default api;
