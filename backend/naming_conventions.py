@@ -357,9 +357,9 @@ class Services(Enum):
     INSURANCE : str
         Identifier for insurance services.
     """
-    CREDIT_CARD = 'credit_card'
-    BANK = 'bank'
-    INSURANCE = 'insurance'
+    CREDIT_CARD = 'credit_cards'
+    BANK = 'banks'
+    INSURANCE = 'insurances'
     CASH = 'cash'
     MANUAL_INVESTMENTS = 'manual_investments'
 
