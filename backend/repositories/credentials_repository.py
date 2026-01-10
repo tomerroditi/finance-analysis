@@ -85,8 +85,8 @@ class CredentialsRepository:
             The default credentials structure.
         """
         if resources_path is None:
-            fad_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'fad')
-            resources_path = os.path.join(fad_path, 'resources')
+            backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            resources_path = os.path.join(backend_path, 'resources')
         
         file_path = os.path.join(resources_path, 'default_credentials.yaml')
         with open(file_path, 'r') as file:
@@ -166,18 +166,11 @@ class CredentialsRepository:
         if provider not in all_creds[service]:
             all_creds[service][provider] = {}
         
-        # Non-sensitive info for YAML
-        yaml_info = {}
+        password = credentials.pop('password', None)
+        keyring_key = f"{service}_{provider}_{account_name}_password"
+        self.set_password_in_keyring(keyring_key, password)
         
-        for key, value in credentials.items():
-            if key == 'password' or key.endswith('_key') or key == 'secret':
-                # Store in keyring
-                keyring_key = f"{service}_{provider}_{account_name}_{key}"
-                self.set_password_in_keyring(keyring_key, value)
-            else:
-                yaml_info[key] = value
-        
-        all_creds[service][provider][account_name] = yaml_info
+        all_creds[service][provider][account_name] = credentials
         self.write_credentials_file(all_creds)
 
     def get_credentials(self, service: str, provider: str, account_name: str) -> Dict:
@@ -185,32 +178,6 @@ class CredentialsRepository:
         Retrieve credentials, including passwords from keyring.
         """
         all_creds = self.read_credentials_file() or {}
-        try:
-            creds = all_creds[service][provider][account_name].copy()
-            
-            # Look for passwords in keyring
-            # We check typical sensitive keys. 
-            # Note: The usage of LoginFields could be dynamic here, but avoiding circular imports is better.
-            sensitive_keys = ['password', 'secret', 'otp_key']
-            
-            for key in creds.keys():
-                if key in sensitive_keys or 'password' in key.lower() or 'secret' in key.lower():
-                    # Try modern key format (underscores)
-                    keyring_key_new = f"{service}_{provider}_{account_name}_{key}"
-                    pwd = self.get_password_from_keyring(keyring_key_new)
-                    
-                    if not pwd:
-                        # Try legacy key format (colons) - used by previous Streamlit app
-                        keyring_key_old = f"{service}:{provider}:{account_name}:{key}"
-                        pwd = self.get_password_from_keyring(keyring_key_old)
-                    
-                    if pwd:
-                        creds[key] = pwd
-                    elif creds.get(key) == "your password is safely stored":
-                        # If we have the placeholder but couldn't find the real password, clear it
-                        # to avoid showing the placeholder to the user.
-                        creds[key] = ""
-                        
-            return creds
-        except KeyError:
-            return {}
+        creds = all_creds[service][provider][account_name].copy()        
+        creds['password'] = self.get_password_from_keyring(f"{service}_{provider}_{account_name}_password")
+        return creds
