@@ -27,6 +27,10 @@ class TFAFinishRequest(BaseModel):
     code: str
 
 
+class AbortRequest(BaseModel):
+    process_id: int
+
+
 @router.post("/start")
 async def start_scraping_single(
     data: StartScrapingRequest,
@@ -42,11 +46,22 @@ async def start_scraping_single(
     return scraping_process_id
 
 
+@router.post("/abort")
+async def abort_scraping(
+    data: AbortRequest,
+    db: Session = Depends(get_database)
+) -> dict:
+    """Abort a scraping process."""
+    service = ScrapingService(db)
+    service.abort_scraping_process(data.process_id)
+    return {"status": "aborted"}
+
+
 @router.get("/status")
 async def get_scraping_status(
-    scraping_process_id: str,
+    scraping_process_id: int,
     db: Session = Depends(get_database)
-) -> str:
+) -> dict:
     """Get the current scraping status."""
     service = ScrapingService(db)
     return service.get_scraping_status(scraping_process_id)

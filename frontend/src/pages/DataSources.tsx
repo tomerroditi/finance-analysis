@@ -7,7 +7,7 @@ export function DataSources() {
     const queryClient = useQueryClient();
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [step, setStep] = useState(1);
-    const [selectedService, setSelectedService] = useState<'bank' | 'credit_card' | ''>('');
+    const [selectedService, setSelectedService] = useState<'banks' | 'credit_cards' | ''>('');
     const [selectedProvider, setSelectedProvider] = useState('');
     const [accountName, setAccountName] = useState('');
     const [fields, setFields] = useState<Record<string, string>>({});
@@ -151,8 +151,8 @@ export function DataSources() {
                                 className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5 flex items-center justify-between hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
                             >
                                 <div className="flex items-center gap-5">
-                                    <div className={`p-3.5 rounded-2xl ${acc.service === 'bank' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
-                                        {acc.service === 'bank' ? <Landmark size={24} /> : <CreditCard size={24} />}
+                                    <div className={`p-3.5 rounded-2xl ${acc.service === 'banks' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
+                                        {acc.service === 'banks' ? <Landmark size={24} /> : <CreditCard size={24} />}
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2 mb-0.5">
@@ -221,7 +221,7 @@ export function DataSources() {
                             <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
                                 <p className="text-[var(--text-muted)] font-medium mb-6">Choose the type of service you want to connect:</p>
                                 <button
-                                    onClick={() => { setSelectedService('bank'); setStep(2); }}
+                                    onClick={() => { setSelectedService('banks'); setStep(2); }}
                                     className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
                                 >
                                     <div className="flex items-center gap-4">
@@ -236,7 +236,7 @@ export function DataSources() {
                                     <ChevronRight className="text-[var(--text-muted)]" />
                                 </button>
                                 <button
-                                    onClick={() => { setSelectedService('credit_card'); setStep(2); }}
+                                    onClick={() => { setSelectedService('credit_cards'); setStep(2); }}
                                     className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
                                 >
                                     <div className="flex items-center gap-4">

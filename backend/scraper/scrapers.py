@@ -6,9 +6,7 @@ from threading import Event
 from time import sleep
 
 import pandas as pd
-import yaml
 
-from backend.repositories.credentials_repository import CREDENTIALS_PATH
 from backend.database import get_db_context
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -87,6 +85,28 @@ def get_scraper(service_name: str, provider_name: str, account_name: str, creden
         raise ValueError(f'The service name {service_name} is not supported yet.')
 
 
+def is_2fa_required(service_name: str, provider_name: str):
+    """
+    Check if the scraper requires 2FA (Two-Factor Authentication)
+
+    Parameters
+    ----------
+    service_name : str
+        The name of the service of the scraper. banks, credit_cards, insurance, etc.
+    provider_name : str
+        The name of the provider of the scraper. isracard, hapoalim, max, etc.
+
+    Returns
+    -------
+    bool
+        True if the scraper requires 2FA, False otherwise
+    """
+    needs_2fa_map = {
+        "banks": ["onezero"]
+    }
+    return service_name in needs_2fa_map and provider_name in needs_2fa_map[service_name]
+
+
 class Scraper(ABC):
     """
     An abstract class to scrape data from different providers and save them to the database using Node.js scripts and
@@ -144,6 +164,11 @@ class Scraper(ABC):
         # 2fa related attributes
         self.otp_code = None
         self.otp_event = Event()
+
+    @property
+    def is_waiting_for_otp(self) -> bool:
+        """Check if the scraper is currently waiting for an OTP code."""
+        return self.otp_code == "waiting for input"
 
     @property
     @abstractmethod

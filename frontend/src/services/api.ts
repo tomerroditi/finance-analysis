@@ -97,13 +97,13 @@ export const credentialsApi = {
 
 // Scraping API
 export const scrapingApi = {
-    getHistory: () => api.get('/scraping/history'),
-    getSummary: () => api.get('/scraping/summary'),
-    getStatus: () => api.get('/scraping/status'),
-    start: (service?: string) => api.post('/scraping/start', { service }),
-    submit2fa: (scraperName: string, code: string) =>
-        api.post('/scraping/2fa', { scraper_name: scraperName, code }),
-    clearStatus: () => api.post('/scraping/clear'),
+    getStatus: (processId: number) => api.get('/scraping/status', { params: { scraping_process_id: processId } }),
+    start: (payload: { service: string, provider: string, account: string }) => {
+        return api.post('/scraping/start', payload);
+    },
+    submit2fa: (service: string, provider: string, account: string, code: string) =>
+        api.post('/scraping/2fa', { service, provider, account, code }),
+    abort: (processId: number) => api.post('/scraping/abort', { process_id: processId }),
 };
 
 // Investments API

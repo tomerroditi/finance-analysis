@@ -1,143 +1,74 @@
 """
-Scraping history repository with pure SQLAlchemy (no Streamlit dependencies).
-
-This module manages scraping attempt history and daily limits.
+Scraping history repository with SQLAlchemy ORM.
 """
 from datetime import datetime, date, timedelta
 from typing import List, Dict
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
+from backend.models.scraping import ScrapingHistory
 from backend.naming_conventions import Tables, ScrapingHistoryTableFields
 
 
 class ScrapingHistoryRepository:
     """
-    Repository for managing scraping history data and daily limits.
-    
-    Tracks when accounts were last scraped and enforces daily limits
-    to prevent excessive requests to financial institutions.
+    Repository for managing scraping history data and daily limits using ORM.
     """
     FAILED = 'failed'
     SUCCESS = 'success'
     CANCELED = 'canceled'
     IN_PROGRESS = 'in_progress'
+    WAITING_FOR_2FA = 'waiting_for_2fa'
 
     def __init__(self, db: Session):
-        """
-        Initialize the ScrapingHistoryRepository.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
         self.db = db
-        self._ensure_table_exists()
 
     def _ensure_table_exists(self) -> None:
-        """Create the scraping history table if it doesn't exist."""
-        self.db.execute(
-            text(f"""
-                CREATE TABLE IF NOT EXISTS {Tables.SCRAPING_HISTORY.value} (
-                    {ScrapingHistoryTableFields.SERVICE_NAME.value} TEXT NOT NULL,
-                    {ScrapingHistoryTableFields.PROVIDER_NAME.value} TEXT NOT NULL,
-                    {ScrapingHistoryTableFields.ACCOUNT_NAME.value} TEXT NOT NULL,
-                    {ScrapingHistoryTableFields.DATE.value} TEXT NOT NULL,
-                    {ScrapingHistoryTableFields.STATUS.value} TEXT NOT NULL,
-                    {ScrapingHistoryTableFields.START_DATE.value} TEXT
-                )
-            """)
-        )
-        self.db.commit()
+        pass
 
-    def record_scrape_start(self, service_name: str, provider_name: str, account_name: str, start_date: datetime.date) -> int:
+    def record_scrape_start(self, service_name: str, provider_name: str, account_name: str, start_date: datetime.date, status: str = IN_PROGRESS) -> int:
         """
         Record a scrape start for an account and return the unique scrape id.
-
-        Parameters
-        ----------
-        service_name : str
-            The service name (banks, credit_cards).
-        provider_name : str
-            The provider name.
-        account_name : str
-            The account name.
-        start_date : str
-            The date used for scraping.
-
-        Returns
-        -------
-        int
-            The unique scrape id.
         """
-        result = self.db.execute(
-            text(f"""
-                INSERT OR REPLACE INTO {Tables.SCRAPING_HISTORY.value} 
-                ({ScrapingHistoryTableFields.SERVICE_NAME.value},
-                 {ScrapingHistoryTableFields.PROVIDER_NAME.value},
-                 {ScrapingHistoryTableFields.ACCOUNT_NAME.value},
-                 {ScrapingHistoryTableFields.DATE.value},
-                 {ScrapingHistoryTableFields.STATUS.value},
-                 {ScrapingHistoryTableFields.START_DATE.value})
-                VALUES (:service_name, :provider_name, :account_name, :date, :status, :start_date)
-            """),
-            {
-                "service_name": service_name,
-                "provider_name": provider_name,
-                "account_name": account_name,
-                "date": datetime.now().isoformat(),
-                "status": self.IN_PROGRESS,
-                "start_date": start_date.isoformat()
-            }
+        # Original logic used INSERT OR REPLACE based on... checking constraints? 
+        # But SQLite schema didn't have specific unique constraint on (service, provider, account, date) 
+        # other than implicit or explicit rowid.
+        # However, calling it multiple times for same day should probably create new entries 
+        # or update existing?
+        # "INSERT OR REPLACE" suggests if PK matches. But standard INSERT doesn't assume PK unless provided.
+        # Here we just want to create a new record for this "attempt".
+        
+        history = ScrapingHistory(
+            service_name=service_name,
+            provider_name=provider_name,
+            account_name=account_name,
+            date=datetime.now().isoformat(),
+            status=status,
+            start_date=start_date.isoformat()
         )
+        self.db.add(history)
         self.db.commit()
-        return result.lastrowid
+        return history.id
     
     def record_scrape_end(self, scrape_id: int, status: str) -> None:
-        self.db.execute(
-            text(f"""
-                UPDATE {Tables.SCRAPING_HISTORY.value}
-                SET {ScrapingHistoryTableFields.STATUS.value} = :status
-                WHERE {ScrapingHistoryTableFields.ID.value} = :scrape_id
-            """),
-            {
-                "status": status,
-                "scrape_id": scrape_id
-            }
+        stmt = (
+            update(ScrapingHistory)
+            .where(ScrapingHistory.id == scrape_id)
+            .values(status=status)
         )
+        self.db.execute(stmt)
         self.db.commit()
 
-    def get_scraping_status(self, service_name: str, provider_name: str, account_name: str) -> str:
-        result = self.db.execute(
-            text(f"""
-                SELECT {ScrapingHistoryTableFields.STATUS.value} FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
-                    AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
-                    AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                LIMIT 1
-            """),
-            {
-                "service_name": service_name,
-                "provider_name": provider_name,
-                "account_name": account_name,
-            }
-        )
-        return result.scalar()
+    def get_scraping_status(self, scrape_id: int) -> str | None:
+        stmt = select(ScrapingHistory.status).where(ScrapingHistory.id == scrape_id)
+        return self.db.execute(stmt).scalar()
 
     def get_scraping_history(self) -> pd.DataFrame:
         """Get the complete scraping history as a DataFrame."""
-        result = self.db.execute(
-            text(f"""
-                SELECT * FROM {Tables.SCRAPING_HISTORY.value}
-                ORDER BY {ScrapingHistoryTableFields.DATE.value} DESC
-            """)
-        )
-        columns = result.keys()
-        data = result.fetchall()
-        return pd.DataFrame(data, columns=columns)
+        stmt = select(ScrapingHistory).order_by(ScrapingHistory.date.desc())
+        return pd.read_sql(stmt, self.db.bind)
 
     def get_last_successful_scrape_date(
         self, 
@@ -146,35 +77,18 @@ class ScrapingHistoryRepository:
         account_name: str
     ) -> str | None:
         """Get the last successful scraping date for an account."""
-        result = self.db.execute(
-            text(f"""
-                SELECT {ScrapingHistoryTableFields.DATE.value} 
-                FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE {ScrapingHistoryTableFields.SERVICE_NAME.value} = :service_name
-                    AND {ScrapingHistoryTableFields.PROVIDER_NAME.value} = :provider_name
-                    AND {ScrapingHistoryTableFields.ACCOUNT_NAME.value} = :account_name
-                    AND {ScrapingHistoryTableFields.STATUS.value} = :success
-                ORDER BY {ScrapingHistoryTableFields.DATE.value} DESC
-                LIMIT 1
-            """),
-            {
-                "service_name": service_name,
-                "provider_name": provider_name,
-                "account_name": account_name,
-                "success": self.SUCCESS
-            }
-        )
-        row = result.first()
-        return row[0] if row else None
+        stmt = select(ScrapingHistory.date).where(
+            ScrapingHistory.service_name == service_name,
+            ScrapingHistory.provider_name == provider_name,
+            ScrapingHistory.account_name == account_name,
+            ScrapingHistory.status == self.SUCCESS
+        ).order_by(ScrapingHistory.date.desc()).limit(1)
+        
+        return self.db.execute(stmt).scalar()
 
     def clear_old_records(self, days_to_keep: int = 30) -> None:
         """Clear scraping history records older than specified days."""
         cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
-        self.db.execute(
-            text(f"""
-                DELETE FROM {Tables.SCRAPING_HISTORY.value}
-                WHERE {ScrapingHistoryTableFields.DATE.value} < :cutoff_date
-            """),
-            {"cutoff_date": cutoff_date}
-        )
+        stmt = delete(ScrapingHistory).where(ScrapingHistory.date < cutoff_date)
+        self.db.execute(stmt)
         self.db.commit()

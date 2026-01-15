@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { analyticsApi } from '../services/api';
 import { DateRangePicker, type DateRange } from '../components/DateRangePicker';
 import { SankeyChart } from '../components/SankeyChart';
+import { ScrapingWidget } from '../components/dashboard/ScrapingWidget';
 
 function StatCard({
     title,
@@ -145,14 +146,24 @@ export function Dashboard() {
                 />
             </div>
 
-            {/* Sankey Flow Diagram */}
-            <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold">Cash Flow</h3>
-                    {sankeyLoading && <span className="text-sm text-[var(--text-muted)]">Loading...</span>}
+
+
+            {/* Actions & Status Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2">
+                    {/* Sankey Flow Diagram */}
+                    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden h-full">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold">Cash Flow</h3>
+                            {sankeyLoading && <span className="text-sm text-[var(--text-muted)]">Loading...</span>}
+                        </div>
+                        <div className="h-[500px]">
+                            <SankeyChart data={sankeyData} height={500} />
+                        </div>
+                    </div>
                 </div>
-                <div className="h-[500px]">
-                    <SankeyChart data={sankeyData} height={500} />
+                <div>
+                    <ScrapingWidget />
                 </div>
             </div>
 
@@ -276,6 +287,6 @@ export function Dashboard() {
                     Live Updates Active
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

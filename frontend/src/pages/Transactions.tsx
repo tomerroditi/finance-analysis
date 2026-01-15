@@ -1,12 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo, useEffect } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Split, Edit2, CheckCircle2, X, ShieldCheck, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Trash2, Split, Edit2, CheckCircle2, X, ShieldCheck } from 'lucide-react';
 import { transactionsApi, taggingApi } from '../services/api';
 import { useAppStore } from '../stores/appStore';
 import { TransactionEditorModal } from '../components/modals/TransactionEditorModal';
 import { SplitTransactionModal } from '../components/modals/SplitTransactionModal';
 import { RuleManager } from '../components/modals/RuleManager';
-import { ScrapingManager } from '../components/modals/ScrapingManager';
 
 type SortConfig = {
     key: string;
@@ -25,7 +24,6 @@ export function Transactions() {
     const [editingTransaction, setEditingTransaction] = useState<any>(null);
     const [splittingTransaction, setSplittingTransaction] = useState<any>(null);
     const [showRuleManager, setShowRuleManager] = useState(false);
-    const [showScrapingManager, setShowScrapingManager] = useState(false);
     const [isBulkTagging, setIsBulkTagging] = useState(false);
     const [bulkTagData, setBulkTagData] = useState({ category: '', tag: '' });
 
@@ -189,8 +187,8 @@ export function Transactions() {
 
     const services = [
         { value: 'all', label: 'All' },
-        { value: 'credit_card', label: 'Credit Card' },
-        { value: 'bank', label: 'Bank' },
+        { value: 'credit_cards', label: 'Credit Card' },
+        { value: 'banks', label: 'Bank' },
         { value: 'cash', label: 'Cash' },
     ] as const;
 
@@ -244,12 +242,7 @@ export function Transactions() {
                     >
                         <ShieldCheck size={16} className="text-[var(--primary)]" /> Rules
                     </button>
-                    <button
-                        onClick={() => setShowScrapingManager(true)}
-                        className="px-4 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20 transition-all flex items-center gap-2"
-                    >
-                        <RefreshCw size={16} /> Import Data
-                    </button>
+
 
                     <div className="w-px h-8 bg-[var(--surface-light)] mx-2" />
 
@@ -382,42 +375,43 @@ export function Transactions() {
                 )}
             </div>
 
-            {selectedIds.size > 0 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--primary)]/50 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40">
-                    <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">{selectedIds.size}</div>
-                        <span className="text-sm font-medium">Selected</span>
+            {
+                selectedIds.size > 0 && (
+                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--primary)]/50 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">{selectedIds.size}</div>
+                            <span className="text-sm font-medium">Selected</span>
+                        </div>
+                        <div className="w-px h-8 bg-[var(--surface-light)]" />
+                        <div className="flex items-center gap-3">
+                            {isBulkTagging ? (
+                                <div className="flex items-center gap-2">
+                                    <select className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none" value={bulkTagData.category} onChange={(e) => setBulkTagData({ ...bulkTagData, category: e.target.value, tag: '' })}>
+                                        <option value="">Category</option>
+                                        {categories && Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                    </select>
+                                    <select className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none disabled:opacity-50" value={bulkTagData.tag} onChange={(e) => setBulkTagData({ ...bulkTagData, tag: e.target.value })} disabled={!bulkTagData.category}>
+                                        <option value="">Tag</option>
+                                        {bulkTagData.category && categories?.[bulkTagData.category]?.map((tag: string) => <option key={tag} value={tag}>{tag}</option>)}
+                                    </select>
+                                    <button className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" onClick={handleBulkTag} disabled={!bulkTagData.category}><CheckCircle2 size={20} /></button>
+                                    <button className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]" onClick={() => { setIsBulkTagging(false); setBulkTagData({ category: '', tag: '' }); }}><X size={20} /></button>
+                                </div>
+                            ) : (
+                                <>
+                                    <button className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all" onClick={() => setIsBulkTagging(true)}>Tag Selection</button>
+                                    <button className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-sm font-medium transition-all" onClick={handleBulkDelete}>Delete</button>
+                                    <button className="px-4 py-2 rounded-lg hover:bg-[var(--surface-light)] text-sm font-medium transition-all" onClick={() => setSelectedIds(new Set())}>Cancel</button>
+                                </>
+                            )}
+                        </div>
                     </div>
-                    <div className="w-px h-8 bg-[var(--surface-light)]" />
-                    <div className="flex items-center gap-3">
-                        {isBulkTagging ? (
-                            <div className="flex items-center gap-2">
-                                <select className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none" value={bulkTagData.category} onChange={(e) => setBulkTagData({ ...bulkTagData, category: e.target.value, tag: '' })}>
-                                    <option value="">Category</option>
-                                    {categories && Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                </select>
-                                <select className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none disabled:opacity-50" value={bulkTagData.tag} onChange={(e) => setBulkTagData({ ...bulkTagData, tag: e.target.value })} disabled={!bulkTagData.category}>
-                                    <option value="">Tag</option>
-                                    {bulkTagData.category && categories?.[bulkTagData.category]?.map((tag: string) => <option key={tag} value={tag}>{tag}</option>)}
-                                </select>
-                                <button className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" onClick={handleBulkTag} disabled={!bulkTagData.category}><CheckCircle2 size={20} /></button>
-                                <button className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]" onClick={() => { setIsBulkTagging(false); setBulkTagData({ category: '', tag: '' }); }}><X size={20} /></button>
-                            </div>
-                        ) : (
-                            <>
-                                <button className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all" onClick={() => setIsBulkTagging(true)}>Tag Selection</button>
-                                <button className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-sm font-medium transition-all" onClick={handleBulkDelete}>Delete</button>
-                                <button className="px-4 py-2 rounded-lg hover:bg-[var(--surface-light)] text-sm font-medium transition-all" onClick={() => setSelectedIds(new Set())}>Cancel</button>
-                            </>
-                        )}
-                    </div>
-                </div>
-            )}
+                )
+            }
 
             {editingTransaction && <TransactionEditorModal transaction={editingTransaction} onClose={() => setEditingTransaction(null)} onSuccess={() => refetch()} />}
             {splittingTransaction && <SplitTransactionModal transaction={splittingTransaction} onClose={() => setSplittingTransaction(null)} onSuccess={() => refetch()} />}
             {showRuleManager && <RuleManager onClose={() => setShowRuleManager(false)} />}
-            {showScrapingManager && <ScrapingManager onClose={() => setShowScrapingManager(false)} />}
-        </div>
+        </div >
     );
 }
