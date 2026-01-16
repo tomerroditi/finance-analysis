@@ -3,12 +3,13 @@ Credentials API routes.
 
 Provides endpoints for account credential management.
 """
+
 from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.naming_conventions import LoginFields
+from backend.naming_conventions import LoginFields, bank_providers, cc_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 
 router = APIRouter()
@@ -28,14 +29,14 @@ async def get_credentials():
     credentials = repo.read_credentials_file()
     if credentials is None:
         return {}
-    
+
     # Remove sensitive data before returning
     safe_credentials = {}
     for service, providers in credentials.items():
         safe_credentials[service] = {}
         for provider, accounts in providers.items():
             safe_credentials[service][provider] = list(accounts.keys())
-    
+
     return safe_credentials
 
 
@@ -46,16 +47,18 @@ async def get_accounts():
     credentials = repo.read_credentials_file()
     if credentials is None:
         return []
-    
+
     accounts = []
     for service, providers in credentials.items():
         for provider, account_dict in providers.items():
             for account_name in account_dict.keys():
-                accounts.append({
-                    "service": service,
-                    "provider": provider,
-                    "account_name": account_name
-                })
+                accounts.append(
+                    {
+                        "service": service,
+                        "provider": provider,
+                        "account_name": account_name,
+                    }
+                )
     return accounts
 
 
@@ -72,11 +75,7 @@ async def get_credential_details(service: str, provider: str, account_name: str)
 @router.get("/providers")
 async def get_providers():
     """Get all supported providers."""
-    from fad.app.naming_conventions import bank_providers, cc_providers
-    return {
-        "bank": bank_providers,
-        "credit_card": cc_providers
-    }
+    return {"bank": bank_providers, "credit_card": cc_providers}
 
 
 @router.post("/")
@@ -87,7 +86,7 @@ async def create_credential(credential: CredentialCreate):
         service=credential.service,
         provider=credential.provider,
         account_name=credential.account_name,
-        credentials=credential.credentials
+        credentials=credential.credentials,
     )
     return {"status": "success"}
 
@@ -100,31 +99,27 @@ async def get_provider_fields(provider: str):
 
 
 @router.delete("/{service}/{provider}/{account_name}")
-async def delete_credential(
-    service: str,
-    provider: str,
-    account_name: str
-):
+async def delete_credential(service: str, provider: str, account_name: str):
     """Delete a credential."""
     repo = CredentialsRepository()
     credentials = repo.read_credentials_file()
-    
+
     if credentials is None:
         raise HTTPException(status_code=404, detail="No credentials found")
-    
+
     # Delete from YAML
     del credentials[service][provider][account_name]
-    
+
     # Clean up empty structures
     if not credentials[service][provider]:
         del credentials[service][provider]
     if not credentials[service]:
         del credentials[service]
-    
+
     repo.write_credentials_file(credentials)
 
     # Delete from Keyring (best effort)
-    for key in ['password', 'secret', 'otp_key']:
+    for key in ["password", "secret", "otp_key"]:
         keyring_key = f"{service}_{provider}_{account_name}_{key}"
         repo.delete_password_from_keyring(keyring_key)
 
