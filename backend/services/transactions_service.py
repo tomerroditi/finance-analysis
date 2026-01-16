@@ -17,6 +17,7 @@ from backend.repositories.transactions_repository import (
 from backend.repositories.split_transactions_repository import SplitTransactionsRepository
 from fad.app.naming_conventions import (
     TransactionsTableFields,
+    SplitTransactionsTableFields,
     NonExpensesCategories,
     SavingsAndInvestmentsCategories,
     IncomeCategories,
@@ -75,23 +76,23 @@ class TransactionsService:
     def get_table_columns_for_display(self) -> List[str]:
         """Get the columns of the transactions table."""
         return [
-            self.transactions_repository.provider_col,
-            self.transactions_repository.account_name_col,
-            self.transactions_repository.account_number_col,
-            self.transactions_repository.date_col,
-            self.transactions_repository.desc_col,
-            self.transactions_repository.amount_col,
-            self.transactions_repository.category_col,
-            self.transactions_repository.tag_col,
-            self.transactions_repository.id_col,
-            self.transactions_repository.status_col,
-            self.transactions_repository.type_col
+            TransactionsTableFields.PROVIDER.value,
+            TransactionsTableFields.ACCOUNT_NAME.value,
+            TransactionsTableFields.ACCOUNT_NUMBER.value,
+            TransactionsTableFields.DATE.value,
+            TransactionsTableFields.DESCRIPTION.value,
+            TransactionsTableFields.AMOUNT.value,
+            TransactionsTableFields.CATEGORY.value,
+            TransactionsTableFields.TAG.value,
+            TransactionsTableFields.ID.value,
+            TransactionsTableFields.STATUS.value,
+            TransactionsTableFields.TYPE.value
         ]
 
     def get_data_for_analysis(self) -> pd.DataFrame:
         """Get table data for analysis purposes."""
-        cc_data = self.get_table_for_analysis('credit_card')
-        bank_data = self.get_table_for_analysis('bank')
+        cc_data = self.get_table_for_analysis('credit_cards')
+        bank_data = self.get_table_for_analysis('banks')
         cash_data = self.get_table_for_analysis('cash')
         manual_investments_data = self.get_table_for_analysis('manual_investments')
         return pd.concat([cc_data, bank_data, cash_data, manual_investments_data], ignore_index=True)
@@ -123,15 +124,15 @@ class TransactionsService:
             investment_df = investment_df[investment_df[tag_col] == tag]
         return investment_df.reset_index(drop=True)
 
-    def get_all_transactions(self, service: Literal['credit_card', 'bank', 'cash']) -> pd.DataFrame:
+    def get_all_transactions(self, service: Literal['credit_cards', 'banks', 'cash']) -> pd.DataFrame:
         """Get all transactions for the specified service."""
-        if service not in ['credit_card', 'bank', 'cash']:
-            raise ValueError(f"service must be one of 'credit_card', 'bank', 'cash'. Got '{service}'")
+        if service not in ['credit_cards', 'banks', 'cash']:
+            raise ValueError(f"service must be one of 'credit_cards', 'banks', 'cash'. Got '{service}'")
         return self.transactions_repository.get_table(service)
 
     def get_untagged_transactions(
         self, 
-        service: Literal['credit_card', 'bank'], 
+        service: Literal['credit_cards', 'banks'], 
         account_number: Optional[str] = None
     ) -> pd.DataFrame:
         """Get transactions that don't have categories assigned."""
@@ -139,7 +140,7 @@ class TransactionsService:
         category_col = TransactionsTableFields.CATEGORY.value
         untagged = transactions[transactions[category_col].isna()]
 
-        if account_number and service == 'bank':
+        if account_number and service == 'banks':
             account_col = TransactionsTableFields.ACCOUNT_NUMBER.value
             untagged = untagged[untagged[account_col] == account_number]
 
@@ -161,7 +162,7 @@ class TransactionsService:
 
     def get_table_for_analysis(
         self, 
-        service: Literal['credit_card', 'bank', 'cash', 'manual_investments'] = 'credit_card'
+        service: Literal['credit_cards', 'banks', 'cash', 'manual_investments'] = 'credit_cards'
     ) -> pd.DataFrame:
         """
         Returns the transactions table with split transactions expanded.
@@ -171,38 +172,36 @@ class TransactionsService:
         df = self.transactions_repository.get_table(service).copy()
 
         analysis_cols = [
-            self.transactions_repository.id_col,
-            self.transactions_repository.date_col,
-            self.transactions_repository.provider_col,
-            self.transactions_repository.account_name_col,
-            self.transactions_repository.account_number_col,
-            self.transactions_repository.desc_col,
-            self.transactions_repository.amount_col,
-            self.transactions_repository.category_col,
-            self.transactions_repository.tag_col
+            TransactionsTableFields.ID.value,
+            TransactionsTableFields.DATE.value,
+            TransactionsTableFields.PROVIDER.value,
+            TransactionsTableFields.ACCOUNT_NAME.value,
+            TransactionsTableFields.ACCOUNT_NUMBER.value,
+            TransactionsTableFields.DESCRIPTION.value,
+            TransactionsTableFields.AMOUNT.value,
+            TransactionsTableFields.CATEGORY.value,
+            TransactionsTableFields.TAG.value
         ]
 
         split_df = self.split_transactions_repository.get_data()
         if split_df.empty:
             return df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
 
-        split_df = split_df[split_df['transaction_id'].isin(df[self.transactions_repository.id_col])]
-        split_ids = set(split_df['transaction_id'])
-        mask = df[self.transactions_repository.id_col].isin(split_ids)
+        split_df = split_df[split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(df[TransactionsTableFields.ID.value])]
+        split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
+        mask = df[TransactionsTableFields.ID.value].isin(split_ids)
         base_df = df[~mask].copy()
 
         split_rows = []
-        for id_, split_group in split_df.groupby(self.split_transactions_repository.transaction_id_col):
-            orig_row = df[df[self.transactions_repository.id_col] == id_]
+        for id_, split_group in split_df.groupby(SplitTransactionsTableFields.TRANSACTION_ID.value):
+            orig_row = df[df[TransactionsTableFields.ID.value] == id_]
             if orig_row.empty:
                 continue
             for _, split in split_group.iterrows():
                 split_row = orig_row.copy()
-                split_row[self.transactions_repository.amount_col] = split[
-                    self.split_transactions_repository.amount_col]
-                split_row[self.transactions_repository.category_col] = split[
-                    self.split_transactions_repository.category_col]
-                split_row[self.transactions_repository.tag_col] = split[self.split_transactions_repository.tag_col]
+                split_row[TransactionsTableFields.AMOUNT.value] = split[SplitTransactionsTableFields.AMOUNT.value]
+                split_row[TransactionsTableFields.CATEGORY.value] = split[SplitTransactionsTableFields.CATEGORY.value]
+                split_row[TransactionsTableFields.TAG.value] = split[SplitTransactionsTableFields.TAG.value]
                 split_rows.append(split_row)
 
         if split_rows:
@@ -292,14 +291,14 @@ class TransactionsService:
         }
 
     @staticmethod
-    def get_providers_for_service(service: Literal['credit_card', 'bank']) -> List[str]:
+    def get_providers_for_service(service: Literal['credit_cards', 'banks']) -> List[str]:
         """Get a list of providers for the specified service."""
         if service == Services.CREDIT_CARD.value:
             return [e.value for e in CreditCards]
         elif service == Services.BANK.value:
             return [e.value for e in Banks]
         else:
-            raise ValueError(f"Service must be 'credit_card' or 'bank'. Got '{service}'")
+            raise ValueError(f"Service must be 'credit_cards' or 'banks'. Got '{service}'")
 
     @staticmethod
     def get_all_providers() -> List[str]:

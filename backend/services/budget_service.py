@@ -226,18 +226,18 @@ class MonthlyBudgetService(BudgetService):
         all_data = self.transactions_service.get_data_for_analysis()
 
         expenses = all_data.loc[
-            ~all_data[self.transactions_service.transactions_repository.category_col]
+            ~all_data[TransactionsTableFields.CATEGORY.value]
             .isin([c.value for c in NonExpensesCategories])
         ].copy()
-        expenses[self.transactions_service.transactions_repository.date_col] = pd.to_datetime(
-            expenses[self.transactions_service.transactions_repository.date_col]
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
         )
 
         projects = ProjectBudgetService(self.db).get_all_projects_names()
         month_data = expenses.loc[
-            (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
-            (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
-            ~expenses[self.transactions_service.transactions_repository.category_col].isin(projects)
+            (expenses[TransactionsTableFields.DATE.value].dt.year == year) &
+            (expenses[TransactionsTableFields.DATE.value].dt.month == month) &
+            ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
         ]
 
         rules = budget_rules[(budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)]
@@ -248,7 +248,7 @@ class MonthlyBudgetService(BudgetService):
 
         total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
         if not total_rule.empty:
-            total = month_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
+            total = month_data[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append({
                 "rule": total_rule.iloc[0].to_dict(),
                 "current_amount": total,
@@ -260,12 +260,12 @@ class MonthlyBudgetService(BudgetService):
         remaining_data = month_data.copy()
         for _, rule in rules.iterrows():
             tags = rule[TAGS]
-            cat_data = remaining_data[remaining_data[self.transactions_service.transactions_repository.category_col] == rule[CATEGORY]]
+            cat_data = remaining_data[remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]]
 
             if tags != [ALL_TAGS]:
-                cat_data = cat_data[cat_data[self.transactions_service.transactions_repository.tag_col].isin(tags)]
+                cat_data = cat_data[cat_data[TransactionsTableFields.TAG.value].isin(tags)]
 
-            amt = cat_data[self.transactions_service.transactions_repository.amount_col].sum() * -1
+            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append({
                 "rule": rule.to_dict(),
                 "current_amount": amt,
@@ -287,7 +287,7 @@ class MonthlyBudgetService(BudgetService):
                     TAGS: "Other Expenses",
                     ID: f"{year}{month}_Other_Expenses"
                 },
-                "current_amount": remaining_data[self.transactions_service.transactions_repository.amount_col].sum() * -1,
+                "current_amount": remaining_data[TransactionsTableFields.AMOUNT.value].sum() * -1,
                 "data": remaining_data.to_dict(orient="records"),
                 "allow_edit": False,
                 "allow_delete": False
@@ -304,11 +304,11 @@ class MonthlyBudgetService(BudgetService):
 
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
-            ~all_data[self.transactions_service.transactions_repository.category_col]
+            ~all_data[TransactionsTableFields.CATEGORY.value]
             .isin([c.value for c in NonExpensesCategories])
         ].copy()
-        expenses[self.transactions_service.transactions_repository.date_col] = pd.to_datetime(
-            expenses[self.transactions_service.transactions_repository.date_col]
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
         )
 
         # Get project categories
@@ -321,9 +321,9 @@ class MonthlyBudgetService(BudgetService):
 
         # Filter for project transactions in the specified month
         project_transactions = expenses.loc[
-            (expenses[self.transactions_service.transactions_repository.date_col].dt.year == year) &
-            (expenses[self.transactions_service.transactions_repository.date_col].dt.month == month) &
-            expenses[self.transactions_service.transactions_repository.category_col].isin(project_categories)
+            (expenses[TransactionsTableFields.DATE.value].dt.year == year) &
+            (expenses[TransactionsTableFields.DATE.value].dt.month == month) &
+            expenses[TransactionsTableFields.CATEGORY.value].isin(project_categories)
         ]
 
         return project_transactions if not project_transactions.empty else None
@@ -334,8 +334,8 @@ class MonthlyBudgetService(BudgetService):
         if project_txns is None or project_txns.empty:
              return {"projects": []}
              
-        cat_col = self.transactions_service.transactions_repository.category_col
-        amount_col = self.transactions_service.transactions_repository.amount_col
+        cat_col = TransactionsTableFields.CATEGORY.value
+        amount_col = TransactionsTableFields.AMOUNT.value
         
         projects_summary = []
         for project_name, group in project_txns.groupby(cat_col):
