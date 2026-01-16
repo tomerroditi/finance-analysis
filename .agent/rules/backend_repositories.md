@@ -1,6 +1,6 @@
 ---
 trigger: glob
-globs: backend/repositories/**/*.py, backend/database.py
+globs: backend/repositories/**/*.py, backend/database.py, backend/models/**/*.py
 ---
 
 # Data Access Layer - Repository Pattern
@@ -30,10 +30,11 @@ Data access layer implementing the Repository Pattern. Repositories are the **ON
 ## Architecture Overview
 
 ### Database Access
-- **ORM:** SQLAlchemy Core (prefer this over raw SQL for DB portability)
-- **Connection:** `SQLConnection` from Streamlit (auto-managed connection pooling)
+- **ORM:** SQLAlchemy ORM (using declarative models with `Base` and `TimestampMixin`)
+- **Connection:** FastAPI dependency injection via `get_db()` context manager
 - **Return Type:** Always `pd.DataFrame` for queries, primitives for boolean/counts
-- **Transactions:** **NOT auto-managed** - always use `s.commit()` after writes
+- **Transactions:** Managed via SQLAlchemy Session - use `db.commit()` after writes
+- **Models:** All models inherit from `Base` and `TimestampMixin` for automatic timestamp management
 
 ### File Access (YAML)
 - Used for **configuration data** that users edit via UI (categories, icons)
@@ -44,11 +45,11 @@ Data access layer implementing the Repository Pattern. Repositories are the **ON
 Repositories can contain instances of other repositories:
 ```python
 class TransactionsRepository:
-    def __init__(self, conn):
-        self.conn = conn
-        self.cc_repo = CreditCardRepository(conn)
-        self.bank_repo = BankRepository(conn)
-        self.cash_repo = CashRepository(conn)
+    def __init__(self, db: Session):
+        self.db = db
+        self.cc_repo = CreditCardRepository(db)
+        self.bank_repo = BankRepository(db)
+        self.cash_repo = CashRepository(db)
 ```
 
 **Purpose:** Manage data from multiple sources/tables more easily. Each financial source (credit cards, banks, cash) has its own table, allowing easier data integration and merging.
@@ -58,127 +59,164 @@ class TransactionsRepository:
 ### Standard Repository Pattern
 
 ```python
-from streamlit.connections import SQLConnection
+from sqlalchemy.orm import Session
+from sqlalchemy import select, Column, Integer, String
 import pandas as pd
-import sqlalchemy as sa
-from sqlalchemy.sql import text
+from backend.models.base import Base, TimestampMixin
+from backend.naming_conventions import Tables
+
+# Define ExampleModel for the ORM example
+class ExampleModel(Base, TimestampMixin):
+    __tablename__ = Tables.EXAMPLE.value # Assuming Tables.EXAMPLE exists
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+
+    def __repr__(self):
+        return f"<ExampleModel(id={self.id}, name='{self.name}')>"
 
 class ExampleRepository:
-    table = Tables.EXAMPLE.value
-    id_col = 'id'
-    name_col = 'name'
-    
-    def __init__(self, conn: SQLConnection):
-        self.conn = conn
-        self.assure_table_exists()
-    
-    def assure_table_exists(self):
-        """Create table if it doesn't exist"""
-        with self.conn.session as s:
-            s.execute(text(
-                f'CREATE TABLE IF NOT EXISTS {self.table} ('
-                f'{self.id_col} INTEGER PRIMARY KEY AUTOINCREMENT, '
-                f'{self.name_col} TEXT NOT NULL'
-                f');'
-            ))
-            s.commit()
+    def __init__(self, db: Session):
+        self.db = db
     
     def get_all(self) -> pd.DataFrame:
-        """Read all records"""
-        with self.conn.session as s:
-            query = f"SELECT * FROM {self.table}"
-            result = s.execute(text(query))
-            df = pd.DataFrame(result.fetchall())
-            if not df.empty:
-                df.columns = result.keys()
-            return df
+        """Read all records using ORM"""
+        stmt = select(ExampleModel)
+        result = self.db.execute(stmt)
+        records = result.scalars().all()
+        
+        # Convert ORM objects to DataFrame
+        if not records:
+            return pd.DataFrame()
+        
+        data = [record.__dict__ for record in records]
+        df = pd.DataFrame(data)
+        # Remove SQLAlchemy internal state
+        if '_sa_instance_state' in df.columns:
+            df = df.drop('_sa_instance_state', axis=1)
+        return df
     
     def add(self, name: str) -> None:
-        """Insert new record"""
-        with self.conn.session as s:
-            cmd = sa.text(f"""
-                INSERT INTO {self.table} ({self.name_col})
-                VALUES (:{self.name_col})
-            """)
-            s.execute(cmd, {self.name_col: name})
-            s.commit()  # CRITICAL: Always commit!
+        """Insert new record using ORM"""
+        new_record = ExampleModel(name=name)
+        self.db.add(new_record)
+        self.db.commit()  # CRITICAL: Always commit!
+        self.db.refresh(new_record)  # Optional: refresh to get auto-generated fields
 ```
+
+## ORM Models
+
+### Base and TimestampMixin
+All ORM models inherit from `Base` (SQLAlchemy declarative base) and `TimestampMixin`:
+
+```python
+from backend.models.base import Base, TimestampMixin
+from sqlalchemy import Column, Integer, String
+
+class MyModel(Base, TimestampMixin):
+    __tablename__ = 'my_table'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+```
+
+**TimestampMixin provides:**
+- `created_at` - Automatically set on record creation
+- `updated_at` - Automatically updated on record modification
+
+**Benefits:**
+- Automatic audit trail for all records
+- No manual timestamp management required
+- Consistent timestamp handling across all tables
+
+### Existing ORM Models
+Located in `backend/models/`:
+- `transaction.py` - `BankTransaction`, `CreditCardTransaction`, `CashTransaction`, `ManualInvestmentTransaction`, `SplitTransaction`
+- `budget.py` - `BudgetRule`
+- `tagging.py` - `TaggingRule`
+- `investment.py` - `Investment`
+- `scraping.py` - `ScrapingHistory`
 
 ## Key Components
 
 ### Table Schema Management
 
-#### `assure_table_exists()`
-**Purpose:** Ensure database table exists with correct schema.
+#### ORM-Based Schema
+**Purpose:** Tables are automatically created from ORM model definitions.
 
-**When Called:** In repository `__init__` method.
+**How it works:** 
+- Models defined in `backend/models/` inherit from `Base`
+- `Base.metadata.create_all(engine)` creates all tables on startup
+- Called in `backend/main.py` during application initialization
 
-**Schema Definition:** Column names and types defined in `naming_conventions.py`
-
-**Example:**
+**Example Model Definition:**
 ```python
-def assure_table_exists(self):
-    """Create the budget table if it doesn't exist."""
-    with self.conn.session as s:
-        s.execute(text(
-            f'CREATE TABLE IF NOT EXISTS {Tables.BUDGET_RULES.value} ('
-            f'{BudgetRulesTableFields.ID.value} INTEGER PRIMARY KEY AUTOINCREMENT, '
-            f'{BudgetRulesTableFields.NAME.value} TEXT NOT NULL, '
-            f'{BudgetRulesTableFields.AMOUNT.value} REAL, '
-            f'{BudgetRulesTableFields.CATEGORY.value} TEXT, '
-            f'{BudgetRulesTableFields.TAGS.value} TEXT, '
-            f'{BudgetRulesTableFields.YEAR.value} INTEGER, '
-            f'{BudgetRulesTableFields.MONTH.value} INTEGER'
-            f');'
-        ))
-        s.commit()
+from backend.models.base import Base, TimestampMixin
+from sqlalchemy import Column, Integer, String, Float
+from backend.naming_conventions import Tables
+
+class BudgetRule(Base, TimestampMixin):
+    __tablename__ = Tables.BUDGET_RULES.value
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    amount = Column(Float)
+    category = Column(String, nullable=True)
+    tags = Column(String, nullable=True)
+    year = Column(Integer, nullable=True)
+    month = Column(Integer, nullable=True)
 ```
 
 **Important Notes:**
-- Use `CREATE TABLE IF NOT EXISTS` to avoid errors on existing tables
-- Table structure defined by field enums in `naming_conventions.py`
-- Always commit after table creation
-- No migrations system - schema changes require manual DB updates
+- Tables created automatically on first run
+- Schema changes require database migrations (manual or via Alembic)
+- All models automatically get `created_at` and `updated_at` via `TimestampMixin`
+- Table names defined in `naming_conventions.py` for consistency
 
 ### Transaction Management
 
-**Critical:** Streamlit's `SQLConnection` does **NOT** auto-commit transactions.
+**Critical:** SQLAlchemy Session requires explicit `commit()` for changes to persist.
 
 **Pattern:**
 ```python
 # ✅ CORRECT - Explicit commit
-with self.conn.session as s:
-    s.execute(text("INSERT INTO..."))
-    s.commit()  # Required!
+new_record = MyModel(name="example")
+self.db.add(new_record)
+self.db.commit()  # Required!
 
 # ❌ WRONG - Changes not persisted
-with self.conn.session as s:
-    s.execute(text("INSERT INTO..."))
-    # Missing commit - data lost!
+new_record = MyModel(name="example")
+self.db.add(new_record)
+# Missing commit - data lost!
 ```
 
 **Rollback on Error:**
 ```python
-with self.conn.session as s:
-    try:
-        s.execute(text("UPDATE..."))
-        s.commit()
-    except Exception as e:
-        s.rollback()
-        raise
+try:
+    record = MyModel(name="example")
+    self.db.add(record)
+    self.db.commit()
+except Exception as e:
+    self.db.rollback()
+    raise
 ```
 
-### Return Types
-
-#### Database Queries → pandas DataFrame
 ```python
-def get_transactions(self) -> pd.DataFrame:
-    with self.conn.session as s:
-        result = s.execute(text("SELECT * FROM transactions"))
-        df = pd.DataFrame(result.fetchall())
-        if not df.empty:
-            df.columns = result.keys()
-        return df
+def get_all(self) -> pd.DataFrame:
+    """Read all records using ORM and return as DataFrame"""
+    stmt = select(ExampleModel)
+    records = self.db.execute(stmt).scalars().all()
+    
+    if not records:
+        return pd.DataFrame()
+    
+    # Convert ORM objects to DataFrame
+    df = pd.DataFrame([r.__dict__ for r in records])
+    
+    # Remove SQLAlchemy internal state
+    if '_sa_instance_state' in df.columns:
+        df = df.drop(columns=['_sa_instance_state'])
+        
+    return df
 ```
 
 #### YAML Operations → Primitives

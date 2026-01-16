@@ -30,8 +30,13 @@ Routes (FastAPI) → Services (Business Logic) → Repositories (Data Access) �
 **Key Rules:**
 - **Routes** define entry points, handle HTTP concerns, and use Pydantic models for request/response validation.
 - **Services** orchestrate business logic and call repositories.
-- **Repositories** handle ALL database operations using the Repository Pattern.
-- **Models** define DB schemas and Pydantic validation schemas.
+- **Repositories** handle ALL database operations using the Repository Pattern with SQLAlchemy ORM.
+- **Models** define DB schemas (SQLAlchemy ORM models in `backend/models/`) and Pydantic validation schemas.
+
+**Service Naming Convention:**
+- Frontend and API use **plural** service names: `banks`, `credit_cards`, `cash`, `manual_investments`
+- These match the `Services` enum values in `backend/naming_conventions.py`
+- Table names may differ (e.g., `credit_card_transactions` table vs `credit_cards` service)
 
 #### Frontend Layers
 ```
