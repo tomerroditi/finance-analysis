@@ -133,6 +133,9 @@ export function ScrapingWidget() {
         if (p.includes('discount')) return 'bg-lime-500';
         if (p.includes('amex')) return 'bg-blue-800';
         if (p.includes('onezero')) return 'bg-gray-800 border border-white/20';
+        // Test Providers
+        if (p.includes('test')) return 'bg-amber-600/50 border border-amber-500/30';
+
         return 'bg-slate-500';
     };
 
@@ -175,209 +178,155 @@ export function ScrapingWidget() {
             </div>
 
             <div className="space-y-6 flex-1 flex flex-col">
-                {isTestMode ? (
-                    <div className="space-y-4">
-                        <div className="bg-amber-500/10 border border-amber-500/50 p-4 rounded-xl">
-                            <h4 className="flex items-center gap-2 text-amber-500 font-bold text-sm mb-2">
-                                <AlertCircle size={16} />
-                                Test Mode Active
-                            </h4>
-                            <p className="text-xs text-[var(--text-muted)]">
-                                Running in isolation. Real accounts are hidden. Using dummy data.
-                            </p>
+                {/* 2FA Input Area */}
+                {activeTfaScraper && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-in zoom-in-95 duration-300">
+                        <div className="flex items-center gap-3 mb-4">
+                            <Smartphone className="text-amber-400" size={20} />
+                            <div>
+                                <h4 className="text-sm font-bold text-white">2FA Required</h4>
+                                <p className="text-xs text-amber-100/70">
+                                    Code for <span className="text-white font-bold">{activeTfaScraper.account.provider} ({activeTfaScraper.account.account_name})</span>
+                                </p>
+                            </div>
                         </div>
-
-                        <div className="grid gap-2">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="Code"
+                                maxLength={10}
+                                className="flex-1 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-2 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
+                                value={tfaCode}
+                                onChange={(e) => setTfaCode(e.target.value)}
+                            />
                             <button
-                                onClick={() => startMutation.mutate({ service: 'banks', provider: 'dummy_regular', account_name: 'Test Regular' })}
-                                disabled={isRunning}
-                                className="w-full py-3 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-left px-4 flex items-center justify-between group transition-all"
+                                onClick={() => {
+                                    // Optimistic update: Mark as in_progress immediately
+                                    setRunningScrapers(prev => ({
+                                        ...prev,
+                                        [activeTfaScraper.process_id]: {
+                                            ...activeTfaScraper,
+                                            status: 'in_progress',
+                                            last_updated: Date.now()
+                                        }
+                                    }));
+
+                                    tfaMutation.mutate({
+                                        service: activeTfaScraper.account.service,
+                                        provider: activeTfaScraper.account.provider,
+                                        account: activeTfaScraper.account.account_name,
+                                        code: tfaCode
+                                    });
+                                }}
+                                disabled={!tfaCode || tfaMutation.isPending}
+                                className="px-3 py-2 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
                             >
-                                <div>
-                                    <div className="font-bold text-sm">Run Dummy Regular</div>
-                                    <div className="text-[10px] text-[var(--text-muted)]">Simulates standard success flow</div>
-                                </div>
-                                <PlayCircle size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                Verify
                             </button>
-
                             <button
-                                onClick={() => startMutation.mutate({ service: 'banks', provider: 'dummy_tfa', account_name: 'Test TFA' })}
-                                disabled={isRunning}
-                                className="w-full py-3 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-left px-4 flex items-center justify-between group transition-all"
-                            >
-                                <div>
-                                    <div className="font-bold text-sm">Run Dummy TFA</div>
-                                    <div className="text-[10px] text-[var(--text-muted)]">Simulates flow requiring OTP</div>
-                                </div>
-                                <PlayCircle size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </button>
+                                onClick={async () => {
+                                    if (!activeTfaScraper) return;
 
-                            <button
-                                onClick={() => startMutation.mutate({ service: 'banks', provider: 'dummy_tfa_no_otp', account_name: 'Test TFA (Token)' })}
-                                disabled={isRunning}
-                                className="w-full py-3 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-left px-4 flex items-center justify-between group transition-all"
+                                    // Optimistic update: Mark old one as canceled/reset immediately in UI
+                                    setRunningScrapers(prev => {
+                                        const newState = { ...prev };
+                                        delete newState[activeTfaScraper.process_id]; // Remove old one or mark canceled
+                                        return newState;
+                                    });
+
+                                    try {
+                                        await scrapingApi.abort(activeTfaScraper.process_id);
+                                        // Start new one
+                                        startMutation.mutate(activeTfaScraper.account);
+                                    } catch (e) {
+                                        console.error("Failed to resend code:", e);
+                                        // Revert state if needed, or just let the error log
+                                    }
+                                }}
+                                disabled={tfaMutation.isPending || startMutation.isPending}
+                                className="px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
                             >
-                                <div>
-                                    <div className="font-bold text-sm">Run Dummy TFA (No OTP)</div>
-                                    <div className="text-[10px] text-[var(--text-muted)]">Simulates valid long-term token</div>
-                                </div>
-                                <PlayCircle size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                Resend
                             </button>
                         </div>
                     </div>
-                ) : (
-                    <>
-                        {/* 2FA Input Area */}
-                        {activeTfaScraper && (
-                            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 animate-in zoom-in-95 duration-300">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <Smartphone className="text-amber-400" size={20} />
-                                    <div>
-                                        <h4 className="text-sm font-bold text-white">2FA Required</h4>
-                                        <p className="text-xs text-amber-100/70">
-                                            Code for <span className="text-white font-bold">{activeTfaScraper.account.provider} ({activeTfaScraper.account.account_name})</span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="Code"
-                                        maxLength={10}
-                                        className="flex-1 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-2 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
-                                        value={tfaCode}
-                                        onChange={(e) => setTfaCode(e.target.value)}
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            // Optimistic update: Mark as in_progress immediately
-                                            setRunningScrapers(prev => ({
-                                                ...prev,
-                                                [activeTfaScraper.process_id]: {
-                                                    ...activeTfaScraper,
-                                                    status: 'in_progress',
-                                                    last_updated: Date.now()
-                                                }
-                                            }));
+                )}
 
-                                            tfaMutation.mutate({
-                                                service: activeTfaScraper.account.service,
-                                                provider: activeTfaScraper.account.provider,
-                                                account: activeTfaScraper.account.account_name,
-                                                code: tfaCode
-                                            });
-                                        }}
-                                        disabled={!tfaCode || tfaMutation.isPending}
-                                        className="px-3 py-2 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
-                                    >
-                                        Verify
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            if (!activeTfaScraper) return;
-
-                                            // Optimistic update: Mark old one as canceled/reset immediately in UI
-                                            setRunningScrapers(prev => {
-                                                const newState = { ...prev };
-                                                delete newState[activeTfaScraper.process_id]; // Remove old one or mark canceled
-                                                return newState;
-                                            });
-
-                                            try {
-                                                await scrapingApi.abort(activeTfaScraper.process_id);
-                                                // Start new one
-                                                startMutation.mutate(activeTfaScraper.account);
-                                            } catch (e) {
-                                                console.error("Failed to resend code:", e);
-                                                // Revert state if needed, or just let the error log
-                                            }
-                                        }}
-                                        disabled={tfaMutation.isPending || startMutation.isPending}
-                                        className="px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
-                                    >
-                                        Resend
-                                    </button>
-                                </div>
-                            </div>
+                {/* Service Selection */}
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar pr-1">
+                    <div className="flex gap-2 mb-2">
+                        <button
+                            onClick={handleStartAll}
+                            disabled={isRunning}
+                            className="flex-1 py-2.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <PlayCircle size={16} />
+                            Scrape All
+                        </button>
+                        {selectedAccounts.size > 0 && (
+                            <button
+                                onClick={handleStartSelected}
+                                disabled={isRunning}
+                                className="flex-1 py-2.5 rounded-xl bg-[var(--surface-light)] text-white text-xs font-bold hover:bg-[var(--surface-base)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <PlayCircle size={16} />
+                                Start Selected ({selectedAccounts.size})
+                            </button>
                         )}
+                    </div>
 
-                        {/* Service Selection */}
-                        <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar pr-1">
-                            <div className="flex gap-2 mb-2">
-                                <button
-                                    onClick={handleStartAll}
-                                    disabled={isRunning}
-                                    className="flex-1 py-2.5 rounded-xl bg-[var(--primary)] text-white text-xs font-bold hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    <div className="grid grid-cols-1 gap-2">
+                        {accounts?.map(acc => {
+                            const id = getAccountId(acc);
+                            const isSelected = selectedAccounts.has(id);
+                            const scraper = getScraperForAccount(acc);
+                            const active = scraper && (scraper.status === 'in_progress' || scraper.status === 'waiting_for_2fa');
+
+                            return (
+                                <div
+                                    key={id}
+                                    className={`flex items-center justify-between p-3 rounded-xl border border-[var(--surface-light)] bg-[var(--surface-base)]/50 hover:bg-[var(--surface-light)]/20 transition-all group ${isSelected ? 'border-[var(--primary)]/50 bg-[var(--primary)]/5' : ''}`}
                                 >
-                                    <PlayCircle size={16} />
-                                    Scrape All
-                                </button>
-                                {selectedAccounts.size > 0 && (
-                                    <button
-                                        onClick={handleStartSelected}
-                                        disabled={isRunning}
-                                        className="flex-1 py-2.5 rounded-xl bg-[var(--surface-light)] text-white text-xs font-bold hover:bg-[var(--surface-base)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <PlayCircle size={16} />
-                                        Start Selected ({selectedAccounts.size})
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-2">
-                                {accounts?.map(acc => {
-                                    const id = getAccountId(acc);
-                                    const isSelected = selectedAccounts.has(id);
-                                    const scraper = getScraperForAccount(acc);
-                                    const active = scraper && (scraper.status === 'in_progress' || scraper.status === 'waiting_for_2fa');
-
-                                    return (
-                                        <div
-                                            key={id}
-                                            className={`flex items-center justify-between p-3 rounded-xl border border-[var(--surface-light)] bg-[var(--surface-base)]/50 hover:bg-[var(--surface-light)]/20 transition-all group ${isSelected ? 'border-[var(--primary)]/50 bg-[var(--primary)]/5' : ''}`}
-                                        >
-                                            <div className="flex items-center gap-3 overflow-hidden flex-1 cursor-pointer" onClick={() => toggleSelection(id)}>
-                                                <div className={`text-[var(--text-muted)] group-hover:text-white transition-colors`}>
-                                                    {isSelected ? <CheckSquare size={18} className="text-[var(--primary)]" /> : <Square size={18} />}
-                                                </div>
-                                                <div className="flex items-center gap-2 overflow-hidden">
-                                                    <div className={`w-1.5 h-6 rounded-full shrink-0 ${getProviderStyle(acc.provider)}`} />
-                                                    <div className="flex flex-col truncate">
-                                                        <span className="font-bold text-xs truncate capitalize">{acc.provider.replace('_', ' ')}</span>
-                                                        <span className="text-[10px] text-[var(--text-muted)] truncate">{acc.account_name}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                {/* Status Indicator */}
-                                                {scraper && (scraper.status !== 'in_progress' && scraper.status !== 'waiting_for_2fa') && (
-                                                    <span className={`text-[10px] font-bold uppercase ${scraper.status === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                        {scraper.status}
-                                                    </span>
-                                                )}
-
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleStartSingle(acc); }}
-                                                    disabled={active}
-                                                    className={`p-1.5 rounded-lg hover:bg-[var(--primary)]/10 text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} disabled:opacity-50`}
-                                                    title="Scrape this source only"
-                                                >
-                                                    {getStatusIcon(scraper)}
-                                                </button>
+                                    <div className="flex items-center gap-3 overflow-hidden flex-1 cursor-pointer" onClick={() => toggleSelection(id)}>
+                                        <div className={`text-[var(--text-muted)] group-hover:text-white transition-colors`}>
+                                            {isSelected ? <CheckSquare size={18} className="text-[var(--primary)]" /> : <Square size={18} />}
+                                        </div>
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <div className={`w-1.5 h-6 rounded-full shrink-0 ${getProviderStyle(acc.provider)}`} />
+                                            <div className="flex flex-col truncate">
+                                                <span className="font-bold text-xs truncate capitalize">{acc.provider.replace('_', ' ')}</span>
+                                                <span className="text-[10px] text-[var(--text-muted)] truncate">{acc.account_name}</span>
                                             </div>
                                         </div>
-                                    );
-                                })}
-                                {(!accounts || accounts.length === 0) && (
-                                    <div className="text-center p-4 text-[var(--text-muted)] text-xs">
-                                        No configured data sources found.
                                     </div>
-                                )}
+
+                                    <div className="flex items-center gap-2">
+                                        {/* Status Indicator */}
+                                        {scraper && (scraper.status !== 'in_progress' && scraper.status !== 'waiting_for_2fa') && (
+                                            <span className={`text-[10px] font-bold uppercase ${scraper.status === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {scraper.status}
+                                            </span>
+                                        )}
+
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleStartSingle(acc); }}
+                                            disabled={active}
+                                            className={`p-1.5 rounded-lg hover:bg-[var(--primary)]/10 text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} disabled:opacity-50`}
+                                            title="Scrape this source only"
+                                        >
+                                            {getStatusIcon(scraper)}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {(!accounts || accounts.length === 0) && (
+                            <div className="text-center p-4 text-[var(--text-muted)] text-xs">
+                                No configured data sources found.
                             </div>
-                        </div>
-                    </>
-                )}
+                        )}
+                    </div>
+                </div>
 
                 {/* Logs/Status Summary */}
                 {Object.keys(runningScrapers).length > 0 && (

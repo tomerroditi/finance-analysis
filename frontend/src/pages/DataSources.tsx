@@ -3,7 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Shield, Globe, Landmark, CreditCard, ChevronRight, X, AlertCircle, Edit2, Eye, EyeOff } from 'lucide-react';
 import { credentialsApi } from '../services/api';
 
+import { useTestMode } from '../context/TestModeContext';
+
 export function DataSources() {
+    const { isTestMode } = useTestMode();
     const queryClient = useQueryClient();
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [step, setStep] = useState(1);
@@ -17,12 +20,12 @@ export function DataSources() {
     const [isViewOnly, setIsViewOnly] = useState(false);
 
     const { data: accounts, isLoading } = useQuery({
-        queryKey: ['credentials-accounts'],
+        queryKey: ['credentials-accounts', isTestMode],
         queryFn: () => credentialsApi.getAccounts().then(res => res.data),
     });
 
     const { data: providers } = useQuery({
-        queryKey: ['providers'],
+        queryKey: ['providers', isTestMode],
         queryFn: () => credentialsApi.getProviders().then(res => res.data),
     });
 

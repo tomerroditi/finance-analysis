@@ -33,8 +33,9 @@ export function TestModeProvider({ children }: { children: ReactNode }) {
         try {
             const res = await testingApi.toggleTestMode(enabled);
             setIsTestMode(res.data.test_mode);
-            // Invalidate all queries to force refetch with new DB/Credentials
-            queryClient.invalidateQueries();
+            // Reset all queries to clear cache and force refetch
+            // This prevents stale data from the other mode from being shown
+            await queryClient.resetQueries();
         } catch (err) {
             console.error("Failed to toggle test mode:", err);
             throw err;
