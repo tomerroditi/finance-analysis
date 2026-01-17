@@ -19,6 +19,8 @@ cc_providers = [
     "isracard",
     "max",
     "visa cal",
+    "test_credit_card",
+    "test_credit_card_2fa",
 ]
 
 bank_providers = [
@@ -33,6 +35,8 @@ bank_providers = [
     "otsar hahayal",
     "union",
     "yahav",
+    "test_bank",
+    "test_bank_2fa",
 ]
 
 
@@ -402,6 +406,8 @@ class CreditCards(Enum):
     AMEX = "amex"
     BEYAHAD_BISHVILHA = "beyahad bishvilha"
     BEHATSADAA = "behatsdaa"
+    TEST_CREDIT_CARD = "test_credit_card"
+    TEST_CREDIT_CARD_2FA = "test_credit_card_2fa"
 
 
 class Banks(Enum):
@@ -445,6 +451,8 @@ class Banks(Enum):
     MASSAD = "massad"
     YAHAV = "yahav"
     ONEZERO = "onezero"
+    TEST_BANK = "test_bank"
+    TEST_BANK_2FA = "test_bank_2fa"
 
 
 class Insurances(Enum):
@@ -603,6 +611,11 @@ class LoginFields:
         "clal": ["username", "password"],
         "harel": ["username", "password"],
         "hafenix": ["username", "password"],
+        # Test Providers
+        "test_bank": ["username", "password"],
+        "test_bank_2fa": ["email", "password", "phoneNumber"],
+        "test_credit_card": ["username", "password"],
+        "test_credit_card_2fa": ["email", "password", "phoneNumber"],
     }
 
     @staticmethod
