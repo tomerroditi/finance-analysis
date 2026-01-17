@@ -9,6 +9,7 @@ Use this workflow to initialize a new clone or worktree. It installs dependencie
    ```zsh
    python3.12 -m venv .venv
    source .venv/bin/activate
+   pip install poetry
    poetry install
    ```
 
