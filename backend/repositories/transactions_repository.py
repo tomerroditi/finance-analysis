@@ -436,10 +436,15 @@ class TransactionsRepository:
             if children:
                 children_df = pd.DataFrame(children)
                 if service:
-                    children_df = children_df[children_df["source"] == service]
+                    target_repo = self.get_repo_by_source(service)
+                    valid_sources = [
+                        src
+                        for src in children_df["source"].unique()
+                        if self.get_repo_by_source(src) == target_repo
+                    ]
+                    children_df = children_df[children_df["source"].isin(valid_sources)]
 
                 if not children_df.empty:
-                    # Align columns
                     df = pd.concat([df, children_df], ignore_index=True)
 
         if not df.empty and "date" in df.columns:
@@ -451,10 +456,8 @@ class TransactionsRepository:
     ) -> bool:
         try:
             repo = self.get_repo_by_source(source)
-            # 1. Mark parent
             repo.update_transaction_by_id(str(unique_id), {"type": "split_parent"})
 
-            # 2. Add children
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             for split in splits:
                 self.split_repo.add_split(
@@ -472,10 +475,8 @@ class TransactionsRepository:
     def revert_split(self, unique_id: int, source: str) -> bool:
         try:
             repo = self.get_repo_by_source(source)
-            # 1. Unmark parent
             repo.update_transaction_by_id(str(unique_id), {"type": "normal"})
 
-            # 2. Delete children
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             return True
         except Exception:
@@ -540,7 +541,6 @@ class TransactionsRepository:
         ).scalar()
 
         if result is not None:
-            # date is stored as string in this DB
             try:
                 return datetime.strptime(result, "%Y-%m-%d")
             except ValueError:
@@ -573,7 +573,6 @@ class TransactionsRepository:
         self.manual_investments_repo.nullify_category(category)
 
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
-        # Replicating original logic: get all tables, search.
         df = self.get_table()
         transaction = df[df["unique_id"] == transaction_id]
         if transaction.empty:
