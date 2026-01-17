@@ -31,6 +31,14 @@ class TaggingRepository:
     """
 
     @staticmethod
+    def load_categories_from_file(file_path: str) -> Dict[str, List[str]]:
+        """Load categories from a YAML file."""
+        if not os.path.exists(file_path):
+            return {}
+        with open(file_path, "r") as file:
+            return yaml.load(file, Loader=yaml.FullLoader) or {}
+
+    @staticmethod
     def get_categories(file_path: str = None) -> Dict[str, List[str]]:
         """Get categories and tags from a YAML file."""
         if file_path is None:
