@@ -11,8 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
-
 from backend.routes import (
     transactions,
     budget,
@@ -21,6 +19,7 @@ from backend.routes import (
     scraping,
     investments,
     analytics,
+    testing,
 )
 from backend.errors import (
     EntityNotFoundException,
@@ -29,6 +28,9 @@ from backend.errors import (
 )
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+
+load_dotenv()
 
 
 @asynccontextmanager
@@ -53,7 +55,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
+        "http://localhost:5173,http://127.0.0.1:5173",
     ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
@@ -71,6 +73,7 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["Credent
 app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 
 
 @app.exception_handler(EntityNotFoundException)

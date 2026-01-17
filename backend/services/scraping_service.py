@@ -13,11 +13,13 @@ from backend.database import get_db_context
 
 _tfa_scrapers_waiting: Dict[str, Tuple[Scraper, Thread]] = {}
 
+
 class ScrapingService:
     """
     Service for managing data scraping operations.
     Handles background threads and 2FA wait states.
     """
+
     def __init__(self, db: Session):
         self.db = db
         self.scraping_history_repo = ScrapingHistoryRepository(db)
@@ -25,18 +27,19 @@ class ScrapingService:
 
     def get_scraping_status(self, scraping_process_id: int) -> Dict[str, str | int]:
         """Get the current scraping status."""
-        status = self.scraping_history_repo.get_scraping_status(int(scraping_process_id))
-        return {
-            "status": status or "unknown",
-            "process_id": scraping_process_id
-        }
-    
+        status = self.scraping_history_repo.get_scraping_status(
+            int(scraping_process_id)
+        )
+        return {"status": status or "unknown", "process_id": scraping_process_id}
+
     def start_scraping(self, accounts: List[Dict]) -> None:
         """
         Start the scraping process for multiple accounts.
         """
         for account in accounts:
-            self.start_scraping_single(account['service'], account['provider'], account['account'])
+            self.start_scraping_single(
+                account["service"], account["provider"], account["account"]
+            )
 
     def start_scraping_single(self, service: str, provider: str, account: str) -> int:
         """
@@ -48,9 +51,15 @@ class ScrapingService:
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            status = history_repo.WAITING_FOR_2FA if requires_2fa else history_repo.IN_PROGRESS
-            process_id = history_repo.record_scrape_start(service, provider, account, start_date, status)
-        
+            status = (
+                history_repo.WAITING_FOR_2FA
+                if requires_2fa
+                else history_repo.IN_PROGRESS
+            )
+            process_id = history_repo.record_scrape_start(
+                service, provider, account, start_date, status
+            )
+
         scraper = get_scraper(service, provider, account, creds, start_date, process_id)
         thread = Thread(target=scraper.pull_data_to_db)
         thread.start()
@@ -58,15 +67,17 @@ class ScrapingService:
         if requires_2fa:
             name = f"{service} - {provider} - {account}"
             _tfa_scrapers_waiting[name] = (scraper, thread)
-            
+
         return process_id
 
-    def submit_2fa_code(self, service: str, provider: str, account: str, code: str) -> None:
+    def submit_2fa_code(
+        self, service: str, provider: str, account: str, code: str
+    ) -> None:
         """Handle 2FA code submission."""
         name = f"{service} - {provider} - {account}"
         if name not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
-        
+
         scraper, thread = _tfa_scrapers_waiting[name]
         scraper.set_otp_code(code)
 
@@ -77,18 +88,26 @@ class ScrapingService:
             if scraper.process_id == process_id:
                 target_name = name
                 break
-        
+
         if not target_name:
-            raise EntityNotFoundException(f"Scraping process {process_id} not found or not waiting for 2FA")
-            
+            raise EntityNotFoundException(
+                f"Scraping process {process_id} not found or not waiting for 2FA"
+            )
+
         scraper, _ = _tfa_scrapers_waiting.pop(target_name)
         scraper.set_otp_code(scraper.CANCEL)
 
-    def _get_scraper_start_date(self, service: str, provider: str, account: str) -> datetime.date:
-        last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(service, provider, account)
+    def _get_scraper_start_date(
+        self, service: str, provider: str, account: str
+    ) -> datetime.date:
+        last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
+            service, provider, account
+        )
         if last_scrape:
             try:
-                start_date = datetime.fromisoformat(last_scrape).date() - timedelta(days=7)
+                start_date = datetime.fromisoformat(last_scrape).date() - timedelta(
+                    days=7
+                )
             except:
                 start_date = date.today() - timedelta(days=365)
         else:

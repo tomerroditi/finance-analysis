@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/layout';
+import { TestModeProvider } from './context/TestModeContext';
 import {
   Dashboard,
   Transactions,
@@ -22,18 +23,20 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="transactions" element={<Transactions />} />
-            <Route path="budget" element={<Budget />} />
-            <Route path="categories" element={<Categories />} />
-            <Route path="investments" element={<Investments />} />
-            <Route path="data-sources" element={<DataSources />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <TestModeProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="transactions" element={<Transactions />} />
+              <Route path="budget" element={<Budget />} />
+              <Route path="categories" element={<Categories />} />
+              <Route path="investments" element={<Investments />} />
+              <Route path="data-sources" element={<DataSources />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </TestModeProvider>
     </QueryClientProvider>
   );
 }

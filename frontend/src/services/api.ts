@@ -136,4 +136,9 @@ export const analyticsApi = {
         api.get('/analytics/sankey', { params: { start_date: startDate, end_date: endDate } }),
 };
 
+export const testingApi = {
+    toggleTestMode: (enabled: boolean) => api.post<{ status: string, test_mode: boolean }>('/testing/toggle_test_mode', { enabled }),
+    getTestModeStatus: () => api.get<{ test_mode: boolean }>('/testing/test_mode_status'),
+};
+
 export default api;

@@ -7,6 +7,7 @@ import { analyticsApi } from '../services/api';
 import { DateRangePicker, type DateRange } from '../components/DateRangePicker';
 import { SankeyChart } from '../components/SankeyChart';
 import { ScrapingWidget } from '../components/dashboard/ScrapingWidget';
+import { useTestMode } from '../context/TestModeContext';
 
 function StatCard({
     title,
@@ -35,13 +36,14 @@ function StatCard({
 }
 
 export function Dashboard() {
+    const { isTestMode } = useTestMode();
     const [dateRange, setDateRange] = useState<DateRange>({
         start: null,
         end: null
     });
 
     const { data: overview, isLoading: overviewLoading } = useQuery({
-        queryKey: ['overview', dateRange.start, dateRange.end],
+        queryKey: ['overview', dateRange.start, dateRange.end, isTestMode],
         queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
@@ -52,7 +54,7 @@ export function Dashboard() {
     });
 
     const { data: incomeOutcome, isLoading: ioLoading } = useQuery({
-        queryKey: ['income-outcome', dateRange.start, dateRange.end],
+        queryKey: ['income-outcome', dateRange.start, dateRange.end, isTestMode],
         queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
@@ -63,7 +65,7 @@ export function Dashboard() {
     });
 
     const { data: categoryData } = useQuery({
-        queryKey: ['analytics-category', dateRange.start, dateRange.end],
+        queryKey: ['analytics-category', dateRange.start, dateRange.end, isTestMode],
         queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
@@ -74,7 +76,7 @@ export function Dashboard() {
     });
 
     const { data: trendData } = useQuery({
-        queryKey: ['analytics-trend', dateRange.start, dateRange.end],
+        queryKey: ['analytics-trend', dateRange.start, dateRange.end, isTestMode],
         queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;
@@ -85,7 +87,7 @@ export function Dashboard() {
     });
 
     const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
-        queryKey: ['sankey', dateRange.start, dateRange.end],
+        queryKey: ['sankey', dateRange.start, dateRange.end, isTestMode],
         queryFn: async () => {
             const start = dateRange.start ? format(dateRange.start, 'yyyy-MM-dd') : undefined;
             const end = dateRange.end ? format(dateRange.end, 'yyyy-MM-dd') : undefined;

@@ -130,6 +130,9 @@ export function ScrapingWidget() {
         if (p.includes('discount')) return 'bg-lime-500';
         if (p.includes('amex')) return 'bg-blue-800';
         if (p.includes('onezero')) return 'bg-gray-800 border border-white/20';
+        // Test Providers
+        if (p.includes('test')) return 'bg-amber-600/50 border border-amber-500/30';
+
         return 'bg-slate-500';
     };
 

@@ -9,6 +9,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.config import AppConfig
 from backend.naming_conventions import LoginFields, bank_providers, cc_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 
@@ -75,7 +76,13 @@ async def get_credential_details(service: str, provider: str, account_name: str)
 @router.get("/providers")
 async def get_providers():
     """Get all supported providers."""
-    return {"bank": bank_providers, "credit_card": cc_providers}
+    is_test = AppConfig().is_test_mode
+
+    # Filter based on mode
+    banks = [p for p in bank_providers if ("test_" in p) == is_test]
+    ccs = [p for p in cc_providers if ("test_" in p) == is_test]
+
+    return {"banks": banks, "credit_cards": ccs}
 
 
 @router.post("/")

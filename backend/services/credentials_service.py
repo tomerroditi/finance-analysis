@@ -10,9 +10,9 @@ from typing import Dict, Optional, List
 
 from backend.repositories.credentials_repository import (
     CredentialsRepository,
-    CREDENTIALS_PATH,
 )
-from backend.naming_conventions import LoginFields
+from backend.config import AppConfig
+from backend.naming_conventions import LoginFields, Fields
 
 
 # In-memory cache for credentials (replaces Streamlit session_state)
@@ -61,7 +61,7 @@ class CredentialsService:
             for provider, accounts in providers.items():
                 for account, fields in accounts.items():
                     for field, value in fields.items():
-                        if field == LoginFields.PASSWORD.value:
+                        if field == Fields.PASSWORD.value:
                             key = self.generate_keyring_key(
                                 service, provider, account, field
                             )
@@ -88,7 +88,7 @@ class CredentialsService:
             for provider, accounts in providers.items():
                 for account, fields in accounts.items():
                     for field, value in fields.items():
-                        if field == LoginFields.PASSWORD.value:
+                        if field == Fields.PASSWORD.value:
                             key = self.generate_keyring_key(
                                 service, provider, account, field
                             )
@@ -96,7 +96,7 @@ class CredentialsService:
                             credentials[service][provider][account][field] = ""
 
         self.repository.write_credentials_file(credentials)
-        self.repository.set_file_permissions(CREDENTIALS_PATH)
+        self.repository.set_file_permissions(AppConfig().get_credentials_path())
 
         _credentials_cache = None  # Clear cache to force reload
         self.credentials = self.load_credentials()

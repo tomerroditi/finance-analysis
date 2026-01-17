@@ -9,7 +9,7 @@ license: Complete terms in LICENSE.txt
 To test local web applications, write native Python Playwright scripts.
 
 **Helper Scripts Available**:
-- `scripts/with_server.py` - Manages server lifecycle (supports multiple servers)
+- `scripts/with_server.py` - Manages server lifecycle (supports multiple servers). **CRITICAL: You MUST use this script when verifying changes that require running the app. Do NOT manually run `uvicorn` or `npm start` in background commands, as this leads to orphaned processes.**
 
 **Always run scripts with `--help` first** to see usage. DO NOT read the source until you try running the script first and find that a customized solution is abslutely necessary. These scripts can be very large and thus pollute your context window. They exist to be called directly as black-box scripts rather than ingested into your context window.
 
@@ -44,7 +44,7 @@ python scripts/with_server.py --server "npm run dev" --port 5173 -- python your_
 **Multiple servers (e.g., backend + frontend):**
 ```bash
 python scripts/with_server.py \
-  --server "cd backend && python server.py" --port 3000 \
+  --server "poetry run uvicorn backend.main:app --port 8000" --port 8000 \
   --server "cd frontend && npm run dev" --port 5173 \
   -- python your_automation.py
 ```

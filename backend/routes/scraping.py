@@ -33,23 +33,19 @@ class AbortRequest(BaseModel):
 
 @router.post("/start")
 async def start_scraping_single(
-    data: StartScrapingRequest,
-    db: Session = Depends(get_database)
+    data: StartScrapingRequest, db: Session = Depends(get_database)
 ) -> int:
     """Start scraping data from sources."""
     service = ScrapingService(db)
     scraping_process_id = service.start_scraping_single(
-        service=data.service,
-        provider=data.provider,
-        account=data.account
+        service=data.service, provider=data.provider, account=data.account
     )
     return scraping_process_id
 
 
 @router.post("/abort")
 async def abort_scraping(
-    data: AbortRequest,
-    db: Session = Depends(get_database)
+    data: AbortRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Abort a scraping process."""
     service = ScrapingService(db)
@@ -59,8 +55,7 @@ async def abort_scraping(
 
 @router.get("/status")
 async def get_scraping_status(
-    scraping_process_id: int,
-    db: Session = Depends(get_database)
+    scraping_process_id: int, db: Session = Depends(get_database)
 ) -> dict:
     """Get the current scraping status."""
     service = ScrapingService(db)
@@ -69,11 +64,9 @@ async def get_scraping_status(
 
 @router.post("/2fa")
 async def handle_2fa(
-    data: TFAFinishRequest,
-    db: Session = Depends(get_database)
+    data: TFAFinishRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Submit a 2FA code."""
     service = ScrapingService(db)
-    service.handle_2fa_code(data.service, data.provider, data.account, data.code)
+    service.submit_2fa_code(data.service, data.provider, data.account, data.code)
     return {"status": "success"}
-
