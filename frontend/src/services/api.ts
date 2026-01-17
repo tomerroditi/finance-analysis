@@ -19,11 +19,11 @@ api.interceptors.response.use(
 // Transactions API
 export const transactionsApi = {
   getAll: (service?: string, includeSplitParents = false) =>
-    api.get("/transactions", {
+    api.get("/transactions/", {
       params: { service, include_split_parents: includeSplitParents },
     }),
   getById: (id: number) => api.get(`/transactions/${id}`),
-  create: (data: any) => api.post("/transactions", data),
+  create: (data: any) => api.post("/transactions/", data),
   update: (uniqueId: string, data: any) =>
     api.put(`/transactions/${uniqueId}`, data),
   delete: (uniqueId: string, source: string) =>
