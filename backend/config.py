@@ -4,7 +4,6 @@ Handles environment switching between production and test modes.
 """
 
 import os
-from typing import Optional
 
 
 class AppConfig:

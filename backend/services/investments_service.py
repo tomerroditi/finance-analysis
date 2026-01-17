@@ -5,15 +5,13 @@ This module provides business logic for investment tracking and analysis.
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import numpy as np
 from sqlalchemy.orm import Session
 
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.services.transactions_service import TransactionsService
-from backend.naming_conventions import InvestmentsType
 
 
 class InvestmentsService:

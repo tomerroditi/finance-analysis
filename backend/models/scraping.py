@@ -2,7 +2,7 @@
 Scraping history model.
 """
 
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String
 
 from backend.models.base import Base, TimestampMixin
 from backend.naming_conventions import Tables

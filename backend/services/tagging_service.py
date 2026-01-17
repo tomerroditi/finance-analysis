@@ -4,19 +4,18 @@ Tagging service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for category and tag management.
 """
 
-import os
 from copy import deepcopy
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
-from backend.repositories.tagging_repository import TaggingRepository
-from backend.repositories.transactions_repository import TransactionsRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
+from backend.repositories.transactions_repository import TransactionsRepository
 
 
 def _sorted_unique(lst: list) -> list:

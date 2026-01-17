@@ -1,15 +1,9 @@
-from datetime import date
-from typing import List, Optional, Dict, Any
-
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.services.scraping_service import ScrapingService
 from backend.dependencies import get_database
-from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.services.scraping_service import ScrapingService
-
 
 router = APIRouter()
 

@@ -4,16 +4,16 @@ Tagging API routes.
 Provides endpoints for category and tag management.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.repositories.tagging_repository import TaggingRepository
+from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_rules_service import TaggingRulesService
-
 
 router = APIRouter()
 

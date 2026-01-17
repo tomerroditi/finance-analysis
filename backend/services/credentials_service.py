@@ -4,16 +4,12 @@ Credentials service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for credential management.
 """
 
-import os
 from copy import deepcopy
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
-from backend.repositories.credentials_repository import (
-    CredentialsRepository,
-)
 from backend.config import AppConfig
-from backend.naming_conventions import LoginFields, Fields
-
+from backend.naming_conventions import Fields
+from backend.repositories.credentials_repository import CredentialsRepository
 
 # In-memory cache for credentials (replaces Streamlit session_state)
 _credentials_cache: Optional[Dict] = None

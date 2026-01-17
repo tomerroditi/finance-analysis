@@ -5,9 +5,10 @@ Provides endpoints for investment tracking.
 """
 
 from datetime import date
-from typing import Optional, List, Dict, Any
+from typing import Optional
+
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -153,4 +154,5 @@ async def delete_investment(investment_id: int, db: Session = Depends(get_databa
     """Delete an investment."""
     repo = InvestmentsRepository(db)
     repo.delete_investment(investment_id)
+    return {"status": "success"}
     return {"status": "success"}

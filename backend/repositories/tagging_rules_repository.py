@@ -4,14 +4,13 @@ Tagging rules repository with SQLAlchemy ORM.
 
 import json
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.tagging import TaggingRule
-from backend.naming_conventions import Tables, TaggingRulesTableFields
 
 
 class TaggingRulesRepository:

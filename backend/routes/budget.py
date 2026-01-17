@@ -4,20 +4,20 @@ Budget API routes.
 Provides endpoints for budget rule management, analysis, and project management.
 """
 
-from typing import Optional, List
+from typing import List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.naming_conventions import ALL_TAGS
 from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
 )
-from backend.naming_conventions import ALL_TAGS
 
 router = APIRouter()
 

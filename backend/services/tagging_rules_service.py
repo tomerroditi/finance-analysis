@@ -1,17 +1,17 @@
 import json
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
-from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.transactions_repository import TransactionsRepository
 from backend.naming_conventions import (
-    TransactionsTableFields,
     Tables,
     TaggingRulesTableFields,
+    TransactionsTableFields,
 )
+from backend.repositories.tagging_rules_repository import TaggingRulesRepository
+from backend.repositories.transactions_repository import TransactionsRepository
 
 
 class TaggingRulesService:
@@ -172,7 +172,7 @@ class TaggingRulesService:
             param_name = f"cond_{i}"
             self._add_condition_clause(where_conditions, param_name, condition, params)
         if not where_conditions:
-            raise ValueError(f"No valid conditions found in the rule.")
+            raise ValueError("No valid conditions found in the rule.")
         return " AND ".join(where_conditions), params
 
     def _add_condition_clause(

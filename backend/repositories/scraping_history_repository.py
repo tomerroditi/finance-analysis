@@ -2,15 +2,13 @@
 Scraping history repository with SQLAlchemy ORM.
 """
 
-from datetime import datetime, date, timedelta
-from typing import List, Dict
+from datetime import datetime, timedelta
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.scraping import ScrapingHistory
-from backend.naming_conventions import Tables, ScrapingHistoryTableFields
 
 
 class ScrapingHistoryRepository:

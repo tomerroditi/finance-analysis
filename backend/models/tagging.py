@@ -2,8 +2,7 @@
 Tagging rule model.
 """
 
-from sqlalchemy import Column, Integer, String, Text, Boolean
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Column, Integer, String, Text
 
 from backend.models.base import Base, TimestampMixin
 from backend.naming_conventions import Tables
