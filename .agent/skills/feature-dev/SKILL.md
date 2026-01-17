@@ -1,35 +1,36 @@
 ---
-name: multi-session-dev
+name: feature-dev
 description: Orchestrates the entire lifecycle of developing a feature in a separate worktree, from setup to PR creation and review. Use this when the user asks YOU to implement a large feature or task that should be isolated.
 allowed-tools: Bash, Write, Read, Grep, Glob, notify_user
 ---
 
-# Multi-Session Development Workflow
+# Feature Development Workflow
 
-This skill defines the protocol for handling large feature requests by isolating them in a separate git worktree. This ensures the main branch remains clean and enables parallel development.
+This skill defines the protocol for handling feature requests by isolating them in a separate git worktree. This ensures the main branch remains clean and enables parallel development.
 
-## Phase 1: Initiation (Current Session)
+## Phase 1: Initiation
 
-**Trigger:** User asks to "implement feature X" or "start a new task X".
+**Trigger:** User asks to implement a feature or task.
 
 **Agent Actions:**
-1.  **Acknowledge & Plan**: State that you will set up an isolated environment for this task (you should not plan the feature yet).
+1.  **Acknowledge & Plan**: if the current branch in the format of `feature/[feature-name]`, State that you will set up an isolated environment for this task (you should not plan the feature yet). otherwise, you are already in the correct branch and can proceed to phase 2 (Execution at New Window).
 2.  **Create Worktree**:
     -   Determine a suitable branch name (e.g., `feature/improved-analytics`).
     -   Run the `/create-task-worktree` workflow.
     -   *Note: This creates the folder `../finance-analysis-feature-improved-analytics`.*
 3.  **Handover**:
     -   **CRITICAL**: You cannot switch windows yourself. You must instruct the user to do so.
-    -   **Final Output**: "I have created the worktree at `../finance-analysis-[feature-name]`. Please open a **NEW WINDOW** for that directory and ask the agent there to: 'Initialize environment and implement [Feature Name]. [detailed explenations on the feature]'."
+    -   **Final Output**: "I have created the worktree at `../finance-analysis-[feature-name]`. Please open a **NEW WINDOW** for that directory and ask the agent there to: 'Initialize environment and implement a new feature: [Feature Name]. [detailed explenations on the feature]'."
 
-## Phase 2: Execution (New Session)
+## Phase 2: Execution at New Window
 
-**Trigger:** User opens the new window and prompts: "Initialize environment and implement [Feature Name]. [detailed explenations on the feature]".
+**Trigger:** User opens the new window and prompts: "Initialize environment and implement a new feature: [Feature Name]. [detailed explenations on the feature]".
 
 **Agent Actions:**
 1.  **Initialize**:
     -   Run the `/setup-environment` workflow immediately.
     -   *This installs dependencies and configures unique ports.*
+    -   make sure that the environment is indeed ready for development (npm install, venv activation, etc.)
 2.  **Plan**:
     -   Enter `task_boundary` (PLANNING mode).
     -   Create `task.md` and `implementation_plan.md`.

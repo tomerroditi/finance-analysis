@@ -10,20 +10,41 @@ Run this workflow after completing and verifying a feature implementation to fin
 
 ## Steps
 
-1. **Stage and Review Changes**
+1. **Format Code**
    ```bash
-   git status
-   git diff --stat
+   # Python
+   black .
+   isort .
+
+   # TypeScript
+   npx prettier --write .
    ```
 
-2. **Commit Changes**
-   Use conventional commit format: `<type>(<scope>): <summary>`
-   ```bash
-   git add -A
-   git commit -m "<type>(<scope>): <summary>"
-   ```
+2. **commit changes in small commits**
+   divide the changes into small commits and commit them one by one (you may select partial changes from several files to commit together instead of committing each file separately - it helps gathering the changes into logical steps - don't abuse it with too many commits).
+   for each commit, use conventional commit format: `<type>(<scope>): <summary>`
    - Types: feat, fix, refactor, docs, test, chore, perf
    - Summary: imperative present tense, capitalize first letter, no period
+   - Scope: affected area (e.g., budget, auth, api)
+   - Example: `feat(auth): add login page`
+
+   ```bash
+   git add <file1> <file2> 
+   ```
+
+   or for selective changes:
+   
+   ```bash
+   git add -p <filename1>
+   git add -p <filename2>
+   ```
+
+   then 
+
+   ```bash
+   git commit -m "<type>(<scope>): <summary>"
+   ```
+   repeat until all changes are committed.
 
 3. **Push Branch**
    ```bash
@@ -65,13 +86,7 @@ Run this workflow after completing and verifying a feature implementation to fin
       - [ ] Code is readable and maintainable
       - [ ] Tests cover key scenarios
    
-   c. **If issues found**: Fix them, commit, and push:
-      ```bash
-      git add -A
-      git commit -m "fix(<scope>): address review feedback"
-      git push
-      ```
-      Then re-review. Repeat until satisfied.
+   c. **If issues found**: repeat steps 1-5 untill all issues are fixed.
 
 6. **Mark PR Ready**
    // turbo
