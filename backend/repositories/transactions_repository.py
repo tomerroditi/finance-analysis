@@ -2,34 +2,25 @@
 Transactions repository with SQLAlchemy ORM.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Optional, Type
-from dataclasses import dataclass
 
 import pandas as pd
-from sqlalchemy import select, update, delete, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import (
-    TransactionBase,
     BankTransaction,
-    CreditCardTransaction,
     CashTransaction,
+    CreditCardTransaction,
     ManualInvestmentTransaction,
+    TransactionBase,
 )
+from backend.naming_conventions import Services, SplitTransactionsTableFields, Tables
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.naming_conventions import (
-    Tables,
-    CreditCardTableFields,
-    BankTableFields,
-    CashTableFields,
-    TransactionsTableFields,
-    Services,
-    ManualInvestmentTransactionsTableFields,
-)
-
 
 DEPOSIT_TYPE = "deposit"
 WITHDRAWAL_TYPE = "withdrawal"
@@ -408,8 +399,8 @@ class TransactionsRepository:
         if not splits_df.empty:
             children = []
             for _, split in splits_df.iterrows():
-                parent_id = split[self.split_repo.transaction_id_col]
-                source = split[self.split_repo.source_col]
+                parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
+                source = split[SplitTransactionsTableFields.SOURCE.value]
 
                 try:
                     repo = self.get_repo_by_source(source)
@@ -426,10 +417,16 @@ class TransactionsRepository:
                         }
 
                         child = parent_dict.copy()
-                        child["unique_id"] = f"split_{split[self.split_repo.id_col]}"
-                        child["amount"] = split[self.split_repo.amount_col]
-                        child["category"] = split[self.split_repo.category_col]
-                        child["tag"] = split[self.split_repo.tag_col]
+                        child["unique_id"] = (
+                            f"split_{split[SplitTransactionsTableFields.ID.value]}"
+                        )
+                        child["amount"] = split[
+                            SplitTransactionsTableFields.AMOUNT.value
+                        ]
+                        child["category"] = split[
+                            SplitTransactionsTableFields.CATEGORY.value
+                        ]
+                        child["tag"] = split[SplitTransactionsTableFields.TAG.value]
                         child["type"] = "split_child"
                         child["source"] = source
                         children.append(child)

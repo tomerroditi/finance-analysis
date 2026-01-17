@@ -124,6 +124,7 @@ split_fields = [
     ("AMOUNT", "amount"),
     ("CATEGORY", "category"),
     ("TAG", "tag"),
+    ("SOURCE", "source"),
 ]
 
 SplitTransactionsTableFields = create_enum("SplitTransactionsTableFields", split_fields)
