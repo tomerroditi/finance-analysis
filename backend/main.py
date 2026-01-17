@@ -11,8 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
-
 from backend.routes import (
     transactions,
     budget,
@@ -30,6 +28,9 @@ from backend.errors import (
 )
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+
+load_dotenv()
 
 
 @asynccontextmanager
