@@ -47,15 +47,15 @@ async def toggle_test_mode(request: TestModeRequest):
             CredentialsService.clear_cache()
             creds_service = CredentialsService()
 
-            def ensure_dummy_cred(provider, account, creds_payload):
+            def ensure_dummy_cred(service, provider, account, creds_payload):
                 try:
-                    creds_service.repository.get_credentials("banks", provider, account)
+                    creds_service.repository.get_credentials(service, provider, account)
                 except EntityNotFoundException:
                     service_creds = creds_service.credentials
-                    if "banks" not in service_creds:
-                        service_creds["banks"] = {}
-                    if provider not in service_creds["banks"]:
-                        service_creds["banks"][provider] = {}
+                    if service not in service_creds:
+                        service_creds[service] = {}
+                    if provider not in service_creds[service]:
+                        service_creds[service][provider] = {}
 
                     # Convert to field format expected by service
                     formatted_creds = {}
@@ -81,24 +81,44 @@ async def toggle_test_mode(request: TestModeRequest):
                     if not formatted_creds:
                         formatted_creds = creds_payload
 
-                    service_creds["banks"][provider][account] = formatted_creds
+                    service_creds[service][provider][account] = formatted_creds
                     creds_service.save_credentials(service_creds)
 
+            # Seeding Test Accounts
+
+            # Banks
             ensure_dummy_cred(
-                "dummy_regular",
-                "Test Regular",
+                "banks",
+                "test_bank",
+                "Test Bank",
                 {"username": "test", "password": "password"},
             )
             ensure_dummy_cred(
-                "dummy_tfa", "Test TFA", {"username": "test", "password": "password"}
+                "banks",
+                "test_bank_2fa",
+                "Test Bank 2FA",
+                {
+                    "email": "test@example.com",
+                    "password": "password",
+                    "phoneNumber": "12345678",
+                },
+            )
+
+            # Credit Cards
+            ensure_dummy_cred(
+                "credit_cards",
+                "test_credit_card",
+                "Test Credit Card",
+                {"username": "test", "password": "password"},
             )
             ensure_dummy_cred(
-                "dummy_tfa_no_otp",
-                "Test TFA (Token)",
+                "credit_cards",
+                "test_credit_card_2fa",
+                "Test Credit Card 2FA",
                 {
-                    "username": "test",
+                    "email": "test@example.com",
                     "password": "password",
-                    "otpLongTermToken": "valid_token",
+                    "phoneNumber": "12345678",
                 },
             )
 

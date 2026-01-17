@@ -3,6 +3,7 @@ API Routes Package
 
 This package contains FastAPI route handlers.
 """
+
 from backend.routes import (
     transactions,
     budget,
@@ -11,6 +12,7 @@ from backend.routes import (
     scraping,
     investments,
     analytics,
+    testing,
 )
 
 __all__ = [
@@ -21,4 +23,5 @@ __all__ = [
     "scraping",
     "investments",
     "analytics",
+    "testing",
 ]
