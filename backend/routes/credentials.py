@@ -75,7 +75,7 @@ async def get_credential_details(service: str, provider: str, account_name: str)
 @router.get("/providers")
 async def get_providers():
     """Get all supported providers."""
-    return {"bank": bank_providers, "credit_card": cc_providers}
+    return {"banks": bank_providers, "credit_cards": cc_providers}
 
 
 @router.post("/")
