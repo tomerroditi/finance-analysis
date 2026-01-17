@@ -3,9 +3,11 @@ import sys
 import subprocess
 from pathlib import Path
 
+
 def print_step(msg):
     print(f"\n[SETUP] {msg}")
     print("-" * 40)
+
 
 def setup_env():
     print_step("Checking environment variables...")
@@ -21,17 +23,20 @@ def setup_env():
     else:
         print(".env already exists.")
 
+
 def init_db():
     print_step("Initializing database...")
     # Add project root to sys.path for backend imports
     sys.path.append(os.getcwd())
-    
+
     from backend.database import init_db as db_init
+
     try:
         db_init()
         print("Database initialized successfully.")
     except Exception as e:
         print(f"Error initializing database: {e}")
+
 
 def install_deps():
     print_step("Checking dependencies...")
@@ -41,7 +46,11 @@ def install_deps():
         subprocess.run(["poetry", "install"], check=True)
     else:
         print("Falling back to pip install...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=False)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+            check=False,
+        )
+
 
 def setup_frontend():
     print_step("Setting up frontend...")
@@ -53,23 +62,25 @@ def setup_frontend():
     else:
         print("Frontend directory not found. Skipping.")
 
+
 def main():
     print("========================================")
     print("   Finance Analysis App Setup Utility   ")
     print("========================================")
-    
+
     try:
         setup_env()
         # install_deps() # Skip heavy install in this script for now, assume user runs it
         init_db()
         # setup_frontend() # Skip for now, assume user handles it
-        
+
         print("\n[SUCCESS] Setup complete!")
         print("To start the backend: python -m uvicorn backend.main:app --reload")
         print("To start the frontend: cd frontend && npm run dev")
     except Exception as e:
         print(f"\n[ERROR] Setup failed: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

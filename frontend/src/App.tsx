@@ -1,15 +1,15 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Layout } from './components/layout';
-import { TestModeProvider } from './context/TestModeContext';
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Layout } from "./components/layout";
+import { TestModeProvider } from "./context/TestModeContext";
 import {
   Dashboard,
   Transactions,
   Budget,
   Categories,
   Investments,
-  DataSources
-} from './pages';
+  DataSources,
+} from "./pages";
 
 const queryClient = new QueryClient({
   defaultOptions: {

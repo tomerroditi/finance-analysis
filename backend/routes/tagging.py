@@ -3,6 +3,7 @@ Tagging API routes.
 
 Provides endpoints for category and tag management.
 """
+
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,16 +74,13 @@ async def add_category(category: CategoryCreate):
 
 
 @router.delete("/categories/{name}")
-async def delete_category(
-    name: str,
-    db: Session = Depends(get_database)
-):
+async def delete_category(name: str, db: Session = Depends(get_database)):
     """Delete a category and its tags, nullifying them in the DB."""
     TaggingRepository.delete_category(name)
-    
+
     tx_repo = TransactionsRepository(db)
     tx_repo.nullify_category(name)
-    
+
     return {"status": "success"}
 
 
@@ -94,31 +92,24 @@ async def create_tag(tag: TagCreate):
 
 
 @router.delete("/tags/{category}/{name}")
-async def delete_tag(
-    category: str,
-    name: str,
-    db: Session = Depends(get_database)
-):
+async def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
     """Delete a tag from a category, nullifying it in the DB."""
     tx_repo = TransactionsRepository(db)
     tx_repo.nullify_category_and_tag(category, name)
-    
+
     TaggingRepository.delete_tag(category, name)
-    
+
     return {"status": "success"}
 
 
 @router.post("/tags/relocate")
-async def relocate_tag(
-    data: TagRelocate,
-    db: Session = Depends(get_database)
-):
+async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
     """Relocate a tag to a different category, reflecting in the DB."""
     TaggingRepository.relocate_tag(data.tag, data.old_category, data.new_category)
 
     tx_repo = TransactionsRepository(db)
     tx_repo.update_category_for_tag(data.old_category, data.new_category, data.tag)
-    
+
     return {"status": "success"}
 
 
@@ -137,8 +128,7 @@ async def update_category_icon(category: str, icon: str):
 
 @router.get("/rules")
 async def get_tagging_rules(
-    active_only: bool = True,
-    db: Session = Depends(get_database)
+    active_only: bool = True, db: Session = Depends(get_database)
 ):
     """Get all tagging rules."""
     service = TaggingRulesService(db)
@@ -147,10 +137,7 @@ async def get_tagging_rules(
 
 
 @router.post("/rules")
-async def create_tagging_rule(
-    rule: RuleCreate,
-    db: Session = Depends(get_database)
-):
+async def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
     """Create a new tagging rule and apply it."""
     service = TaggingRulesService(db)
     rule_id, n_tagged = service.add_rule(
@@ -158,16 +145,14 @@ async def create_tagging_rule(
         conditions=rule.conditions,
         category=rule.category,
         tag=rule.tag,
-        priority=rule.priority
+        priority=rule.priority,
     )
     return {"status": "success", "id": rule_id, "tagged_count": n_tagged}
 
 
 @router.put("/rules/{rule_id}")
 async def update_tagging_rule(
-    rule_id: int,
-    rule: RuleUpdate,
-    db: Session = Depends(get_database)
+    rule_id: int, rule: RuleUpdate, db: Session = Depends(get_database)
 ):
     """Update an existing tagging rule."""
     service = TaggingRulesService(db)
@@ -176,10 +161,7 @@ async def update_tagging_rule(
 
 
 @router.delete("/rules/{rule_id}")
-async def delete_tagging_rule(
-    rule_id: int,
-    db: Session = Depends(get_database)
-):
+async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
     """Delete a tagging rule."""
     service = TaggingRulesService(db)
     service.delete_rule(rule_id)
@@ -187,9 +169,7 @@ async def delete_tagging_rule(
 
 
 @router.post("/rules/apply")
-async def apply_tagging_rules(
-    db: Session = Depends(get_database)
-):
+async def apply_tagging_rules(db: Session = Depends(get_database)):
     """Manually trigger application of all active rules."""
     service = TaggingRulesService(db)
     count = service.apply_rules()
@@ -198,13 +178,9 @@ async def apply_tagging_rules(
 
 @router.post("/rules/test")
 async def test_tagging_rule(
-    conditions: List[Dict[str, Any]],
-    db: Session = Depends(get_database)
+    conditions: List[Dict[str, Any]], db: Session = Depends(get_database)
 ):
     """Test rule conditions against existing transactions."""
     service = TaggingRulesService(db)
     count, df = service.test_rule_against_transactions(conditions, limit=100)
-    return {
-        "match_count": count,
-        "sample_matches": df.to_dict(orient="records")
-    }
+    return {"match_count": count, "sample_matches": df.to_dict(orient="records")}

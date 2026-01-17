@@ -3,6 +3,7 @@ Investments API routes.
 
 Provides endpoints for investment tracking.
 """
+
 from datetime import date
 from typing import Optional, List, Dict, Any
 import numpy as np
@@ -41,8 +42,7 @@ class InvestmentUpdate(BaseModel):
 
 @router.get("/")
 async def get_investments(
-    include_closed: bool = False,
-    db: Session = Depends(get_database)
+    include_closed: bool = False, db: Session = Depends(get_database)
 ):
     """Get all investments."""
     repo = InvestmentsRepository(db)
@@ -52,10 +52,7 @@ async def get_investments(
 
 
 @router.get("/{investment_id}")
-async def get_investment(
-    investment_id: int,
-    db: Session = Depends(get_database)
-):
+async def get_investment(investment_id: int, db: Session = Depends(get_database)):
     """Get a specific investment by ID."""
     repo = InvestmentsRepository(db)
     df = repo.get_by_id(investment_id)
@@ -64,9 +61,7 @@ async def get_investment(
 
 
 @router.get("/analysis/portfolio")
-async def get_portfolio_analysis(
-    db: Session = Depends(get_database)
-):
+async def get_portfolio_analysis(db: Session = Depends(get_database)):
     """Get portfolio-level analysis and metrics."""
     service = InvestmentsService(db)
     return service.get_portfolio_overview()
@@ -77,7 +72,7 @@ async def get_investment_analysis(
     investment_id: int,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    db: Session = Depends(get_database)
+    db: Session = Depends(get_database),
 ):
     """
     Get detailed analysis for a specific investment.
@@ -87,23 +82,21 @@ async def get_investment_analysis(
     metrics = service.calculate_profit_loss(investment_id)
     if not start_date:
         # Default to first transaction date or 1 year ago
-        start_date = metrics.get('first_transaction_date') or (date.today().replace(year=date.today().year - 1).strftime(r'%Y-%m-%d'))
-    
+        start_date = metrics.get("first_transaction_date") or (
+            date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+        )
+
     if not end_date:
-        end_date = date.today().strftime(r'%Y-%m-%d')
-        
+        end_date = date.today().strftime(r"%Y-%m-%d")
+
     history = service.calculate_balance_over_time(investment_id, start_date, end_date)
-    
-    return {
-        "metrics": metrics,
-        "history": history
-    }
+
+    return {"metrics": metrics, "history": history}
 
 
 @router.post("/")
 async def create_investment(
-    investment: InvestmentCreate,
-    db: Session = Depends(get_database)
+    investment: InvestmentCreate, db: Session = Depends(get_database)
 ):
     """Create a new investment."""
     repo = InvestmentsRepository(db)
@@ -119,7 +112,7 @@ async def create_investment(
         commission_withdrawal=investment.commission_withdrawal,
         liquidity_date=investment.liquidity_date,
         maturity_date=investment.maturity_date,
-        notes=investment.notes
+        notes=investment.notes,
     )
     return {"status": "success"}
 
@@ -128,7 +121,7 @@ async def create_investment(
 async def update_investment(
     investment_id: int,
     investment: InvestmentUpdate,
-    db: Session = Depends(get_database)
+    db: Session = Depends(get_database),
 ):
     """Update an investment."""
     repo = InvestmentsRepository(db)
@@ -139,9 +132,7 @@ async def update_investment(
 
 @router.post("/{investment_id}/close")
 async def close_investment(
-    investment_id: int,
-    closed_date: str,
-    db: Session = Depends(get_database)
+    investment_id: int, closed_date: str, db: Session = Depends(get_database)
 ):
     """Close an investment."""
     repo = InvestmentsRepository(db)
@@ -150,10 +141,7 @@ async def close_investment(
 
 
 @router.post("/{investment_id}/reopen")
-async def reopen_investment(
-    investment_id: int,
-    db: Session = Depends(get_database)
-):
+async def reopen_investment(investment_id: int, db: Session = Depends(get_database)):
     """Reopen a closed investment."""
     repo = InvestmentsRepository(db)
     repo.reopen_investment(investment_id)
@@ -161,10 +149,7 @@ async def reopen_investment(
 
 
 @router.delete("/{investment_id}")
-async def delete_investment(
-    investment_id: int,
-    db: Session = Depends(get_database)
-):
+async def delete_investment(investment_id: int, db: Session = Depends(get_database)):
     """Delete an investment."""
     repo = InvestmentsRepository(db)
     repo.delete_investment(investment_id)

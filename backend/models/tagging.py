@@ -1,6 +1,7 @@
 """
 Tagging rule model.
 """
+
 from sqlalchemy import Column, Integer, String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,6 +13,7 @@ class TaggingRule(Base, TimestampMixin):
     """
     Model for automated tagging rules.
     """
+
     __tablename__ = Tables.TAGGING_RULES.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -21,4 +23,6 @@ class TaggingRule(Base, TimestampMixin):
     category = Column(String, nullable=False)
     tag = Column(String, nullable=False)
     is_active = Column(Integer, default=1)  # 0 or 1
-    created_date = Column(Text, nullable=True) # Historical string date, kept for migration logic
+    created_date = Column(
+        Text, nullable=True
+    )  # Historical string date, kept for migration logic

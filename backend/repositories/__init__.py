@@ -3,6 +3,7 @@ Backend Repositories
 
 This package contains refactored repository classes with pure SQLAlchemy.
 """
+
 from backend.repositories.transactions_repository import (
     TransactionsRepository,
     CreditCardRepository,
@@ -18,7 +19,9 @@ from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.split_transactions_repository import SplitTransactionsRepository
+from backend.repositories.split_transactions_repository import (
+    SplitTransactionsRepository,
+)
 
 __all__ = [
     "TransactionsRepository",

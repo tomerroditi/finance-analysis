@@ -1,6 +1,7 @@
 """
 Investments repository with SQLAlchemy ORM.
 """
+
 from datetime import datetime
 
 import pandas as pd
@@ -16,8 +17,9 @@ class InvestmentsRepository:
     """
     Repository for managing investment tracking records using ORM.
     """
+
     table = Tables.INVESTMENTS.value
-    
+
     id_col = InvestmentsTableFields.ID.value
     category_col = InvestmentsTableFields.CATEGORY.value
     tag_col = InvestmentsTableFields.TAG.value
@@ -27,13 +29,13 @@ class InvestmentsRepository:
     created_date_col = InvestmentsTableFields.CREATED_DATE.value
     closed_date_col = InvestmentsTableFields.CLOSED_DATE.value
     notes_col = InvestmentsTableFields.NOTES.value
-    
+
     def __init__(self, db: Session):
         self.db = db
 
     def _assure_table_exists(self) -> None:
         pass
-    
+
     def create_investment(
         self,
         category: str,
@@ -41,13 +43,13 @@ class InvestmentsRepository:
         type_: str,
         name: str,
         interest_rate: float = None,
-        interest_rate_type: str = 'fixed',
+        interest_rate_type: str = "fixed",
         commission_deposit: float = None,
         commission_management: float = None,
         commission_withdrawal: float = None,
         liquidity_date: str = None,
         maturity_date: str = None,
-        notes: str = None
+        notes: str = None,
     ) -> None:
         """Create a new investment record."""
         # Check if already exists? Original SQL used UNIQUE constraint on (category, tag).
@@ -64,52 +66,51 @@ class InvestmentsRepository:
             commission_withdrawal=commission_withdrawal,
             liquidity_date=liquidity_date,
             maturity_date=maturity_date,
-            created_date=datetime.today().strftime('%Y-%m-%d'),
-            notes=notes
+            created_date=datetime.today().strftime("%Y-%m-%d"),
+            notes=notes,
         )
         self.db.add(new_inv)
         self.db.commit()
-    
+
     def get_all_investments(self, include_closed: bool = False) -> pd.DataFrame:
         """Get all investments, optionally including closed ones."""
         stmt = select(Investment)
         if not include_closed:
             stmt = stmt.where(Investment.is_closed == 0)
-        
+
         return pd.read_sql(stmt, self.db.bind)
-    
+
     def get_by_id(self, investment_id: int) -> pd.DataFrame:
         """Get an investment by its ID."""
         stmt = select(Investment).where(Investment.id == investment_id)
         df = pd.read_sql(stmt, self.db.bind)
         if df.empty:
-            raise EntityNotFoundException(f"No investment found with ID {investment_id}")
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )
         return df
-    
+
     def get_by_category_tag(self, category: str, tag: str) -> pd.DataFrame:
         """Get an investment by category and tag."""
         stmt = select(Investment).where(
-            Investment.category == category,
-            Investment.tag == tag
+            Investment.category == category, Investment.tag == tag
         )
         return pd.read_sql(stmt, self.db.bind)
-    
+
     def update_investment(self, investment_id: int, **fields) -> None:
         """Update an investment by ID."""
         if not fields:
             return
-        
-        stmt = (
-            update(Investment)
-            .where(Investment.id == investment_id)
-            .values(**fields)
-        )
+
+        stmt = update(Investment).where(Investment.id == investment_id).values(**fields)
         result = self.db.execute(stmt)
         self.db.commit()
-        
+
         if result.rowcount == 0:
-            raise EntityNotFoundException(f"No investment found with ID {investment_id}")
-    
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )
+
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """Close an investment by setting is_closed flag and closed_date."""
         stmt = (
@@ -119,7 +120,7 @@ class InvestmentsRepository:
         )
         self.db.execute(stmt)
         self.db.commit()
-    
+
     def reopen_investment(self, investment_id: int) -> None:
         """Reopen a closed investment."""
         stmt = (
@@ -129,12 +130,14 @@ class InvestmentsRepository:
         )
         self.db.execute(stmt)
         self.db.commit()
-    
+
     def delete_investment(self, investment_id: int) -> None:
         """Delete an investment by ID."""
         stmt = delete(Investment).where(Investment.id == investment_id)
         result = self.db.execute(stmt)
         self.db.commit()
-        
+
         if result.rowcount == 0:
-            raise EntityNotFoundException(f"No investment found with ID {investment_id}")
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )

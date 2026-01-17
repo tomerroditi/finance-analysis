@@ -4,6 +4,7 @@ Unit tests for backend SQLAlchemy ORM models.
 Tests cover model instantiation, table names, column types, nullable constraints,
 default values, and mixin inheritance.
 """
+
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -175,8 +176,8 @@ class TestCreditCardTransaction:
         db_session.commit()
         db_session.refresh(txn)
 
-        assert hasattr(txn, 'created_at')
-        assert hasattr(txn, 'updated_at')
+        assert hasattr(txn, "created_at")
+        assert hasattr(txn, "updated_at")
         assert txn.created_at is not None
 
 
@@ -211,7 +212,10 @@ class TestManualInvestmentTransaction:
 
     def test_table_name(self):
         """Test that table name matches Tables enum."""
-        assert ManualInvestmentTransaction.__tablename__ == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
+        assert (
+            ManualInvestmentTransaction.__tablename__
+            == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
+        )
 
     def test_model_instantiation(self, db_session: Session):
         """Test model can be instantiated with all fields."""
@@ -284,7 +288,7 @@ class TestSplitTransaction:
         db_session.commit()
         db_session.refresh(split)
 
-        assert hasattr(split, 'created_at')
+        assert hasattr(split, "created_at")
         assert split.created_at is not None
 
 
@@ -366,7 +370,7 @@ class TestBudgetRule:
         db_session.commit()
         db_session.refresh(rule)
 
-        assert hasattr(rule, 'created_at')
+        assert hasattr(rule, "created_at")
         assert rule.created_at is not None
 
 
@@ -502,7 +506,7 @@ class TestTaggingRule:
         """Test creating an inactive rule."""
         rule = TaggingRule(
             name="Inactive Rule",
-            conditions='[]',
+            conditions="[]",
             category="Test",
             tag="Inactive",
             is_active=0,
@@ -517,7 +521,7 @@ class TestTaggingRule:
         """Test model has TimestampMixin fields."""
         rule = TaggingRule(
             name="Timestamp Test",
-            conditions='[]',
+            conditions="[]",
             category="Test",
             tag="Test",
         )
@@ -525,7 +529,7 @@ class TestTaggingRule:
         db_session.commit()
         db_session.refresh(rule)
 
-        assert hasattr(rule, 'created_at')
+        assert hasattr(rule, "created_at")
         assert rule.created_at is not None
 
 
@@ -599,5 +603,5 @@ class TestScrapingHistory:
         db_session.commit()
         db_session.refresh(history)
 
-        assert hasattr(history, 'created_at')
+        assert hasattr(history, "created_at")
         assert history.created_at is not None

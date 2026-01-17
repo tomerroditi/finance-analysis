@@ -1,6 +1,7 @@
 """
 Transaction models for different financial services.
 """
+
 from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -13,6 +14,7 @@ class TransactionBase(TimestampMixin):
     """
     Base class for all transaction types with common columns.
     """
+
     unique_id = Column(Integer, primary_key=True, autoincrement=True)
     id = Column(String)  # Original ID from source
     date = Column(String)  # Stored as string YYYY-MM-DD
@@ -24,8 +26,8 @@ class TransactionBase(TimestampMixin):
     category = Column(String, nullable=True)
     tag = Column(String, nullable=True)
     source = Column(String)  # 'bank', 'credit_card', etc.
-    type = Column(String, default='normal')  # 'normal', 'split_parent'
-    status = Column(String, default='completed')
+    type = Column(String, default="normal")  # 'normal', 'split_parent'
+    status = Column(String, default="completed")
 
 
 class BankTransaction(Base, TransactionBase):
@@ -48,6 +50,7 @@ class SplitTransaction(Base, TimestampMixin):
     """
     Model for split transactions.
     """
+
     __tablename__ = Tables.SPLIT_TRANSACTIONS.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)

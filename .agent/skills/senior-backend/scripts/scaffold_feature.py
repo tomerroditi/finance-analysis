@@ -20,40 +20,41 @@ from typing import NamedTuple
 
 class FeatureNames(NamedTuple):
     """Generated names for a feature."""
-    snake_case: str        # invoice_items
-    pascal_case: str       # InvoiceItems
-    camel_case: str        # invoiceItems
-    kebab_case: str        # invoice-items
-    table_name: str        # invoice_items
-    singular: str          # invoice_item
+
+    snake_case: str  # invoice_items
+    pascal_case: str  # InvoiceItems
+    camel_case: str  # invoiceItems
+    kebab_case: str  # invoice-items
+    table_name: str  # invoice_items
+    singular: str  # invoice_item
 
 
 def to_pascal_case(snake: str) -> str:
     """Convert snake_case to PascalCase."""
-    return ''.join(word.capitalize() for word in snake.split('_'))
+    return "".join(word.capitalize() for word in snake.split("_"))
 
 
 def to_camel_case(snake: str) -> str:
     """Convert snake_case to camelCase."""
-    words = snake.split('_')
-    return words[0] + ''.join(word.capitalize() for word in words[1:])
+    words = snake.split("_")
+    return words[0] + "".join(word.capitalize() for word in words[1:])
 
 
 def to_kebab_case(snake: str) -> str:
     """Convert snake_case to kebab-case."""
-    return snake.replace('_', '-')
+    return snake.replace("_", "-")
 
 
 def generate_names(feature_name: str) -> FeatureNames:
     """Generate all naming variations for a feature."""
-    snake = feature_name.lower().replace('-', '_').replace(' ', '_')
+    snake = feature_name.lower().replace("-", "_").replace(" ", "_")
     return FeatureNames(
         snake_case=snake,
         pascal_case=to_pascal_case(snake),
         camel_case=to_camel_case(snake),
         kebab_case=to_kebab_case(snake),
-        table_name=snake if snake.endswith('s') else f"{snake}s",
-        singular=snake.rstrip('s') if snake.endswith('s') else snake
+        table_name=snake if snake.endswith("s") else f"{snake}s",
+        singular=snake.rstrip("s") if snake.endswith("s") else snake,
     )
 
 
@@ -325,8 +326,14 @@ def scaffold_feature(feature_name: str, output_dir: Path) -> None:
 
     files = [
         (output_dir / "models" / f"{names.snake_case}.py", generate_model(names)),
-        (output_dir / "repositories" / f"{names.snake_case}_repository.py", generate_repository(names)),
-        (output_dir / "services" / f"{names.snake_case}_service.py", generate_service(names)),
+        (
+            output_dir / "repositories" / f"{names.snake_case}_repository.py",
+            generate_repository(names),
+        ),
+        (
+            output_dir / "services" / f"{names.snake_case}_service.py",
+            generate_service(names),
+        ),
         (output_dir / "routes" / f"{names.snake_case}.py", generate_route(names)),
     ]
 
@@ -349,19 +356,19 @@ def main():
         description="Scaffold a new backend feature (route, service, repository, model)"
     )
     parser.add_argument(
-        'feature_name',
-        help='Name of the feature (e.g., "invoice" or "payment_method")'
+        "feature_name", help='Name of the feature (e.g., "invoice" or "payment_method")'
     )
     parser.add_argument(
-        '--output-dir', '-o',
+        "--output-dir",
+        "-o",
         type=Path,
-        default=Path(__file__).parent.parent.parent / 'backend',
-        help='Backend directory path (default: ../../backend relative to script)'
+        default=Path(__file__).parent.parent.parent / "backend",
+        help="Backend directory path (default: ../../backend relative to script)",
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be created without writing files'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be created without writing files",
     )
 
     args = parser.parse_args()
@@ -379,5 +386,5 @@ def main():
         scaffold_feature(args.feature_name, args.output_dir)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

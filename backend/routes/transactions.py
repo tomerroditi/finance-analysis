@@ -3,6 +3,7 @@ Transactions API routes.
 
 Provides endpoints for transaction CRUD operations.
 """
+
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -58,14 +59,20 @@ class SplitRequest(BaseModel):
 
 @router.get("/")
 async def get_transactions(
-    service: Optional[str] = Query(None, description="Filter by service: credit_card, bank, cash"),
-    include_split_parents: bool = Query(False, description="Whether to include split parents"),
-    db: Session = Depends(get_database)
+    service: Optional[str] = Query(
+        None, description="Filter by service: credit_card, bank, cash"
+    ),
+    include_split_parents: bool = Query(
+        False, description="Whether to include split parents"
+    ),
+    db: Session = Depends(get_database),
 ):
     """Get all transactions, optionally filtered by service."""
     repo = TransactionsRepository(db)
     try:
-        df = repo.get_table(service=service, include_split_parents=include_split_parents)
+        df = repo.get_table(
+            service=service, include_split_parents=include_split_parents
+        )
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -73,17 +80,20 @@ async def get_transactions(
 
 @router.post("/")
 async def create_transaction(
-    data: TransactionCreate,
-    db: Session = Depends(get_database)
+    data: TransactionCreate, db: Session = Depends(get_database)
 ):
     """Create a new manual transaction."""
     repo = TransactionsRepository(db)
     try:
         if data.service not in ["cash", "manual_investments"]:
-            raise HTTPException(status_code=400, detail="Can only create cash or manual_investments transactions")
-        
+            raise HTTPException(
+                status_code=400,
+                detail="Can only create cash or manual_investments transactions",
+            )
+
         # Convert to repository expected format
         from backend.repositories.transactions_repository import CashTransaction
+
         tx = CashTransaction(
             date=datetime.combine(data.date, datetime.min.time()),
             account_name=data.account_name,
@@ -92,7 +102,7 @@ async def create_transaction(
             provider=data.provider,
             account_number=data.account_number,
             category=data.category,
-            tag=data.tag
+            tag=data.tag,
         )
         success = repo.add_transaction(tx, data.service)
         if not success:
@@ -106,34 +116,39 @@ async def create_transaction(
 
 @router.put("/{unique_id}")
 async def update_transaction(
-    unique_id: str,
-    data: TransactionUpdate,
-    db: Session = Depends(get_database)
+    unique_id: str, data: TransactionUpdate, db: Session = Depends(get_database)
 ):
     """Update a transaction with source-based constraints."""
     repo = TransactionsRepository(db)
     try:
         target_repo = repo.get_repo_by_source(data.source)
-        
+
         # Enforce constraints
         is_manual = data.source in ["cash", "manual_investment_transactions"]
-        
+
         updates = {}
         if is_manual:
-            if data.description is not None: updates["description"] = data.description
-            if data.amount is not None: updates["amount"] = data.amount
-            if data.provider is not None: updates["provider"] = data.provider
-        
+            if data.description is not None:
+                updates["description"] = data.description
+            if data.amount is not None:
+                updates["amount"] = data.amount
+            if data.provider is not None:
+                updates["provider"] = data.provider
+
         # Everyone can update tagging
-        if data.category is not None: updates["category"] = data.category
-        if data.tag is not None: updates["tag"] = data.tag
-        
+        if data.category is not None:
+            updates["category"] = data.category
+        if data.tag is not None:
+            updates["tag"] = data.tag
+
         if not updates:
             return {"status": "no_changes"}
-            
+
         success = target_repo.update_transaction_by_id(unique_id, updates)
         if not success:
-            raise HTTPException(status_code=404, detail="Transaction not found or update failed")
+            raise HTTPException(
+                status_code=404, detail="Transaction not found or update failed"
+            )
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -143,18 +158,23 @@ async def update_transaction(
 async def delete_transaction(
     unique_id: str,
     source: str = Query(..., description="The source of the transaction"),
-    db: Session = Depends(get_database)
+    db: Session = Depends(get_database),
 ):
     """Delete a transaction (only for manual entries)."""
     repo = TransactionsRepository(db)
     try:
         if source not in ["cash_transactions", "manual_investment_transactions"]:
-            raise HTTPException(status_code=403, detail="Deletion of bank/card transactions is prohibited")
-            
+            raise HTTPException(
+                status_code=403,
+                detail="Deletion of bank/card transactions is prohibited",
+            )
+
         target_repo = repo.get_repo_by_source(source)
         success = target_repo.delete_transaction_by_id(unique_id)
         if not success:
-            raise HTTPException(status_code=404, detail="Transaction not found or deletion failed")
+            raise HTTPException(
+                status_code=404, detail="Transaction not found or deletion failed"
+            )
         return {"status": "success"}
     except HTTPException:
         raise
@@ -164,9 +184,7 @@ async def delete_transaction(
 
 @router.post("/{unique_id}/split")
 async def split_transaction(
-    unique_id: int,
-    data: SplitRequest,
-    db: Session = Depends(get_database)
+    unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ):
     """Split a transaction into multiple parts."""
     repo = TransactionsRepository(db)
@@ -184,7 +202,7 @@ async def split_transaction(
 async def revert_split(
     unique_id: int,
     source: str = Query(..., description="The source of the transaction"),
-    db: Session = Depends(get_database)
+    db: Session = Depends(get_database),
 ):
     """Revert a transaction split."""
     repo = TransactionsRepository(db)
@@ -199,13 +217,14 @@ async def revert_split(
 
 @router.post("/bulk-tag")
 async def bulk_tag_transactions(
-    data: BulkTagUpdate,
-    db: Session = Depends(get_database)
+    data: BulkTagUpdate, db: Session = Depends(get_database)
 ):
     """Apply tagging to multiple transactions of the same source."""
     repo = TransactionsRepository(db)
     try:
-        tx_list = [{"unique_id": uid, "source": data.source} for uid in data.transaction_ids]
+        tx_list = [
+            {"unique_id": uid, "source": data.source} for uid in data.transaction_ids
+        ]
         repo.bulk_update_tagging(tx_list, data.category, data.tag)
         return {"status": "success"}
     except Exception as e:
@@ -213,10 +232,7 @@ async def bulk_tag_transactions(
 
 
 @router.get("/{transaction_id}")
-async def get_transaction(
-    transaction_id: int,
-    db: Session = Depends(get_database)
-):
+async def get_transaction(transaction_id: int, db: Session = Depends(get_database)):
     """Get a specific transaction by ID."""
     repo = TransactionsRepository(db)
     try:
@@ -232,7 +248,7 @@ async def update_transaction_tag(
     category: str,
     tag: str,
     service: str = Query(..., description="Service: credit_card, bank, cash"),
-    db: Session = Depends(get_database)
+    db: Session = Depends(get_database),
 ):
     """Update category and tag for a transaction (Legacy support)."""
     repo = TransactionsRepository(db)
@@ -245,9 +261,7 @@ async def update_transaction_tag(
 
 
 @router.get("/latest-date")
-async def get_latest_data_date(
-    db: Session = Depends(get_database)
-):
+async def get_latest_data_date(db: Session = Depends(get_database)):
     """Get the latest transaction date across all tables."""
     repo = TransactionsRepository(db)
     dates = []

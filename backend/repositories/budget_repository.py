@@ -1,6 +1,7 @@
 """
 Budget repository with SQLAlchemy ORM.
 """
+
 from typing import Optional
 
 import pandas as pd
@@ -8,13 +9,23 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
 from backend.models.budget import BudgetRule
-from backend.naming_conventions import Tables, ID, NAME, AMOUNT, CATEGORY, TAGS, YEAR, MONTH
+from backend.naming_conventions import (
+    Tables,
+    ID,
+    NAME,
+    AMOUNT,
+    CATEGORY,
+    TAGS,
+    YEAR,
+    MONTH,
+)
 
 
 class BudgetRepository:
     """
     Repository for budget rule CRUD operations using ORM.
     """
+
     table = Tables.BUDGET_RULES.value
     id_col = ID
     name_col = NAME
@@ -27,8 +38,15 @@ class BudgetRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def add(self, name: str, amount: float, category: str, tags: str, 
-            month: Optional[int], year: Optional[int]) -> None:
+    def add(
+        self,
+        name: str,
+        amount: float,
+        category: str,
+        tags: str,
+        month: Optional[int],
+        year: Optional[int],
+    ) -> None:
         """Create a new budget rule."""
         new_rule = BudgetRule(
             name=name,
@@ -36,7 +54,7 @@ class BudgetRepository:
             category=category,
             tags=tags,
             month=month,
-            year=year
+            year=year,
         )
         self.db.add(new_rule)
         self.db.commit()
@@ -54,16 +72,14 @@ class BudgetRepository:
     def read_by_month(self, year: int, month: int) -> pd.DataFrame:
         """Read budget rules for a specific month."""
         stmt = select(BudgetRule).where(
-            BudgetRule.year == year,
-            BudgetRule.month == month
+            BudgetRule.year == year, BudgetRule.month == month
         )
         return pd.read_sql(stmt, self.db.bind)
 
     def read_project_rules(self) -> pd.DataFrame:
         """Read project budget rules (no year/month set)."""
         stmt = select(BudgetRule).where(
-            BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None)
+            BudgetRule.year.is_(None), BudgetRule.month.is_(None)
         )
         return pd.read_sql(stmt, self.db.bind)
 
@@ -72,11 +88,7 @@ class BudgetRepository:
         if not fields:
             return
 
-        stmt = (
-            update(BudgetRule)
-            .where(BudgetRule.id == id_)
-            .values(**fields)
-        )
+        stmt = update(BudgetRule).where(BudgetRule.id == id_).values(**fields)
         result = self.db.execute(stmt)
         if result.rowcount == 0:
             raise ValueError(f"No rule found with ID {id_}. Update failed.")
@@ -91,8 +103,7 @@ class BudgetRepository:
     def delete_by_month(self, year: int, month: int) -> None:
         """Delete budget rules by year and month."""
         stmt = delete(BudgetRule).where(
-            BudgetRule.year == year,
-            BudgetRule.month == month
+            BudgetRule.year == year, BudgetRule.month == month
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -102,7 +113,7 @@ class BudgetRepository:
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
             BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None)
+            BudgetRule.month.is_(None),
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -113,7 +124,7 @@ class BudgetRepository:
             BudgetRule.category == category,
             BudgetRule.tags == tags,
             BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None)
+            BudgetRule.month.is_(None),
         )
         self.db.execute(stmt)
         self.db.commit()

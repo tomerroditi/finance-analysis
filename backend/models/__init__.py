@@ -3,6 +3,7 @@ SQLAlchemy ORM Models
 
 This package contains SQLAlchemy ORM models for database tables.
 """
+
 from backend.models.base import Base, TimestampMixin
 from backend.models.transaction import (
     BankTransaction,
