@@ -176,6 +176,8 @@ export const MonthlyBudgetView: React.FC = () => {
                         <TransactionCollapsibleList
                             transactions={item.data}
                             isOpen={expandedRuleId === String(item.rule.id)}
+                            showActions
+                            onTransactionUpdated={() => queryClient.invalidateQueries({ queryKey: ['budgetAnalysis'] })}
                         />
                     </BudgetProgressBar>
                 ))}
@@ -200,6 +202,8 @@ export const MonthlyBudgetView: React.FC = () => {
                                     <TransactionCollapsibleList
                                         transactions={project.transactions}
                                         isOpen={expandedRuleId === `project_spending_${project.category}`}
+                                        showActions
+                                        onTransactionUpdated={() => queryClient.invalidateQueries({ queryKey: ['budgetAnalysis'] })}
                                     />
                                 </BudgetProgressBar>
                             ))}

@@ -239,6 +239,8 @@ export const ProjectBudgetView: React.FC = () => {
                                 <TransactionCollapsibleList
                                     transactions={item.data}
                                     isOpen={expandedRuleId === String(item.rule.id)}
+                                    showActions
+                                    onTransactionUpdated={() => queryClient.invalidateQueries({ queryKey: ['projectDetails', selectedProject] })}
                                 />
                             </BudgetProgressBar>
                         );
@@ -259,6 +261,8 @@ export const ProjectBudgetView: React.FC = () => {
                                 <TransactionCollapsibleList
                                     transactions={otherTransactions}
                                     isOpen={expandedRuleId === 'other_project_txs'}
+                                    showActions
+                                    onTransactionUpdated={() => queryClient.invalidateQueries({ queryKey: ['projectDetails', selectedProject] })}
                                 />
                             </BudgetProgressBar>
                         </div>

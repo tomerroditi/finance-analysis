@@ -13,18 +13,18 @@ This skill defines the protocol for handling large feature requests by isolating
 **Trigger:** User asks to "implement feature X" or "start a new task X".
 
 **Agent Actions:**
-1.  **Acknowledge & Plan**: State that you will set up an isolated environment for this task.
+1.  **Acknowledge & Plan**: State that you will set up an isolated environment for this task (you should not plan the feature yet).
 2.  **Create Worktree**:
     -   Determine a suitable branch name (e.g., `feature/improved-analytics`).
     -   Run the `/create-task-worktree` workflow.
     -   *Note: This creates the folder `../finance-analysis-feature-improved-analytics`.*
 3.  **Handover**:
     -   **CRITICAL**: You cannot switch windows yourself. You must instruct the user to do so.
-    -   **Final Output**: "I have created the worktree at `../finance-analysis-[feature-name]`. Please open a **NEW WINDOW** for that directory and ask the agent there to: 'Initialize environment and implement [Feature Name]'."
+    -   **Final Output**: "I have created the worktree at `../finance-analysis-[feature-name]`. Please open a **NEW WINDOW** for that directory and ask the agent there to: 'Initialize environment and implement [Feature Name]. [detailed explenations on the feature]'."
 
 ## Phase 2: Execution (New Session)
 
-**Trigger:** User opens the new window and prompts: "Initialize environment and implement [Feature Name]".
+**Trigger:** User opens the new window and prompts: "Initialize environment and implement [Feature Name]. [detailed explenations on the feature]".
 
 **Agent Actions:**
 1.  **Initialize**:
