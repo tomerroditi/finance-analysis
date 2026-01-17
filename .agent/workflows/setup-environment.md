@@ -7,6 +7,8 @@ Use this workflow to initialize a new clone or worktree. It installs dependencie
 1. **Install Backend Dependencies**
    Initialize the python environment and install dependencies.
    ```zsh
+   python3.12 -m venv .venv
+   source .venv/bin/activate
    poetry install
    ```
 
