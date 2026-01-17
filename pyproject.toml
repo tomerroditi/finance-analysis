@@ -28,6 +28,8 @@ python-dotenv = "^1.0.0"
 pytest = "==8.3.5"
 Faker = "==24.3.0"
 commitizen = "^4.4.1"
+playwright = "^1.57.0"
+requests = "^2.32.5"
 
 [tool.pytest.ini_options]
 markers = [
