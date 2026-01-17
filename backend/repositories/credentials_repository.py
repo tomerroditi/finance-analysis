@@ -4,6 +4,7 @@ Credentials repository for secure credential storage.
 This repository handles file-based and keyring storage for credentials.
 No Streamlit dependencies - uses pure file I/O and system keyring.
 """
+
 import os
 import stat
 from typing import Dict, Optional
@@ -14,10 +15,7 @@ import yaml
 from backend.errors import EntityNotFoundException
 
 
-# Default paths - can be overridden via environment variables
-USER_DIR = os.environ.get('FAD_USER_DIR', os.path.join(os.path.expanduser('~'), '.finance-analysis'))
-CREDENTIALS_PATH = os.environ.get('FAD_CREDENTIALS_PATH', os.path.join(USER_DIR, 'credentials.yaml'))
-SRC_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.config import AppConfig
 
 _KEYRING_SERVICE = "finance-analysis-app"
 
@@ -25,10 +23,11 @@ _KEYRING_SERVICE = "finance-analysis-app"
 class CredentialsRepository:
     """
     Repository for secure credential storage and retrieval.
-    
+
     Uses system keyring for passwords and YAML files for non-sensitive data.
     Implemented as a singleton.
     """
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -37,11 +36,11 @@ class CredentialsRepository:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, credentials_path: str = CREDENTIALS_PATH):
+    def __init__(self, credentials_path: str = None):
         """Initialize the CredentialsRepository singleton."""
         if self._initialized:
             return
-        self.credentials_path = credentials_path
+        self.credentials_path = credentials_path or AppConfig().get_credentials_path()
         self._initialized = True
 
     def read_credentials_file(self) -> Optional[Dict]:
@@ -56,7 +55,7 @@ class CredentialsRepository:
         if not os.path.exists(self.credentials_path):
             return None
 
-        with open(self.credentials_path, 'r') as file:
+        with open(self.credentials_path, "r") as file:
             return yaml.safe_load(file)
 
     def write_credentials_file(self, credentials: Dict) -> None:
@@ -69,7 +68,7 @@ class CredentialsRepository:
             The credentials dictionary to write.
         """
         os.makedirs(os.path.dirname(self.credentials_path), exist_ok=True)
-        with open(self.credentials_path, 'w') as file:
+        with open(self.credentials_path, "w") as file:
             yaml.dump(credentials, file, sort_keys=False, indent=4)
 
     def read_default_credentials(self, resources_path: Optional[str] = None) -> Dict:
@@ -88,11 +87,18 @@ class CredentialsRepository:
         """
         if resources_path is None:
             backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            resources_path = os.path.join(backend_path, 'resources')
-        
-        file_path = os.path.join(resources_path, 'default_credentials.yaml')
-        with open(file_path, 'r') as file:
+            resources_path = os.path.join(backend_path, "resources")
+
+        file_path = os.path.join(resources_path, "default_credentials.yaml")
+        with open(file_path, "r") as file:
             return yaml.safe_load(file)
+
+    @property
+    def keyring_service(self):
+        service = _KEYRING_SERVICE
+        if AppConfig().is_test_mode:
+            service += "-test"
+        return service
 
     def get_password_from_keyring(self, key: str) -> Optional[str]:
         """
@@ -108,7 +114,7 @@ class CredentialsRepository:
         Optional[str]
             The password if found, None otherwise.
         """
-        return keyring.get_password(_KEYRING_SERVICE, key)
+        return keyring.get_password(self.keyring_service, key)
 
     def set_password_in_keyring(self, key: str, password: str) -> None:
         """
@@ -121,7 +127,7 @@ class CredentialsRepository:
         password : str
             The password to store.
         """
-        keyring.set_password(_KEYRING_SERVICE, key, password or "")
+        keyring.set_password(self.keyring_service, key, password or "")
 
     def delete_password_from_keyring(self, key: str) -> bool:
         """
@@ -138,7 +144,7 @@ class CredentialsRepository:
             True if deleted successfully, False otherwise.
         """
         try:
-            keyring.delete_password(_KEYRING_SERVICE, key)
+            keyring.delete_password(self.keyring_service, key)
             return True
         except keyring.errors.PasswordDeleteError:
             return False
@@ -157,24 +163,33 @@ class CredentialsRepository:
         except Exception:
             pass  # Best effort on Windows
 
-    def save_credentials(self, service: str, provider: str, account_name: str, credentials: Dict) -> None:
+    def save_credentials(
+        self, service: str, provider: str, account_name: str, credentials: Dict
+    ) -> None:
         """
         Save credentials securely, using keyring for passwords.
         """
         all_creds = self.read_credentials_file() or {}
-        
+
         if service not in all_creds:
             all_creds[service] = {}
         if provider not in all_creds[service]:
             all_creds[service][provider] = {}
-        
-        password = credentials.pop('password', None)
-        long_term_token = credentials.pop('otpLongTermToken', None) # only one zero for now
 
-        for key, val in {"password": password, "otpLongTermToken": long_term_token}.items():
+        password = credentials.pop("password", None)
+        long_term_token = credentials.pop(
+            "otpLongTermToken", None
+        )  # only one zero for now
+
+        for key, val in {
+            "password": password,
+            "otpLongTermToken": long_term_token,
+        }.items():
             if val is not None:
-                self.set_password_in_keyring(f"{service}_{provider}_{account_name}_{key}", val)
-        
+                self.set_password_in_keyring(
+                    f"{service}_{provider}_{account_name}_{key}", val
+                )
+
         all_creds[service][provider][account_name] = credentials
         self.write_credentials_file(all_creds)
 
@@ -187,12 +202,18 @@ class CredentialsRepository:
         try:
             creds = all_creds[service][provider][account_name].copy()
         except KeyError:
-            raise EntityNotFoundException(f"Credentials for {service} {provider} {account_name} not found")
+            raise EntityNotFoundException(
+                f"Credentials for {service} {provider} {account_name} not found"
+            )
 
-        creds['password'] = self.get_password_from_keyring(f"{service}_{provider}_{account_name}_password")
+        creds["password"] = self.get_password_from_keyring(
+            f"{service}_{provider}_{account_name}_password"
+        )
         return creds
 
-    def update_credentials(self, service: str, provider: str, account_name: str, credentials: Dict) -> None:
+    def update_credentials(
+        self, service: str, provider: str, account_name: str, credentials: Dict
+    ) -> None:
         """
         Update credentials securely, using keyring for passwords.
         """

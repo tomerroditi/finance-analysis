@@ -21,6 +21,7 @@ from backend.routes import (
     scraping,
     investments,
     analytics,
+    testing,
 )
 from backend.errors import (
     EntityNotFoundException,
@@ -71,6 +72,7 @@ app.include_router(credentials.router, prefix="/api/credentials", tags=["Credent
 app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 
 
 @app.exception_handler(EntityNotFoundException)

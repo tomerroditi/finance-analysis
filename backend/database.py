@@ -4,6 +4,7 @@ Database connection and session management for the FastAPI backend.
 This module provides pure SQLAlchemy database connection handling,
 replacing the Streamlit-specific database connection used in the original app.
 """
+
 import os
 from contextlib import contextmanager
 from typing import Generator
@@ -12,53 +13,55 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
-
-# Default paths - can be overridden via environment variables
-USER_DIR = os.environ.get('FAD_USER_DIR', os.path.join(os.path.expanduser('~'), '.finance-analysis'))
-DB_PATH = os.environ.get('FAD_DB_PATH', os.path.join(USER_DIR, 'data.db'))
+from backend.config import AppConfig
 
 
-def get_database_url(db_path: str = DB_PATH) -> str:
+def get_database_url(db_path: str = None) -> str:
     """
     Get the SQLAlchemy database URL for SQLite.
-    
+
     Parameters
     ----------
-    db_path : str
-        Path to the SQLite database file.
-        
+    db_path : str, optional
+        Path to the SQLite database file. If None, uses path from AppConfig.
+
     Returns
     -------
     str
         SQLAlchemy database URL.
     """
+    if db_path is None:
+        db_path = AppConfig().get_db_path()
     return f"sqlite:///{db_path}"
 
 
-def create_db_engine(db_path: str = DB_PATH, echo: bool = False):
+def create_db_engine(db_path: str = None, echo: bool = False):
     """
     Create a SQLAlchemy engine for the database.
-    
+
     Parameters
     ----------
     db_path : str
         Path to the SQLite database file.
     echo : bool
         If True, log all SQL statements.
-        
+
     Returns
     -------
     Engine
         SQLAlchemy engine instance.
     """
+    if db_path is None:
+        db_path = AppConfig().get_db_path()
+
     # Ensure the directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
+
     # Create the database file if it doesn't exist
     if not os.path.exists(db_path):
-        with open(db_path, 'w'):
+        with open(db_path, "w"):
             pass
-    
+
     return create_engine(
         get_database_url(db_path),
         echo=echo,
@@ -72,15 +75,15 @@ _engine = None
 _SessionLocal = None
 
 
-def get_engine(db_path: str = DB_PATH):
+def get_engine(db_path: str = None):
     """
     Get or create the default database engine.
-    
+
     Parameters
     ----------
     db_path : str
         Path to the SQLite database file.
-        
+
     Returns
     -------
     Engine
@@ -92,15 +95,15 @@ def get_engine(db_path: str = DB_PATH):
     return _engine
 
 
-def get_session_factory(db_path: str = DB_PATH):
+def get_session_factory(db_path: str = None):
     """
     Get or create the session factory.
-    
+
     Parameters
     ----------
     db_path : str
         Path to the SQLite database file.
-        
+
     Returns
     -------
     sessionmaker
@@ -116,15 +119,15 @@ def get_session_factory(db_path: str = DB_PATH):
 def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency that provides a database session.
-    
+
     Yields a database session and ensures it's closed after the request.
     Use this as a dependency in FastAPI route handlers.
-    
+
     Yields
     ------
     Session
         SQLAlchemy session instance.
-        
+
     Example
     -------
     ```python
@@ -145,15 +148,15 @@ def get_db() -> Generator[Session, None, None]:
 def get_db_context() -> Generator[Session, None, None]:
     """
     Context manager for database sessions (for non-FastAPI usage).
-    
+
     Use this when you need a database session outside of FastAPI routes,
     such as in background tasks or scripts.
-    
+
     Yields
     ------
     Session
         SQLAlchemy session instance.
-        
+
     Example
     -------
     ```python
@@ -172,7 +175,7 @@ def get_db_context() -> Generator[Session, None, None]:
 def reset_engine():
     """
     Reset the global engine and session factory.
-    
+
     Useful for testing or when switching databases.
     """
     global _engine, _SessionLocal

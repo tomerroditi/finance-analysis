@@ -4,6 +4,8 @@ import { Sidebar } from './Sidebar';
 import { GlobalSearch } from './GlobalSearch';
 import { useAppStore } from '../../stores/appStore';
 
+import { Header } from './Header';
+
 export function Layout() {
     const { sidebarOpen, searchOpen, setSearchOpen } = useAppStore();
 
@@ -26,6 +28,7 @@ export function Layout() {
                 className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'
                     }`}
             >
+                <Header />
                 <div className="p-8">
                     <Outlet />
                 </div>
