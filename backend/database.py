@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.config import AppConfig
@@ -164,12 +164,7 @@ def get_db_context() -> Generator[Session, None, None]:
         result = db.execute(text("SELECT * FROM items")).fetchall()
     ```
     """
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    yield get_db()
 
 
 def reset_engine():
