@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { testingApi } from '../services/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface TestModeContextType {
     isTestMode: boolean;
@@ -12,6 +13,7 @@ const TestModeContext = createContext<TestModeContextType | undefined>(undefined
 export function TestModeProvider({ children }: { children: ReactNode }) {
     const [isTestMode, setIsTestMode] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         // Fetch initial status
@@ -31,6 +33,8 @@ export function TestModeProvider({ children }: { children: ReactNode }) {
         try {
             const res = await testingApi.toggleTestMode(enabled);
             setIsTestMode(res.data.test_mode);
+            // Invalidate all queries to force refetch with new DB/Credentials
+            queryClient.invalidateQueries();
         } catch (err) {
             console.error("Failed to toggle test mode:", err);
             throw err;
