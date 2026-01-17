@@ -10,24 +10,24 @@ from typing import List, Literal, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.repositories.transactions_repository import (
-    TransactionsRepository,
-    CashTransaction,
-    ManualInvestmentTransaction,
+from backend.naming_conventions import (
+    Banks,
+    CreditCards,
+    IncomeCategories,
+    LiabilitiesCategories,
+    NonExpensesCategories,
+    SavingsAndInvestmentsCategories,
+    Services,
+    SplitTransactionsTableFields,
+    TransactionsTableFields,
 )
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.naming_conventions import (
-    TransactionsTableFields,
-    SplitTransactionsTableFields,
-    NonExpensesCategories,
-    SavingsAndInvestmentsCategories,
-    IncomeCategories,
-    LiabilitiesCategories,
-    CreditCards,
-    Banks,
-    Services,
+from backend.repositories.transactions_repository import (
+    CashTransaction,
+    ManualInvestmentTransaction,
+    TransactionsRepository,
 )
 
 
@@ -102,9 +102,11 @@ class TransactionsService:
         bank_data = self.get_table_for_analysis("banks")
         cash_data = self.get_table_for_analysis("cash")
         manual_investments_data = self.get_table_for_analysis("manual_investments")
-        return pd.concat(
-            [cc_data, bank_data, cash_data, manual_investments_data], ignore_index=True
-        )
+        dfs = [cc_data, bank_data, cash_data, manual_investments_data]
+        dfs = [df for df in dfs if not df.empty]
+        if not dfs:
+            return pd.DataFrame()
+        return pd.concat(dfs, ignore_index=True)
 
     def update_tagging_by_id(
         self, id_: str, category: str | None, tag: str | None
