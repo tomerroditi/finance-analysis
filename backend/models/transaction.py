@@ -2,9 +2,7 @@
 Transaction models for different financial services.
 """
 
-from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Column, Float, Integer, String
 
 from backend.models.base import Base, TimestampMixin
 from backend.naming_conventions import Tables
