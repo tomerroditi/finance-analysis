@@ -37,6 +37,7 @@ async def toggle_test_mode(request: TestModeRequest):
         # Since it's a singleton, we need to force re-initialization or update its path
         repo = CredentialsRepository()
         repo.credentials_path = config.get_credentials_path()
+        CredentialsService.clear_cache()
 
         # If enabling test mode, ensure the database schema exists
         if request.enabled:
@@ -44,7 +45,6 @@ async def toggle_test_mode(request: TestModeRequest):
             Base.metadata.create_all(bind=engine)
 
             # Seed dummy credentials for testing
-            CredentialsService.clear_cache()
             creds_service = CredentialsService()
 
             def ensure_dummy_cred(service, provider, account, creds_payload):
