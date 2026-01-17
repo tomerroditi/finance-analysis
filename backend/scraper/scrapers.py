@@ -147,7 +147,10 @@ def is_2fa_required(service_name: str, provider_name: str):
     bool
         True if the scraper requires 2FA, False otherwise
     """
-    needs_2fa_map = {"banks": ["onezero"]}
+    needs_2fa_map = {
+        "banks": ["onezero", "test_bank_2fa"],
+        "credit_cards": ["test_credit_card_2fa"],
+    }
     return (
         service_name in needs_2fa_map and provider_name in needs_2fa_map[service_name]
     )
@@ -282,7 +285,7 @@ class Scraper(ABC):
             f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({self.start_date}) started",
             flush=True,
         )
-
+        self.scrape_data(self.start_date.strftime("%Y-%m-%d"))
         try:
             self.scrape_data(self.start_date.strftime("%Y-%m-%d"))
             if not self.data.empty:
@@ -871,6 +874,81 @@ class DummyCreditCardTFAScraper(CreditCardScraper):
             self.credentials.get("otpLongTermToken", "none"),
         )
         self.data = self._scrape_data(start_date, *args)
+
+    def _scrape_data(self, start_date: str, *args) -> pd.DataFrame:
+        """
+        Get the data from the website (Interactive 2FA version)
+        """
+        args = ["node", self.script_path, *args, start_date]
+        process = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+
+        # wait for the OTP code to be requested, and then send it
+        start_time = datetime.datetime.now()
+        max_wait_time = 300  # Maximum time to wait for OTP prompt or data in seconds
+
+        while True:
+            # Check if we've been waiting too long
+            if (datetime.datetime.now() - start_time).total_seconds() > max_wait_time:
+                print(
+                    f"DEBUG: {self.provider_name}: Timed out waiting for OTP prompt or data output",
+                    flush=True,
+                )
+                process.kill()
+                break
+
+            output = process.stdout.readline()
+            if output:
+                if "Enter OTP code:" in output:
+                    self.otp_code = "waiting for input"
+                    if not self.otp_event.wait(timeout=max_wait_time):
+                        raise LoginError("Timeout: OTP code was not provided for 2FA")
+                    if self.otp_code == self.CANCEL:
+                        process.kill()
+                        return pd.DataFrame()
+                    process.stdin.write(self.otp_code + "\n")
+                    process.stdin.flush()
+                    process.stdin.close()
+                    break
+                elif (
+                    "writing scraped data to console" in output
+                ):  # long term token is valid
+                    self.otp_code = "not required"
+                    break
+                elif (
+                    "long term token is valid" in output
+                ):  # Another indicator that 2FA is not needed
+                    self.otp_code = "not required"
+                    break
+            sleep(0.3)
+
+        while process.poll() is None:
+            self.result += process.stdout.readline()
+
+        self._handle_error(process.stderr.read())
+
+        lines = self.result.split("\n")
+        for line in lines:
+            if "renewed long term token" in line:
+                self.credentials["otpLongTermToken"] = line.split(":", 1)[-1].strip()
+                creds_repo = CredentialsRepository()
+                creds_repo.update_credentials(
+                    self.service_name,
+                    self.provider_name,
+                    self.account_name,
+                    self.credentials,
+                )
+                break
+            elif "long term token is valid" in line:
+                break
+
+        return self._scraped_data_to_df(self.result)
 
 
 ############################################

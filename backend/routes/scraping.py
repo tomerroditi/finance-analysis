@@ -74,6 +74,6 @@ async def handle_2fa(
 ) -> dict:
     """Submit a 2FA code."""
     service = ScrapingService(db)
-    service.handle_2fa_code(data.service, data.provider, data.account, data.code)
+    service.submit_2fa_code(data.service, data.provider, data.account, data.code)
     return {"status": "success"}
 
