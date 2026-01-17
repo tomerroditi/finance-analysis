@@ -16,7 +16,7 @@ build/
 *.env
 .env.*
 .venv/
-venv/
+.ruff_cache/
 
 # Jupyter Notebook
 .ipynb_checkpoints/
