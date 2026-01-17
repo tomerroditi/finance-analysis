@@ -22,6 +22,7 @@ streamlit-tags = "==1.2.8"
 # Backend API dependencies
 fastapi = ">=0.109.0"
 uvicorn = {version = ">=0.27.0", extras = ["standard"]}
+python-dotenv = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "==8.3.5"
