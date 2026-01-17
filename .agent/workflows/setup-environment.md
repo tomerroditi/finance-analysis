@@ -10,7 +10,7 @@ Use this workflow to initialize a new clone or worktree. It installs dependencie
    python3.12 -m venv .venv
    source .venv/bin/activate
    pip install poetry
-   poetry install
+   poetry install --no-root
    ```
 
 2. **Install Frontend Dependencies**
