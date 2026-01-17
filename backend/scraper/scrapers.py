@@ -76,6 +76,14 @@ def get_scraper(
             )
         elif provider_name == "behatsdaa":
             return BehatsdaaScraper(account_name, credentials, start_date, process_id)
+        elif provider_name == "test_credit_card":
+            return DummyCreditCardScraper(
+                account_name, credentials, start_date, process_id
+            )
+        elif provider_name == "test_credit_card_2fa":
+            return DummyCreditCardTFAScraper(
+                account_name, credentials, start_date, process_id
+            )
     elif service_name == "banks":
         if provider_name == "onezero":
             return OneZeroScraper(account_name, credentials, start_date, process_id)
@@ -101,6 +109,12 @@ def get_scraper(
             return MassadScraper(account_name, credentials, start_date, process_id)
         elif provider_name == "yahav":
             return YahavScraper(account_name, credentials, start_date, process_id)
+        elif provider_name == "test_bank":
+            return DummyRegularScraper(
+                account_name, credentials, start_date, process_id
+            )
+        elif provider_name == "test_bank_2fa":
+            return DummyTFAScraper(account_name, credentials, start_date, process_id)
         elif provider_name == "dummy_tfa":
             return DummyTFAScraper(account_name, credentials, start_date, process_id)
         elif provider_name == "dummy_tfa_no_otp":
@@ -825,6 +839,37 @@ class BehatsdaaScraper(CreditCardScraper):
             The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
         """
         args = (self.credentials["id"], self.credentials["password"])
+        self.data = self._scrape_data(start_date, *args)
+
+
+class DummyCreditCardScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, "dummy_regular.js")
+    provider_name = "test_credit_card"
+    requires_2fa = False
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Dummy Regular scraper for Credit Cards
+        """
+        args = ()
+        self.data = self._scrape_data(start_date, *args)
+
+
+class DummyCreditCardTFAScraper(CreditCardScraper):
+    script_path = os.path.join(NODE_JS_SCRIPTS_DIR, "dummy_tfa.js")
+    provider_name = "test_credit_card_2fa"
+    requires_2fa = True
+
+    def scrape_data(self, start_date: str) -> None:
+        """
+        Get the data from the Dummy TFA scraper for Credit Cards
+        """
+        args = (
+            self.credentials.get("email", "dummy@example.com"),
+            self.credentials.get("password", "dummypass"),
+            self.credentials.get("phoneNumber", "1234567890"),
+            self.credentials.get("otpLongTermToken", "none"),
+        )
         self.data = self._scrape_data(start_date, *args)
 
 
