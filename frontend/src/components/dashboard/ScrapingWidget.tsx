@@ -16,10 +16,7 @@ interface ScraperState {
     last_updated: number;
 }
 
-import { useTestMode } from '../../context/TestModeContext';
-
 export function ScrapingWidget() {
-    const { isTestMode } = useTestMode();
     const [tfaCode, setTfaCode] = useState('');
     const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
 
