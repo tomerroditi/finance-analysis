@@ -64,3 +64,10 @@ async def handle_2fa(
     service = ScrapingService(db)
     service.submit_2fa_code(data.service, data.provider, data.account, data.code)
     return {"status": "success"}
+
+
+@router.get("/last-scrapes")
+async def get_last_scrapes(db: Session = Depends(get_database)) -> list:
+    """Get last successful scrape dates for all configured accounts."""
+    service = ScrapingService(db)
+    return service.get_last_scrape_dates()

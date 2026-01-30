@@ -12,10 +12,8 @@ from typing import Dict, Optional
 import keyring
 import yaml
 
-from backend.errors import EntityNotFoundException
-
-
 from backend.config import AppConfig
+from backend.errors import EntityNotFoundException
 
 _KEYRING_SERVICE = "finance-analysis-app"
 
@@ -218,3 +216,29 @@ class CredentialsRepository:
         Update credentials securely, using keyring for passwords.
         """
         self.save_credentials(service, provider, account_name, credentials)
+
+    def list_accounts(self) -> list:
+        """
+        Get a list of all configured accounts.
+
+        Returns
+        -------
+        list
+            List of dicts with service, provider, and account_name keys.
+        """
+        credentials = self.read_credentials_file()
+        if credentials is None:
+            return []
+
+        accounts = []
+        for service, providers in credentials.items():
+            for provider, account_dict in providers.items():
+                for account_name in account_dict.keys():
+                    accounts.append(
+                        {
+                            "service": service,
+                            "provider": provider,
+                            "account_name": account_name,
+                        }
+                    )
+        return accounts

@@ -8,29 +8,29 @@ from time import sleep
 import pandas as pd
 
 from backend.database import get_db_context
-from backend.repositories.credentials_repository import CredentialsRepository
-from backend.repositories.transactions_repository import TransactionsRepository
-from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.naming_conventions import (
-    TransactionsTableFields,
-    CreditCardTableFields,
     BankTableFields,
+    CreditCardTableFields,
     Tables,
+    TransactionsTableFields,
 )
+from backend.repositories.credentials_repository import CredentialsRepository
+from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.repositories.transactions_repository import TransactionsRepository
 from backend.scraper import NODE_JS_SCRIPTS_DIR
 from backend.scraper.exceptions import (
-    ErrorType,
-    ScraperError,
-    LoginError,
-    CredentialsError,
-    ConnectionError,
-    TimeoutError,
-    DataError,
     AccountError,
-    ServiceError,
-    SecurityError,
-    RateLimitError,
+    ConnectionError,
+    CredentialsError,
+    DataError,
+    ErrorType,
+    LoginError,
     PasswordChangeError,
+    RateLimitError,
+    ScraperError,
+    SecurityError,
+    ServiceError,
+    TimeoutError,
 )
 
 
@@ -285,7 +285,6 @@ class Scraper(ABC):
             f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({self.start_date}) started",
             flush=True,
         )
-        self.scrape_data(self.start_date.strftime("%Y-%m-%d"))
         try:
             self.scrape_data(self.start_date.strftime("%Y-%m-%d"))
             if not self.data.empty:
@@ -552,47 +551,49 @@ class Scraper(ABC):
         error_handlers = {
             ErrorType.CREDENTIALS: (
                 CredentialsError,
-                f"Invalid credentials: Please check your login details for {self.provider_name} - {self.account_name}",
+                "Invalid credentials. Please check your login details.",
             ),
             ErrorType.CONNECTION: (
                 ConnectionError,
-                f"Connection error: Unable to connect to {self.provider_name} - {self.account_name}. Please check your internet connection and try again.",
+                "Connection error. Check your internet connection.",
             ),
             ErrorType.TIMEOUT: (
                 TimeoutError,
-                f"Timeout error: The operation for {self.provider_name} - {self.account_name} timed out. Please try again later.",
+                "Request timed out. Please try again.",
             ),
             ErrorType.DATA: (
                 DataError,
-                f"Data error: There was an issue processing data from {self.provider_name} - {self.account_name}.",
+                "Error processing data from provider.",
             ),
             ErrorType.LOGIN: (
                 LoginError,
-                f"Login error: Failed to log in to {self.provider_name} - {self.account_name}. Please check your credentials.",
+                "Login failed. Please check your credentials.",
             ),
             ErrorType.PASSWORD_CHANGE: (
                 PasswordChangeError,
-                f"Password expired: The password for {self.provider_name} - {self.account_name} has expired, please change it",
+                "Password expired. Please update your password.",
             ),
             ErrorType.ACCOUNT: (
                 AccountError,
-                f"Account error: There is an issue with your {self.provider_name} - {self.account_name} account. It may be blocked, suspended, or locked.",
+                "Account issue. May be blocked or suspended.",
             ),
             ErrorType.SERVICE: (
                 ServiceError,
-                f"Service unavailable: The {self.provider_name} - {self.account_name} service is currently unavailable. This may be due to maintenance or technical issues.",
+                "Service unavailable. Try again later.",
             ),
             ErrorType.RATE_LIMIT: (
                 RateLimitError,
-                f"Rate limit exceeded: Too many requests to {self.provider_name} - {self.account_name}. Please try again later.",
+                "Too many requests. Please wait and try again.",
             ),
             ErrorType.SECURITY: (
                 SecurityError,
-                f"Security verification required: Additional security verification is needed for {self.provider_name} - {self.account_name}.",
+                "Security verification required.",
             ),
             ErrorType.GENERAL: (
                 ScraperError,
-                f"Error with {self.provider_name} - {self.account_name}: {error}",
+                f"Unexpected error: {error[:50]}..."
+                if len(error) > 50
+                else f"Error: {error}",
             ),
         }
 
@@ -655,14 +656,17 @@ class Scraper(ABC):
             self.otp_code == self.CANCEL
         ):  # 2fa canceled by the user (self.data is an empty df)
             status = ScrapingHistoryRepository.CANCELED
+            error_message = None
         elif self.data is not None and not self.error:
             status = ScrapingHistoryRepository.SUCCESS
+            error_message = None
         else:
             status = ScrapingHistoryRepository.FAILED
+            error_message = self.error
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(id_, status)
+            history_repo.record_scrape_end(id_, status, error_message)
 
     def _save_scraped_transactions(self):
         """

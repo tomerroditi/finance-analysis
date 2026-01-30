@@ -8,8 +8,11 @@ import {
   Square,
   CheckCircle2,
   XCircle,
+  Info,
+  Calendar,
+  Clock,
 } from "lucide-react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { scrapingApi, credentialsApi } from "../../services/api";
 
 interface Account {
@@ -23,9 +26,41 @@ interface ScraperState {
   account: Account;
   status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed'
   last_updated: number;
+  error_message?: string;
+}
+
+interface LastScrapeInfo {
+  service: string;
+  provider: string;
+  account_name: string;
+  last_scrape_date: string | null;
+}
+
+function isToday(dateString: string): boolean {
+  const date = new Date(dateString);
+  const today = new Date();
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+}
+
+function formatRelativeDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export function ScrapingWidget() {
+  const queryClient = useQueryClient();
   const [tfaCode, setTfaCode] = useState("");
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(
     new Set(),
@@ -43,27 +78,49 @@ export function ScrapingWidget() {
       credentialsApi.getAccounts().then((res) => res.data as Account[]),
   });
 
-  // Start Mutation
-  const startMutation = useMutation({
-    mutationFn: (acc: Account) =>
-      scrapingApi.start({
+  // Fetch last scrape dates
+  const { data: lastScrapes } = useQuery({
+    queryKey: ["last-scrapes"],
+    queryFn: () =>
+      scrapingApi.getLastScrapes().then((res) => res.data as LastScrapeInfo[]),
+  });
+
+  // Helper to get last scrape info for an account
+  const getLastScrapeInfo = (acc: Account): LastScrapeInfo | undefined => {
+    return lastScrapes?.find(
+      (ls) =>
+        ls.service === acc.service &&
+        ls.provider === acc.provider &&
+        ls.account_name === acc.account_name
+    );
+  };
+
+  // Start Scraper Helper
+  const startScraper = async (acc: Account) => {
+    try {
+      const res = await scrapingApi.start({
         service: acc.service,
         provider: acc.provider,
         account: acc.account_name,
-      }),
-    onSuccess: (res, acc) => {
-      const processId = res.data; // integer
-      setRunningScrapers((prev) => ({
-        ...prev,
-        [processId]: {
-          process_id: processId,
-          account: acc,
-          status: "in_progress",
-          last_updated: Date.now(),
-        },
-      }));
-    },
-  });
+      });
+      handleScrapeSuccess(res, acc);
+    } catch (e) {
+      console.error("Failed to start scraper:", e);
+    }
+  };
+
+  const handleScrapeSuccess = (res: any, acc: Account) => {
+    const processId = res.data; // integer
+    setRunningScrapers((prev) => ({
+      ...prev,
+      [processId]: {
+        process_id: processId,
+        account: acc,
+        status: "in_progress",
+        last_updated: Date.now(),
+      },
+    }));
+  };
 
   // 2FA Mutation
   const tfaMutation = useMutation({
@@ -96,16 +153,23 @@ export function ScrapingWidget() {
         try {
           const res = await scrapingApi.getStatus(scraper.process_id);
           const newStatus = res.data.status; // 'in_progress', 'waiting_for_2fa', 'success', 'failed'
+          const errorMessage = res.data.error_message;
 
           if (
             newStatus !== scraper.status ||
             Date.now() - scraper.last_updated > 5000
           ) {
+            // Invalidate last scrapes query when a scraper completes successfully
+            if (newStatus === "success" && scraper.status !== "success") {
+              queryClient.invalidateQueries({ queryKey: ["last-scrapes"] });
+            }
+
             setRunningScrapers((prev) => ({
               ...prev,
               [scraper.process_id]: {
                 ...scraper,
                 status: newStatus,
+                error_message: errorMessage,
                 last_updated: Date.now(),
               },
             }));
@@ -142,16 +206,16 @@ export function ScrapingWidget() {
     const selectedList = accounts?.filter((acc) =>
       selectedAccounts.has(getAccountId(acc)),
     );
-    selectedList?.forEach((acc) => startMutation.mutate(acc));
+    selectedList?.forEach((acc) => startScraper(acc));
     setSelectedAccounts(new Set());
   };
 
   const handleStartSingle = (acc: Account) => {
-    startMutation.mutate(acc);
+    startScraper(acc);
   };
 
   const handleStartAll = () => {
-    accounts?.forEach((acc) => startMutation.mutate(acc));
+    accounts?.forEach((acc) => startScraper(acc));
   };
 
   // Helper to get color/icon based on provider
@@ -178,8 +242,7 @@ export function ScrapingWidget() {
       return <Smartphone size={16} className="text-amber-400 animate-pulse" />;
     if (scraper.status === "success")
       return <CheckCircle2 size={16} className="text-emerald-400" />;
-    if (scraper.status === "failed")
-      return <XCircle size={16} className="text-red-400" />;
+    // For failed or any other status, show play icon (retry)
     return <PlayCircle size={16} />;
   };
 
@@ -235,12 +298,12 @@ export function ScrapingWidget() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 type="text"
                 placeholder="Code"
                 maxLength={10}
-                className="flex-1 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-2 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
+                className="flex-1 min-w-0 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-2 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
                 value={tfaCode}
                 onChange={(e) => setTfaCode(e.target.value)}
               />
@@ -282,13 +345,13 @@ export function ScrapingWidget() {
                   try {
                     await scrapingApi.abort(activeTfaScraper.process_id);
                     // Start new one
-                    startMutation.mutate(activeTfaScraper.account);
+                    startScraper(activeTfaScraper.account);
                   } catch (e) {
                     console.error("Failed to resend code:", e);
                     // Revert state if needed, or just let the error log
                   }
                 }}
-                disabled={tfaMutation.isPending || startMutation.isPending}
+                disabled={tfaMutation.isPending}
                 className="px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
               >
                 Resend
@@ -298,7 +361,7 @@ export function ScrapingWidget() {
         )}
 
         {/* Service Selection */}
-        <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar pr-1">
+        <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
           <div className="flex gap-2 mb-2">
             <button
               onClick={handleStartAll}
@@ -367,16 +430,87 @@ export function ScrapingWidget() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Status Indicator */}
-                    {scraper &&
-                      scraper.status !== "in_progress" &&
-                      scraper.status !== "waiting_for_2fa" && (
-                        <span
-                          className={`text-[10px] font-bold uppercase ${scraper.status === "success" ? "text-emerald-400" : "text-red-400"}`}
-                        >
-                          {scraper.status}
+                    {/* Status with error tooltip for failed */}
+                    {scraper && scraper.status === "failed" && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-bold uppercase text-red-400">
+                          failed
                         </span>
-                      )}
+                        {scraper.error_message && (
+                          <div className="relative group">
+                            <Info size={12} className="text-red-400 cursor-help" />
+                            <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block z-50">
+                              <div className="bg-gray-900 text-white text-[9px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
+                                {scraper.error_message}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {scraper && scraper.status === "success" && (
+                      <span className="text-[10px] font-bold uppercase text-emerald-400">
+                        success
+                      </span>
+                    )}
+
+                    {/* Last scrape status - show when no active session status */}
+                    {(!scraper || (scraper.status !== "in_progress" && scraper.status !== "waiting_for_2fa" && scraper.status !== "success" && scraper.status !== "failed")) && (() => {
+                      const lastScrape = getLastScrapeInfo(acc);
+                      if (!lastScrape?.last_scrape_date) {
+                        return (
+                          <span className="text-[10px] text-[var(--text-muted)] italic">
+                            Never synced
+                          </span>
+                        );
+                      }
+                      const scrapedToday = isToday(lastScrape.last_scrape_date);
+                      if (scrapedToday) {
+                        return (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                            <CheckCircle2 size={10} className="text-emerald-400" />
+                            <span className="text-[9px] font-semibold text-emerald-400">
+                              Synced
+                            </span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-1 text-[var(--text-muted)]">
+                          <Clock size={10} />
+                          <span className="text-[9px]">
+                            {formatRelativeDate(lastScrape.last_scrape_date)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Abort button for running scrapers */}
+                    {active && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await scrapingApi.abort(scraper!.process_id);
+                            setRunningScrapers((prev) => ({
+                              ...prev,
+                              [scraper!.process_id]: {
+                                ...scraper!,
+                                status: "failed",
+                                error_message: "Aborted by user",
+                                last_updated: Date.now(),
+                              },
+                            }));
+                          } catch (err) {
+                            console.error("Failed to abort:", err);
+                          }
+                        }}
+                        className="p-1 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors"
+                        title="Abort"
+                      >
+                        <XCircle size={14} />
+                      </button>
+                    )}
 
                     <button
                       onClick={(e) => {
@@ -401,64 +535,7 @@ export function ScrapingWidget() {
           </div>
         </div>
 
-        {/* Logs/Status Summary */}
-        {Object.keys(runningScrapers).length > 0 && (
-          <div className="space-y-2 pt-4 border-t border-[var(--surface-light)] mt-auto">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">
-                Recent Activity
-              </h4>
-            </div>
-            <div className="max-h-[120px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-              {Object.values(
-                Object.values(runningScrapers).reduce(
-                  (acc, scraper) => {
-                    // Deduplicate: Keep only the latest processId per account
-                    const key = `${scraper.account.service}_${scraper.account.provider}_${scraper.account.account_name}`;
-                    if (!acc[key] || acc[key].process_id < scraper.process_id) {
-                      acc[key] = scraper;
-                    }
-                    return acc;
-                  },
-                  {} as Record<string, ScraperState>,
-                ),
-              )
-                .sort((a, b) => b.last_updated - a.last_updated)
-                .map((scraper) => (
-                  <div
-                    key={scraper.process_id}
-                    className="flex items-center justify-between p-2 rounded bg-black/20 text-[10px]"
-                  >
-                    <span className="font-bold uppercase tracking-tight truncate mr-2">
-                      {scraper.account.provider}{" "}
-                      <span className="text-[var(--text-muted)]">
-                        / {scraper.account.account_name}
-                      </span>
-                    </span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {scraper.status === "success" ? (
-                        <div className="flex items-center gap-1 text-emerald-400">
-                          <CheckCircle2 size={10} />
-                          <span className="font-medium">Success</span>
-                        </div>
-                      ) : scraper.status === "failed" ? (
-                        <div className="flex items-center gap-1 text-red-400">
-                          <AlertCircle size={10} />
-                          <span>Failed</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-blue-400">
-                          <RefreshCw size={10} className="animate-spin" />
-                          <span>Running</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
       </div>
-    </div>
+    </div >
   );
 }

@@ -1,15 +1,14 @@
-from datetime import datetime, timedelta, date
-from typing import Dict, List, Tuple
+from datetime import date, datetime, timedelta
 from threading import Thread
+from typing import Dict, List, Tuple
 
 from sqlalchemy.orm import Session
 
-from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.repositories.credentials_repository import CredentialsRepository
-from backend.scraper import get_scraper, is_2fa_required, Scraper
-from backend.errors import EntityNotFoundException
 from backend.database import get_db_context
-
+from backend.errors import EntityNotFoundException
+from backend.repositories.credentials_repository import CredentialsRepository
+from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.scraper import Scraper, get_scraper, is_2fa_required
 
 _tfa_scrapers_waiting: Dict[str, Tuple[Scraper, Thread]] = {}
 
@@ -30,7 +29,35 @@ class ScrapingService:
         status = self.scraping_history_repo.get_scraping_status(
             int(scraping_process_id)
         )
-        return {"status": status or "unknown", "process_id": scraping_process_id}
+        error_message = self.scraping_history_repo.get_error_message(
+            int(scraping_process_id)
+        )
+        return {
+            "status": status or "unknown",
+            "process_id": scraping_process_id,
+            "error_message": error_message,
+        }
+
+    def get_last_scrape_dates(self) -> List[Dict]:
+        """
+        Get last successful scrape dates for all configured accounts.
+        Returns a list of dicts with service, provider, account_name, and last_scrape_date.
+        """
+        accounts = self.credentials_repo.list_accounts()
+        result = []
+        for acc in accounts:
+            last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
+                acc["service"], acc["provider"], acc["account_name"]
+            )
+            result.append(
+                {
+                    "service": acc["service"],
+                    "provider": acc["provider"],
+                    "account_name": acc["account_name"],
+                    "last_scrape_date": last_scrape,
+                }
+            )
+        return result
 
     def start_scraping(self, accounts: List[Dict]) -> None:
         """
@@ -82,20 +109,23 @@ class ScrapingService:
         scraper.set_otp_code(code)
 
     def abort_scraping_process(self, process_id: int) -> None:
-        """Abort a scraping process waiting for 2FA."""
+        """Abort any scraping process by its ID."""
+        # Check if it's a 2FA-waiting scraper
         target_name = None
         for name, (scraper, _) in _tfa_scrapers_waiting.items():
             if scraper.process_id == process_id:
                 target_name = name
                 break
 
-        if not target_name:
-            raise EntityNotFoundException(
-                f"Scraping process {process_id} not found or not waiting for 2FA"
-            )
+        if target_name:
+            # Cancel the 2FA scraper
+            scraper, _ = _tfa_scrapers_waiting.pop(target_name)
+            scraper.set_otp_code(scraper.CANCEL)
 
-        scraper, _ = _tfa_scrapers_waiting.pop(target_name)
-        scraper.set_otp_code(scraper.CANCEL)
+        # Mark as failed in the database regardless
+        with get_db_context() as db:
+            history_repo = ScrapingHistoryRepository(db)
+            history_repo.record_scrape_end(process_id, history_repo.FAILED)
 
     def _get_scraper_start_date(
         self, service: str, provider: str, account: str

@@ -133,6 +133,15 @@ export const scrapingApi = {
   ) => api.post("/scraping/2fa", { service, provider, account, code }),
   abort: (processId: number) =>
     api.post("/scraping/abort", { process_id: processId }),
+  getLastScrapes: () =>
+    api.get<
+      {
+        service: string;
+        provider: string;
+        account_name: string;
+        last_scrape_date: string | null;
+      }[]
+    >("/scraping/last-scrapes"),
 };
 
 // Investments API

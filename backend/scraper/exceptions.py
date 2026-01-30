@@ -1,4 +1,4 @@
-from enum import Enum, auto
+from enum import Enum
 
 
 class ErrorType(Enum):
@@ -10,41 +10,41 @@ class ErrorType(Enum):
 
     Attributes
     ----------
-    GENERAL : auto
+    GENERAL : str
         General scraper error, not fitting any specific category.
-    CREDENTIALS : auto
+    CREDENTIALS : str
         Error related to invalid credentials.
-    CONNECTION : auto
+    CONNECTION : str
         Error related to network connection issues.
-    TIMEOUT : auto
+    TIMEOUT : str
         Error related to operation timeouts.
-    DATA : auto
+    DATA : str
         Error related to data processing or parsing.
-    LOGIN : auto
+    LOGIN : str
         Error related to the login process.
-    PASSWORD_CHANGE : auto
+    PASSWORD_CHANGE : str
         Error indicating that a password change is required.
-    ACCOUNT : auto
+    ACCOUNT : str
         Error related to account status (blocked, suspended, etc.).
-    SERVICE : auto
+    SERVICE : str
         Error related to service availability.
-    RATE_LIMIT : auto
+    RATE_LIMIT : str
         Error related to rate limiting or too many requests.
-    SECURITY : auto
+    SECURITY : str
         Error related to security measures (CAPTCHA, verification, etc.).
     """
 
-    GENERAL = auto()
-    CREDENTIALS = auto()
-    CONNECTION = auto()
-    TIMEOUT = auto()
-    DATA = auto()
-    LOGIN = auto()
-    PASSWORD_CHANGE = auto()
-    ACCOUNT = auto()
-    SERVICE = auto()
-    RATE_LIMIT = auto()
-    SECURITY = auto()
+    GENERAL = "GENERAL"
+    CREDENTIALS = "CREDENTIALS"
+    CONNECTION = "CONNECTION"
+    TIMEOUT = "TIMEOUT"
+    DATA = "DATA"
+    LOGIN = "LOGIN"
+    PASSWORD_CHANGE = "PASSWORD_CHANGE"
+    ACCOUNT = "ACCOUNT"
+    SERVICE = "SERVICE"
+    RATE_LIMIT = "RATE_LIMIT"
+    SECURITY = "SECURITY"
 
 
 class ScraperError(Exception):

@@ -25,3 +25,4 @@ class ScrapingHistory(Base, TimestampMixin):
     start_date = Column(
         String, nullable=True
     )  # The 'start_date' parameter used for scraping
+    error_message = Column(String, nullable=True)  # Error details for failed scrapes

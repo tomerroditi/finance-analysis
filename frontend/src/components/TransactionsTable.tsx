@@ -18,6 +18,7 @@ import {
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { transactionsApi, taggingApi } from "../services/api";
+import { formatDate } from "../utils/dateFormatting";
 
 export interface Transaction {
   id?: any;
@@ -340,13 +341,12 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     <th
       onClick={() => handleSort(sortKey)}
       style={{ width }}
-      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${
-        align === "right"
-          ? "text-right"
-          : align === "center"
-            ? "text-center"
-            : "text-left"
-      }`}
+      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
+        ? "text-right"
+        : align === "center"
+          ? "text-center"
+          : "text-left"
+        }`}
     >
       <div
         className={`flex items-center ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"}`}
@@ -475,7 +475,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   <td
                     className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-[var(--text-muted)]`}
                   >
-                    {new Date(tx.date).toLocaleDateString()}
+                    {formatDate(tx.date)}
                   </td>
                   <td
                     className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}

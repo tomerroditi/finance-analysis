@@ -59,17 +59,25 @@ class ScrapingHistoryRepository:
         self.db.commit()
         return history.id
 
-    def record_scrape_end(self, scrape_id: int, status: str) -> None:
+    def record_scrape_end(
+        self, scrape_id: int, status: str, error_message: str = None
+    ) -> None:
         stmt = (
             update(ScrapingHistory)
             .where(ScrapingHistory.id == scrape_id)
-            .values(status=status)
+            .values(status=status, error_message=error_message)
         )
         self.db.execute(stmt)
         self.db.commit()
 
     def get_scraping_status(self, scrape_id: int) -> str | None:
         stmt = select(ScrapingHistory.status).where(ScrapingHistory.id == scrape_id)
+        return self.db.execute(stmt).scalar()
+
+    def get_error_message(self, scrape_id: int) -> str | None:
+        stmt = select(ScrapingHistory.error_message).where(
+            ScrapingHistory.id == scrape_id
+        )
         return self.db.execute(stmt).scalar()
 
     def get_scraping_history(self) -> pd.DataFrame:

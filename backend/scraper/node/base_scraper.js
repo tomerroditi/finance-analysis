@@ -1,4 +1,4 @@
-import {createScraper} from 'israeli-bank-scrapers';
+import { createScraper } from 'israeli-bank-scrapers';
 import readline from "readline";
 
 /**
@@ -71,7 +71,8 @@ export async function runScraper(options, credentials, requires2FA = false) {
 
     // Handle 2FA if needed
     if (requires2FA && !scrapeResult.success && scrapeResult.errorMessage &&
-        scrapeResult.errorMessage.includes('reading \'idToken\'')) {
+      (scrapeResult.errorMessage.includes('reading \'idToken\'') ||
+        scrapeResult.errorMessage.includes('reading \'otpToken\''))) {
       credentials.otpLongTermToken = await renewLongTermToken(scraper, credentials);
       scrapeResult = await scraper.scrape(credentials);
     } else if (requires2FA) {
@@ -106,71 +107,71 @@ export async function runScraper(options, credentials, requires2FA = false) {
     let errorMessage = e.message;
 
     // Check for credential errors
-    if (e.message.includes("INVALID_PASSWORD") || 
-        e.message.includes("INVALID_CREDENTIALS") || 
-        e.message.includes("password") || 
-        e.message.includes("credentials") ||
-        e.message.includes("GENERIC")) {
+    if (e.message.includes("INVALID_PASSWORD") ||
+      e.message.includes("INVALID_CREDENTIALS") ||
+      e.message.includes("password") ||
+      e.message.includes("credentials") ||
+      e.message.includes("GENERIC")) {
       errorType = ErrorType.CREDENTIALS;
     }
     // Check for connection errors
-    else if (e.message.includes("ENOTFOUND") || 
-             e.message.includes("ECONNREFUSED") || 
-             e.message.includes("network") ||
-             e.message.includes("Network")) {
+    else if (e.message.includes("ENOTFOUND") ||
+      e.message.includes("ECONNREFUSED") ||
+      e.message.includes("network") ||
+      e.message.includes("Network")) {
       errorType = ErrorType.CONNECTION;
     }
     // Check for timeout errors
-    else if (e.message.includes("timeout") || 
-             e.message.includes("timed out") ||
-             e.message.includes("TIMEOUT")) {
+    else if (e.message.includes("timeout") ||
+      e.message.includes("timed out") ||
+      e.message.includes("TIMEOUT")) {
       errorType = ErrorType.TIMEOUT;
     }
     // Check for data errors
-    else if (e.message.includes("data") || 
-             e.message.includes("parsing") ||
-             e.message.includes("DATA")) {
+    else if (e.message.includes("data") ||
+      e.message.includes("parsing") ||
+      e.message.includes("DATA")) {
       errorType = ErrorType.DATA;
     }
     // Check for login errors
-    else if (e.message.includes("login") || 
-             e.message.includes("authentication") || 
-             e.message.includes("auth") ||
-             e.message.includes("LOGIN")) {
+    else if (e.message.includes("login") ||
+      e.message.includes("authentication") ||
+      e.message.includes("auth") ||
+      e.message.includes("LOGIN")) {
       errorType = ErrorType.LOGIN;
     }
     // Check for password change required
-    else if (e.message.includes("CHANGE_PASSWORD") || 
-             e.message.includes("password expired") ||
-             e.message.includes("change password")) {
+    else if (e.message.includes("CHANGE_PASSWORD") ||
+      e.message.includes("password expired") ||
+      e.message.includes("change password")) {
       errorType = ErrorType.PASSWORD_CHANGE;
     }
     // Check for account-related errors
-    else if (e.message.includes("account") || 
-             e.message.includes("blocked") || 
-             e.message.includes("suspended") ||
-             e.message.includes("locked")) {
+    else if (e.message.includes("account") ||
+      e.message.includes("blocked") ||
+      e.message.includes("suspended") ||
+      e.message.includes("locked")) {
       errorType = ErrorType.ACCOUNT;
     }
     // Check for service unavailability
-    else if (e.message.includes("maintenance") || 
-             e.message.includes("unavailable") || 
-             e.message.includes("service") ||
-             e.message.includes("down")) {
+    else if (e.message.includes("maintenance") ||
+      e.message.includes("unavailable") ||
+      e.message.includes("service") ||
+      e.message.includes("down")) {
       errorType = ErrorType.SERVICE;
     }
     // Check for rate limiting
-    else if (e.message.includes("rate limit") || 
-             e.message.includes("too many requests") || 
-             e.message.includes("try again later") ||
-             e.message.includes("429")) {
+    else if (e.message.includes("rate limit") ||
+      e.message.includes("too many requests") ||
+      e.message.includes("try again later") ||
+      e.message.includes("429")) {
       errorType = ErrorType.RATE_LIMIT;
     }
     // Check for security-related issues
-    else if (e.message.includes("captcha") || 
-             e.message.includes("verification") || 
-             e.message.includes("security") ||
-             e.message.includes("challenge")) {
+    else if (e.message.includes("captcha") ||
+      e.message.includes("verification") ||
+      e.message.includes("security") ||
+      e.message.includes("challenge")) {
       errorType = ErrorType.SECURITY;
     }
 
@@ -180,8 +181,8 @@ export async function runScraper(options, credentials, requires2FA = false) {
     // Add stack trace for more detailed debugging
     console.error(`DEBUG: Error stack trace: ${e.stack}`);
 
-    return { 
-      success: false, 
+    return {
+      success: false,
       errorType: errorType,
       errorMessage: errorMessage
     };

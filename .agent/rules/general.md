@@ -17,6 +17,11 @@ Personal finance tracking and analysis system that automates data collection fro
 - **State Management:** TanStack Query (React Query) + Zustand
 - **Testing:** pytest (Backend)
 
+**Important Paths:**
+- **Database:** `~/.finance-analysis/data.db`
+- **Credentials:** `~/.finance-analysis/credentials.yaml`
+- **User Data Dir:** `~/.finance-analysis/`
+
 ## Architecture Principles
 
 ### Decoupled Architecture

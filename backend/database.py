@@ -11,7 +11,7 @@ from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 from backend.config import AppConfig
 
@@ -66,7 +66,7 @@ def create_db_engine(db_path: str = None, echo: bool = False):
         get_database_url(db_path),
         echo=echo,
         connect_args={"check_same_thread": False},  # Required for SQLite with FastAPI
-        poolclass=StaticPool,  # Use static pool for SQLite
+        poolclass=NullPool,  # Create fresh connections for thread safety
     )
 
 
@@ -164,7 +164,12 @@ def get_db_context() -> Generator[Session, None, None]:
         result = db.execute(text("SELECT * FROM items")).fetchall()
     ```
     """
-    yield get_db()
+    SessionLocal = get_session_factory()
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def reset_engine():
