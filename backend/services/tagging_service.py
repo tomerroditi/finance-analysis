@@ -16,6 +16,7 @@ from backend.repositories.split_transactions_repository import (
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
+from backend.utils.text_utils import to_title_case
 
 
 def _sorted_unique(lst: list) -> list:
@@ -100,9 +101,12 @@ class CategoriesTagsService:
         Add a new category.
 
         Returns True if added successfully, False if empty or already exists.
+        Category name is normalized to title case.
         """
         if not category or not isinstance(category, str) or not category.strip():
             return False
+        # Normalize to title case
+        category = to_title_case(category.strip())
         if category.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
             return False
         self.categories_and_tags[category] = []
@@ -176,9 +180,12 @@ class CategoriesTagsService:
         Add a new tag to a category.
 
         Returns True if added successfully, False if category doesn't exist or tag exists.
+        Tag name is normalized to title case.
         """
         if category not in self.categories_and_tags:
             return False
+        # Normalize to title case
+        tag = to_title_case(tag.strip()) if tag else tag
         if tag in self.categories_and_tags[category]:
             return False
         self.categories_and_tags[category].append(tag)
