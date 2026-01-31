@@ -133,10 +133,25 @@ async def get_monthly_analysis(
     year: int, month: int, db: Session = Depends(get_database)
 ):
     """Get full monthly budget analysis."""
+    from backend.services.pending_refunds_service import PendingRefundsService
+
     service = MonthlyBudgetService(db)
     view = service.get_monthly_budget_view(year, month)
     project_summary = service.get_monthly_project_spending_summary(year, month)
-    return {"rules": view if view else [], "project_spending": project_summary}
+
+    # Get pending refunds summary
+    pending_service = PendingRefundsService(db)
+    pending_refunds = pending_service.get_all_pending(status="pending")
+    budget_adjustment = pending_service.get_budget_adjustment(year, month)
+
+    return {
+        "rules": view if view else [],
+        "project_spending": project_summary,
+        "pending_refunds": {
+            "items": pending_refunds,
+            "total_expected": budget_adjustment,
+        },
+    }
 
 
 # --- Project Endpoints ---
