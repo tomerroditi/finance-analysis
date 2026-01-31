@@ -213,10 +213,11 @@ export function BudgetRuleModal({
                         key={tag}
                         type="button"
                         onClick={() => handleTagToggle(tag)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedTags.includes(tag)
-                          ? "bg-[var(--primary)] text-white shadow-sm"
-                          : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:bg-[var(--surface-base)] border border-transparent hover:border-[var(--surface-light)]"
-                          }`}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                          selectedTags.includes(tag)
+                            ? "bg-[var(--primary)] text-white shadow-sm"
+                            : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:bg-[var(--surface-base)] border border-transparent hover:border-[var(--surface-light)]"
+                        }`}
                       >
                         {tag}
                       </button>

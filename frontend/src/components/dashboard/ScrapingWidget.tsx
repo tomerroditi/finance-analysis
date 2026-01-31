@@ -89,7 +89,7 @@ export function ScrapingWidget() {
       (ls) =>
         ls.service === acc.service &&
         ls.provider === acc.provider &&
-        ls.account_name === acc.account_name
+        ls.account_name === acc.account_name,
     );
   };
 
@@ -436,7 +436,10 @@ export function ScrapingWidget() {
                         </span>
                         {scraper.error_message && (
                           <div className="relative group">
-                            <Info size={12} className="text-red-400 cursor-help" />
+                            <Info
+                              size={12}
+                              className="text-red-400 cursor-help"
+                            />
                             <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block z-50">
                               <div className="bg-gray-900 text-white text-[9px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
                                 {scraper.error_message}
@@ -453,35 +456,45 @@ export function ScrapingWidget() {
                     )}
 
                     {/* Last scrape status - show when no active session status */}
-                    {(!scraper || (scraper.status !== "in_progress" && scraper.status !== "waiting_for_2fa" && scraper.status !== "success" && scraper.status !== "failed")) && (() => {
-                      const lastScrape = getLastScrapeInfo(acc);
-                      if (!lastScrape?.last_scrape_date) {
-                        return (
-                          <span className="text-[10px] text-[var(--text-muted)] italic">
-                            Never synced
-                          </span>
+                    {(!scraper ||
+                      (scraper.status !== "in_progress" &&
+                        scraper.status !== "waiting_for_2fa" &&
+                        scraper.status !== "success" &&
+                        scraper.status !== "failed")) &&
+                      (() => {
+                        const lastScrape = getLastScrapeInfo(acc);
+                        if (!lastScrape?.last_scrape_date) {
+                          return (
+                            <span className="text-[10px] text-[var(--text-muted)] italic">
+                              Never synced
+                            </span>
+                          );
+                        }
+                        const scrapedToday = isToday(
+                          lastScrape.last_scrape_date,
                         );
-                      }
-                      const scrapedToday = isToday(lastScrape.last_scrape_date);
-                      if (scrapedToday) {
+                        if (scrapedToday) {
+                          return (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                              <CheckCircle2
+                                size={10}
+                                className="text-emerald-400"
+                              />
+                              <span className="text-[9px] font-semibold text-emerald-400">
+                                Synced
+                              </span>
+                            </div>
+                          );
+                        }
                         return (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                            <CheckCircle2 size={10} className="text-emerald-400" />
-                            <span className="text-[9px] font-semibold text-emerald-400">
-                              Synced
+                          <div className="flex items-center gap-1 text-[var(--text-muted)]">
+                            <Clock size={10} />
+                            <span className="text-[9px]">
+                              {formatRelativeDate(lastScrape.last_scrape_date)}
                             </span>
                           </div>
                         );
-                      }
-                      return (
-                        <div className="flex items-center gap-1 text-[var(--text-muted)]">
-                          <Clock size={10} />
-                          <span className="text-[9px]">
-                            {formatRelativeDate(lastScrape.last_scrape_date)}
-                          </span>
-                        </div>
-                      );
-                    })()}
+                      })()}
 
                     {/* Abort button for running scrapers */}
                     {active && (
@@ -532,8 +545,7 @@ export function ScrapingWidget() {
             )}
           </div>
         </div>
-
       </div>
-    </div >
+    </div>
   );
 }

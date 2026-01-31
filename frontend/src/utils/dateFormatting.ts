@@ -12,8 +12,8 @@ export const DATE_FORMAT = "dd/MM/yyyy";
  * @returns Formatted date string in dd/MM/yyyy format
  */
 export function formatDate(date: string | Date): string {
-    const dateObj = typeof date === "string" ? new Date(date) : date;
-    return format(dateObj, DATE_FORMAT);
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  return format(dateObj, DATE_FORMAT);
 }
 
 /**
@@ -22,6 +22,6 @@ export function formatDate(date: string | Date): string {
  * @returns Formatted date string
  */
 export function formatShortDate(date: string | Date): string {
-    const dateObj = typeof date === "string" ? new Date(date) : date;
-    return format(dateObj, "d MMM");
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  return format(dateObj, "d MMM");
 }

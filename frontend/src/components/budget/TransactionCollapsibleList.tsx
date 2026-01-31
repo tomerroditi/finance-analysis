@@ -16,7 +16,14 @@ interface TransactionCollapsibleListProps {
  */
 export const TransactionCollapsibleList: React.FC<
   TransactionCollapsibleListProps
-> = ({ transactions, isOpen, showActions = false, onTransactionUpdated, pendingRefundsMap, refundLinksMap }) => {
+> = ({
+  transactions,
+  isOpen,
+  showActions = false,
+  onTransactionUpdated,
+  pendingRefundsMap,
+  refundLinksMap,
+}) => {
   if (!isOpen) return null;
 
   return (

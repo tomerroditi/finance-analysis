@@ -1,6 +1,5 @@
 """Tests for PendingRefundsRepository."""
 
-import pytest
 
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
 

@@ -6,13 +6,11 @@ Provides endpoints for managing pending refunds and linking refund transactions.
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.errors import EntityNotFoundException, ValidationException
-from backend.models.pending_refund import PendingRefund
 from backend.services.pending_refunds_service import PendingRefundsService
 
 router = APIRouter(tags=["pending-refunds"])

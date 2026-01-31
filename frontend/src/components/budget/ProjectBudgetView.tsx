@@ -196,9 +196,9 @@ export const ProjectBudgetView: React.FC = () => {
   const initialModalData =
     isEditMode && projectTotalRule
       ? {
-        category: selectedProject,
-        total_budget: projectTotalRule.rule.amount,
-      }
+          category: selectedProject,
+          total_budget: projectTotalRule.rule.amount,
+        }
       : null;
 
   // Calculate "Other" transactions (those not in specific tag rules)

@@ -376,7 +376,7 @@ def main():
     if args.dry_run:
         names = generate_names(args.feature_name)
         print(f"\nDry run for feature: {names.pascal_case}")
-        print(f"\nWould create:")
+        print("\nWould create:")
         print(f"  - {args.output_dir}/models/{names.snake_case}.py")
         print(f"  - {args.output_dir}/repositories/{names.snake_case}_repository.py")
         print(f"  - {args.output_dir}/services/{names.snake_case}_service.py")

@@ -197,7 +197,6 @@ class PendingRefundsService:
         """
         from sqlalchemy import select
 
-        from backend.naming_conventions import SplitTransactionsTableFields
         from backend.repositories.transactions_repository import TransactionsRepository
 
         df = self.repo.get_all_pending_refunds(status=status)

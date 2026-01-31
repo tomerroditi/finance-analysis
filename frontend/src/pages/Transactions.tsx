@@ -43,7 +43,7 @@ export function Transactions() {
     const map = new Map<string, any>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach(pr => {
+    pendingRefunds.forEach((pr) => {
       // Key format matches default getTransactionId: `${source}_${unique_id}`
       // Adjust based on your ID strategy. Here we use source_table and source_id.
       // Note: TransactionTable uses `${source}_${unique_id}` or source from API.
@@ -92,8 +92,6 @@ export function Transactions() {
   useEffect(() => {
     // Handled by TransactionsTable internally
   }, [selectedService, onlyUntagged]);
-
-
 
   const services = [
     { value: "all", label: "All" },
@@ -167,10 +165,11 @@ export function Transactions() {
                 )}
                 <button
                   onClick={() => setSelectedService(value as any)}
-                  className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
-                    ? "bg-[var(--primary)] text-white"
-                    : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
-                    }`}
+                  className={`px-4 py-2 rounded-lg transition-colors ${
+                    selectedService === value
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+                  }`}
                 >
                   {label}
                 </button>

@@ -20,7 +20,11 @@ import {
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
-import { transactionsApi, taggingApi, pendingRefundsApi } from "../services/api";
+import {
+  transactionsApi,
+  taggingApi,
+  pendingRefundsApi,
+} from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
 export interface Transaction {
@@ -388,12 +392,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     <th
       onClick={() => handleSort(sortKey)}
       style={{ width }}
-      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
-        ? "text-right"
-        : align === "center"
-          ? "text-center"
-          : "text-left"
-        }`}
+      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${
+        align === "right"
+          ? "text-right"
+          : align === "center"
+            ? "text-center"
+            : "text-left"
+      }`}
     >
       <div
         className={`flex items-center ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"}`}
@@ -577,19 +582,27 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           <Split size={14} />
                         </button>
                         {/* Pending refund actions */}
-                        {tx.amount < 0 && (
+                        {tx.amount < 0 &&
                           (() => {
-                            const pending = pendingRefundsMap?.get(getTransactionId(tx));
+                            const pending = pendingRefundsMap?.get(
+                              getTransactionId(tx),
+                            );
 
                             if (pending) {
-                              if (pending.status === 'resolved') {
+                              if (pending.status === "resolved") {
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
                                     title="Refund Resolved (Click to remove/unlink)"
                                     onClick={() => {
-                                      if (window.confirm("This refund is marked as resolved. Do you want to remove this record?")) {
-                                        cancelPendingMutation.mutate(pending.id);
+                                      if (
+                                        window.confirm(
+                                          "This refund is marked as resolved. Do you want to remove this record?",
+                                        )
+                                      ) {
+                                        cancelPendingMutation.mutate(
+                                          pending.id,
+                                        );
                                       }
                                     }}
                                     disabled={cancelPendingMutation.isPending}
@@ -598,19 +611,28 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                   </button>
                                 );
                               }
-                              if (pending.status === 'partial') {
+                              if (pending.status === "partial") {
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
                                     title={`Partially Refunded (${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.total_refunded || 0)} / ${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.expected_amount)}) - Click to Cancel`}
                                     onClick={() => {
-                                      if (window.confirm("Remove this partial refund request? Linked refunds will be unlinked.")) {
-                                        cancelPendingMutation.mutate(pending.id);
+                                      if (
+                                        window.confirm(
+                                          "Remove this partial refund request? Linked refunds will be unlinked.",
+                                        )
+                                      ) {
+                                        cancelPendingMutation.mutate(
+                                          pending.id,
+                                        );
                                       }
                                     }}
                                     disabled={cancelPendingMutation.isPending}
                                   >
-                                    <RefreshCw size={14} className="animate-spin-slow" />
+                                    <RefreshCw
+                                      size={14}
+                                      className="animate-spin-slow"
+                                    />
                                     {/* Using RefreshCw for partial but maybe PieChart is better if imported? 
                                         Let's stick to RefreshCw but blue distinct color, or PieChart if imported. 
                                         PieChart is not imported. Let's use Link2 or RefreshCw. RefreshCw implies ongoing.
@@ -624,13 +646,20 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                   className="p-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
                                   title="Cancel Pending Refund Request"
                                   onClick={() => {
-                                    if (window.confirm("Remove this request? If it is linked to refunds, those links will be broken.")) {
+                                    if (
+                                      window.confirm(
+                                        "Remove this request? If it is linked to refunds, those links will be broken.",
+                                      )
+                                    ) {
                                       cancelPendingMutation.mutate(pending.id);
                                     }
                                   }}
                                   disabled={cancelPendingMutation.isPending}
                                 >
-                                  <RefreshCw size={14} className="animate-pulse" />
+                                  <RefreshCw
+                                    size={14}
+                                    className="animate-pulse"
+                                  />
                                 </button>
                               );
                             }
@@ -644,12 +673,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 <RefreshCw size={14} />
                               </button>
                             );
-                          })()
-                        )}
-                        {tx.amount > 0 && (
+                          })()}
+                        {tx.amount > 0 &&
                           (() => {
                             // Check if this transaction is linked as a refund
-                            const linkId = refundLinksMap?.get(getTransactionId(tx));
+                            const linkId = refundLinksMap?.get(
+                              getTransactionId(tx),
+                            );
 
                             if (linkId) {
                               return (
@@ -657,7 +687,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                   className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
                                   title="Linked to Pending Refund. Click to Unlink."
                                   onClick={() => {
-                                    if (window.confirm("Unlink this refund from the pending request?")) {
+                                    if (
+                                      window.confirm(
+                                        "Unlink this refund from the pending request?",
+                                      )
+                                    ) {
                                       unlinkRefundMutation.mutate(linkId);
                                     }
                                   }}
@@ -677,8 +711,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 <Link2 size={14} />
                               </button>
                             );
-                          })()
-                        )}
+                          })()}
                         {showDelete && isManual && (
                           <button
                             className="p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
@@ -906,9 +939,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           onClose={() => setLinkingTransaction(null)}
           refundTransaction={{
             id: linkingTransaction.unique_id,
-            source: linkingTransaction.source || 'unknown',
+            source: linkingTransaction.source || "unknown",
             amount: linkingTransaction.amount,
-            description: linkingTransaction.description || linkingTransaction.desc || '',
+            description:
+              linkingTransaction.description || linkingTransaction.desc || "",
           }}
         />
       )}

@@ -229,8 +229,7 @@ export const pendingRefundsApi = {
   }) => api.post<PendingRefund>("/pending-refunds/", data),
   getAll: (status?: string) =>
     api.get<PendingRefund[]>("/pending-refunds/", { params: { status } }),
-  getById: (id: number) =>
-    api.get<PendingRefund>(`/pending-refunds/${id}`),
+  getById: (id: number) => api.get<PendingRefund>(`/pending-refunds/${id}`),
   cancel: (id: number) => api.delete(`/pending-refunds/${id}`),
   linkRefund: (
     pendingId: number,
@@ -238,7 +237,7 @@ export const pendingRefundsApi = {
       refund_transaction_id: number;
       refund_source: string;
       amount: number;
-    }
+    },
   ) => api.post(`/pending-refunds/${pendingId}/link`, data),
   unlinkRefund: (linkId: number) =>
     api.delete(`/pending-refunds/links/${linkId}`),
@@ -255,4 +254,3 @@ export const testingApi = {
 };
 
 export default api;
-

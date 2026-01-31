@@ -352,7 +352,9 @@ export function Dashboard() {
           <h2 className="text-xl font-semibold mb-1">Data Status</h2>
           <p className="text-[var(--text-muted)] text-sm">
             Latest transaction date:{" "}
-            {overview?.latest_data_date ? formatDate(overview.latest_data_date) : "No data available"}
+            {overview?.latest_data_date
+              ? formatDate(overview.latest_data_date)
+              : "No data available"}
           </p>
         </div>
         <div className="text-[var(--primary)] font-bold text-xs uppercase tracking-widest px-3 py-1 bg-[var(--primary)]/10 rounded-full border border-[var(--primary)]/20">
