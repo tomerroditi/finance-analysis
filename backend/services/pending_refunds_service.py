@@ -279,6 +279,13 @@ class PendingRefundsService:
                 except Exception:
                     pass
 
+        # Apply details to pending items
+        for p in pending_list:
+            details = details_map.get(
+                (p["source_table"], p["source_type"], p["source_id"]), {}
+            )
+            p.update(details)
+
         # Fetch linked transactions details
         for p in pending_list:
             if "links" not in p:
