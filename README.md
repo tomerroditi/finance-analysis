@@ -63,13 +63,12 @@ The frontend is built with React and Vite.
 - create a summary of the data
 
 
-# Streamlit App
-the app should be able to:
-- [x] categories setting page to add new categories and tags
-- [x] add\edit\delete credentials of different data scraping websites
-- [x] edit the tags of the expenses (the tags table of the database)
-- [x] visualize the data in various ways with an interactive dashboard
-- provide a forecast of the future savings
-- provide a summary of the data
-- upload a pdf of their monthly salary to be digested by the system
-- [x] support the 2 factor authentication process
+# Dashboard Interface
+The application features a modern React-based dashboard that supports:
+- [x] Category and Tag management
+- [x] Provider credential management (Banks, Credit Cards)
+- [x] Manual transaction entry (Cash, Investments)
+- [x] Interactive data visualization and financial analysis
+- [x] Automated tagging rules
+- [x] 2FA authentication flow support for scraping
+- [x] Budget tracking and project budget management

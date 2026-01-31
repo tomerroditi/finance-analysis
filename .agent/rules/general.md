@@ -88,7 +88,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 ### 5. Non-Expense Categories
 - **Ignore:** Internal transfers, credit card billing summaries.
 - **Income:** Salary, Other Income.
-- **Savings/Investments:** Allocated funds.
+- **Investments:** Allocated funds.
 - **Liabilities:** Debt payments.
 
 ## Code Quality Standards
@@ -143,7 +143,7 @@ finance-analysis/
 │   │   ├── services/   # API client (api.ts)
 │   │   └── hooks/      # Custom React hooks
 │   └── public/
-├── fad/                # Legacy code / Original Streamlit package
+├── fad/                # DEPRECATED: Legacy code / Original Streamlit package (ignore)
 └── .agent/             # Agent rules and workflows
 ```
 

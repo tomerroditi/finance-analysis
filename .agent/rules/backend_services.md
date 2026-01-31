@@ -1,6 +1,6 @@
 ---
 trigger: glob
-globs: backend/services/**/*.py"
+globs: backend/services/**/*.py
 ---
 
 # Services Layer - Business Logic
@@ -22,9 +22,8 @@ The services layer contains **ALL business logic** for the application. Services
 
 ### What Services DO NOT DO:
 ❌ **Direct database access** - always use repositories  
-❌ **UI rendering** - no Streamlit widgets  
-❌ **Session state management** - avoid `st.session_state` (component responsibility)  
-❌ **Direct file I/O** - use repositories for YAML/file operations  
+❌ **UI rendering** - services don't handle UI logic
+❌ **Direct file I/O** - use repositories for YAML/file operations
 
 **Golden Rule:** If it's about "what the data means" or "what to do with it" - it's business logic and belongs in services.
 
@@ -37,19 +36,19 @@ Services can be **basic** (only use repositories) or **complex** (use other serv
 ```python
 # Basic Service - Only repositories
 class TransactionsService:
-    def __init__(self, conn):
-        self.transactions_repo = TransactionsRepository(conn)
-        self.split_repo = SplitTransactionsRepository(conn)
+    def __init__(self, db: Session):
+        self.transactions_repository = TransactionsRepository(db)
+        self.split_transactions_repository = SplitTransactionsRepository(db)
     
     def get_transactions(self):
-        return self.transactions_repo.get_all_transactions()
+        return self.transactions_repository.get_table("credit_cards")
 
 # Complex Service - Uses other services
 class BudgetService:
-    def __init__(self, conn):
-        self.budget_repo = BudgetRepository(conn)
-        self.categories_service = CategoriesTagsService()  # Service dependency
-        self.transactions_service = TransactionsService(conn)  # Service dependency
+    def __init__(self, db: Session):
+        self.budget_repository = BudgetRepository(db)
+        self.tagging_service = TaggingService(db)  # Service dependency
+        self.transactions_service = TransactionsService(db)  # Service dependency
 ```
 
 **Critical Design Rule:** **Avoid circular dependencies!**
@@ -63,52 +62,23 @@ class BudgetService:
 Complex Services → Basic Services → Repositories → Database/Files
 ```
 
-### Connection Parameter (`conn`)
+### Database Session (`db`)
 
-**Purpose:** Dependency injection for easier testing.
+**Purpose:** Dependency injection for session management within the request lifecycle.
 
 **Pattern:**
 ```python
 class ExampleService:
-    def __init__(self, conn: SQLConnection = get_db_connection()):
-        self.conn = conn
-        self.repo = ExampleRepository(conn)
+    def __init__(self, db: Session):
+        self.db = db
+        self.repo = ExampleRepository(db)
 ```
 
 **Benefits:**
-- Tests can inject mock connections
-- Same connection reused across repositories
-- Potential for singleton pattern (not currently implemented)
+- FastAPI handles session lifecycle (closing, committing) via dependencies.
+- Tests can inject test sessions or mocks.
+- Consistent database access across repositories.
 
-**Note:** Services are currently **not singletons** - new instances created per operation. Consider singleton pattern carefully before implementing (thread safety, state management).
-
-### Session State Interaction
-
-**Current State:** Some services interact with `st.session_state` (legacy pattern).
-
-**Goal:** Components should manage session state, not services.
-
-**Example (Current - Avoid):**
-```python
-# ❌ Service managing session state (legacy pattern)
-class CategoriesTagsService:
-    def get_categories_and_tags(self):
-        if 'categories_and_tags' not in st.session_state:
-            st.session_state['categories_and_tags'] = self.load_from_file()
-        return st.session_state['categories_and_tags']
-```
-
-**Better Pattern (Target):**
-```python
-# ✅ Component manages session state
-class CategoriesComponent:
-    def __init__(self):
-        self.service = CategoriesTagsService()
-        if 'categories_and_tags' not in st.session_state:
-            st.session_state['categories_and_tags'] = self.service.load_categories()
-```
-
-**Guideline:** New services should avoid session state. Existing services with session state are being refactored gradually.
 
 ## Return Types
 
@@ -195,7 +165,7 @@ def update_budget(self, id: int, amount: float):
 
 ## Existing Services
 
-### 1. `TransactionsService` (at fad.app.services.transactions_service)
+### 1. `TransactionsService` (at backend/services/transactions_service.py)
 **Purpose:** Manage transaction data across multiple sources (credit cards, banks, cash, manual investments).
 
 **Key Responsibilities:**
@@ -218,7 +188,7 @@ def update_budget(self, id: int, amount: float):
 - Filter out "Ignore" category transactions from analysis
 - Merge split transactions into original transaction data
 
-### 2. `CategoriesTagsService` (at fad.app.services.tagging_service)
+### 2. `TaggingService` (at backend/services/tagging_service.py)
 **Purpose:** Manage category and tag configuration.
 
 **Key Responsibilities:**
@@ -239,7 +209,7 @@ def update_budget(self, id: int, amount: float):
 - Cannot delete category with existing transactions
 - Reallocating tags requires updating all affected transactions/rules
 
-### 3. `TaggingRulesService` (at fad.app.services.tagging_rules_service)
+### 3. `TaggingRulesService` (at backend/services/tagging_rules_service.py)
 **Purpose:** Manage automatic tagging rules with priority-based pattern matching.
 
 **Key Responsibilities:**
@@ -278,7 +248,7 @@ def update_budget(self, id: int, amount: float):
 }
 ```
 
-### 4. `BudgetService` (at fad.app.services.budget_service)
+### 4. `BudgetService` (at backend/services/budget_service.py)
 **Purpose:** Manage monthly and project budgets.
 
 **Key Responsibilities:**
@@ -301,7 +271,7 @@ def update_budget(self, id: int, amount: float):
 - **"Total Budget"** is special category for overall monthly spending limit
 - Tags stored as semicolon-separated string in DB (`"tag1;tag2;tag3"`)
 
-### 5. `SplitTransactionsService` (at fad.app.services.split_transactions_service)
+### 5. `SplitTransactionsService` (no separate file, logic often in `TransactionsService`)
 **Purpose:** Manage transaction splitting across multiple categories.
 
 **Key Responsibilities:**
@@ -341,7 +311,7 @@ Splits:
 Result for Analysis: Two separate entries (food and household) instead of one uncategorized
 ```
 
-### 6. `ScrapingService` (DataScrapingService) (at fad.app.services.data_scraping_service)
+### 6. `ScrapingService` (at backend/services/scraping_service.py)
 **Purpose:** Orchestrate web scraping operations with 2FA handling.
 
 **Key Responsibilities:**
@@ -389,7 +359,7 @@ def get_credentials_with_passwords(self, credentials: dict) -> dict:
 5. User enters OTP → service calls `scraper.set_otp_code()`
 6. Scraper continues in background thread
 
-### 7. `CredentialsService` (at fad.app.services.credentials_service)
+### 7. `CredentialsService` (at backend/services/credentials_service.py)
 **Purpose:** Manage user credentials for financial providers.
 
 **Key Responsibilities:**
@@ -424,7 +394,7 @@ credentials = {
 }
 ```
 
-### 8. `OverviewService` (at fad.app.services.overview_service)
+### 8. `AnalysisService` (at backend/services/analysis_service.py)
 **Purpose:** Provide dashboard-level aggregated data and insights.
 
 **Key Responsibilities:**
@@ -438,7 +408,7 @@ credentials = {
 - `get_category_breakdown()` - Spending by category
 - `get_trends()` - Month-over-month comparisons
 
-### 9. `InvestmentsService` (at fad.app.services.investments_service)
+### 9. `InvestmentsService` (at backend/services/investments_service.py)
 **Purpose:** Manage investment portfolio tracking.
 
 **Key Responsibilities:**
@@ -561,15 +531,15 @@ def get_budget(self) -> pd.DataFrame:
 ### Step 3: Create Service Class
 
 ```python
-from streamlit.connections import SQLConnection
-from fad.app.data_access import get_db_connection
+from sqlalchemy.orm import Session
+from backend.services.tagging_service import TaggingService
 
 class NewService:
-    def __init__(self, conn: SQLConnection = get_db_connection()):
-        self.conn = conn
-        self.repo = NewRepository(conn)
+    def __init__(self, db: Session):
+        self.db = db
+        self.repo = NewRepository(db)
         # If complex service:
-        # self.other_service = OtherService(conn)
+        # self.other_service = OtherService(db)
     
     def business_method(self, param: str) -> pd.DataFrame:
         """Business logic here"""

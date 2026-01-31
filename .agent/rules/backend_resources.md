@@ -52,7 +52,7 @@ CategoryName:
 **Category Types:**
 - **Regular Expense Categories:** Food, Transportation, Health, Household, etc.
 - **Income Categories:** Salary, Other Income
-- **Non-Expense Categories:** Ignore, Savings, Investments, Liabilities
+- **Non-Expense Categories:** Ignore, Investments, Liabilities
 - **Project Categories:** User-defined (e.g., "Wedding", "New Apartment")
 
 **Guidelines:**
@@ -95,12 +95,12 @@ AnotherCategory: "📊"
 
 ## File Location & Access
 
-**Base Path:** `fad/resources/`
+**Base Path:** `backend/resources/`
 
 **Accessing in Code:**
 ```python
 import os
-from fad import SRC_PATH
+from backend import SRC_PATH
 
 # Default credentials template
 default_creds_path = os.path.join(SRC_PATH, 'resources', 'default_credentials.yaml')
@@ -135,12 +135,12 @@ icons_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
 
 | File | Location | Purpose | Modifiable |
 |------|----------|---------|-----------|
-| `default_credentials.yaml` | `fad/resources/` | Empty template | ❌ No (in git) |
+| `default_credentials.yaml` | `backend/resources/` | Empty template | ❌ No (in git) |
 | `credentials.yaml` | `~/.finance-analysis/` | User's actual config | ✅ Yes (via UI) |
-| `default_categories.yaml` | `fad/resources/` | Default categories | ❌ No (in git) |
+| `default_categories.yaml` | `backend/resources/` | Default categories | ❌ No (in git) |
 | `categories.yaml` | `~/.finance-analysis/` | User's categories | ✅ Yes (via UI) |
-| `categories_icons.yaml` | `fad/resources/` | Icon mappings | ✅ Yes (via UI) |
-| `test_credentials.yaml` | `fad/resources/` | Test account creds | ❌ No (gitignored) |
+| `categories_icons.yaml` | `backend/resources/` | Icon mappings | ✅ Yes (via UI) |
+| `test_credentials.yaml` | `backend/resources/` | Test account creds | ❌ No (gitignored) |
 
 **Note:** `~/.finance-analysis/` refers to the `.finance-analysis` directory in the user's home directory.
 
@@ -149,7 +149,7 @@ icons_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
 ## Common Tasks
 
 ### Adding a New Default Category
-1. Edit `fad/resources/default_categories.yaml`
+1. Edit `backend/resources/default_categories.yaml`
 2. Add category and its tags in YAML format
 3. Add icon mapping to `categories_icons.yaml`
 4. Users will see new category on next fresh install
@@ -162,7 +162,7 @@ icons_path = os.path.join(SRC_PATH, 'resources', 'categories_icons.yaml')
 
 ### Adding/Changing Category Icons
 - Done automatically via UI when users create/edit categories
-- Updates `fad/resources/categories_icons.yaml`
+- Updates `backend/resources/categories_icons.yaml`
 - Icons are loaded dynamically
 
 ---

@@ -23,7 +23,7 @@ Data access layer implementing the Repository Pattern. Repositories are the **ON
 ❌ **No data validation** - services handle validation  
 ❌ **No filtering based on business rules** - only database-level filtering  
 ❌ **No calling other services** - only call other repositories if needed  
-❌ **No UI logic** - repositories don't know about Streamlit  
+❌ **No UI logic** - repositories should not have any UI-specific logic
 
 **Golden Rule:** If you need to think about "why" - it's business logic and belongs in services, not repositories.
 
@@ -38,7 +38,7 @@ Data access layer implementing the Repository Pattern. Repositories are the **ON
 
 ### File Access (YAML)
 - Used for **configuration data** that users edit via UI (categories, icons)
-- Stored in `~/.finance-analysis/` (user data) or `fad/resources/` (defaults)
+- Stored in `~/.finance-analysis/` (user data) or `backend/resources/` (defaults)
 - Return type: Primitives (dict, list, bool) for YAML operations
 
 ### Repository Composition
@@ -553,7 +553,7 @@ except yaml.YAMLError as e:
 
 ## Best Practices
 
-1. **Always commit after writes** - Streamlit doesn't auto-commit
+1. **Always commit after writes** - Necessary for changes to persist
 2. **Use parameterized queries** - Prevent SQL injection
 3. **Map DataFrame columns** - Ensure column names are set
 4. **Return empty DataFrames, not None** - Easier for services to handle
@@ -579,7 +579,7 @@ except yaml.YAMLError as e:
 - Verify DataFrame structures match expectations
 
 ## Notes
-- Connection pooling handled automatically by Streamlit
+- Connection pooling handled automatically by SQLAlchemy
 - Schema migrations not supported - manual DB updates required for schema changes
 - Prefer SQLAlchemy Core over ORM for simplicity and portability
 - YAML files for configuration, database for transactional data
