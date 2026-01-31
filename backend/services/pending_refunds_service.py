@@ -406,3 +406,35 @@ class PendingRefundsService:
         # Sum expected amounts for pending refunds
         # Note: In full implementation, would filter by source transaction dates
         return pending_df["expected_amount"].sum()
+
+    def get_active_pending_identifiers(self) -> dict[str, set]:
+        """
+        Get sets of identifiers for active pending refunds.
+
+        Returns
+        -------
+        dict[str, set]
+            Dictionary with keys 'transaction_ids' and 'split_ids'.
+            'transaction_ids' contains unique_ids of transactions.
+            'split_ids' contains ids of split transactions.
+        """
+        pending_df = self.repo.get_all_pending_refunds()
+        if pending_df.empty:
+            return {"transaction_ids": set(), "split_ids": set()}
+
+        # Filter for active pending refunds (pending or partial)
+        active_pending = pending_df[pending_df["status"] != "resolved"]
+
+        # Get transaction unique_ids
+        transaction_pending = active_pending[
+            active_pending["source_type"] == "transaction"
+        ]
+
+        # Get transaction unique_ids (source_id corresponds to unique_id for transactions)
+        transaction_ids = set(transaction_pending["source_id"].tolist())
+
+        # Get split ids
+        split_pending = active_pending[active_pending["source_type"] == "split"]
+        split_ids = set(split_pending["source_id"].tolist())
+
+        return {"transaction_ids": transaction_ids, "split_ids": split_ids}

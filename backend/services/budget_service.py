@@ -23,6 +23,7 @@ from backend.naming_conventions import (
     TransactionsTableFields,
 )
 from backend.repositories.budget_repository import BudgetRepository
+from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 
@@ -48,6 +49,7 @@ class BudgetService:
         self.budget_repository = BudgetRepository(db)
         self.categories_tags_service = CategoriesTagsService()
         self.transactions_service = TransactionsService(db)
+        self.pending_refunds_service = PendingRefundsService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
         """Get all budget rules with parsed tags."""
@@ -295,6 +297,20 @@ class MonthlyBudgetService(BudgetService):
             & (expenses[TransactionsTableFields.DATE.value].dt.month == month)
             & ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
         ]
+
+        # Filter out pending refunds
+        pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
+        tx_ids = pending_refs["transaction_ids"]
+        split_ids = pending_refs["split_ids"]
+
+        month_data = month_data[
+            ~month_data[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
+        ]
+
+        if TransactionsTableFields.SPLIT_ID.value in month_data.columns:
+            month_data = month_data[
+                ~month_data[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
+            ]
 
         rules = budget_rules[
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)

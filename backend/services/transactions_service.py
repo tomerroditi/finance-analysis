@@ -218,10 +218,13 @@ class TransactionsService:
             TransactionsTableFields.TAG.value,
             TransactionsTableFields.UNIQUE_ID.value,
             TransactionsTableFields.SOURCE.value,
+            TransactionsTableFields.SPLIT_ID.value,
         ]
 
         split_df = self.split_transactions_repository.get_data()
         if split_df.empty:
+            if TransactionsTableFields.SPLIT_ID.value not in df.columns:
+                df[TransactionsTableFields.SPLIT_ID.value] = None
             return (
                 df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
             )
@@ -234,6 +237,7 @@ class TransactionsService:
         split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
         mask = df[TransactionsTableFields.ID.value].isin(split_ids)
         base_df = df[~mask].copy()
+        base_df[TransactionsTableFields.SPLIT_ID.value] = None
 
         split_rows = []
         for id_, split_group in split_df.groupby(
@@ -253,6 +257,9 @@ class TransactionsService:
                 split_row[TransactionsTableFields.TAG.value] = split[
                     SplitTransactionsTableFields.TAG.value
                 ]
+                split_row[TransactionsTableFields.SPLIT_ID.value] = split[
+                    SplitTransactionsTableFields.ID.value
+                ]
                 split_rows.append(split_row)
 
         if split_rows:
@@ -260,6 +267,8 @@ class TransactionsService:
             result_df = pd.concat([base_df, split_rows_df], ignore_index=True)
         else:
             result_df = base_df
+            if TransactionsTableFields.SPLIT_ID.value not in result_df.columns:
+                result_df[TransactionsTableFields.SPLIT_ID.value] = None
 
         return (
             result_df[analysis_cols].reset_index(drop=True)

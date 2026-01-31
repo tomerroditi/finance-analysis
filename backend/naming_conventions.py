@@ -110,6 +110,7 @@ fields = [
     ("CATEGORY", "category"),
     ("TAG", "tag"),
     ("SOURCE", "source"),
+    ("SPLIT_ID", "split_id"),
 ]
 
 TransactionsTableFields = create_enum("TransactionsTableFields", fields)
