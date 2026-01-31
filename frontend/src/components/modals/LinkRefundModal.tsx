@@ -61,9 +61,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
     const filteredPending =
         pendingRefunds?.filter((p: PendingRefund) => {
             if (!searchQuery) return true;
+            const query = searchQuery.toLowerCase();
             return (
-                p.source_table.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                p.notes?.toLowerCase().includes(searchQuery.toLowerCase())
+                p.description?.toLowerCase().includes(query) ||
+                p.notes?.toLowerCase().includes(query) ||
+                p.account_name?.toLowerCase().includes(query) ||
+                p.provider?.toLowerCase().includes(query) ||
+                p.source_table.toLowerCase().includes(query)
             );
         }) || [];
 
@@ -150,18 +154,28 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                                         : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                                         }`}
                                 >
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <span className="text-xs font-medium text-[var(--text-muted)] uppercase">
-                                                {pending.source_table}
-                                            </span>
-                                            <span className="text-sm text-[var(--text-muted)] ml-2">
-                                                #{pending.source_id}
-                                            </span>
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-semibold text-white truncate mb-0.5">
+                                                {pending.description || "Unknown Expense"}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                                                <span className="uppercase">{pending.provider || pending.source_table}</span>
+                                                <span>•</span>
+                                                <span>{pending.date || "No date"}</span>
+                                                {pending.account_name && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span>{pending.account_name}</span>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
-                                        <span className="font-semibold text-amber-400">
-                                            {formatCurrency(pending.expected_amount)}
-                                        </span>
+                                        <div className="text-right shrink-0">
+                                            <div className="font-bold text-amber-400">
+                                                {formatCurrency(pending.expected_amount)}
+                                            </div>
+                                        </div>
                                     </div>
                                     {pending.notes && (
                                         <p className="text-sm text-[var(--text-muted)] mt-1 truncate">
