@@ -60,3 +60,10 @@ Components contain **ALL UI implementation logic** for the React application. Th
 - Button, Input, Card (UI primitives)
 - TransactionTable, BudgetChart (Feature components)
 - Modal, Dialog (Overlays)
+
+## System-Specific Rules
+### TransactionsTable Updates
+- **Rule:** When modifying `TransactionsTable.tsx` (especially props), YOU MUST update all its consumers:
+  - `frontend/src/pages/Transactions.tsx`
+  - `frontend/src/components/budget/TransactionCollapsibleList.tsx`
+  - Ensure data fetching (e.g., pending refunds) is consistent across `MonthlyBudgetView` and `ProjectBudgetView`.

@@ -55,6 +55,7 @@ export interface TransactionsTableProps {
   // Callbacks
   onTransactionUpdated?: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
+  pendingRefundsMap?: Map<string, any>;
 
   // Styling
   compact?: boolean;
@@ -86,6 +87,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   rowsPerPageOptions = null,
   onTransactionUpdated,
   onSelectionChange,
+  pendingRefundsMap,
   compact = false,
 }) => {
   const queryClient = useQueryClient();
@@ -142,6 +144,17 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      onTransactionUpdated?.();
+    },
+  });
+
+  const cancelPendingMutation = useMutation({
+    mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
       onTransactionUpdated?.();
     },
   });
@@ -553,14 +566,73 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         </button>
                         {/* Pending refund actions */}
                         {tx.amount < 0 && (
-                          <button
-                            className="p-1.5 rounded-md hover:bg-amber-500/10 text-amber-400/70 hover:text-amber-400 transition-colors"
-                            title="Mark as Pending Refund"
-                            onClick={() => markPendingMutation.mutate(tx)}
-                            disabled={markPendingMutation.isPending}
-                          >
-                            <RefreshCw size={14} />
-                          </button>
+                          (() => {
+                            const pending = pendingRefundsMap?.get(getTransactionId(tx));
+
+                            if (pending) {
+                              if (pending.status === 'resolved') {
+                                return (
+                                  <button
+                                    className="p-1.5 rounded-md bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                                    title="Refund Resolved (Click to remove/unlink)"
+                                    onClick={() => {
+                                      if (window.confirm("This refund is marked as resolved. Do you want to remove this record?")) {
+                                        cancelPendingMutation.mutate(pending.id);
+                                      }
+                                    }}
+                                    disabled={cancelPendingMutation.isPending}
+                                  >
+                                    <CheckCircle2 size={14} />
+                                  </button>
+                                );
+                              }
+                              if (pending.status === 'partial') {
+                                return (
+                                  <button
+                                    className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+                                    title={`Partially Refunded (${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.total_refunded || 0)} / ${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.expected_amount)}) - Click to Cancel`}
+                                    onClick={() => {
+                                      if (window.confirm("Remove this partial refund request? Linked refunds will be unlinked.")) {
+                                        cancelPendingMutation.mutate(pending.id);
+                                      }
+                                    }}
+                                    disabled={cancelPendingMutation.isPending}
+                                  >
+                                    <RefreshCw size={14} className="animate-spin-slow" />
+                                    {/* Using RefreshCw for partial but maybe PieChart is better if imported? 
+                                        Let's stick to RefreshCw but blue distinct color, or PieChart if imported. 
+                                        PieChart is not imported. Let's use Link2 or RefreshCw. RefreshCw implies ongoing.
+                                    */}
+                                    <RefreshCw size={14} />
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  className="p-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                                  title="Cancel Pending Refund Request"
+                                  onClick={() => {
+                                    if (window.confirm("Remove this request? If it is linked to refunds, those links will be broken.")) {
+                                      cancelPendingMutation.mutate(pending.id);
+                                    }
+                                  }}
+                                  disabled={cancelPendingMutation.isPending}
+                                >
+                                  <RefreshCw size={14} className="animate-pulse" />
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                className="p-1.5 rounded-md hover:bg-amber-500/10 text-amber-400/70 hover:text-amber-400 transition-colors"
+                                title="Mark as Pending Refund"
+                                onClick={() => markPendingMutation.mutate(tx)}
+                                disabled={markPendingMutation.isPending}
+                              >
+                                <RefreshCw size={14} />
+                              </button>
+                            );
+                          })()
                         )}
                         {tx.amount > 0 && (
                           <button

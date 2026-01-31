@@ -8,11 +8,12 @@ import {
   Trash2,
   Copy,
 } from "lucide-react";
-import { budgetApi } from "../../services/api";
+import { budgetApi, pendingRefundsApi } from "../../services/api";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import { PendingRefundsSection } from "./PendingRefundsSection";
+import { useMemo } from "react";
 
 export const MonthlyBudgetView: React.FC = () => {
   const today = new Date();
@@ -28,6 +29,24 @@ export const MonthlyBudgetView: React.FC = () => {
     queryKey: ["budgetAnalysis", year, month],
     queryFn: () => budgetApi.getAnalysis(year, month).then((res) => res.data),
   });
+
+  // Fetch pending refunds to know which transactions are already marked
+  const { data: pendingRefunds } = useQuery({
+    queryKey: ["pendingRefunds", "all"],
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+  });
+
+  // Create a map of pending refunds by source ID for quick lookup
+  const pendingRefundsMap = useMemo(() => {
+    const map = new Map<string, any>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach((pr: any) => {
+      const key = `${pr.source_table}_${pr.source_id}`;
+      map.set(key, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
 
   const createMutation = useMutation({
     mutationFn: budgetApi.createRule,
@@ -216,6 +235,7 @@ export const MonthlyBudgetView: React.FC = () => {
               onTransactionUpdated={() =>
                 queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] })
               }
+              pendingRefundsMap={pendingRefundsMap}
             />
           </BudgetProgressBar>
         ))}
@@ -262,6 +282,7 @@ export const MonthlyBudgetView: React.FC = () => {
                         queryKey: ["budgetAnalysis"],
                       })
                     }
+                    pendingRefundsMap={pendingRefundsMap}
                   />
                 </BudgetProgressBar>
               ))}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, PenSquare } from "lucide-react";
-import { budgetApi } from "../../services/api";
+import { budgetApi, pendingRefundsApi } from "../../services/api";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
@@ -22,6 +22,24 @@ export const ProjectBudgetView: React.FC = () => {
     queryKey: ["projects"],
     queryFn: () => budgetApi.getProjects().then((res) => res.data),
   });
+
+  // Fetch pending refunds
+  const { data: pendingRefunds } = useQuery({
+    queryKey: ["pendingRefunds", "all"],
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+  });
+
+  // Create a map of pending refunds
+  const pendingRefundsMap = useMemo(() => {
+    const map = new Map<string, any>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach((pr: any) => {
+      const key = `${pr.source_table}_${pr.source_id}`;
+      map.set(key, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
 
   // Auto-select first project if available and none selected
   useEffect(() => {
@@ -162,9 +180,9 @@ export const ProjectBudgetView: React.FC = () => {
   const initialModalData =
     isEditMode && projectTotalRule
       ? {
-          category: selectedProject,
-          total_budget: projectTotalRule.rule.amount,
-        }
+        category: selectedProject,
+        total_budget: projectTotalRule.rule.amount,
+      }
       : null;
 
   // Calculate "Other" transactions (those not in specific tag rules)
@@ -299,6 +317,7 @@ export const ProjectBudgetView: React.FC = () => {
                       queryKey: ["projectDetails", selectedProject],
                     })
                   }
+                  pendingRefundsMap={pendingRefundsMap}
                 />
               </BudgetProgressBar>
             );
@@ -330,6 +349,7 @@ export const ProjectBudgetView: React.FC = () => {
                       queryKey: ["projectDetails", selectedProject],
                     })
                   }
+                  pendingRefundsMap={pendingRefundsMap}
                 />
               </BudgetProgressBar>
             </div>

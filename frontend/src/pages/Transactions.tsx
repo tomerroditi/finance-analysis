@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
 import { RuleManager } from "../components/modals/RuleManager";
 import RefundsView from "../components/transactions/RefundsView";
+import { pendingRefundsApi } from "../services/api";
 
 export function Transactions() {
   const { selectedService, setSelectedService } = useAppStore();
@@ -29,6 +30,35 @@ export function Transactions() {
         )
         .then((res) => res.data),
   });
+
+  // Fetch pending refunds to know which transactions are already marked
+  const { data: pendingRefunds, refetch: refetchPending } = useQuery({
+    queryKey: ["pendingRefunds", "all"],
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+  });
+
+  // Create a map of pending refunds by source ID for quick lookup
+  const pendingRefundsMap = useMemo(() => {
+    const map = new Map<string, any>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach(pr => {
+      // Key format matches default getTransactionId: `${source}_${unique_id}`
+      // Adjust based on your ID strategy. Here we use source_table and source_id.
+      // Note: TransactionTable uses `${source}_${unique_id}` or source from API.
+      // API returns source like 'banks', 'credit_cards' etc.
+      // Pending refund object has source_table and source_id.
+      const key = `${pr.source_table}_${pr.source_id}`;
+      map.set(key, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  // Refetch both when actions happen
+  const refreshAll = () => {
+    refetch();
+    refetchPending();
+  };
 
   // Filter for untagged only
   const filteredTransactions = useMemo(() => {
@@ -117,8 +147,8 @@ export function Transactions() {
                 <button
                   onClick={() => setSelectedService(value as any)}
                   className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+                    ? "bg-[var(--primary)] text-white"
+                    : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
                     }`}
                 >
                   {label}
@@ -146,7 +176,8 @@ export function Transactions() {
             showFilter
             rowsPerPage={50}
             rowsPerPageOptions={[10, 50, 100, 500, 1000]}
-            onTransactionUpdated={() => refetch()}
+            onTransactionUpdated={refreshAll}
+            pendingRefundsMap={pendingRefundsMap}
           />
         )}
       </div>
