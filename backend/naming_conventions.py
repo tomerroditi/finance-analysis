@@ -481,12 +481,11 @@ class Insurances(Enum):
     HAFENIX = "hafenix"
 
 
-class SavingsAndInvestmentsCategories(Enum):
+class InvestmentCategories(Enum):
     """
     Enum defining categories that are considered savings and investments.
     """
 
-    SAVINGS = "Savings"
     INVESTMENTS = "Investments"
 
 
@@ -516,8 +515,6 @@ class NonExpensesCategories(Enum):
         Transactions to be ignored in analysis.
     SALARY : str
         Income from employment.
-    SAVINGS : str
-        Money set aside as savings.
     INVESTMENTS : str
         Money allocated to investments.
     OTHER_INCOME : str
@@ -527,8 +524,7 @@ class NonExpensesCategories(Enum):
     """
 
     IGNORE = "Ignore"
-    SAVINGS = SavingsAndInvestmentsCategories.SAVINGS.value
-    INVESTMENTS = SavingsAndInvestmentsCategories.INVESTMENTS.value
+    INVESTMENTS = InvestmentCategories.INVESTMENTS.value
     SALARY = IncomeCategories.SALARY.value
     OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
     LIABILITIES = LiabilitiesCategories.LIABILITIES.value
