@@ -5,17 +5,18 @@ This package contains SQLAlchemy ORM models for database tables.
 """
 
 from backend.models.base import Base, TimestampMixin
+from backend.models.budget import BudgetRule
+from backend.models.investment import Investment
+from backend.models.pending_refund import PendingRefund, RefundLink
+from backend.models.scraping import ScrapingHistory
+from backend.models.tagging import TaggingRule
 from backend.models.transaction import (
     BankTransaction,
-    CreditCardTransaction,
     CashTransaction,
+    CreditCardTransaction,
     ManualInvestmentTransaction,
     SplitTransaction,
 )
-from backend.models.budget import BudgetRule
-from backend.models.investment import Investment
-from backend.models.tagging import TaggingRule
-from backend.models.scraping import ScrapingHistory
 
 __all__ = [
     # Base
@@ -32,4 +33,7 @@ __all__ = [
     "Investment",
     "TaggingRule",
     "ScrapingHistory",
+    # Refund linking
+    "PendingRefund",
+    "RefundLink",
 ]

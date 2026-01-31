@@ -73,6 +73,8 @@ class Tables(Enum):
     SCRAPING_HISTORY = "scraping_history"
     INVESTMENTS = "investments"
     MANUAL_INVESTMENT_TRANSACTIONS = "manual_investment_transactions"
+    PENDING_REFUNDS = "pending_refunds"
+    REFUND_LINKS = "refund_links"
 
 
 def create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
