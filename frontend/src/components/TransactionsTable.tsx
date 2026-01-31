@@ -14,10 +14,12 @@ import {
   Split,
   Trash2,
   CheckCircle2,
+  RefreshCw,
+  Link2,
 } from "lucide-react";
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
-import { transactionsApi, taggingApi } from "../services/api";
+import { transactionsApi, taggingApi, pendingRefundsApi } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
 export interface Transaction {
@@ -32,6 +34,7 @@ export interface Transaction {
   tag?: string;
   provider?: string;
   account_name?: string;
+  pending_refund_id?: number; // ID if this transaction has a pending refund
 }
 
 export interface TransactionsTableProps {
@@ -120,6 +123,22 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       setSelectedIds(new Set());
       setIsBulkTagging(false);
       setBulkTagData({ category: "", tag: "" });
+      onTransactionUpdated?.();
+    },
+  });
+
+  // Pending refund mutation
+  const markPendingMutation = useMutation({
+    mutationFn: (tx: Transaction) =>
+      pendingRefundsApi.create({
+        source_type: "transaction",
+        source_id: tx.unique_id,
+        source_table: tx.source || "unknown",
+        expected_amount: Math.abs(tx.amount),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       onTransactionUpdated?.();
     },
   });
@@ -529,6 +548,29 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Split size={14} />
                         </button>
+                        {/* Pending refund actions */}
+                        {tx.amount < 0 && (
+                          <button
+                            className="p-1.5 rounded-md hover:bg-amber-500/10 text-amber-400/70 hover:text-amber-400 transition-colors"
+                            title="Mark as Pending Refund"
+                            onClick={() => markPendingMutation.mutate(tx)}
+                            disabled={markPendingMutation.isPending}
+                          >
+                            <RefreshCw size={14} />
+                          </button>
+                        )}
+                        {tx.amount > 0 && (
+                          <button
+                            className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                            title="Link as Refund"
+                            onClick={() => {
+                              // TODO: Open link refund modal
+                              alert("Link as Refund - Coming soon!");
+                            }}
+                          >
+                            <Link2 size={14} />
+                          </button>
+                        )}
                         {showDelete && isManual && (
                           <button
                             className="p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
