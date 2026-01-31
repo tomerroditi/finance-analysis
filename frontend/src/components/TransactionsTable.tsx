@@ -135,7 +135,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (tx: Transaction) =>
       pendingRefundsApi.create({
         source_type: "transaction",
-        source_id: tx.unique_id ?? tx.id,
+        source_id: tx.unique_id,
         source_table: tx.source || "unknown",
         expected_amount: Math.abs(tx.amount),
       }),
