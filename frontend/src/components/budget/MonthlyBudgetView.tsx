@@ -12,6 +12,7 @@ import { budgetApi } from "../../services/api";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import { PendingRefundsSection } from "./PendingRefundsSection";
 
 export const MonthlyBudgetView: React.FC = () => {
   const today = new Date();
@@ -219,6 +220,15 @@ export const MonthlyBudgetView: React.FC = () => {
           </BudgetProgressBar>
         ))}
       </div>
+
+      {/* Pending Refunds Section */}
+      {analysis?.pending_refunds && (
+        <PendingRefundsSection
+          pendingRefunds={analysis.pending_refunds}
+          year={year}
+          month={month}
+        />
+      )}
 
       {/* Project Spending Summary (Moved to bottom) */}
       {project_spending &&
