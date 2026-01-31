@@ -1,12 +1,14 @@
 from typing import Optional
+
+import pandas as pd
 from sqlalchemy.orm import Session
-from backend.repositories.transactions_repository import TransactionsRepository
+
 from backend.naming_conventions import (
-    NonExpensesCategories,
     IncomeCategories,
     LiabilitiesCategories,
+    NonExpensesCategories,
 )
-import pandas as pd
+from backend.repositories.transactions_repository import TransactionsRepository
 
 
 class AnalysisService:
@@ -163,7 +165,6 @@ class AnalysisService:
         SALARY = IncomeCategories.SALARY.value
         OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
         LIABILITIES = LiabilitiesCategories.LIABILITIES.value
-        SAVINGS = NonExpensesCategories.SAVINGS.value
         INVESTMENTS = NonExpensesCategories.INVESTMENTS.value
 
         total_income_node = "Total Income"
@@ -180,14 +181,14 @@ class AnalysisService:
         sources["Loans"] = df[(df["category"] == LIABILITIES) & (df["amount"] > 0)][
             "amount"
         ].sum()
-        # sources["Savings Withdrawal"] = df[(df['category'].isin([SAVINGS, INVESTMENTS])) & (df['amount'] > 0)]['amount'].sum()
+        # sources["Investments Withdrawal"] = df[(df['category'] == INVESTMENTS) & (df['amount'] > 0)]['amount'].sum()
 
         destinations["Paid Debt"] = abs(
             df[(df["category"] == LIABILITIES) & (df["amount"] < 0)]["amount"].sum()
         )
-        # destinations["Savings Deposit"] = abs(df[(df['category'].isin([SAVINGS, INVESTMENTS])) & (df['amount'] < 0)]['amount'].sum())
+        # destinations["Investments Deposit"] = abs(df[(df['category'] == INVESTMENTS) & (df['amount'] < 0)]['amount'].sum())
 
-        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES, SAVINGS, INVESTMENTS, IGNORE]
+        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES, INVESTMENTS, IGNORE]
         expenses_df = df[~df["category"].isin(exclude_cats)]
         for cat, group in expenses_df.groupby("category"):
             net = group["amount"].sum()

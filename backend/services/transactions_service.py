@@ -14,9 +14,9 @@ from backend.naming_conventions import (
     Banks,
     CreditCards,
     IncomeCategories,
+    InvestmentCategories,
     LiabilitiesCategories,
     NonExpensesCategories,
-    SavingsAndInvestmentsCategories,
     Services,
     SplitTransactionsTableFields,
     TransactionsTableFields,
@@ -284,7 +284,7 @@ class TransactionsService:
 
         period_income = data["income"][amount_col].sum()
         period_expenses = data["expenses"][amount_col].sum() * -1 + 0
-        period_savings = data["savings"][amount_col].sum() * -1 + 0
+        period_investments = data["investments"][amount_col].sum() * -1 + 0
         period_liabilities_paid = (
             data["liabilities"][data["liabilities"][amount_col] < 0][amount_col].sum()
             * -1
@@ -294,9 +294,12 @@ class TransactionsService:
             data["liabilities"][amount_col] > 0
         ][amount_col].sum()
         bank_balance_increase = (
-            period_income - period_expenses - period_liabilities_paid - period_savings
+            period_income
+            - period_expenses
+            - period_liabilities_paid
+            - period_investments
         )
-        total_savings = bank_balance_increase + period_savings
+        total_savings = bank_balance_increase + period_investments
         actual_savings_rate = (
             (total_savings / period_income * 100) if period_income != 0 else 0
         )
@@ -317,7 +320,7 @@ class TransactionsService:
         return {
             "income": period_income,
             "expenses": period_expenses,
-            "savings_and_investments": period_savings,
+            "savings_and_investments": period_investments,
             "bank_balance_increase": bank_balance_increase,
             "savings_rate": actual_savings_rate,
             "liabilities_paid": period_liabilities_paid,
@@ -330,14 +333,14 @@ class TransactionsService:
     def split_data_by_category_types(df: pd.DataFrame) -> dict:
         """Split data into expenses, savings, income, and liabilities."""
         category_col = TransactionsTableFields.CATEGORY.value
-        savings_categories = [e.value for e in SavingsAndInvestmentsCategories]
+        investment_categories = [e.value for e in InvestmentCategories]
         income_categories = [e.value for e in IncomeCategories]
         liabilities_categories = [e.value for e in LiabilitiesCategories]
         non_expenses_categories = [e.value for e in NonExpensesCategories]
 
         return {
             "expenses": df[~df[category_col].isin(non_expenses_categories)],
-            "savings": df[df[category_col].isin(savings_categories)].copy(),
+            "investments": df[df[category_col].isin(investment_categories)].copy(),
             "income": df[df[category_col].isin(income_categories)],
             "liabilities": df[df[category_col].isin(liabilities_categories)],
         }

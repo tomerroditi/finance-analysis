@@ -11,14 +11,14 @@ from sqlalchemy.orm import Session
 
 from backend.models import (
     BankTransaction,
-    CreditCardTransaction,
-    CashTransaction,
-    ManualInvestmentTransaction,
-    SplitTransaction,
     BudgetRule,
+    CashTransaction,
+    CreditCardTransaction,
     Investment,
-    TaggingRule,
+    ManualInvestmentTransaction,
     ScrapingHistory,
+    SplitTransaction,
+    TaggingRule,
 )
 from backend.naming_conventions import Tables
 
@@ -102,7 +102,7 @@ class TestBankTransaction:
             id="bank-002",
             date="2026-01-15",
             provider="leumi",
-            account_name="savings",
+            account_name="investments",
             desc="Transfer",
             amount=500.0,
             source="banks",
@@ -428,7 +428,7 @@ class TestInvestment:
     def test_nullable_financial_fields(self, db_session: Session):
         """Test nullable financial detail fields."""
         inv = Investment(
-            category="Savings",
+            category="Investments",
             tag="Emergency Fund",
             type="pakam",
             name="High Yield Savings",
@@ -580,7 +580,7 @@ class TestScrapingHistory:
         history = ScrapingHistory(
             service_name="banks",
             provider_name="leumi",
-            account_name="savings",
+            account_name="investments",
             date="2026-01-16T12:00:00",
             status="success",
         )
