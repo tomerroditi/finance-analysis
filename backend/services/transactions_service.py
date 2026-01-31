@@ -225,6 +225,7 @@ class TransactionsService:
             TransactionsTableFields.UNIQUE_ID.value,
             TransactionsTableFields.SOURCE.value,
             TransactionsTableFields.SPLIT_ID.value,
+            TransactionsTableFields.TYPE.value,
         ]
 
         split_df = self.split_transactions_repository.get_data()

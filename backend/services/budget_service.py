@@ -326,7 +326,12 @@ class MonthlyBudgetService(BudgetService):
 
         total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
         if not total_rule.empty:
-            total = month_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+            # Exclude split_parent transactions from total calculation
+            if "type" in month_data.columns:
+                month_data_for_calc = month_data[month_data["type"] != "split_parent"]
+            else:
+                month_data_for_calc = month_data
+            total = month_data_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append(
                 {
                     "rule": total_rule.iloc[0].to_dict(),
@@ -349,7 +354,12 @@ class MonthlyBudgetService(BudgetService):
                     cat_data[TransactionsTableFields.TAG.value].isin(tags)
                 ]
 
-            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+            # Exclude split_parent transactions from amount calculation
+            if "type" in cat_data.columns:
+                cat_data_for_calc = cat_data[cat_data["type"] != "split_parent"]
+            else:
+                cat_data_for_calc = cat_data
+            amt = cat_data_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append(
                 {
                     "rule": rule.to_dict(),
@@ -367,6 +377,13 @@ class MonthlyBudgetService(BudgetService):
         if not remaining_data.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
             total_amt = total_rule.iloc[0][AMOUNT] - total_alloc
+            # Exclude split_parent transactions from amount calculation
+            if "type" in remaining_data.columns:
+                remaining_for_calc = remaining_data[
+                    remaining_data["type"] != "split_parent"
+                ]
+            else:
+                remaining_for_calc = remaining_data
             view.append(
                 {
                     "rule": {
@@ -376,7 +393,7 @@ class MonthlyBudgetService(BudgetService):
                         TAGS: "Other Expenses",
                         ID: f"{year}{month}_Other_Expenses",
                     },
-                    "current_amount": remaining_data[
+                    "current_amount": remaining_for_calc[
                         TransactionsTableFields.AMOUNT.value
                     ].sum()
                     * -1,
