@@ -94,6 +94,8 @@ class TransactionsService:
             TransactionsTableFields.ID.value,
             TransactionsTableFields.STATUS.value,
             TransactionsTableFields.TYPE.value,
+            TransactionsTableFields.UNIQUE_ID.value,
+            TransactionsTableFields.SOURCE.value,
         ]
 
     def get_data_for_analysis(self) -> pd.DataFrame:
@@ -214,6 +216,8 @@ class TransactionsService:
             TransactionsTableFields.AMOUNT.value,
             TransactionsTableFields.CATEGORY.value,
             TransactionsTableFields.TAG.value,
+            TransactionsTableFields.UNIQUE_ID.value,
+            TransactionsTableFields.SOURCE.value,
         ]
 
         split_df = self.split_transactions_repository.get_data()
