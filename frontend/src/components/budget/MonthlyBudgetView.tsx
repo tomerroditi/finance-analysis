@@ -225,8 +225,6 @@ export const MonthlyBudgetView: React.FC = () => {
       {analysis?.pending_refunds && (
         <PendingRefundsSection
           pendingRefunds={analysis.pending_refunds}
-          year={year}
-          month={month}
         />
       )}
 

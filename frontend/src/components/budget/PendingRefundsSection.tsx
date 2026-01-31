@@ -1,21 +1,17 @@
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Link2, X } from "lucide-react";
-import { PendingRefund, pendingRefundsApi } from "../../services/api";
+import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 
 interface PendingRefundsSectionProps {
     pendingRefunds: {
         items: PendingRefund[];
         total_expected: number;
     };
-    year: number;
-    month: number;
 }
 
 export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     pendingRefunds,
-    year,
-    month,
 }) => {
     const queryClient = useQueryClient();
     const { items, total_expected } = pendingRefunds;

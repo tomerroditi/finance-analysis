@@ -1,27 +1,24 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
-import { pendingRefundsApi, PendingRefund } from "../../services/api";
+import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 
 interface LinkRefundModalProps {
     isOpen: boolean;
     onClose: () => void;
-    // Mode 1: Linking a refund transaction TO a pending refund
+    // Linking a refund transaction TO a pending refund
     refundTransaction?: {
         id: number;
         source: string;
         amount: number;
         description: string;
     };
-    // Mode 2: Linking a pending refund TO a refund transaction
-    pendingRefund?: PendingRefund;
 }
 
 export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
     isOpen,
     onClose,
     refundTransaction,
-    pendingRefund,
 }) => {
     const queryClient = useQueryClient();
     const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
@@ -149,8 +146,8 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                                         );
                                     }}
                                     className={`w-full p-4 rounded-xl border text-left transition-all ${selectedPendingId === pending.id
-                                            ? "border-emerald-500 bg-emerald-500/10"
-                                            : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
+                                        ? "border-emerald-500 bg-emerald-500/10"
+                                        : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                                         }`}
                                 >
                                     <div className="flex items-center justify-between">

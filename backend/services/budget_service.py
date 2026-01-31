@@ -9,22 +9,22 @@ from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.repositories.budget_repository import BudgetRepository
-from backend.services.transactions_service import TransactionsService
-from backend.services.tagging_service import CategoriesTagsService
 from backend.naming_conventions import (
-    NAME,
+    ALL_TAGS,
     AMOUNT,
     CATEGORY,
-    TAGS,
-    YEAR,
-    MONTH,
-    ALL_TAGS,
     ID,
+    MONTH,
+    NAME,
+    TAGS,
     TOTAL_BUDGET,
-    TransactionsTableFields,
+    YEAR,
     NonExpensesCategories,
+    TransactionsTableFields,
 )
+from backend.repositories.budget_repository import BudgetRepository
+from backend.services.tagging_service import CategoriesTagsService
+from backend.services.transactions_service import TransactionsService
 
 
 class BudgetService:
