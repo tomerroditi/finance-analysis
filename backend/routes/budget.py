@@ -223,7 +223,16 @@ async def get_project_details(
 
     # Ensure transactions is JSON serializable (handle NaNs)
     transactions_processed = transactions.where(pd.notnull(transactions), None)
-    total_spent = transactions_processed["amount"].sum() * -1
+
+    # Exclude split_parent transactions from total calculation to avoid double-counting
+    # (split_parent transactions are only included for display purposes)
+    if "type" in transactions_processed.columns:
+        non_parent_txns = transactions_processed[
+            transactions_processed["type"] != "split_parent"
+        ]
+    else:
+        non_parent_txns = transactions_processed
+    total_spent = non_parent_txns["amount"].sum() * -1
 
     if not total_rule.empty:
         view.append(
@@ -242,7 +251,12 @@ async def get_project_details(
         tags = rule["tags"]
         # Filter transactions for these tags
         tag_txns = transactions_processed[transactions_processed["tag"].isin(tags)]
-        spent = tag_txns["amount"].sum() * -1
+        # Exclude split_parent transactions from spent calculation
+        if "type" in tag_txns.columns:
+            tag_txns_for_calc = tag_txns[tag_txns["type"] != "split_parent"]
+        else:
+            tag_txns_for_calc = tag_txns
+        spent = tag_txns_for_calc["amount"].sum() * -1
 
         view.append(
             {
