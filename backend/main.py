@@ -4,31 +4,30 @@ FastAPI main application entry point.
 This module sets up the FastAPI application with CORS, routes, and exception handlers.
 """
 
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import os
-
-from backend.routes import (
-    transactions,
-    budget,
-    tagging,
-    credentials,
-    scraping,
-    investments,
-    analytics,
-    testing,
-)
-from backend.errors import (
-    EntityNotFoundException,
-    ValidationException,
-    EntityAlreadyExistsException,
-)
-from fastapi import Request
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.errors import (
+    EntityAlreadyExistsException,
+    EntityNotFoundException,
+    ValidationException,
+)
+from backend.routes import (
+    analytics,
+    budget,
+    credentials,
+    investments,
+    pending_refunds,
+    scraping,
+    tagging,
+    testing,
+    transactions,
+)
 
 load_dotenv()
 
@@ -74,6 +73,9 @@ app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
+app.include_router(
+    pending_refunds.router, prefix="/api/pending-refunds", tags=["Pending Refunds"]
+)
 
 
 @app.exception_handler(EntityNotFoundException)
