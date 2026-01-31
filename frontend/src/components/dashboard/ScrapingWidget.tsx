@@ -2,14 +2,12 @@ import { useState, useEffect } from "react";
 import {
   RefreshCw,
   Smartphone,
-  AlertCircle,
   PlayCircle,
   CheckSquare,
   Square,
   CheckCircle2,
   XCircle,
   Info,
-  Calendar,
   Clock,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
