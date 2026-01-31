@@ -153,7 +153,15 @@ export function BudgetRuleModal({
             <select
               required
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => {
+                const newCategory = e.target.value;
+                setCategory(newCategory);
+                if (categoriesMap && (categoriesMap as any)[newCategory]) {
+                  setSelectedTags((categoriesMap as any)[newCategory]);
+                } else {
+                  setSelectedTags([]);
+                }
+              }}
               className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium appearance-none disabled:opacity-50"
               disabled={isProjectRule && !!initialData}
             >
@@ -167,9 +175,28 @@ export function BudgetRuleModal({
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Tags
-            </label>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="block text-xs font-bold uppercase text-[var(--text-muted)]">
+                Tags
+              </label>
+              {availableTags.length > 0 && !isProjectRule && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedTags.length === availableTags.length) {
+                      setSelectedTags([]);
+                    } else {
+                      setSelectedTags([...(availableTags as string[])]);
+                    }
+                  }}
+                  className="text-xs text-[var(--primary)] hover:underline font-medium"
+                >
+                  {selectedTags.length === availableTags.length
+                    ? "Deselect All"
+                    : "Select All"}
+                </button>
+              )}
+            </div>
             {isProjectRule && !!initialData ? (
               <input
                 type="text"
@@ -186,11 +213,10 @@ export function BudgetRuleModal({
                         key={tag}
                         type="button"
                         onClick={() => handleTagToggle(tag)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                          selectedTags.includes(tag)
-                            ? "bg-[var(--primary)] text-white shadow-sm"
-                            : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:bg-[var(--surface-base)] border border-transparent hover:border-[var(--surface-light)]"
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${selectedTags.includes(tag)
+                          ? "bg-[var(--primary)] text-white shadow-sm"
+                          : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:bg-[var(--surface-base)] border border-transparent hover:border-[var(--surface-light)]"
+                          }`}
                       >
                         {tag}
                       </button>
