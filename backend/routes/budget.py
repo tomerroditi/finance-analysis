@@ -218,22 +218,22 @@ async def get_project_details(
     # Total Project Rule
     total_rule = pd.DataFrame()
     if not rules.empty:
-        # Find where tags == [ALL_TAGS].
-        total_rule = rules[rules["tags"].apply(lambda x: x == [ALL_TAGS])]
+        # Find where tags == [ALL_TAGS] (handle case sensitivity)
+        total_rule = rules[
+            rules["tags"].apply(lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()])
+        ]
 
     # Ensure transactions is JSON serializable (handle NaNs)
     transactions_processed = transactions.where(pd.notnull(transactions), None)
 
     # Exclude split_parent transactions from total calculation to avoid double-counting
     # (split_parent transactions are only included for display purposes)
-    if "type" in transactions_processed.columns:
-        non_parent_txns = transactions_processed[
-            transactions_processed["type"] != "split_parent"
-        ]
+    # Exclude split_parent transactions from total calculation to avoid double-counting
+    if "type" in transactions.columns:
+        non_parent_txns = transactions[transactions["type"] != "split_parent"]
     else:
-        non_parent_txns = transactions_processed
+        non_parent_txns = transactions
     total_spent = non_parent_txns["amount"].sum() * -1
-
     if not total_rule.empty:
         view.append(
             {
@@ -249,20 +249,26 @@ async def get_project_details(
     # Per tag rules
     for _, rule in rules.iterrows():
         tags = rule["tags"]
-        # Filter transactions for these tags
-        tag_txns = transactions_processed[transactions_processed["tag"].isin(tags)]
+        # Filter transactions for these tags using original DataFrame for calculation
+        tag_txns_orig = transactions[transactions["tag"].isin(tags)]
+
         # Exclude split_parent transactions from spent calculation
-        if "type" in tag_txns.columns:
-            tag_txns_for_calc = tag_txns[tag_txns["type"] != "split_parent"]
+        if "type" in tag_txns_orig.columns:
+            tag_txns_for_calc = tag_txns_orig[tag_txns_orig["type"] != "split_parent"]
         else:
-            tag_txns_for_calc = tag_txns
+            tag_txns_for_calc = tag_txns_orig
         spent = tag_txns_for_calc["amount"].sum() * -1
+
+        # Filter processed transactions for display
+        tag_txns_display = transactions_processed[
+            transactions_processed["tag"].isin(tags)
+        ]
 
         view.append(
             {
                 "rule": rule.to_dict(),
                 "current_amount": spent,
-                "data": tag_txns.to_dict(orient="records"),
+                "data": tag_txns_display.to_dict(orient="records"),
                 "allow_edit": True,
                 "allow_delete": True,
             }

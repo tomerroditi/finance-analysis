@@ -349,7 +349,8 @@ class MonthlyBudgetService(BudgetService):
                 remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
             ]
 
-            if tags != [ALL_TAGS]:
+            is_all_tags = [t.lower() for t in tags] == [ALL_TAGS.lower()]
+            if not is_all_tags:
                 cat_data = cat_data[
                     cat_data[TransactionsTableFields.TAG.value].isin(tags)
                 ]
