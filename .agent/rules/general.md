@@ -97,6 +97,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 - ❌ No business logic in Routes or Frontend Components.
 - ❌ No direct DB access outside Repositories.
 - ❌ No obvious comments or dead code.
+- ❌ No verbose comments explaining code that is already self-explanatory.
 - ❌ No raw Axios calls inside components (use `src/services/api.ts`).
 
 ### What TO Do
