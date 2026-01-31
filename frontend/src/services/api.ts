@@ -214,6 +214,9 @@ export interface RefundLink {
   refund_transaction_id: number;
   refund_source: string;
   amount: number;
+  // Enriched fields
+  date?: string;
+  description?: string;
 }
 
 export const pendingRefundsApi = {

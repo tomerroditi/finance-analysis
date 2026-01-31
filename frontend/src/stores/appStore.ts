@@ -12,9 +12,9 @@ interface AppState {
   setSelectedMonth: (month: number) => void;
 
   // Active service filter for transactions
-  selectedService: "all" | "credit_cards" | "banks" | "cash";
+  selectedService: "all" | "credit_cards" | "banks" | "cash" | "refunds";
   setSelectedService: (
-    service: "all" | "credit_cards" | "banks" | "cash",
+    service: "all" | "credit_cards" | "banks" | "cash" | "refunds",
   ) => void;
 
   // Global Search

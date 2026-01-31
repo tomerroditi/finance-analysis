@@ -279,11 +279,55 @@ class PendingRefundsService:
                 except Exception:
                     pass
 
-        # Merge details
+        # Fetch linked transactions details
         for p in pending_list:
-            key = (p["source_table"], p["source_type"], p["source_id"])
-            details = details_map.get(key, {})
-            p.update(details)
+            if "links" not in p:
+                # Fetch links if not already present (repo might not fetch relation if I used get_all_pending_refunds which does distinct?)
+                # Actually repo methods separate links. get_pending_by_id fetches links. get_all_pending_refunds returns just pending table.
+                # So we need to fetch links for all these items.
+                links_df = self.repo.get_links_for_pending(p["id"])
+                p["links"] = (
+                    links_df.to_dict(orient="records") if not links_df.empty else []
+                )
+
+            # Now enrich links
+            link_sources = {}
+            for link in p["links"]:
+                k = (
+                    link["refund_source"],
+                    "transaction",
+                )  # Links are always transactions? Yes, refund_transaction_id.
+                if k not in link_sources:
+                    link_sources[k] = []
+                link_sources[k].append(link["refund_transaction_id"])
+
+            # Fetch details for links
+            link_details_map = {}
+            for (table, _), ids in link_sources.items():
+                try:
+                    repo_cls = trans_repo.repo_map.get(table)
+                    if repo_cls:
+                        model = repo_cls.model
+                        stmt = select(model).where(model.unique_id.in_(ids))
+                        results = self.db.execute(stmt).scalars().all()
+                        for tx in results:
+                            link_details_map[(table, tx.unique_id)] = {
+                                "date": tx.date,
+                                "description": tx.desc,
+                                "account_name": tx.account_name,
+                                "provider": tx.provider,
+                                "amount": tx.amount,
+                                "original_currency": "ILS",
+                            }
+                except Exception:
+                    pass
+
+            # Apply details to links
+            for link in p["links"]:
+                details = link_details_map.get(
+                    (link["refund_source"], link["refund_transaction_id"]), {}
+                )
+                link.update(details)
 
         return pending_list
 
