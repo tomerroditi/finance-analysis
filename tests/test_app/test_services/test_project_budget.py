@@ -121,9 +121,7 @@ class TestProjectBudgetService:
         assert venue_rule["current_amount"] == 1000.0
         assert len(venue_rule["data"]) == 1
 
-        # Find "Other" tag rule (synthetic)
-        # Note: In the previous implementation this was "Other Expenses" grouping everything
-        # Now it should be a rule specifically for the tag "Other"
+        # Find "Other" tag rule (which should now be auto-created and real)
         other_tag_rule = next(
             (r for r in rules_view if r["rule"][NAME] == "Other"), None
         )
@@ -131,8 +129,13 @@ class TestProjectBudgetService:
         assert other_tag_rule["current_amount"] == 200.0
         assert len(other_tag_rule["data"]) == 1
         assert other_tag_rule["rule"][TAGS] == ["Other"]
+        # New assertions for auto-created rules
+        assert other_tag_rule["allow_edit"] is True
+        assert other_tag_rule["allow_delete"] is True
+        # ID should not be the old synthetic format
+        assert "Synthetic" not in str(other_tag_rule["rule"][ID])
 
-        # Find "Random" tag rule (synthetic)
+        # Find "Random" tag rule (which should now be auto-created and real)
         random_tag_rule = next(
             (r for r in rules_view if r["rule"][NAME] == "Random"), None
         )
@@ -140,6 +143,9 @@ class TestProjectBudgetService:
         assert random_tag_rule["current_amount"] == 50.0
         assert len(random_tag_rule["data"]) == 1
         assert random_tag_rule["rule"][TAGS] == ["Random"]
+        assert random_tag_rule["allow_edit"] is True
+        assert random_tag_rule["allow_delete"] is True
+        assert "Synthetic" not in str(random_tag_rule["rule"][ID])
 
         # Verify NO "Other Expenses" catch-all rule
         catch_all = next(

@@ -641,9 +641,16 @@ class ProjectBudgetService(BudgetService):
         ]
 
         if not unmatched_txns.empty:
-            # Group unmatched transactions by tag
             for tag, group in unmatched_txns.groupby(TransactionsTableFields.TAG.value):
-                # Exclude split_parent transactions from spent calculation
+                self.add_rule(
+                    name=tag,
+                    amount=0,
+                    category=project,
+                    tags=[tag],
+                    month=None,
+                    year=None,
+                )
+
                 if "type" in group.columns:
                     group_for_calc = group[group["type"] != "split_parent"]
                 else:
@@ -651,26 +658,38 @@ class ProjectBudgetService(BudgetService):
 
                 spent = group_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
 
-                # Filter processed transactions for display
                 group_display = transactions_processed.loc[group.index]
 
-                # Create a synthetic rule for display
-                # Note: We use the tag name as the rule name for clarity
-                synthetic_rule = {
-                    NAME: tag,
-                    AMOUNT: 0,  # Unmatched tags have 0 allocated budget
-                    CATEGORY: project,
-                    TAGS: [tag],  # Treat it as a list of matching tags
-                    ID: f"{project}_{tag}_Synthetic",
-                }
+                new_rule_df = self.budget_repository.read_all()
+                new_rule = new_rule_df[
+                    (new_rule_df[CATEGORY] == project)
+                    & (new_rule_df[YEAR].isnull())
+                    & (new_rule_df[MONTH].isnull())
+                    & (new_rule_df[NAME] == tag)
+                ]
+
+                rule_dict = {}
+                if not new_rule.empty:
+                    r = new_rule.iloc[0]
+                    rule_dict = r.to_dict()
+                    if isinstance(rule_dict[TAGS], str):
+                        rule_dict[TAGS] = rule_dict[TAGS].split(";")
+                else:
+                    rule_dict = {
+                        NAME: tag,
+                        AMOUNT: 0,
+                        CATEGORY: project,
+                        TAGS: [tag],
+                        ID: 0,
+                    }
 
                 view.append(
                     {
-                        "rule": synthetic_rule,
+                        "rule": rule_dict,
                         "current_amount": spent,
                         "data": group_display.to_dict(orient="records"),
-                        "allow_edit": False,
-                        "allow_delete": False,
+                        "allow_edit": True,
+                        "allow_delete": True,
                     }
                 )
 
