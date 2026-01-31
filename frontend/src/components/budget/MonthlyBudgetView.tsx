@@ -22,12 +22,14 @@ export const MonthlyBudgetView: React.FC = () => {
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+  const [includeSplitParents, setIncludeSplitParents] = useState(false);
 
   const queryClient = useQueryClient();
 
   const { data: analysis, isLoading } = useQuery({
-    queryKey: ["budgetAnalysis", year, month],
-    queryFn: () => budgetApi.getAnalysis(year, month).then((res) => res.data),
+    queryKey: ["budgetAnalysis", year, month, includeSplitParents],
+    queryFn: () =>
+      budgetApi.getAnalysis(year, month, includeSplitParents).then((res) => res.data),
   });
 
   // Fetch pending refunds to know which transactions are already marked
@@ -253,6 +255,9 @@ export const MonthlyBudgetView: React.FC = () => {
               }
               pendingRefundsMap={pendingRefundsMap}
               refundLinksMap={refundLinksMap}
+              showSplitParentsFilter
+              includeSplitParents={includeSplitParents}
+              onIncludeSplitParentsChange={setIncludeSplitParents}
             />
           </BudgetProgressBar>
         ))}

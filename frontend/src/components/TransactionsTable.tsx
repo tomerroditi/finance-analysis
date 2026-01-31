@@ -52,6 +52,11 @@ export interface TransactionsTableProps {
   showDelete?: boolean;
   showFilter?: boolean;
 
+  // Split parents filter (controlled by parent due to API dependency)
+  showSplitParentsFilter?: boolean;
+  includeSplitParents?: boolean;
+  onIncludeSplitParentsChange?: (value: boolean) => void;
+
   // Pagination config
   rowsPerPage?: number;
   rowsPerPageOptions?: number[] | null;
@@ -88,6 +93,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   showActions = false,
   showDelete = false,
   showFilter = false,
+  showSplitParentsFilter = false,
+  includeSplitParents = false,
+  onIncludeSplitParentsChange,
   rowsPerPage: initialRowsPerPage = 10,
   rowsPerPageOptions = null,
   onTransactionUpdated,
@@ -474,6 +482,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
             />
           </div>
+          {showSplitParentsFilter && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
+              <label
+                className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
+                htmlFor="table-split-parents"
+              >
+                Show Split Parents
+              </label>
+              <input
+                id="table-split-parents"
+                type="checkbox"
+                checked={includeSplitParents}
+                onChange={(e) => onIncludeSplitParentsChange?.(e.target.checked)}
+                className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+              />
+            </div>
+          )}
           {(filterText || onlyUntagged) && (
             <span className="text-xs text-[var(--text-muted)]">
               {filteredTransactions.length} of {transactions.length}{" "}

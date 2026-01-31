@@ -8,6 +8,10 @@ interface TransactionCollapsibleListProps {
   onTransactionUpdated?: () => void;
   pendingRefundsMap?: Map<string, any>;
   refundLinksMap?: Map<string, number>;
+  // Split parents filter props
+  showSplitParentsFilter?: boolean;
+  includeSplitParents?: boolean;
+  onIncludeSplitParentsChange?: (value: boolean) => void;
 }
 
 /**
@@ -23,23 +27,29 @@ export const TransactionCollapsibleList: React.FC<
   onTransactionUpdated,
   pendingRefundsMap,
   refundLinksMap,
+  showSplitParentsFilter = false,
+  includeSplitParents = false,
+  onIncludeSplitParentsChange,
 }) => {
-  if (!isOpen) return null;
+    if (!isOpen) return null;
 
-  return (
-    <div className="mt-4 border-t border-[var(--surface-light)] pt-4 animate-in slide-in-from-top-2 fade-in duration-200">
-      <TransactionsTable
-        transactions={transactions}
-        showSelection={showActions}
-        showBulkActions={showActions}
-        showActions={showActions}
-        showFilter
-        compact
-        rowsPerPage={10}
-        onTransactionUpdated={onTransactionUpdated}
-        pendingRefundsMap={pendingRefundsMap}
-        refundLinksMap={refundLinksMap}
-      />
-    </div>
-  );
-};
+    return (
+      <div className="mt-4 border-t border-[var(--surface-light)] pt-4 animate-in slide-in-from-top-2 fade-in duration-200">
+        <TransactionsTable
+          transactions={transactions}
+          showSelection={showActions}
+          showBulkActions={showActions}
+          showActions={showActions}
+          showFilter
+          compact
+          rowsPerPage={10}
+          onTransactionUpdated={onTransactionUpdated}
+          pendingRefundsMap={pendingRefundsMap}
+          refundLinksMap={refundLinksMap}
+          showSplitParentsFilter={showSplitParentsFilter}
+          includeSplitParents={includeSplitParents}
+          onIncludeSplitParentsChange={onIncludeSplitParentsChange}
+        />
+      </div>
+    );
+  };

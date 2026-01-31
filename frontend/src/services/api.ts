@@ -60,15 +60,20 @@ export const budgetApi = {
   deleteRule: (id: number) => api.delete(`/budget/rules/${id}`),
   copyRules: (year: number, month: number) =>
     api.post(`/budget/rules/${year}/${month}/copy`),
-  getAnalysis: (year: number, month: number) =>
-    api.get(`/budget/analysis/${year}/${month}`),
+  getAnalysis: (year: number, month: number, includeSplitParents = false) =>
+    api.get(`/budget/analysis/${year}/${month}`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
   getProjects: () => api.get("/budget/projects"),
   getAvailableProjects: () => api.get("/budget/projects/available"),
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
   updateProject: (name: string, data: { total_budget: number }) =>
     api.put(`/budget/projects/${name}`, data),
-  getProjectDetails: (name: string) => api.get(`/budget/projects/${name}`),
+  getProjectDetails: (name: string, includeSplitParents = false) =>
+    api.get(`/budget/projects/${name}`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
   deleteProject: (name: string) => api.delete(`/budget/projects/${name}`),
 };
 

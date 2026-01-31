@@ -93,30 +93,9 @@ export function Transactions() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Transactions</h1>
-          <div className="flex items-center gap-4 mt-1">
-            <p className="text-[var(--text-muted)]">
-              View and manage your transactions
-            </p>
-            {selectedService !== "refunds" && (
-              <>
-                <div className="flex items-center gap-2 px-3 py-1 bg-[var(--surface-light)]/20 rounded-full border border-[var(--surface-light)]">
-                  <label
-                    className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none"
-                    htmlFor="split-parents"
-                  >
-                    Show Split Parents
-                  </label>
-                  <input
-                    id="split-parents"
-                    type="checkbox"
-                    checked={includeSplitParents}
-                    onChange={(e) => setIncludeSplitParents(e.target.checked)}
-                    className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
-                  />
-                </div>
-              </>
-            )}
-          </div>
+          <p className="text-[var(--text-muted)]">
+            View and manage your transactions
+          </p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -165,7 +144,10 @@ export function Transactions() {
             showActions
             showDelete
             showFilter
-            rowsPerPage={10} // Default rows per page
+            showSplitParentsFilter
+            includeSplitParents={includeSplitParents}
+            onIncludeSplitParentsChange={setIncludeSplitParents}
+            rowsPerPage={10}
             rowsPerPageOptions={[10, 50, 100, 500, 1000]}
             onTransactionUpdated={refreshAll}
             pendingRefundsMap={pendingRefundsMap}
@@ -174,9 +156,11 @@ export function Transactions() {
         )}
       </div>
 
-      {showRuleManager && (
-        <RuleManager onClose={() => setShowRuleManager(false)} />
-      )}
-    </div>
+      {
+        showRuleManager && (
+          <RuleManager onClose={() => setShowRuleManager(false)} />
+        )
+      }
+    </div >
   );
 }

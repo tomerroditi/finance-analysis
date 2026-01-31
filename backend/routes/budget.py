@@ -7,7 +7,7 @@ Provides endpoints for budget rule management, analysis, and project management.
 from typing import List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -130,14 +130,19 @@ async def copy_previous_month_rules(
 
 @router.get("/analysis/{year}/{month}")
 async def get_monthly_analysis(
-    year: int, month: int, db: Session = Depends(get_database)
+    year: int,
+    month: int,
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
 ):
     """Get full monthly budget analysis."""
     from backend.services.pending_refunds_service import PendingRefundsService
 
     service = MonthlyBudgetService(db)
-    view = service.get_monthly_budget_view(year, month)
-    project_summary = service.get_monthly_project_spending_summary(year, month)
+    view = service.get_monthly_budget_view(year, month, include_split_parents)
+    project_summary = service.get_monthly_project_spending_summary(
+        year, month, include_split_parents
+    )
 
     # Get pending refunds summary
     pending_service = PendingRefundsService(db)
@@ -198,11 +203,15 @@ async def delete_project(name: str, db: Session = Depends(get_database)):
 
 
 @router.get("/projects/{name}")
-async def get_project_details(name: str, db: Session = Depends(get_database)):
+async def get_project_details(
+    name: str,
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+):
     """Get project details including rules and transactions."""
     service = ProjectBudgetService(db)
     rules = service.get_rules_for_project(name)
-    transactions = service.get_project_transactions(name)
+    transactions = service.get_project_transactions(name, include_split_parents)
 
     view = []
 

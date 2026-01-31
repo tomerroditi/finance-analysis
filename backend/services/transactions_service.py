@@ -98,12 +98,16 @@ class TransactionsService:
             TransactionsTableFields.SOURCE.value,
         ]
 
-    def get_data_for_analysis(self) -> pd.DataFrame:
+    def get_data_for_analysis(
+        self, include_split_parents: bool = False
+    ) -> pd.DataFrame:
         """Get table data for analysis purposes."""
-        cc_data = self.get_table_for_analysis("credit_cards")
-        bank_data = self.get_table_for_analysis("banks")
-        cash_data = self.get_table_for_analysis("cash")
-        manual_investments_data = self.get_table_for_analysis("manual_investments")
+        cc_data = self.get_table_for_analysis("credit_cards", include_split_parents)
+        bank_data = self.get_table_for_analysis("banks", include_split_parents)
+        cash_data = self.get_table_for_analysis("cash", include_split_parents)
+        manual_investments_data = self.get_table_for_analysis(
+            "manual_investments", include_split_parents
+        )
         dfs = [cc_data, bank_data, cash_data, manual_investments_data]
         dfs = [df for df in dfs if not df.empty]
         if not dfs:
@@ -198,11 +202,13 @@ class TransactionsService:
         service: Literal[
             "credit_cards", "banks", "cash", "manual_investments"
         ] = "credit_cards",
+        include_split_parents: bool = False,
     ) -> pd.DataFrame:
         """
         Returns the transactions table with split transactions expanded.
 
-        Split rows replace the original transaction rows.
+        Split rows replace the original transaction rows unless include_split_parents
+        is True, in which case parent transactions are also included.
         """
         df = self.transactions_repository.get_table(service).copy()
 
@@ -236,8 +242,17 @@ class TransactionsService:
         ]
         split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
         mask = df[TransactionsTableFields.ID.value].isin(split_ids)
-        base_df = df[~mask].copy()
-        base_df[TransactionsTableFields.SPLIT_ID.value] = None
+
+        if include_split_parents:
+            # Include parent transactions alongside split children
+            base_df = df.copy()
+            base_df[TransactionsTableFields.SPLIT_ID.value] = None
+            # Mark parent transactions with type 'split_parent' for identification
+            base_df.loc[mask, "type"] = "split_parent"
+        else:
+            # Exclude parent transactions (default behavior)
+            base_df = df[~mask].copy()
+            base_df[TransactionsTableFields.SPLIT_ID.value] = None
 
         split_rows = []
         for id_, split_group in split_df.groupby(

@@ -14,6 +14,7 @@ export const ProjectBudgetView: React.FC = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+  const [includeSplitParents, setIncludeSplitParents] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -41,22 +42,6 @@ export const ProjectBudgetView: React.FC = () => {
     return map;
   }, [pendingRefunds]);
 
-  // Map of linked refunds
-  const refundLinksMap = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!pendingRefunds) return map;
-
-    pendingRefunds.forEach((pr: any) => {
-      if (pr.links) {
-        pr.links.forEach((link: any) => {
-          const key = `${link.refund_source}_${link.refund_transaction_id}`;
-          map.set(key, link.id);
-        });
-      }
-    });
-    return map;
-  }, [pendingRefunds]);
-
   // Auto-select first project if available and none selected
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
@@ -66,9 +51,11 @@ export const ProjectBudgetView: React.FC = () => {
 
   // Fetch details for selected project
   const { data: projectDetails } = useQuery({
-    queryKey: ["projectDetails", selectedProject],
+    queryKey: ["projectDetails", selectedProject, includeSplitParents],
     queryFn: () =>
-      budgetApi.getProjectDetails(selectedProject).then((res) => res.data),
+      budgetApi
+        .getProjectDetails(selectedProject, includeSplitParents)
+        .then((res) => res.data),
     enabled: !!selectedProject,
   });
 
@@ -334,6 +321,9 @@ export const ProjectBudgetView: React.FC = () => {
                     })
                   }
                   pendingRefundsMap={pendingRefundsMap}
+                  showSplitParentsFilter
+                  includeSplitParents={includeSplitParents}
+                  onIncludeSplitParentsChange={setIncludeSplitParents}
                 />
               </BudgetProgressBar>
             );
@@ -366,6 +356,9 @@ export const ProjectBudgetView: React.FC = () => {
                     })
                   }
                   pendingRefundsMap={pendingRefundsMap}
+                  showSplitParentsFilter
+                  includeSplitParents={includeSplitParents}
+                  onIncludeSplitParentsChange={setIncludeSplitParents}
                 />
               </BudgetProgressBar>
             </div>

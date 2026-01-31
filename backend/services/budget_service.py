@@ -277,10 +277,14 @@ class MonthlyBudgetService(BudgetService):
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
         ]
 
-    def get_monthly_budget_view(self, year: int, month: int) -> Optional[list[dict]]:
+    def get_monthly_budget_view(
+        self, year: int, month: int, include_split_parents: bool = False
+    ) -> Optional[list[dict]]:
         """Compute budget rule usage view for a given month."""
         budget_rules = self.get_all_rules()
-        all_data = self.transactions_service.get_data_for_analysis()
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
 
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
@@ -385,13 +389,15 @@ class MonthlyBudgetService(BudgetService):
         return view
 
     def get_monthly_project_transactions(
-        self, year: int, month: int
+        self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[pd.DataFrame]:
         """
         Get project-related transactions for a specific month.
         """
         budget_rules = self.budget_repository.read_all()
-        all_data = self.transactions_service.get_data_for_analysis()
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
 
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
@@ -420,9 +426,13 @@ class MonthlyBudgetService(BudgetService):
 
         return project_transactions if not project_transactions.empty else None
 
-    def get_monthly_project_spending_summary(self, year: int, month: int) -> dict:
+    def get_monthly_project_spending_summary(
+        self, year: int, month: int, include_split_parents: bool = False
+    ) -> dict:
         """Get summary of project spending for a month, grouped by project."""
-        project_txns = self.get_monthly_project_transactions(year, month)
+        project_txns = self.get_monthly_project_transactions(
+            year, month, include_split_parents
+        )
         if project_txns is None or project_txns.empty:
             return {"projects": []}
 
@@ -499,9 +509,13 @@ class ProjectBudgetService(BudgetService):
         """Delete a specific tag rule from a project."""
         self.budget_repository.delete_by_category_and_tags(category, tag)
 
-    def get_project_transactions(self, project: str) -> pd.DataFrame:
+    def get_project_transactions(
+        self, project: str, include_split_parents: bool = False
+    ) -> pd.DataFrame:
         """Get all transactions for a specific project."""
-        all_data = self.transactions_service.get_data_for_analysis()
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
         return all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
 
     def get_all_projects_names(self) -> list[str]:
