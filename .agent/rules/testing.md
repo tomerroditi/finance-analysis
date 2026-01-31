@@ -1,28 +1,44 @@
+---
+trigger: glob
+globs: tests/**/*.py, pytest.ini, conftest.py
+---
+
 # Testing Standards
 
-Rules and best practices for writing tests in the Finance Analysis Dashboard project.
-
 ## Directory Structure
-New tests should be added to the appropriate directory under `tests/`:
-- `tests/backend/unit/`: Unit tests for individual classes and functions.
-- `tests/backend/integration/`: Tests for multiple components interacting (e.g., Service + Repository).
-- `tests/backend/routes/`: Tests for FastAPI endpoints.
-- `tests/frontend/`: (Planned) Vitest for frontend components.
+```
+tests/
+├── backend/
+│   ├── unit/           # Individual classes/functions
+│   ├── integration/    # Service + Repository interactions
+│   └── routes/         # FastAPI endpoint tests
+└── frontend/           # (Planned) Vitest for components
+```
 
-## General Principles
-- **Framework**: Use `pytest`.
-- **Grouping**: Always use test classes to group tests related to the same class or feature.
-  ```python
-  class TestClassName:
-      def test_method(self):
-          ...
-  ```
-- **Fixtures**: Use fixtures (shared in `tests/conftest.py` or defined locally) to reduce code repetition.
-- **High Coverage, High Quality**: Aim for high coverage, but avoid "garbage tests" that increase coverage without providing real value. Every test should have a clear purpose and assertion.
-- **Docstrings**: Every test class and test function MUST have a descriptive docstring.
-- **Assertions**: Use clear and descriptive assertions.
-- **Mocks**: Use `pytest-mock` or `unittest.mock` to isolate units under test, especially when dealing with external services or complex dependencies.
+## Principles
 
-## Synchronization
+| Rule | Details |
+|------|---------|
+| **Framework** | pytest |
+| **Grouping** | Always use test classes to group related tests |
+| **Fixtures** | Shared in `conftest.py`, reduce code repetition |
+| **Docstrings** | Every test class and function MUST have one |
+| **Mocks** | Use `pytest-mock` to isolate units |
+
+## Test Class Pattern
+```python
+class TestClassName:
+    """Tests for ClassName functionality."""
+    
+    def test_method_does_something(self):
+        """Verify method returns expected result."""
+        ...
+```
+
+## Quality Guidelines
+- **High coverage, high quality** - avoid "garbage tests" that don't add value
+- Every test should have a clear purpose and assertion
+- Use descriptive test names: `test_<method>_<scenario>_<expected>`
+
 > [!IMPORTANT]
-> When making changes to the test structure, naming conventions, or global fixtures, you MUST update this rule file to reflect the changes.
+> When changing test structure, naming conventions, or global fixtures, update this rule file.
