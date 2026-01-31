@@ -249,7 +249,7 @@ export function Investments() {
 
   const filteredCategories = categories
     ? Object.keys(categories)
-        .filter((cat) => ["Savings", "Investments"].includes(cat))
+        .filter((cat) => ["Investments"].includes(cat))
         .reduce((obj, key) => {
           const availableTags = categories[key].filter(
             (tag: string) => !usedTagsSet.has(`${key}:${tag}`),

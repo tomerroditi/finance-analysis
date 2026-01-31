@@ -300,7 +300,7 @@ export function DataSources() {
                         Bank Account
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        Checkings, Savings, or Business accounts
+                        Checkings, Investments, or Business accounts
                       </p>
                     </div>
                   </div>
@@ -378,7 +378,7 @@ export function DataSources() {
                     <input
                       type="text"
                       disabled={isViewOnly || !!editingAccount}
-                      placeholder="e.g. My Savings Account"
+                      placeholder="e.g. My Investment Account"
                       className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50"
                       value={accountName}
                       onChange={(e) => setAccountName(e.target.value)}
