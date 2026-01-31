@@ -23,22 +23,20 @@ export const Budget: React.FC = () => {
         <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
           <button
             onClick={() => setActiveTab("monthly")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all ${
-              activeTab === "monthly"
-                ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-            }`}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all ${activeTab === "monthly"
+              ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+              }`}
           >
             <Calendar size={18} />
             Monthly Budget
           </button>
           <button
             onClick={() => setActiveTab("projects")}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all ${
-              activeTab === "projects"
-                ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-            }`}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold transition-all ${activeTab === "projects"
+              ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+              }`}
           >
             <Layers size={18} />
             Project Budgets

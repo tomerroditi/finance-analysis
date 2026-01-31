@@ -105,6 +105,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     direction: "desc",
   });
   const [filterText, setFilterText] = useState("");
+  const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Modal state
@@ -187,17 +188,28 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Filter transactions
   const filteredTransactions = useMemo(() => {
-    if (!filterText.trim()) return transactions;
-    const lowerFilter = filterText.toLowerCase();
-    return transactions.filter(
-      (tx) =>
-        getDescription(tx).toLowerCase().includes(lowerFilter) ||
-        (tx.category ?? "").toLowerCase().includes(lowerFilter) ||
-        (tx.tag ?? "").toLowerCase().includes(lowerFilter) ||
-        (tx.provider ?? "").toLowerCase().includes(lowerFilter) ||
-        (tx.account_name ?? "").toLowerCase().includes(lowerFilter),
-    );
-  }, [transactions, filterText]);
+    let result = transactions;
+
+    // Apply untagged filter first
+    if (onlyUntagged) {
+      result = result.filter((tx) => !tx.tag || tx.tag === "-");
+    }
+
+    // Apply text filter
+    if (filterText.trim()) {
+      const lowerFilter = filterText.toLowerCase();
+      result = result.filter(
+        (tx) =>
+          getDescription(tx).toLowerCase().includes(lowerFilter) ||
+          (tx.category ?? "").toLowerCase().includes(lowerFilter) ||
+          (tx.tag ?? "").toLowerCase().includes(lowerFilter) ||
+          (tx.provider ?? "").toLowerCase().includes(lowerFilter) ||
+          (tx.account_name ?? "").toLowerCase().includes(lowerFilter),
+      );
+    }
+
+    return result;
+  }, [transactions, filterText, onlyUntagged]);
 
   // Sort transactions
   const sortedTransactions = useMemo(() => {
@@ -392,13 +404,12 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     <th
       onClick={() => handleSort(sortKey)}
       style={{ width }}
-      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${
-        align === "right"
-          ? "text-right"
-          : align === "center"
-            ? "text-center"
-            : "text-left"
-      }`}
+      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
+        ? "text-right"
+        : align === "center"
+          ? "text-center"
+          : "text-left"
+        }`}
     >
       <div
         className={`flex items-center ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"}`}
@@ -412,7 +423,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   // Calculate column count for empty state
   const columnCount = 5 + (showSelection ? 1 : 0) + (showActions ? 1 : 0);
 
-  if (sortedTransactions.length === 0 && !filterText) {
+  if (sortedTransactions.length === 0 && !filterText && !onlyUntagged) {
     return (
       <div
         className={`text-center text-[var(--text-muted)] ${compact ? "py-4" : "py-8"}`}
@@ -426,7 +437,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     <>
       {/* Filter Input */}
       {showFilter && (
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex items-center gap-3">
           <div className="relative flex-1 max-w-xs">
             <Search
               size={14}
@@ -448,7 +459,22 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </button>
             )}
           </div>
-          {filterText && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
+            <label
+              className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
+              htmlFor="table-untagged-only"
+            >
+              Only Untagged
+            </label>
+            <input
+              id="table-untagged-only"
+              type="checkbox"
+              checked={onlyUntagged}
+              onChange={(e) => setOnlyUntagged(e.target.checked)}
+              className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+            />
+          </div>
+          {(filterText || onlyUntagged) && (
             <span className="text-xs text-[var(--text-muted)]">
               {filteredTransactions.length} of {transactions.length}{" "}
               transactions

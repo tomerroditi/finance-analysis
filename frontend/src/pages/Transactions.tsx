@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { ShieldCheck } from "lucide-react";
 import { transactionsApi } from "../services/api";
 import { useAppStore } from "../stores/appStore";
@@ -11,7 +11,6 @@ import { pendingRefundsApi } from "../services/api";
 export function Transactions() {
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
-  const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [showRuleManager, setShowRuleManager] = useState(false);
 
   // Clean up any potential import artifacts if I messed up previously
@@ -81,18 +80,6 @@ export function Transactions() {
     refetchPending();
   };
 
-  // Filter for untagged only
-  const filteredTransactions = useMemo(() => {
-    if (!transactions) return [];
-    if (!onlyUntagged) return transactions;
-    return transactions.filter((tx: any) => !tx.tag || tx.tag === "-");
-  }, [transactions, onlyUntagged]);
-
-  // Reset when filters change
-  useEffect(() => {
-    // Handled by TransactionsTable internally
-  }, [selectedService, onlyUntagged]);
-
   const services = [
     { value: "all", label: "All" },
     { value: "credit_cards", label: "Credit Card" },
@@ -127,21 +114,6 @@ export function Transactions() {
                     className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
                   />
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1 bg-[var(--surface-light)]/20 rounded-full border border-[var(--surface-light)]">
-                  <label
-                    className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none"
-                    htmlFor="untagged-only"
-                  >
-                    Only Untagged
-                  </label>
-                  <input
-                    id="untagged-only"
-                    type="checkbox"
-                    checked={onlyUntagged}
-                    onChange={(e) => setOnlyUntagged(e.target.checked)}
-                    className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
-                  />
-                </div>
               </>
             )}
           </div>
@@ -165,11 +137,10 @@ export function Transactions() {
                 )}
                 <button
                   onClick={() => setSelectedService(value as any)}
-                  className={`px-4 py-2 rounded-lg transition-colors ${
-                    selectedService === value
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
-                  }`}
+                  className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
+                    ? "bg-[var(--primary)] text-white"
+                    : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+                    }`}
                 >
                   {label}
                 </button>
@@ -188,7 +159,7 @@ export function Transactions() {
           </div>
         ) : (
           <TransactionsTable
-            transactions={filteredTransactions}
+            transactions={transactions || []}
             showSelection
             showBulkActions
             showActions
