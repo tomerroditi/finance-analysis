@@ -101,7 +101,8 @@ export const taggingApi = {
   createRule: (rule: any) => api.post("/tagging/rules", rule),
   updateRule: (id: number, rule: any) => api.put(`/tagging/rules/${id}`, rule),
   deleteRule: (id: number) => api.delete(`/tagging/rules/${id}`),
-  applyRules: () => api.post("/tagging/rules/apply"),
+  applyRules: (overwrite = true) =>
+    api.post("/tagging/rules/apply", null, { params: { overwrite } }),
   testRule: (conditions: any[]) => api.post("/tagging/rules/test", conditions),
 };
 

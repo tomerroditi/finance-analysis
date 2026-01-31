@@ -78,25 +78,25 @@ class TaggingRulesService:
             raise EntityNotFoundException(f"Rule with ID {rule_id} not found")
         return sucess
 
-    def apply_rules(self) -> int:
+    def apply_rules(self, overwrite: bool = True) -> int:
         """Apply all active rules."""
         rules_df = self.rules_repo.get_all_rules(active_only=True)
         rules = rules_df.to_dict(orient="records")
 
         total_tagged = 0
         for rule in rules:
-            total_tagged += self._apply_single_rule(rule)
+            total_tagged += self._apply_single_rule(rule, overwrite=overwrite)
         return total_tagged
 
-    def apply_rule_by_id(self, rule_id: int) -> int:
+    def apply_rule_by_id(self, rule_id: int, overwrite: bool = True) -> int:
         """Apply a single rule by ID."""
         rule = self.get_rule_by_id(rule_id, json_load_conditions=False)
         if rule is None:
             raise ValueError(f"Rule with ID {rule_id} not found.")
-        return self._apply_single_rule(rule)
+        return self._apply_single_rule(rule, overwrite=overwrite)
 
-    def _apply_single_rule(self, rule: Dict) -> int:
-        """Apply a single rule to untagged transactions."""
+    def _apply_single_rule(self, rule: Dict, overwrite: bool = True) -> int:
+        """Apply a single rule to transactions."""
         conditions = json.loads(rule[TaggingRulesTableFields.CONDITIONS.value])
         where_conditions, params = self._build_rule_where_clause_conditions(conditions)
         tables = self._get_tables_names_for_rule_application_from_conditions(conditions)
@@ -106,12 +106,22 @@ class TaggingRulesService:
 
         row_count = 0
         for table in tables:
+            extra_conditions = ""
+            if not overwrite:
+                extra_conditions = f" AND {category_col} IS NULL"
+            else:
+                extra_conditions = f" AND ({category_col} != :category OR {category_col} IS NULL OR {tag_col} != :tag OR {tag_col} IS NULL)"
+
             update_query = f"""
                 UPDATE {table}
                 SET {category_col} = :category,
                     {tag_col} = :tag
-                WHERE {where_conditions} AND ({category_col} != :category OR {category_col} is null) AND ({tag_col} != :tag OR {tag_col} is null)
+                WHERE {where_conditions}{extra_conditions}
             """
+            print(
+                f"DEBUG: overwrite={overwrite}, query={update_query.strip()}, params={{'category': '{rule[TaggingRulesTableFields.CATEGORY.value]}', 'tag': '{rule[TaggingRulesTableFields.TAG.value]}' }}"
+            )
+
             update_params = {
                 "category": rule[TaggingRulesTableFields.CATEGORY.value],
                 "tag": rule[TaggingRulesTableFields.TAG.value],

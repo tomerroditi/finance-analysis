@@ -169,10 +169,12 @@ async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database))
 
 
 @router.post("/rules/apply")
-async def apply_tagging_rules(db: Session = Depends(get_database)):
+async def apply_tagging_rules(
+    overwrite: bool = True, db: Session = Depends(get_database)
+):
     """Manually trigger application of all active rules."""
     service = TaggingRulesService(db)
-    count = service.apply_rules()
+    count = service.apply_rules(overwrite=overwrite)
     return {"status": "success", "tagged_count": count}
 
 
