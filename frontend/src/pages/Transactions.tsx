@@ -108,18 +108,22 @@ export function Transactions() {
 
           <div className="w-px h-8 bg-[var(--surface-light)] mx-2" />
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {services.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => setSelectedService(value as any)}
-                className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
-                  }`}
-              >
-                {label}
-              </button>
+              <div key={value} className="flex items-center gap-2">
+                {value === "refunds" && (
+                  <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
+                )}
+                <button
+                  onClick={() => setSelectedService(value as any)}
+                  className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+                    }`}
+                >
+                  {label}
+                </button>
+              </div>
             ))}
           </div>
         </div>
