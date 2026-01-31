@@ -240,6 +240,8 @@ export const pendingRefundsApi = {
       amount: number;
     }
   ) => api.post(`/pending-refunds/${pendingId}/link`, data),
+  unlinkRefund: (linkId: number) =>
+    api.delete(`/pending-refunds/links/${linkId}`),
 };
 
 export const testingApi = {

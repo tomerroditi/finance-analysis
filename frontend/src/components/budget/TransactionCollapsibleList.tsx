@@ -7,6 +7,7 @@ interface TransactionCollapsibleListProps {
   showActions?: boolean;
   onTransactionUpdated?: () => void;
   pendingRefundsMap?: Map<string, any>;
+  refundLinksMap?: Map<string, number>;
 }
 
 /**
@@ -15,7 +16,7 @@ interface TransactionCollapsibleListProps {
  */
 export const TransactionCollapsibleList: React.FC<
   TransactionCollapsibleListProps
-> = ({ transactions, isOpen, showActions = false, onTransactionUpdated, pendingRefundsMap }) => {
+> = ({ transactions, isOpen, showActions = false, onTransactionUpdated, pendingRefundsMap, refundLinksMap }) => {
   if (!isOpen) return null;
 
   return (
@@ -30,6 +31,7 @@ export const TransactionCollapsibleList: React.FC<
         rowsPerPage={10}
         onTransactionUpdated={onTransactionUpdated}
         pendingRefundsMap={pendingRefundsMap}
+        refundLinksMap={refundLinksMap}
       />
     </div>
   );

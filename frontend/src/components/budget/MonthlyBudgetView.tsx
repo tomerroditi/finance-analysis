@@ -48,6 +48,22 @@ export const MonthlyBudgetView: React.FC = () => {
     return map;
   }, [pendingRefunds]);
 
+  // Map of linked refunds: transaction_key -> link_id
+  const refundLinksMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach((pr: any) => {
+      if (pr.links) {
+        pr.links.forEach((link: any) => {
+          const key = `${link.refund_source}_${link.refund_transaction_id}`;
+          map.set(key, link.id);
+        });
+      }
+    });
+    return map;
+  }, [pendingRefunds]);
+
   const createMutation = useMutation({
     mutationFn: budgetApi.createRule,
     onSuccess: () =>
@@ -236,6 +252,7 @@ export const MonthlyBudgetView: React.FC = () => {
                 queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] })
               }
               pendingRefundsMap={pendingRefundsMap}
+              refundLinksMap={refundLinksMap}
             />
           </BudgetProgressBar>
         ))}
@@ -283,6 +300,7 @@ export const MonthlyBudgetView: React.FC = () => {
                       })
                     }
                     pendingRefundsMap={pendingRefundsMap}
+                    refundLinksMap={refundLinksMap}
                   />
                 </BudgetProgressBar>
               ))}

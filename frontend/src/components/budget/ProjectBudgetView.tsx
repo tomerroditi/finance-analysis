@@ -41,6 +41,22 @@ export const ProjectBudgetView: React.FC = () => {
     return map;
   }, [pendingRefunds]);
 
+  // Map of linked refunds
+  const refundLinksMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach((pr: any) => {
+      if (pr.links) {
+        pr.links.forEach((link: any) => {
+          const key = `${link.refund_source}_${link.refund_transaction_id}`;
+          map.set(key, link.id);
+        });
+      }
+    });
+    return map;
+  }, [pendingRefunds]);
+
   // Auto-select first project if available and none selected
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {

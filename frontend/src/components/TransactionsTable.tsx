@@ -56,6 +56,7 @@ export interface TransactionsTableProps {
   onTransactionUpdated?: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
   pendingRefundsMap?: Map<string, any>;
+  refundLinksMap?: Map<string, number>;
 
   // Styling
   compact?: boolean;
@@ -88,6 +89,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onTransactionUpdated,
   onSelectionChange,
   pendingRefundsMap,
+  refundLinksMap,
   compact = false,
 }) => {
   const queryClient = useQueryClient();
@@ -151,6 +153,16 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   const cancelPendingMutation = useMutation({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      onTransactionUpdated?.();
+    },
+  });
+
+  const unlinkRefundMutation = useMutation({
+    mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
@@ -635,13 +647,37 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           })()
                         )}
                         {tx.amount > 0 && (
-                          <button
-                            className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                            title="Link as Refund"
-                            onClick={() => setLinkingTransaction(tx)}
-                          >
-                            <Link2 size={14} />
-                          </button>
+                          (() => {
+                            // Check if this transaction is linked as a refund
+                            const linkId = refundLinksMap?.get(getTransactionId(tx));
+
+                            if (linkId) {
+                              return (
+                                <button
+                                  className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
+                                  title="Linked to Pending Refund. Click to Unlink."
+                                  onClick={() => {
+                                    if (window.confirm("Unlink this refund from the pending request?")) {
+                                      unlinkRefundMutation.mutate(linkId);
+                                    }
+                                  }}
+                                  disabled={unlinkRefundMutation.isPending}
+                                >
+                                  <Link2 size={14} />
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <button
+                                className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                                title="Link as Refund"
+                                onClick={() => setLinkingTransaction(tx)}
+                              >
+                                <Link2 size={14} />
+                              </button>
+                            );
+                          })()
                         )}
                         {showDelete && isManual && (
                           <button

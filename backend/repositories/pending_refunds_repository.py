@@ -219,3 +219,23 @@ class PendingRefundsRepository:
         if pending:
             self.db.delete(pending)
         self.db.commit()
+
+    def delete_refund_link(self, link_id: int) -> RefundLink | None:
+        """
+        Delete a specific refund link.
+
+        Parameters
+        ----------
+        link_id : int
+            ID of the link to delete.
+
+        Returns
+        -------
+        RefundLink or None
+            The deleted link if found, None otherwise.
+        """
+        link = self.db.get(RefundLink, link_id)
+        if link:
+            self.db.delete(link)
+            self.db.commit()
+        return link

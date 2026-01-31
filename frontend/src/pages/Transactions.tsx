@@ -29,6 +29,7 @@ export function Transactions() {
           includeSplitParents,
         )
         .then((res) => res.data),
+    enabled: selectedService !== "refunds",
   });
 
   // Fetch pending refunds to know which transactions are already marked
@@ -50,6 +51,26 @@ export function Transactions() {
       // Pending refund object has source_table and source_id.
       const key = `${pr.source_table}_${pr.source_id}`;
       map.set(key, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  // Create a map of Transactions that are linked to pending refunds (i.e. they ARE the refund)
+  // map: transaction_id (string key) -> link_id (number)
+  const refundLinksMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!pendingRefunds) return map;
+
+    pendingRefunds.forEach((pr: any) => {
+      if (pr.links) {
+        pr.links.forEach((link: any) => {
+          // Key format: source_table + val (which is unique_id usually)
+          // Wait, getTransactionId uses tx.source and tx.unique_id
+          // Link has refund_source and refund_transaction_id.
+          const key = `${link.refund_source}_${link.refund_transaction_id}`;
+          map.set(key, link.id);
+        });
+      }
     });
     return map;
   }, [pendingRefunds]);
@@ -174,10 +195,11 @@ export function Transactions() {
             showActions
             showDelete
             showFilter
-            rowsPerPage={50}
+            rowsPerPage={10} // Default rows per page
             rowsPerPageOptions={[10, 50, 100, 500, 1000]}
             onTransactionUpdated={refreshAll}
             pendingRefundsMap={pendingRefundsMap}
+            refundLinksMap={refundLinksMap}
           />
         )}
       </div>
