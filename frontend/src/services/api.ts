@@ -189,6 +189,51 @@ export const analyticsApi = {
     }),
 };
 
+// Pending Refunds API
+export interface PendingRefund {
+  id: number;
+  source_type: "transaction" | "split";
+  source_id: number;
+  source_table: string;
+  expected_amount: number;
+  status: "pending" | "resolved" | "partial";
+  notes?: string;
+  total_refunded?: number;
+  remaining?: number;
+  links?: RefundLink[];
+}
+
+export interface RefundLink {
+  id: number;
+  pending_refund_id: number;
+  refund_transaction_id: number;
+  refund_source: string;
+  amount: number;
+}
+
+export const pendingRefundsApi = {
+  create: (data: {
+    source_type: "transaction" | "split";
+    source_id: number;
+    source_table: string;
+    expected_amount: number;
+    notes?: string;
+  }) => api.post<PendingRefund>("/pending-refunds/", data),
+  getAll: (status?: string) =>
+    api.get<PendingRefund[]>("/pending-refunds/", { params: { status } }),
+  getById: (id: number) =>
+    api.get<PendingRefund>(`/pending-refunds/${id}`),
+  cancel: (id: number) => api.delete(`/pending-refunds/${id}`),
+  linkRefund: (
+    pendingId: number,
+    data: {
+      refund_transaction_id: number;
+      refund_source: string;
+      amount: number;
+    }
+  ) => api.post(`/pending-refunds/${pendingId}/link`, data),
+};
+
 export const testingApi = {
   toggleTestMode: (enabled: boolean) =>
     api.post<{ status: string; test_mode: boolean }>(
@@ -200,3 +245,4 @@ export const testingApi = {
 };
 
 export default api;
+
