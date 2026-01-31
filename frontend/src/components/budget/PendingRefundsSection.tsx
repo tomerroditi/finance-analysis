@@ -63,20 +63,37 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                         key={item.id}
                         className="px-5 py-3 flex items-center justify-between hover:bg-[var(--surface-light)]/50 transition-colors"
                     >
-                        <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-[var(--text-muted)] uppercase">
-                                    {item.source_table}
+                        <div className="flex flex-col gap-1">
+                            {/* Top row: Date & Description */}
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-mono text-[var(--text-muted)] bg-[var(--surface-light)] px-1.5 py-0.5 rounded">
+                                    {item.date || "NO DATE"}
                                 </span>
-                                <span className="text-sm text-[var(--text-muted)]">
-                                    #{item.source_id}
+                                <span className="font-medium text-[var(--text-primary)]">
+                                    {item.description || "Unknown Transaction"}
                                 </span>
                             </div>
-                            {item.notes && (
-                                <span className="text-sm text-[var(--text-muted)] mt-1">
-                                    {item.notes}
+
+                            {/* Bottom row: Account, Source info, Notes */}
+                            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                                {item.account_name && (
+                                    <>
+                                        <span>{item.account_name}</span>
+                                        <span>•</span>
+                                    </>
+                                )}
+                                <span className="uppercase">
+                                    {item.provider || item.source_table}
                                 </span>
-                            )}
+                                {item.notes && (
+                                    <>
+                                        <span>•</span>
+                                        <span className="italic text-amber-500/80">
+                                            "{item.notes}"
+                                        </span>
+                                    </>
+                                )}
+                            </div>
                         </div>
                         <div className="flex items-center gap-3">
                             <span className="text-amber-400 font-semibold">

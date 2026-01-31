@@ -201,6 +201,11 @@ export interface PendingRefund {
   total_refunded?: number;
   remaining?: number;
   links?: RefundLink[];
+  // Enriched fields
+  date?: string;
+  description?: string;
+  account_name?: string;
+  provider?: string;
 }
 
 export interface RefundLink {

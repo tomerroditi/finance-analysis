@@ -183,7 +183,7 @@ class PendingRefundsService:
 
     def get_all_pending(self, status: Optional[str] = None) -> list[dict]:
         """
-        Get all pending refunds.
+        Get all pending refunds enriched with source details.
 
         Parameters
         ----------
@@ -193,10 +193,99 @@ class PendingRefundsService:
         Returns
         -------
         list[dict]
-            List of pending refund records.
+            List of pending refund records with source transaction details.
         """
+        from sqlalchemy import select
+
+        from backend.naming_conventions import SplitTransactionsTableFields
+        from backend.repositories.transactions_repository import TransactionsRepository
+
         df = self.repo.get_all_pending_refunds(status=status)
-        return df.to_dict(orient="records") if not df.empty else []
+        pending_list = df.to_dict(orient="records") if not df.empty else []
+
+        if not pending_list:
+            return []
+
+        # Initialize repos
+        trans_repo = TransactionsRepository(self.db)
+        # Split repo is needed if we have split sources, but we need parent transaction anyway.
+
+        # Group by source table/type to batch fetch
+        # format: { (table, type): [ids] }
+        sources = {}
+        for p in pending_list:
+            key = (p["source_table"], p["source_type"])
+            if key not in sources:
+                sources[key] = []
+            sources[key].append(p["source_id"])
+
+        # Fetch details
+        details_map = {}  # (table, type, id) -> details dict
+
+        for (table, type_), ids in sources.items():
+            if type_ == "transaction":
+                try:
+                    repo_cls = trans_repo.repo_map.get(table)
+                    if repo_cls:
+                        model = repo_cls.model
+                        # Fetch transactions
+                        stmt = select(model).where(model.unique_id.in_(ids))
+                        results = self.db.execute(stmt).scalars().all()
+                        for tx in results:
+                            details_map[(table, type_, tx.unique_id)] = {
+                                "date": tx.date,
+                                "description": tx.desc,
+                                "account_name": tx.account_name,
+                                "provider": tx.provider,
+                                "original_currency": "ILS",  # Assumption
+                            }
+                except Exception:
+                    pass  # Fail gracefully on enrichment
+            elif type_ == "split":
+                # For splits, we need to get the split record to find the parent transaction
+                # Then get details from the parent
+                try:
+                    # We can't batch efficiently across mixed split IDs easily without ORM for splits
+                    # But we can iterate. Optimally we'd use SplitTransactionsRepository.
+                    # Since split repo is SQL-based/Pandas in parts, let's use the DB directly for efficiency if possible
+                    # or just use the repo.
+                    for split_id in ids:
+                        split_df = (
+                            trans_repo.split_repo.get_data()
+                        )  # Inefficient if large
+                        # Better to select specific split. split_repo doesn't have get_by_id?
+                        # It has get_splits_for_transaction.
+                        # Let's direct query split table
+                        from backend.models.transaction import SplitTransaction
+
+                        split = self.db.get(SplitTransaction, split_id)
+                        if split:
+                            # Get parent
+                            repo_cls = trans_repo.repo_map.get(split.source)
+                            if repo_cls:
+                                parent = self.db.execute(
+                                    select(repo_cls.model).where(
+                                        repo_cls.model.unique_id == split.transaction_id
+                                    )
+                                ).scalar_one_or_none()
+                                if parent:
+                                    details_map[(table, type_, split_id)] = {
+                                        "date": parent.date,
+                                        "description": f"Split: {parent.desc}",
+                                        "account_name": parent.account_name,
+                                        "provider": parent.provider,
+                                        "original_currency": "ILS",
+                                    }
+                except Exception:
+                    pass
+
+        # Merge details
+        for p in pending_list:
+            key = (p["source_table"], p["source_type"], p["source_id"])
+            details = details_map.get(key, {})
+            p.update(details)
+
+        return pending_list
 
     def get_pending_by_id(self, pending_refund_id: int) -> dict:
         """
