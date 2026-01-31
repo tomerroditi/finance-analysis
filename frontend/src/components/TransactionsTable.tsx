@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
+import { LinkRefundModal } from "./modals/LinkRefundModal";
 import { transactionsApi, taggingApi, pendingRefundsApi } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
@@ -102,6 +103,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [splittingTransaction, setSplittingTransaction] =
+    useState<Transaction | null>(null);
+  const [linkingTransaction, setLinkingTransaction] =
     useState<Transaction | null>(null);
 
   // Bulk tagging state
@@ -563,10 +566,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           <button
                             className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
                             title="Link as Refund"
-                            onClick={() => {
-                              // TODO: Open link refund modal
-                              alert("Link as Refund - Coming soon!");
-                            }}
+                            onClick={() => setLinkingTransaction(tx)}
                           >
                             <Link2 size={14} />
                           </button>
@@ -790,6 +790,18 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           transaction={splittingTransaction}
           onClose={() => setSplittingTransaction(null)}
           onSuccess={handleModalSuccess}
+        />
+      )}
+      {linkingTransaction && (
+        <LinkRefundModal
+          isOpen={!!linkingTransaction}
+          onClose={() => setLinkingTransaction(null)}
+          refundTransaction={{
+            id: linkingTransaction.unique_id,
+            source: linkingTransaction.source || 'unknown',
+            amount: linkingTransaction.amount,
+            description: linkingTransaction.description || linkingTransaction.desc || '',
+          }}
         />
       )}
     </>
