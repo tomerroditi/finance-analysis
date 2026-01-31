@@ -552,3 +552,126 @@ class ProjectBudgetService(BudgetService):
             if cat not in current_projects
         ]
         return new_possible_projects
+
+    def get_project_budget_view(
+        self, project: str, include_split_parents: bool = False
+    ) -> dict:
+        """
+        Get project details including rules and transactions, with an 'Other' category
+        for unmatched transactions.
+        """
+        rules = self.get_rules_for_project(project)
+        transactions = self.get_project_transactions(project, include_split_parents)
+
+        view = []
+
+        # Total Project Rule
+        total_rule = pd.DataFrame()
+        if not rules.empty:
+            # Find where tags == [ALL_TAGS] (handle case sensitivity)
+            total_rule = rules[
+                rules[TAGS].apply(
+                    lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
+                )
+            ]
+
+        # Ensure transactions is JSON serializable (handle NaNs)
+        transactions_processed = transactions.where(pd.notnull(transactions), None)
+
+        # Exclude split_parent transactions from total calculation
+        if "type" in transactions.columns:
+            non_parent_txns = transactions[transactions["type"] != "split_parent"]
+        else:
+            non_parent_txns = transactions
+        total_spent = non_parent_txns[TransactionsTableFields.AMOUNT.value].sum() * -1
+
+        if not total_rule.empty:
+            view.append(
+                {
+                    "rule": total_rule.iloc[0].to_dict(),
+                    "current_amount": total_spent,
+                    "data": transactions_processed.to_dict(orient="records"),
+                    "allow_edit": True,
+                    "allow_delete": False,
+                }
+            )
+            rules = rules.drop(total_rule.index)
+
+        # Track transactions that have been matched to a rule
+        matched_txns_indices = set()
+
+        # Per tag rules
+        for _, rule in rules.iterrows():
+            tags = rule[TAGS]
+            # Filter transactions for these tags using original DataFrame for calculation
+            tag_txns_orig = transactions[
+                transactions[TransactionsTableFields.TAG.value].isin(tags)
+            ]
+
+            # Record indices of matched transactions
+            matched_txns_indices.update(tag_txns_orig.index)
+
+            # Exclude split_parent transactions from spent calculation
+            if "type" in tag_txns_orig.columns:
+                tag_txns_for_calc = tag_txns_orig[
+                    tag_txns_orig["type"] != "split_parent"
+                ]
+            else:
+                tag_txns_for_calc = tag_txns_orig
+            spent = tag_txns_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+
+            # Filter processed transactions for display
+            tag_txns_display = transactions_processed[
+                transactions_processed[TransactionsTableFields.TAG.value].isin(tags)
+            ]
+
+            view.append(
+                {
+                    "rule": rule.to_dict(),
+                    "current_amount": spent,
+                    "data": tag_txns_display.to_dict(orient="records"),
+                    "allow_edit": True,
+                    "allow_delete": True,
+                }
+            )
+
+        # Handle unmatched transactions ("Other" or random tags)
+        unmatched_txns = transactions.loc[
+            ~transactions.index.isin(matched_txns_indices)
+        ]
+
+        if not unmatched_txns.empty:
+            # Group unmatched transactions by tag
+            for tag, group in unmatched_txns.groupby(TransactionsTableFields.TAG.value):
+                # Exclude split_parent transactions from spent calculation
+                if "type" in group.columns:
+                    group_for_calc = group[group["type"] != "split_parent"]
+                else:
+                    group_for_calc = group
+
+                spent = group_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+
+                # Filter processed transactions for display
+                group_display = transactions_processed.loc[group.index]
+
+                # Create a synthetic rule for display
+                # Note: We use the tag name as the rule name for clarity
+                synthetic_rule = {
+                    NAME: tag,
+                    AMOUNT: 0,  # Unmatched tags have 0 allocated budget
+                    CATEGORY: project,
+                    TAGS: [tag],  # Treat it as a list of matching tags
+                    ID: f"{project}_{tag}_Synthetic",
+                }
+
+                view.append(
+                    {
+                        "rule": synthetic_rule,
+                        "current_amount": spent,
+                        "data": group_display.to_dict(orient="records"),
+                        "allow_edit": False,
+                        "allow_delete": False,
+                    }
+                )
+
+        return {"name": project, "rules": view, "total_spent": total_spent}
