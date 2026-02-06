@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.naming_conventions import (
+    PRIOR_WEALTH_TAG,
     Banks,
     CreditCards,
     IncomeCategories,
@@ -27,6 +28,7 @@ from backend.repositories.split_transactions_repository import (
 from backend.repositories.transactions_repository import (
     CashTransaction,
     ManualInvestmentTransaction,
+    ManualTransactionDTO,
     TransactionsRepository,
 )
 
@@ -79,6 +81,107 @@ class TransactionsService:
             )
 
         return self.transactions_repository.add_transaction(tx, service)
+
+    def sync_prior_wealth_offset(
+        self, target_service: Literal["cash", "manual_investments"] | None = None
+    ) -> None:
+        """
+        Synchronize the prior wealth offset transaction for each service.
+
+        Tracks manual deposits (negative amounts) separately for each service (cash/manual_investments)
+        and maintains a single consolidated "Prior Wealth" transaction in EACH table.
+
+        Logic per service:
+        1. Calculate total offset needed = sum(abs(manual_deposits)) for that service
+        2. Find existing offset transaction in that service's table
+        3. If total > 0: Update or Create single offset transaction
+        4. If total == 0: Delete existing offset transaction(s)
+        """
+        services_to_sync = (
+            [target_service]
+            if target_service
+            else [Services.CASH.value, Services.MANUAL_INVESTMENTS.value]
+        )
+
+        for service in services_to_sync:
+            # 1. Get transactions for this service
+            df = self.transactions_repository.get_table(service=service)
+
+            # 2. Calculate offset needed (sum of manual negative amounts)
+            offset_needed = 0.0
+            if not df.empty and TransactionsTableFields.PROVIDER.value in df.columns:
+                # Filter: Provider=MANUAL AND Amount < 0
+                mask = (df[TransactionsTableFields.PROVIDER.value] == "MANUAL") & (
+                    df[TransactionsTableFields.AMOUNT.value] < 0
+                )
+                offset_needed = abs(
+                    df.loc[mask, TransactionsTableFields.AMOUNT.value].sum()
+                )
+
+            # 3. Handle offset transaction in the specific service table
+            if service == Services.CASH.value:
+                repo = self.transactions_repository.cash_repo
+            elif service == Services.MANUAL_INVESTMENTS.value:
+                repo = self.transactions_repository.manual_investments_repo
+            else:
+                raise ValueError(
+                    f"Service '{service}' not supported for prior wealth offset"
+                )
+
+            current_data = repo.get_table()
+            existing_offsets = pd.DataFrame()
+
+            if not current_data.empty:
+                offset_mask = (
+                    (
+                        current_data[TransactionsTableFields.TAG.value]
+                        == PRIOR_WEALTH_TAG
+                    )
+                    & (
+                        current_data[TransactionsTableFields.CATEGORY.value]
+                        == IncomeCategories.OTHER_INCOME.value
+                    )
+                    & (
+                        current_data[TransactionsTableFields.ACCOUNT_NAME.value]
+                        == PRIOR_WEALTH_TAG
+                    )
+                )
+                existing_offsets = current_data[offset_mask]
+
+            if offset_needed > 0:
+                if not existing_offsets.empty:
+                    # Update first existing one
+                    first_id = existing_offsets.iloc[0][
+                        TransactionsTableFields.UNIQUE_ID.value
+                    ]
+                    repo.update_transaction_by_id(
+                        str(first_id), {"amount": offset_needed}
+                    )
+                    # Delete duplicates if any
+                    if len(existing_offsets) > 1:
+                        for _, row in existing_offsets.iloc[1:].iterrows():
+                            repo.delete_transaction_by_id(
+                                str(row[TransactionsTableFields.UNIQUE_ID.value])
+                            )
+                else:
+                    offset_tx = ManualTransactionDTO(
+                        date=datetime.now(),
+                        account_name=PRIOR_WEALTH_TAG,
+                        description=f"Prior Wealth Offset ({service})",
+                        amount=offset_needed,
+                        provider="MANUAL",
+                        account_number="prior_wealth",
+                        category=IncomeCategories.OTHER_INCOME.value,
+                        tag=PRIOR_WEALTH_TAG,
+                    )
+                    self.transactions_repository.add_transaction(offset_tx, service)
+            else:
+                # Delete all existing offsets if amount needed is 0
+                if not existing_offsets.empty:
+                    for _, row in existing_offsets.iterrows():
+                        repo.delete_transaction_by_id(
+                            str(row[TransactionsTableFields.UNIQUE_ID.value])
+                        )
 
     def get_table_columns_for_display(self) -> List[str]:
         """Get the columns of the transactions table."""

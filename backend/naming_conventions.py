@@ -11,6 +11,9 @@ YEAR = "year"
 ALL_TAGS = "all_tags"
 
 TOTAL_BUDGET = "Total Budget"
+PRIOR_WEALTH_TAG = "Prior Wealth"
+
+PROTECTED_TAGS = [PRIOR_WEALTH_TAG]
 
 cc_providers = [
     "amex",

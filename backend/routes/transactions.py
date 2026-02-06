@@ -12,7 +12,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.naming_conventions import PROTECTED_TAGS
+from backend.repositories.transactions_repository import (
+    ManualTransactionDTO,
+    TransactionsRepository,
+)
+from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
 
@@ -83,6 +88,7 @@ async def create_transaction(
 ):
     """Create a new manual transaction."""
     repo = TransactionsRepository(db)
+    service = TransactionsService(db)
     try:
         if data.service not in ["cash", "manual_investments"]:
             raise HTTPException(
@@ -90,10 +96,7 @@ async def create_transaction(
                 detail="Can only create cash or manual_investments transactions",
             )
 
-        # Convert to repository expected format
-        from backend.repositories.transactions_repository import CashTransactionDTO
-
-        tx = CashTransactionDTO(
+        tx = ManualTransactionDTO(
             date=datetime.combine(data.date, datetime.min.time()),
             account_name=data.account_name,
             description=data.description,
@@ -106,6 +109,10 @@ async def create_transaction(
         success = repo.add_transaction(tx, data.service)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create transaction")
+
+        # Sync prior wealth offset
+        service.sync_prior_wealth_offset()
+
         return {"status": "success"}
     except HTTPException:
         raise
@@ -161,11 +168,29 @@ async def delete_transaction(
 ):
     """Delete a transaction (only for manual entries)."""
     repo = TransactionsRepository(db)
+    service = TransactionsService(db)
     try:
         if source not in ["cash_transactions", "manual_investment_transactions"]:
             raise HTTPException(
                 status_code=403,
                 detail="Deletion of bank/card transactions is prohibited",
+            )
+
+        try:
+            tx = repo.get_transaction_by_id(int(unique_id))
+        except ValueError:
+            # invalid id format
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # Protect "Prior Wealth" offset transactions from manual deletion
+        if (
+            tx
+            and tx.get("tag") in PROTECTED_TAGS
+            and tx.get("account_name") in PROTECTED_TAGS
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Cannot manually delete system-generated {tx.get('tag')} transaction",
             )
 
         target_repo = repo.get_repo_by_source(source)
@@ -174,6 +199,10 @@ async def delete_transaction(
             raise HTTPException(
                 status_code=404, detail="Transaction not found or deletion failed"
             )
+
+        # Sync prior wealth offset after deletion
+        service.sync_prior_wealth_offset()
+
         return {"status": "success"}
     except HTTPException:
         raise

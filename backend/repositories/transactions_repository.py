@@ -27,8 +27,8 @@ WITHDRAWAL_TYPE = "withdrawal"
 
 
 @dataclass
-class CashTransactionDTO:
-    """Data class representing a cash transaction."""
+class ManualTransactionDTO:
+    """Data class for manually inserted transactions (cash and manual investments)."""
 
     date: datetime
     account_name: str
@@ -182,7 +182,7 @@ class ServiceRepository:
         self.db.commit()
 
     def add_transaction(
-        self, transaction: CashTransactionDTO | ManualInvestmentTransactionDTO
+        self, transaction: ManualTransactionDTO | ManualInvestmentTransactionDTO
     ) -> bool:
         """Add a new transaction to the database."""
         # Calculate new ID (legacy string id logic)
@@ -355,7 +355,7 @@ class TransactionsRepository:
 
     def add_transaction(
         self,
-        transaction: CashTransactionDTO | ManualInvestmentTransactionDTO,
+        transaction: ManualTransactionDTO | ManualInvestmentTransactionDTO,
         service: str,
     ) -> bool:
         if service == Services.CASH.value:
