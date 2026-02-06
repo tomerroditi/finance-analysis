@@ -71,6 +71,7 @@ export function Transactions() {
     { value: "credit_cards", label: "Credit Card" },
     { value: "banks", label: "Bank" },
     { value: "cash", label: "Cash" },
+    { value: "manual_investments", label: "Investments" },
     { value: "refunds", label: "Refunds" },
   ] as const;
 
