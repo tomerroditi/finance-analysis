@@ -1,19 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { ShieldCheck } from "lucide-react";
 import { transactionsApi } from "../services/api";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
-import { RuleManager } from "../components/modals/RuleManager";
+import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
 import RefundsView from "../components/transactions/RefundsView";
 import { pendingRefundsApi } from "../services/api";
 
 export function Transactions() {
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
-  const [showRuleManager, setShowRuleManager] = useState(false);
-
-  // Clean up any potential import artifacts if I messed up previously
 
   const {
     data: transactions,
@@ -43,19 +39,12 @@ export function Transactions() {
     if (!pendingRefunds) return map;
 
     pendingRefunds.forEach((pr) => {
-      // Key format matches default getTransactionId: `${source}_${unique_id}`
-      // Adjust based on your ID strategy. Here we use source_table and source_id.
-      // Note: TransactionTable uses `${source}_${unique_id}` or source from API.
-      // API returns source like 'banks', 'credit_cards' etc.
-      // Pending refund object has source_table and source_id.
       const key = `${pr.source_table}_${pr.source_id}`;
       map.set(key, pr);
     });
     return map;
   }, [pendingRefunds]);
 
-  // Create a map of Transactions that are linked to pending refunds (i.e. they ARE the refund)
-  // map: transaction_id (string key) -> link_id (number)
   const refundLinksMap = useMemo(() => {
     const map = new Map<string, number>();
     if (!pendingRefunds) return map;
@@ -63,9 +52,6 @@ export function Transactions() {
     pendingRefunds.forEach((pr: any) => {
       if (pr.links) {
         pr.links.forEach((link: any) => {
-          // Key format: source_table + val (which is unique_id usually)
-          // Wait, getTransactionId uses tx.source and tx.unique_id
-          // Link has refund_source and refund_transaction_id.
           const key = `${link.refund_source}_${link.refund_transaction_id}`;
           map.set(key, link.id);
         });
@@ -89,78 +75,67 @@ export function Transactions() {
   ] as const;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Transactions</h1>
-          <p className="text-[var(--text-muted)]">
-            View and manage your transactions
-          </p>
+    <div className="flex relative">
+      <div className="space-y-6 min-w-0 flex-1">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Transactions</h1>
+            <p className="text-[var(--text-muted)]">
+              View and manage your transactions
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex gap-2 items-center">
+              {services.map(({ value, label }) => (
+                <div key={value} className="flex items-center gap-2">
+                  {value === "refunds" && (
+                    <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
+                  )}
+                  <button
+                    onClick={() => setSelectedService(value as any)}
+                    className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+                      }`}
+                  >
+                    {label}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setShowRuleManager(true)}
-            className="px-4 py-2 rounded-lg bg-[var(--surface)] border border-[var(--surface-light)] text-sm font-semibold hover:border-[var(--primary)] transition-all flex items-center gap-2"
-          >
-            <ShieldCheck size={16} className="text-[var(--primary)]" /> Rules
-          </button>
-
-          <div className="w-px h-8 bg-[var(--surface-light)] mx-2" />
-
-          <div className="flex gap-2 items-center">
-            {services.map(({ value, label }) => (
-              <div key={value} className="flex items-center gap-2">
-                {value === "refunds" && (
-                  <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
-                )}
-                <button
-                  onClick={() => setSelectedService(value as any)}
-                  className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
-                    ? "bg-[var(--primary)] text-white"
-                    : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
-                    }`}
-                >
-                  {label}
-                </button>
-              </div>
-            ))}
-          </div>
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-4">
+          {selectedService === "refunds" ? (
+            <RefundsView />
+          ) : isLoading ? (
+            <div className="p-8 text-center text-[var(--text-muted)]">
+              Loading...
+            </div>
+          ) : (
+            <TransactionsTable
+              transactions={transactions || []}
+              showSelection
+              showBulkActions
+              showActions
+              showDelete
+              showFilter
+              showSplitParentsFilter
+              includeSplitParents={includeSplitParents}
+              onIncludeSplitParentsChange={setIncludeSplitParents}
+              rowsPerPage={10}
+              rowsPerPageOptions={[10, 50, 100, 500, 1000]}
+              onTransactionUpdated={refreshAll}
+              pendingRefundsMap={pendingRefundsMap}
+              refundLinksMap={refundLinksMap}
+            />
+          )}
         </div>
       </div>
 
-      <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-4">
-        {selectedService === "refunds" ? (
-          <RefundsView />
-        ) : isLoading ? (
-          <div className="p-8 text-center text-[var(--text-muted)]">
-            Loading...
-          </div>
-        ) : (
-          <TransactionsTable
-            transactions={transactions || []}
-            showSelection
-            showBulkActions
-            showActions
-            showDelete
-            showFilter
-            showSplitParentsFilter
-            includeSplitParents={includeSplitParents}
-            onIncludeSplitParentsChange={setIncludeSplitParents}
-            rowsPerPage={10}
-            rowsPerPageOptions={[10, 50, 100, 500, 1000]}
-            onTransactionUpdated={refreshAll}
-            pendingRefundsMap={pendingRefundsMap}
-            refundLinksMap={refundLinksMap}
-          />
-        )}
-      </div>
-
-      {
-        showRuleManager && (
-          <RuleManager onClose={() => setShowRuleManager(false)} />
-        )
-      }
-    </div >
+      <AutoTaggingPanel />
+    </div>
   );
 }

@@ -4,7 +4,7 @@ Tagging API routes.
 Provides endpoints for category and tag management.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.transactions_repository import TransactionsRepository
-from backend.services.tagging_rules_service import TaggingRulesService
 
 router = APIRouter()
 
@@ -26,23 +25,6 @@ class CategoryCreate(BaseModel):
 class TagCreate(BaseModel):
     category: str
     name: str
-
-
-class RuleCreate(BaseModel):
-    name: str
-    conditions: List[Dict[str, Any]]
-    category: str
-    tag: str
-    priority: int = 1
-
-
-class RuleUpdate(BaseModel):
-    name: Optional[str] = None
-    conditions: Optional[List[Dict[str, Any]]] = None
-    category: Optional[str] = None
-    tag: Optional[str] = None
-    priority: Optional[int] = None
-    is_active: Optional[bool] = None
 
 
 class CategoryDelete(BaseModel):
@@ -124,65 +106,3 @@ async def update_category_icon(category: str, icon: str):
     """Update a category's icon."""
     changed = TaggingRepository.update_category_icon(category, icon)
     return {"status": "success", "changed": changed}
-
-
-@router.get("/rules")
-async def get_tagging_rules(
-    active_only: bool = True, db: Session = Depends(get_database)
-):
-    """Get all tagging rules."""
-    service = TaggingRulesService(db)
-    df = service.get_all_rules(active_only=active_only)
-    return df.to_dict(orient="records")
-
-
-@router.post("/rules")
-async def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
-    """Create a new tagging rule and apply it."""
-    service = TaggingRulesService(db)
-    rule_id, n_tagged = service.add_rule(
-        name=rule.name,
-        conditions=rule.conditions,
-        category=rule.category,
-        tag=rule.tag,
-        priority=rule.priority,
-    )
-    return {"status": "success", "id": rule_id, "tagged_count": n_tagged}
-
-
-@router.put("/rules/{rule_id}")
-async def update_tagging_rule(
-    rule_id: int, rule: RuleUpdate, db: Session = Depends(get_database)
-):
-    """Update an existing tagging rule."""
-    service = TaggingRulesService(db)
-    n_tagged = service.update_rule(rule_id, **rule.model_dump(exclude_none=True))
-    return {"status": "success", "tagged_count": n_tagged}
-
-
-@router.delete("/rules/{rule_id}")
-async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
-    """Delete a tagging rule."""
-    service = TaggingRulesService(db)
-    service.delete_rule(rule_id)
-    return {"status": "success"}
-
-
-@router.post("/rules/apply")
-async def apply_tagging_rules(
-    overwrite: bool = True, db: Session = Depends(get_database)
-):
-    """Manually trigger application of all active rules."""
-    service = TaggingRulesService(db)
-    count = service.apply_rules(overwrite=overwrite)
-    return {"status": "success", "tagged_count": count}
-
-
-@router.post("/rules/test")
-async def test_tagging_rule(
-    conditions: List[Dict[str, Any]], db: Session = Depends(get_database)
-):
-    """Test rule conditions against existing transactions."""
-    service = TaggingRulesService(db)
-    count, df = service.test_rule_against_transactions(conditions, limit=100)
-    return {"match_count": count, "sample_matches": df.to_dict(orient="records")}

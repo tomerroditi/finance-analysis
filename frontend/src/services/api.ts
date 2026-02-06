@@ -78,7 +78,37 @@ export const budgetApi = {
 };
 
 // Tagging API
+export type Operator =
+  | "contains"
+  | "equals"
+  | "starts_with"
+  | "ends_with"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "between";
+
+export type ConditionType = "AND" | "OR" | "CONDITION";
+
+export interface ConditionNode {
+  type: ConditionType;
+  subconditions?: ConditionNode[];
+  field?: string;
+  operator?: Operator;
+  value?: any;
+}
+
+export interface TaggingRule {
+  id: number;
+  name: string;
+  conditions: ConditionNode;
+  category: string;
+  tag: string;
+}
+
 export const taggingApi = {
+  // Category & Tag Management (Legislated in routes/tagging.py)
   getCategories: () => api.get("/tagging/categories"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
@@ -96,14 +126,26 @@ export const taggingApi = {
   getIcons: () => api.get("/tagging/icons"),
   updateIcon: (category: string, icon: string) =>
     api.put(`/tagging/icons/${category}`, null, { params: { icon } }),
-  getRules: (activeOnly = true) =>
-    api.get("/tagging/rules", { params: { active_only: activeOnly } }),
-  createRule: (rule: any) => api.post("/tagging/rules", rule),
-  updateRule: (id: number, rule: any) => api.put(`/tagging/rules/${id}`, rule),
-  deleteRule: (id: number) => api.delete(`/tagging/rules/${id}`),
+
+  // Rules Management (New routes/tagging_rules.py)
+  getRules: () =>
+    api.get<TaggingRule[]>("/tagging-rules/rules"),
+  createRule: (rule: Omit<TaggingRule, "id">) =>
+    api.post("/tagging-rules/rules", rule),
+  updateRule: (id: number, rule: Partial<TaggingRule>) =>
+    api.put(`/tagging-rules/rules/${id}`, rule),
+  deleteRule: (id: number) => api.delete(`/tagging-rules/rules/${id}`),
   applyRules: (overwrite = true) =>
-    api.post("/tagging/rules/apply", null, { params: { overwrite } }),
-  testRule: (conditions: any[]) => api.post("/tagging/rules/test", conditions),
+    api.post("/tagging-rules/rules/apply", null, { params: { overwrite } }),
+  testRule: (conditions: any[]) =>
+    api.post("/tagging-rules/rules/test", conditions),
+  checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>
+    api.post("/tagging-rules/rules/validate", {
+      conditions,
+      category,
+      tag,
+      rule_id: ruleId
+    }),
 };
 
 // Credentials API

@@ -5,15 +5,17 @@ globs: tests/**/*.py, pytest.ini, conftest.py
 
 # Testing Standards
 
-## Directory Structure
-```
 tests/
 ├── backend/
 │   ├── unit/           # Individual classes/functions
+│   │   ├── models/     # Tests for models
+│   │   ├── services/   # Tests for services
+│   │   ├── repositories/   # Tests for repositories
+│   │   ├── routes/         # Tests for routes
+|   |   └── scraper/        # Tests for scraper
 │   ├── integration/    # Service + Repository interactions
 │   └── routes/         # FastAPI endpoint tests
 └── frontend/           # (Planned) Vitest for components
-```
 
 ## Principles
 

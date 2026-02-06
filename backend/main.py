@@ -25,6 +25,7 @@ from backend.routes import (
     pending_refunds,
     scraping,
     tagging,
+    tagging_rules,
     testing,
     transactions,
 )
@@ -75,6 +76,9 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 app.include_router(
     pending_refunds.router, prefix="/api/pending-refunds", tags=["Pending Refunds"]
+)
+app.include_router(
+    tagging_rules.router, prefix="/api/tagging-rules", tags=["Tagging Rules"]
 )
 
 

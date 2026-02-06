@@ -27,3 +27,9 @@ class ValidationException(AppException):
     """Raised for invalid inputs."""
 
     pass
+
+
+class BadRequestException(AppException):
+    """Raised for bad requests."""
+
+    pass
