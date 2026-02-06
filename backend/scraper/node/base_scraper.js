@@ -52,7 +52,7 @@ export function logScrapeResults(scrapeResult) {
   scrapeResult.accounts.forEach((account) => {
     console.log(`found ${account.txns.length} transactions for account number ${account.accountNumber}`);
     account.txns.forEach((txn) => {
-      console.log(`account number: ${account.accountNumber}| type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| desc: ${txn.description}| status: ${txn.status}`);
+      console.log(`account number: ${account.accountNumber}| type: ${txn.type}| id: ${txn.identifier}| date: ${txn.date}| amount: ${txn.chargedAmount}| description: ${txn.description}| status: ${txn.status}`);
     });
   });
 }

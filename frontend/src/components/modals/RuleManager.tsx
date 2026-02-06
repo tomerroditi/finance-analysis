@@ -34,16 +34,14 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     mutationFn: (rule: any) => {
       const payload = {
         name: rule.name || rule.description_contains,
-        conditions: [
-          {
-            field: "description",
-            operator: "contains",
-            value: rule.description_contains,
-          },
-        ],
+        conditions: {
+          type: "CONDITION" as const,
+          field: "description",
+          operator: "contains" as const,
+          value: rule.description_contains,
+        },
         category: rule.category,
         tag: rule.tag,
-        priority: 1,
       };
       return taggingApi.createRule(payload);
     },
@@ -62,13 +60,12 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     mutationFn: ({ id, rule }: { id: number; rule: any }) => {
       const payload = {
         name: rule.name || rule.description_contains,
-        conditions: [
-          {
-            field: "description",
-            operator: "contains",
-            value: rule.description_contains,
-          },
-        ],
+        conditions: {
+          type: "CONDITION" as const,
+          field: "description",
+          operator: "contains" as const,
+          value: rule.description_contains,
+        },
         category: rule.category,
         tag: rule.tag,
       };
@@ -294,7 +291,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               No rules defined yet
             </div>
           ) : (
-            rules.map((rule: any) => (
+            rules?.map((rule: any) => (
               <div
                 key={rule.id}
                 className="group flex items-center justify-between p-4 rounded-xl bg-[var(--surface-base)]/50 border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all"

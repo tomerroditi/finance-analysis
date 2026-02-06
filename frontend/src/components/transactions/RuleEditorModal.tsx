@@ -1,0 +1,345 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { X, Save, Loader2 } from "lucide-react";
+import { taggingApi } from "../../services/api";
+import type { TaggingRule, ConditionNode } from "../../services/api";
+import { RuleBuilder } from "./RuleBuilder";
+import { ResizableSplitPane } from "../common/ResizableSplitPane";
+
+interface RuleEditorModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    editingRule?: TaggingRule | null;
+    onSaved?: () => void;
+}
+
+const EMPTY_CONDITIONS: ConditionNode = {
+    type: "CONDITION",
+    field: "description",
+    operator: "contains",
+    value: ""
+};
+
+export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
+    const queryClient = useQueryClient();
+
+    // Form state
+    const [name, setName] = useState("");
+    const [category, setCategory] = useState("");
+    const [tag, setTag] = useState("");
+    const [conditions, setConditions] = useState<ConditionNode>(EMPTY_CONDITIONS);
+    const [error, setError] = useState<string | null>(null);
+
+    // Categories data
+    const { data: categories } = useQuery({
+        queryKey: ["categories"],
+        queryFn: () => taggingApi.getCategories().then(res => res.data as Record<string, string[]>)
+    });
+
+    const availableTags = category && categories ? categories[category] || [] : [];
+
+    // Initialize form when editing
+    useEffect(() => {
+        if (editingRule) {
+            setName(editingRule.name);
+            setCategory(editingRule.category);
+            setTag(editingRule.tag);
+            setConditions(editingRule.conditions);
+        } else {
+            setName("");
+            setCategory("");
+            setTag("");
+            setConditions(EMPTY_CONDITIONS);
+        }
+        setError(null);
+    }, [editingRule, isOpen]);
+
+    // Debounced conditions for preview
+    const [debouncedConditions, setDebouncedConditions] = useState<ConditionNode>(conditions);
+    useEffect(() => {
+        const timeout = setTimeout(() => setDebouncedConditions(conditions), 300);
+        return () => clearTimeout(timeout);
+    }, [conditions]);
+
+    // Preview query
+    const { data: preview, isLoading: previewLoading } = useQuery({
+        queryKey: ["rule-preview", debouncedConditions],
+        queryFn: () => taggingApi.previewRule(debouncedConditions, 50).then(res => res.data),
+        enabled: isOpen && hasValidCondition(debouncedConditions),
+        staleTime: 5000,
+    });
+
+    // Mutations
+    const createMutation = useMutation({
+        mutationFn: (payload: Omit<TaggingRule, "id">) => taggingApi.createRule(payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
+            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            onSaved?.();
+            onClose();
+        },
+        onError: (err: any) => setError(err.response?.data?.detail || "Failed to create rule")
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: (payload: { id: number; data: Partial<TaggingRule> }) =>
+            taggingApi.updateRule(payload.id, payload.data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
+            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            onSaved?.();
+            onClose();
+        },
+        onError: (err: any) => setError(err.response?.data?.detail || "Failed to update rule")
+    });
+
+    const handleSave = () => {
+        setError(null);
+        if (!name || !category) {
+            setError("Name and category are required");
+            return;
+        }
+
+        const payload = { name, category, tag, conditions };
+
+        if (editingRule) {
+            updateMutation.mutate({ id: editingRule.id, data: payload });
+        } else {
+            createMutation.mutate(payload);
+        }
+    };
+
+    const isSaving = createMutation.isPending || updateMutation.isPending;
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+            {/* Modal */}
+            <div className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
+                    <h2 className="text-xl font-bold">
+                        {editingRule ? "Edit Rule" : "Create Rule"}
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-hidden">
+                    <ResizableSplitPane
+                        storageKey="rule-editor-split"
+                        defaultLeftWidth={55}
+                        minLeftWidth={30}
+                        minRightWidth={25}
+                        left={<TransactionPreview matches={preview?.matches || []} loading={previewLoading} count={preview?.count || 0} />}
+                        right={
+                            <div className="h-full overflow-y-auto p-6">
+                                <RuleForm
+                                    name={name}
+                                    setName={setName}
+                                    category={category}
+                                    setCategory={(c) => { setCategory(c); setTag(""); }}
+                                    tag={tag}
+                                    setTag={setTag}
+                                    conditions={conditions}
+                                    setConditions={setConditions}
+                                    categories={categories || {}}
+                                    availableTags={availableTags}
+                                    error={error}
+                                />
+                            </div>
+                        }
+                    />
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
+                    <button
+                        onClick={onClose}
+                        className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={!name || !category || isSaving}
+                        className="px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                        {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                        Save Rule
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Helper to check if conditions have any value
+function hasValidCondition(node: ConditionNode): boolean {
+    if (node.type === "CONDITION") {
+        return !!node.value;
+    }
+    if (node.subconditions) {
+        return node.subconditions.some(hasValidCondition);
+    }
+    return false;
+}
+
+// Transaction Preview Component
+function TransactionPreview({ matches, loading, count }: { matches: any[]; loading: boolean; count: number }) {
+    const formatAmount = (amount: number) => {
+        const formatted = Math.abs(amount).toLocaleString("he-IL", { style: "currency", currency: "ILS" });
+        return amount < 0 ? `-${formatted}` : formatted;
+    };
+
+    return (
+        <div className="h-full flex flex-col bg-[var(--surface)]">
+            <div className="px-4 py-3 border-b border-[var(--surface-light)] flex items-center justify-between">
+                <h3 className="font-bold text-[var(--text-muted)]">Matching Transactions</h3>
+                <span className="text-sm text-[var(--text-muted)]">
+                    {loading ? "Loading..." : `${count} matches`}
+                </span>
+            </div>
+
+            <div className="flex-1 overflow-auto">
+                {loading ? (
+                    <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
+                        <Loader2 size={24} className="animate-spin mr-2" />
+                        Loading preview...
+                    </div>
+                ) : matches.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-[var(--text-muted)] p-8 text-center">
+                        No transactions match your conditions yet.<br />
+                        Start typing to see matches.
+                    </div>
+                ) : (
+                    <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--surface-light)]">
+                            <tr className="text-left text-[var(--text-muted)]">
+                                <th className="px-4 py-2 font-medium">Date</th>
+                                <th className="px-4 py-2 font-medium">Description</th>
+                                <th className="px-4 py-2 font-medium text-right">Amount</th>
+                                <th className="px-4 py-2 font-medium">Current Tag</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {matches.map((tx, i) => (
+                                <tr key={tx.unique_id || i} className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/20">
+                                    <td className="px-4 py-2 text-[var(--text-muted)] whitespace-nowrap">
+                                        {tx.date?.split("T")[0] || "—"}
+                                    </td>
+                                    <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
+                                        {tx.description}
+                                    </td>
+                                    <td className={`px-4 py-2 text-right whitespace-nowrap font-mono ${tx.amount < 0 ? "text-red-400" : "text-green-400"}`}>
+                                        {formatAmount(tx.amount)}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                        {tx.category ? (
+                                            <span className="inline-flex gap-1 text-xs">
+                                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{tx.category}</span>
+                                                {tx.tag && <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{tx.tag}</span>}
+                                            </span>
+                                        ) : (
+                                            <span className="text-[var(--text-muted)] text-xs">Untagged</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// Rule Form Component
+function RuleForm({
+    name, setName,
+    category, setCategory,
+    tag, setTag,
+    conditions, setConditions,
+    categories, availableTags,
+    error
+}: {
+    name: string; setName: (v: string) => void;
+    category: string; setCategory: (v: string) => void;
+    tag: string; setTag: (v: string) => void;
+    conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
+    categories: Record<string, string[]>;
+    availableTags: string[];
+    error: string | null;
+}) {
+    return (
+        <div className="space-y-6">
+            {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
+                    {error}
+                </div>
+            )}
+
+            {/* Basic Info */}
+            <div className="space-y-4 p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
+                <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Rule Details</h4>
+
+                <div>
+                    <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Name</label>
+                    <input
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        placeholder="e.g. Auto: Food - Restaurants"
+                        className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-colors"
+                    />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Category</label>
+                        <select
+                            value={category}
+                            onChange={e => setCategory(e.target.value)}
+                            className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+                        >
+                            <option value="">Select...</option>
+                            {Object.keys(categories).map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Tag</label>
+                        <select
+                            value={tag}
+                            onChange={e => setTag(e.target.value)}
+                            disabled={!category}
+                            className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50"
+                        >
+                            <option value="">Select...</option>
+                            {availableTags.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            {/* Conditions */}
+            <div className="space-y-3">
+                <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Conditions</h4>
+                <div className="p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
+                    <RuleBuilder value={conditions} onChange={setConditions} />
+                </div>
+            </div>
+        </div>
+    );
+}

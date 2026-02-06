@@ -150,6 +150,11 @@ export const taggingApi = {
       tag,
       rule_id: ruleId
     }),
+  previewRule: (conditions: ConditionNode, limit = 100) =>
+    api.post<{ matches: any[]; count: number }>("/tagging-rules/rules/preview", {
+      conditions,
+      limit
+    }),
 };
 
 // Credentials API

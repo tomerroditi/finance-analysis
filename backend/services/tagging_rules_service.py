@@ -163,6 +163,40 @@ class TaggingRulesService:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
         return self._apply_single_rule(rule.__dict__, overwrite=overwrite)
 
+    def preview_rule(
+        self, conditions: Dict[str, Any], limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Preview which transactions would match given conditions without modifying them.
+        Returns list of matching transactions with key fields.
+        """
+        conditions = self._normalize_conditions(conditions)
+        where_conditions, params = self._build_recursive_where_clause(conditions)
+        tables = self._get_tables_names_for_conditions(conditions)
+
+        results = []
+        for table in tables:
+            query = f"""
+                SELECT id, unique_id, date, description, amount, category, tag,
+                       account_name, provider
+                FROM {table}
+                WHERE {where_conditions}
+                LIMIT :limit
+            """
+            df = self.transactions_repo.get_table(
+                service=table, query=query, query_params={**params, "limit": limit}
+            )
+            if not df.empty:
+                df["source"] = table
+                results.append(df)
+
+        if not results:
+            return []
+
+        combined = pd.concat(results, ignore_index=True)
+        combined = combined.sort_values("date", ascending=False).head(limit)
+        return combined.to_dict(orient="records")
+
     def validate_rule_integrity(self, conditions: Dict[str, Any]):
         """
         Validates that conditions matches field types.

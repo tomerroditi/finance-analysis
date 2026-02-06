@@ -138,3 +138,23 @@ async def validate_rule_conflicts(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class RulePreview(BaseModel):
+    conditions: Dict[str, Any]
+    limit: int = 100
+
+
+@router.post("/rules/preview")
+async def preview_rule_matches(
+    preview: RulePreview, db: Session = Depends(get_database)
+):
+    """Preview which transactions would match given conditions."""
+    service = TaggingRulesService(db)
+    try:
+        matches = service.preview_rule(preview.conditions, preview.limit)
+        return {"matches": matches, "count": len(matches)}
+    except BadRequestException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

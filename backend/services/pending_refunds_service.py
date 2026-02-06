@@ -233,7 +233,7 @@ class PendingRefundsService:
                         for tx in results:
                             details_map[(table, type_, tx.unique_id)] = {
                                 "date": tx.date,
-                                "description": tx.desc,
+                                "description": tx.description,
                                 "account_name": tx.account_name,
                                 "provider": tx.provider,
                                 "original_currency": "ILS",  # Assumption
@@ -270,7 +270,7 @@ class PendingRefundsService:
                                 if parent:
                                     details_map[(table, type_, split_id)] = {
                                         "date": parent.date,
-                                        "description": f"Split: {parent.desc}",
+                                        "description": f"Split: {parent.description}",
                                         "account_name": parent.account_name,
                                         "provider": parent.provider,
                                         "original_currency": "ILS",
@@ -319,7 +319,7 @@ class PendingRefundsService:
                         for tx in results:
                             link_details_map[(table, tx.unique_id)] = {
                                 "date": tx.date,
-                                "description": tx.desc,
+                                "description": tx.description,
                                 "account_name": tx.account_name,
                                 "provider": tx.provider,
                                 "amount": tx.amount,

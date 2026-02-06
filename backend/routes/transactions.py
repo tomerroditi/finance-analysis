@@ -4,16 +4,15 @@ Transactions API routes.
 Provides endpoints for transaction CRUD operations.
 """
 
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.repositories.transactions_repository import TransactionsRepository
-
-from datetime import date, datetime
-from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -92,12 +91,12 @@ async def create_transaction(
             )
 
         # Convert to repository expected format
-        from backend.repositories.transactions_repository import CashTransaction
+        from backend.repositories.transactions_repository import CashTransactionDTO
 
-        tx = CashTransaction(
+        tx = CashTransactionDTO(
             date=datetime.combine(data.date, datetime.min.time()),
             account_name=data.account_name,
-            desc=data.description,
+            description=data.description,
             amount=data.amount,
             provider=data.provider,
             account_number=data.account_number,

@@ -32,7 +32,7 @@ class CashTransactionDTO:
 
     date: datetime
     account_name: str
-    desc: str
+    description: str
     amount: float
     provider: str | None = None
     account_number: str | None = None
@@ -46,7 +46,7 @@ class ManualInvestmentTransactionDTO:
 
     date: datetime
     account_name: str
-    desc: str
+    description: str
     amount: float
     transaction_type: Literal["deposit", "withdrawal"]
     provider: str
@@ -202,7 +202,7 @@ class ServiceRepository:
                 provider=transaction.provider,
                 account_name=transaction.account_name,
                 account_number=transaction.account_number,
-                desc=transaction.desc,
+                description=transaction.description,
                 amount=transaction.amount,
                 category=transaction.category,
                 tag=transaction.tag,
@@ -251,7 +251,7 @@ class ManualInvestmentTransactionsRepository(CashRepository):
         tx_copy = ManualInvestmentTransactionDTO(
             date=transaction.date,
             account_name=transaction.account_name,
-            desc=transaction.desc,
+            description=transaction.description,
             amount=amount,
             transaction_type=transaction.transaction_type,
             provider=transaction.provider,
@@ -267,7 +267,12 @@ class TransactionsRepository:
     Main repository aggregating all transaction types.
     """
 
-    tables = [Tables.CREDIT_CARD.value, Tables.BANK.value, Tables.CASH.value]
+    tables = [
+        Tables.CREDIT_CARD.value,
+        Tables.BANK.value,
+        Tables.CASH.value,
+        Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+    ]
 
     unique_columns = ["id", "provider", "date", "amount"]
 
@@ -335,7 +340,7 @@ class TransactionsRepository:
                 provider=row["provider"],
                 account_name=row["account_name"],
                 account_number=row.get("account_number"),
-                desc=row.get("desc"),
+                description=row.get("description"),
                 amount=float(row["amount"]),
                 category=row.get("category"),
                 tag=row.get("tag"),

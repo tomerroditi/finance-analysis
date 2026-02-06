@@ -19,7 +19,7 @@ class TransactionBase(TimestampMixin):
     provider = Column(String)
     account_name = Column(String)
     account_number = Column(String, nullable=True)
-    desc = Column(String)  # Description
+    description = Column(String)
     amount = Column(Float)
     category = Column(String, nullable=True)
     tag = Column(String, nullable=True)
