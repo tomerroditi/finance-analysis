@@ -77,7 +77,7 @@ export function AutoTaggingPanel() {
     });
 
     const applyMutation = useMutation({
-        mutationFn: () => taggingApi.applyRules(false),
+        mutationFn: () => taggingApi.applyRules(),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: ["transactions"] });
             setSuccess(`Applied rules! ${res.data.tagged_count} tagged.`);
@@ -85,6 +85,18 @@ export function AutoTaggingPanel() {
         },
         onError: (err: any) => {
             setError(err.response?.data?.detail || "Failed to apply rules");
+        }
+    });
+
+    const applySingleMutation = useMutation({
+        mutationFn: ({ id, overwrite }: { id: number, overwrite: boolean }) => taggingApi.applyRule(id, overwrite),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            setSuccess(`Applied rule! ${res.data.tagged_count} tagged.`);
+            setTimeout(() => setSuccess(null), 3000);
+        },
+        onError: (err: any) => {
+            setError(err.response?.data?.detail || "Failed to apply rule");
         }
     });
 
@@ -296,6 +308,18 @@ export function AutoTaggingPanel() {
                                         <div className="flex justify-between items-start mb-2">
                                             <h4 className="font-bold text-sm">{rule.name}</h4>
                                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={() => {
+                                                        const overwrite = confirm(
+                                                            "Do you want to OVERWRITE existing tags?\n\nOK = Overwrite\nCancel = Only tag untagged"
+                                                        );
+                                                        applySingleMutation.mutate({ id: rule.id, overwrite });
+                                                    }}
+                                                    className="p-1 hover:bg-emerald-500/10 text-emerald-400 rounded"
+                                                    title="Apply Rule"
+                                                >
+                                                    <Play size={14} />
+                                                </button>
                                                 <button
                                                     onClick={() => startEdit(rule)}
                                                     className="p-1 hover:bg-blue-500/10 text-blue-400 rounded"

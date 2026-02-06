@@ -135,8 +135,12 @@ export const taggingApi = {
   updateRule: (id: number, rule: Partial<TaggingRule>) =>
     api.put(`/tagging-rules/rules/${id}`, rule),
   deleteRule: (id: number) => api.delete(`/tagging-rules/rules/${id}`),
-  applyRules: (overwrite = true) =>
+  applyRules: (overwrite = false) =>
     api.post("/tagging-rules/rules/apply", null, { params: { overwrite } }),
+  applyRule: (id: number, overwrite = false) =>
+    api.post(`/tagging-rules/rules/${id}/apply`, null, {
+      params: { overwrite },
+    }),
   testRule: (conditions: any[]) =>
     api.post("/tagging-rules/rules/test", conditions),
   checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>

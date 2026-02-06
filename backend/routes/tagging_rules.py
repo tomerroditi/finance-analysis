@@ -93,13 +93,28 @@ async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database))
 
 @router.post("/rules/apply")
 async def apply_tagging_rules(
-    overwrite: bool = True, db: Session = Depends(get_database)
+    overwrite: bool = False, db: Session = Depends(get_database)
 ):
     """Manually trigger application of all active rules."""
     service = TaggingRulesService(db)
     try:
         count = service.apply_rules(overwrite=overwrite)
         return {"status": "success", "tagged_count": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/{rule_id}/apply")
+async def apply_single_tagging_rule(
+    rule_id: int, overwrite: bool = False, db: Session = Depends(get_database)
+):
+    """Manually trigger application of a single rule."""
+    service = TaggingRulesService(db)
+    try:
+        count = service.apply_rule_by_id(rule_id, overwrite=overwrite)
+        return {"status": "success", "tagged_count": count}
+    except EntityNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

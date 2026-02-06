@@ -141,7 +141,7 @@ class TaggingRulesService:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
         return success
 
-    def apply_rules(self, overwrite: bool = True) -> int:
+    def apply_rules(self, overwrite: bool = False) -> int:
         """
         Apply all active rules to transactions.
         """
@@ -156,7 +156,7 @@ class TaggingRulesService:
 
         return len(modified_transactions)
 
-    def apply_rule_by_id(self, rule_id: int, overwrite: bool = True) -> int:
+    def apply_rule_by_id(self, rule_id: int, overwrite: bool = False) -> int:
         """Apply a single rule by ID."""
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if not rule:
@@ -309,13 +309,13 @@ class TaggingRulesService:
                             f"which assigns a different tag ('{rule['category']} - {rule['tag']}')."
                         )
 
-    def _apply_single_rule(self, rule: Dict[str, Any], overwrite: bool = True) -> int:
+    def _apply_single_rule(self, rule: Dict[str, Any], overwrite: bool = False) -> int:
         """Legacy wrapper returning count."""
         ids = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
         return len(ids)
 
     def _apply_single_rule_returning_ids(
-        self, rule: Dict[str, Any], overwrite: bool = True
+        self, rule: Dict[str, Any], overwrite: bool = False
     ) -> Set[Tuple[str, int]]:
         """
         Apply a single rule to transactions and return set of (table, unique_id) pairs updated.

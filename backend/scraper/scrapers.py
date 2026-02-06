@@ -32,6 +32,7 @@ from backend.scraper.exceptions import (
     ServiceError,
     TimeoutError,
 )
+from backend.services.tagging_rules_service import TaggingRulesService
 
 
 def get_scraper(
@@ -292,6 +293,7 @@ class Scraper(ABC):
                 self.data = self._add_account_name_and_provider_columns(self.data)
                 self.data = self._add_missing_columns(self.data)
                 self._save_scraped_transactions()
+                self._apply_auto_tagging()
         except CredentialsError as e:
             print(
                 f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
@@ -676,6 +678,26 @@ class Scraper(ABC):
         with get_db_context() as db:
             transactions_repo = TransactionsRepository(db)
             transactions_repo.add_scraped_transactions(self.data, self.table_name)
+
+    def _apply_auto_tagging(self):
+        """
+        Apply tagging rules to the newly scraped transactions.
+        Only tags transactions that don't have a category (overwrite=False).
+        """
+        try:
+            with get_db_context() as db:
+                tagging_service = TaggingRulesService(db)
+                count = tagging_service.apply_rules(overwrite=False)
+                if count > 0:
+                    print(
+                        f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Auto-tagged {count} transactions",
+                        flush=True,
+                    )
+        except Exception as e:
+            print(
+                f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Error auto-tagging: {str(e)}",
+                flush=True,
+            )
 
 
 ############################################
