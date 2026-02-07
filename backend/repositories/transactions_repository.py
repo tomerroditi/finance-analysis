@@ -34,25 +34,11 @@ class ManualTransactionDTO:
     account_name: str
     description: str
     amount: float
+    transaction_type: Literal["deposit", "withdrawal"] | None = None
     provider: str | None = None
     account_number: str | None = None
     category: str | None = None
     tag: str | None = None
-
-
-@dataclass
-class ManualInvestmentTransactionDTO:
-    """Data class representing a manual investment transaction."""
-
-    date: datetime
-    account_name: str
-    description: str
-    amount: float
-    transaction_type: Literal["deposit", "withdrawal"]
-    provider: str
-    account_number: str
-    category: str
-    tag: str
 
 
 T_service = Literal[
@@ -191,9 +177,7 @@ class ServiceRepository:
         self.db.execute(stmt)
         self.db.commit()
 
-    def add_transaction(
-        self, transaction: ManualTransactionDTO | ManualInvestmentTransactionDTO
-    ) -> bool:
+    def add_transaction(self, transaction: ManualTransactionDTO) -> bool:
         """Add a new transaction to the database."""
         # Calculate new ID (legacy string id logic)
         try:
@@ -341,7 +325,7 @@ class TransactionsRepository:
 
     def add_transaction(
         self,
-        transaction: ManualTransactionDTO | ManualInvestmentTransactionDTO,
+        transaction: ManualTransactionDTO,
         service: str,
     ) -> bool:
         if service == Services.CASH.value:
@@ -360,86 +344,122 @@ class TransactionsRepository:
         query_params: dict | None = None,
         include_split_parents: bool = False,
     ) -> pd.DataFrame:
-        if service is None:
-            dfs = [
-                self.cc_repo.get_table(query, query_params),
-                self.bank_repo.get_table(query, query_params),
-                self.cash_repo.get_table(query, query_params),
-                self.manual_investments_repo.get_table(query, query_params),
-            ]
-            dfs = [df for df in dfs if not df.empty]
-            if not dfs:
-                return pd.DataFrame()
-            df = pd.concat(dfs, ignore_index=True)
-        else:
+        """Get transactions table with optional filtering and split handling."""
+        df = self._get_base_transactions(service, query, query_params)
+
+        if not include_split_parents:
+            df = self._filter_split_parents(df)
+
+        df = self._add_split_children(df, service)
+        df = self._normalize_dates(df)
+
+        return df
+
+    def _get_base_transactions(
+        self,
+        service: T_service | None,
+        query: str | None,
+        query_params: dict | None,
+    ) -> pd.DataFrame:
+        """Fetch base transactions from repositories."""
+        if service is not None:
             repo = self.get_repo_by_source(service)
-            df = repo.get_table(query, query_params)
+            return repo.get_table(query, query_params)
 
-        if not include_split_parents and not df.empty and "type" in df.columns:
-            df = df[df["type"] != "split_parent"]
+        dfs = [
+            self.cc_repo.get_table(query, query_params),
+            self.bank_repo.get_table(query, query_params),
+            self.cash_repo.get_table(query, query_params),
+            self.manual_investments_repo.get_table(query, query_params),
+        ]
+        dfs = [df for df in dfs if not df.empty]
 
-        # Add split children
-        # Note: We need to refactor split repo to ORM first to fully utilize ORM here,
-        # but existing split repo uses SQL. Converting df logic is same.
-        # Ideally, we should fetch splits via relationship or updated split repo logic.
-        # For now, using existing logic but adapting to use get_repo_by_source which now returns ORM repos.
+        if not dfs:
+            return pd.DataFrame()
 
-        splits_df = (
-            self.split_repo.get_data()
-        )  # This relies on split_repo still working (it is raw SQL currently)
-        if not splits_df.empty:
-            children = []
-            for _, split in splits_df.iterrows():
-                parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
-                source = split[SplitTransactionsTableFields.SOURCE.value]
+        return pd.concat(dfs, ignore_index=True)
 
-                try:
-                    repo = self.get_repo_by_source(source)
-                    # Use ORM to fetch parent
-                    parent = self.db.execute(
-                        select(repo.model).where(repo.model.unique_id == int(parent_id))
-                    ).scalar_one_or_none()
+    def _filter_split_parents(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove split parent transactions from the dataframe."""
+        if df.empty or "type" not in df.columns:
+            return df
+        return df[df["type"] != "split_parent"]
 
-                    if parent:
-                        # Convert parent model to dict
-                        parent_dict = {
-                            c.name: getattr(parent, c.name)
-                            for c in parent.__table__.columns
-                        }
+    def _build_split_child(self, split: pd.Series) -> dict | None:
+        """Build a split child row from a split record and its parent transaction."""
+        parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
+        source = split[SplitTransactionsTableFields.SOURCE.value]
 
-                        child = parent_dict.copy()
-                        child["unique_id"] = (
-                            f"split_{split[SplitTransactionsTableFields.ID.value]}"
-                        )
-                        child["amount"] = split[
-                            SplitTransactionsTableFields.AMOUNT.value
-                        ]
-                        child["category"] = split[
-                            SplitTransactionsTableFields.CATEGORY.value
-                        ]
-                        child["tag"] = split[SplitTransactionsTableFields.TAG.value]
-                        child["type"] = "split_child"
-                        child["source"] = source
-                        children.append(child)
-                except Exception:
-                    continue
+        try:
+            repo = self.get_repo_by_source(source)
+            parent = self.db.execute(
+                select(repo.model).where(repo.model.unique_id == int(parent_id))
+            ).scalar_one_or_none()
 
-            if children:
-                children_df = pd.DataFrame(children)
-                if service:
-                    target_repo = self.get_repo_by_source(service)
-                    valid_sources = [
-                        src
-                        for src in children_df["source"].unique()
-                        if self.get_repo_by_source(src) == target_repo
-                    ]
-                    children_df = children_df[children_df["source"].isin(valid_sources)]
+            if not parent:
+                return None
 
-                if not children_df.empty:
-                    df = pd.concat([df, children_df], ignore_index=True)
+            parent_dict = {
+                c.name: getattr(parent, c.name) for c in parent.__table__.columns
+            }
 
-        if not df.empty and "date" in df.columns:
-            df["date"] = pd.to_datetime(df["date"]).dt.strftime(r"%Y-%m-%d")
+            return {
+                **parent_dict,
+                "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
+                "amount": split[SplitTransactionsTableFields.AMOUNT.value],
+                "category": split[SplitTransactionsTableFields.CATEGORY.value],
+                "tag": split[SplitTransactionsTableFields.TAG.value],
+                "type": "split_child",
+                "source": source,
+            }
+        except Exception:
+            return None
+
+    def _get_split_children(self, service: T_service | None) -> pd.DataFrame:
+        """Get all split children, optionally filtered by service."""
+        splits_df = self.split_repo.get_data()
+
+        if splits_df.empty:
+            return pd.DataFrame()
+
+        children = []
+        for _, split in splits_df.iterrows():
+            child = self._build_split_child(split)
+            if child:
+                children.append(child)
+
+        if not children:
+            return pd.DataFrame()
+
+        children_df = pd.DataFrame(children)
+
+        if service:
+            target_repo = self.get_repo_by_source(service)
+            valid_sources = [
+                src
+                for src in children_df["source"].unique()
+                if self.get_repo_by_source(src) == target_repo
+            ]
+            children_df = children_df[children_df["source"].isin(valid_sources)]
+
+        return children_df
+
+    def _add_split_children(
+        self, df: pd.DataFrame, service: T_service | None
+    ) -> pd.DataFrame:
+        """Add split children to the transactions dataframe."""
+        children_df = self._get_split_children(service)
+
+        if children_df.empty:
+            return df
+
+        return pd.concat([df, children_df], ignore_index=True)
+
+    def _normalize_dates(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize date column to YYYY-MM-DD format."""
+        if df.empty or "date" not in df.columns:
+            return df
+        df["date"] = pd.to_datetime(df["date"]).dt.strftime(r"%Y-%m-%d")
         return df
 
     def split_transaction(
