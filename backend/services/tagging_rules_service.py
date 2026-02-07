@@ -527,6 +527,7 @@ class TaggingRulesService:
         Returns:
             int: The number of transactions that were auto-tagged.
         """
+        # TODO: figure out why we have so many missmatches between credit card monthly amount and bank cc bill
         bank_data = self.transactions_repo.get_table(service=Tables.BANK.value)
         bank_data = bank_data[bank_data["category"].isna()]
         bank_data["date"] = pd.to_datetime(bank_data["date"])
@@ -536,9 +537,9 @@ class TaggingRulesService:
             return 0
 
         cc_data = self.transactions_repo.get_table(service=Tables.CREDIT_CARD.value)
-        cc_data["date"] = pd.to_datetime(cc_data["date"]) + pd.DateOffset(
-            months=1
-        )  # cc is billed on the next month
+        cc_data["date"] = (
+            pd.to_datetime(cc_data["date"]) + pd.DateOffset(months=1, days=1)
+        )  # cc is billed on the next month and we have an issue where all data is one day early
         cc_data["month"] = cc_data["date"].dt.strftime("%Y-%m")
 
         if cc_data.empty:
@@ -569,10 +570,17 @@ class TaggingRulesService:
                 bank_tag_month_data_amount = bank_month_data[
                     (
                         bank_month_data[TransactionsTableFields.AMOUNT.value]
-                        == cc_tag_month_data_amount
+                        >= cc_tag_month_data_amount - 0.01
+                    )
+                    & (
+                        bank_month_data[TransactionsTableFields.AMOUNT.value]
+                        <= cc_tag_month_data_amount + 0.01
                     )
                 ]
-
+                if cc_tag_month_data_amount != 0:
+                    print(
+                        f"month: {bank_month}, tag: {cc_tag}, amount: {cc_tag_month_data_amount}"
+                    )
                 if len(bank_tag_month_data_amount) == 1:
                     unique_id = bank_tag_month_data_amount.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value
