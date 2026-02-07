@@ -104,3 +104,49 @@ class TaggingRulesRepository:
         self.db.delete(rule)
         self.db.commit()
         return True
+
+    def delete_rules_by_category(self, category: str) -> bool:
+        """
+        Delete all rules for a specific category.
+        """
+        rules = self.db.query(TaggingRule).filter_by(category=category).all()
+        if not rules:
+            return False
+
+        for rule in rules:
+            self.db.delete(rule)
+
+        self.db.commit()
+        return True
+
+    def delete_rules_by_category_and_tag(self, category: str, tag: str) -> bool:
+        """
+        Delete all rules for a specific category and tag.
+        """
+        rules = self.db.query(TaggingRule).filter_by(category=category, tag=tag).all()
+        if not rules:
+            return False
+
+        for rule in rules:
+            self.db.delete(rule)
+
+        self.db.commit()
+        return True
+
+    def update_category_for_tag(
+        self, old_category: str, new_category: str, tag: str
+    ) -> bool:
+        """
+        Update the category for a specific tag in all rules.
+        """
+        rules = (
+            self.db.query(TaggingRule).filter_by(category=old_category, tag=tag).all()
+        )
+        if not rules:
+            return False
+
+        for rule in rules:
+            rule.category = new_category
+
+        self.db.commit()
+        return True
