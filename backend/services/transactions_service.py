@@ -156,8 +156,13 @@ class TransactionsService:
                     first_id = existing_offsets.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value
                     ]
+                    target_date = self.get_earliest_data_date()
                     repo.update_transaction_by_id(
-                        str(first_id), {"amount": offset_needed}
+                        str(first_id),
+                        {
+                            "amount": offset_needed,
+                            "date": target_date.strftime("%Y-%m-%d"),
+                        },
                     )
                     # Delete duplicates if any
                     if len(existing_offsets) > 1:
@@ -166,8 +171,9 @@ class TransactionsService:
                                 str(row[TransactionsTableFields.UNIQUE_ID.value])
                             )
                 else:
+                    target_date = self.get_earliest_data_date()
                     offset_tx = ManualTransactionDTO(
-                        date=datetime.now(),
+                        date=target_date,
                         account_name=PRIOR_WEALTH_TAG,
                         description=f"Prior Wealth Offset ({service})",
                         amount=offset_needed,
@@ -301,6 +307,21 @@ class TransactionsService:
             if latest_dates
             else datetime.today() - timedelta(days=365)
         )
+
+    def get_earliest_data_date(self) -> datetime:
+        """Get the earliest date of transactions across all tables."""
+        earliest_dates = []
+        tables = self.transactions_repository.get_all_table_names()
+
+        for table in tables:
+            earliest_date = self.transactions_repository.get_earliest_date_from_table(
+                table
+            )
+            if earliest_date is not None:
+                earliest_dates.append(earliest_date)
+
+        # Fallback if no data exists
+        return min(earliest_dates) if earliest_dates else datetime.now()
 
     def get_table_for_analysis(
         self,

@@ -558,6 +558,23 @@ class TransactionsRepository:
                 return None
         return None
 
+    def get_earliest_date_from_table(self, table_name: str) -> datetime | None:
+        repo_cls = self.repo_map.get(table_name)
+        if not repo_cls:
+            return None
+
+        model = repo_cls.model
+        result = self.db.execute(
+            select(model.date).order_by(model.date.asc()).limit(1)
+        ).scalar()
+
+        if result is not None:
+            try:
+                return datetime.strptime(result, "%Y-%m-%d")
+            except ValueError:
+                return None
+        return None
+
     def get_all_table_names(self) -> list[str]:
         return self.tables.copy()
 
