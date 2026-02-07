@@ -42,29 +42,40 @@ class AnalysisService:
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ):
         df = self.repo.get_table()
+        df = df[df["source"] != "credit_card_transactions"]
         if start_date:
             df = df[df["date"] >= start_date]
         if end_date:
             df = df[df["date"] <= end_date]
-        return df[df["category"].isin([c.value for c in IncomeCategories])][
-            "amount"
-        ].sum()
+
+        df = df[
+            df["category"].isin([c.value for c in IncomeCategories])
+            | (
+                df["category"].isin([c.value for c in LiabilitiesCategories])
+                & (df["amount"] > 0)
+            )
+        ]
+        return df["amount"].sum()
 
     def get_total_expenses(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ):
         df = self.repo.get_table()
+        df = df[df["source"] != "credit_card_transactions"]
         if start_date:
             df = df[df["date"] >= start_date]
         if end_date:
             df = df[df["date"] <= end_date]
 
-        # Exclude credit card transactions
-        df = df[df["source"] != "credit_cards"]
-
-        # Exclude non-expense categories (Salary, Other Income, etc.)
-        non_expense_cats = [c.value for c in NonExpensesCategories]
-        df = df[~df["category"].isin(non_expense_cats)]
+        df = df[
+            ~(
+                df["category"].isin([c.value for c in IncomeCategories])
+                | (
+                    df["category"].isin([c.value for c in LiabilitiesCategories])
+                    & (df["amount"] < 0)
+                )
+            )
+        ]
 
         return abs(df["amount"].sum())
 
