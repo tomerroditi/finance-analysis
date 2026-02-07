@@ -14,6 +14,14 @@ TOTAL_BUDGET = "Total Budget"
 PRIOR_WEALTH_TAG = "Prior Wealth"
 
 PROTECTED_TAGS = [PRIOR_WEALTH_TAG]
+PROTECTED_CATEGORIES = [
+    "Credit Cards",
+    "Salay",
+    "Other Income",
+    "Investments",
+    "Ignore",
+    "Liabilities",
+]
 
 cc_providers = [
     "amex",

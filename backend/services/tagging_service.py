@@ -5,11 +5,12 @@ This module provides business logic for category and tag management.
 """
 
 from copy import deepcopy
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
+from backend.naming_conventions import PROTECTED_CATEGORIES
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -115,13 +116,13 @@ class CategoriesTagsService:
         self.save_categories_and_tags()
         return True
 
-    def delete_category(self, category: str, protected_categories: List[str]) -> bool:
+    def delete_category(self, category: str) -> bool:
         """
         Delete a category.
 
         Returns True if deleted successfully, False if protected or doesn't exist.
         """
-        if category in protected_categories:
+        if category in PROTECTED_CATEGORIES:
             return False
 
         # Update database if repos are available
