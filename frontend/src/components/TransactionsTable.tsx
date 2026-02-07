@@ -339,7 +339,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Bulk tagging handlers
   const handleBulkTag = () => {
-    if (!bulkTagData.category) return;
+
     const selectedTxs = transactions.filter((tx) =>
       selectedIds.has(getTransactionId(tx)),
     );
@@ -921,7 +921,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   onChange={(e) =>
                     setBulkTagData({ ...bulkTagData, tag: e.target.value })
                   }
-                  disabled={!bulkTagData.category}
+                  disabled={false}
+
                 >
                   <option value="">Tag</option>
                   {bulkTagData.category &&
@@ -934,7 +935,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <button
                   className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
                   onClick={handleBulkTag}
-                  disabled={!bulkTagData.category || bulkTagMutation.isPending}
+                  disabled={bulkTagMutation.isPending}
+
                 >
                   <CheckCircle2 size={20} />
                 </button>

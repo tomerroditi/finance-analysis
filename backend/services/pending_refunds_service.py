@@ -224,9 +224,9 @@ class PendingRefundsService:
         for (table, type_), ids in sources.items():
             if type_ == "transaction":
                 try:
-                    repo_cls = trans_repo.repo_map.get(table)
-                    if repo_cls:
-                        model = repo_cls.model
+                    repo = trans_repo.repo_map.get(table)
+                    if repo:
+                        model = repo.model
                         # Fetch transactions
                         stmt = select(model).where(model.unique_id.in_(ids))
                         results = self.db.execute(stmt).scalars().all()
@@ -260,11 +260,11 @@ class PendingRefundsService:
                         split = self.db.get(SplitTransaction, split_id)
                         if split:
                             # Get parent
-                            repo_cls = trans_repo.repo_map.get(split.source)
-                            if repo_cls:
+                            repo = trans_repo.repo_map.get(split.source)
+                            if repo:
                                 parent = self.db.execute(
-                                    select(repo_cls.model).where(
-                                        repo_cls.model.unique_id == split.transaction_id
+                                    select(repo.model).where(
+                                        repo.model.unique_id == split.transaction_id
                                     )
                                 ).scalar_one_or_none()
                                 if parent:
@@ -311,9 +311,9 @@ class PendingRefundsService:
             link_details_map = {}
             for (table, _), ids in link_sources.items():
                 try:
-                    repo_cls = trans_repo.repo_map.get(table)
-                    if repo_cls:
-                        model = repo_cls.model
+                    repo = trans_repo.repo_map.get(table)
+                    if repo:
+                        model = repo.model
                         stmt = select(model).where(model.unique_id.in_(ids))
                         results = self.db.execute(stmt).scalars().all()
                         for tx in results:

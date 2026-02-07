@@ -262,17 +262,6 @@ class TransactionsRepository:
 
     unique_columns = ["id", "provider", "date", "amount"]
 
-    repo_map = {
-        Tables.CREDIT_CARD.value: CreditCardRepository,
-        Tables.BANK.value: BankRepository,
-        Tables.CASH.value: CashRepository,
-        Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: ManualInvestmentTransactionsRepository,
-        Services.CREDIT_CARD.value: CreditCardRepository,
-        Services.BANK.value: BankRepository,
-        Services.CASH.value: CashRepository,
-        Services.MANUAL_INVESTMENTS.value: ManualInvestmentTransactionsRepository,
-    }
-
     def __init__(self, db: Session):
         self.db = db
         self.cc_repo = CreditCardRepository(db)
@@ -281,6 +270,17 @@ class TransactionsRepository:
         self.manual_investments_repo = ManualInvestmentTransactionsRepository(db)
         self.split_repo = SplitTransactionsRepository(db)
 
+        self.repo_map = {
+            Tables.CREDIT_CARD.value: self.cc_repo,
+            Tables.BANK.value: self.bank_repo,
+            Tables.CASH.value: self.cash_repo,
+            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: self.manual_investments_repo,
+            Services.CREDIT_CARD.value: self.cc_repo,
+            Services.BANK.value: self.bank_repo,
+            Services.CASH.value: self.cash_repo,
+            Services.MANUAL_INVESTMENTS.value: self.manual_investments_repo,
+        }
+
     def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
         """
         Save scraped transactions avoiding duplicates.
@@ -288,16 +288,12 @@ class TransactionsRepository:
         if table_name not in self.tables:
             raise ValueError(f"table_name should be one of {self.tables}")
 
-        repo_cls = self.repo_map.get(table_name)
-        if not repo_cls:
-            return
-
-        # Instantiate repo to get model and props
-        repo = repo_cls(self.db)
-        model = repo.model
+        repo = self.get_repo_by_source(table_name)
 
         # Using pandas for the merge logic as in original code is robust for the duplicate check
-        stmt = select(model.id, model.provider, model.date, model.amount)
+        stmt = select(
+            repo.model.id, repo.model.provider, repo.model.date, repo.model.amount
+        )
         existing_data = pd.read_sql(stmt, self.db.bind)
 
         # Make sure columns align for merge
@@ -320,7 +316,7 @@ class TransactionsRepository:
         # Prepare list of model instances
         instances = []
         for _, row in new_rows.iterrows():
-            instance = model(
+            instance = repo.model(
                 id=row["id"],
                 date=row["date"],
                 provider=row["provider"],
@@ -513,18 +509,10 @@ class TransactionsRepository:
             return False
 
     def get_repo_by_source(self, source: str) -> ServiceRepository:
-        for key, repo_cls in self.repo_map.items():
-            if source == key:
-                # Need to return the instance, not class
-                if isinstance(self.cc_repo, repo_cls):
-                    return self.cc_repo
-                if isinstance(self.bank_repo, repo_cls):
-                    return self.bank_repo
-                if isinstance(self.cash_repo, repo_cls):
-                    return self.cash_repo
-                if isinstance(self.manual_investments_repo, repo_cls):
-                    return self.manual_investments_repo
-        raise ValueError(f"Invalid source: '{source}'")
+        try:
+            return self.repo_map.get(source)
+        except Exception:
+            raise ValueError(f"Invalid source: '{source}'")
 
     def bulk_update_tagging(
         self, transactions: list[dict], category: Optional[str], tag: Optional[str]
@@ -533,7 +521,8 @@ class TransactionsRepository:
         Update tagging for multiple transactions.
         """
         for tx in transactions:
-            self.update_tagging_by_id(tx["source"], tx["unique_id"], category, tag)
+            repo = self.get_repo_by_source(tx["source"])
+            repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
 
     def update_with_query(
         self,
@@ -556,14 +545,9 @@ class TransactionsRepository:
         return updated_rows
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
-        repo_cls = self.repo_map.get(table_name)
-        if not repo_cls:
-            return None
-
-        # We need an instance to get the model usually, but class is enough here
-        model = repo_cls.model
+        repo = self.get_repo_by_source(table_name)
         result = self.db.execute(
-            select(model.date).order_by(model.date.desc()).limit(1)
+            select(repo.model.date).order_by(repo.model.date.desc()).limit(1)
         ).scalar()
 
         if result is not None:
@@ -574,13 +558,9 @@ class TransactionsRepository:
         return None
 
     def get_earliest_date_from_table(self, table_name: str) -> datetime | None:
-        repo_cls = self.repo_map.get(table_name)
-        if not repo_cls:
-            return None
-
-        model = repo_cls.model
+        repo = self.get_repo_by_source(table_name)
         result = self.db.execute(
-            select(model.date).order_by(model.date.asc()).limit(1)
+            select(repo.model.date).order_by(repo.model.date.asc()).limit(1)
         ).scalar()
 
         if result is not None:
