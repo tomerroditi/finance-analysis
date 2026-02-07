@@ -22,7 +22,7 @@ class TaggingRulesService:
         self.db = db
         self.rules_repo = TaggingRulesRepository(db)
         self.transactions_repo = TransactionsRepository(db)
-        self.tagging_repo = CategoriesTagsService(db)
+        self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
@@ -521,24 +521,35 @@ class TaggingRulesService:
                 services.add(val)
 
     def auto_tag_credit_cards_bills(self) -> int:
-        """Auto-tag credit cards bills."""
+        """
+        This function auto-tags credit card bills by matching the month of the transaction with the month of the credit card bill.
+
+        Returns:
+            int: The number of transactions that were auto-tagged.
+        """
         bank_data = self.transactions_repo.get_table(service=Tables.BANK.value)
         bank_data = bank_data[bank_data["category"].isna()]
+        bank_data["date"] = pd.to_datetime(bank_data["date"])
         bank_data["month"] = bank_data["date"].dt.strftime("%Y-%m")
 
         if bank_data.empty:
             return 0
 
         cc_data = self.transactions_repo.get_table(service=Tables.CREDIT_CARD.value)
+        cc_data["date"] = pd.to_datetime(cc_data["date"]) + pd.DateOffset(
+            months=1
+        )  # cc is billed on the next month
         cc_data["month"] = cc_data["date"].dt.strftime("%Y-%m")
 
         if cc_data.empty:
             return 0
 
-        cc_tags = self.CategoriesTagsService.categories_and_tags["Credit Cards"]
-        for (_, cc_month_data), (_, bank_month_data) in zip(
-            cc_data.groupby("month"), bank_data.groupby("month")
+        count = 0
+        cc_tags = self.categories_tags_service.categories_and_tags["Credit Cards"]
+        for bank_month, bank_month_data in bank_data.sort_values("month").groupby(
+            "month"
         ):
+            cc_month_data = cc_data[cc_data["month"] == bank_month]
             for cc_tag in cc_tags:
                 provider, account_name, account_number = cc_tag.split(" - ")
                 cc_tag_month_data_amount = cc_month_data[
@@ -553,6 +564,7 @@ class TaggingRulesService:
                         ].str.endswith(account_number)
                     )
                 ][TransactionsTableFields.AMOUNT.value].sum()
+
                 # find if we have some bank transaction with equal amount, it should be taged as credit card bill
                 bank_tag_month_data_amount = bank_month_data[
                     (
@@ -560,6 +572,7 @@ class TaggingRulesService:
                         == cc_tag_month_data_amount
                     )
                 ]
+
                 if len(bank_tag_month_data_amount) == 1:
                     unique_id = bank_tag_month_data_amount.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value
@@ -567,3 +580,6 @@ class TaggingRulesService:
                     self.transactions_service.update_tagging_by_id(
                         Tables.BANK.value, unique_id, "Credit Cards", cc_tag
                     )
+                    count += 1
+
+        return count

@@ -104,8 +104,8 @@ async def create_transaction(
             amount=data.amount,
             provider=data.provider,
             account_number=data.account_number,
-            category=data.category,
-            tag=data.tag,
+            category=data.category if data.category != "" else None,
+            tag=data.tag if data.tag != "" else None,
         )
         success = repo.add_transaction(tx, data.service)
         if not success:
@@ -144,14 +144,14 @@ async def update_transaction(
 
         # Everyone can update tagging
         if data.category is not None:
-            updates["category"] = data.category
+            updates["category"] = data.category if data.category != "" else None
         if data.tag is not None:
-            updates["tag"] = data.tag
+            updates["tag"] = data.tag if data.tag != "" else None
 
         if not updates:
             return {"status": "no_changes"}
 
-        success = target_repo.update_transaction_by_id(unique_id, updates)
+        success = target_repo.update_transaction_by_unique_id(int(unique_id), updates)
         if not success:
             raise HTTPException(
                 status_code=404, detail="Transaction not found or update failed"
@@ -207,7 +207,7 @@ async def delete_transaction(
                 detail=f"Cannot manually delete system-generated {tx.get('tag')} transaction",
             )
 
-        success = target_repo.delete_transaction_by_id(unique_id)
+        success = target_repo.delete_transaction_by_unique_id(unique_id)
         if not success:
             raise HTTPException(
                 status_code=404, detail="Transaction not found or deletion failed"
@@ -266,7 +266,11 @@ async def bulk_tag_transactions(
         tx_list = [
             {"unique_id": uid, "source": data.source} for uid in data.transaction_ids
         ]
-        repo.bulk_update_tagging(tx_list, data.category, data.tag)
+        repo.bulk_update_tagging(
+            tx_list,
+            data.category if data.category != "" else None,
+            data.tag if data.tag != "" else None,
+        )
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -294,7 +298,12 @@ async def update_transaction_tag(
     """Update category and tag for a transaction (Legacy support)."""
     repo = TransactionsRepository(db)
     try:
-        repo.update_tagging_by_id(service, transaction_id, category, tag)
+        repo.update_tagging_by_id(
+            service,
+            transaction_id,
+            category if category != "" else None,
+            tag if tag != "" else None,
+        )
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

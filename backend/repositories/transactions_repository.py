@@ -96,27 +96,28 @@ class ServiceRepository:
         self.db.commit()
         return result.rowcount
 
-    def update_tagging_by_id(self, id_: str, category: str, tag: str) -> None:
+    def update_tagging_by_unique_id(
+        self, unique_id: int, category: str, tag: str
+    ) -> None:
         """Update category and tag for a transaction by ID."""
-        # Note: id_ here expects the string ID column, not unique_id PK
         stmt = (
             update(self.model)
-            .where(self.model.id == id_)
+            .where(self.model.unique_id == int(unique_id))
             .values(category=category, tag=tag)
         )
         self.db.execute(stmt)
         self.db.commit()
 
-    def delete_transaction_by_id(self, transaction_id: str) -> bool:
+    def delete_transaction_by_unique_id(self, unique_id: int) -> bool:
         """Delete a transaction by its unique_id."""
         try:
             import logging
 
             logger = logging.getLogger(__name__)
             logger.info(
-                f"Attempting to delete transaction_id={transaction_id} from table={self.model.__tablename__}"
+                f"Attempting to delete unique_id={unique_id} from table={self.model.__tablename__}"
             )
-            stmt = delete(self.model).where(self.model.unique_id == int(transaction_id))
+            stmt = delete(self.model).where(self.model.unique_id == int(unique_id))
             result = self.db.execute(stmt)
             self.db.commit()
             logger.info(f"Delete rowcount={result.rowcount}")
@@ -128,7 +129,7 @@ class ServiceRepository:
             self.db.rollback()
             return False
 
-    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
+    def update_transaction_by_unique_id(self, unique_id: int, updates: dict) -> bool:
         """Update a transaction by its unique_id."""
         if not updates:
             return True
@@ -136,7 +137,7 @@ class ServiceRepository:
         try:
             stmt = (
                 update(self.model)
-                .where(self.model.unique_id == int(transaction_id))
+                .where(self.model.unique_id == int(unique_id))
                 .values(**updates)
             )
             result = self.db.execute(stmt)
@@ -482,7 +483,9 @@ class TransactionsRepository:
     ) -> bool:
         try:
             repo = self.get_repo_by_source(source)
-            repo.update_transaction_by_id(str(unique_id), {"type": "split_parent"})
+            repo.update_transaction_by_unique_id(
+                str(unique_id), {"type": "split_parent"}
+            )
 
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             for split in splits:
@@ -501,7 +504,7 @@ class TransactionsRepository:
     def revert_split(self, unique_id: int, source: str) -> bool:
         try:
             repo = self.get_repo_by_source(source)
-            repo.update_transaction_by_id(str(unique_id), {"type": "normal"})
+            repo.update_transaction_by_unique_id(str(unique_id), {"type": "normal"})
 
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             return True

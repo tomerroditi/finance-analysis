@@ -20,6 +20,7 @@ from backend.naming_conventions import (
     NonExpensesCategories,
     Services,
     SplitTransactionsTableFields,
+    Tables,
     TransactionsTableFields,
 )
 from backend.repositories.split_transactions_repository import (
@@ -167,7 +168,7 @@ class TransactionsService:
                     # Delete duplicates if any
                     if len(existing_offsets) > 1:
                         for _, row in existing_offsets.iloc[1:].iterrows():
-                            repo.delete_transaction_by_id(
+                            repo.delete_transaction_by_unique_id(
                                 str(row[TransactionsTableFields.UNIQUE_ID.value])
                             )
                 else:
@@ -187,7 +188,7 @@ class TransactionsService:
                 # Delete all existing offsets if amount needed is 0
                 if not existing_offsets.empty:
                     for _, row in existing_offsets.iterrows():
-                        repo.delete_transaction_by_id(
+                        repo.delete_transaction_by_unique_id(
                             str(row[TransactionsTableFields.UNIQUE_ID.value])
                         )
 
@@ -226,25 +227,27 @@ class TransactionsService:
         return pd.concat(dfs, ignore_index=True)
 
     def update_tagging_by_id(
-        self, table_name: str, id_: str, category: str | None, tag: str | None
+        self, table_name: str, unique_id: int, category: str | None, tag: str | None
     ) -> None:
         """Update the category and tag for a transaction by ID."""
-        if table_name == "credit_cards":
-            self.transactions_repository.cc_repo.update_tagging_by_id(
-                id_, category, tag
+        if table_name == Tables.CREDIT_CARD.value:
+            self.transactions_repository.cc_repo.update_tagging_by_unique_id(
+                unique_id, category, tag
             )
-        elif table_name == "banks":
-            self.transactions_repository.bank_repo.update_tagging_by_id(
-                id_, category, tag
+        elif table_name == Tables.BANK.value:
+            self.transactions_repository.bank_repo.update_tagging_by_unique_id(
+                unique_id, category, tag
             )
-        elif table_name == "cash":
-            self.transactions_repository.cash_repo.update_tagging_by_id(
-                id_, category, tag
+        elif table_name == Tables.CASH.value:
+            self.transactions_repository.cash_repo.update_tagging_by_unique_id(
+                unique_id, category, tag
             )
-        elif table_name == "manual_investments":
-            self.transactions_repository.manual_investments_repo.update_tagging_by_id(
-                id_, category, tag
+        elif table_name == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
+            self.transactions_repository.manual_investments_repo.update_tagging_by_unique_id(
+                unique_id, category, tag
             )
+        else:
+            raise ValueError(f"Invalid table name: {table_name}")
 
     def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
         """Update a transaction by ID with the given field updates."""
@@ -261,7 +264,7 @@ class TransactionsService:
 
     def delete_transaction_by_id(self, transaction_id: str) -> bool:
         """Delete a transaction by ID. Supports cash transactions only."""
-        return self.transactions_repository.cash_repo.delete_transaction_by_id(
+        return self.transactions_repository.cash_repo.delete_transaction_by_unique_id(
             transaction_id
         )
 

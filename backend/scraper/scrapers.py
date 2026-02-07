@@ -691,6 +691,7 @@ class Scraper(ABC):
                 cat_and_tags_service.add_new_credit_card_tags()  # runs on all cc data so not most efficient
                 tagging_rules_service = TaggingRulesService(db)
                 count = tagging_rules_service.apply_rules(overwrite=False)
+                count += tagging_rules_service.auto_tag_credit_cards_bills()
                 if count > 0:
                     print(
                         f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Auto-tagged {count} transactions",
