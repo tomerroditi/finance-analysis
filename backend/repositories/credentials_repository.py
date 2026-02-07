@@ -26,6 +26,10 @@ class CredentialsRepository:
     Implemented as a singleton.
     """
 
+    CREDIT_CARD = "credit_cards"
+    BANK = "banks"
+    INSURANCE = "insurances"
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -69,27 +73,22 @@ class CredentialsRepository:
         with open(self.credentials_path, "w") as file:
             yaml.dump(credentials, file, sort_keys=False, indent=4)
 
-    def read_default_credentials(self, resources_path: Optional[str] = None) -> Dict:
+    def generate_default_credentials(self) -> Dict:
         """
         Read the default credentials template.
-
-        Parameters
-        ----------
-        resources_path : str, optional
-            Path to the resources directory.
 
         Returns
         -------
         Dict
             The default credentials structure.
         """
-        if resources_path is None:
-            backend_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            resources_path = os.path.join(backend_path, "resources")
-
-        file_path = os.path.join(resources_path, "default_credentials.yaml")
-        with open(file_path, "r") as file:
-            return yaml.safe_load(file)
+        default_credentials = {
+            self.BANK: {},
+            self.CREDIT_CARD: {},
+            self.INSURANCE: {},
+        }
+        self.write_credentials_file(default_credentials)
+        return default_credentials
 
     @property
     def keyring_service(self):

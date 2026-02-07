@@ -49,8 +49,7 @@ class CredentialsService:
         credentials = self.repository.read_credentials_file()
 
         if credentials is None:
-            credentials = self.repository.read_default_credentials()
-            self.repository.write_credentials_file(credentials)
+            credentials = self.repository.generate_default_credentials()
 
         # Retrieve passwords from keyring
         for service, providers in credentials.items():
