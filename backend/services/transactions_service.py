@@ -109,14 +109,16 @@ class TransactionsService:
 
             # 2. Calculate offset needed (sum of manual negative amounts)
             offset_needed = 0.0
-            if not df.empty and TransactionsTableFields.PROVIDER.value in df.columns:
-                # Filter: Provider=MANUAL AND Amount < 0
-                mask = (df[TransactionsTableFields.PROVIDER.value] == "MANUAL") & (
-                    df[TransactionsTableFields.AMOUNT.value] < 0
-                )
-                offset_needed = abs(
-                    df.loc[mask, TransactionsTableFields.AMOUNT.value].sum()
-                )
+            if not df.empty:
+                # Filter: Amount < 0 AND Tag != PRIOR_WEALTH_TAG (to exclude the offset itself)
+                amount_col = TransactionsTableFields.AMOUNT.value
+                tag_col = TransactionsTableFields.TAG.value
+
+                mask = df[amount_col] < 0
+                if tag_col in df.columns:
+                    mask = mask & (df[tag_col] != PRIOR_WEALTH_TAG)
+
+                offset_needed = abs(df.loc[mask, amount_col].sum())
 
             # 3. Handle offset transaction in the specific service table
             if service == Services.CASH.value:

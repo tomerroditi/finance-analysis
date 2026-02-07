@@ -7,9 +7,12 @@ import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
 import RefundsView from "../components/transactions/RefundsView";
 import { pendingRefundsApi } from "../services/api";
 
+import { TransactionFormModal } from "../components/modals/TransactionFormModal";
+
 export function Transactions() {
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const {
     data: transactions,
@@ -131,12 +134,28 @@ export function Transactions() {
               onTransactionUpdated={refreshAll}
               pendingRefundsMap={pendingRefundsMap}
               refundLinksMap={refundLinksMap}
+              onAddTransaction={
+                (selectedService === "cash" || selectedService === "manual_investments")
+                  ? () => setIsCreateModalOpen(true)
+                  : undefined
+              }
             />
           )}
         </div>
       </div>
 
       <AutoTaggingPanel />
+
+      <TransactionFormModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        service={
+          (selectedService === "cash" || selectedService === "manual_investments")
+            ? (selectedService as "cash" | "manual_investments")
+            : undefined
+        }
+        onSuccess={refreshAll}
+      />
     </div>
   );
 }
