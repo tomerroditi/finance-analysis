@@ -4,6 +4,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.naming_conventions import (
+    PRIOR_WEALTH_TAG,
     IncomeCategories,
     LiabilitiesCategories,
     NonExpensesCategories,
@@ -177,7 +178,14 @@ class AnalysisService:
         df = df[df["category"] != IGNORE]
 
         sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
-        sources[OTHER_INCOME] = df[df["category"] == OTHER_INCOME]["amount"].sum()
+        # Split out Prior Wealth from Other Income
+        other_income_df = df[df["category"] == OTHER_INCOME]
+        sources[PRIOR_WEALTH_TAG] = other_income_df[
+            other_income_df["tag"] == PRIOR_WEALTH_TAG
+        ]["amount"].sum()
+        sources[OTHER_INCOME] = other_income_df[
+            other_income_df["tag"] != PRIOR_WEALTH_TAG
+        ]["amount"].sum()
         sources["Loans"] = df[(df["category"] == LIABILITIES) & (df["amount"] > 0)][
             "amount"
         ].sum()
