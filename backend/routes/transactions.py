@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -173,14 +174,27 @@ async def delete_transaction(
         if source not in ["cash_transactions", "manual_investment_transactions"]:
             raise HTTPException(
                 status_code=403,
-                detail="Deletion of bank/card transactions is prohibited",
+                detail=f"Deletion of {source} transactions is prohibited",
             )
 
-        try:
-            tx = repo.get_transaction_by_id(int(unique_id))
-        except ValueError:
-            # invalid id format
+        # Get the source-specific repository
+        target_repo = repo.get_repo_by_source(source)
+
+        # Look up the transaction in the source-specific table
+        tx_record = db.execute(
+            select(target_repo.model).where(
+                target_repo.model.unique_id == int(unique_id)
+            )
+        ).scalar_one_or_none()
+
+        if not tx_record:
             raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # Convert to dict for tag/account_name checks
+        tx = {
+            "tag": getattr(tx_record, "tag", None),
+            "account_name": getattr(tx_record, "account_name", None),
+        }
 
         # Protect "Prior Wealth" offset transactions from manual deletion
         if (
@@ -193,7 +207,6 @@ async def delete_transaction(
                 detail=f"Cannot manually delete system-generated {tx.get('tag')} transaction",
             )
 
-        target_repo = repo.get_repo_by_source(source)
         success = target_repo.delete_transaction_by_id(unique_id)
         if not success:
             raise HTTPException(

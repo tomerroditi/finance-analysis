@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Link2,
+  Plus,
 } from "lucide-react";
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
@@ -64,6 +65,7 @@ export interface TransactionsTableProps {
   // Callbacks
   onTransactionUpdated?: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
+  onAddTransaction?: () => void;
   pendingRefundsMap?: Map<string, any>;
   refundLinksMap?: Map<string, number>;
 
@@ -100,6 +102,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   rowsPerPageOptions = null,
   onTransactionUpdated,
   onSelectionChange,
+  onAddTransaction,
   pendingRefundsMap,
   refundLinksMap,
   compact = false,
@@ -122,6 +125,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [splittingTransaction, setSplittingTransaction] =
     useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] =
+    useState<Transaction | null>(null);
+  const [deletingTransaction, setDeletingTransaction] =
     useState<Transaction | null>(null);
 
   // Bulk tagging state
@@ -310,18 +315,19 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     );
   }, [paginatedTransactions, selectedIds]);
 
-  const handleDelete = async (tx: Transaction) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this manual transaction?",
-      )
-    )
-      return;
+  const handleDelete = (tx: Transaction) => {
+    setDeletingTransaction(tx);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingTransaction) return;
     try {
-      await transactionsApi.delete(tx.unique_id, tx.source || "");
+      await transactionsApi.delete(deletingTransaction.unique_id, deletingTransaction.source || "");
       onTransactionUpdated?.();
     } catch (err) {
       alert("Failed to delete transaction.");
+    } finally {
+      setDeletingTransaction(null);
     }
   };
 
@@ -431,18 +437,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   // Calculate column count for empty state
   const columnCount = 5 + (showSelection ? 1 : 0) + (showActions ? 1 : 0);
 
-  if (sortedTransactions.length === 0 && !filterText && !onlyUntagged) {
-    return (
-      <div
-        className={`text-center text-[var(--text-muted)] ${compact ? "py-4" : "py-8"}`}
-      >
-        No transactions found.
-      </div>
-    );
-  }
 
   return (
     <>
+
       {/* Filter Input */}
       {showFilter && (
         <div className="mb-3 flex items-center gap-3">
@@ -498,6 +496,15 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
               />
             </div>
+          )}
+          {onAddTransaction && (
+            <button
+              onClick={onAddTransaction}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-hover)] transition-colors text-xs font-medium"
+            >
+              <Plus size={14} />
+              <span>Add Transaction</span>
+            </button>
           )}
           {(filterText || onlyUntagged) && (
             <span className="text-xs text-[var(--text-muted)]">
@@ -996,6 +1003,42 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               linkingTransaction.description || linkingTransaction.desc || "",
           }}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDeletingTransaction(null)}
+          />
+          <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl p-6 shadow-2xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Delete Transaction
+            </h3>
+            <p className="text-[var(--text-muted)] mb-6">
+              Are you sure you want to delete this manual transaction?
+              <br />
+              <span className="text-[var(--text-default)] font-medium">
+                {getDescription(deletingTransaction) || "No description"}
+              </span>
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeletingTransaction(null)}
+                className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-[var(--text-default)] text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

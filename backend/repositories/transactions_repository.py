@@ -124,11 +124,21 @@ class ServiceRepository:
     def delete_transaction_by_id(self, transaction_id: str) -> bool:
         """Delete a transaction by its unique_id."""
         try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Attempting to delete transaction_id={transaction_id} from table={self.model.__tablename__}"
+            )
             stmt = delete(self.model).where(self.model.unique_id == int(transaction_id))
             result = self.db.execute(stmt)
             self.db.commit()
+            logger.info(f"Delete rowcount={result.rowcount}")
             return result.rowcount > 0
-        except Exception:
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).error(f"Delete failed: {e}")
             self.db.rollback()
             return False
 
@@ -233,33 +243,9 @@ class CashRepository(ServiceRepository):
     table = Tables.CASH.value
 
 
-class ManualInvestmentTransactionsRepository(CashRepository):
+class ManualInvestmentTransactionsRepository(ServiceRepository):
     model = ManualInvestmentTransaction
     table = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
-
-    def add_transaction(self, transaction: ManualInvestmentTransactionDTO) -> bool:
-        """Add a manual investment transaction (deposits are negative amounts)."""
-        # Logic specific to manual investments sign handling
-        amount = (
-            transaction.amount * -1
-            if transaction.transaction_type == DEPOSIT_TYPE
-            else transaction.amount
-        )
-
-        # Create a new DTO/object with adjusted amount to pass to super or handle directly
-        # We need to make a copy to avoid side effects if the original DTO is used elsewhere
-        tx_copy = ManualInvestmentTransactionDTO(
-            date=transaction.date,
-            account_name=transaction.account_name,
-            description=transaction.description,
-            amount=amount,
-            transaction_type=transaction.transaction_type,
-            provider=transaction.provider,
-            account_number=transaction.account_number,
-            category=transaction.category,
-            tag=transaction.tag,
-        )
-        return super().add_transaction(tx_copy)
 
 
 class TransactionsRepository:
