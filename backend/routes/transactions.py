@@ -294,8 +294,7 @@ async def update_transaction_tag(
     """Update category and tag for a transaction (Legacy support)."""
     repo = TransactionsRepository(db)
     try:
-        target_repo = repo.get_repo_by_source(service)
-        target_repo.update_tagging_by_id(transaction_id, category, tag)
+        repo.update_tagging_by_id(service, transaction_id, category, tag)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

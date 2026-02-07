@@ -158,3 +158,14 @@ async def preview_rule_matches(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rules/auto-tag-credit-cards-bills")
+async def auto_tag_credit_cards_bills(db: Session = Depends(get_database)):
+    """Auto-tag credit cards bills."""
+    service = TaggingRulesService(db)
+    try:
+        count = service.auto_tag_credit_cards_bills()
+        return {"status": "success", "tagged_count": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

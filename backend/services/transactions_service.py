@@ -226,12 +226,25 @@ class TransactionsService:
         return pd.concat(dfs, ignore_index=True)
 
     def update_tagging_by_id(
-        self, id_: str, category: str | None, tag: str | None
+        self, table_name: str, id_: str, category: str | None, tag: str | None
     ) -> None:
         """Update the category and tag for a transaction by ID."""
-        self.transactions_repository.cc_repo.update_tagging_by_id(id_, category, tag)
-        self.transactions_repository.bank_repo.update_tagging_by_id(id_, category, tag)
-        self.transactions_repository.cash_repo.update_tagging_by_id(id_, category, tag)
+        if table_name == "credit_cards":
+            self.transactions_repository.cc_repo.update_tagging_by_id(
+                id_, category, tag
+            )
+        elif table_name == "banks":
+            self.transactions_repository.bank_repo.update_tagging_by_id(
+                id_, category, tag
+            )
+        elif table_name == "cash":
+            self.transactions_repository.cash_repo.update_tagging_by_id(
+                id_, category, tag
+            )
+        elif table_name == "manual_investments":
+            self.transactions_repository.manual_investments_repo.update_tagging_by_id(
+                id_, category, tag
+            )
 
     def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
         """Update a transaction by ID with the given field updates."""

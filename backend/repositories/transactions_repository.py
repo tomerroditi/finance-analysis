@@ -530,10 +530,7 @@ class TransactionsRepository:
         Update tagging for multiple transactions.
         """
         for tx in transactions:
-            repo = self.get_repo_by_source(tx["source"])
-            repo.update_transaction_by_id(
-                str(tx["unique_id"]), {"category": category, "tag": tag}
-            )
+            self.update_tagging_by_id(tx["source"], tx["unique_id"], category, tag)
 
     def update_with_query(
         self,
