@@ -236,14 +236,16 @@ export const analyticsApi = {
     api.get("/analytics/by-category", {
       params: { start_date: startDate, end_date: endDate },
     }),
-  getMonthlyTrend: (startDate?: string, endDate?: string) =>
-    api.get("/analytics/monthly-trend", {
-      params: { start_date: startDate, end_date: endDate },
-    }),
+
   getSankeyData: (startDate?: string, endDate?: string) =>
     api.get("/analytics/sankey", {
       params: { start_date: startDate, end_date: endDate },
     }),
+  getNetBalanceTrend: (startDate?: string, endDate?: string) =>
+    api.get<{ month: string; net: number; cumulative: number }[]>(
+      "/analytics/net-balance-trend",
+      { params: { start_date: startDate, end_date: endDate } }
+    ),
 };
 
 // Pending Refunds API

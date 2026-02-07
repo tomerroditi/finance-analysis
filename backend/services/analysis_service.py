@@ -38,46 +38,41 @@ class AnalysisService:
             "total_transactions": len(df),
         }
 
+    def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
+        return df["category"].isin([c.value for c in IncomeCategories]) | (
+            df["category"].isin([c.value for c in LiabilitiesCategories])
+            & (df["amount"] > 0)
+        )
+
+    def _get_income_amount(self, df: pd.DataFrame) -> float:
+        df = df[df["source"] != "credit_card_transactions"]
+        return float(df[self._get_income_mask(df)]["amount"].sum())
+
+    def _get_expenses_amount(self, df: pd.DataFrame) -> float:
+        df = df[df["source"] != "credit_card_transactions"]
+        return float(df[~self._get_income_mask(df)]["amount"].sum()) * -1
+
     def get_total_income(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ):
         df = self.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
         if start_date:
             df = df[df["date"] >= start_date]
         if end_date:
             df = df[df["date"] <= end_date]
 
-        df = df[
-            df["category"].isin([c.value for c in IncomeCategories])
-            | (
-                df["category"].isin([c.value for c in LiabilitiesCategories])
-                & (df["amount"] > 0)
-            )
-        ]
-        return df["amount"].sum()
+        return self._get_income_amount(df)
 
     def get_total_expenses(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ):
         df = self.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
         if start_date:
             df = df[df["date"] >= start_date]
         if end_date:
             df = df[df["date"] <= end_date]
 
-        df = df[
-            ~(
-                df["category"].isin([c.value for c in IncomeCategories])
-                | (
-                    df["category"].isin([c.value for c in LiabilitiesCategories])
-                    & (df["amount"] < 0)
-                )
-            )
-        ]
-
-        return abs(df["amount"].sum())
+        return self._get_expenses_amount(df)
 
     def get_expenses_by_category(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -112,11 +107,11 @@ class AnalysisService:
             ],
         }
 
-    def get_monthly_trend(
+    def get_net_balance_trend(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ):
+    ) -> list[dict]:
         """
-        Get monthly income and outcome trends.
+        Get monthly net balance and cumulative balance over time.
         """
         df = self.repo.get_table()
 
@@ -131,33 +126,28 @@ class AnalysisService:
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
 
         trend = []
+        cumulative = 0.0
 
-        for month, group in df.groupby("month"):
-            salary_mask = (group["amount"] > 0) & (
-                group["category"] == IncomeCategories.SALARY.value
-            )
-            salary = group[salary_mask]["amount"].sum()
+        for month in sorted(df["month"].unique()):
+            group = df[df["month"] == month]
 
-            other_income_mask = (group["amount"] > 0) & (
-                group["category"] != IncomeCategories.SALARY.value
-            )
-            other_income = group[other_income_mask]["amount"].sum()
+            income = self._get_income_amount(group)
+            expenses = self._get_expenses_amount(group)
 
-            outcome_mask = (group["amount"] < 0) & (
-                ~group["category"].isin([c.value for c in NonExpensesCategories])
-            )
-            outcome = abs(group[outcome_mask]["amount"].sum())
+            net = float(income - expenses)
+            cumulative += net
 
             trend.append(
                 {
                     "month": month,
-                    "salary": float(salary),
-                    "other_income": float(other_income),
-                    "outcome": float(outcome),
+                    "income": round(income, 2),
+                    "expenses": round(expenses, 2),
+                    "net": round(net, 2),
+                    "cumulative": round(cumulative, 2),
                 }
             )
 
-        return sorted(trend, key=lambda x: x["month"])
+        return trend
 
     def get_sankey_data(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None

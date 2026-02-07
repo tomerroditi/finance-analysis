@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.services.analysis_service import AnalysisService
 
-
 router = APIRouter()
 
 
@@ -48,16 +47,6 @@ async def get_expenses_by_category(
     return service.get_expenses_by_category(start_date, end_date)
 
 
-@router.get("/monthly-trend")
-async def get_monthly_trend(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    db: Session = Depends(get_database),
-):
-    service = AnalysisService(db)
-    return service.get_monthly_trend(start_date, end_date)
-
-
 @router.get("/sankey")
 async def get_sankey_data(
     start_date: Optional[str] = None,
@@ -66,3 +55,13 @@ async def get_sankey_data(
 ) -> dict:
     service = AnalysisService(db)
     return service.get_sankey_data(start_date, end_date)
+
+
+@router.get("/net-balance-trend")
+async def get_net_balance_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_database),
+):
+    service = AnalysisService(db)
+    return service.get_net_balance_trend(start_date, end_date)

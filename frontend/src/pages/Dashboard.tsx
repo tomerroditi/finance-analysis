@@ -99,22 +99,7 @@ export function Dashboard() {
       (!!dateRange.start && !!dateRange.end),
   });
 
-  const { data: trendData } = useQuery({
-    queryKey: ["analytics-trend", dateRange.start, dateRange.end, isTestMode],
-    queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getMonthlyTrend(start, end);
-      return res.data;
-    },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
-  });
+
 
   const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
     queryKey: ["sankey", dateRange.start, dateRange.end, isTestMode],
@@ -128,7 +113,23 @@ export function Dashboard() {
       const res = await analyticsApi.getSankeyData(start, end);
       return res.data;
     },
-    // Enable if both are null (All Time) OR if both are set (Specific Range)
+    enabled:
+      (dateRange.start === null && dateRange.end === null) ||
+      (!!dateRange.start && !!dateRange.end),
+  });
+
+  const { data: netBalanceData } = useQuery({
+    queryKey: ["net-balance-trend", dateRange.start, dateRange.end, isTestMode],
+    queryFn: async () => {
+      const start = dateRange.start
+        ? format(dateRange.start, "yyyy-MM-dd")
+        : undefined;
+      const end = dateRange.end
+        ? format(dateRange.end, "yyyy-MM-dd")
+        : undefined;
+      const res = await analyticsApi.getNetBalanceTrend(start, end);
+      return res.data;
+    },
     enabled:
       (dateRange.start === null && dateRange.end === null) ||
       (!!dateRange.start && !!dateRange.end),
@@ -216,6 +217,59 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Net Balance Over Time Chart */}
+      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+        <h3 className="text-lg font-bold mb-4">Net Balance Over Time</h3>
+        <div className="h-[350px]">
+          <Plot
+            data={
+              !netBalanceData || netBalanceData.length === 0
+                ? []
+                : [
+                  {
+                    x: netBalanceData.map((d) => d.month),
+                    y: netBalanceData.map((d) => d.net),
+                    name: "Monthly Net",
+                    type: "bar",
+                    marker: {
+                      color: netBalanceData.map((d) =>
+                        d.net >= 0 ? "#10b981" : "#ef4444"
+                      ),
+                    },
+                    yaxis: "y",
+                  },
+                  {
+                    x: netBalanceData.map((d) => d.month),
+                    y: netBalanceData.map((d) => d.cumulative),
+                    name: "Cumulative Balance",
+                    type: "scatter",
+                    mode: "lines+markers",
+                    line: { color: "#3b82f6", width: 3 },
+                    marker: { size: 8, color: "#3b82f6" },
+                  },
+                ]
+            }
+            layout={{
+              ...chartTheme,
+              autosize: true,
+              height: 350,
+              yaxis: {
+                title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
+                tickfont: { color: "#94a3b8" },
+              },
+              legend: {
+                orientation: "h",
+                y: -0.15,
+                x: 0.5,
+                xanchor: "center",
+              },
+            }}
+            style={{ width: "100%", height: "100%" }}
+            config={{ displayModeBar: false, responsive: true }}
+          />
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Monthly Trend Chart */}
         <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
@@ -224,22 +278,15 @@ export function Dashboard() {
             <Plot
               data={[
                 {
-                  x: trendData?.map((d: any) => d.month),
-                  y: trendData?.map((d: any) => d.salary),
-                  name: "Salary",
+                  x: netBalanceData?.map((d: any) => d.month),
+                  y: netBalanceData?.map((d: any) => d.income),
+                  name: "Income",
                   type: "bar",
                   marker: { color: "#059669" },
                 },
                 {
-                  x: trendData?.map((d: any) => d.month),
-                  y: trendData?.map((d: any) => d.other_income),
-                  name: "Other Income",
-                  type: "bar",
-                  marker: { color: "#34d399" },
-                },
-                {
-                  x: trendData?.map((d: any) => d.month),
-                  y: trendData?.map((d: any) => d.outcome),
+                  x: netBalanceData?.map((d: any) => d.month),
+                  y: netBalanceData?.map((d: any) => d.expenses),
                   name: "Expenses",
                   type: "bar",
                   marker: { color: "#f43f5e" },
