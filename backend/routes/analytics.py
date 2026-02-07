@@ -25,16 +25,24 @@ async def get_overview(
     return service.get_overview(start_date, end_date)
 
 
-@router.get("/income-outcome")
-async def get_income_outcome(
+@router.get("/net-balance-over-time")
+async def get_net_balance_over_time(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: Session = Depends(get_database),
 ):
     service = AnalysisService(db)
-    income = service.get_total_income(start_date, end_date)
-    expenses = service.get_total_expenses(start_date, end_date)
-    return {"total_income": income, "total_outcome": expenses, "net": income - expenses}
+    return service.get_net_balance_over_time(start_date, end_date)
+
+
+@router.get("/income-expenses-over-time")
+async def get_income_expenses_over_time(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_database),
+):
+    service = AnalysisService(db)
+    return service.get_income_expenses_over_time(start_date, end_date)
 
 
 @router.get("/by-category")
@@ -55,13 +63,3 @@ async def get_sankey_data(
 ) -> dict:
     service = AnalysisService(db)
     return service.get_sankey_data(start_date, end_date)
-
-
-@router.get("/net-balance-trend")
-async def get_net_balance_trend(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    db: Session = Depends(get_database),
-):
-    service = AnalysisService(db)
-    return service.get_net_balance_trend(start_date, end_date)

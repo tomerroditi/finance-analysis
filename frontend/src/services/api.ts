@@ -225,13 +225,27 @@ export const investmentsApi = {
 // Analytics API
 export const analyticsApi = {
   getOverview: (startDate?: string, endDate?: string) =>
-    api.get("/analytics/overview", {
+    api.get<{
+      latest_data_date: string | null;
+      total_transactions: number;
+      total_income: number;
+      total_expenses: number;
+      net_balance_change: number;
+    }>("/analytics/overview", {
       params: { start_date: startDate, end_date: endDate },
     }),
-  getIncomeOutcome: (startDate?: string, endDate?: string) =>
-    api.get("/analytics/income-outcome", {
-      params: { start_date: startDate, end_date: endDate },
-    }),
+  getNetBalanceOverTime: (startDate?: string, endDate?: string) =>
+    api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
+      "/analytics/net-balance-over-time",
+      { params: { start_date: startDate, end_date: endDate } }
+    ),
+  getIncomeExpensesOverTime: (startDate?: string, endDate?: string) =>
+    api.get<{ month: string; income: number; expenses: number }[]>(
+      "/analytics/income-expenses-over-time",
+      {
+        params: { start_date: startDate, end_date: endDate },
+      }
+    ),
   getByCategory: (startDate?: string, endDate?: string) =>
     api.get("/analytics/by-category", {
       params: { start_date: startDate, end_date: endDate },
@@ -241,11 +255,6 @@ export const analyticsApi = {
     api.get("/analytics/sankey", {
       params: { start_date: startDate, end_date: endDate },
     }),
-  getNetBalanceTrend: (startDate?: string, endDate?: string) =>
-    api.get<{ month: string; net: number; cumulative: number }[]>(
-      "/analytics/net-balance-trend",
-      { params: { start_date: startDate, end_date: endDate } }
-    ),
 };
 
 // Pending Refunds API

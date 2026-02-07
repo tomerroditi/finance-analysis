@@ -69,7 +69,7 @@ export function Dashboard() {
       const end = dateRange.end
         ? format(dateRange.end, "yyyy-MM-dd")
         : undefined;
-      const res = await analyticsApi.getIncomeOutcome(start, end);
+      const res = await analyticsApi.getIncomeExpensesOverTime(start, end);
       return res.data;
     },
     enabled:
@@ -127,7 +127,7 @@ export function Dashboard() {
       const end = dateRange.end
         ? format(dateRange.end, "yyyy-MM-dd")
         : undefined;
-      const res = await analyticsApi.getNetBalanceTrend(start, end);
+      const res = await analyticsApi.getNetBalanceOverTime(start, end);
       return res.data;
     },
     enabled:
@@ -165,7 +165,7 @@ export function Dashboard() {
         <StatCard
           title="Total Income"
           value={
-            ioLoading ? "..." : formatCurrency(incomeOutcome?.total_income || 0)
+            overviewLoading ? "..." : formatCurrency(overview?.total_income || 0)
           }
           icon={TrendingUp}
           color="bg-emerald-500/20 text-emerald-400"
@@ -173,16 +173,16 @@ export function Dashboard() {
         <StatCard
           title="Total Expenses"
           value={
-            ioLoading
+            overviewLoading
               ? "..."
-              : formatCurrency(incomeOutcome?.total_outcome || 0)
+              : formatCurrency(overview?.total_expenses || 0)
           }
           icon={TrendingDown}
           color="bg-red-500/20 text-red-400"
         />
         <StatCard
           title="Net Balance"
-          value={ioLoading ? "..." : formatCurrency(incomeOutcome?.net || 0)}
+          value={overviewLoading ? "..." : formatCurrency(overview?.net_balance_change || 0)}
           icon={Wallet}
           color="bg-blue-500/20 text-blue-400"
         />
@@ -228,19 +228,19 @@ export function Dashboard() {
                 : [
                   {
                     x: netBalanceData.map((d) => d.month),
-                    y: netBalanceData.map((d) => d.net),
+                    y: netBalanceData.map((d) => d.net_change),
                     name: "Monthly Net",
                     type: "bar",
                     marker: {
                       color: netBalanceData.map((d) =>
-                        d.net >= 0 ? "#10b981" : "#ef4444"
+                        d.net_change >= 0 ? "#10b981" : "#ef4444"
                       ),
                     },
                     yaxis: "y",
                   },
                   {
                     x: netBalanceData.map((d) => d.month),
-                    y: netBalanceData.map((d) => d.cumulative),
+                    y: netBalanceData.map((d) => d.cumulative_balance),
                     name: "Cumulative Balance",
                     type: "scatter",
                     mode: "lines+markers",
@@ -278,15 +278,15 @@ export function Dashboard() {
             <Plot
               data={[
                 {
-                  x: netBalanceData?.map((d: any) => d.month),
-                  y: netBalanceData?.map((d: any) => d.income),
+                  x: incomeOutcome?.map((d: any) => d.month) || [],
+                  y: incomeOutcome?.map((d: any) => d.income) || [],
                   name: "Income",
                   type: "bar",
                   marker: { color: "#059669" },
                 },
                 {
-                  x: netBalanceData?.map((d: any) => d.month),
-                  y: netBalanceData?.map((d: any) => d.expenses),
+                  x: incomeOutcome?.map((d: any) => d.month) || [],
+                  y: incomeOutcome?.map((d: any) => d.expenses) || [],
                   name: "Expenses",
                   type: "bar",
                   marker: { color: "#f43f5e" },
