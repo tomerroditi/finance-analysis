@@ -33,6 +33,7 @@ from backend.scraper.exceptions import (
     TimeoutError,
 )
 from backend.services.tagging_rules_service import TaggingRulesService
+from backend.services.tagging_service import CategoriesTagsService
 
 
 def get_scraper(
@@ -686,8 +687,10 @@ class Scraper(ABC):
         """
         try:
             with get_db_context() as db:
-                tagging_service = TaggingRulesService(db)
-                count = tagging_service.apply_rules(overwrite=False)
+                cat_and_tags_service = CategoriesTagsService(db)
+                cat_and_tags_service.add_new_credit_card_tags()  # runs on all cc data so not most efficient
+                tagging_rules_service = TaggingRulesService(db)
+                count = tagging_rules_service.apply_rules(overwrite=False)
                 if count > 0:
                     print(
                         f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Auto-tagged {count} transactions",

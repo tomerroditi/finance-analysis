@@ -7,12 +7,11 @@ No Streamlit dependencies - uses pure YAML file I/O.
 
 import os
 from typing import Dict, List
-from backend.errors import EntityNotFoundException, EntityAlreadyExistsException
 
 import yaml
 
-
 from backend.config import AppConfig
+from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
 
 BACKEND_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CATEGORIES_PATH = os.path.join(
@@ -37,6 +36,14 @@ class TaggingRepository:
             return {}
         with open(file_path, "r") as file:
             return yaml.load(file, Loader=yaml.FullLoader) or {}
+
+    @staticmethod
+    def save_categories_to_file(
+        categories: Dict[str, List[str]], file_path: str
+    ) -> None:
+        """Save categories to a YAML file."""
+        with open(file_path, "w") as file:
+            yaml.dump(categories, file)
 
     @staticmethod
     def get_categories(file_path: str = None) -> Dict[str, List[str]]:

@@ -80,8 +80,6 @@ class CategoriesTagsService:
 
     def save_categories_and_tags(self) -> None:
         """Save categories and tags to file and update cache."""
-        global _categories_cache
-        _categories_cache = self.categories_and_tags
         TaggingRepository.save_categories_to_file(
             self.categories_and_tags, AppConfig().get_categories_path()
         )
@@ -219,7 +217,9 @@ class CategoriesTagsService:
     def add_new_credit_card_tags(self) -> bool:
         """Add new credit card tags to the "Credit Card" category in the YAML file."""
         cc_accounts = self.credit_card_repo.get_unique_accounts_tags()
+        if "Credit Cards" not in self.categories_and_tags:
+            self.add_category("Credit Cards", cc_accounts)
+            return True
         for account in cc_accounts:
             self.add_tag("Credit Cards", account)
-        self.save_categories_and_tags()
         return True
