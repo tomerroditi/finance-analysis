@@ -11,8 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.repositories.tagging_repository import TaggingRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.services.tagging_service import CategoriesTagsService
 
 router = APIRouter()
 
@@ -43,66 +42,65 @@ class TagRelocate(BaseModel):
 
 
 @router.get("/categories")
-async def get_categories():
+async def get_categories(db: Session = Depends(get_database)):
     """Get all categories and their tags."""
-    return TaggingRepository.get_categories()
+    return CategoriesTagsService(db).get_categories_and_tags()
 
 
 @router.post("/categories")
-async def add_category(category: CategoryCreate):
+async def add_category(category: CategoryCreate, db: Session = Depends(get_database)):
     """Add a new category."""
-    TaggingRepository.add_category(category.name, category.tags)
+    CategoriesTagsService(db).add_category(category.name, category.tags)
     return {"status": "success"}
 
 
 @router.delete("/categories/{name}")
 async def delete_category(name: str, db: Session = Depends(get_database)):
     """Delete a category and its tags, nullifying them in the DB."""
-    TaggingRepository.delete_category(name)
-
-    tx_repo = TransactionsRepository(db)
-    tx_repo.nullify_category(name)
-
+    CategoriesTagsService(db).delete_category(name)
     return {"status": "success"}
 
 
 @router.post("/tags")
-async def create_tag(tag: TagCreate):
+async def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
     """Add a tag to a category."""
-    TaggingRepository.add_tag(tag.category, tag.name)
+    CategoriesTagsService(db).add_tag(tag.category, tag.name)
     return {"status": "success"}
 
 
 @router.delete("/tags/{category}/{name}")
 async def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
     """Delete a tag from a category, nullifying it in the DB."""
-    tx_repo = TransactionsRepository(db)
-    tx_repo.nullify_category_and_tag(category, name)
-
-    TaggingRepository.delete_tag(category, name)
-
+    CategoriesTagsService(db).delete_tag(category, name)
     return {"status": "success"}
 
 
 @router.post("/tags/relocate")
 async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
     """Relocate a tag to a different category, reflecting in the DB."""
-    TaggingRepository.relocate_tag(data.tag, data.old_category, data.new_category)
-
-    tx_repo = TransactionsRepository(db)
-    tx_repo.update_category_for_tag(data.old_category, data.new_category, data.tag)
-
+    CategoriesTagsService(db).reallocate_tag(
+        data.old_category, data.new_category, data.tag
+    )
     return {"status": "success"}
 
 
 @router.get("/icons")
-async def get_category_icons():
+async def get_category_icons(db: Session = Depends(get_database)):
     """Get category icons mapping."""
-    return TaggingRepository.get_categories_icons()
+    return CategoriesTagsService(db).get_categories_icons()
 
 
 @router.put("/icons/{category}")
-async def update_category_icon(category: str, icon: str):
+async def update_category_icon(
+    category: str, icon: str, db: Session = Depends(get_database)
+):
     """Update a category's icon."""
-    changed = TaggingRepository.update_category_icon(category, icon)
+    changed = CategoriesTagsService(db).update_category_icon(category, icon)
     return {"status": "success", "changed": changed}
+
+
+@router.post("/add-new-credit-card-tags")
+async def add_new_credit_card_tags(db: Session = Depends(get_database)):
+    """Add new credit card tags."""
+    CategoriesTagsService(db).add_new_credit_card_tags()
+    return {"status": "success"}

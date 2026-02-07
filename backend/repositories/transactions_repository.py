@@ -216,6 +216,21 @@ class CreditCardRepository(ServiceRepository):
     model = CreditCardTransaction
     table = Tables.CREDIT_CARD.value
 
+    def get_unique_accounts_tags(self) -> list:
+        """get unique accounts according to provider, account name, and account number."""
+        accounts = (
+            self.db.query(
+                self.model.provider, self.model.account_name, self.model.account_number
+            )
+            .distinct()
+            .all()
+        )
+        accounts = [
+            "-".join([provider, account_name, account_number[-4:]])
+            for (provider, account_name, account_number) in accounts
+        ]
+        return accounts
+
 
 class BankRepository(ServiceRepository):
     model = BankTransaction

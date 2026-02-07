@@ -15,7 +15,10 @@ from backend.repositories.split_transactions_repository import (
 )
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions_repository import (
+    CreditCardRepository,
+    TransactionsRepository,
+)
 from backend.utils.text_utils import to_title_case
 
 
@@ -54,6 +57,7 @@ class CategoriesTagsService:
             self.transactions_repo = TransactionsRepository(db)
             self.split_transactions_repo = SplitTransactionsRepository(db)
             self.tagging_rules_repo = TaggingRulesRepository(db)
+            self.credit_card_repo = CreditCardRepository(db)
         else:
             self.transactions_repo = None
             self.split_transactions_repo = None
@@ -96,7 +100,7 @@ class CategoriesTagsService:
         """Set or update the icon for a category."""
         return TaggingRepository.update_category_icon(category, icon)
 
-    def add_category(self, category: str) -> bool:
+    def add_category(self, category: str, tags: list[str]) -> bool:
         """
         Add a new category.
 
@@ -109,7 +113,7 @@ class CategoriesTagsService:
         category = to_title_case(category.strip())
         if category.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
             return False
-        self.categories_and_tags[category] = []
+        self.categories_and_tags[category] = tags
         self.save_categories_and_tags()
         return True
 
@@ -119,6 +123,9 @@ class CategoriesTagsService:
 
         Returns True if deleted successfully, False if protected or doesn't exist.
         """
+        if category in protected_categories:
+            return False
+
         # Update database if repos are available
         if self.transactions_repo:
             self.transactions_repo.nullify_category(category)
@@ -127,17 +134,13 @@ class CategoriesTagsService:
         if self.tagging_rules_repo:
             self.tagging_rules_repo.delete_rules_by_category(category)
 
-        if category in protected_categories:
-            return False
         if category in self.categories_and_tags:
             del self.categories_and_tags[category]
             self.save_categories_and_tags()
             return True
         return False
 
-    def reallocate_tags(
-        self, old_category: str, new_category: str, tags: List[str]
-    ) -> bool:
+    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> bool:
         """
         Move tags from one category to another.
 
@@ -150,27 +153,26 @@ class CategoriesTagsService:
             return False
 
         # Update category for the specified tags in all relevant tables
-        for tag in tags:
-            if self.transactions_repo:
-                self.transactions_repo.update_category_for_tag(
-                    old_category, new_category, tag
-                )
-            if self.split_transactions_repo:
-                self.split_transactions_repo.update_category_for_tag(
-                    old_category, new_category, tag
-                )
-            if self.tagging_rules_repo:
-                self.tagging_rules_repo.update_category_for_tag(
-                    old_category, new_category, tag
-                )
+        if self.transactions_repo:
+            self.transactions_repo.update_category_for_tag(
+                old_category, new_category, tag
+            )
+        if self.split_transactions_repo:
+            self.split_transactions_repo.update_category_for_tag(
+                old_category, new_category, tag
+            )
+        if self.tagging_rules_repo:
+            self.tagging_rules_repo.update_category_for_tag(
+                old_category, new_category, tag
+            )
 
         # Remove tags from old category
         self.categories_and_tags[old_category] = [
-            t for t in self.categories_and_tags[old_category] if t not in tags
+            t for t in self.categories_and_tags[old_category] if t != tag
         ]
         # Add tags to new category (avoid duplicates)
         self.categories_and_tags[new_category] = _sorted_unique(
-            self.categories_and_tags[new_category] + tags
+            self.categories_and_tags[new_category] + [tag]
         )
         self.save_categories_and_tags()
         return True
@@ -211,5 +213,13 @@ class CategoriesTagsService:
         if tag not in self.categories_and_tags[category]:
             return False
         self.categories_and_tags[category].remove(tag)
+        self.save_categories_and_tags()
+        return True
+
+    def add_new_credit_card_tags(self) -> bool:
+        """Add new credit card tags to the "Credit Card" category in the YAML file."""
+        cc_accounts = self.credit_card_repo.get_unique_accounts_tags()
+        for account in cc_accounts:
+            self.add_tag("Credit Cards", account)
         self.save_categories_and_tags()
         return True
