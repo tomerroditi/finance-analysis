@@ -8,7 +8,7 @@ from time import sleep
 import pandas as pd
 
 from backend.database import get_db_context
-from backend.naming_conventions import (
+from backend.constants.tables import (
     BankTableFields,
     CreditCardTableFields,
     Tables,

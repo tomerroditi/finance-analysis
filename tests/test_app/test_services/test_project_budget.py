@@ -1,15 +1,8 @@
 import pandas as pd
 import pytest
 
-from backend.naming_conventions import (
-    ALL_TAGS,
-    AMOUNT,
-    CATEGORY,
-    ID,
-    NAME,
-    TAGS,
-    TransactionsTableFields,
-)
+from backend.constants.budget import ALL_TAGS, AMOUNT, CATEGORY, ID, NAME, TAGS
+from backend.constants.tables import TransactionsTableFields
 from backend.services.budget_service import ProjectBudgetService
 
 

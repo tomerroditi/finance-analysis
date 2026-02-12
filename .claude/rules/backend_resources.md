@@ -46,8 +46,8 @@ YAML configuration files for defaults, credentials, and UI customization.
 3. Users see new category on fresh install
 
 ### Adding Support for New Provider
-1. Add to `naming_conventions.py` enums
-2. Add login fields to `LoginFields.providers_fields`
+1. Add to `backend/constants/providers.py` enums
+2. Add login fields to `LoginFields.providers_fields` in `backend/constants/providers.py`
 3. Users add credentials via UI
 
 ## Notes

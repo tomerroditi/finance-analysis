@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.errors import EntityNotFoundException
 
 from backend.models.investment import Investment
-from backend.naming_conventions import Tables, InvestmentsTableFields
+from backend.constants.tables import InvestmentsTableFields, Tables
 
 
 class InvestmentsRepository:

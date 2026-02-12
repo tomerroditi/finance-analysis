@@ -5,7 +5,7 @@ Scraping history model.
 from sqlalchemy import Column, Integer, String
 
 from backend.models.base import Base, TimestampMixin
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 
 class ScrapingHistory(Base, TimestampMixin):

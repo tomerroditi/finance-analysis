@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import Dict, List, Optional
 
 from backend.config import AppConfig
-from backend.naming_conventions import Fields, bank_providers, cc_providers
+from backend.constants.providers import Fields, bank_providers, cc_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 
 # In-memory cache for credentials (replaces Streamlit session_state)

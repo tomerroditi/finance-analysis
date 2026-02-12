@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.errors import BadRequestException, EntityNotFoundException
-from backend.naming_conventions import Tables, TransactionsTableFields
+from backend.constants.tables import Tables, TransactionsTableFields
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService

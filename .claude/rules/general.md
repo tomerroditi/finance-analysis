@@ -36,7 +36,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> D
 
 **Service Naming Convention:**
 - Frontend and API use **plural** service names: `banks`, `credit_cards`, `cash`, `manual_investments`
-- These match the `Services` enum values in `backend/naming_conventions.py`
+- These match the `Services` enum values in `backend/constants/providers.py`
 - Table names may differ (e.g., `credit_card_transactions` table vs `credit_cards` service)
 
 #### Frontend Layers
@@ -133,6 +133,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 ```
 finance-analysis/
 ├── backend/            # FastAPI application
+│   ├── constants/      # Enums & constants (tables, providers, categories, budget)
 │   ├── routes/         # API endpoints
 │   ├── services/       # Business logic
 │   ├── repositories/   # DB access (Repository Pattern)

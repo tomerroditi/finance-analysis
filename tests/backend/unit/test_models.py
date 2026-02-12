@@ -20,7 +20,7 @@ from backend.models import (
     SplitTransaction,
     TaggingRule,
 )
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 
 class TestTimestampMixin:

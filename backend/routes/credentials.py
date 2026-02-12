@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.naming_conventions import LoginFields
+from backend.constants.providers import LoginFields
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.services.credentials_service import CredentialsService
 

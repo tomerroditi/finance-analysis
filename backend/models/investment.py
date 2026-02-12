@@ -5,7 +5,7 @@ Investment tracking model.
 from sqlalchemy import Column, Integer, String, Float, Text
 
 from backend.models.base import Base, TimestampMixin
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 
 class Investment(Base, TimestampMixin):

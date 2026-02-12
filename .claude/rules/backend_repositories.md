@@ -71,7 +71,7 @@ class ExampleRepository:
 ```python
 from backend.models.base import Base, TimestampMixin
 from sqlalchemy import Column, Integer, String
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 class MyModel(Base, TimestampMixin):
     __tablename__ = Tables.MY_TABLE.value
@@ -128,6 +128,6 @@ except sa.exc.IntegrityError:
 1. **Always commit after writes**
 2. **Use ORM methods** - avoid raw SQL
 3. **Return empty DataFrames, not None**
-4. **Use enums** from `naming_conventions.py` for table/column names
+4. **Use enums** from `backend/constants/` for table/column names
 5. **Handle empty results** - check `df.empty`
 6. **Parameterize queries** - never string interpolate user input

@@ -1,0 +1,10 @@
+ID = "id"
+CATEGORY = "category"
+TAGS = "tags"
+NAME = "name"
+AMOUNT = "amount"
+MONTH = "month"
+YEAR = "year"
+ALL_TAGS = "all_tags"
+
+TOTAL_BUDGET = "Total Budget"

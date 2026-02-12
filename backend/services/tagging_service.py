@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
-from backend.naming_conventions import PROTECTED_CATEGORIES
+from backend.constants.categories import PROTECTED_CATEGORIES
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )

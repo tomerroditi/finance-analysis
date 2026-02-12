@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.services.analysis_service import AnalysisService
 
+
 router = APIRouter()
 
 

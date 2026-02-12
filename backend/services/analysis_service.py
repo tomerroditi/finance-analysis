@@ -3,7 +3,7 @@ from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.naming_conventions import (
+from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     IncomeCategories,
     LiabilitiesCategories,

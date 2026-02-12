@@ -66,7 +66,7 @@ def generate_model(names: FeatureNames) -> str:
 from sqlalchemy import Column, Integer, String, Float, Boolean
 
 from backend.models.base import Base, TimestampMixin
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 
 class {names.pascal_case}(Base, TimestampMixin):
@@ -294,7 +294,7 @@ Generated files for feature: {names.snake_case}
 
 NEXT STEPS:
 
-1. Add table name to backend/naming_conventions.py:
+1. Add table name to backend/constants/tables.py:
 
    class Tables(Enum):
        ...

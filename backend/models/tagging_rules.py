@@ -5,7 +5,7 @@ Tagging rules model.
 from sqlalchemy import JSON, Column, Integer, String
 
 from backend.models.base import Base, TimestampMixin
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 
 
 class TaggingRule(Base, TimestampMixin):

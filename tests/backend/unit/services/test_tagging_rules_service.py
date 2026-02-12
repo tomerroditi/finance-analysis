@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.errors import BadRequestException
 from backend.models.tagging_rules import TaggingRule
-from backend.naming_conventions import Tables
+from backend.constants.tables import Tables
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.services.tagging_rules_service import TaggingRulesService
 

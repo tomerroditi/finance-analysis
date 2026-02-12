@@ -61,7 +61,7 @@ Tracked in `scraping_history` table for audit and rate limiting:
 
 ## Adding a New Provider
 
-1. **Add to enums** in `naming_conventions.py` (CreditCards/Banks enum, LoginFields)
+1. **Add to enums** in `backend/constants/providers.py` (CreditCards/Banks enum, LoginFields)
 2. **Check Node.js support** - verify `israeli-bank-scrapers` supports provider
 3. **Create scraper class:**
 ```python

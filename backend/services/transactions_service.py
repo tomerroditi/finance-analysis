@@ -10,16 +10,16 @@ from typing import List, Literal, Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.naming_conventions import (
+from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     PROTECTED_TAGS,
-    Banks,
-    CreditCards,
     IncomeCategories,
     InvestmentCategories,
     LiabilitiesCategories,
     NonExpensesCategories,
-    Services,
+)
+from backend.constants.providers import Banks, CreditCards, Services
+from backend.constants.tables import (
     SplitTransactionsTableFields,
     Tables,
     TransactionsTableFields,

@@ -9,16 +9,8 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
 from backend.models.budget import BudgetRule
-from backend.naming_conventions import (
-    Tables,
-    ID,
-    NAME,
-    AMOUNT,
-    CATEGORY,
-    TAGS,
-    YEAR,
-    MONTH,
-)
+from backend.constants.budget import AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR
+from backend.constants.tables import Tables
 
 
 class BudgetRepository:

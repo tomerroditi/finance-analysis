@@ -17,7 +17,8 @@ from backend.models.transaction import (
     ManualInvestmentTransaction,
     TransactionBase,
 )
-from backend.naming_conventions import Services, SplitTransactionsTableFields, Tables
+from backend.constants.providers import Services
+from backend.constants.tables import SplitTransactionsTableFields, Tables
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )

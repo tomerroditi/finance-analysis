@@ -9,7 +9,7 @@ from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.naming_conventions import (
+from backend.constants.budget import (
     ALL_TAGS,
     AMOUNT,
     CATEGORY,
@@ -19,9 +19,9 @@ from backend.naming_conventions import (
     TAGS,
     TOTAL_BUDGET,
     YEAR,
-    NonExpensesCategories,
-    TransactionsTableFields,
 )
+from backend.constants.categories import NonExpensesCategories
+from backend.constants.tables import TransactionsTableFields
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.tagging_service import CategoriesTagsService
