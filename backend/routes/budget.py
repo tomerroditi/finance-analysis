@@ -4,15 +4,13 @@ Budget API routes.
 Provides endpoints for budget rule management, analysis, and project management.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
-import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.naming_conventions import ALL_TAGS
 from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
@@ -48,7 +46,9 @@ class ProjectUpdate(BaseModel):
 
 
 @router.get("/rules")
-async def get_budget_rules(db: Session = Depends(get_database)):
+async def get_budget_rules(
+    db: Session = Depends(get_database),
+) -> list[dict]:
     """Get all budget rules."""
     service = BudgetService(db)
     df = service.get_all_rules()
@@ -58,7 +58,7 @@ async def get_budget_rules(db: Session = Depends(get_database)):
 @router.get("/rules/{year}/{month}")
 async def get_budget_rules_by_month(
     year: int, month: int, db: Session = Depends(get_database)
-):
+) -> list[dict]:
     """Get budget rules for a specific month."""
     service = MonthlyBudgetService(db)
     df = service.get_month_rules(year, month)
@@ -68,33 +68,22 @@ async def get_budget_rules_by_month(
 @router.post("/rules")
 async def create_budget_rule(
     rule: BudgetRuleCreate, db: Session = Depends(get_database)
-):
+) -> dict[str, str]:
     """Create a new budget rule."""
     service = MonthlyBudgetService(db)
-    budget_rules = service.get_all_rules()
-    is_valid, msg = service.validate_rule_inputs(
-        budget_rules,
-        rule.name,
-        rule.category,
-        rule.tags.split(";") if isinstance(rule.tags, str) else rule.tags,
-        rule.amount,
-        rule.year,
-        rule.month,
-        None,
-    )
-    if not is_valid:
-        raise ValueError(msg)
-
-    service.add_rule(
-        rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
-    )
-    return {"status": "success"}
+    try:
+        service.create_rule(
+            rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
+        )
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/rules/{rule_id}")
 async def update_budget_rule(
     rule_id: int, rule: BudgetRuleUpdate, db: Session = Depends(get_database)
-):
+) -> dict[str, str]:
     """Update a budget rule."""
     service = BudgetService(db)
     updates = {k: v for k, v in rule.dict().items() if v is not None}
@@ -103,7 +92,9 @@ async def update_budget_rule(
 
 
 @router.delete("/rules/{rule_id}")
-async def delete_budget_rule(rule_id: int, db: Session = Depends(get_database)):
+async def delete_budget_rule(
+    rule_id: int, db: Session = Depends(get_database)
+) -> dict[str, str]:
     """Delete a budget rule."""
     service = BudgetService(db)
     service.delete_rule(rule_id)
@@ -113,7 +104,7 @@ async def delete_budget_rule(rule_id: int, db: Session = Depends(get_database)):
 @router.post("/rules/{year}/{month}/copy")
 async def copy_previous_month_rules(
     year: int, month: int, db: Session = Depends(get_database)
-):
+) -> dict[str, str]:
     """Copy budget rules from the previous month."""
     service = MonthlyBudgetService(db)
     budget_rules = service.get_all_rules()
@@ -134,50 +125,37 @@ async def get_monthly_analysis(
     month: int,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Get full monthly budget analysis."""
-    from backend.services.pending_refunds_service import PendingRefundsService
-
     service = MonthlyBudgetService(db)
-    view = service.get_monthly_budget_view(year, month, include_split_parents)
-    project_summary = service.get_monthly_project_spending_summary(
-        year, month, include_split_parents
-    )
-
-    # Get pending refunds summary
-    pending_service = PendingRefundsService(db)
-    pending_refunds = pending_service.get_all_pending(status="pending")
-    budget_adjustment = pending_service.get_budget_adjustment(year, month)
-
-    return {
-        "rules": view if view else [],
-        "project_spending": project_summary,
-        "pending_refunds": {
-            "items": pending_refunds,
-            "total_expected": budget_adjustment,
-        },
-    }
+    return service.get_monthly_analysis(year, month, include_split_parents)
 
 
 # --- Project Endpoints ---
 
 
 @router.get("/projects")
-async def get_projects(db: Session = Depends(get_database)):
+async def get_projects(
+    db: Session = Depends(get_database),
+) -> list[str]:
     """Get all project names."""
     service = ProjectBudgetService(db)
     return service.get_all_projects_names()
 
 
 @router.get("/projects/available")
-async def get_available_categories_for_new_project(db: Session = Depends(get_database)):
+async def get_available_categories_for_new_project(
+    db: Session = Depends(get_database),
+) -> list[str]:
     """Get available categories for a new project."""
     service = ProjectBudgetService(db)
     return service.get_available_categories_for_new_project()
 
 
 @router.post("/projects")
-async def create_project(project: ProjectCreate, db: Session = Depends(get_database)):
+async def create_project(
+    project: ProjectCreate, db: Session = Depends(get_database)
+) -> dict[str, str]:
     """Create a new project."""
     service = ProjectBudgetService(db)
     service.create_project(project.category, project.total_budget)
@@ -187,7 +165,7 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_datab
 @router.put("/projects/{name}")
 async def update_project(
     name: str, project: ProjectUpdate, db: Session = Depends(get_database)
-):
+) -> dict[str, str]:
     """Update project total budget."""
     service = ProjectBudgetService(db)
     service.update_project(name, project.total_budget)
@@ -195,7 +173,9 @@ async def update_project(
 
 
 @router.delete("/projects/{name}")
-async def delete_project(name: str, db: Session = Depends(get_database)):
+async def delete_project(
+    name: str, db: Session = Depends(get_database)
+) -> dict[str, str]:
     """Delete a project."""
     service = ProjectBudgetService(db)
     service.delete_project(name)
@@ -207,7 +187,7 @@ async def get_project_details(
     name: str,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Get project details including rules and transactions."""
     service = ProjectBudgetService(db)
     return service.get_project_budget_view(name, include_split_parents)

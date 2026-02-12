@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.naming_conventions import (
     PRIOR_WEALTH_TAG,
+    PROTECTED_TAGS,
     Banks,
     CreditCards,
     IncomeCategories,
@@ -230,6 +231,8 @@ class TransactionsService:
         self, table_name: str, unique_id: int, category: str | None, tag: str | None
     ) -> None:
         """Update the category and tag for a transaction by ID."""
+        category = self._normalize_empty_string(category)
+        tag = self._normalize_empty_string(tag)
         if table_name == Tables.CREDIT_CARD.value:
             self.transactions_repository.cc_repo.update_tagging_by_unique_id(
                 unique_id, category, tag
@@ -289,6 +292,146 @@ class TransactionsService:
                 f"service must be one of 'credit_cards', 'banks', 'cash'. Got '{service}'"
             )
         return self.transactions_repository.get_table(service)
+
+    @staticmethod
+    def _normalize_empty_string(value: str | None) -> str | None:
+        """Convert empty strings to None for category/tag fields."""
+        return None if value == "" else value
+
+    def create_transaction(self, data: dict, service: str) -> None:
+        """
+        Create a new manual transaction with validation and normalization.
+
+        Parameters
+        ----------
+        data : dict
+            Transaction data including date, description, amount, account_name,
+            and optional provider, account_number, category, tag.
+        service : str
+            The service type: 'cash' or 'manual_investments'.
+
+        Raises
+        ------
+        ValueError
+            If service is not 'cash' or 'manual_investments'.
+        RuntimeError
+            If the transaction could not be created.
+        """
+        if service not in ["cash", "manual_investments"]:
+            raise ValueError("Can only create cash or manual_investments transactions")
+
+        tx = ManualTransactionDTO(
+            date=datetime.combine(data["date"], datetime.min.time()),
+            account_name=data["account_name"],
+            description=data["description"],
+            amount=data["amount"],
+            provider=data.get("provider"),
+            account_number=data.get("account_number"),
+            category=self._normalize_empty_string(data.get("category")),
+            tag=self._normalize_empty_string(data.get("tag")),
+        )
+        success = self.transactions_repository.add_transaction(tx, service)
+        if not success:
+            raise RuntimeError("Failed to create transaction")
+
+        self.sync_prior_wealth_offset()
+
+    def update_transaction(
+        self, unique_id: int, source: str, updates: dict
+    ) -> bool:
+        """
+        Update a transaction with source-based permission constraints.
+
+        Manual sources (cash, manual_investment_transactions) can edit
+        description, amount, and provider. All sources can update category/tag.
+
+        Returns
+        -------
+        bool
+            True if updates were applied, False if no changes were needed.
+        """
+        target_repo = self.transactions_repository.get_repo_by_source(source)
+        is_manual = source in ["cash", "manual_investment_transactions"]
+
+        filtered_updates = {}
+        if is_manual:
+            if updates.get("description") is not None:
+                filtered_updates["description"] = updates["description"]
+            if updates.get("amount") is not None:
+                filtered_updates["amount"] = updates["amount"]
+            if updates.get("provider") is not None:
+                filtered_updates["provider"] = updates["provider"]
+
+        if updates.get("category") is not None:
+            filtered_updates["category"] = self._normalize_empty_string(
+                updates["category"]
+            )
+        if updates.get("tag") is not None:
+            filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
+
+        if not filtered_updates:
+            return False
+
+        return target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
+
+    def delete_transaction(self, unique_id: int, source: str) -> None:
+        """
+        Delete a transaction with source and protection checks.
+
+        Raises
+        ------
+        PermissionError
+            If the source does not allow deletion or the transaction is protected.
+        ValueError
+            If the transaction is not found.
+        """
+        if source not in ["cash_transactions", "manual_investment_transactions"]:
+            raise PermissionError(
+                f"Deletion of {source} transactions is prohibited"
+            )
+
+        target_repo = self.transactions_repository.get_repo_by_source(source)
+
+        from sqlalchemy import select
+
+        tx_record = self.transactions_repository.db.execute(
+            select(target_repo.model).where(
+                target_repo.model.unique_id == unique_id
+            )
+        ).scalar_one_or_none()
+
+        if not tx_record:
+            raise ValueError("Transaction not found")
+
+        tag = getattr(tx_record, "tag", None)
+        account_name = getattr(tx_record, "account_name", None)
+        if tag in PROTECTED_TAGS and account_name in PROTECTED_TAGS:
+            raise PermissionError(
+                f"Cannot manually delete system-generated {tag} transaction"
+            )
+
+        success = target_repo.delete_transaction_by_unique_id(unique_id)
+        if not success:
+            raise ValueError("Transaction not found or deletion failed")
+
+        self.sync_prior_wealth_offset()
+
+    def bulk_tag_transactions(
+        self,
+        transaction_ids: list[int],
+        source: str,
+        category: str | None,
+        tag: str | None,
+    ) -> None:
+        """Apply tagging to multiple transactions of the same source."""
+        tx_list = [
+            {"unique_id": uid, "source": source} for uid in transaction_ids
+        ]
+        self.transactions_repository.bulk_update_tagging(
+            tx_list,
+            self._normalize_empty_string(category),
+            self._normalize_empty_string(tag),
+        )
 
     def get_untagged_transactions(
         self,

@@ -4,9 +4,10 @@ Investments service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for investment tracking and analysis.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,56 @@ class InvestmentsService:
         self.db = db
         self.investments_repo = InvestmentsRepository(db)
         self.transactions_service = TransactionsService(db)
+
+    def get_all_investments(self, include_closed: bool = False) -> List[Dict[str, Any]]:
+        """Get all investments as a list of JSON-safe dicts."""
+        df = self.investments_repo.get_all_investments(include_closed=include_closed)
+        df = df.replace({np.nan: None})
+        return df.to_dict(orient="records")
+
+    def get_investment(self, investment_id: int) -> Dict[str, Any]:
+        """Get a single investment by ID as a JSON-safe dict."""
+        df = self.investments_repo.get_by_id(investment_id)
+        df = df.replace({np.nan: None})
+        return df.iloc[0].to_dict()
+
+    def get_investment_analysis(
+        self,
+        investment_id: int,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get detailed analysis for a specific investment with date defaults."""
+        metrics = self.calculate_profit_loss(investment_id)
+        if not start_date:
+            start_date = metrics.get("first_transaction_date") or (
+                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+            )
+        if not end_date:
+            end_date = date.today().strftime(r"%Y-%m-%d")
+
+        history = self.calculate_balance_over_time(investment_id, start_date, end_date)
+        return {"metrics": metrics, "history": history}
+
+    def create_investment(self, **kwargs) -> None:
+        """Create a new investment."""
+        self.investments_repo.create_investment(**kwargs)
+
+    def update_investment(self, investment_id: int, **updates) -> None:
+        """Update an investment."""
+        self.investments_repo.update_investment(investment_id, **updates)
+
+    def close_investment(self, investment_id: int, closed_date: str) -> None:
+        """Close an investment."""
+        self.investments_repo.close_investment(investment_id, closed_date)
+
+    def reopen_investment(self, investment_id: int) -> None:
+        """Reopen a closed investment."""
+        self.investments_repo.reopen_investment(investment_id)
+
+    def delete_investment(self, investment_id: int) -> None:
+        """Delete an investment."""
+        self.investments_repo.delete_investment(investment_id)
 
     def get_portfolio_overview(self) -> Dict[str, Any]:
         """

@@ -268,14 +268,58 @@ class MonthlyBudgetService(BudgetService):
 
         return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
 
-    @staticmethod
     def get_month_rules(
-        year: int, month: int, budget_rules: pd.DataFrame
+        self, year: int, month: int, budget_rules: pd.DataFrame | None = None
     ) -> pd.DataFrame:
         """Get all budget rules for a specific month."""
+        if budget_rules is None:
+            budget_rules = self.get_all_rules()
         return budget_rules[
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
         ]
+
+    def create_rule(
+        self,
+        name: str,
+        amount: float,
+        category: str,
+        tags: str | list[str],
+        month: int | None = None,
+        year: int | None = None,
+    ) -> None:
+        """Create a budget rule with validation and tag parsing."""
+        parsed_tags = tags.split(";") if isinstance(tags, str) else tags
+        budget_rules = self.get_all_rules()
+        is_valid, msg = self.validate_rule_inputs(
+            budget_rules, name, category, parsed_tags, amount, year, month, None
+        )
+        if not is_valid:
+            raise ValueError(msg)
+
+        self.add_rule(name, amount, category, tags, month, year)
+
+    def get_monthly_analysis(
+        self, year: int, month: int, include_split_parents: bool = False
+    ) -> dict:
+        """Get full monthly budget analysis combining budget view, project spending, and pending refunds."""
+        view = self.get_monthly_budget_view(year, month, include_split_parents)
+        project_summary = self.get_monthly_project_spending_summary(
+            year, month, include_split_parents
+        )
+
+        pending_refunds = self.pending_refunds_service.get_all_pending(status="pending")
+        budget_adjustment = self.pending_refunds_service.get_budget_adjustment(
+            year, month
+        )
+
+        return {
+            "rules": view if view else [],
+            "project_spending": project_summary,
+            "pending_refunds": {
+                "items": pending_refunds,
+                "total_expected": budget_adjustment,
+            },
+        }
 
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
