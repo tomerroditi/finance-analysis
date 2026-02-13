@@ -6,11 +6,14 @@ Provides endpoints for account credential management.
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from backend.constants.providers import LoginFields
+from backend.dependencies import get_database
 from backend.repositories.credentials_repository import CredentialsRepository
+from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
 
 router = APIRouter()
@@ -77,12 +80,18 @@ async def get_provider_fields(provider: str) -> dict[str, List[str]]:
 
 @router.delete("/{service}/{provider}/{account_name}")
 async def delete_credential(
-    service: str, provider: str, account_name: str
+    service: str,
+    provider: str,
+    account_name: str,
+    db: Session = Depends(get_database),
 ) -> dict[str, str]:
-    """Delete a credential."""
+    """Delete a credential and clean up associated data."""
     creds_service = CredentialsService()
     try:
         creds_service.delete_credential(service, provider, account_name)
+        if service == "banks":
+            balance_service = BankBalanceService(db)
+            balance_service.delete_for_account(provider, account_name)
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
