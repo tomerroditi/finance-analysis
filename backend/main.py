@@ -19,6 +19,7 @@ from backend.errors import (
 )
 from backend.routes import (
     analytics,
+    bank_balances,
     budget,
     credentials,
     investments,
@@ -79,6 +80,9 @@ app.include_router(
 )
 app.include_router(
     tagging_rules.router, prefix="/api/tagging-rules", tags=["Tagging Rules"]
+)
+app.include_router(
+    bank_balances.router, prefix="/api/bank-balances", tags=["Bank Balances"]
 )
 
 
