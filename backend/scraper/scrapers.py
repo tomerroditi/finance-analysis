@@ -32,6 +32,7 @@ from backend.scraper.exceptions import (
     ServiceError,
     TimeoutError,
 )
+from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
 
@@ -295,6 +296,7 @@ class Scraper(ABC):
                 self.data = self._add_missing_columns(self.data)
                 self._save_scraped_transactions()
                 self._apply_auto_tagging()
+                self._recalculate_bank_balances()
         except CredentialsError as e:
             print(
                 f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
@@ -700,6 +702,27 @@ class Scraper(ABC):
         except Exception as e:
             print(
                 f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Error auto-tagging: {str(e)}",
+                flush=True,
+            )
+
+    def _recalculate_bank_balances(self):
+        """
+        Recalculate bank balance after a successful scrape.
+        Only runs for bank scrapers (service_name == 'banks').
+        """
+        if self.service_name != "banks":
+            return
+        try:
+            with get_db_context() as db:
+                balance_service = BankBalanceService(db)
+                balance_service.recalculate_for_account(
+                    self.provider_name, self.account_name
+                )
+        except Exception as e:
+            print(
+                f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+                f"{self.provider_name}: {self.account_name}: "
+                f"Error recalculating bank balance: {str(e)}",
                 flush=True,
             )
 
