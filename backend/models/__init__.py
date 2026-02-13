@@ -4,6 +4,7 @@ SQLAlchemy ORM Models
 This package contains SQLAlchemy ORM models for database tables.
 """
 
+from backend.models.bank_balance import BankBalance
 from backend.models.base import Base, TimestampMixin
 from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
@@ -29,6 +30,7 @@ __all__ = [
     "ManualInvestmentTransaction",
     "SplitTransaction",
     # Other models
+    "BankBalance",
     "BudgetRule",
     "Investment",
     "TaggingRule",
