@@ -20,6 +20,10 @@ interface AppState {
   // Global Search
   searchOpen: boolean;
   setSearchOpen: (open: boolean) => void;
+
+  // Auto Tagging Panel (Transactions page sidebar)
+  autoTaggingPanelOpen: boolean;
+  toggleAutoTaggingPanel: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -40,4 +44,8 @@ export const useAppStore = create<AppState>((set) => ({
   // Global Search
   searchOpen: false,
   setSearchOpen: (open) => set({ searchOpen: open }),
+
+  // Auto Tagging Panel
+  autoTaggingPanelOpen: true,
+  toggleAutoTaggingPanel: () => set((state) => ({ autoTaggingPanelOpen: !state.autoTaggingPanelOpen })),
 }));

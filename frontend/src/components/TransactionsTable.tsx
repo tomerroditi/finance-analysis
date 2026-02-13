@@ -17,6 +17,9 @@ import {
   RefreshCw,
   Link2,
   Plus,
+  Filter,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
@@ -27,6 +30,8 @@ import {
   pendingRefundsApi,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
+import { useTransactionFilters } from "../hooks/useTransactionFilters";
+import { FilterPanel } from "./transactions/FilterPanel";
 
 export interface Transaction {
   id?: any;
@@ -115,9 +120,16 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     key: "date",
     direction: "desc",
   });
-  const [filterText, setFilterText] = useState("");
-  const [onlyUntagged, setOnlyUntagged] = useState(false);
+  const {
+    filters,
+    options: filterOptions,
+    activeFilterCount,
+    filteredTransactions,
+    updateFilters,
+    resetFilters,
+  } = useTransactionFilters(transactions);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Modal state
   const [editingTransaction, setEditingTransaction] =
@@ -192,37 +204,12 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   // Reset page when transactions or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [transactions, filterText]);
+  }, [transactions, filters]);
 
   // Sync selection with parent
   useEffect(() => {
     onSelectionChange?.(selectedIds);
   }, [selectedIds, onSelectionChange]);
-
-  // Filter transactions
-  const filteredTransactions = useMemo(() => {
-    let result = transactions;
-
-    // Apply untagged filter first
-    if (onlyUntagged) {
-      result = result.filter((tx) => !tx.tag || tx.tag === "-");
-    }
-
-    // Apply text filter
-    if (filterText.trim()) {
-      const lowerFilter = filterText.toLowerCase();
-      result = result.filter(
-        (tx) =>
-          getDescription(tx).toLowerCase().includes(lowerFilter) ||
-          (tx.category ?? "").toLowerCase().includes(lowerFilter) ||
-          (tx.tag ?? "").toLowerCase().includes(lowerFilter) ||
-          (tx.provider ?? "").toLowerCase().includes(lowerFilter) ||
-          (tx.account_name ?? "").toLowerCase().includes(lowerFilter),
-      );
-    }
-
-    return result;
-  }, [transactions, filterText, onlyUntagged]);
 
   // Sort transactions
   const sortedTransactions = useMemo(() => {
@@ -441,76 +428,107 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   return (
     <>
 
-      {/* Filter Input */}
+      {/* Filter Bar */}
       {showFilter && (
-        <div className="mb-3 flex items-center gap-3">
-          <div className="relative flex-1 max-w-xs">
-            <Search
-              size={14}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            />
-            <input
-              type="text"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Filter transactions..."
-              className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
-            />
-            {filterText && (
-              <button
-                onClick={() => setFilterText("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
-            <label
-              className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
-              htmlFor="table-untagged-only"
+        <div className="mb-3 space-y-3">
+          {/* Controls row — single line */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors shrink-0 ${
+                filtersOpen || activeFilterCount > 0
+                  ? "bg-[var(--primary)]/10 border-[var(--primary)]/30 text-[var(--primary)]"
+                  : "bg-[var(--surface-base)] border-[var(--surface-light)] text-[var(--text-muted)] hover:border-[var(--primary)]/50"
+              }`}
             >
-              Only Untagged
-            </label>
-            <input
-              id="table-untagged-only"
-              type="checkbox"
-              checked={onlyUntagged}
-              onChange={(e) => setOnlyUntagged(e.target.checked)}
-              className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
-            />
-          </div>
-          {showSplitParentsFilter && (
+              <Filter size={14} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--primary)] text-white leading-none">
+                  {activeFilterCount}
+                </span>
+              )}
+              {filtersOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            <div className="relative flex-1 min-w-0">
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              />
+              <input
+                type="text"
+                value={filters.filterText}
+                onChange={(e) => updateFilters({ filterText: e.target.value })}
+                placeholder="Search transactions..."
+                className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+              />
+              {filters.filterText && (
+                <button
+                  onClick={() => updateFilters({ filterText: "" })}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
               <label
                 className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
-                htmlFor="table-split-parents"
+                htmlFor="table-untagged-only"
               >
-                Show Split Parents
+                Only Untagged
               </label>
               <input
-                id="table-split-parents"
+                id="table-untagged-only"
                 type="checkbox"
-                checked={includeSplitParents}
-                onChange={(e) => onIncludeSplitParentsChange?.(e.target.checked)}
+                checked={filters.onlyUntagged}
+                onChange={(e) => updateFilters({ onlyUntagged: e.target.checked })}
                 className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
               />
             </div>
-          )}
-          {onAddTransaction && (
-            <button
-              onClick={onAddTransaction}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-hover)] transition-colors text-xs font-medium"
-            >
-              <Plus size={14} />
-              <span>Add Transaction</span>
-            </button>
-          )}
-          {(filterText || onlyUntagged) && (
-            <span className="text-xs text-[var(--text-muted)]">
-              {filteredTransactions.length} of {transactions.length}{" "}
-              transactions
-            </span>
+            {showSplitParentsFilter && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
+                <label
+                  className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
+                  htmlFor="table-split-parents"
+                >
+                  Show Split Parents
+                </label>
+                <input
+                  id="table-split-parents"
+                  type="checkbox"
+                  checked={includeSplitParents}
+                  onChange={(e) => onIncludeSplitParentsChange?.(e.target.checked)}
+                  className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                />
+              </div>
+            )}
+            {onAddTransaction && (
+              <button
+                onClick={onAddTransaction}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-hover)] transition-colors text-xs font-medium shrink-0"
+              >
+                <Plus size={14} />
+                <span>Add Transaction</span>
+              </button>
+            )}
+            {(filters.filterText || activeFilterCount > 0) && (
+              <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
+                {filteredTransactions.length} of {transactions.length}{" "}
+                transactions
+              </span>
+            )}
+          </div>
+          {filtersOpen && (
+            <FilterPanel
+              filters={filters}
+              options={filterOptions}
+              onFilterChange={updateFilters}
+              onReset={resetFilters}
+              activeFilterCount={activeFilterCount}
+              compact={compact}
+            />
           )}
         </div>
       )}
@@ -791,7 +809,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   colSpan={columnCount}
                   className={`px-4 ${compact ? "py-4" : "py-8"} text-center text-[var(--text-muted)]`}
                 >
-                  {filterText
+                  {filters.filterText || activeFilterCount > 0
                     ? "No matching transactions."
                     : "No transactions found."}
                 </td>

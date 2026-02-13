@@ -80,7 +80,7 @@ export function Transactions() {
 
   return (
     <div className="flex relative">
-      <div className="space-y-6 min-w-0 flex-1">
+      <div className="space-y-6 min-w-0 flex-1 transition-all duration-300">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Transactions</h1>

@@ -60,7 +60,7 @@ export function Dashboard() {
       (!!dateRange.start && !!dateRange.end),
   });
 
-  const { data: incomeOutcome, isLoading: ioLoading } = useQuery({
+  const { data: incomeOutcome } = useQuery({
     queryKey: ["income-outcome", dateRange.start, dateRange.end, isTestMode],
     queryFn: async () => {
       const start = dateRange.start
