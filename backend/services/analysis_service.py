@@ -9,6 +9,7 @@ from backend.constants.categories import (
     LiabilitiesCategories,
     NonExpensesCategories,
 )
+from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 
 
@@ -16,6 +17,7 @@ class AnalysisService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = TransactionsRepository(db)
+        self.balance_repo = BankBalanceRepository(db)
 
     def get_overview(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -80,6 +82,13 @@ class AnalysisService:
             df["category"].isin([c.value for c in LiabilitiesCategories])
             & (df["amount"] > 0)
         )
+
+    def _get_bank_prior_wealth_total(self) -> float:
+        """Get total prior wealth from all bank balance records."""
+        df = self.balance_repo.get_all()
+        if df.empty:
+            return 0.0
+        return float(df["prior_wealth_amount"].sum())
 
     def get_net_balance_over_time(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -187,9 +196,11 @@ class AnalysisService:
         sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
         # Split out Prior Wealth from Other Income
         other_income_df = df[df["category"] == OTHER_INCOME]
-        sources[PRIOR_WEALTH_TAG] = other_income_df[
+        txn_prior_wealth = other_income_df[
             other_income_df["tag"] == PRIOR_WEALTH_TAG
         ]["amount"].sum()
+        bank_prior_wealth = self._get_bank_prior_wealth_total()
+        sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth
         sources[OTHER_INCOME] = other_income_df[
             other_income_df["tag"] != PRIOR_WEALTH_TAG
         ]["amount"].sum()
