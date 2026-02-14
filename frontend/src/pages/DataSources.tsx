@@ -100,6 +100,9 @@ export function DataSources() {
       setEditingBalance(null);
       setBalanceInput("");
     },
+    onError: (error: any) => {
+      alert(error.response?.data?.detail || "Failed to set balance.");
+    },
   });
 
   const [editingBalance, setEditingBalance] = useState<string | null>(null);
