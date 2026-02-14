@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Wallet, PiggyBank } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, PiggyBank, Landmark } from "lucide-react";
 import Plot from "react-plotly.js";
 import { format } from "date-fns";
-import { analyticsApi } from "../services/api";
+import { analyticsApi, bankBalancesApi } from "../services/api";
 import { DateRangePicker, type DateRange } from "../components/DateRangePicker";
 import { SankeyChart } from "../components/SankeyChart";
 import { ScrapingWidget } from "../components/dashboard/ScrapingWidget";
@@ -135,6 +135,11 @@ export function Dashboard() {
       (!!dateRange.start && !!dateRange.end),
   });
 
+  const { data: bankBalances } = useQuery({
+    queryKey: ["bank-balances", isTestMode],
+    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+  });
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("he-IL", {
       style: "currency",
@@ -193,6 +198,30 @@ export function Dashboard() {
           color="bg-purple-500/20 text-purple-400"
         />
       </div>
+
+      {/* Bank Balances */}
+      {bankBalances && bankBalances.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--text-muted)] mb-4">Bank Balances</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard
+              title="Total Bank Balance"
+              value={formatCurrency(bankBalances.reduce((sum, b) => sum + b.balance, 0))}
+              icon={Landmark}
+              color="bg-amber-500/20 text-amber-400"
+            />
+            {bankBalances.map((b) => (
+              <StatCard
+                key={`${b.provider}-${b.account_name}`}
+                title={b.account_name}
+                value={formatCurrency(b.balance)}
+                icon={Landmark}
+                color="bg-amber-500/20 text-amber-300"
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Actions & Status Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
