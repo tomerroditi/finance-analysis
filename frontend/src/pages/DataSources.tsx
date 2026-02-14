@@ -13,8 +13,15 @@ import {
   Edit2,
   Eye,
   EyeOff,
+  DollarSign,
+  Check,
 } from "lucide-react";
-import { credentialsApi } from "../services/api";
+import {
+  credentialsApi,
+  bankBalancesApi,
+  scrapingApi,
+} from "../services/api";
+import type { BankBalance } from "../services/api";
 
 import { useTestMode } from "../context/TestModeContext";
 
@@ -74,6 +81,61 @@ export function DataSources() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["credentials-accounts"] }),
   });
+
+  // Bank Balances
+  const { data: bankBalances } = useQuery({
+    queryKey: ["bank-balances", isTestMode],
+    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+  });
+
+  const { data: lastScrapes } = useQuery({
+    queryKey: ["last-scrapes", isTestMode],
+    queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
+  });
+
+  const setBalanceMutation = useMutation({
+    mutationFn: bankBalancesApi.setBalance,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bank-balances"] });
+      setEditingBalance(null);
+      setBalanceInput("");
+    },
+  });
+
+  const [editingBalance, setEditingBalance] = useState<string | null>(null);
+  const [balanceInput, setBalanceInput] = useState("");
+
+  const getAccountBalance = (
+    provider: string,
+    accountName: string,
+  ): BankBalance | undefined => {
+    return bankBalances?.find(
+      (b) => b.provider === provider && b.account_name === accountName,
+    );
+  };
+
+  const isScrapedToday = (
+    provider: string,
+    accountName: string,
+  ): boolean => {
+    const scrape = lastScrapes?.find(
+      (s) => s.provider === provider && s.account_name === accountName,
+    );
+    if (!scrape?.last_scrape_date) return false;
+    const scrapeDate = new Date(scrape.last_scrape_date);
+    const today = new Date();
+    return (
+      scrapeDate.getFullYear() === today.getFullYear() &&
+      scrapeDate.getMonth() === today.getMonth() &&
+      scrapeDate.getDate() === today.getDate()
+    );
+  };
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("he-IL", {
+      style: "currency",
+      currency: "ILS",
+    }).format(val);
 
   const resetForm = () => {
     setIsAddOpen(false);
@@ -214,6 +276,107 @@ export function DataSources() {
                   <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
                     <Shield size={12} /> Secure Connection
                   </div>
+                  {acc.service === "banks" &&
+                    (() => {
+                      const bal = getAccountBalance(
+                        acc.provider,
+                        acc.account_name,
+                      );
+                      const key = `${acc.provider}|${acc.account_name}`;
+                      const isEditing = editingBalance === key;
+                      const canSetBalance = isScrapedToday(
+                        acc.provider,
+                        acc.account_name,
+                      );
+
+                      if (isEditing) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={balanceInput}
+                              onChange={(e) => setBalanceInput(e.target.value)}
+                              placeholder="Enter balance..."
+                              className="w-36 px-3 py-1.5 rounded-lg bg-[var(--bg)] border border-[var(--surface-light)] text-white text-sm focus:outline-none focus:border-[var(--primary)]"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && balanceInput) {
+                                  setBalanceMutation.mutate({
+                                    provider: acc.provider,
+                                    account_name: acc.account_name,
+                                    balance: parseFloat(balanceInput),
+                                  });
+                                }
+                                if (e.key === "Escape") {
+                                  setEditingBalance(null);
+                                  setBalanceInput("");
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                if (balanceInput) {
+                                  setBalanceMutation.mutate({
+                                    provider: acc.provider,
+                                    account_name: acc.account_name,
+                                    balance: parseFloat(balanceInput),
+                                  });
+                                }
+                              }}
+                              className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all"
+                            >
+                              <Check size={16} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingBalance(null);
+                                setBalanceInput("");
+                              }}
+                              className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex items-center gap-2">
+                          {bal ? (
+                            <span className="text-sm font-semibold text-amber-400">
+                              {formatCurrency(bal.balance)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)] italic">
+                              No balance set
+                            </span>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (canSetBalance) {
+                                setEditingBalance(key);
+                                setBalanceInput(
+                                  bal ? String(bal.balance) : "",
+                                );
+                              }
+                            }}
+                            disabled={!canSetBalance}
+                            className={`p-1.5 rounded-lg transition-all ${
+                              canSetBalance
+                                ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                                : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed opacity-50"
+                            }`}
+                            title={
+                              canSetBalance
+                                ? "Set Balance"
+                                : "Scrape today first to set balance"
+                            }
+                          >
+                            <DollarSign size={16} />
+                          </button>
+                        </div>
+                      );
+                    })()}
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
                     <button
                       onClick={() => handleView(acc)}
