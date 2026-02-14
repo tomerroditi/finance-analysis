@@ -2,10 +2,11 @@ from enum import Enum
 
 
 PRIOR_WEALTH_TAG = "Prior Wealth"
+CREDIT_CARDS = "Credit Cards"
 
 PROTECTED_TAGS = [PRIOR_WEALTH_TAG]
 PROTECTED_CATEGORIES = [
-    "Credit Cards",
+    CREDIT_CARDS,
     "Salay",
     "Other Income",
     "Investments",

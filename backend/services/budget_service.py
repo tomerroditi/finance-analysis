@@ -9,6 +9,7 @@ from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.constants.categories import CREDIT_CARDS
 from backend.constants.budget import (
     ALL_TAGS,
     AMOUNT,
@@ -332,7 +333,7 @@ class MonthlyBudgetService(BudgetService):
 
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [c.value for c in NonExpensesCategories]
+                [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
@@ -464,7 +465,7 @@ class MonthlyBudgetService(BudgetService):
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [c.value for c in NonExpensesCategories]
+                [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
