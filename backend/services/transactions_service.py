@@ -24,6 +24,7 @@ from backend.constants.tables import (
     Tables,
     TransactionsTableFields,
 )
+from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -54,6 +55,7 @@ class TransactionsService:
         """
         self.transactions_repository = TransactionsRepository(db)
         self.split_transactions_repository = SplitTransactionsRepository(db)
+        self.balance_repo = BankBalanceRepository(db)
 
     def add_transaction(
         self, transaction: dict, service: Literal["cash", "manual_investments"]
@@ -214,7 +216,7 @@ class TransactionsService:
     def get_data_for_analysis(
         self, include_split_parents: bool = False
     ) -> pd.DataFrame:
-        """Get table data for analysis purposes."""
+        """Get table data for analysis purposes, including bank prior wealth."""
         cc_data = self.get_table_for_analysis("credit_cards", include_split_parents)
         bank_data = self.get_table_for_analysis("banks", include_split_parents)
         cash_data = self.get_table_for_analysis("cash", include_split_parents)
@@ -222,10 +224,45 @@ class TransactionsService:
             "manual_investments", include_split_parents
         )
         dfs = [cc_data, bank_data, cash_data, manual_investments_data]
+
+        prior_wealth_df = self._build_bank_prior_wealth_rows()
+        if not prior_wealth_df.empty:
+            dfs.append(prior_wealth_df)
+
         dfs = [df for df in dfs if not df.empty]
         if not dfs:
             return pd.DataFrame()
         return pd.concat(dfs, ignore_index=True)
+
+    def _build_bank_prior_wealth_rows(self) -> pd.DataFrame:
+        """Build synthetic prior wealth rows from bank balance records."""
+        balances_df = self.balance_repo.get_all()
+        if balances_df.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for _, bal in balances_df.iterrows():
+            if bal["prior_wealth_amount"] == 0:
+                continue
+            rows.append({
+                TransactionsTableFields.ID.value: f"bank_pw_{bal['id']}",
+                TransactionsTableFields.DATE.value: bal.get("last_manual_update") or bal.get("created_at", ""),
+                TransactionsTableFields.PROVIDER.value: bal["provider"],
+                TransactionsTableFields.ACCOUNT_NAME.value: bal["account_name"],
+                TransactionsTableFields.ACCOUNT_NUMBER.value: None,
+                TransactionsTableFields.DESCRIPTION.value: f"Prior Wealth ({bal['provider']} - {bal['account_name']})",
+                TransactionsTableFields.AMOUNT.value: bal["prior_wealth_amount"],
+                TransactionsTableFields.CATEGORY.value: IncomeCategories.OTHER_INCOME.value,
+                TransactionsTableFields.TAG.value: PRIOR_WEALTH_TAG,
+                TransactionsTableFields.UNIQUE_ID.value: f"bank_pw_{bal['id']}",
+                TransactionsTableFields.SOURCE.value: "bank_balances",
+                TransactionsTableFields.SPLIT_ID.value: None,
+                TransactionsTableFields.TYPE.value: "normal",
+            })
+
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
 
     def update_tagging_by_id(
         self, table_name: str, unique_id: int, category: str | None, tag: str | None
