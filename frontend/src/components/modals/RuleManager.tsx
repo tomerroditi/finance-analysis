@@ -12,7 +12,6 @@ export function RuleManager({ onClose }: RuleManagerProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [overwrite, setOverwrite] = useState(true);
   const [newRule, setNewRule] = useState({
     name: "",
     description_contains: "", // Still using this for the simple UI, will map to conditions
@@ -89,7 +88,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
   });
 
   const applyMutation = useMutation({
-    mutationFn: () => taggingApi.applyRules(overwrite),
+    mutationFn: () => taggingApi.applyRules(),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setSuccessMessage(
@@ -146,19 +145,6 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               {applyMutation.isPending ? "Applying..." : "Apply Rules Now"}
             </button>
           </div>
-        </div>
-        <div className="flex items-center gap-2 mb-4 px-1">
-          <label className="flex items-center gap-2 text-sm text-[var(--text-muted)] cursor-pointer select-none group">
-            <input
-              type="checkbox"
-              checked={overwrite}
-              onChange={(e) => setOverwrite(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-600 bg-gray-700/50 text-[var(--primary)] focus:ring-[var(--primary)] focus:ring-offset-0 transition-all cursor-pointer"
-            />
-            <span className="group-hover:text-white transition-colors">
-              Overwrite existing tags
-            </span>
-          </label>
         </div>
 
         {successMessage && (
