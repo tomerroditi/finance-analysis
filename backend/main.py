@@ -12,11 +12,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.database import get_engine
 from backend.errors import (
     EntityAlreadyExistsException,
     EntityNotFoundException,
     ValidationException,
 )
+from backend.models import Base
 from backend.routes import (
     analytics,
     bank_balances,
@@ -39,6 +41,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
     # Startup
     print("Starting Finance Analysis API...")
+    Base.metadata.create_all(bind=get_engine())
     yield
     # Shutdown
     print("Shutting down Finance Analysis API...")
