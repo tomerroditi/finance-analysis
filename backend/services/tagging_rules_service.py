@@ -165,7 +165,12 @@ class TaggingRulesService:
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if not rule:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
-        return self._apply_single_rule(rule.__dict__, overwrite=overwrite)
+        rule_dict = {
+            "conditions": rule.conditions,
+            "category": rule.category,
+            "tag": rule.tag,
+        }
+        return self._apply_single_rule(rule_dict, overwrite=overwrite)
 
     def preview_rule(
         self, conditions: Dict[str, Any], limit: int = 100
@@ -334,11 +339,12 @@ class TaggingRulesService:
                 batch_size = 900
                 for i in range(0, len(ids_to_check), batch_size):
                     batch = ids_to_check[i : i + batch_size]
-                    id_list = ",".join(map(str, batch))
+                    id_params = {f"bid_{j}": id_val for j, id_val in enumerate(batch)}
+                    id_placeholders = ",".join(f":bid_{j}" for j in range(len(batch)))
 
-                    check_query = f"SELECT count(*) as count FROM {table} WHERE id IN ({id_list}) AND ({r_where})"
+                    check_query = f"SELECT count(*) as count FROM {table} WHERE id IN ({id_placeholders}) AND ({r_where})"
                     # Combine params
-                    combined_params = {**r_params}
+                    combined_params = {**r_params, **id_params}
 
                     res = self.db.execute(text(check_query), combined_params).scalar()
                     if res > 0:
@@ -377,7 +383,8 @@ class TaggingRulesService:
                 extra_conditions = f" AND ({category_col} IS NOT :category OR {tag_col} IS NOT :tag OR {category_col} IS NULL)"
 
             # Find IDs first
-            find_query = f"SELECT unique_id FROM {table} WHERE {where_conditions}{extra_conditions}"
+            find_query = f"SELECT unique_id FROM {table} WHERE ({where_conditions}){extra_conditions}"
+            print(find_query, params, flush=True)
             find_params = {
                 "category": rule["category"],
                 "tag": rule["tag"],
@@ -393,15 +400,17 @@ class TaggingRulesService:
             ids_to_update = ids_df["unique_id"].tolist()
 
             # 2. Perform the update
+            uid_params = {f"uid_{j}": uid for j, uid in enumerate(ids_to_update)}
+            uid_placeholders = ",".join(f":uid_{j}" for j in range(len(ids_to_update)))
             update_query = f"""
                 UPDATE {table}
                 SET {category_col} = :category,
                     {tag_col} = :tag
-                WHERE unique_id IN ({",".join(map(str, ids_to_update))})
+                WHERE unique_id IN ({uid_placeholders})
             """
             self.transactions_repo.update_with_query(
                 update_query,
-                {"category": rule["category"], "tag": rule["tag"]},
+                {"category": rule["category"], "tag": rule["tag"], **uid_params},
                 service=table,
             )
 
