@@ -257,6 +257,26 @@ export const analyticsApi = {
     }),
 };
 
+// Bank Balances API
+export interface BankBalance {
+  id: number;
+  provider: string;
+  account_name: string;
+  balance: number;
+  prior_wealth_amount: number;
+  last_manual_update: string | null;
+  last_scrape_update: string | null;
+}
+
+export const bankBalancesApi = {
+  getAll: () => api.get<BankBalance[]>("/bank-balances/"),
+  setBalance: (data: {
+    provider: string;
+    account_name: string;
+    balance: number;
+  }) => api.post<BankBalance>("/bank-balances/", data),
+};
+
 // Pending Refunds API
 export interface PendingRefund {
   id: number;
