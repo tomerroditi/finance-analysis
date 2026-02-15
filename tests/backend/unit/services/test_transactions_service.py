@@ -46,7 +46,7 @@ class TestTransactionsServiceDataRetrieval:
     ):
         """Verify split parent transactions are excluded by default."""
         service = TransactionsService(db_session)
-        result = service.get_data_for_analysis(include_split_parents=False)
+        result = service.get_data_for_analysis()
 
         type_col = TransactionsTableFields.TYPE.value
         assert "split_parent" not in result[type_col].values
@@ -59,10 +59,20 @@ class TestTransactionsServiceDataRetrieval:
         result = service.get_data_for_analysis()
 
         # The split transactions fixture has 5 children total (3 CC + 2 bank).
-        # Split children are identified by type="split_child" in the data.
-        type_col = TransactionsTableFields.TYPE.value
-        split_rows = result[result[type_col] == "split_child"]
-        assert len(split_rows) >= 5
+        # Verify specific split amounts are present to confirm children are included.
+        amount_col = TransactionsTableFields.AMOUNT.value
+        category_col = TransactionsTableFields.CATEGORY.value
+
+        # CC splits: -150 (Food/Groceries), -100 (Home/Cleaning), -50 (Other)
+        cc_split_amounts = {-150.0, -100.0, -50.0}
+        # Bank splits: -120 (Home/Maintenance), -80 (Other)
+        bank_split_amounts = {-120.0, -80.0}
+        expected_split_amounts = cc_split_amounts | bank_split_amounts
+
+        # Check that all expected split amounts are present in the result
+        result_amounts = set(result[amount_col].values)
+        for amt in expected_split_amounts:
+            assert amt in result_amounts, f"Missing split amount {amt}"
 
     def test_get_data_for_analysis_includes_prior_wealth(
         self, db_session, seed_prior_wealth_transactions
@@ -233,6 +243,9 @@ class TestTransactionsServiceCRUD:
         cc_df = service.get_all_transactions("credit_cards")
         unique_id = int(cc_df.iloc[0]["unique_id"])
 
+        # Capture original description before update
+        original_description = cc_df.iloc[0]["description"]
+
         # Try to update description (should be filtered out for scraped source)
         updates = {
             "description": "Should not update",
@@ -244,10 +257,10 @@ class TestTransactionsServiceCRUD:
         )
         assert result is True
 
-        # Verify only category/tag changed, description stayed
+        # Verify only category/tag changed, description retained original value
         updated_df = service.get_all_transactions("credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
-        assert updated_row["description"] != "Should not update"
+        assert updated_row["description"] == original_description
         assert updated_row["category"] == "Transport"
         assert updated_row["tag"] == "Gas"
 
@@ -366,18 +379,26 @@ class TestTransactionsServiceKPIs:
 
         # Salary income: 8000 + 8500 + 8200 = 24700
         # Other Income (freelance): 3500
+        # Ignore transfers (500 + 700) are NOT income
         # Total income = 28200
         assert kpis["income"] == pytest.approx(28200.0, abs=1.0)
 
-        # Expenses should be positive (negative amounts * -1)
-        assert kpis["expenses"] > 0
+        # Expenses (non-income, non-ignore negative amounts * -1):
+        # CC: 150+80+60+40+180+120+55+45+200+95+70+35+250 = 1380
+        # Bank Rent: 3000*3 = 9000
+        # Cash: 15+10+18+12+12+8 = 75
+        # Total = 10455
+        assert kpis["expenses"] == pytest.approx(10455.0, abs=1.0)
 
-        # Savings rate should be a percentage
-        assert isinstance(kpis["savings_rate"], float)
+        # Savings rate = (total_savings / income) * 100
+        # bank_balance_increase = income - expenses - liabilities_paid - investments = 28200 - 10455 - 0 - 0 = 17745
+        # total_savings = bank_balance_increase + investments = 17745 + 0 = 17745
+        # savings_rate = 17745 / 28200 * 100 ≈ 62.93%
+        assert kpis["savings_rate"] == pytest.approx(62.93, abs=1.0)
 
-        # Largest expense category should be a string
-        assert isinstance(kpis["largest_expense_cat_name"], str)
-        assert kpis["largest_expense_cat_name"] != "-"
+        # Largest expense category should be Home (3 x 3000 rent = 9000)
+        assert kpis["largest_expense_cat_name"] == "Home"
+        assert kpis["largest_expense_cat_val"] == pytest.approx(9000.0, abs=1.0)
 
     def test_split_data_by_category_types(self, db_session, seed_base_transactions):
         """Verify data split into expenses, investments, income, liabilities."""
@@ -394,13 +415,13 @@ class TestTransactionsServiceKPIs:
 
         # Income should contain only income categories
         income_cats = [e.value for e in IncomeCategories]
-        if not data["income"].empty:
-            assert all(data["income"][category_col].isin(income_cats))
+        assert not data["income"].empty, "Expected income data from seed fixture"
+        assert all(data["income"][category_col].isin(income_cats))
 
         # Expenses should NOT contain non-expense categories
         non_expense_cats = [e.value for e in NonExpensesCategories]
-        if not data["expenses"].empty:
-            assert not any(data["expenses"][category_col].isin(non_expense_cats))
+        assert not data["expenses"].empty, "Expected expense data from seed fixture"
+        assert not any(data["expenses"][category_col].isin(non_expense_cats))
 
     def test_get_liabilities_summary(self, db_session, seed_base_transactions):
         """Verify liabilities breakdown by tag."""
@@ -461,6 +482,7 @@ class TestTransactionsServiceKPIs:
 
         assert summary["total_received"] == pytest.approx(500000.0)
         assert summary["total_paid"] == pytest.approx(6000.0)
+        assert summary["outstanding_balance"] == pytest.approx(494000.0)
 
 
 class TestTransactionsServicePriorWealth:
@@ -470,7 +492,7 @@ class TestTransactionsServicePriorWealth:
         """Verify offset transaction created for cash deposits."""
         service = TransactionsService(db_session)
 
-        # Create a negative cash transaction (deposit/expense)
+        # Create a cash expense (negative amount triggers prior wealth offset)
         data = {
             "date": date(2024, 4, 1),
             "account_name": "Cash Wallet",
