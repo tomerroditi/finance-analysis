@@ -268,9 +268,7 @@ class TestMonthlyBudgetService:
 
         result = service.copy_last_month_rules(2024, 2, all_rules)
 
-        assert result is not None
-        assert "Copied" in result
-        assert "4" in result  # 4 rules from Jan
+        assert result == "Copied 4 rules from 2024-1"
 
         feb_rules = service.get_month_rules(2024, 2)
         assert len(feb_rules) == 4
@@ -309,12 +307,16 @@ class TestMonthlyBudgetService:
 
         view = service.get_monthly_budget_view(2024, 1)
         assert view is not None
-        assert len(view) >= 2
+        assert len(view) == 3  # Total Budget + Food + Other Expenses
 
         # Total Budget should be the first entry
         total_entry = view[0]
         assert total_entry["rule"][NAME] == TOTAL_BUDGET
-        assert total_entry["current_amount"] > 0
+        # Jan 2024 expenses (non-Ignore/Salary/Other Income/Investments/Liabilities/CC):
+        # cc_jan_1(-150) + cc_jan_2(-80) + cc_jan_3(-60) + cc_jan_4(-40) + cc_jan_5(-250)
+        # + bank_jan_2(-3000) + cash_jan_1(-15) + cash_jan_2(-10)
+        # Ignore transactions net to 0. Total = 3605.0
+        assert total_entry["current_amount"] == 3605.0
         assert total_entry["allow_delete"] is False
 
         # Food rule
@@ -361,7 +363,8 @@ class TestMonthlyBudgetService:
         assert other_entry is not None
         assert other_entry["allow_edit"] is False
         assert other_entry["allow_delete"] is False
-        assert other_entry["current_amount"] > 0
+        # Other Expenses = Transport(60+10) + Entertainment(40) + Home(3000) + Other(250) = 3360.0
+        assert other_entry["current_amount"] == 3360.0
 
     def test_get_monthly_analysis(self, db_session, seed_base_transactions):
         """Verify full analysis includes rules, project spending, pending refunds."""
@@ -388,10 +391,10 @@ class TestMonthlyBudgetService:
         assert "rules" in analysis
         assert "project_spending" in analysis
         assert "pending_refunds" in analysis
-        assert "items" in analysis["pending_refunds"]
-        assert "total_expected" in analysis["pending_refunds"]
         assert isinstance(analysis["rules"], list)
-        assert len(analysis["rules"]) > 0
+        assert len(analysis["rules"]) == 3  # Total Budget + Food + Other Expenses
+        assert analysis["pending_refunds"]["items"] == []
+        assert analysis["pending_refunds"]["total_expected"] == 0.0
 
     def test_delete_rules_by_month(self, db_session, seed_budget_rules):
         """Verify all rules for a month are deleted."""
@@ -435,18 +438,7 @@ class TestProjectBudgetService:
             year=None,
         )
 
-        # 2. Data: Insert transactions directly into DB (mocking via table_mock would be ideal,
-        # but here we can mock the transactions_service.get_data_for_analysis return value
-        # OR insert into the in-memory DB if the service uses real DB calls for transactions)
-
-        # Since ProjectBudgetService uses transactions_service.get_data_for_analysis,
-        # and that likely queries the DB, we can insert into the DB table if available.
-        # However, looking at the service, it instantiates TransactionsService(db).
-
-        # Let's mock the transactions_service.get_data_for_analysis method specifically
-        # to return our test dataframe.
-        # This isolates the ProjectBudgetService logic we want to test.
-
+        # Mock transactions_service.get_data_for_analysis to return controlled test data
         test_transactions = pd.DataFrame(
             [
                 {
@@ -476,27 +468,12 @@ class TestProjectBudgetService:
             ]
         )
 
-        # Mocking the transactions service within the budget service instance
-        # We need to monkeypatch the get_data_for_analysis method on the service.transactions_service instance
-
         service.transactions_service.get_data_for_analysis = (
             lambda include_split_parents: test_transactions
         )
 
-        # 3. Action: Call get_project_budget_view (which we are about to implement)
-        # Note: The method get_project_budget_view doesn't exist yet in the code,
-        # so this test will fail initially or crash.
-        # But we can verify the behavior we expect once implemented.
-        # For now, let's call the proposed method name.
+        view_result = service.get_project_budget_view(project_name)
 
-        try:
-            view_result = service.get_project_budget_view(project_name)
-        except AttributeError:
-            pytest.fail("Method get_project_budget_view not implemented yet")
-
-        # 4. Assertions
-
-        # Check total spent
         # Total spent should be 1000 + 200 + 50 = 1250
         assert view_result["total_spent"] == 1250.0
 
