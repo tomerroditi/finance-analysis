@@ -137,7 +137,7 @@ class TestAnalysisServiceTimeSeries:
         expected_total = 4975.0 + 8970.0 + 5180.0
         assert total_net == expected_total
 
-        # Verify CC amounts are NOT included (total CC = -1330 across all months)
+        # Verify CC amounts are NOT included (total CC = -1380 across all months)
         # If CC were included, total would differ
         cc_total = -(150 + 80 + 60 + 40 + 250 + 180 + 120 + 55 + 45 + 200 + 95 + 70 + 35)
         assert total_net != expected_total + cc_total
@@ -210,37 +210,48 @@ class TestAnalysisServiceIncomeExpenses:
     """Tests for income/expense classification logic."""
 
     def test_get_income_and_expenses(self, db_session, seed_base_transactions):
-        """Verify income vs expense calculation."""
+        """Verify income vs expense calculation via direct method call."""
         service = AnalysisService(db_session)
 
-        # get_overview calls get_income_and_expenses internally
-        result = service.get_overview()
+        # Call get_income_and_expenses directly with the full transactions df
+        df = service.repo.get_table()
+        income, expenses = service.get_income_and_expenses(df)
 
-        # Income = Salary (24700) + Other Income (3500) = 28200
-        assert result["total_income"] == 28200.0
+        # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500
+        assert income == 28200.0
 
-        # Expenses = Home/Rent (9000) + Ignore(net 0) + Food/Coffee (45) + Transport/Parking (30)
-        assert result["total_expenses"] == 9075.0
+        # Expenses from bank+cash only: Home/Rent 9000 + Coffee 45 + Parking 30
+        assert expenses == 9075.0
 
     def test_income_mask_includes_salary(self, db_session, seed_base_transactions):
-        """Verify Salary category counted as income."""
+        """Verify Salary category counted as income by the income mask."""
         service = AnalysisService(db_session)
-        result = service.get_income_expenses_over_time()
+        df = service.repo.get_table()
+        df = df[df["source"] != "credit_card_transactions"]
 
-        # January income is solely from Salary (bank: 8000)
-        jan = result[0]
-        assert jan["income"] == 8000.0
+        mask = service._get_income_mask(df)
+        income_rows = df[mask]
+
+        # Salary rows should be in income
+        salary_rows = income_rows[income_rows["category"] == "Salary"]
+        assert not salary_rows.empty
+        assert salary_rows["amount"].sum() == 24700.0  # 8000 + 8500 + 8200
 
     def test_income_mask_includes_other_income(
         self, db_session, seed_base_transactions
     ):
-        """Verify Other Income category counted as income."""
+        """Verify Other Income category counted as income by the income mask."""
         service = AnalysisService(db_session)
-        result = service.get_income_expenses_over_time()
+        df = service.repo.get_table()
+        df = df[df["source"] != "credit_card_transactions"]
 
-        # February includes Other Income (+3500 freelance) plus Salary (+8500)
-        feb = result[1]
-        assert feb["income"] == 12000.0
+        mask = service._get_income_mask(df)
+        income_rows = df[mask]
+
+        # Other Income rows should be in income
+        other_income_rows = income_rows[income_rows["category"] == "Other Income"]
+        assert not other_income_rows.empty
+        assert other_income_rows["amount"].sum() == 3500.0  # Freelance payment
 
     def test_income_mask_liability_positive_is_income(self, db_session):
         """Verify positive Liabilities amounts (loans received) counted as income."""
@@ -305,7 +316,7 @@ class TestAnalysisServiceSankey:
 
         # Find the Prior Wealth link
         pw_node_idx = result["node_labels"].index("Prior Wealth")
-        pw_links = [l for l in result["links"] if l["source"] == pw_node_idx]
+        pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert len(pw_links) == 1
 
         # Prior Wealth value = cash_pw (5000) + manual_inv_pw (3000) + bank balances (20000 + 15000)
