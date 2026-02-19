@@ -2,16 +2,10 @@
 Tests for TaggingRulesService.
 """
 
-from datetime import datetime
-
 import pytest
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 from backend.errors import BadRequestException
-from backend.models.tagging_rules import TaggingRule
-from backend.constants.tables import Tables
-from backend.repositories.tagging_rules_repository import TaggingRulesRepository
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.tagging_rules_service import TaggingRulesService
 
 
@@ -25,24 +19,24 @@ class TestTaggingRulesService:
     @pytest.fixture
     def setup_transactions(self, db_session):
         """Setup sample transactions for conflict tests."""
-        # Insert a credit card transaction
-        db_session.execute(
-            text(f"""
-            INSERT INTO {Tables.CREDIT_CARD.value} 
-            (id, date, amount, description, original_description, account_name, provider, service)
-            VALUES 
-            (100, '2023-01-01', -50.0, 'GitHub Subscription', 'GitHub', 'MyCard', 'Visa', 'credit_card')
-            """)
-        )
-        # Insert a bank transaction
-        db_session.execute(
-            text(f"""
-            INSERT INTO {Tables.BANK.value}
-            (id, date, amount, description, original_description, account_name, provider, service)
-            VALUES
-            (200, '2023-01-02', -100.0, 'AWS Bill', 'AWS', 'MyBank', 'Bank', 'bank')
-            """)
-        )
+        db_session.add(CreditCardTransaction(
+            id="cc-100",
+            date="2023-01-01",
+            amount=-50.0,
+            description="GitHub Subscription",
+            account_name="MyCard",
+            provider="Visa",
+            source="credit_card_transactions",
+        ))
+        db_session.add(BankTransaction(
+            id="bank-200",
+            date="2023-01-02",
+            amount=-100.0,
+            description="AWS Bill",
+            account_name="MyBank",
+            provider="Bank",
+            source="bank_transactions",
+        ))
         db_session.commit()
 
     def test_validate_rule_integrity_valid(self, service):
@@ -257,10 +251,9 @@ class TestTaggingRulesService:
         }
         where, params = service._build_recursive_where_clause(conditions)
 
-        assert "description LIKE :p_0_description" in where
-        assert "amount < :p_1_0_amount" in where
-        assert "provider = :p_1_1_provider" in where
-        assert " OR " in where
-        assert " AND " in where
+        # Param names use prefix only: p_0, p_1_0, p_1_1
+        assert "description LIKE :p_0" in where
+        assert "amount < :p_1_0" in where
+        assert "provider = :p_1_1" in where
         assert " OR " in where
         assert " AND " in where

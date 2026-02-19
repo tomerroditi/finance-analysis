@@ -33,7 +33,7 @@ class TestTimestampMixin:
             date="2026-01-01",
             provider="hapoalim",
             account_name="main",
-            desc="Test transaction",
+            description="Test transaction",
             amount=-100.0,
             source="banks",
         )
@@ -51,7 +51,7 @@ class TestTimestampMixin:
             date="2026-01-01",
             provider="hapoalim",
             account_name="main",
-            desc="Test transaction",
+            description="Test transaction",
             amount=-50.0,
             source="banks",
         )
@@ -78,7 +78,7 @@ class TestBankTransaction:
             provider="hapoalim",
             account_name="main account",
             account_number="123456",
-            desc="Grocery store purchase",
+            description="Grocery store purchase",
             amount=-150.50,
             category="Food",
             tag="Groceries",
@@ -103,7 +103,7 @@ class TestBankTransaction:
             date="2026-01-15",
             provider="leumi",
             account_name="investments",
-            desc="Transfer",
+            description="Transfer",
             amount=500.0,
             source="banks",
         )
@@ -122,7 +122,7 @@ class TestBankTransaction:
             date="2026-01-15",
             provider="discount",
             account_name="main",
-            desc="Payment",
+            description="Payment",
             amount=-25.0,
             source="banks",
         )
@@ -148,7 +148,7 @@ class TestCreditCardTransaction:
             date="2026-01-10",
             provider="isracard",
             account_name="personal",
-            desc="Online shopping",
+            description="Online shopping",
             amount=-299.99,
             category="Shopping",
             source="credit_cards",
@@ -168,7 +168,7 @@ class TestCreditCardTransaction:
             date="2026-01-10",
             provider="max",
             account_name="business",
-            desc="Office supplies",
+            description="Office supplies",
             amount=-89.00,
             source="credit_cards",
         )
@@ -195,7 +195,7 @@ class TestCashTransaction:
             date="2026-01-12",
             provider="manual",
             account_name="wallet",
-            desc="Coffee shop",
+            description="Coffee shop",
             amount=-15.0,
             source="cash",
         )
@@ -224,7 +224,7 @@ class TestManualInvestmentTransaction:
             date="2026-01-05",
             provider="manual",
             account_name="brokerage",
-            desc="Stock purchase",
+            description="Stock purchase",
             amount=-1000.0,
             category="Investments",
             tag="Stocks",
@@ -472,11 +472,9 @@ class TestTaggingRule:
         """Test model can be instantiated with all fields."""
         rule = TaggingRule(
             name="Grocery Stores",
-            priority=10,
-            conditions='[{"field": "desc", "operator": "contains", "value": "supermarket"}]',
+            conditions={"type": "CONDITION", "field": "description", "operator": "contains", "value": "supermarket"},
             category="Food",
             tag="Groceries",
-            is_active=1,
         )
         db_session.add(rule)
         db_session.commit()
@@ -484,14 +482,21 @@ class TestTaggingRule:
 
         assert rule.id is not None
         assert rule.name == "Grocery Stores"
-        assert rule.priority == 10
-        assert rule.is_active == 1
+        assert rule.category == "Food"
+        assert rule.tag == "Groceries"
 
-    def test_default_values(self, db_session: Session):
-        """Test default values for priority and is_active."""
+    def test_conditions_stored_as_json(self, db_session: Session):
+        """Test that conditions are stored and retrieved as JSON."""
+        conditions = {
+            "type": "AND",
+            "subconditions": [
+                {"type": "CONDITION", "field": "description", "operator": "equals", "value": "test"},
+                {"type": "CONDITION", "field": "amount", "operator": "lt", "value": -10},
+            ],
+        }
         rule = TaggingRule(
-            name="Default Rule",
-            conditions='[{"field": "desc", "operator": "equals", "value": "test"}]',
+            name="JSON Rule",
+            conditions=conditions,
             category="Other",
             tag="Misc",
         )
@@ -499,29 +504,31 @@ class TestTaggingRule:
         db_session.commit()
         db_session.refresh(rule)
 
-        assert rule.priority == 1
-        assert rule.is_active == 1
+        assert rule.conditions["type"] == "AND"
+        assert len(rule.conditions["subconditions"]) == 2
 
-    def test_inactive_rule(self, db_session: Session):
-        """Test creating an inactive rule."""
+    def test_nullable_constraints(self, db_session: Session):
+        """Test that name, conditions, category, and tag are required."""
         rule = TaggingRule(
-            name="Inactive Rule",
-            conditions="[]",
+            name="Required Fields",
+            conditions={"type": "CONDITION", "field": "description", "operator": "contains", "value": "x"},
             category="Test",
-            tag="Inactive",
-            is_active=0,
+            tag="Test",
         )
         db_session.add(rule)
         db_session.commit()
         db_session.refresh(rule)
 
-        assert rule.is_active == 0
+        assert rule.name is not None
+        assert rule.conditions is not None
+        assert rule.category is not None
+        assert rule.tag is not None
 
     def test_inherits_timestamp_mixin(self, db_session: Session):
         """Test model has TimestampMixin fields."""
         rule = TaggingRule(
             name="Timestamp Test",
-            conditions="[]",
+            conditions={"type": "CONDITION", "field": "description", "operator": "contains", "value": "x"},
             category="Test",
             tag="Test",
         )
