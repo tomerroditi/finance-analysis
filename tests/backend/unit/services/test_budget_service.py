@@ -593,3 +593,304 @@ class TestProjectBudgetService:
         reno_txns = service.get_project_transactions("Renovation")
         assert not reno_txns.empty
         assert len(reno_txns) == 5
+
+
+class TestBudgetServiceValidation:
+    """Extended tests for budget rule input validation edge cases."""
+
+    def test_validate_null_category_rejected(self, db_session, seed_budget_rules):
+        """Verify validation rejects None category."""
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name="New Rule",
+            category=None,
+            tags=["Groceries"],
+            amount=100.0,
+            year=2024,
+            month=1,
+            id_=None,
+        )
+        assert valid is False
+        assert "category" in msg.lower()
+
+    def test_validate_no_tags_rejected(self, db_session, seed_budget_rules):
+        """Verify validation rejects empty tags list."""
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name="New Rule",
+            category="Food",
+            tags=[],
+            amount=100.0,
+            year=2024,
+            month=1,
+            id_=None,
+        )
+        assert valid is False
+        assert "tag" in msg.lower()
+
+    def test_validate_all_tags_with_existing_specific_tag_rules(self, db_session):
+        """Verify ALL_TAGS rejected when specific tag rules already exist for category."""
+        service = BudgetService(db_session)
+
+        # Create Total Budget
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=10000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=3,
+            year=2024,
+        )
+        # Create a specific tag rule for Food/Groceries
+        service.add_rule(
+            name="Food Groceries",
+            amount=500.0,
+            category="Food",
+            tags=["Groceries"],
+            month=3,
+            year=2024,
+        )
+
+        rules = service.get_all_rules()
+
+        # Try to add ALL_TAGS for Food, which already has a specific tag rule
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name="Food All",
+            category="Food",
+            tags=[ALL_TAGS],
+            amount=1000.0,
+            year=2024,
+            month=3,
+            id_=None,
+        )
+        assert valid is False
+        assert "all_tags" in msg.lower() or ALL_TAGS in msg
+
+    def test_validate_total_budget_below_sum_rejected(self, db_session):
+        """Verify Total Budget cannot be set below sum of existing rules."""
+        service = BudgetService(db_session)
+
+        # Create Total Budget
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=5000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=4,
+            year=2024,
+        )
+        # Create rules that sum to 3000
+        service.add_rule(
+            name="Food",
+            amount=2000.0,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=4,
+            year=2024,
+        )
+        service.add_rule(
+            name="Transport",
+            amount=1000.0,
+            category="Transport",
+            tags=[ALL_TAGS],
+            month=4,
+            year=2024,
+        )
+
+        rules = service.get_all_rules()
+        total_rule = rules.loc[
+            (rules[NAME] == TOTAL_BUDGET)
+            & (rules[YEAR] == 2024)
+            & (rules[MONTH] == 4)
+        ]
+        total_id = int(total_rule.iloc[0][ID])
+
+        # Try to set Total Budget to 2000, which is below sum of 3000
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name=TOTAL_BUDGET,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            amount=2000.0,
+            year=2024,
+            month=4,
+            id_=total_id,
+        )
+        assert valid is False
+        assert "greater" in msg.lower()
+
+    def test_validate_update_same_values_returns_true(self, db_session, seed_budget_rules):
+        """Verify updating a rule with identical values returns True (no-op)."""
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+
+        food_rule = rules.loc[rules[NAME] == "Food"].iloc[0]
+        rule_id = int(food_rule[ID])
+
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name=food_rule[NAME],
+            category=food_rule[CATEGORY],
+            tags=food_rule[TAGS],
+            amount=food_rule[AMOUNT],
+            year=2024,
+            month=1,
+            id_=rule_id,
+        )
+        assert valid is True
+        assert msg == ""
+
+
+class TestMonthlyBudgetServiceExtended:
+    """Extended tests for MonthlyBudgetService."""
+
+    def test_get_available_tags_removes_all_tags_category(self, db_session):
+        """Verify category is removed from available when ALL_TAGS rule exists."""
+        service = MonthlyBudgetService(db_session)
+
+        # Create a rule with ALL_TAGS for Food
+        service.add_rule(
+            name="Food All",
+            amount=2000.0,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=5,
+            year=2024,
+        )
+
+        rules = service.get_month_rules(2024, 5)
+        available = service.get_available_tags_for_each_category(rules)
+
+        # Food should be completely removed since ALL_TAGS is used
+        assert "Food" not in available
+
+    def test_get_available_tags_reduces_specific_tags(self, db_session):
+        """Verify specific used tags are excluded from available list."""
+        service = MonthlyBudgetService(db_session)
+
+        # Create a rule that uses specific tags
+        service.add_rule(
+            name="Food Groceries",
+            amount=1000.0,
+            category="Food",
+            tags=["Groceries"],
+            month=5,
+            year=2024,
+        )
+
+        rules = service.get_month_rules(2024, 5)
+        available = service.get_available_tags_for_each_category(rules)
+
+        # Food should still be present but without "Groceries"
+        assert "Food" in available
+        assert "Groceries" not in available["Food"]
+        # Remaining tags should still be there
+        assert "Restaurants" in available["Food"]
+        assert "Coffee" in available["Food"]
+
+    def test_copy_last_month_rules_year_boundary(self, db_session):
+        """Verify copying from December of previous year when month is January."""
+        service = MonthlyBudgetService(db_session)
+
+        # Create rules for December 2023
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=8000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=12,
+            year=2023,
+        )
+        service.add_rule(
+            name="Food",
+            amount=2000.0,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=12,
+            year=2023,
+        )
+
+        all_rules = service.get_all_rules()
+        result = service.copy_last_month_rules(2024, 1, all_rules)
+
+        assert result == "Copied 2 rules from 2023-12"
+
+        jan_rules = service.get_month_rules(2024, 1)
+        assert len(jan_rules) == 2
+        names = set(jan_rules[NAME].tolist())
+        assert names == {TOTAL_BUDGET, "Food"}
+
+
+class TestProjectBudgetServiceExtended:
+    """Extended tests for ProjectBudgetService."""
+
+    def test_get_rules_for_nonexistent_project_raises(self, db_session):
+        """Verify ValueError raised when project has no rules."""
+        service = ProjectBudgetService(db_session)
+
+        with pytest.raises(ValueError, match="not found"):
+            service.get_rules_for_project("Nonexistent Project")
+
+    def test_update_project_total_budget_via_rule(self, db_session):
+        """Verify updating the total budget for an existing project via update_rule."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        # Find the Total Budget rule and update it directly via update_rule
+        rules = service.get_rules_for_project("Wedding")
+        total_rule = rules.loc[
+            rules[TAGS].apply(
+                lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
+            )
+        ]
+        assert not total_rule.empty
+        rule_id = int(total_rule.iloc[0][ID])
+
+        service.update_rule(rule_id, amount=75000.0)
+
+        updated_rules = service.get_rules_for_project("Wedding")
+        updated_total = updated_rules.loc[
+            updated_rules[TAGS].apply(
+                lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
+            )
+        ]
+        assert not updated_total.empty
+        assert updated_total.iloc[0][AMOUNT] == 75000.0
+
+    def test_get_available_categories_for_new_project(self, db_session):
+        """Verify available categories exclude existing projects."""
+        service = ProjectBudgetService(db_session)
+
+        # Before any projects, all categories should be available
+        available_before = service.get_available_categories_for_new_project()
+        assert "Wedding" in available_before
+        assert "Renovation" in available_before
+
+        # Create a project
+        service.create_project("Wedding", 50000.0)
+
+        # Now Wedding should no longer be available
+        available_after = service.get_available_categories_for_new_project()
+        assert "Wedding" not in available_after
+        assert "Renovation" in available_after
+
+    def test_get_available_categories_excludes_all_projects(self, db_session):
+        """Verify multiple created projects are all excluded from available list."""
+        service = ProjectBudgetService(db_session)
+
+        service.create_project("Wedding", 50000.0)
+        service.create_project("Renovation", 25000.0)
+
+        available = service.get_available_categories_for_new_project()
+        assert "Wedding" not in available
+        assert "Renovation" not in available
+        # Other categories should still be available
+        assert "Food" in available
+        assert "Transport" in available

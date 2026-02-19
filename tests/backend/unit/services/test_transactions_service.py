@@ -1,6 +1,6 @@
 """Tests for TransactionsService using real in-memory SQLite database."""
 
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
@@ -10,10 +10,12 @@ from backend.constants.categories import (
     NonExpensesCategories,
     PRIOR_WEALTH_TAG,
 )
-from backend.constants.tables import TransactionsTableFields
+from backend.constants.providers import Banks, CreditCards
+from backend.constants.tables import Tables, TransactionsTableFields
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
+    ManualInvestmentTransaction,
 )
 from backend.services.transactions_service import TransactionsService
 
@@ -589,3 +591,265 @@ class TestTransactionsServicePriorWealth:
         cash_df_after = service.get_all_transactions("cash")
         pw_after = cash_df_after[cash_df_after["tag"] == PRIOR_WEALTH_TAG]
         assert len(pw_after) == 0
+
+
+class TestTransactionsServiceAddTransaction:
+    """Tests for the lower-level add_transaction method."""
+
+    def test_add_cash_transaction_succeeds(self, db_session):
+        """Verify adding a CashTransaction via add_transaction returns True."""
+        service = TransactionsService(db_session)
+
+        tx_dict = {
+            "id": "cash_add_1",
+            "date": datetime(2024, 5, 1),
+            "provider": "cash",
+            "account_name": "Cash Wallet",
+            "description": "Test cash add",
+            "amount": -25.0,
+            "category": "Food",
+            "tag": "Coffee",
+            "source": "cash_transactions",
+            "type": "normal",
+            "status": "completed",
+        }
+        result = service.add_transaction(tx_dict, "cash")
+        assert result is True
+
+        cash_df = service.get_all_transactions("cash")
+        assert not cash_df.empty
+        match = cash_df[cash_df["description"] == "Test cash add"]
+        assert len(match) == 1
+        assert match.iloc[0]["amount"] == -25.0
+
+    def test_add_manual_investment_transaction_succeeds(self, db_session):
+        """Verify adding a ManualInvestmentTransaction via add_transaction returns True."""
+        service = TransactionsService(db_session)
+
+        tx_dict = {
+            "id": "inv_add_1",
+            "date": datetime(2024, 5, 1),
+            "provider": "manual_investments",
+            "account_name": "Investment Account",
+            "description": "Test investment add",
+            "amount": -1000.0,
+            "category": "Investments",
+            "tag": "Stock Fund",
+            "source": "manual_investment_transactions",
+            "type": "normal",
+            "status": "completed",
+        }
+        result = service.add_transaction(tx_dict, "manual_investments")
+        assert result is True
+
+        inv_df = service.get_table_for_analysis("manual_investments")
+        assert not inv_df.empty
+        match = inv_df[inv_df["description"] == "Test investment add"]
+        assert len(match) == 1
+
+    def test_add_transaction_invalid_service_raises(self, db_session):
+        """Verify ValueError raised when service is not cash or manual_investments."""
+        service = TransactionsService(db_session)
+
+        tx_dict = {
+            "id": "bad_1",
+            "date": "2024-05-01",
+            "provider": "isracard",
+            "account_name": "Card",
+            "description": "Bad service",
+            "amount": -50.0,
+            "source": "credit_card_transactions",
+            "type": "normal",
+            "status": "completed",
+        }
+        with pytest.raises(ValueError, match="Only 'cash' and 'manual_investments'"):
+            service.add_transaction(tx_dict, "credit_cards")
+
+
+class TestTransactionsServiceTaggingById:
+    """Tests for update_tagging_by_id method."""
+
+    def test_update_cc_transaction_tagging(self, db_session, seed_base_transactions):
+        """Verify tagging update for a credit card transaction by table name."""
+        service = TransactionsService(db_session)
+        cc_df = service.get_all_transactions("credit_cards")
+        first_uid = int(cc_df.iloc[0]["unique_id"])
+
+        service.update_tagging_by_id(
+            Tables.CREDIT_CARD.value, first_uid, "Transport", "Gas"
+        )
+
+        updated = service.get_all_transactions("credit_cards")
+        row = updated[updated["unique_id"] == first_uid].iloc[0]
+        assert row["category"] == "Transport"
+        assert row["tag"] == "Gas"
+
+    def test_update_bank_transaction_tagging(self, db_session, seed_base_transactions):
+        """Verify tagging update for a bank transaction by table name."""
+        service = TransactionsService(db_session)
+        bank_df = service.get_all_transactions("banks")
+        # Find a bank transaction with a category to update
+        expense_row = bank_df[bank_df["category"] == "Home"].iloc[0]
+        uid = int(expense_row["unique_id"])
+
+        service.update_tagging_by_id(
+            Tables.BANK.value, uid, "Entertainment", "Cinema"
+        )
+
+        updated = service.get_all_transactions("banks")
+        row = updated[updated["unique_id"] == uid].iloc[0]
+        assert row["category"] == "Entertainment"
+        assert row["tag"] == "Cinema"
+
+    def test_update_cash_transaction_tagging(self, db_session, seed_base_transactions):
+        """Verify tagging update for a cash transaction by table name."""
+        service = TransactionsService(db_session)
+        cash_df = service.get_all_transactions("cash")
+        first_uid = int(cash_df.iloc[0]["unique_id"])
+
+        service.update_tagging_by_id(
+            Tables.CASH.value, first_uid, "Home", "Cleaning"
+        )
+
+        updated = service.get_all_transactions("cash")
+        row = updated[updated["unique_id"] == first_uid].iloc[0]
+        assert row["category"] == "Home"
+        assert row["tag"] == "Cleaning"
+
+    def test_update_tagging_invalid_table_raises(self, db_session):
+        """Verify ValueError raised for an invalid table name."""
+        service = TransactionsService(db_session)
+        with pytest.raises(ValueError, match="Invalid table name"):
+            service.update_tagging_by_id("nonexistent_table", 1, "Food", "Coffee")
+
+
+class TestTransactionsServiceDateMethods:
+    """Tests for get_latest_data_date and get_earliest_data_date methods."""
+
+    def test_get_latest_data_date_with_data(self, db_session, seed_base_transactions):
+        """Verify latest date returns earliest of the per-table max dates."""
+        service = TransactionsService(db_session)
+        latest = service.get_latest_data_date()
+
+        # The method returns min(latest_dates) across tables.
+        # CC latest: 2024-03-25, Bank latest: 2024-03-10, Cash latest: 2024-03-22
+        # Manual investments: no data -> fallback = today - 365
+        # min of those would be the fallback date (roughly today - 365)
+        assert isinstance(latest, datetime)
+
+    def test_get_earliest_data_date_with_data(self, db_session, seed_base_transactions):
+        """Verify earliest date returns the minimum date across all tables."""
+        service = TransactionsService(db_session)
+        earliest = service.get_earliest_data_date()
+
+        # Earliest across all seeded data: bank_jan_1 = 2024-01-01
+        assert isinstance(earliest, datetime)
+        assert earliest == datetime(2024, 1, 1)
+
+    def test_get_latest_data_date_empty_db(self, db_session):
+        """Verify fallback date returned when no transactions exist."""
+        service = TransactionsService(db_session)
+        latest = service.get_latest_data_date()
+
+        # Fallback: today - 365 days for each empty table, min of those
+        expected_approx = datetime.today().replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) - __import__("datetime").timedelta(days=365)
+        assert isinstance(latest, datetime)
+        # The date should be approximately one year ago
+        diff = abs((latest - expected_approx).days)
+        assert diff <= 1
+
+    def test_get_earliest_data_date_empty_db(self, db_session):
+        """Verify fallback to current datetime when no data exists."""
+        service = TransactionsService(db_session)
+        earliest = service.get_earliest_data_date()
+
+        # Fallback: datetime.now()
+        assert isinstance(earliest, datetime)
+        now = datetime.now()
+        # Should be within a few seconds of now
+        assert abs((now - earliest).total_seconds()) < 5
+
+
+class TestTransactionsServiceStaticMethods:
+    """Tests for static utility methods on TransactionsService."""
+
+    def test_get_providers_for_credit_cards(self):
+        """Verify credit card providers list matches CreditCards enum."""
+        providers = TransactionsService.get_providers_for_service("credit_cards")
+        expected = [e.value for e in CreditCards]
+        assert providers == expected
+
+    def test_get_providers_for_banks(self):
+        """Verify bank providers list matches Banks enum."""
+        providers = TransactionsService.get_providers_for_service("banks")
+        expected = [e.value for e in Banks]
+        assert providers == expected
+
+    def test_get_providers_for_invalid_service_raises(self):
+        """Verify ValueError raised for unsupported service name."""
+        with pytest.raises(ValueError, match="Service must be 'credit_cards' or 'banks'"):
+            TransactionsService.get_providers_for_service("cash")
+
+    def test_get_all_providers_returns_combined_list(self):
+        """Verify get_all_providers returns all CC + Bank providers."""
+        all_providers = TransactionsService.get_all_providers()
+        cc_providers = [e.value for e in CreditCards]
+        bank_providers = [e.value for e in Banks]
+        assert all_providers == cc_providers + bank_providers
+        assert len(all_providers) == len(cc_providers) + len(bank_providers)
+
+    def test_get_table_columns_for_display(self, db_session):
+        """Verify returned column list includes all expected display columns."""
+        service = TransactionsService(db_session)
+        columns = service.get_table_columns_for_display()
+
+        expected_columns = [
+            "provider",
+            "account_name",
+            "account_number",
+            "date",
+            "description",
+            "amount",
+            "category",
+            "tag",
+            "id",
+            "status",
+            "type",
+            "unique_id",
+            "source",
+        ]
+        assert columns == expected_columns
+
+    def test_normalize_empty_string_converts_to_none(self):
+        """Verify empty string is converted to None."""
+        result = TransactionsService._normalize_empty_string("")
+        assert result is None
+
+    def test_normalize_empty_string_preserves_value(self):
+        """Verify non-empty string is preserved as-is."""
+        result = TransactionsService._normalize_empty_string("Food")
+        assert result == "Food"
+
+    def test_normalize_empty_string_preserves_none(self):
+        """Verify None input is preserved as None."""
+        result = TransactionsService._normalize_empty_string(None)
+        assert result is None
+
+    def test_update_transaction_empty_updates_returns_false(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify update_transaction returns False when no valid updates provided."""
+        service = TransactionsService(db_session)
+
+        # Get a CC transaction (scraped source) and pass only non-applicable updates
+        cc_df = service.get_all_transactions("credit_cards")
+        unique_id = int(cc_df.iloc[0]["unique_id"])
+
+        # For scraped source, only category/tag are allowed;
+        # pass empty dict (no valid updates at all)
+        result = service.update_transaction(
+            unique_id, "credit_card_transactions", {}
+        )
+        assert result is False

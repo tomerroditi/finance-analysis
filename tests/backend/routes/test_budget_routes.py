@@ -1,6 +1,7 @@
 """Tests for the /api/budget API endpoints."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 
 SAMPLE_CATEGORIES = {
@@ -191,3 +192,71 @@ class TestBudgetRoutes:
         # Verify deletion
         projects = test_client.get("/api/budget/projects").json()
         assert "Wedding" not in projects
+
+
+class TestBudgetRoutesErrors:
+    """Tests for error handling in budget route endpoints."""
+
+    def test_copy_rules_returns_null_no_previous(self, test_client, seed_budget_rules):
+        """Verify 404 when copying rules and the previous month has no rules.
+
+        Seed data has rules for January 2024 only. Copying from July 2024
+        (prev month = June) should return 404 because June has no rules.
+        """
+        response = test_client.post("/api/budget/rules/2024/7/copy")
+        assert response.status_code == 404
+        assert "No rules found" in response.json()["detail"]
+
+    def test_get_project_details_error(self, test_client):
+        """Verify 500 when project budget view raises an exception.
+
+        The project detail route has no try/except, so the RuntimeError
+        propagates to FastAPI's default exception handler.
+        """
+        with patch(
+            "backend.routes.budget.ProjectBudgetService"
+        ) as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.get_project_budget_view.side_effect = RuntimeError(
+                "Project view failed"
+            )
+            with pytest.raises(RuntimeError, match="Project view failed"):
+                test_client.get("/api/budget/projects/NonExistent")
+
+    def test_delete_project_error(self, test_client):
+        """Verify exception propagation when project deletion raises an error.
+
+        The delete project route has no try/except, so the RuntimeError
+        propagates through the TestClient.
+        """
+        with patch(
+            "backend.routes.budget.ProjectBudgetService"
+        ) as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.delete_project.side_effect = RuntimeError(
+                "Delete project failed"
+            )
+            with pytest.raises(RuntimeError, match="Delete project failed"):
+                test_client.delete("/api/budget/projects/Wedding")
+
+    def test_update_project_error(self, test_client):
+        """Verify exception propagation when project update raises an error.
+
+        The update project route has no try/except, so the RuntimeError
+        propagates through the TestClient.
+        """
+        with patch(
+            "backend.routes.budget.ProjectBudgetService"
+        ) as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.update_project.side_effect = RuntimeError(
+                "Update project failed"
+            )
+            with pytest.raises(RuntimeError, match="Update project failed"):
+                test_client.put(
+                    "/api/budget/projects/Wedding",
+                    json={"total_budget": 60000.0},
+                )
