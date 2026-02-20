@@ -49,7 +49,7 @@ def mock_credentials_deps(monkeypatch):
     )
     monkeypatch.setattr(
         "backend.routes.credentials.CredentialsRepository",
-        lambda: mock_repo,
+        lambda db: mock_repo,
     )
 
 

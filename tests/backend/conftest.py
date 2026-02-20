@@ -1165,6 +1165,20 @@ def sample_categories_yaml() -> dict:
     }
 
 
+@pytest.fixture
+def seed_categories(db_session, sample_categories_yaml):
+    """Insert categories from sample_categories_yaml into the DB."""
+    from backend.models.category import Category
+
+    cats = []
+    for name, tags in sample_categories_yaml.items():
+        cat = Category(name=name, tags=tags)
+        db_session.add(cat)
+        cats.append(cat)
+    db_session.commit()
+    return cats
+
+
 # ---------------------------------------------------------------------------
 # 10. Sample credentials YAML
 # ---------------------------------------------------------------------------

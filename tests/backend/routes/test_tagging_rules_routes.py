@@ -2,12 +2,15 @@
 
 import pytest
 
+import backend.services.tagging_service as ts
 from backend.errors import BadRequestException, EntityNotFoundException
+from backend.models.category import Category
 
 
 @pytest.fixture(autouse=True)
-def mock_categories(monkeypatch):
-    """Provide in-memory categories and mock file I/O for tagging rules tests."""
+def seed_route_categories(db_session):
+    """Seed categories into the DB and reset cache for each route test."""
+    ts._categories_cache = None
     categories = {
         "Food": ["Groceries", "Restaurants"],
         "Transport": ["Gas", "Public Transport", "Rides"],
@@ -20,13 +23,11 @@ def mock_categories(monkeypatch):
         "Credit Cards": [],
         "Housing": ["Rent", "Utilities"],
     }
-    monkeypatch.setattr(
-        "backend.services.tagging_service._categories_cache", categories
-    )
-    monkeypatch.setattr(
-        "backend.repositories.tagging_repository.TaggingRepository.save_categories_to_file",
-        lambda *a, **kw: None,
-    )
+    for name, tags in categories.items():
+        db_session.add(Category(name=name, tags=tags))
+    db_session.commit()
+    yield
+    ts._categories_cache = None
 
 
 class TestTaggingRulesRoutes:

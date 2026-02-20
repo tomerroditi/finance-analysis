@@ -2,10 +2,14 @@
 
 import pytest
 
+import backend.services.tagging_service as ts
+from backend.models.category import Category
+
 
 @pytest.fixture(autouse=True)
-def mock_categories(monkeypatch):
-    """Provide in-memory categories and mock file I/O."""
+def seed_route_categories(db_session):
+    """Seed categories into the DB and reset cache for each route test."""
+    ts._categories_cache = None
     categories = {
         "Food": ["Groceries", "Restaurants"],
         "Transport": ["Gas", "Public Transport"],
@@ -18,13 +22,11 @@ def mock_categories(monkeypatch):
         "Credit Cards": [],
         "Housing": ["Rent", "Utilities"],
     }
-    monkeypatch.setattr(
-        "backend.services.tagging_service._categories_cache", categories
-    )
-    monkeypatch.setattr(
-        "backend.repositories.tagging_repository.TaggingRepository.save_categories_to_file",
-        lambda *a, **kw: None,
-    )
+    for name, tags in categories.items():
+        db_session.add(Category(name=name, tags=tags))
+    db_session.commit()
+    yield
+    ts._categories_cache = None
 
 
 class TestTaggingRoutes:
@@ -112,25 +114,29 @@ class TestTaggingRoutes:
         assert "Restaurants" not in data["Food"]
         assert "Restaurants" in data["Entertainment"]
 
-    def test_get_category_icons(self, test_client, monkeypatch):
+    def test_get_category_icons(self, test_client, db_session):
         """GET /api/tagging/icons returns icon mapping."""
-        mock_icons = {"Food": "utensils", "Transport": "car"}
-        monkeypatch.setattr(
-            "backend.repositories.tagging_repository.TaggingRepository.get_categories_icons",
-            lambda *a, **kw: mock_icons,
-        )
+        from sqlalchemy import select
+
+        food = db_session.execute(
+            select(Category).where(Category.name == "Food")
+        ).scalar_one()
+        food.icon = "utensils"
+        transport = db_session.execute(
+            select(Category).where(Category.name == "Transport")
+        ).scalar_one()
+        transport.icon = "car"
+        db_session.commit()
+        ts._categories_cache = None
+
         response = test_client.get("/api/tagging/icons")
         assert response.status_code == 200
         data = response.json()
         assert data["Food"] == "utensils"
         assert data["Transport"] == "car"
 
-    def test_update_category_icon(self, test_client, monkeypatch):
+    def test_update_category_icon(self, test_client):
         """PUT /api/tagging/icons/{category} updates icon."""
-        monkeypatch.setattr(
-            "backend.repositories.tagging_repository.TaggingRepository.update_category_icon",
-            lambda *a, **kw: True,
-        )
         response = test_client.put("/api/tagging/icons/Food?icon=pizza")
         assert response.status_code == 200
         data = response.json()

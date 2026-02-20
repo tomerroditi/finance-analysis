@@ -48,7 +48,7 @@ class BudgetService:
         """
         self.db = db
         self.budget_repository = BudgetRepository(db)
-        self.categories_tags_service = CategoriesTagsService()
+        self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
         self.pending_refunds_service = PendingRefundsService(db)
 
