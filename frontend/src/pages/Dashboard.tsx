@@ -153,6 +153,23 @@ export function Dashboard() {
       (!!dateRange.start && !!dateRange.end),
   });
 
+  const { data: incomeBySourceData } = useQuery({
+    queryKey: ["income-by-source", dateRange.start, dateRange.end, isTestMode],
+    queryFn: async () => {
+      const start = dateRange.start
+        ? format(dateRange.start, "yyyy-MM-dd")
+        : undefined;
+      const end = dateRange.end
+        ? format(dateRange.end, "yyyy-MM-dd")
+        : undefined;
+      const res = await analyticsApi.getIncomeBySourceOverTime(start, end);
+      return res.data;
+    },
+    enabled:
+      (dateRange.start === null && dateRange.end === null) ||
+      (!!dateRange.start && !!dateRange.end),
+  });
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("he-IL", {
       style: "currency",
@@ -402,6 +419,55 @@ export function Dashboard() {
             />
           </div>
         </div>
+
+        {/* Income Breakdown by Source */}
+        {incomeBySourceData && incomeBySourceData.length > 0 && (() => {
+          // Collect all unique source labels across all months
+          const allSources = Array.from(
+            new Set(incomeBySourceData.flatMap((d) => Object.keys(d.sources)))
+          );
+
+          // Green-toned palette for income sources
+          const colors = [
+            "#059669", "#10b981", "#34d399", "#6ee7b7",
+            "#a7f3d0", "#047857", "#065f46", "#064e3b",
+          ];
+
+          return (
+            <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+              <h3 className="text-lg font-bold mb-4">Income by Source</h3>
+              <div className="h-[350px]">
+                <Plot
+                  data={allSources.map((source, i) => ({
+                    x: incomeBySourceData.map((d) => d.month),
+                    y: incomeBySourceData.map((d) => d.sources[source] || 0),
+                    name: source,
+                    type: "bar" as const,
+                    marker: { color: colors[i % colors.length] },
+                  }))}
+                  layout={{
+                    ...chartTheme,
+                    barmode: "stack",
+                    autosize: true,
+                    height: 350,
+                    yaxis: {
+                      title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
+                      tickfont: { color: "#94a3b8" },
+                    },
+                    legend: {
+                      orientation: "h",
+                      y: -0.15,
+                      x: 0.5,
+                      xanchor: "center",
+                    },
+                  }}
+                  style={{ width: "100%", height: "100%" }}
+                  config={{ displayModeBar: false, responsive: true }}
+                />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Category Breakdown Charts */}
         <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
