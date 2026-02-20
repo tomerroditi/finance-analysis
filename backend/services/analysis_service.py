@@ -10,7 +10,9 @@ from backend.constants.categories import (
     NonExpensesCategories,
 )
 from backend.repositories.bank_balance_repository import BankBalanceRepository
+from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
+from backend.services.investments_service import InvestmentsService
 
 
 class AnalysisService:
@@ -18,6 +20,8 @@ class AnalysisService:
         self.db = db
         self.repo = TransactionsRepository(db)
         self.balance_repo = BankBalanceRepository(db)
+        self.investments_repo = InvestmentsRepository(db)
+        self.investments_service = InvestmentsService(db)
 
     def get_overview(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -86,6 +90,13 @@ class AnalysisService:
     def _get_bank_prior_wealth_total(self) -> float:
         """Get total prior wealth from all bank balance records."""
         df = self.balance_repo.get_all()
+        if df.empty:
+            return 0.0
+        return float(df["prior_wealth_amount"].sum())
+
+    def _get_investment_prior_wealth_total(self) -> float:
+        """Get total prior wealth from all open investments."""
+        df = self.investments_repo.get_all_investments(include_closed=False)
         if df.empty:
             return 0.0
         return float(df["prior_wealth_amount"].sum())
@@ -267,3 +278,51 @@ class AnalysisService:
             "node_labels": nodes,
             "links": links,
         }
+
+    def get_net_worth_over_time(
+        self, start_date: Optional[str] = None, end_date: Optional[str] = None
+    ) -> list[dict]:
+        """
+        Get monthly net worth (bank balance + investment value) over time.
+
+        Bank balance is reconstructed as prior_wealth + cumulative bank transactions.
+        Investment value is the cumulative net invested amount across all investments.
+        """
+        df = self.repo.get_table()
+        df = df[df["source"] != "credit_card_transactions"]
+
+        if start_date:
+            df = df[df["date"] >= start_date]
+        if end_date:
+            df = df[df["date"] <= end_date]
+
+        if df.empty:
+            return []
+
+        prior_wealth = self._get_bank_prior_wealth_total()
+
+        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        months = sorted(df["month"].unique())
+
+        full_df = self.repo.get_table()
+        full_df = full_df[full_df["source"] != "credit_card_transactions"]
+        full_df["date_parsed"] = pd.to_datetime(full_df["date"])
+
+        result = []
+        for month in months:
+            month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
+            month_end_str = month_end.strftime("%Y-%m-%d")
+
+            bank_txns_to_date = full_df[full_df["date_parsed"] <= month_end]
+            bank_balance = prior_wealth + float(bank_txns_to_date["amount"].sum())
+
+            investment_value = self.investments_service.get_total_value_at_date(month_end_str)
+
+            result.append({
+                "month": month,
+                "bank_balance": round(bank_balance, 2),
+                "investment_value": round(investment_value, 2),
+                "net_worth": round(bank_balance + investment_value, 2),
+            })
+
+        return result

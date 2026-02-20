@@ -343,3 +343,28 @@ class TestAnalysisServiceSankey:
         # Verify that all nodes are valid (no Ignore-related nodes)
         for node in result["nodes"]:
             assert "Ignore" not in node
+
+
+class TestAnalysisServiceInvestmentPriorWealth:
+    """Tests for investment prior wealth aggregation in AnalysisService."""
+
+    def test_get_investment_prior_wealth_total_sums_open_investments(
+        self, db_session, seed_investments
+    ):
+        """Verify _get_investment_prior_wealth_total sums prior_wealth_amount for open investments."""
+        stock_fund, bond_fund = seed_investments["investments"]
+        stock_fund.prior_wealth_amount = 12000.0
+        bond_fund.prior_wealth_amount = -160.0   # closed, should be excluded
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        total = service._get_investment_prior_wealth_total()
+
+        assert total == pytest.approx(12000.0)
+
+    def test_get_investment_prior_wealth_total_returns_zero_with_no_investments(
+        self, db_session
+    ):
+        """Verify _get_investment_prior_wealth_total returns 0.0 when no investments exist."""
+        service = AnalysisService(db_session)
+        assert service._get_investment_prior_wealth_total() == 0.0
