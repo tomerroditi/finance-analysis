@@ -313,6 +313,8 @@ class TransactionsService:
     ) -> pd.DataFrame:
         """Get all transactions filtered by category and optionally tag."""
         df = self.get_data_for_analysis()
+        if df.empty:
+            return df
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
         investment_df = df[df[category_col] == category]

@@ -91,12 +91,9 @@ class InvestmentsService:
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
-        try:
-            transactions_df = self._get_all_transactions_for_investment(
-                inv["category"], inv["tag"]
-            )
-        except KeyError:
-            transactions_df = pd.DataFrame()
+        transactions_df = self._get_all_transactions_for_investment(
+            inv["category"], inv["tag"]
+        )
         if transactions_df.empty:
             prior_wealth = 0.0
         else:
