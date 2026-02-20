@@ -104,6 +104,22 @@ class InvestmentsService:
             prior_wealth = -float(transactions_df["amount"].sum())
         self.investments_repo.update_prior_wealth(investment_id, prior_wealth)
 
+    def recalculate_prior_wealth_by_tag(self, category: str, tag: str) -> None:
+        """
+        Look up investment by category and tag, then recalculate prior_wealth_amount.
+
+        Parameters
+        ----------
+        category : str
+            Investment category (e.g. "Investments").
+        tag : str
+            Investment tag identifying the specific investment.
+        """
+        inv_df = self.investments_repo.get_by_category_tag(category, tag)
+        if inv_df.empty:
+            return
+        self.recalculate_prior_wealth(int(inv_df.iloc[0]["id"]))
+
     def get_total_prior_wealth(self) -> float:
         """
         Sum prior_wealth_amount across all open (non-closed) investments.

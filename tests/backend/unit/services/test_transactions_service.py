@@ -140,6 +140,33 @@ class TestTransactionsServiceDataRetrieval:
         assert len(grocery_txns) < len(food_txns)
 
 
+    def test_get_data_for_analysis_includes_investment_prior_wealth(
+        self, db_session, seed_investments
+    ):
+        """Verify investment prior wealth synthetic rows appear in analysis data."""
+        from backend.constants.tables import TransactionsTableFields
+        from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
+
+        # Set prior_wealth_amount on the open investment
+        stock_fund = seed_investments["investments"][0]
+        stock_fund.prior_wealth_amount = 12000.0
+        db_session.commit()
+
+        service = TransactionsService(db_session)
+        result = service.get_data_for_analysis()
+
+        tag_col = TransactionsTableFields.TAG.value
+        source_col = TransactionsTableFields.SOURCE.value
+
+        inv_pw_rows = result[
+            (result[tag_col] == PRIOR_WEALTH_TAG) & (result[source_col] == "investments")
+        ]
+        # Only stock_fund is open (bond_fund is closed), so 1 row
+        assert len(inv_pw_rows) == 1
+        assert inv_pw_rows.iloc[0]["amount"] == pytest.approx(12000.0)
+        assert inv_pw_rows.iloc[0]["category"] == IncomeCategories.OTHER_INCOME.value
+
+
 class TestTransactionsServiceCRUD:
     """Tests for TransactionsService create/update/delete operations."""
 
@@ -591,6 +618,74 @@ class TestTransactionsServicePriorWealth:
         cash_df_after = service.get_all_transactions("cash")
         pw_after = cash_df_after[cash_df_after["tag"] == PRIOR_WEALTH_TAG]
         assert len(pw_after) == 0
+
+
+    def test_sync_prior_wealth_skips_manual_investments(self, db_session):
+        """Verify sync_prior_wealth_offset does not create offset for manual_investments."""
+        from backend.models.transaction import ManualInvestmentTransaction
+        from backend.constants.categories import PRIOR_WEALTH_TAG
+        inv_tx = ManualInvestmentTransaction(
+            id="test_inv_1",
+            date="2024-01-01",
+            provider="manual_investments",
+            account_name="Investment Account",
+            description="Deposit",
+            amount=-5000.0,
+            category="Investments",
+            tag="Stock Fund",
+            source="manual_investment_transactions",
+            type="normal",
+        )
+        db_session.add(inv_tx)
+        db_session.commit()
+
+        service = TransactionsService(db_session)
+        service.sync_prior_wealth_offset()
+
+        from backend.repositories.transactions_repository import TransactionsRepository
+        repo = TransactionsRepository(db_session)
+        inv_df = repo.get_table("manual_investments")
+        pw_rows = inv_df[inv_df["tag"] == PRIOR_WEALTH_TAG]
+        assert len(pw_rows) == 0
+
+
+    def test_create_manual_investments_transaction_updates_prior_wealth(
+        self, db_session, seed_investments
+    ):
+        """Verify creating a manual_investments transaction recalculates Investment.prior_wealth_amount."""
+        from datetime import date as date_type
+        service = TransactionsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+
+        data = {
+            "date": date_type(2024, 3, 1),
+            "description": "Extra deposit",
+            "amount": -3000.0,
+            "account_name": "Investment Account",
+            "category": "Investments",
+            "tag": "Stock Fund",
+        }
+        service.create_transaction(data, "manual_investments")
+
+        db_session.refresh(stock_fund)
+        # Existing txns: -10000 + -2000 = -12000, plus new -3000 = -15000 → prior_wealth = 15000
+        assert stock_fund.prior_wealth_amount == pytest.approx(15000.0)
+
+    def test_delete_manual_investments_transaction_updates_prior_wealth(
+        self, db_session, seed_investments
+    ):
+        """Verify deleting a manual_investments transaction recalculates Investment.prior_wealth_amount."""
+        service = TransactionsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        txns = seed_investments["transactions"]
+        # inv_txn_2 is a Stock Fund txn with amount=-2000
+        inv_txn_2 = next(t for t in txns if t.id == "inv_txn_2")
+
+        service.delete_transaction(inv_txn_2.unique_id, "manual_investment_transactions")
+
+        db_session.refresh(stock_fund)
+        # After deleting -2000, remaining: -10000 → prior_wealth = 10000
+        assert stock_fund.prior_wealth_amount == pytest.approx(10000.0)
 
 
 class TestTransactionsServiceAddTransaction:

@@ -25,6 +25,7 @@ from backend.constants.tables import (
     TransactionsTableFields,
 )
 from backend.repositories.bank_balance_repository import BankBalanceRepository
+from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -53,9 +54,11 @@ class TransactionsService:
         db : Session
             SQLAlchemy session for database operations.
         """
+        self.db = db
         self.transactions_repository = TransactionsRepository(db)
         self.split_transactions_repository = SplitTransactionsRepository(db)
         self.balance_repo = BankBalanceRepository(db)
+        self.investments_repo = InvestmentsRepository(db)
 
     def add_transaction(
         self, transaction: dict, service: Literal["cash", "manual_investments"]
@@ -87,13 +90,15 @@ class TransactionsService:
         return self.transactions_repository.add_transaction(tx, service)
 
     def sync_prior_wealth_offset(
-        self, target_service: Literal["cash", "manual_investments"] | None = None
+        self, target_service: Literal["cash"] | None = None
     ) -> None:
         """
-        Synchronize the prior wealth offset transaction for each service.
+        Synchronize the prior wealth offset transaction for the cash service.
 
-        Tracks manual deposits (negative amounts) separately for each service (cash/manual_investments)
-        and maintains a single consolidated "Prior Wealth" transaction in EACH table.
+        Tracks manual deposits (negative amounts) for cash and maintains a single
+        consolidated "Prior Wealth" transaction in the cash table.
+        Investment prior wealth is handled separately via Investment.prior_wealth_amount
+        and _build_investment_prior_wealth_rows().
 
         Logic per service:
         1. Calculate total offset needed = sum(abs(manual_deposits)) for that service
@@ -104,7 +109,7 @@ class TransactionsService:
         services_to_sync = (
             [target_service]
             if target_service
-            else [Services.CASH.value, Services.MANUAL_INVESTMENTS.value]
+            else [Services.CASH.value]
         )
 
         for service in services_to_sync:
@@ -127,8 +132,6 @@ class TransactionsService:
             # 3. Handle offset transaction in the specific service table
             if service == Services.CASH.value:
                 repo = self.transactions_repository.cash_repo
-            elif service == Services.MANUAL_INVESTMENTS.value:
-                repo = self.transactions_repository.manual_investments_repo
             else:
                 raise ValueError(
                     f"Service '{service}' not supported for prior wealth offset"
@@ -229,6 +232,10 @@ class TransactionsService:
         if not prior_wealth_df.empty:
             dfs.append(prior_wealth_df)
 
+        investment_prior_wealth_df = self._build_investment_prior_wealth_rows()
+        if not investment_prior_wealth_df.empty:
+            dfs.append(investment_prior_wealth_df)
+
         dfs = [df for df in dfs if not df.empty]
         if not dfs:
             return pd.DataFrame()
@@ -263,6 +270,41 @@ class TransactionsService:
         if not rows:
             return pd.DataFrame()
         return pd.DataFrame(rows)
+
+    def _build_investment_prior_wealth_rows(self) -> pd.DataFrame:
+        """Build synthetic prior wealth rows from Investment.prior_wealth_amount.
+
+        Mirrors _build_bank_prior_wealth_rows for bank accounts.
+        Only includes open (non-closed) investments with prior_wealth_amount != 0.
+        """
+        investments_df = self.investments_repo.get_all_investments(include_closed=False)
+        if investments_df.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for _, inv in investments_df.iterrows():
+            if inv["prior_wealth_amount"] == 0:
+                continue
+            rows.append({
+                TransactionsTableFields.ID.value: f"inv_pw_{inv['id']}",
+                TransactionsTableFields.DATE.value: inv.get("created_date", ""),
+                TransactionsTableFields.PROVIDER.value: "manual_investments",
+                TransactionsTableFields.ACCOUNT_NAME.value: inv["name"],
+                TransactionsTableFields.ACCOUNT_NUMBER.value: None,
+                TransactionsTableFields.DESCRIPTION.value: f"Prior Wealth ({inv['name']})",
+                TransactionsTableFields.AMOUNT.value: inv["prior_wealth_amount"],
+                TransactionsTableFields.CATEGORY.value: IncomeCategories.OTHER_INCOME.value,
+                TransactionsTableFields.TAG.value: PRIOR_WEALTH_TAG,
+                TransactionsTableFields.UNIQUE_ID.value: f"inv_pw_{inv['id']}",
+                TransactionsTableFields.SOURCE.value: "investments",
+                TransactionsTableFields.SPLIT_ID.value: None,
+                TransactionsTableFields.TYPE.value: "normal",
+            })
+
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
+
 
     def update_tagging_by_id(
         self, table_name: str, unique_id: int, category: str | None, tag: str | None
@@ -373,7 +415,14 @@ class TransactionsService:
         if not success:
             raise RuntimeError("Failed to create transaction")
 
-        self.sync_prior_wealth_offset()
+        if service == "cash":
+            self.sync_prior_wealth_offset(target_service="cash")
+        elif service == "manual_investments":
+            category = data.get("category")
+            tag = data.get("tag")
+            if category and tag:
+                from backend.services.investments_service import InvestmentsService
+                InvestmentsService(self.db).recalculate_prior_wealth_by_tag(category, tag)
 
     def update_transaction(
         self, unique_id: int, source: str, updates: dict
@@ -449,11 +498,21 @@ class TransactionsService:
                 f"Cannot manually delete system-generated {tag} transaction"
             )
 
+        inv_category = None
+        inv_tag = None
+        if source == "manual_investment_transactions":
+            inv_category = getattr(tx_record, "category", None)
+            inv_tag = getattr(tx_record, "tag", None)
+
         success = target_repo.delete_transaction_by_unique_id(unique_id)
         if not success:
             raise ValueError("Transaction not found or deletion failed")
 
-        self.sync_prior_wealth_offset()
+        if source == "cash_transactions":
+            self.sync_prior_wealth_offset(target_service="cash")
+        elif source == "manual_investment_transactions" and inv_category and inv_tag:
+            from backend.services.investments_service import InvestmentsService
+            InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
 
     def bulk_tag_transactions(
         self,
