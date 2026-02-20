@@ -39,7 +39,7 @@ class AnalysisService:
         if end_date:
             df = df[df["date"] <= end_date]
 
-        income, expenses = self.get_income_and_expenses(df)
+        income, expenses = self.get_income_and_expenses(df, include_prior_wealth=True)
 
         return {
             "latest_data_date": latest_date,
@@ -74,10 +74,14 @@ class AnalysisService:
 
         return monthly_data
 
-    def get_income_and_expenses(self, df: pd.DataFrame) -> tuple[float, float]:
+    def get_income_and_expenses(
+        self, df: pd.DataFrame, include_prior_wealth: bool = False
+    ) -> tuple[float, float]:
         df = df[df["source"] != "credit_card_transactions"]
         income_mask = self._get_income_mask(df)
         income = float(df[income_mask]["amount"].sum())
+        if include_prior_wealth:
+            income += self._get_bank_prior_wealth_total() + self._get_investment_prior_wealth_total()
         expenses = float(df[~income_mask]["amount"].sum()) * -1
         return income, expenses
 
@@ -96,7 +100,7 @@ class AnalysisService:
 
     def _get_investment_prior_wealth_total(self) -> float:
         """Get total prior wealth from all open investments."""
-        df = self.investments_repo.get_all_investments(include_closed=False)
+        df = self.investments_repo.get_all_investments(include_closed=True)
         if df.empty:
             return 0.0
         return float(df["prior_wealth_amount"].sum())
@@ -287,37 +291,55 @@ class AnalysisService:
         Get monthly net worth (bank balance + investment value) over time.
 
         Bank balance is reconstructed as prior_wealth + cumulative bank transactions.
-        Investment value is the cumulative net invested amount across all investments.
+        Investment value is prior_wealth + cumulative investment transactions.
+        The first data point is anchored one month before the earliest transaction,
+        showing the pure prior-wealth baseline.
         """
-        df = self.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
+        bank_prior_wealth = self._get_bank_prior_wealth_total()
+        investment_prior_wealth = self._get_investment_prior_wealth_total()
 
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
-
-        if df.empty:
-            return []
-
-        prior_wealth = self._get_bank_prior_wealth_total() + self._get_investment_prior_wealth_total()
-
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
-        months = sorted(df["month"].unique())
-
+        # --- Bank transactions (all sources except credit card) ---
         full_df = self.repo.get_table()
         full_df = full_df[full_df["source"] != "credit_card_transactions"]
-        full_df["date_parsed"] = pd.to_datetime(full_df["date"])
 
-        result = []
+        filtered_df = full_df.copy()
+        if start_date:
+            filtered_df = filtered_df[filtered_df["date"] >= start_date]
+        if end_date:
+            filtered_df = filtered_df[filtered_df["date"] <= end_date]
+
+        if filtered_df.empty:
+            return []
+
+        full_df["date_parsed"] = pd.to_datetime(full_df["date"])
+        filtered_df["month"] = pd.to_datetime(filtered_df["date"]).dt.strftime("%Y-%m")
+        months = sorted(filtered_df["month"].unique())
+
+        # --- Investment transactions: fetch once, filter per month in-memory ---
+        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
+
+        # --- Prior-wealth anchor point (1 month before earliest data) ---
+        anchor_month = (pd.to_datetime(months[0] + "-01") - pd.DateOffset(months=1)).strftime("%Y-%m")
+
+        result = [{
+            "month": anchor_month,
+            "bank_balance": round(bank_prior_wealth, 2),
+            "investment_value": round(investment_prior_wealth, 2),
+            "net_worth": round(bank_prior_wealth + investment_prior_wealth, 2),
+        }]
+
         for month in months:
             month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
-            month_end_str = month_end.strftime("%Y-%m-%d")
 
-            bank_txns_to_date = full_df[full_df["date_parsed"] <= month_end]
-            bank_balance = prior_wealth + float(bank_txns_to_date["amount"].sum())
+            bank_balance = bank_prior_wealth + float(
+                full_df.loc[full_df["date_parsed"] <= month_end, "amount"].sum()
+            )
 
-            investment_value = self.investments_service.get_total_value_at_date(month_end_str)
+            inv_to_date = (
+                -float(inv_df.loc[inv_df["date_parsed"] <= month_end, "amount"].sum())
+                if not inv_df.empty else 0.0
+            )
+            investment_value = investment_prior_wealth + inv_to_date
 
             result.append({
                 "month": month,

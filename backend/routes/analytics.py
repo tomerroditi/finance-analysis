@@ -64,3 +64,13 @@ async def get_sankey_data(
 ) -> dict:
     service = AnalysisService(db)
     return service.get_sankey_data(start_date, end_date)
+
+
+@router.get("/net-worth-over-time")
+async def get_net_worth_over_time(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_database),
+):
+    service = AnalysisService(db)
+    return service.get_net_worth_over_time(start_date, end_date)

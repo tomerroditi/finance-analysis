@@ -332,6 +332,39 @@ class InvestmentsService:
             "first_transaction_date": first_date.strftime("%Y-%m-%d"),
         }
 
+    def get_all_investment_transactions_combined(self, include_closed: bool = True) -> pd.DataFrame:
+        """
+        Fetch transactions for all investments in a single combined DataFrame.
+
+        Parameters
+        ----------
+        include_closed : bool
+            Whether to include transactions for closed investments.
+
+        Returns
+        -------
+        pd.DataFrame
+            Combined transactions with a parsed ``date_parsed`` column and
+            numeric ``amount``.  Empty DataFrame if no investments exist.
+        """
+        investments = self.investments_repo.get_all_investments(include_closed=include_closed)
+        if investments.empty:
+            return pd.DataFrame()
+
+        frames = []
+        for _, inv in investments.iterrows():
+            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+            if not txns.empty:
+                frames.append(txns)
+
+        if not frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(frames, ignore_index=True)
+        combined["date_parsed"] = pd.to_datetime(combined["date"])
+        combined["amount"] = pd.to_numeric(combined["amount"], errors="coerce").fillna(0.0)
+        return combined
+
     def get_total_value_at_date(self, as_of_date: str) -> float:
         """
         Get total portfolio value across all investments at a given date.

@@ -255,6 +255,11 @@ export const analyticsApi = {
     api.get("/analytics/sankey", {
       params: { start_date: startDate, end_date: endDate },
     }),
+  getNetWorthOverTime: (startDate?: string, endDate?: string) =>
+    api.get<{ month: string; bank_balance: number; investment_value: number; net_worth: number }[]>(
+      "/analytics/net-worth-over-time",
+      { params: { start_date: startDate, end_date: endDate } }
+    ),
 };
 
 // Bank Balances API

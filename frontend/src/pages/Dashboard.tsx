@@ -140,6 +140,19 @@ export function Dashboard() {
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
+  const { data: netWorthData } = useQuery({
+    queryKey: ["net-worth-over-time", dateRange.start, dateRange.end, isTestMode],
+    queryFn: async () => {
+      const start = dateRange.start ? format(dateRange.start, "yyyy-MM-dd") : undefined;
+      const end = dateRange.end ? format(dateRange.end, "yyyy-MM-dd") : undefined;
+      const res = await analyticsApi.getNetWorthOverTime(start, end);
+      return res.data;
+    },
+    enabled:
+      (dateRange.start === null && dateRange.end === null) ||
+      (!!dateRange.start && !!dateRange.end),
+  });
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("he-IL", {
       style: "currency",
@@ -219,6 +232,63 @@ export function Dashboard() {
                 color="bg-amber-500/20 text-amber-300"
               />
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Net Worth Over Time */}
+      {netWorthData && netWorthData.length > 0 && (
+        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+          <h3 className="text-lg font-bold mb-4">Net Worth Over Time</h3>
+          <div className="h-[350px]">
+            <Plot
+              data={[
+                {
+                  x: netWorthData.map((d) => d.month),
+                  y: netWorthData.map((d) => d.bank_balance),
+                  name: "Bank Balance",
+                  type: "scatter",
+                  mode: "lines+markers",
+                  line: { color: "#f59e0b", width: 2 },
+                  marker: { size: 4, color: "#f59e0b" },
+                },
+                {
+                  x: netWorthData.map((d) => d.month),
+                  y: netWorthData.map((d) => d.investment_value),
+                  name: "Investments",
+                  type: "scatter",
+                  mode: "lines+markers",
+                  line: { color: "#6366f1", width: 2 },
+                  marker: { size: 4, color: "#6366f1" },
+                },
+                {
+                  x: netWorthData.map((d) => d.month),
+                  y: netWorthData.map((d) => d.net_worth),
+                  name: "Net Worth",
+                  type: "scatter",
+                  mode: "lines+markers",
+                  line: { color: "#10b981", width: 3 },
+                  marker: { size: 5, color: "#10b981" },
+                },
+              ]}
+              layout={{
+                ...chartTheme,
+                autosize: true,
+                height: 350,
+                yaxis: {
+                  title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
+                  tickfont: { color: "#94a3b8" },
+                },
+                legend: {
+                  orientation: "h",
+                  y: -0.15,
+                  x: 0.5,
+                  xanchor: "center",
+                },
+              }}
+              style={{ width: "100%", height: "100%" }}
+              config={{ displayModeBar: false, responsive: true }}
+            />
           </div>
         </div>
       )}
