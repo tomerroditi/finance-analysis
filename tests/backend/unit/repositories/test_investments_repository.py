@@ -173,3 +173,50 @@ class TestInvestmentsRepository:
         repo = InvestmentsRepository(db_session)
         with pytest.raises(EntityNotFoundException):
             repo.delete_investment(999)
+
+
+class TestInvestmentsRepositoryPriorWealth:
+    """Tests for prior_wealth_amount persistence."""
+
+    def test_update_prior_wealth_persists_value(self, db_session):
+        """Verify update_prior_wealth writes the value to the DB."""
+        from backend.models.investment import Investment
+
+        inv = Investment(
+            category="Investments",
+            tag="Test Fund",
+            type="etf",
+            name="Test",
+            created_date="2024-01-01",
+        )
+        db_session.add(inv)
+        db_session.commit()
+        db_session.refresh(inv)
+
+        repo = InvestmentsRepository(db_session)
+        repo.update_prior_wealth(inv.id, 15000.0)
+
+        db_session.refresh(inv)
+        assert inv.prior_wealth_amount == 15000.0
+
+    def test_update_prior_wealth_handles_zero(self, db_session):
+        """Verify prior_wealth_amount can be set to zero."""
+        from backend.models.investment import Investment
+
+        inv = Investment(
+            category="Investments",
+            tag="Zero Fund",
+            type="etf",
+            name="Zero",
+            created_date="2024-01-01",
+            prior_wealth_amount=5000.0,
+        )
+        db_session.add(inv)
+        db_session.commit()
+        db_session.refresh(inv)
+
+        repo = InvestmentsRepository(db_session)
+        repo.update_prior_wealth(inv.id, 0.0)
+
+        db_session.refresh(inv)
+        assert inv.prior_wealth_amount == 0.0

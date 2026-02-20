@@ -111,6 +111,16 @@ class InvestmentsRepository:
                 f"No investment found with ID {investment_id}"
             )
 
+    def update_prior_wealth(self, investment_id: int, amount: float) -> None:
+        """Update the stored prior_wealth_amount for an investment."""
+        stmt = (
+            update(Investment)
+            .where(Investment.id == investment_id)
+            .values(prior_wealth_amount=amount)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """Close an investment by setting is_closed flag and closed_date."""
         stmt = (
