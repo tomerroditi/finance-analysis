@@ -231,12 +231,12 @@ class InvestmentsService:
 
     def get_total_prior_wealth(self) -> float:
         """
-        Sum prior_wealth_amount across all open (non-closed) investments.
+        Sum prior_wealth_amount across all investments (open and closed).
 
         Returns
         -------
         float
-            Total prior wealth across open investments.
+            Total prior wealth across all investments.
         """
         df = self.investments_repo.get_all_investments(include_closed=True)
         if df.empty:

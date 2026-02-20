@@ -267,8 +267,8 @@ class AnalysisService:
             return {"nodes": [], "links": []}
 
         # Calculate CC gap before filtering out Credit Cards category
-        bank_cc_payments = df[df["category"] == CREDIT_CARDS]["amount"].sum()
-        itemized_cc_total = df[df["source"] == "credit_card_transactions"]["amount"].sum()
+        bank_cc_payments = abs(df[df["category"] == CREDIT_CARDS]["amount"].sum())
+        itemized_cc_total = abs(df[df["source"] == "credit_card_transactions"]["amount"].sum())
         cc_gap = bank_cc_payments - itemized_cc_total
 
         df = df[df['category'] != CREDIT_CARDS]

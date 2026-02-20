@@ -213,20 +213,20 @@ class TestInvestmentsServicePriorWealth:
         db_session.refresh(inv)
         assert inv.prior_wealth_amount == 0.0
 
-    def test_get_total_prior_wealth_sums_open_investments(self, db_session, seed_investments):
-        """Verify get_total_prior_wealth sums prior_wealth_amount for non-closed investments only."""
+    def test_get_total_prior_wealth_sums_all_investments(self, db_session, seed_investments):
+        """Verify get_total_prior_wealth sums prior_wealth_amount for all investments."""
         stock_fund, bond_fund = seed_investments["investments"]
         stock_fund.prior_wealth_amount = 12000.0   # open
-        bond_fund.prior_wealth_amount = -160.0     # closed — should be excluded
+        bond_fund.prior_wealth_amount = 100.0     # closed — still included
         db_session.commit()
 
         service = InvestmentsService(db_session)
         total = service.get_total_prior_wealth()
 
-        assert total == pytest.approx(12000.0)
+        assert total == pytest.approx(12100.0)
 
     def test_get_total_prior_wealth_returns_zero_when_empty(self, db_session):
-        """Verify get_total_prior_wealth returns 0.0 when no open investments exist."""
+        """Verify get_total_prior_wealth returns 0.0 when no investments exist."""
         service = InvestmentsService(db_session)
         assert service.get_total_prior_wealth() == 0.0
 

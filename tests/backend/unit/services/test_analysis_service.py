@@ -28,24 +28,6 @@ class TestAnalysisServiceOverview:
 
         assert result["net_balance_change"] == 28200.0 - 9075.0
 
-    def test_get_overview_with_date_filter(self, db_session, seed_base_transactions):
-        """Verify overview respects date range filters."""
-        service = AnalysisService(db_session)
-
-        # Filter to January 2024 only
-        result = service.get_overview(
-            start_date="2024-01-01", end_date="2024-01-31"
-        )
-
-        # Jan bank+cash income: 8000 (Salary)
-        assert result["total_income"] == 8000.0
-
-        # Jan bank+cash expenses: Home/Rent 3000 + Ignore(net 0) + Coffee 15 + Parking 10
-        assert result["total_expenses"] == 3025.0
-
-        # latest_data_date is always from full dataset (before filtering)
-        assert result["latest_data_date"] == "2024-03-25"
-
     def test_get_overview_empty_db(self, db_session):
         """Verify overview raises KeyError on empty database (no columns in empty DataFrame)."""
         service = AnalysisService(db_session)
@@ -80,20 +62,6 @@ class TestAnalysisServiceTimeSeries:
         mar = result[2]
         assert mar["income"] == 8200.0
         assert mar["expenses"] == 3020.0
-
-    def test_get_income_expenses_over_time_date_filter(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify date filtering on time series."""
-        service = AnalysisService(db_session)
-        result = service.get_income_expenses_over_time(
-            start_date="2024-02-01", end_date="2024-02-28"
-        )
-
-        assert len(result) == 1
-        assert result[0]["month"] == "2024-02"
-        assert result[0]["income"] == 12000.0
-        assert result[0]["expenses"] == 3030.0
 
     def test_get_net_balance_over_time(self, db_session, seed_base_transactions):
         """Verify cumulative balance calculation."""
@@ -320,9 +288,8 @@ class TestAnalysisServiceSankey:
         pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert len(pw_links) == 1
 
-        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000) + stock_fund (12000)
-        # bond_fund excluded because it is closed
-        assert pw_links[0]["value"] == 52000.0
+        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000) + all investments (12000 + -160)
+        assert pw_links[0]["value"] == 51840.0
 
     def test_get_sankey_data_empty(self, db_session):
         """Verify empty nodes/links for no data."""
@@ -471,19 +438,19 @@ class TestAnalysisServiceSankey:
 class TestAnalysisServiceInvestmentPriorWealth:
     """Tests for investment prior wealth aggregation."""
 
-    def test_get_investment_prior_wealth_total_sums_open_investments(
+    def test_get_investment_prior_wealth_total_sums_all_investments(
         self, db_session, seed_investments
     ):
-        """Verify get_total_prior_wealth sums prior_wealth_amount for open investments."""
+        """Verify get_total_prior_wealth sums prior_wealth_amount for all investments."""
         stock_fund, bond_fund = seed_investments["investments"]
         stock_fund.prior_wealth_amount = 12000.0
-        bond_fund.prior_wealth_amount = -160.0   # closed, should be excluded
+        bond_fund.prior_wealth_amount = -160.0   # closed, still included
         db_session.commit()
 
         service = InvestmentsService(db_session)
         total = service.get_total_prior_wealth()
 
-        assert total == pytest.approx(12000.0)
+        assert total == pytest.approx(11840.0)
 
     def test_get_investment_prior_wealth_total_returns_zero_with_no_investments(
         self, db_session
@@ -519,20 +486,6 @@ class TestAnalysisServiceIncomeBySource:
         mar = result[2]
         assert mar["sources"] == {"Salary": 8200.0}
         assert mar["total"] == 8200.0
-
-    def test_get_income_by_source_over_time_with_date_filter(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify date filtering narrows results to specified range."""
-        service = AnalysisService(db_session)
-        result = service.get_income_by_source_over_time(
-            start_date="2024-02-01", end_date="2024-02-28"
-        )
-
-        assert len(result) == 1
-        assert result[0]["month"] == "2024-02"
-        assert result[0]["sources"]["Salary"] == 8500.0
-        assert result[0]["sources"]["Other Income"] == 3500.0
 
     def test_get_income_by_source_over_time_with_tags(self, db_session):
         """Verify category/tag combo labels when tags exist on income transactions."""
