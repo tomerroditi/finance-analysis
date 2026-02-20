@@ -238,7 +238,7 @@ class InvestmentsService:
         float
             Total prior wealth across open investments.
         """
-        df = self.investments_repo.get_all_investments(include_closed=False)
+        df = self.investments_repo.get_all_investments(include_closed=True)
         if df.empty:
             return 0.0
         return float(df["prior_wealth_amount"].sum())

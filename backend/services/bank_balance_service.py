@@ -152,3 +152,10 @@ class BankBalanceService:
             return 0.0
         mask = (df["provider"] == provider) & (df["account_name"] == account_name)
         return float(df.loc[mask, "amount"].sum())
+
+    def get_total_prior_wealth(self) -> float:
+        """Get total prior wealth from all bank accounts."""
+        df = self.balance_repo.get_all()
+        if df.empty:
+            return 0.0
+        return float(df["prior_wealth_amount"].sum())

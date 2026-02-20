@@ -14,6 +14,7 @@ from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.investments_service import InvestmentsService
+from backend.services.bank_balance_service import BankBalanceService
 
 
 class AnalysisService:
@@ -39,6 +40,7 @@ class AnalysisService:
         self.balance_repo = BankBalanceRepository(db)
         self.investments_repo = InvestmentsRepository(db)
         self.investments_service = InvestmentsService(db)
+        self.bank_balance_service = BankBalanceService(db)
 
     def get_overview(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -74,7 +76,8 @@ class AnalysisService:
         if end_date:
             df = df[df["date"] <= end_date]
 
-        income, expenses = self.get_income_and_expenses(df, include_prior_wealth=True)
+        income, expenses = self.get_income_and_expenses(df)
+        income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
 
         return {
             "latest_data_date": latest_date,
@@ -132,7 +135,7 @@ class AnalysisService:
         return monthly_data
 
     def get_income_and_expenses(
-        self, df: pd.DataFrame, include_prior_wealth: bool = False
+        self, df: pd.DataFrame
     ) -> tuple[float, float]:
         """
         Compute total income and total expenses from a transactions DataFrame.
@@ -146,9 +149,6 @@ class AnalysisService:
         ----------
         df : pd.DataFrame
             Transactions DataFrame (typically the full merged table).
-        include_prior_wealth : bool, optional
-            When ``True``, bank balance and investment prior-wealth totals
-            are added to the income figure. Default is ``False``.
 
         Returns
         -------
@@ -159,8 +159,6 @@ class AnalysisService:
         df = df[df["source"] != "credit_card_transactions"]
         income_mask = self._get_income_mask(df)
         income = float(df[income_mask]["amount"].sum())
-        if include_prior_wealth:
-            income += self._get_bank_prior_wealth_total() + self._get_investment_prior_wealth_total()
         expenses = float(df[~income_mask]["amount"].sum()) * -1
         return income, expenses
 
@@ -186,20 +184,6 @@ class AnalysisService:
             df["category"].isin([c.value for c in LiabilitiesCategories])
             & (df["amount"] > 0)
         )
-
-    def _get_bank_prior_wealth_total(self) -> float:
-        """Get total prior wealth from all bank balance records."""
-        df = self.balance_repo.get_all()
-        if df.empty:
-            return 0.0
-        return float(df["prior_wealth_amount"].sum())
-
-    def _get_investment_prior_wealth_total(self) -> float:
-        """Get total prior wealth from all open investments."""
-        df = self.investments_repo.get_all_investments()
-        if df.empty:
-            return 0.0
-        return float(df["prior_wealth_amount"].sum())
 
     def get_net_balance_over_time(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
@@ -378,8 +362,8 @@ class AnalysisService:
         txn_prior_wealth = other_income_df[
             other_income_df["tag"] == PRIOR_WEALTH_TAG
         ]["amount"].sum()
-        bank_prior_wealth = self._get_bank_prior_wealth_total()
-        investment_prior_wealth = self._get_investment_prior_wealth_total()
+        bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
+        investment_prior_wealth = self.investments_service.get_total_prior_wealth()
         sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth + investment_prior_wealth
         sources[OTHER_INCOME] = other_income_df[
             other_income_df["tag"] != PRIOR_WEALTH_TAG
@@ -564,8 +548,8 @@ class AnalysisService:
             - ``investment_value`` – reconstructed investment value at month end.
             - ``net_worth`` – ``bank_balance + investment_value``.
         """
-        bank_prior_wealth = self._get_bank_prior_wealth_total()
-        investment_prior_wealth = self._get_investment_prior_wealth_total()
+        bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
+        investment_prior_wealth = self.investments_service.get_total_prior_wealth()
 
         # --- Bank transactions (all sources except credit card) ---
         full_df = self.repo.get_table(exclude_services=["credit_card_transactions"])
