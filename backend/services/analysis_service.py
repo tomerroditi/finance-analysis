@@ -446,7 +446,7 @@ class AnalysisService:
         Get monthly net worth (bank balance + investment value) over time.
 
         Bank balance is reconstructed as ``prior_wealth + cumulative bank transactions``.
-        Investment value is ``prior_wealth + cumulative investment transactions``
+        Investment value is ``cumulative investment transactions``
         (negative investment amounts are deposits, so balance is negated sum).
         An anchor data point one month before the earliest transaction shows
         the pure prior-wealth baseline.
@@ -463,6 +463,7 @@ class AnalysisService:
         """
         bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
+        prior_wealth_total = bank_prior_wealth + investment_prior_wealth
 
         # --- Bank transactions (all sources except credit card) ---
         df = self.repo.get_table(exclude_services=["credit_card_transactions"])
@@ -484,15 +485,15 @@ class AnalysisService:
 
         result = [{
             "month": anchor_month,
-            "bank_balance": round(bank_prior_wealth, 2),
-            "investment_value": round(investment_prior_wealth, 2),
-            "net_worth": round(bank_prior_wealth + investment_prior_wealth, 2),
+            "bank_balance": round(prior_wealth_total, 2),
+            "investment_value": 0.0,
+            "net_worth": round(prior_wealth_total, 2),
         }]
 
         for month in months:
             month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
 
-            bank_balance = bank_prior_wealth + float(
+            bank_balance = prior_wealth_total + float(
                 df.loc[df["date_parsed"] <= month_end, "amount"].sum()
             )
 
@@ -500,13 +501,12 @@ class AnalysisService:
                 -float(inv_df.loc[inv_df["date_parsed"] <= month_end, "amount"].sum())
                 if not inv_df.empty else 0.0
             )
-            investment_value = investment_prior_wealth + inv_to_date
 
             result.append({
                 "month": month,
                 "bank_balance": round(bank_balance, 2),
-                "investment_value": round(investment_value, 2),
-                "net_worth": round(bank_balance + investment_value, 2),
+                "investment_value": round(inv_to_date, 2),
+                "net_worth": round(bank_balance + inv_to_date, 2),
             })
 
         return result
