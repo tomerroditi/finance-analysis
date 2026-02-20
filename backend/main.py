@@ -12,7 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.database import get_engine
+from backend.config import AppConfig
+from backend.database import get_db_context, get_engine
 from backend.errors import (
     EntityAlreadyExistsException,
     EntityNotFoundException,
@@ -39,9 +40,35 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
+    from backend.repositories.credentials_repository import CredentialsRepository
+    from backend.repositories.tagging_repository import (
+        TaggingRepository,
+        DEFAULT_CATEGORIES_PATH,
+        DEFAULT_CATEGORIES_ICONS_PATH,
+    )
+
     # Startup
     print("Starting Finance Analysis API...")
     Base.metadata.create_all(bind=get_engine())
+
+    # Seed categories and migrate credentials
+    with get_db_context() as db:
+        config = AppConfig()
+
+        # Seed categories from YAML if DB table is empty
+        tagging_repo = TaggingRepository(db)
+        user_categories_path = config.get_categories_path()
+        categories_path = (
+            user_categories_path
+            if os.path.exists(user_categories_path)
+            else DEFAULT_CATEGORIES_PATH
+        )
+        tagging_repo.seed_from_yaml(categories_path, DEFAULT_CATEGORIES_ICONS_PATH)
+
+        # Migrate credentials from YAML if DB table is empty
+        creds_repo = CredentialsRepository(db)
+        creds_repo.migrate_from_yaml(config.get_credentials_path())
+
     yield
     # Shutdown
     print("Shutting down Finance Analysis API...")
