@@ -36,3 +36,4 @@ class Investment(Base, TimestampMixin):
     created_date = Column(String, nullable=False)  # Original creation date
     closed_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    prior_wealth_amount = Column(Float, nullable=False, default=0.0)
