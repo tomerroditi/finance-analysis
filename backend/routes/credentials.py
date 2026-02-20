@@ -1,5 +1,4 @@
-"""
-Credentials API routes.
+"""Credentials API routes.
 
 Provides endpoints for account credential management.
 """
@@ -27,25 +26,32 @@ class CredentialCreate(BaseModel):
 
 
 @router.get("/")
-async def get_credentials() -> dict[str, dict[str, list[str]]]:
+async def get_credentials(
+    db: Session = Depends(get_database),
+) -> dict[str, dict[str, list[str]]]:
     """Get all stored credentials (without passwords)."""
-    service = CredentialsService()
+    service = CredentialsService(db)
     return service.get_safe_credentials()
 
 
 @router.get("/accounts")
-async def get_accounts() -> list[dict[str, str]]:
+async def get_accounts(
+    db: Session = Depends(get_database),
+) -> list[dict[str, str]]:
     """Get a list of all configured accounts."""
-    service = CredentialsService()
+    service = CredentialsService(db)
     return service.get_accounts_list()
 
 
 @router.get("/{service}/{provider}/{account_name}")
 async def get_credential_details(
-    service: str, provider: str, account_name: str
+    service: str,
+    provider: str,
+    account_name: str,
+    db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get details for a specific credential."""
-    repo = CredentialsRepository()
+    repo = CredentialsRepository(db)
     creds = repo.get_credentials(service, provider, account_name)
     if not creds:
         raise HTTPException(status_code=404, detail="Credential not found")
@@ -59,9 +65,12 @@ async def get_providers() -> dict[str, list[str]]:
 
 
 @router.post("/")
-async def create_credential(credential: CredentialCreate) -> dict[str, str]:
+async def create_credential(
+    credential: CredentialCreate,
+    db: Session = Depends(get_database),
+) -> dict[str, str]:
     """Create or update a credential."""
-    repo = CredentialsRepository()
+    repo = CredentialsRepository(db)
     repo.save_credentials(
         service=credential.service,
         provider=credential.provider,
@@ -86,7 +95,7 @@ async def delete_credential(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Delete a credential and clean up associated data."""
-    creds_service = CredentialsService()
+    creds_service = CredentialsService(db)
     try:
         creds_service.delete_credential(service, provider, account_name)
         if service == "banks":

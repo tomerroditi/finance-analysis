@@ -990,13 +990,14 @@ class DummyCreditCardTFAScraper(CreditCardScraper):
         for line in lines:
             if "renewed long term token" in line:
                 self.credentials["otpLongTermToken"] = line.split(":", 1)[-1].strip()
-                creds_repo = CredentialsRepository()
-                creds_repo.update_credentials(
-                    self.service_name,
-                    self.provider_name,
-                    self.account_name,
-                    self.credentials,
-                )
+                with get_db_context() as db:
+                    creds_repo = CredentialsRepository(db)
+                    creds_repo.save_credentials(
+                        self.service_name,
+                        self.provider_name,
+                        self.account_name,
+                        self.credentials,
+                    )
                 break
             elif "long term token is valid" in line:
                 break
@@ -1165,13 +1166,14 @@ class OneZeroScraper(BankScraper):
         for line in lines:
             if "renewed long term token" in line:
                 self.credentials["otpLongTermToken"] = line.split(":", 1)[-1].strip()
-                creds_repo = CredentialsRepository()
-                creds_repo.update_credentials(
-                    self.service_name,
-                    self.provider_name,
-                    self.account_name,
-                    self.credentials,
-                )
+                with get_db_context() as db:
+                    creds_repo = CredentialsRepository(db)
+                    creds_repo.save_credentials(
+                        self.service_name,
+                        self.provider_name,
+                        self.account_name,
+                        self.credentials,
+                    )
                 break
             elif "long term token is valid" in line:
                 break

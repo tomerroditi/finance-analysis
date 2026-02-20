@@ -22,7 +22,7 @@ class ScrapingService:
     def __init__(self, db: Session):
         self.db = db
         self.scraping_history_repo = ScrapingHistoryRepository(db)
-        self.credentials_repo = CredentialsRepository()
+        self.credentials_repo = CredentialsRepository(db)
 
     def get_scraping_status(self, scraping_process_id: int) -> Dict[str, str | int]:
         """Get the current scraping status."""

@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
 from backend import database
-from backend.repositories.credentials_repository import CredentialsRepository
+from backend.dependencies import get_database
 from backend.services.credentials_service import CredentialsService
 from backend.models import Base
 
@@ -15,7 +16,10 @@ class TestModeRequest(BaseModel):
 
 
 @router.post("/toggle_test_mode")
-async def toggle_test_mode(request: TestModeRequest) -> dict[str, str | bool]:
+async def toggle_test_mode(
+    request: TestModeRequest,
+    db: Session = Depends(get_database),
+) -> dict[str, str | bool]:
     """
     Toggle the application's test mode.
 
@@ -31,9 +35,6 @@ async def toggle_test_mode(request: TestModeRequest) -> dict[str, str | bool]:
         # Reset database engine to pick up new path
         database.reset_engine()
 
-        # Reset credentials repository to pick up new path
-        repo = CredentialsRepository()
-        repo.credentials_path = config.get_credentials_path()
         CredentialsService.clear_cache()
 
         # If enabling test mode, ensure the database schema exists and seed credentials
@@ -41,7 +42,7 @@ async def toggle_test_mode(request: TestModeRequest) -> dict[str, str | bool]:
             engine = database.get_engine()
             Base.metadata.create_all(bind=engine)
 
-            creds_service = CredentialsService()
+            creds_service = CredentialsService(db)
             creds_service.seed_test_credentials()
 
     return {"status": "success", "test_mode": config.is_test_mode}
