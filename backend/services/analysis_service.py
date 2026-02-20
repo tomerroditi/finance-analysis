@@ -211,7 +211,8 @@ class AnalysisService:
             other_income_df["tag"] == PRIOR_WEALTH_TAG
         ]["amount"].sum()
         bank_prior_wealth = self._get_bank_prior_wealth_total()
-        sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth
+        investment_prior_wealth = self._get_investment_prior_wealth_total()
+        sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth + investment_prior_wealth
         sources[OTHER_INCOME] = other_income_df[
             other_income_df["tag"] != PRIOR_WEALTH_TAG
         ]["amount"].sum()
@@ -299,7 +300,7 @@ class AnalysisService:
         if df.empty:
             return []
 
-        prior_wealth = self._get_bank_prior_wealth_total()
+        prior_wealth = self._get_bank_prior_wealth_total() + self._get_investment_prior_wealth_total()
 
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
         months = sorted(df["month"].unique())

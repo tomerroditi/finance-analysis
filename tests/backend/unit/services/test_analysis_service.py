@@ -305,9 +305,9 @@ class TestAnalysisServiceSankey:
             assert "label" in link
 
     def test_get_sankey_data_includes_prior_wealth(
-        self, db_session, seed_base_transactions, seed_prior_wealth_transactions
+        self, db_session, seed_base_transactions, seed_prior_wealth_transactions, seed_investments
     ):
-        """Verify Prior Wealth node included from bank balances."""
+        """Verify Prior Wealth node included from bank balances and open investments."""
         service = AnalysisService(db_session)
         result = service.get_sankey_data()
 
@@ -319,8 +319,9 @@ class TestAnalysisServiceSankey:
         pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert len(pw_links) == 1
 
-        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000)
-        assert pw_links[0]["value"] == 40000.0
+        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000) + stock_fund (12000)
+        # bond_fund excluded because it is closed
+        assert pw_links[0]["value"] == 52000.0
 
     def test_get_sankey_data_empty(self, db_session):
         """Verify empty nodes/links for no data."""
