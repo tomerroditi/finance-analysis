@@ -260,6 +260,11 @@ export const analyticsApi = {
       "/analytics/net-worth-over-time",
       { params: { start_date: startDate, end_date: endDate } }
     ),
+  getIncomeBySourceOverTime: (startDate?: string, endDate?: string) =>
+    api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
+      "/analytics/income-by-source-over-time",
+      { params: { start_date: startDate, end_date: endDate } }
+    ),
 };
 
 // Bank Balances API
