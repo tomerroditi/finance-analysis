@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
+from backend.models.investment import Investment
 from backend.repositories.investments_repository import InvestmentsRepository
 
 
@@ -180,8 +181,6 @@ class TestInvestmentsRepositoryPriorWealth:
 
     def test_update_prior_wealth_persists_value(self, db_session):
         """Verify update_prior_wealth writes the value to the DB."""
-        from backend.models.investment import Investment
-
         inv = Investment(
             category="Investments",
             tag="Test Fund",
@@ -201,8 +200,6 @@ class TestInvestmentsRepositoryPriorWealth:
 
     def test_update_prior_wealth_handles_zero(self, db_session):
         """Verify prior_wealth_amount can be set to zero."""
-        from backend.models.investment import Investment
-
         inv = Investment(
             category="Investments",
             tag="Zero Fund",

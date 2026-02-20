@@ -118,8 +118,12 @@ class InvestmentsRepository:
             .where(Investment.id == investment_id)
             .values(prior_wealth_amount=amount)
         )
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
         self.db.commit()
+        if result.rowcount == 0:
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )
 
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """Close an investment by setting is_closed flag and closed_date."""
