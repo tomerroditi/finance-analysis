@@ -12,7 +12,11 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.services.transactions_service import TransactionsService
+from backend.repositories.transactions_repository import TransactionsRepository
+
+# TransactionsService is imported lazily inside __init__ to avoid a
+# module-level circular dependency (TransactionsService also lazy-imports
+# InvestmentsService inside its create/delete methods).
 
 
 class InvestmentsService:
@@ -24,6 +28,9 @@ class InvestmentsService:
     def __init__(self, db: Session):
         self.db = db
         self.investments_repo = InvestmentsRepository(db)
+        self.transactions_repo = TransactionsRepository(db)
+        from backend.services.transactions_service import TransactionsService
+
         self.transactions_service = TransactionsService(db)
 
     def get_all_investments(self, include_closed: bool = False) -> List[Dict[str, Any]]:
@@ -80,7 +87,8 @@ class InvestmentsService:
         """
         Calculate and store prior_wealth_amount for an investment.
 
-        Reads all ManualInvestmentTransactions for the investment and stores
+        Reads ManualInvestmentTransactions directly (bypassing get_data_for_analysis
+        to avoid depending on synthetic prior-wealth rows) and stores
         -(sum of amounts) as prior_wealth_amount. Equivalent to
         BankBalanceService.recalculate_for_account for bank accounts.
 
@@ -91,17 +99,21 @@ class InvestmentsService:
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
-        transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
-        )
-        if transactions_df.empty:
+        all_inv_txns = self.transactions_repo.get_table("manual_investments")
+        if all_inv_txns.empty:
             prior_wealth = 0.0
         else:
-            if "amount" in transactions_df.columns:
-                transactions_df["amount"] = pd.to_numeric(
-                    transactions_df["amount"], errors="coerce"
+            mask = (all_inv_txns["category"] == inv["category"]) & (
+                all_inv_txns["tag"] == inv["tag"]
+            )
+            inv_txns = all_inv_txns[mask]
+            if inv_txns.empty:
+                prior_wealth = 0.0
+            else:
+                amounts = pd.to_numeric(
+                    inv_txns["amount"], errors="coerce"
                 ).fillna(0.0)
-            prior_wealth = -float(transactions_df["amount"].sum())
+                prior_wealth = -float(amounts.sum())
         self.investments_repo.update_prior_wealth(investment_id, prior_wealth)
 
     def recalculate_prior_wealth_by_tag(self, category: str, tag: str) -> None:
