@@ -67,10 +67,10 @@ class CredentialsRepository:
         Returns
         -------
         str
-            Colon-delimited key in the format "service:provider:account_name:field"
+            Underscore-delimited key in the format "service_provider_account_name_field"
             used as the username argument when reading or writing keyring entries.
         """
-        return f"{service}:{provider}:{account_name}:{field}"
+        return f"{service}_{provider}_{account_name}_{field}"
 
     def _find_credential(
         self, service: str, provider: str, account_name: str
