@@ -69,6 +69,70 @@ async def lifespan(app: FastAPI):
         creds_repo = CredentialsRepository(db)
         creds_repo.migrate_from_yaml(config.get_credentials_path())
 
+    # Migrate: seed Investment.prior_wealth_amount from transactions
+    # and clean up legacy manual_investments prior wealth offset transactions
+    with get_db_context() as db:
+        from sqlalchemy import text
+        from backend.repositories.investments_repository import InvestmentsRepository
+        from backend.repositories.transactions_repository import TransactionsRepository
+        from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
+        from backend.constants.tables import TransactionsTableFields
+
+        engine = get_engine()
+
+        # 1. Add the column if not present (SQLite doesn't auto-add columns)
+        with engine.connect() as conn:
+            cols = [
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(investments)")).fetchall()
+            ]
+            if "prior_wealth_amount" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE investments ADD COLUMN prior_wealth_amount REAL NOT NULL DEFAULT 0.0"
+                    )
+                )
+                conn.commit()
+
+        investments_repo = InvestmentsRepository(db)
+        txns_repo = TransactionsRepository(db)
+
+        # 2. Seed prior_wealth_amount for every investment from its transactions
+        investments_df = investments_repo.get_all_investments(include_closed=True)
+        if not investments_df.empty:
+            txns_df = txns_repo.get_table("manual_investments")
+            for _, inv in investments_df.iterrows():
+                if not txns_df.empty:
+                    mask = (txns_df["category"] == inv["category"]) & (
+                        txns_df["tag"] == inv["tag"]
+                    )
+                    inv_txns = txns_df[mask]
+                    prior_wealth = (
+                        -float(inv_txns["amount"].sum())
+                        if not inv_txns.empty
+                        else 0.0
+                    )
+                else:
+                    prior_wealth = 0.0
+                investments_repo.update_prior_wealth(int(inv["id"]), prior_wealth)
+
+        # 3. Remove legacy manual_investments prior wealth offset transactions
+        manual_inv_repo = txns_repo.manual_investments_repo
+        inv_all_df = manual_inv_repo.get_table()
+        if not inv_all_df.empty:
+            tag_col = TransactionsTableFields.TAG.value
+            cat_col = TransactionsTableFields.CATEGORY.value
+            acct_col = TransactionsTableFields.ACCOUNT_NAME.value
+            uid_col = TransactionsTableFields.UNIQUE_ID.value
+
+            pw_mask = (
+                (inv_all_df[tag_col] == PRIOR_WEALTH_TAG)
+                & (inv_all_df[cat_col] == IncomeCategories.OTHER_INCOME.value)
+                & (inv_all_df[acct_col] == PRIOR_WEALTH_TAG)
+            )
+            for _, row in inv_all_df[pw_mask].iterrows():
+                manual_inv_repo.delete_transaction_by_unique_id(str(row[uid_col]))
+
     yield
     # Shutdown
     print("Shutting down Finance Analysis API...")
