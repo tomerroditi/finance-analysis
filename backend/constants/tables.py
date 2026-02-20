@@ -32,6 +32,10 @@ class Tables(Enum):
         Name of the table storing refund links.
     BANK_BALANCES : str
         Name of the table storing bank account balance snapshots.
+    CATEGORIES : str
+        Name of the table storing categories, tags, and icons.
+    CREDENTIALS : str
+        Name of the table storing provider account credentials.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -46,6 +50,8 @@ class Tables(Enum):
     PENDING_REFUNDS = "pending_refunds"
     REFUND_LINKS = "refund_links"
     BANK_BALANCES = "bank_balances"
+    CATEGORIES = "categories"
+    CREDENTIALS = "credentials"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
