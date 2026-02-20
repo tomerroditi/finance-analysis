@@ -229,3 +229,11 @@ class TestInvestmentsServicePriorWealth:
         """Verify get_total_prior_wealth returns 0.0 when no open investments exist."""
         service = InvestmentsService(db_session)
         assert service.get_total_prior_wealth() == 0.0
+
+    def test_recalculate_prior_wealth_by_tag_no_op_when_no_matching_investment(
+        self, db_session
+    ):
+        """Verify recalculate_prior_wealth_by_tag does nothing when no investment matches category/tag."""
+        service = InvestmentsService(db_session)
+        # Should not raise — silent no-op when investment does not exist
+        service.recalculate_prior_wealth_by_tag("Investments", "Nonexistent Fund")
