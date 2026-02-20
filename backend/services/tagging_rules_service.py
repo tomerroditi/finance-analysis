@@ -1,16 +1,27 @@
 import json
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.errors import BadRequestException, EntityNotFoundException
-from backend.constants.tables import Tables, TransactionsTableFields
+from backend.constants.tables import Tables
+from backend.models.transaction import (
+    BankTransaction,
+    CreditCardTransaction,
+    TransactionBase,
+)
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
+
+
+TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
+    Tables.CREDIT_CARD.value: CreditCardTransaction,
+    Tables.BANK.value: BankTransaction,
+}
 
 
 class TaggingRulesService:
@@ -180,21 +191,18 @@ class TaggingRulesService:
         Returns list of matching transactions with key fields.
         """
         conditions = self._normalize_conditions(conditions)
-        where_conditions, params = self._build_recursive_where_clause(conditions)
         tables = self._get_tables_names_for_conditions(conditions)
 
         results = []
         for table in tables:
-            query = f"""
-                SELECT id, unique_id, date, description, amount, category, tag,
-                       account_name, provider
-                FROM {table}
-                WHERE {where_conditions}
-                LIMIT :limit
-            """
-            df = self.transactions_repo.get_table(
-                service=table, query=query, query_params={**params, "limit": limit}
-            )
+            model = TABLE_TO_MODEL[table]
+            filter_expr = self._build_recursive_filter(conditions, model)
+            stmt = select(
+                model.id, model.unique_id, model.date, model.description,
+                model.amount, model.category, model.tag, model.account_name,
+                model.provider,
+            ).where(filter_expr).limit(limit)
+            df = pd.read_sql(stmt, self.db.bind)
             if not df.empty:
                 df["source"] = table
                 results.append(df)
@@ -279,29 +287,21 @@ class TaggingRulesService:
         AND matches to a DIFFERENT category/tag.
         """
         conditions = self._normalize_conditions(conditions)
-        # 1. Get query for this rule
-        where_clause, params = self._build_recursive_where_clause(conditions)
-        if not where_clause:
-            return
-
-        # We need to check against ALL tables that this rule could apply to
         tables = self._get_tables_names_for_conditions(conditions)
 
         matching_tx_ids_by_table = {}
 
         for table in tables:
-            # Find IDs of transactions matched by this NEW rule
-            query = f"SELECT id FROM {table} WHERE {where_clause}"
-            df = self.transactions_repo.get_table(
-                service=table, query=query, query_params=params
-            )
+            model = TABLE_TO_MODEL[table]
+            filter_expr = self._build_recursive_filter(conditions, model)
+            stmt = select(model.id).where(filter_expr)
+            df = pd.read_sql(stmt, self.db.bind)
             if not df.empty:
                 matching_tx_ids_by_table[table] = set(df["id"].tolist())
 
         if not any(matching_tx_ids_by_table.values()):
-            return  # No transactions match this rule, so no conflict possible yet
+            return
 
-        # 2. Get all OTHER rules
         other_rules_df = self.rules_repo.get_all_rules()
         if exclude_rule_id:
             other_rules_df = other_rules_df[other_rules_df["id"] != exclude_rule_id]
@@ -309,20 +309,16 @@ class TaggingRulesService:
         other_rules = other_rules_df.to_dict(orient="records")
 
         for rule in other_rules:
-            # Optimization: If category/tag are EXACTLY same, overlap is allowed (redundant but safe)
             if rule["category"] == category and rule["tag"] == tag:
                 continue
 
-            # Check if this EXISTING rule matches any of our transactions
             rule_conds = rule["conditions"]
             if isinstance(rule_conds, str):
-                # Handle legacy/stringified logic if any (though we aim to replace)
                 try:
                     rule_conds = json.loads(rule_conds)
-                except:
+                except Exception:
                     continue
 
-            r_where, r_params = self._build_recursive_where_clause(rule_conds)
             r_tables = self._get_tables_names_for_conditions(rule_conds)
 
             for table in r_tables:
@@ -333,20 +329,16 @@ class TaggingRulesService:
                 if not ids_to_check:
                     continue
 
-                # Check overlap using SQL for efficiency
-                # SELECT count(*) FROM table WHERE id IN (...) AND (rule_where_clause)
-                # Batch IDs if too many
+                model = TABLE_TO_MODEL[table]
+                r_filter = self._build_recursive_filter(rule_conds, model)
+
                 batch_size = 900
                 for i in range(0, len(ids_to_check), batch_size):
                     batch = ids_to_check[i : i + batch_size]
-                    id_params = {f"bid_{j}": id_val for j, id_val in enumerate(batch)}
-                    id_placeholders = ",".join(f":bid_{j}" for j in range(len(batch)))
-
-                    check_query = f"SELECT count(*) as count FROM {table} WHERE id IN ({id_placeholders}) AND ({r_where})"
-                    # Combine params
-                    combined_params = {**r_params, **id_params}
-
-                    res = self.db.execute(text(check_query), combined_params).scalar()
+                    stmt = select(func.count()).select_from(model).where(
+                        and_(model.id.in_(batch), r_filter)
+                    )
+                    res = self.db.execute(stmt).scalar()
                     if res > 0:
                         raise BadRequestException(
                             f"Conflict detected: This rule matches transactions that are also matched by existing rule '{rule['name']}' "
@@ -365,132 +357,101 @@ class TaggingRulesService:
         Apply a single rule to transactions and return set of (table, unique_id) pairs updated.
         """
         conditions = self._normalize_conditions(rule["conditions"])
-        where_conditions, params = self._build_recursive_where_clause(conditions)
         tables = self._get_tables_names_for_conditions(conditions)
-
-        category_col = TransactionsTableFields.CATEGORY.value
-        tag_col = TransactionsTableFields.TAG.value
 
         modified_pairs = set()
         for table in tables:
-            # 1. Identify which rows SHOULD be updated
-            # This avoids blind updates and helps us return the exact set of changed IDs
-            extra_conditions = ""
+            model = TABLE_TO_MODEL[table]
+            base_filter = self._build_recursive_filter(conditions, model)
+
             if not overwrite:
-                extra_conditions = f" AND {category_col} IS NULL"
+                extra_filter = model.category.is_(None)
             else:
-                # Optimized overwrite: only update if different
-                extra_conditions = f" AND ({category_col} IS NOT :category OR {tag_col} IS NOT :tag OR {category_col} IS NULL)"
+                extra_filter = or_(
+                    model.category.isnot(rule["category"]),
+                    model.tag.isnot(rule["tag"]),
+                    model.category.is_(None),
+                )
 
             # Find IDs first
-            find_query = f"SELECT unique_id FROM {table} WHERE ({where_conditions}){extra_conditions}"
-            print(find_query, params, flush=True)
-            find_params = {
-                "category": rule["category"],
-                "tag": rule["tag"],
-                **params,
-            }
-
-            ids_df = self.transactions_repo.get_table(
-                service=table, query=find_query, query_params=find_params
-            )
+            stmt = select(model.unique_id).where(and_(base_filter, extra_filter))
+            ids_df = pd.read_sql(stmt, self.db.bind)
             if ids_df.empty:
                 continue
 
             ids_to_update = ids_df["unique_id"].tolist()
 
-            # 2. Perform the update
-            uid_params = {f"uid_{j}": uid for j, uid in enumerate(ids_to_update)}
-            uid_placeholders = ",".join(f":uid_{j}" for j in range(len(ids_to_update)))
-            update_query = f"""
-                UPDATE {table}
-                SET {category_col} = :category,
-                    {tag_col} = :tag
-                WHERE unique_id IN ({uid_placeholders})
-            """
-            self.transactions_repo.update_with_query(
-                update_query,
-                {"category": rule["category"], "tag": rule["tag"], **uid_params},
-                service=table,
+            # Perform the update
+            update_stmt = (
+                update(model)
+                .where(model.unique_id.in_(ids_to_update))
+                .values(category=rule["category"], tag=rule["tag"])
             )
+            self.db.execute(update_stmt)
+            self.db.commit()
 
             for uid in ids_to_update:
                 modified_pairs.add((table, uid))
 
         return modified_pairs
 
-    def _build_recursive_where_clause(
-        self, condition_node: Dict[str, Any], param_prefix: str = "p"
-    ) -> Tuple[str, Dict[str, Any]]:
+    def _build_recursive_filter(self, condition_node: Dict[str, Any], model: Type[TransactionBase]):
         """
-        Recursively builds WHERE clause from condition tree.
+        Recursively builds a SQLAlchemy filter expression from a condition tree.
         """
         c_type = condition_node.get("type")
 
-        if c_type == "AND" or c_type == "OR":
+        if c_type in ("AND", "OR"):
             subconditions = condition_node.get("subconditions", [])
             if not subconditions:
-                return "1=1", {}  # Empty group
+                return True  # Empty group matches all
 
-            clauses = []
-            all_params = {}
-            for i, sub in enumerate(subconditions):
-                sub_prefix = f"{param_prefix}_{i}"
-                clause, params = self._build_recursive_where_clause(sub, sub_prefix)
-                clauses.append(f"({clause})")
-                all_params.update(params)
-
-            join_op = " AND " if c_type == "AND" else " OR "
-            return join_op.join(clauses), all_params
+            clauses = [self._build_recursive_filter(sub, model) for sub in subconditions]
+            return and_(*clauses) if c_type == "AND" else or_(*clauses)
 
         elif c_type == "CONDITION":
-            return self._build_single_condition(condition_node, param_prefix)
+            return self._build_single_filter(condition_node, model)
 
-        return "1=0", {}  # Fallback
+        return False  # Fallback: match nothing
 
-    def _build_single_condition(
-        self, condition: Dict[str, Any], param_name: str
-    ) -> Tuple[str, Dict[str, Any]]:
+    def _build_single_filter(self, condition: Dict[str, Any], model: Type[TransactionBase]):
+        """Build a single SQLAlchemy filter from a condition dict."""
         field = condition.get("field")
         operator = condition.get("operator")
         value = condition.get("value")
 
-        db_field = self._map_field_to_db_column(field)
-        if not db_field:
-            return "1=1", {}  # Ignored field
-
-        params = {}
-        clause = ""
+        column = self._get_model_column(field, model)
+        if column is None:
+            return True  # Ignored field (e.g., 'service' handled by table selection)
 
         if operator == "contains":
-            clause = f"{db_field} LIKE :{param_name}"
-            params[param_name] = f"%{value}%"
+            return column.like(f"%{value}%")
         elif operator == "equals":
-            clause = f"{db_field} = :{param_name}"
-            params[param_name] = value
+            return column == value
         elif operator == "starts_with":
-            clause = f"{db_field} LIKE :{param_name}"
-            params[param_name] = f"{value}%"
+            return column.like(f"{value}%")
         elif operator == "ends_with":
-            clause = f"{db_field} LIKE :{param_name}"
-            params[param_name] = f"%{value}"
-        elif operator in ["gt", "lt", "gte", "lte"]:
-            op_map = {"gt": ">", "lt": "<", "gte": ">=", "lte": "<="}
-            clause = f"{db_field} {op_map[operator]} :{param_name}"
-            params[param_name] = float(value)
+            return column.like(f"%{value}")
+        elif operator == "gt":
+            return column > float(value)
+        elif operator == "lt":
+            return column < float(value)
+        elif operator == "gte":
+            return column >= float(value)
+        elif operator == "lte":
+            return column <= float(value)
         elif operator == "between":
-            clause = f"{db_field} BETWEEN :{param_name}_min AND :{param_name}_max"
-            params[f"{param_name}_min"] = float(value[0])
-            params[f"{param_name}_max"] = float(value[1])
+            return column.between(float(value[0]), float(value[1]))
 
-        return clause, params
+        return True
 
-    def _map_field_to_db_column(self, field: str) -> Optional[str]:
+    def _get_model_column(self, field: str, model: Type[TransactionBase]):
+        """Map a condition field name to a SQLAlchemy model column."""
         field_mapping = {
-            "description": TransactionsTableFields.DESCRIPTION.value,
-            "amount": TransactionsTableFields.AMOUNT.value,
-            "provider": TransactionsTableFields.PROVIDER.value,
-            "account_name": TransactionsTableFields.ACCOUNT_NAME.value,
+            "description": model.description,
+            "amount": model.amount,
+            "provider": model.provider,
+            "account_name": model.account_name,
             "service": None,  # Handled by table selection
         }
         return field_mapping.get(field)

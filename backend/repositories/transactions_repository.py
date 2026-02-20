@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Literal, Optional, Type
 
 import pandas as pd
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import cast, delete, func, Integer, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import (
@@ -66,36 +66,10 @@ class ServiceRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_table(
-        self, query: str | None = None, params: dict | None = None
-    ) -> pd.DataFrame:
-        """
-        Get the transactions table as a DataFrame.
-        """
-        if query:
-            # For backward compatibility with custom raw SQL queries
-            result = self.db.execute(text(query), params or {})
-            columns = result.keys()
-            data = result.fetchall()
-            return pd.DataFrame(data, columns=columns)
-        else:
-            stmt = select(self.model)
-            # Use pandas read_sql to handle ORM objects easier or manual conversion
-            # Using manual conversion to list of dicts to correctly handle model attributes
-            # But read_sql with stmt and session.bind works great
-            return pd.read_sql(stmt, self.db.bind)
-
-    def update_with_query(self, query: str, query_params: dict | None = None) -> int:
-        """
-        Execute an UPDATE query and return the number of affected rows.
-        Kept for backward compatibility/complex batch updates.
-        """
-        if not query.strip().lower().startswith("update"):
-            raise ValueError("The query must be an UPDATE statement.")
-
-        result = self.db.execute(text(query), query_params or {})
-        self.db.commit()
-        return result.rowcount
+    def get_table(self) -> pd.DataFrame:
+        """Get the transactions table as a DataFrame."""
+        stmt = select(self.model)
+        return pd.read_sql(stmt, self.db.bind)
 
     def update_tagging_by_unique_id(
         self, unique_id: int, category: str, tag: str
@@ -181,13 +155,10 @@ class ServiceRepository:
 
     def add_transaction(self, transaction: ManualTransactionDTO) -> bool:
         """Add a new transaction to the database."""
-        # Calculate new ID (legacy string id logic)
         try:
-            # Note: We need to cast id to integer for comparison to find the max
-            # SQLite stores it as TEXT because of legacy schema, but they are number strings.
-            # Using casting in SQL for max calculation.
+            # id is stored as TEXT but contains number strings; cast to integer for MAX
             max_id = self.db.execute(
-                text(f"SELECT MAX(CAST(id AS INTEGER)) FROM {self.table}")
+                select(func.max(cast(self.model.id, Integer)))
             ).scalar()
 
             new_id = str((int(max_id) + 1) if max_id is not None else 1)
@@ -353,12 +324,10 @@ class TransactionsRepository:
     def get_table(
         self,
         service: T_service | None = None,
-        query: str | None = None,
-        query_params: dict | None = None,
         include_split_parents: bool = False,
     ) -> pd.DataFrame:
         """Get transactions table with optional filtering and split handling."""
-        df = self._get_base_transactions(service, query, query_params)
+        df = self._get_base_transactions(service)
 
         if not include_split_parents:
             df = self._filter_split_parents(df)
@@ -371,19 +340,17 @@ class TransactionsRepository:
     def _get_base_transactions(
         self,
         service: T_service | None,
-        query: str | None,
-        query_params: dict | None,
     ) -> pd.DataFrame:
         """Fetch base transactions from repositories."""
         if service is not None:
             repo = self.get_repo_by_source(service)
-            return repo.get_table(query, query_params)
+            return repo.get_table()
 
         dfs = [
-            self.cc_repo.get_table(query, query_params),
-            self.bank_repo.get_table(query, query_params),
-            self.cash_repo.get_table(query, query_params),
-            self.manual_investments_repo.get_table(query, query_params),
+            self.cc_repo.get_table(),
+            self.bank_repo.get_table(),
+            self.cash_repo.get_table(),
+            self.manual_investments_repo.get_table(),
         ]
         dfs = [df for df in dfs if not df.empty]
 
@@ -524,26 +491,6 @@ class TransactionsRepository:
         for tx in transactions:
             repo = self.get_repo_by_source(tx["source"])
             repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
-
-    def update_with_query(
-        self,
-        query: str,
-        query_params: dict | None = None,
-        service: T_service | None = None,
-    ) -> int:
-        """Execute an UPDATE query on the specified service(s)."""
-        updated_rows = 0
-        if service is None:
-            updated_rows += self.cc_repo.update_with_query(query, query_params)
-            updated_rows += self.bank_repo.update_with_query(query, query_params)
-            updated_rows += self.cash_repo.update_with_query(query, query_params)
-            updated_rows += self.manual_investments_repo.update_with_query(
-                query, query_params
-            )
-        else:
-            repo = self.get_repo_by_source(service)
-            updated_rows += repo.update_with_query(query, query_params)
-        return updated_rows
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         repo = self.get_repo_by_source(table_name)

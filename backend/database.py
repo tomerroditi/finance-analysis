@@ -133,7 +133,7 @@ def get_db() -> Generator[Session, None, None]:
     ```python
     @app.get("/items")
     def get_items(db: Session = Depends(get_db)):
-        return db.execute(text("SELECT * FROM items")).fetchall()
+        return db.execute(select(Item)).scalars().all()
     ```
     """
     SessionLocal = get_session_factory()
@@ -161,7 +161,7 @@ def get_db_context() -> Generator[Session, None, None]:
     -------
     ```python
     with get_db_context() as db:
-        result = db.execute(text("SELECT * FROM items")).fetchall()
+        result = db.execute(select(Item)).scalars().all()
     ```
     """
     SessionLocal = get_session_factory()
