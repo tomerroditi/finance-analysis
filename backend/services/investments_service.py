@@ -76,6 +76,51 @@ class InvestmentsService:
         """Delete an investment."""
         self.investments_repo.delete_investment(investment_id)
 
+    def recalculate_prior_wealth(self, investment_id: int) -> None:
+        """
+        Calculate and store prior_wealth_amount for an investment.
+
+        Reads all ManualInvestmentTransactions for the investment and stores
+        -(sum of amounts) as prior_wealth_amount. Equivalent to
+        BankBalanceService.recalculate_for_account for bank accounts.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to recalculate.
+        """
+        investment = self.investments_repo.get_by_id(investment_id)
+        inv = investment.iloc[0]
+        try:
+            transactions_df = self._get_all_transactions_for_investment(
+                inv["category"], inv["tag"]
+            )
+        except KeyError:
+            transactions_df = pd.DataFrame()
+        if transactions_df.empty:
+            prior_wealth = 0.0
+        else:
+            if "amount" in transactions_df.columns:
+                transactions_df["amount"] = pd.to_numeric(
+                    transactions_df["amount"], errors="coerce"
+                ).fillna(0.0)
+            prior_wealth = -float(transactions_df["amount"].sum())
+        self.investments_repo.update_prior_wealth(investment_id, prior_wealth)
+
+    def get_total_prior_wealth(self) -> float:
+        """
+        Sum prior_wealth_amount across all open (non-closed) investments.
+
+        Returns
+        -------
+        float
+            Total prior wealth across open investments.
+        """
+        df = self.investments_repo.get_all_investments(include_closed=False)
+        if df.empty:
+            return 0.0
+        return float(df["prior_wealth_amount"].sum())
+
     def get_portfolio_overview(self) -> Dict[str, Any]:
         """
         Get portfolio-level metrics and allocation data.
@@ -261,6 +306,30 @@ class InvestmentsService:
             "cagr_percentage": float(cagr_percentage),
             "first_transaction_date": first_date.strftime("%Y-%m-%d"),
         }
+
+    def get_total_value_at_date(self, as_of_date: str) -> float:
+        """
+        Get total portfolio value across all investments at a given date.
+
+        Parameters
+        ----------
+        as_of_date : str
+            Date in YYYY-MM-DD format.
+
+        Returns
+        -------
+        float
+            Sum of all investment balances as of the given date.
+        """
+        investments = self.investments_repo.get_all_investments(include_closed=True)
+        if investments.empty:
+            return 0.0
+
+        total = 0.0
+        for _, inv in investments.iterrows():
+            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+            total += self._calculate_balance_from_transactions(txns, as_of_date=as_of_date)
+        return total
 
     def _get_all_transactions_for_investment(
         self, category: str, tag: str

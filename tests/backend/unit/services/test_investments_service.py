@@ -2,6 +2,7 @@
 
 import pytest
 
+from backend.models.investment import Investment as InvestmentModel
 from backend.services.investments_service import InvestmentsService
 
 
@@ -177,3 +178,54 @@ class TestInvestmentsServiceCalculations:
         assert overview["total_profit"] == 0.0
         assert overview["portfolio_roi"] == 0.0
         assert overview["allocation"] == []
+
+
+class TestInvestmentsServicePriorWealth:
+    """Tests for prior wealth calculation and storage."""
+
+    def test_recalculate_prior_wealth_sums_transactions(self, db_session, seed_investments):
+        """Verify recalculate_prior_wealth stores -(sum of all txns) on Investment."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+
+        # stock_fund txns: -10000, -2000 → prior_wealth = -(-12000) = 12000
+        service.recalculate_prior_wealth(stock_fund.id)
+
+        db_session.refresh(stock_fund)
+        assert stock_fund.prior_wealth_amount == pytest.approx(12000.0)
+
+    def test_recalculate_prior_wealth_handles_no_transactions(self, db_session):
+        """Verify prior_wealth_amount is 0 when investment has no transactions."""
+        inv = InvestmentModel(
+            category="Investments",
+            tag="Empty Fund",
+            type="etf",
+            name="Empty",
+            created_date="2024-01-01",
+        )
+        db_session.add(inv)
+        db_session.commit()
+        db_session.refresh(inv)
+
+        service = InvestmentsService(db_session)
+        service.recalculate_prior_wealth(inv.id)
+
+        db_session.refresh(inv)
+        assert inv.prior_wealth_amount == 0.0
+
+    def test_get_total_prior_wealth_sums_open_investments(self, db_session, seed_investments):
+        """Verify get_total_prior_wealth sums prior_wealth_amount for non-closed investments only."""
+        stock_fund, bond_fund = seed_investments["investments"]
+        stock_fund.prior_wealth_amount = 12000.0   # open
+        bond_fund.prior_wealth_amount = -160.0     # closed — should be excluded
+        db_session.commit()
+
+        service = InvestmentsService(db_session)
+        total = service.get_total_prior_wealth()
+
+        assert total == pytest.approx(12000.0)
+
+    def test_get_total_prior_wealth_returns_zero_when_empty(self, db_session):
+        """Verify get_total_prior_wealth returns 0.0 when no open investments exist."""
+        service = InvestmentsService(db_session)
+        assert service.get_total_prior_wealth() == 0.0
