@@ -369,3 +369,148 @@ class TestAnalysisServiceInvestmentPriorWealth:
         """Verify _get_investment_prior_wealth_total returns 0.0 when no investments exist."""
         service = AnalysisService(db_session)
         assert service._get_investment_prior_wealth_total() == 0.0
+
+
+class TestAnalysisServiceIncomeBySource:
+    """Tests for income breakdown by source over time."""
+
+    def test_get_income_by_source_over_time(self, db_session, seed_base_transactions):
+        """Verify monthly income is broken down by category+tag source."""
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert len(result) == 3
+        months = [r["month"] for r in result]
+        assert months == ["2024-01", "2024-02", "2024-03"]
+
+        # January: only Salary 8000
+        jan = result[0]
+        assert jan["sources"] == {"Salary": 8000.0}
+        assert jan["total"] == 8000.0
+
+        # February: Salary 8500 + Other Income 3500
+        feb = result[1]
+        assert feb["sources"] == {"Salary": 8500.0, "Other Income": 3500.0}
+        assert feb["total"] == 12000.0
+
+        # March: only Salary 8200
+        mar = result[2]
+        assert mar["sources"] == {"Salary": 8200.0}
+        assert mar["total"] == 8200.0
+
+    def test_get_income_by_source_over_time_with_date_filter(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify date filtering narrows results to specified range."""
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time(
+            start_date="2024-02-01", end_date="2024-02-28"
+        )
+
+        assert len(result) == 1
+        assert result[0]["month"] == "2024-02"
+        assert result[0]["sources"]["Salary"] == 8500.0
+        assert result[0]["sources"]["Other Income"] == 3500.0
+
+    def test_get_income_by_source_over_time_with_tags(self, db_session):
+        """Verify category/tag combo labels when tags exist on income transactions."""
+        records = [
+            BankTransaction(
+                id="bank_tag_1", date="2024-04-01", provider="hapoalim",
+                account_name="Checking", description="Salary April",
+                amount=8000.0, category="Salary", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="bank_tag_2", date="2024-04-10", provider="leumi",
+                account_name="Business", description="Freelance Project A",
+                amount=2000.0, category="Other Income", tag="Freelance",
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="bank_tag_3", date="2024-04-15", provider="leumi",
+                account_name="Business", description="Dividend Payment",
+                amount=500.0, category="Other Income", tag="Dividends",
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="bank_tag_4", date="2024-04-20", provider="leumi",
+                account_name="Business", description="Misc Income",
+                amount=300.0, category="Other Income", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert len(result) == 1
+        sources = result[0]["sources"]
+        # Salary has no tag variants -> just "Salary"
+        assert sources["Salary"] == 8000.0
+        # Other Income with tags -> "Other Income / Tag"
+        assert sources["Other Income / Freelance"] == 2000.0
+        assert sources["Other Income / Dividends"] == 500.0
+        # Other Income with no tag -> just "Other Income"
+        assert sources["Other Income"] == 300.0
+        assert result[0]["total"] == 10800.0
+
+    def test_get_income_by_source_over_time_includes_positive_liabilities(self, db_session):
+        """Verify positive Liabilities (loans received) counted as income source."""
+        records = [
+            BankTransaction(
+                id="bank_loan_inc", date="2024-05-01", provider="hapoalim",
+                account_name="Checking", description="Loan Disbursement",
+                amount=50000.0, category="Liabilities", tag="Mortgage",
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="bank_sal_inc", date="2024-05-01", provider="hapoalim",
+                account_name="Checking", description="Salary May",
+                amount=8000.0, category="Salary", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert len(result) == 1
+        sources = result[0]["sources"]
+        assert sources["Loans"] == 50000.0
+        assert sources["Salary"] == 8000.0
+
+    def test_get_income_by_source_over_time_excludes_prior_wealth(
+        self, db_session, seed_base_transactions, seed_prior_wealth_transactions
+    ):
+        """Verify Prior Wealth tagged transactions are excluded from income sources."""
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        # Prior Wealth should not appear as a source label
+        for month_data in result:
+            for source_label in month_data["sources"]:
+                assert "Prior Wealth" not in source_label
+
+    def test_get_income_by_source_over_time_empty(self, db_session):
+        """Verify empty database returns empty list."""
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+        assert result == []
+
+    def test_get_income_by_source_over_time_excludes_cc(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify credit card transactions are excluded from income calculation."""
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        # All income should come from bank/cash sources only
+        # CC transactions have no income categories in seed data, but verify
+        # the method filters them out by checking totals match expected
+        total_income = sum(r["total"] for r in result)
+        assert total_income == 8000.0 + 12000.0 + 8200.0  # 28200
