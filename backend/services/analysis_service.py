@@ -476,6 +476,8 @@ class AnalysisService:
 
         # --- Investment transactions: fetch once, filter per month in-memory ---
         inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
+        if not inv_df.empty:
+            inv_df["date_parsed"] = pd.to_datetime(inv_df["date"])
 
         # --- Prior-wealth anchor point (1 month before earliest data) ---
         anchor_month = (pd.to_datetime(months[0] + "-01") - pd.DateOffset(months=1)).strftime("%Y-%m")
@@ -491,7 +493,7 @@ class AnalysisService:
             month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
 
             bank_balance = bank_prior_wealth + float(
-                full_df.loc[full_df["date_parsed"] <= month_end, "amount"].sum()
+                df.loc[df["date_parsed"] <= month_end, "amount"].sum()
             )
 
             inv_to_date = (
