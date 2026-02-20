@@ -325,14 +325,26 @@ class TransactionsRepository:
         self,
         service: T_service | None = None,
         include_split_parents: bool = False,
+        exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
-        """Get transactions table with optional filtering and split handling."""
-        df = self._get_base_transactions(service)
+        """Get transactions table with optional filtering and split handling.
+
+        Parameters
+        ----------
+        service : T_service | None
+            If provided, return only transactions from this service.
+        include_split_parents : bool
+            If True, keep split-parent rows in the result.
+        exclude_services : list[T_service] | None
+            When fetching all services (``service=None``), skip these services.
+            Ignored when ``service`` is specified.
+        """
+        df = self._get_base_transactions(service, exclude_services)
 
         if not include_split_parents:
             df = self._filter_split_parents(df)
 
-        df = self._add_split_children(df, service)
+        df = self._add_split_children(df, service, exclude_services)
         df = self._normalize_dates(df)
 
         return df
@@ -340,17 +352,29 @@ class TransactionsRepository:
     def _get_base_transactions(
         self,
         service: T_service | None,
+        exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
         """Fetch base transactions from repositories."""
         if service is not None:
             repo = self.get_repo_by_source(service)
             return repo.get_table()
 
+        excluded_repos = {
+            repo
+            for s in (exclude_services or [])
+            if (repo := self.get_repo_by_source(s)) is not None
+        }
+
+        all_repos = [
+            self.cc_repo,
+            self.bank_repo,
+            self.cash_repo,
+            self.manual_investments_repo,
+        ]
         dfs = [
-            self.cc_repo.get_table(),
-            self.bank_repo.get_table(),
-            self.cash_repo.get_table(),
-            self.manual_investments_repo.get_table(),
+            repo.get_table()
+            for repo in all_repos
+            if repo not in excluded_repos
         ]
         dfs = [df for df in dfs if not df.empty]
 
@@ -395,7 +419,11 @@ class TransactionsRepository:
         except Exception:
             return None
 
-    def _get_split_children(self, service: T_service | None) -> pd.DataFrame:
+    def _get_split_children(
+        self,
+        service: T_service | None,
+        exclude_services: list[T_service] | None = None,
+    ) -> pd.DataFrame:
         """Get all split children, optionally filtered by service."""
         splits_df = self.split_repo.get_data()
 
@@ -421,14 +449,29 @@ class TransactionsRepository:
                 if self.get_repo_by_source(src) == target_repo
             ]
             children_df = children_df[children_df["source"].isin(valid_sources)]
+        elif exclude_services:
+            excluded_repos = {
+                repo
+                for s in exclude_services
+                if (repo := self.get_repo_by_source(s)) is not None
+            }
+            excluded_sources = [
+                src
+                for src in children_df["source"].unique()
+                if self.get_repo_by_source(src) in excluded_repos
+            ]
+            children_df = children_df[~children_df["source"].isin(excluded_sources)]
 
         return children_df
 
     def _add_split_children(
-        self, df: pd.DataFrame, service: T_service | None
+        self,
+        df: pd.DataFrame,
+        service: T_service | None,
+        exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
         """Add split children to the transactions dataframe."""
-        children_df = self._get_split_children(service)
+        children_df = self._get_split_children(service, exclude_services)
 
         if children_df.empty:
             return df

@@ -143,11 +143,11 @@ class TestAnalysisServiceTimeSeries:
         assert total_net != expected_total + cc_total
 
     def test_get_net_balance_over_time_empty(self, db_session):
-        """Verify empty database raises KeyError (no columns in empty DataFrame)."""
+        """Verify empty database returns empty list."""
         service = AnalysisService(db_session)
 
-        with pytest.raises(KeyError):
-            service.get_net_balance_over_time()
+        result = service.get_net_balance_over_time()
+        assert result == []
 
 
 class TestAnalysisServiceCategories:

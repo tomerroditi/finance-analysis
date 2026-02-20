@@ -111,8 +111,7 @@ class AnalysisService:
         """
         Get monthly net balance and cumulative balance over time.
         """
-        df = self.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
+        df = self.repo.get_table(exclude_services=["credit_card_transactions"])
 
         if start_date:
             df = df[df["date"] >= start_date]
@@ -299,8 +298,7 @@ class AnalysisService:
         investment_prior_wealth = self._get_investment_prior_wealth_total()
 
         # --- Bank transactions (all sources except credit card) ---
-        full_df = self.repo.get_table()
-        full_df = full_df[full_df["source"] != "credit_card_transactions"]
+        full_df = self.repo.get_table(exclude_services=["credit_card_transactions"])
 
         filtered_df = full_df.copy()
         if start_date:
