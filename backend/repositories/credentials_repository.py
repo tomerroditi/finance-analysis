@@ -1,243 +1,201 @@
-"""
-Credentials repository for secure credential storage.
+"""Credentials repository for secure credential storage.
 
-This repository handles file-based and keyring storage for credentials.
-No Streamlit dependencies - uses pure file I/O and system keyring.
+This repository handles DB-based storage for credentials
+and OS keyring for sensitive fields (passwords, OTP tokens).
 """
 
 import os
-import stat
-from typing import Dict, Optional
+from typing import Dict, List
 
 import keyring
 import yaml
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
 from backend.errors import EntityNotFoundException
+from backend.models.credential import Credential
 
 _KEYRING_SERVICE = "finance-analysis-app"
+_SENSITIVE_FIELDS = ("password", "otpLongTermToken")
 
 
 class CredentialsRepository:
-    """
-    Repository for secure credential storage and retrieval.
+    """Repository for credential storage backed by SQLite + OS Keyring."""
 
-    Uses system keyring for passwords and YAML files for non-sensitive data.
-    Implemented as a singleton.
-    """
-
-    CREDIT_CARD = "credit_cards"
-    BANK = "banks"
-    INSURANCE = "insurances"
-
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(CredentialsRepository, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self, credentials_path: str = None):
-        """Initialize the CredentialsRepository singleton."""
-        if self._initialized:
-            return
-        self.credentials_path = credentials_path or AppConfig().get_credentials_path()
-        self._initialized = True
-
-    def read_credentials_file(self) -> Optional[Dict]:
-        """
-        Read credentials from the YAML file.
-
-        Returns
-        -------
-        Optional[Dict]
-            The credentials dictionary, or None if file doesn't exist.
-        """
-        if not os.path.exists(self.credentials_path):
-            return None
-
-        with open(self.credentials_path, "r") as file:
-            return yaml.safe_load(file)
-
-    def write_credentials_file(self, credentials: Dict) -> None:
-        """
-        Write credentials to the YAML file.
-
-        Parameters
-        ----------
-        credentials : Dict
-            The credentials dictionary to write.
-        """
-        os.makedirs(os.path.dirname(self.credentials_path), exist_ok=True)
-        with open(self.credentials_path, "w") as file:
-            yaml.dump(credentials, file, sort_keys=False, indent=4)
-
-    def generate_default_credentials(self) -> Dict:
-        """
-        Read the default credentials template.
-
-        Returns
-        -------
-        Dict
-            The default credentials structure.
-        """
-        default_credentials = {
-            self.BANK: {},
-            self.CREDIT_CARD: {},
-            self.INSURANCE: {},
-        }
-        self.write_credentials_file(default_credentials)
-        return default_credentials
+    def __init__(self, db: Session):
+        self.db = db
 
     @property
-    def keyring_service(self):
+    def keyring_service(self) -> str:
+        """Keyring service name, with test suffix in test mode."""
         service = _KEYRING_SERVICE
         if AppConfig().is_test_mode:
             service += "-test"
         return service
 
-    def get_password_from_keyring(self, key: str) -> Optional[str]:
-        """
-        Retrieve a password from the system keyring.
+    def _keyring_key(
+        self, service: str, provider: str, account_name: str, field: str
+    ) -> str:
+        """Generate a standardized keyring key."""
+        return f"{service}:{provider}:{account_name}:{field}"
 
-        Parameters
-        ----------
-        key : str
-            The keyring key for the password.
-
-        Returns
-        -------
-        Optional[str]
-            The password if found, None otherwise.
-        """
-        return keyring.get_password(self.keyring_service, key)
-
-    def set_password_in_keyring(self, key: str, password: str) -> None:
-        """
-        Store a password in the system keyring.
-
-        Parameters
-        ----------
-        key : str
-            The keyring key for the password.
-        password : str
-            The password to store.
-        """
-        keyring.set_password(self.keyring_service, key, password or "")
-
-    def delete_password_from_keyring(self, key: str) -> bool:
-        """
-        Delete a password from the system keyring.
-
-        Parameters
-        ----------
-        key : str
-            The keyring key for the password.
-
-        Returns
-        -------
-        bool
-            True if deleted successfully, False otherwise.
-        """
-        try:
-            keyring.delete_password(self.keyring_service, key)
-            return True
-        except keyring.errors.PasswordDeleteError:
-            return False
-
-    def set_file_permissions(self, path: str) -> None:
-        """
-        Set restrictive file permissions on a file.
-
-        Parameters
-        ----------
-        path : str
-            Path to the file.
-        """
-        try:
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except Exception:
-            pass  # Best effort on Windows
-
-    def save_credentials(
-        self, service: str, provider: str, account_name: str, credentials: Dict
-    ) -> None:
-        """
-        Save credentials securely, using keyring for passwords.
-        """
-        all_creds = self.read_credentials_file() or {}
-
-        if service not in all_creds:
-            all_creds[service] = {}
-        if provider not in all_creds[service]:
-            all_creds[service][provider] = {}
-
-        password = credentials.pop("password", None)
-        long_term_token = credentials.pop(
-            "otpLongTermToken", None
-        )  # only one zero for now
-
-        for key, val in {
-            "password": password,
-            "otpLongTermToken": long_term_token,
-        }.items():
-            if val is not None:
-                self.set_password_in_keyring(
-                    f"{service}_{provider}_{account_name}_{key}", val
-                )
-
-        all_creds[service][provider][account_name] = credentials
-        self.write_credentials_file(all_creds)
-
-    def get_credentials(self, service: str, provider: str, account_name: str) -> Dict:
-        """
-        Retrieve credentials, including passwords from keyring.
-        """
-        all_creds = self.read_credentials_file() or {}
-
-        try:
-            creds = all_creds[service][provider][account_name].copy()
-        except KeyError:
+    def _find_credential(
+        self, service: str, provider: str, account_name: str
+    ) -> Credential:
+        """Fetch a credential row or raise EntityNotFoundException."""
+        cred = self.db.execute(
+            select(Credential).where(
+                Credential.service == service,
+                Credential.provider == provider,
+                Credential.account_name == account_name,
+            )
+        ).scalar_one_or_none()
+        if cred is None:
             raise EntityNotFoundException(
                 f"Credentials for {service} {provider} {account_name} not found"
             )
+        return cred
 
-        creds["password"] = self.get_password_from_keyring(
-            f"{service}_{provider}_{account_name}_password"
+    def get_credentials(
+        self, service: str, provider: str, account_name: str
+    ) -> Dict:
+        """Get credentials for an account, merging in keyring password."""
+        cred = self._find_credential(service, provider, account_name)
+        result = dict(cred.fields)
+        result["password"] = (
+            keyring.get_password(
+                self.keyring_service,
+                self._keyring_key(service, provider, account_name, "password"),
+            )
+            or ""
         )
-        return creds
+        return result
 
-    def update_credentials(
-        self, service: str, provider: str, account_name: str, credentials: Dict
+    def save_credentials(
+        self,
+        service: str,
+        provider: str,
+        account_name: str,
+        credentials: Dict,
     ) -> None:
-        """
-        Update credentials securely, using keyring for passwords.
-        """
-        self.save_credentials(service, provider, account_name, credentials)
+        """Save credentials: sensitive fields to keyring, rest to DB."""
+        fields = dict(credentials)
 
-    def list_accounts(self) -> list:
-        """
-        Get a list of all configured accounts.
+        for sensitive_field in _SENSITIVE_FIELDS:
+            value = fields.pop(sensitive_field, None)
+            if value is not None:
+                keyring.set_password(
+                    self.keyring_service,
+                    self._keyring_key(service, provider, account_name, sensitive_field),
+                    value or "",
+                )
 
-        Returns
-        -------
-        list
-            List of dicts with service, provider, and account_name keys.
-        """
-        credentials = self.read_credentials_file()
-        if credentials is None:
-            return []
+        existing = self.db.execute(
+            select(Credential).where(
+                Credential.service == service,
+                Credential.provider == provider,
+                Credential.account_name == account_name,
+            )
+        ).scalar_one_or_none()
 
-        accounts = []
-        for service, providers in credentials.items():
-            for provider, account_dict in providers.items():
-                for account_name in account_dict.keys():
-                    accounts.append(
-                        {
-                            "service": service,
-                            "provider": provider,
-                            "account_name": account_name,
-                        }
+        if existing is not None:
+            existing.fields = fields
+        else:
+            self.db.add(
+                Credential(
+                    service=service,
+                    provider=provider,
+                    account_name=account_name,
+                    fields=fields,
+                )
+            )
+        self.db.commit()
+
+    def delete_credentials(
+        self, service: str, provider: str, account_name: str
+    ) -> None:
+        """Delete a credential from DB and clean up keyring entries."""
+        cred = self._find_credential(service, provider, account_name)
+        self.db.delete(cred)
+        self.db.commit()
+
+        for field in ("password", "secret", "otp_key", "otpLongTermToken"):
+            try:
+                keyring.delete_password(
+                    self.keyring_service,
+                    self._keyring_key(service, provider, account_name, field),
+                )
+            except keyring.errors.PasswordDeleteError:
+                pass
+
+    def list_accounts(self) -> List[Dict[str, str]]:
+        """Get a flat list of all configured accounts."""
+        rows = self.db.execute(select(Credential)).scalars().all()
+        return [
+            {
+                "service": row.service,
+                "provider": row.provider,
+                "account_name": row.account_name,
+            }
+            for row in rows
+        ]
+
+    def get_all_credentials(self) -> Dict:
+        """Get all credentials as nested dict with keyring passwords filled in."""
+        rows = self.db.execute(select(Credential)).scalars().all()
+        result: Dict = {}
+        for row in rows:
+            result.setdefault(row.service, {}).setdefault(row.provider, {})
+            fields = dict(row.fields)
+            fields["password"] = (
+                keyring.get_password(
+                    self.keyring_service,
+                    self._keyring_key(
+                        row.service, row.provider, row.account_name, "password"
+                    ),
+                )
+                or ""
+            )
+            result[row.service][row.provider][row.account_name] = fields
+        return result
+
+    def migrate_from_yaml(self, credentials_path: str) -> None:
+        """One-time migration: import existing YAML credentials into DB.
+
+        Skips if the credentials table already has data.
+        Only imports non-sensitive fields; passwords remain in keyring.
+        """
+        existing = self.db.execute(select(Credential)).first()
+        if existing is not None:
+            return
+
+        if not os.path.exists(credentials_path):
+            return
+
+        with open(credentials_path, "r") as f:
+            all_creds = yaml.safe_load(f) or {}
+
+        for service, providers in all_creds.items():
+            if not isinstance(providers, dict):
+                continue
+            for provider, accounts in providers.items():
+                if not isinstance(accounts, dict):
+                    continue
+                for account_name, fields in accounts.items():
+                    if not isinstance(fields, dict):
+                        continue
+                    clean_fields = {
+                        k: v
+                        for k, v in fields.items()
+                        if k not in _SENSITIVE_FIELDS
+                    }
+                    self.db.add(
+                        Credential(
+                            service=service,
+                            provider=provider,
+                            account_name=account_name,
+                            fields=clean_fields,
+                        )
                     )
-        return accounts
+        self.db.commit()
