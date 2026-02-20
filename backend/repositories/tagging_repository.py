@@ -1,17 +1,17 @@
-"""
-Tagging repository for category and tag management.
+"""Tagging repository for category and tag management.
 
-This repository handles file-based storage for categories and tags.
-No Streamlit dependencies - uses pure YAML file I/O.
+This repository handles DB-based storage for categories, tags, and icons.
 """
 
 import os
-from typing import Dict, List
+from typing import Optional
 
 import yaml
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from backend.config import AppConfig
 from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
+from backend.models.category import Category
 
 BACKEND_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CATEGORIES_PATH = os.path.join(
@@ -23,179 +23,121 @@ DEFAULT_CATEGORIES_ICONS_PATH = os.path.join(
 
 
 class TaggingRepository:
-    """
-    Repository for basic CRUD operations on tagging data.
+    """Repository for category and tag CRUD operations backed by SQLite."""
 
-    Handles file-based storage for categories and tags using YAML files.
-    """
+    def __init__(self, db: Session):
+        self.db = db
 
-    @staticmethod
-    def load_categories_from_file(file_path: str) -> Dict[str, List[str]]:
-        """Load categories from a YAML file."""
-        if not os.path.exists(file_path):
-            return {}
-        with open(file_path, "r") as file:
-            return yaml.load(file, Loader=yaml.FullLoader) or {}
+    def _get_category(self, name: str) -> Category:
+        """Fetch a category by name or raise EntityNotFoundException."""
+        cat = self.db.execute(
+            select(Category).where(Category.name == name)
+        ).scalar_one_or_none()
+        if cat is None:
+            raise EntityNotFoundException(f"Category '{name}' not found")
+        return cat
 
-    @staticmethod
-    def save_categories_to_file(
-        categories: Dict[str, List[str]], file_path: str
+    def get_categories(self) -> dict[str, list[str]]:
+        """Get all categories and their tags as a dict."""
+        rows = self.db.execute(select(Category)).scalars().all()
+        return {row.name: list(row.tags) for row in rows}
+
+    def add_category(
+        self, name: str, tags: list[str], icon: Optional[str] = None
     ) -> None:
-        """Save categories to a YAML file."""
-        with open(file_path, "w") as file:
-            yaml.dump(categories, file)
+        """Add a new category. Raises EntityAlreadyExistsException on duplicate."""
+        existing = self.db.execute(
+            select(Category).where(Category.name == name)
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise EntityAlreadyExistsException(
+                f"Category '{name}' already exists"
+            )
+        self.db.add(Category(name=name, tags=tags, icon=icon))
+        self.db.commit()
 
-    @staticmethod
-    def get_categories(file_path: str = None) -> Dict[str, List[str]]:
-        """Get categories and tags from a YAML file."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
+    def delete_category(self, name: str) -> None:
+        """Delete a category. Raises EntityNotFoundException if not found."""
+        cat = self._get_category(name)
+        self.db.delete(cat)
+        self.db.commit()
 
-        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-            if os.path.exists(DEFAULT_CATEGORIES_PATH):
-                categories = TaggingRepository.load_categories_from_file(
-                    DEFAULT_CATEGORIES_PATH
-                )
-            else:
-                categories = {}
+    def add_tag(self, category: str, tag: str) -> None:
+        """Add a tag to a category's tags list."""
+        cat = self._get_category(category)
+        if tag in cat.tags:
+            raise EntityAlreadyExistsException(
+                f"Tag '{tag}' already exists in category '{category}'"
+            )
+        cat.tags = [*cat.tags, tag]
+        self.db.commit()
 
-            with open(file_path, "w") as file:
-                yaml.dump(categories, file)
+    def delete_tag(self, category: str, tag: str) -> None:
+        """Remove a tag from a category's tags list."""
+        cat = self._get_category(category)
+        if tag not in cat.tags:
+            raise EntityNotFoundException(
+                f"Tag '{tag}' not found in category '{category}'"
+            )
+        cat.tags = [t for t in cat.tags if t != tag]
+        self.db.commit()
 
-            return categories
-
-        with open(file_path, "r") as file:
-            return yaml.load(file, Loader=yaml.FullLoader) or {}
-
-    @staticmethod
-    def add_category(category: str, tags: List[str], file_path: str = None) -> None:
-        """Add a new category and its tags to the YAML file."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
-        categories = TaggingRepository.get_categories(file_path)
-        if category in categories:
-            raise EntityAlreadyExistsException(f"Category '{category}' already exists")
-        categories[category] = tags
-        with open(file_path, "w") as file:
-            yaml.dump(categories, file)
-
-    @staticmethod
-    def delete_category(category: str, file_path: str = None) -> None:
-        """Remove a category and its tags from the YAML file."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
-        categories = TaggingRepository.get_categories(file_path)
-        if category in categories:
-            del categories[category]
-            with open(file_path, "w") as file:
-                yaml.dump(categories, file)
-        else:
-            raise EntityNotFoundException(f"Category '{category}' not found")
-
-    @staticmethod
-    def get_categories_icons() -> Dict[str, str]:
-        """
-        Get category icons mapping.
-
-        Returns
-        -------
-        Dict[str, str]
-            Mapping of category names to icon strings.
-        """
-        categories_icons_path = AppConfig().get_categories_icons_path()
-        if (
-            not os.path.exists(categories_icons_path)
-            or os.path.getsize(categories_icons_path) == 0
-        ):
-            with open(DEFAULT_CATEGORIES_ICONS_PATH, "r") as file:
-                default_icons = yaml.load(file, Loader=yaml.FullLoader)
-            with open(categories_icons_path, "w") as file:
-                yaml.dump(default_icons, file)
-            return default_icons
-
-        with open(categories_icons_path, "r") as file:
-            return yaml.load(file, Loader=yaml.FullLoader)
-
-    @staticmethod
-    def update_category_icon(category: str, icon: str) -> bool:
-        """
-        Set the icon for a category.
-
-        Parameters
-        ----------
-        category : str
-            The category name.
-        icon : str
-            The icon string.
-
-        Returns
-        -------
-        bool
-            True if the icon was changed, False if it was already set.
-        """
-        icons = TaggingRepository.get_categories_icons()
-
-        if category in icons and icons[category] == icon:
-            return False
-
-        icons[category] = icon
-        categories_icons_path = AppConfig().get_categories_icons_path()
-        with open(categories_icons_path, "w") as file:
-            yaml.dump(icons, file)
-        return True
-
-    @staticmethod
-    def add_tag(category: str, tag: str, file_path: str = None) -> None:
-        """Add a tag to a category."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
-        categories = TaggingRepository.get_categories(file_path)
-        if category in categories:
-            if tag in categories[category]:
-                raise EntityAlreadyExistsException(
-                    f"Tag '{tag}' already exists in category '{category}'"
-                )
-            categories[category].append(tag)
-            with open(file_path, "w") as file:
-                yaml.dump(categories, file)
-        else:
-            raise EntityNotFoundException(f"Category '{category}' not found")
-
-    @staticmethod
-    def delete_tag(category: str, tag: str, file_path: str = None) -> None:
-        """Remove a tag from a category."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
-        categories = TaggingRepository.get_categories(file_path)
-        if category in categories:
-            if tag not in categories[category]:
-                raise EntityNotFoundException(
-                    f"Tag '{tag}' not found in category '{category}'"
-                )
-            categories[category].remove(tag)
-            with open(file_path, "w") as file:
-                yaml.dump(categories, file)
-        else:
-            raise EntityNotFoundException(f"Category '{category}' not found")
-
-    @staticmethod
     def relocate_tag(
-        tag: str, old_category: str, new_category: str, file_path: str = None
+        self, tag: str, old_category: str, new_category: str
     ) -> None:
         """Move a tag from one category to another."""
-        if file_path is None:
-            file_path = AppConfig().get_categories_path()
-        categories = TaggingRepository.get_categories(file_path)
-        if old_category not in categories:
-            raise EntityNotFoundException(f"Category '{old_category}' not found")
-        if tag not in categories[old_category]:
+        old_cat = self._get_category(old_category)
+        if tag not in old_cat.tags:
             raise EntityNotFoundException(
                 f"Tag '{tag}' not found in category '{old_category}'"
             )
-        if new_category not in categories:
-            raise EntityNotFoundException(f"Category '{new_category}' not found")
-        if tag not in categories[new_category]:
-            categories[new_category].append(tag)
-        categories[old_category].remove(tag)
-        with open(file_path, "w") as file:
-            yaml.dump(categories, file)
+        new_cat = self._get_category(new_category)
+
+        old_cat.tags = [t for t in old_cat.tags if t != tag]
+        if tag not in new_cat.tags:
+            new_cat.tags = [*new_cat.tags, tag]
+        self.db.commit()
+
+    def get_categories_icons(self) -> dict[str, str]:
+        """Get mapping of category names to icons (excludes nulls)."""
+        rows = self.db.execute(select(Category)).scalars().all()
+        return {row.name: row.icon for row in rows if row.icon is not None}
+
+    def update_category_icon(self, category: str, icon: str) -> bool:
+        """Update a category's icon. Returns False if unchanged."""
+        cat = self._get_category(category)
+        if cat.icon == icon:
+            return False
+        cat.icon = icon
+        self.db.commit()
+        return True
+
+    def seed_from_yaml(self, categories_path: str, icons_path: str) -> None:
+        """Seed categories from YAML files if the table is empty.
+
+        Parameters
+        ----------
+        categories_path : str
+            Path to YAML file with {category_name: [tags]} structure.
+        icons_path : str
+            Path to YAML file with {category_name: icon_emoji} structure.
+        """
+        existing = self.db.execute(select(Category)).first()
+        if existing is not None:
+            return
+
+        categories = {}
+        if os.path.exists(categories_path):
+            with open(categories_path, "r") as f:
+                categories = yaml.safe_load(f) or {}
+
+        icons = {}
+        if os.path.exists(icons_path):
+            with open(icons_path, "r") as f:
+                icons = yaml.safe_load(f) or {}
+
+        for name, tags in categories.items():
+            self.db.add(
+                Category(name=name, tags=tags or [], icon=icons.get(name))
+            )
+        self.db.commit()

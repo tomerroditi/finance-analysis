@@ -1,16 +1,10 @@
-"""
-Unit tests for TaggingRepository YAML-based category and tag CRUD operations.
-
-Covers loading/saving YAML files, category add/delete, tag add/delete/relocate,
-icon management, and default file creation fallback behavior.
-"""
-
-import os
+"""Unit tests for TaggingRepository DB-backed category and tag CRUD operations."""
 
 import pytest
 import yaml
 
 from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
+from backend.models.category import Category
 from backend.repositories.tagging_repository import TaggingRepository
 
 
@@ -20,123 +14,54 @@ from backend.repositories.tagging_repository import TaggingRepository
 
 
 @pytest.fixture
-def categories_file(tmp_path):
-    """Create a temporary categories YAML file with two categories."""
-    file_path = str(tmp_path / "categories.yaml")
-    categories = {
-        "Food": ["Groceries", "Restaurants"],
-        "Transport": ["Gas", "Parking"],
-    }
-    with open(file_path, "w") as f:
-        yaml.dump(categories, f)
-    return file_path
+def seeded_repo(db_session):
+    """Create a TaggingRepository with two seeded categories."""
+    db_session.add(Category(name="Food", tags=["Groceries", "Restaurants"]))
+    db_session.add(Category(name="Transport", tags=["Gas", "Parking"]))
+    db_session.commit()
+    return TaggingRepository(db_session)
 
 
 @pytest.fixture
-def empty_categories_file(tmp_path):
-    """Create an empty YAML file path (file does not exist on disk)."""
-    return str(tmp_path / "nonexistent_categories.yaml")
-
-
-@pytest.fixture
-def icons_file(tmp_path, monkeypatch):
-    """Create a temporary icons YAML file and patch AppConfig to use it."""
-    file_path = str(tmp_path / "categories_icons.yaml")
-    icons = {"Food": "burger", "Transport": "car"}
-    with open(file_path, "w") as f:
-        yaml.dump(icons, f)
-    monkeypatch.setattr(
-        "backend.config.AppConfig.get_categories_icons_path",
-        lambda self: file_path,
-    )
-    return file_path
+def empty_repo(db_session):
+    """Create a TaggingRepository with no categories."""
+    return TaggingRepository(db_session)
 
 
 # ---------------------------------------------------------------------------
-# Class 1: Load / save / get operations
+# Class 1: Read operations
 # ---------------------------------------------------------------------------
 
 
-class TestTaggingRepositoryLoad:
-    """Tests for loading, saving, and reading categories from YAML files."""
+class TestTaggingRepositoryRead:
+    """Tests for reading categories from the database."""
 
-    def test_load_categories_from_file(self, categories_file):
-        """Verify loading a valid YAML file returns the expected dict."""
-        result = TaggingRepository.load_categories_from_file(categories_file)
+    def test_get_categories(self, seeded_repo):
+        """Verify get_categories returns dict of category name to tags list."""
+        result = seeded_repo.get_categories()
         assert isinstance(result, dict)
-        assert "Food" in result
         assert result["Food"] == ["Groceries", "Restaurants"]
-        assert "Transport" in result
         assert result["Transport"] == ["Gas", "Parking"]
 
-    def test_load_categories_from_nonexistent_file(self, tmp_path):
-        """Verify loading from a nonexistent path returns an empty dict."""
-        missing_path = str(tmp_path / "does_not_exist.yaml")
-        result = TaggingRepository.load_categories_from_file(missing_path)
+    def test_get_categories_empty(self, empty_repo):
+        """Verify get_categories returns empty dict when no categories exist."""
+        result = empty_repo.get_categories()
         assert result == {}
 
-    def test_load_categories_from_empty_file(self, tmp_path):
-        """Verify loading an empty YAML file returns an empty dict."""
-        empty_path = str(tmp_path / "empty.yaml")
-        with open(empty_path, "w") as f:
-            f.write("")
-        result = TaggingRepository.load_categories_from_file(empty_path)
-        assert result == {}
+    def test_get_categories_icons(self, db_session):
+        """Verify get_categories_icons returns name-to-icon mapping."""
+        db_session.add(Category(name="Food", tags=[], icon="🍔"))
+        db_session.add(Category(name="Transport", tags=[], icon="🚗"))
+        db_session.add(Category(name="Salary", tags=[], icon=None))
+        db_session.commit()
 
-    def test_save_categories_to_file(self, tmp_path):
-        """Verify saving categories writes valid YAML that can be re-read."""
-        file_path = str(tmp_path / "saved.yaml")
-        categories = {"Health": ["Doctor", "Pharmacy"], "Shopping": ["Clothes"]}
+        repo = TaggingRepository(db_session)
+        icons = repo.get_categories_icons()
+        assert icons == {"Food": "🍔", "Transport": "🚗"}
 
-        TaggingRepository.save_categories_to_file(categories, file_path)
-
-        with open(file_path, "r") as f:
-            loaded = yaml.load(f, Loader=yaml.FullLoader)
-        assert loaded == categories
-
-    def test_get_categories_from_existing_file(self, categories_file):
-        """Verify get_categories reads from an existing file correctly."""
-        result = TaggingRepository.get_categories(categories_file)
-        assert "Food" in result
-        assert "Transport" in result
-        assert result["Food"] == ["Groceries", "Restaurants"]
-
-    def test_get_categories_creates_from_defaults_if_missing(self, tmp_path, monkeypatch):
-        """Verify get_categories copies defaults when the target file is missing."""
-        missing_file = str(tmp_path / "categories.yaml")
-
-        # Provide a small default file for the test
-        default_path = str(tmp_path / "default_categories.yaml")
-        default_cats = {"DefaultCat": ["Tag1", "Tag2"]}
-        with open(default_path, "w") as f:
-            yaml.dump(default_cats, f)
-
-        monkeypatch.setattr(
-            "backend.repositories.tagging_repository.DEFAULT_CATEGORIES_PATH",
-            default_path,
-        )
-
-        result = TaggingRepository.get_categories(missing_file)
-
-        assert result == default_cats
-        # The file should now exist on disk
-        assert os.path.exists(missing_file)
-        with open(missing_file, "r") as f:
-            written = yaml.load(f, Loader=yaml.FullLoader)
-        assert written == default_cats
-
-    def test_get_categories_creates_empty_when_no_defaults(self, tmp_path, monkeypatch):
-        """Verify get_categories returns empty dict when defaults file is also missing."""
-        missing_file = str(tmp_path / "categories.yaml")
-        monkeypatch.setattr(
-            "backend.repositories.tagging_repository.DEFAULT_CATEGORIES_PATH",
-            str(tmp_path / "nonexistent_defaults.yaml"),
-        )
-
-        result = TaggingRepository.get_categories(missing_file)
-
-        assert result == {}
-        assert os.path.exists(missing_file)
+    def test_get_categories_icons_empty(self, empty_repo):
+        """Verify get_categories_icons returns empty dict when no categories."""
+        assert empty_repo.get_categories_icons() == {}
 
 
 # ---------------------------------------------------------------------------
@@ -147,43 +72,42 @@ class TestTaggingRepositoryLoad:
 class TestTaggingRepositoryCategoryOperations:
     """Tests for adding and deleting categories."""
 
-    def test_add_category(self, categories_file):
+    def test_add_category(self, seeded_repo):
         """Verify adding a new category persists it with tags."""
-        TaggingRepository.add_category("Health", ["Doctor", "Pharmacy"], categories_file)
-
-        result = TaggingRepository.get_categories(categories_file)
+        seeded_repo.add_category("Health", ["Doctor", "Pharmacy"])
+        result = seeded_repo.get_categories()
         assert "Health" in result
         assert result["Health"] == ["Doctor", "Pharmacy"]
-        # Original categories should still be present
         assert "Food" in result
-        assert "Transport" in result
 
-    def test_add_category_with_empty_tags(self, categories_file):
-        """Verify adding a category with an empty tag list succeeds."""
-        TaggingRepository.add_category("Salary", [], categories_file)
+    def test_add_category_with_icon(self, empty_repo):
+        """Verify adding a category with an icon stores it."""
+        empty_repo.add_category("Food", ["Groceries"], icon="🍔")
+        icons = empty_repo.get_categories_icons()
+        assert icons["Food"] == "🍔"
 
-        result = TaggingRepository.get_categories(categories_file)
-        assert "Salary" in result
+    def test_add_category_with_empty_tags(self, seeded_repo):
+        """Verify adding a category with empty tag list succeeds."""
+        seeded_repo.add_category("Salary", [])
+        result = seeded_repo.get_categories()
         assert result["Salary"] == []
 
-    def test_add_category_already_exists(self, categories_file):
+    def test_add_category_already_exists(self, seeded_repo):
         """Verify adding a duplicate category raises EntityAlreadyExistsException."""
         with pytest.raises(EntityAlreadyExistsException, match="Food"):
-            TaggingRepository.add_category("Food", ["NewTag"], categories_file)
+            seeded_repo.add_category("Food", ["NewTag"])
 
-    def test_delete_category(self, categories_file):
-        """Verify deleting an existing category removes it from the file."""
-        TaggingRepository.delete_category("Food", categories_file)
-
-        result = TaggingRepository.get_categories(categories_file)
+    def test_delete_category(self, seeded_repo):
+        """Verify deleting an existing category removes it."""
+        seeded_repo.delete_category("Food")
+        result = seeded_repo.get_categories()
         assert "Food" not in result
-        # Other categories remain
         assert "Transport" in result
 
-    def test_delete_category_not_found(self, categories_file):
+    def test_delete_category_not_found(self, seeded_repo):
         """Verify deleting a nonexistent category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistent"):
-            TaggingRepository.delete_category("NonExistent", categories_file)
+            seeded_repo.delete_category("NonExistent")
 
 
 # ---------------------------------------------------------------------------
@@ -194,41 +118,38 @@ class TestTaggingRepositoryCategoryOperations:
 class TestTaggingRepositoryTagOperations:
     """Tests for adding and deleting tags within categories."""
 
-    def test_add_tag(self, categories_file):
+    def test_add_tag(self, seeded_repo):
         """Verify adding a tag to an existing category appends it."""
-        TaggingRepository.add_tag("Food", "Snacks", categories_file)
-
-        result = TaggingRepository.get_categories(categories_file)
+        seeded_repo.add_tag("Food", "Snacks")
+        result = seeded_repo.get_categories()
         assert "Snacks" in result["Food"]
-        assert result["Food"] == ["Groceries", "Restaurants", "Snacks"]
 
-    def test_add_tag_already_exists(self, categories_file):
+    def test_add_tag_already_exists(self, seeded_repo):
         """Verify adding a duplicate tag raises EntityAlreadyExistsException."""
         with pytest.raises(EntityAlreadyExistsException, match="Groceries"):
-            TaggingRepository.add_tag("Food", "Groceries", categories_file)
+            seeded_repo.add_tag("Food", "Groceries")
 
-    def test_add_tag_category_not_found(self, categories_file):
+    def test_add_tag_category_not_found(self, seeded_repo):
         """Verify adding a tag to a nonexistent category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistent"):
-            TaggingRepository.add_tag("NonExistent", "SomeTag", categories_file)
+            seeded_repo.add_tag("NonExistent", "SomeTag")
 
-    def test_delete_tag(self, categories_file):
+    def test_delete_tag(self, seeded_repo):
         """Verify deleting a tag removes it from the category."""
-        TaggingRepository.delete_tag("Food", "Groceries", categories_file)
-
-        result = TaggingRepository.get_categories(categories_file)
+        seeded_repo.delete_tag("Food", "Groceries")
+        result = seeded_repo.get_categories()
         assert "Groceries" not in result["Food"]
         assert result["Food"] == ["Restaurants"]
 
-    def test_delete_tag_not_found(self, categories_file):
+    def test_delete_tag_not_found(self, seeded_repo):
         """Verify deleting a nonexistent tag raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistentTag"):
-            TaggingRepository.delete_tag("Food", "NonExistentTag", categories_file)
+            seeded_repo.delete_tag("Food", "NonExistentTag")
 
-    def test_delete_tag_category_not_found(self, categories_file):
+    def test_delete_tag_category_not_found(self, seeded_repo):
         """Verify deleting a tag from a nonexistent category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistent"):
-            TaggingRepository.delete_tag("NonExistent", "SomeTag", categories_file)
+            seeded_repo.delete_tag("NonExistent", "SomeTag")
 
 
 # ---------------------------------------------------------------------------
@@ -239,44 +160,38 @@ class TestTaggingRepositoryTagOperations:
 class TestTaggingRepositoryRelocate:
     """Tests for moving tags between categories."""
 
-    def test_relocate_tag(self, categories_file):
+    def test_relocate_tag(self, seeded_repo):
         """Verify relocating a tag moves it from old to new category."""
-        TaggingRepository.relocate_tag("Groceries", "Food", "Transport", categories_file)
-
-        result = TaggingRepository.get_categories(categories_file)
+        seeded_repo.relocate_tag("Groceries", "Food", "Transport")
+        result = seeded_repo.get_categories()
         assert "Groceries" not in result["Food"]
         assert "Groceries" in result["Transport"]
 
-    def test_relocate_tag_old_category_not_found(self, categories_file):
+    def test_relocate_tag_old_category_not_found(self, seeded_repo):
         """Verify relocating from a nonexistent category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistent"):
-            TaggingRepository.relocate_tag("SomeTag", "NonExistent", "Food", categories_file)
+            seeded_repo.relocate_tag("SomeTag", "NonExistent", "Food")
 
-    def test_relocate_tag_tag_not_in_old(self, categories_file):
+    def test_relocate_tag_tag_not_in_old(self, seeded_repo):
         """Verify relocating a tag not in the old category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="MissingTag"):
-            TaggingRepository.relocate_tag("MissingTag", "Food", "Transport", categories_file)
+            seeded_repo.relocate_tag("MissingTag", "Food", "Transport")
 
-    def test_relocate_tag_new_category_not_found(self, categories_file):
+    def test_relocate_tag_new_category_not_found(self, seeded_repo):
         """Verify relocating to a nonexistent category raises EntityNotFoundException."""
         with pytest.raises(EntityNotFoundException, match="NonExistent"):
-            TaggingRepository.relocate_tag("Groceries", "Food", "NonExistent", categories_file)
+            seeded_repo.relocate_tag("Groceries", "Food", "NonExistent")
 
-    def test_relocate_tag_already_in_new_category(self, tmp_path):
-        """Verify relocating a tag that already exists in new category does not duplicate it."""
-        file_path = str(tmp_path / "categories.yaml")
-        categories = {
-            "Food": ["Groceries", "Restaurants"],
-            "Shopping": ["Groceries", "Clothes"],
-        }
-        with open(file_path, "w") as f:
-            yaml.dump(categories, f)
+    def test_relocate_tag_already_in_new_category(self, db_session):
+        """Verify relocating a tag already in new category does not duplicate."""
+        db_session.add(Category(name="Food", tags=["Groceries", "Restaurants"]))
+        db_session.add(Category(name="Shopping", tags=["Groceries", "Clothes"]))
+        db_session.commit()
+        repo = TaggingRepository(db_session)
 
-        TaggingRepository.relocate_tag("Groceries", "Food", "Shopping", file_path)
-
-        result = TaggingRepository.get_categories(file_path)
+        repo.relocate_tag("Groceries", "Food", "Shopping")
+        result = repo.get_categories()
         assert "Groceries" not in result["Food"]
-        # Should not be duplicated -- still exactly one
         assert result["Shopping"].count("Groceries") == 1
 
 
@@ -288,54 +203,74 @@ class TestTaggingRepositoryRelocate:
 class TestTaggingRepositoryIcons:
     """Tests for category icon loading and updating."""
 
-    def test_get_categories_icons(self, icons_file):
-        """Verify get_categories_icons reads the icons YAML file."""
-        result = TaggingRepository.get_categories_icons()
-        assert isinstance(result, dict)
-        assert result["Food"] == "burger"
-        assert result["Transport"] == "car"
-
-    def test_get_categories_icons_creates_from_defaults_when_missing(
-        self, tmp_path, monkeypatch
-    ):
-        """Verify get_categories_icons copies defaults when the target file is missing."""
-        missing_path = str(tmp_path / "missing_icons.yaml")
-        monkeypatch.setattr(
-            "backend.config.AppConfig.get_categories_icons_path",
-            lambda self: missing_path,
-        )
-
-        default_icons_path = str(tmp_path / "default_icons.yaml")
-        default_icons = {"Food": "plate", "Health": "pill"}
-        with open(default_icons_path, "w") as f:
-            yaml.dump(default_icons, f)
-        monkeypatch.setattr(
-            "backend.repositories.tagging_repository.DEFAULT_CATEGORIES_ICONS_PATH",
-            default_icons_path,
-        )
-
-        result = TaggingRepository.get_categories_icons()
-
-        assert result == default_icons
-        assert os.path.exists(missing_path)
-
-    def test_update_category_icon_new(self, icons_file):
-        """Verify updating an icon for a new category returns True."""
-        result = TaggingRepository.update_category_icon("Health", "pill")
+    def test_update_category_icon_new(self, seeded_repo):
+        """Verify setting an icon on a category without one returns True."""
+        result = seeded_repo.update_category_icon("Food", "🍔")
         assert result is True
+        assert seeded_repo.get_categories_icons()["Food"] == "🍔"
 
-        icons = TaggingRepository.get_categories_icons()
-        assert icons["Health"] == "pill"
+    def test_update_category_icon_changed(self, db_session):
+        """Verify changing an existing icon returns True."""
+        db_session.add(Category(name="Food", tags=[], icon="🍔"))
+        db_session.commit()
+        repo = TaggingRepository(db_session)
 
-    def test_update_category_icon_changed(self, icons_file):
-        """Verify updating an existing icon to a new value returns True."""
-        result = TaggingRepository.update_category_icon("Food", "pizza")
+        result = repo.update_category_icon("Food", "🍕")
         assert result is True
+        assert repo.get_categories_icons()["Food"] == "🍕"
 
-        icons = TaggingRepository.get_categories_icons()
-        assert icons["Food"] == "pizza"
+    def test_update_category_icon_same_value(self, db_session):
+        """Verify updating an icon to the same value returns False."""
+        db_session.add(Category(name="Food", tags=[], icon="🍔"))
+        db_session.commit()
+        repo = TaggingRepository(db_session)
 
-    def test_update_category_icon_same_value(self, icons_file):
-        """Verify updating an icon to the same value returns False (no change)."""
-        result = TaggingRepository.update_category_icon("Food", "burger")
+        result = repo.update_category_icon("Food", "🍔")
         assert result is False
+
+    def test_update_category_icon_not_found(self, seeded_repo):
+        """Verify updating icon for nonexistent category raises EntityNotFoundException."""
+        with pytest.raises(EntityNotFoundException, match="NonExistent"):
+            seeded_repo.update_category_icon("NonExistent", "❓")
+
+
+# ---------------------------------------------------------------------------
+# Class 6: Seeding from YAML
+# ---------------------------------------------------------------------------
+
+
+class TestTaggingRepositorySeeding:
+    """Tests for seeding categories from YAML files."""
+
+    def test_seed_from_yaml(self, db_session, tmp_path):
+        """Verify seeding from YAML files populates DB correctly."""
+        cat_path = str(tmp_path / "categories.yaml")
+        icons_path = str(tmp_path / "icons.yaml")
+
+        with open(cat_path, "w") as f:
+            yaml.dump({"Food": ["Groceries"], "Salary": []}, f)
+        with open(icons_path, "w") as f:
+            yaml.dump({"Food": "🍔"}, f)
+
+        repo = TaggingRepository(db_session)
+        repo.seed_from_yaml(cat_path, icons_path)
+
+        result = repo.get_categories()
+        assert result == {"Food": ["Groceries"], "Salary": []}
+        assert repo.get_categories_icons() == {"Food": "🍔"}
+
+    def test_seed_skips_when_table_not_empty(self, seeded_repo, tmp_path):
+        """Verify seeding is skipped when categories already exist."""
+        cat_path = str(tmp_path / "categories.yaml")
+        icons_path = str(tmp_path / "icons.yaml")
+
+        with open(cat_path, "w") as f:
+            yaml.dump({"NewCat": ["NewTag"]}, f)
+        with open(icons_path, "w") as f:
+            yaml.dump({}, f)
+
+        seeded_repo.seed_from_yaml(cat_path, icons_path)
+
+        result = seeded_repo.get_categories()
+        assert "NewCat" not in result
+        assert "Food" in result
