@@ -2,8 +2,9 @@
 
 import pytest
 
-from backend.models.transaction import BankTransaction
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis_service import AnalysisService
+from backend.services.investments_service import InvestmentsService
 
 
 class TestAnalysisServiceOverview:
@@ -331,6 +332,127 @@ class TestAnalysisServiceSankey:
         assert result["nodes"] == []
         assert result["links"] == []
 
+    def test_get_sankey_data_unknown_cc_gap(self, db_session):
+        """Verify Unknown destination appears when bank CC payments exceed itemized CC total."""
+        # Bank CC bill payment: 500
+        bank_cc = BankTransaction(
+            id="bank_cc_1",
+            date="2024-01-10",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Credit Card Payment - Isracard",
+            amount=-500.0,
+            category="Credit Cards",
+            tag=None,
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        # Itemized CC transactions: 150 + 200 = 350
+        cc_txn_1 = CreditCardTransaction(
+            id="cc_gap_1",
+            date="2024-01-05",
+            provider="isracard",
+            account_name="Isracard",
+            description="Grocery Store",
+            amount=-150.0,
+            category="Food",
+            tag="Groceries",
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        cc_txn_2 = CreditCardTransaction(
+            id="cc_gap_2",
+            date="2024-01-08",
+            provider="isracard",
+            account_name="Isracard",
+            description="Gas Station",
+            amount=-200.0,
+            category="Transport",
+            tag="Gas",
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        # Also add a salary so the diagram has income
+        salary = BankTransaction(
+            id="bank_salary_gap",
+            date="2024-01-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Salary",
+            amount=8000.0,
+            category="Salary",
+            tag=None,
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add_all([bank_cc, cc_txn_1, cc_txn_2, salary])
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_sankey_data()
+
+        # Gap = 500 - 350 = 150 → should appear as Unknown
+        assert "Unknown" in result["nodes"]
+        unknown_idx = result["node_labels"].index("Unknown")
+        unknown_links = [
+            link for link in result["links"] if link["target"] == unknown_idx
+        ]
+        assert len(unknown_links) == 1
+        assert unknown_links[0]["value"] == 150.0
+
+    def test_get_sankey_data_no_unknown_when_no_gap(self, db_session):
+        """Verify Unknown does not appear when bank CC payments equal itemized CC total."""
+        bank_cc = BankTransaction(
+            id="bank_cc_no_gap",
+            date="2024-01-10",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Credit Card Payment",
+            amount=-300.0,
+            category="Credit Cards",
+            tag=None,
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        cc_txn = CreditCardTransaction(
+            id="cc_no_gap_1",
+            date="2024-01-05",
+            provider="isracard",
+            account_name="Isracard",
+            description="Grocery Store",
+            amount=-300.0,
+            category="Food",
+            tag="Groceries",
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        salary = BankTransaction(
+            id="bank_salary_no_gap",
+            date="2024-01-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Salary",
+            amount=8000.0,
+            category="Salary",
+            tag=None,
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add_all([bank_cc, cc_txn, salary])
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_sankey_data()
+
+        assert "Unknown" not in result["nodes"]
+
     def test_get_sankey_data_excludes_ignore(
         self, db_session, seed_base_transactions
     ):
@@ -347,28 +469,28 @@ class TestAnalysisServiceSankey:
 
 
 class TestAnalysisServiceInvestmentPriorWealth:
-    """Tests for investment prior wealth aggregation in AnalysisService."""
+    """Tests for investment prior wealth aggregation."""
 
     def test_get_investment_prior_wealth_total_sums_open_investments(
         self, db_session, seed_investments
     ):
-        """Verify _get_investment_prior_wealth_total sums prior_wealth_amount for open investments."""
+        """Verify get_total_prior_wealth sums prior_wealth_amount for open investments."""
         stock_fund, bond_fund = seed_investments["investments"]
         stock_fund.prior_wealth_amount = 12000.0
         bond_fund.prior_wealth_amount = -160.0   # closed, should be excluded
         db_session.commit()
 
-        service = AnalysisService(db_session)
-        total = service._get_investment_prior_wealth_total()
+        service = InvestmentsService(db_session)
+        total = service.get_total_prior_wealth()
 
         assert total == pytest.approx(12000.0)
 
     def test_get_investment_prior_wealth_total_returns_zero_with_no_investments(
         self, db_session
     ):
-        """Verify _get_investment_prior_wealth_total returns 0.0 when no investments exist."""
-        service = AnalysisService(db_session)
-        assert service._get_investment_prior_wealth_total() == 0.0
+        """Verify get_total_prior_wealth returns 0.0 when no investments exist."""
+        service = InvestmentsService(db_session)
+        assert service.get_total_prior_wealth() == 0.0
 
 
 class TestAnalysisServiceIncomeBySource:

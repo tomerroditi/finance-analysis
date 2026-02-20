@@ -21,18 +21,6 @@ class TestAnalyticsRoutes:
         assert data["total_income"] > 0
         assert data["total_expenses"] > 0
 
-    def test_get_overview_date_filter(self, test_client, seed_base_transactions):
-        """GET /api/analytics/overview with date filter narrows results."""
-        response = test_client.get(
-            "/api/analytics/overview?start_date=2024-01-01&end_date=2024-01-31"
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        # Filtered to January only, so fewer transactions than the full set
-        assert data["total_transactions"] < len(seed_base_transactions)
-        assert data["total_transactions"] > 0
-
     def test_get_net_balance_over_time(self, test_client, seed_base_transactions):
         """GET /api/analytics/net-balance-over-time returns time series data."""
         response = test_client.get("/api/analytics/net-balance-over-time")
@@ -115,18 +103,6 @@ class TestAnalyticsRoutes:
         assert "total" in entry
         assert isinstance(entry["sources"], dict)
         assert entry["total"] > 0
-
-    def test_get_income_by_source_over_time_date_filter(self, test_client, seed_base_transactions):
-        """GET /api/analytics/income-by-source-over-time with date filter narrows results."""
-        response = test_client.get(
-            "/api/analytics/income-by-source-over-time"
-            "?start_date=2024-02-01&end_date=2024-02-28"
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["month"] == "2024-02"
 
     def test_get_income_by_source_over_time_empty(self, test_client):
         """GET /api/analytics/income-by-source-over-time with no data returns empty list."""

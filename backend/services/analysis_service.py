@@ -42,18 +42,9 @@ class AnalysisService:
         self.investments_service = InvestmentsService(db)
         self.bank_balance_service = BankBalanceService(db)
 
-    def get_overview(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ):
+    def get_overview(self):
         """
         Get a financial overview including totals and latest data date.
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions to.
 
         Returns
         -------
@@ -70,12 +61,6 @@ class AnalysisService:
         df = self.repo.get_table()
         latest_date = df["date"].max()
 
-        # Get transaction counts (optionally filtered)
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
-
         income, expenses = self.get_income_and_expenses(df)
         income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
 
@@ -87,21 +72,12 @@ class AnalysisService:
             "net_balance_change": income - expenses,
         }
 
-    def get_income_expenses_over_time(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ):
+    def get_income_expenses_over_time(self):
         """
         Aggregate income and expenses by month over time.
 
         Credit card transactions are excluded to avoid double-counting
         (bank debits already capture the net payment).
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions to.
 
         Returns
         -------
@@ -113,11 +89,6 @@ class AnalysisService:
             - ``expenses`` – total expenses for the month (absolute value).
         """
         df = self.repo.get_table()
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
-
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
 
         monthly_data = []
@@ -185,21 +156,12 @@ class AnalysisService:
             & (df["amount"] > 0)
         )
 
-    def get_net_balance_over_time(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ) -> list[dict]:
+    def get_net_balance_over_time(self) -> list[dict]:
         """
         Get monthly net balance and cumulative balance over time.
 
         Credit card transactions are excluded to avoid double-counting.
         Cumulative balance is the running total starting from 0.
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions to.
 
         Returns
         -------
@@ -211,11 +173,6 @@ class AnalysisService:
             - ``cumulative_balance`` – running total up to and including this month.
         """
         df = self.repo.get_table(exclude_services=["credit_card_transactions"])
-
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
 
         if df.empty:
             return []
@@ -240,9 +197,7 @@ class AnalysisService:
 
         return trend
 
-    def get_expenses_by_category(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ):
+    def get_expenses_by_category(self):
         """
         Get expenses and refunds grouped by category.
 
@@ -250,13 +205,6 @@ class AnalysisService:
         Liabilities) are excluded. Transactions with no category are grouped
         as ``"Uncategorized"``. Categories with positive net amounts are treated
         as refunds; those with negative net amounts are expenses.
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions to.
 
         Returns
         -------
@@ -269,11 +217,6 @@ class AnalysisService:
               for categories with net positive amounts (refunds exceed spend).
         """
         df = self.repo.get_table()
-
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
 
         if df.empty:
             return []
@@ -295,9 +238,7 @@ class AnalysisService:
             ],
         }
 
-    def get_sankey_data(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ) -> dict:
+    def get_sankey_data(self) -> dict:
         """
         Get data for a two-layer Sankey (flow) diagram.
 
@@ -309,13 +250,6 @@ class AnalysisService:
         include: per-category expenses, Paid Debt, and Wealth Growth
         (added when income exceeds expenses). Credit Cards and Ignore
         categories are excluded.
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter transactions to.
 
         Returns
         -------
@@ -329,14 +263,13 @@ class AnalysisService:
         """
         df = self.repo.get_table(include_split_parents=False)
 
-        # Date Filtering
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
-
         if df.empty:
             return {"nodes": [], "links": []}
+
+        # Calculate CC gap before filtering out Credit Cards category
+        bank_cc_payments = df[df["category"] == CREDIT_CARDS]["amount"].sum()
+        itemized_cc_total = df[df["source"] == "credit_card_transactions"]["amount"].sum()
+        cc_gap = bank_cc_payments - itemized_cc_total
 
         df = df[df['category'] != CREDIT_CARDS]
 
@@ -387,6 +320,9 @@ class AnalysisService:
             elif net < 0:
                 destinations[cat] = abs(net)
 
+        if cc_gap > 0:
+            destinations["Unknown"] = cc_gap
+
         # TODO: we need to account for payments and allocations from filtered out data to correctly calculate it
         helpers["Debt To Be Paid"] = df[(df["category"] == LIABILITIES)]["amount"].sum()
         net = sum(sources.values()) - sum(destinations.values())
@@ -432,18 +368,9 @@ class AnalysisService:
             "links": links,
         }
 
-    def get_income_by_source_over_time(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ) -> list[dict]:
+    def get_income_by_source_over_time(self) -> list[dict]:
         """
         Get monthly income broken down by source (category+tag combination).
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (YYYY-MM-DD) for the start of the range.
-        end_date : str, optional
-            ISO date string (YYYY-MM-DD) for the end of the range.
 
         Returns
         -------
@@ -458,11 +385,6 @@ class AnalysisService:
 
         # Exclude credit card transactions (same as other income methods)
         df = df[df["source"] != "credit_card_transactions"]
-
-        if start_date:
-            df = df[df["date"] >= start_date]
-        if end_date:
-            df = df[df["date"] <= end_date]
 
         if df.empty:
             return []
@@ -519,9 +441,7 @@ class AnalysisService:
             return category
         return f"{category} / {tag}"
 
-    def get_net_worth_over_time(
-        self, start_date: Optional[str] = None, end_date: Optional[str] = None
-    ) -> list[dict]:
+    def get_net_worth_over_time(self) -> list[dict]:
         """
         Get monthly net worth (bank balance + investment value) over time.
 
@@ -530,13 +450,6 @@ class AnalysisService:
         (negative investment amounts are deposits, so balance is negated sum).
         An anchor data point one month before the earliest transaction shows
         the pure prior-wealth baseline.
-
-        Parameters
-        ----------
-        start_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter displayed months from.
-        end_date : str, optional
-            ISO date string (``YYYY-MM-DD``) to filter displayed months to.
 
         Returns
         -------
@@ -552,20 +465,14 @@ class AnalysisService:
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
 
         # --- Bank transactions (all sources except credit card) ---
-        full_df = self.repo.get_table(exclude_services=["credit_card_transactions"])
+        df = self.repo.get_table(exclude_services=["credit_card_transactions"])
 
-        filtered_df = full_df.copy()
-        if start_date:
-            filtered_df = filtered_df[filtered_df["date"] >= start_date]
-        if end_date:
-            filtered_df = filtered_df[filtered_df["date"] <= end_date]
-
-        if filtered_df.empty:
+        if df.empty:
             return []
 
-        full_df["date_parsed"] = pd.to_datetime(full_df["date"])
-        filtered_df["month"] = pd.to_datetime(filtered_df["date"]).dt.strftime("%Y-%m")
-        months = sorted(filtered_df["month"].unique())
+        df["date_parsed"] = pd.to_datetime(df["date"])
+        df["month"] = df["date_parsed"].dt.strftime("%Y-%m")
+        months = sorted(df["month"].unique())
 
         # --- Investment transactions: fetch once, filter per month in-memory ---
         inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
