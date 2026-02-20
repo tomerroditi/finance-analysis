@@ -92,9 +92,9 @@ class TestTransactionsServiceDataRetrieval:
         ]
         assert len(bank_pw_rows) == 2  # hapoalim + leumi
 
-        # Plus the cash and manual investment prior wealth rows seeded directly
+        # Plus the cash prior wealth row seeded directly
         all_pw_rows = result[result[tag_col] == PRIOR_WEALTH_TAG]
-        assert len(all_pw_rows) == 4  # 2 bank balance + 1 cash + 1 manual inv
+        assert len(all_pw_rows) == 3  # 2 bank balance + 1 cash
 
     def test_get_table_for_analysis_single_service(self, db_session, seed_base_transactions):
         """Verify filtering by a single service."""

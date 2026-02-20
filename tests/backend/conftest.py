@@ -552,8 +552,7 @@ def seed_split_transactions(db_session: Session) -> dict:
 def seed_prior_wealth_transactions(db_session: Session) -> dict:
     """Insert prior-wealth seed data (cash, manual investment, bank balances).
 
-    Returns a dict with keys ``cash``, ``manual_investment``, and
-    ``bank_balances``.
+    Returns a dict with keys ``cash`` and ``bank_balances``.
     """
     cash_pw = CashTransaction(
         id="cash_pw_1",
@@ -565,20 +564,6 @@ def seed_prior_wealth_transactions(db_session: Session) -> dict:
         category="Other Income",
         tag="Prior Wealth",
         source="cash_transactions",
-        type="normal",
-        status="completed",
-    )
-
-    manual_inv_pw = ManualInvestmentTransaction(
-        id="inv_pw_1",
-        date="2024-01-01",
-        provider="manual_investments",
-        account_name="Investment Account",
-        description="Prior Wealth - Investments",
-        amount=3000.0,
-        category="Other Income",
-        tag="Prior Wealth",
-        source="manual_investment_transactions",
         type="normal",
         status="completed",
     )
@@ -598,14 +583,13 @@ def seed_prior_wealth_transactions(db_session: Session) -> dict:
         last_manual_update="2024-01-01",
     )
 
-    db_session.add_all([cash_pw, manual_inv_pw, bank_balance_1, bank_balance_2])
+    db_session.add_all([cash_pw, bank_balance_1, bank_balance_2])
     db_session.commit()
-    for obj in [cash_pw, manual_inv_pw, bank_balance_1, bank_balance_2]:
+    for obj in [cash_pw, bank_balance_1, bank_balance_2]:
         db_session.refresh(obj)
 
     return {
         "cash": cash_pw,
-        "manual_investment": manual_inv_pw,
         "bank_balances": [bank_balance_1, bank_balance_2],
     }
 
@@ -1054,6 +1038,7 @@ def seed_investments(db_session: Session) -> dict:
         interest_rate_type="variable",
         created_date="2023-06-15",
         is_closed=0,
+        prior_wealth_amount=12000.0,
     )
     bond_fund = Investment(
         category="Investments",
@@ -1066,6 +1051,7 @@ def seed_investments(db_session: Session) -> dict:
         is_closed=1,
         closed_date="2024-01-10",
         maturity_date="2024-01-10",
+        prior_wealth_amount=-160.0,
     )
 
     db_session.add_all([stock_fund, bond_fund])

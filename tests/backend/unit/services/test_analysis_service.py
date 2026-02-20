@@ -319,8 +319,8 @@ class TestAnalysisServiceSankey:
         pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert len(pw_links) == 1
 
-        # Prior Wealth value = cash_pw (5000) + manual_inv_pw (3000) + bank balances (20000 + 15000)
-        assert pw_links[0]["value"] == 43000.0
+        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000)
+        assert pw_links[0]["value"] == 40000.0
 
     def test_get_sankey_data_empty(self, db_session):
         """Verify empty nodes/links for no data."""
