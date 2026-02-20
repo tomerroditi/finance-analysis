@@ -103,7 +103,26 @@ async def get_budget_adjustment(
     month: int,
     db: Session = Depends(get_db),
 ):
-    """Calculate budget adjustment for pending refunds."""
+    """Return the total amount to exclude from budget expenses for pending refunds.
+
+    Sums the ``expected_amount`` of all currently pending (unresolved) refunds.
+    This value can be subtracted from reported expenses in the monthly budget
+    view to account for money the user expects to recover. The ``year``/``month``
+    parameters are accepted for future filtering but are not yet applied.
+
+    Parameters
+    ----------
+    year : int
+        Budget year (reserved for future month-level filtering).
+    month : int
+        Budget month 1–12 (reserved for future month-level filtering).
+
+    Returns
+    -------
+    dict
+        ``{"adjustment": float}`` — a positive number representing the sum
+        of expected refund amounts outstanding.
+    """
     service = PendingRefundsService(db)
     adjustment = service.get_budget_adjustment(year, month)
     return {"adjustment": adjustment}

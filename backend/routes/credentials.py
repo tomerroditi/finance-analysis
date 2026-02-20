@@ -29,7 +29,14 @@ class CredentialCreate(BaseModel):
 async def get_credentials(
     db: Session = Depends(get_database),
 ) -> dict[str, dict[str, list[str]]]:
-    """Get all stored credentials (without passwords)."""
+    """Return all stored credentials, omitting passwords.
+
+    Returns
+    -------
+    dict
+        Nested structure ``{service: {provider: [account_names]}}``
+        e.g. ``{"banks": {"hapoalim": ["main"]}, "credit_cards": {...}}``.
+    """
     service = CredentialsService(db)
     return service.get_safe_credentials()
 
@@ -94,7 +101,24 @@ async def delete_credential(
     account_name: str,
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
-    """Delete a credential and clean up associated data."""
+    """Delete a stored credential and clean up associated data.
+
+    For bank accounts, also removes the stored balance record for that account.
+
+    Parameters
+    ----------
+    service : str
+        Service type (``banks``, ``credit_cards``).
+    provider : str
+        Provider identifier (e.g. ``hapoalim``, ``isracard``).
+    account_name : str
+        Account name as stored in credentials.
+
+    Raises
+    ------
+    HTTPException
+        404 if the credential does not exist.
+    """
     creds_service = CredentialsService(db)
     try:
         creds_service.delete_credential(service, provider, account_name)

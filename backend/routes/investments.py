@@ -42,7 +42,14 @@ class InvestmentUpdate(BaseModel):
 async def get_investments(
     include_closed: bool = False, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
-    """Get all investments."""
+    """Return all investment records.
+
+    Parameters
+    ----------
+    include_closed : bool, optional
+        When ``True``, include investments that have been closed.
+        Defaults to ``False`` (active investments only).
+    """
     service = InvestmentsService(db)
     return service.get_all_investments(include_closed=include_closed)
 
@@ -72,7 +79,17 @@ async def get_investment_analysis(
     end_date: Optional[str] = None,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
-    """Get detailed analysis for a specific investment."""
+    """Return detailed analysis for a specific investment.
+
+    Parameters
+    ----------
+    investment_id : int
+        ID of the investment to analyse.
+    start_date : str, optional
+        ISO date string (YYYY-MM-DD) to restrict the transaction history.
+    end_date : str, optional
+        ISO date string (YYYY-MM-DD) to restrict the transaction history.
+    """
     service = InvestmentsService(db)
     return service.get_investment_analysis(investment_id, start_date, end_date)
 
@@ -117,7 +134,15 @@ async def update_investment(
 async def close_investment(
     investment_id: int, closed_date: str, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Close an investment."""
+    """Mark an investment as closed.
+
+    Parameters
+    ----------
+    investment_id : int
+        ID of the investment to close.
+    closed_date : str
+        ISO date string (YYYY-MM-DD) recording when the investment was closed.
+    """
     service = InvestmentsService(db)
     service.close_investment(investment_id, closed_date)
     return {"status": "success"}

@@ -26,10 +26,32 @@ class TaggingRepository:
     """Repository for category and tag CRUD operations backed by SQLite."""
 
     def __init__(self, db: Session):
+        """
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session.
+        """
         self.db = db
 
     def _get_category(self, name: str) -> Category:
-        """Fetch a category by name or raise EntityNotFoundException."""
+        """Fetch a category by name or raise EntityNotFoundException.
+
+        Parameters
+        ----------
+        name : str
+            Category name to look up.
+
+        Returns
+        -------
+        Category
+            The ORM model instance for the matching category.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no category with that name exists.
+        """
         cat = self.db.execute(
             select(Category).where(Category.name == name)
         ).scalar_one_or_none()
@@ -38,14 +60,39 @@ class TaggingRepository:
         return cat
 
     def get_categories(self) -> dict[str, list[str]]:
-        """Get all categories and their tags as a dict."""
+        """Get all categories and their tags as a dict.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping of category name to list of tag names.
+        """
         rows = self.db.execute(select(Category)).scalars().all()
         return {row.name: list(row.tags) for row in rows}
 
     def add_category(
         self, name: str, tags: list[str], icon: Optional[str] = None
     ) -> None:
-        """Add a new category. Raises EntityAlreadyExistsException on duplicate."""
+        """Add a new category.
+
+        Parameters
+        ----------
+        name : str
+            New category name.
+        tags : list[str]
+            Initial list of tags to associate with the category.
+        icon : str, optional
+            Emoji icon for the category. Defaults to None.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        EntityAlreadyExistsException
+            If a category with that name already exists.
+        """
         existing = self.db.execute(
             select(Category).where(Category.name == name)
         ).scalar_one_or_none()
@@ -57,13 +104,39 @@ class TaggingRepository:
         self.db.commit()
 
     def delete_category(self, name: str) -> None:
-        """Delete a category. Raises EntityNotFoundException if not found."""
+        """Delete a category.
+
+        Parameters
+        ----------
+        name : str
+            Name of the category to delete.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no category with that name exists.
+        """
         cat = self._get_category(name)
         self.db.delete(cat)
         self.db.commit()
 
     def add_tag(self, category: str, tag: str) -> None:
-        """Add a tag to a category's tags list."""
+        """Add a tag to a category's tags list.
+
+        Parameters
+        ----------
+        category : str
+            Name of the category to add the tag to.
+        tag : str
+            Tag name to add.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the category does not exist.
+        EntityAlreadyExistsException
+            If the tag already exists in that category.
+        """
         cat = self._get_category(category)
         if tag in cat.tags:
             raise EntityAlreadyExistsException(
@@ -73,7 +146,20 @@ class TaggingRepository:
         self.db.commit()
 
     def delete_tag(self, category: str, tag: str) -> None:
-        """Remove a tag from a category's tags list."""
+        """Remove a tag from a category's tags list.
+
+        Parameters
+        ----------
+        category : str
+            Name of the category containing the tag.
+        tag : str
+            Tag name to remove.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the category does not exist, or the tag is not found in that category.
+        """
         cat = self._get_category(category)
         if tag not in cat.tags:
             raise EntityNotFoundException(
@@ -85,7 +171,26 @@ class TaggingRepository:
     def relocate_tag(
         self, tag: str, old_category: str, new_category: str
     ) -> None:
-        """Move a tag from one category to another."""
+        """Move a tag from one category to another.
+
+        Parameters
+        ----------
+        tag : str
+            Tag name to move.
+        old_category : str
+            Name of the category currently holding the tag.
+        new_category : str
+            Name of the destination category.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If either category does not exist, or the tag is not found in old_category.
+
+        Notes
+        -----
+        If the tag already exists in new_category it is not added again (deduplication).
+        """
         old_cat = self._get_category(old_category)
         if tag not in old_cat.tags:
             raise EntityNotFoundException(
@@ -99,12 +204,32 @@ class TaggingRepository:
         self.db.commit()
 
     def get_categories_icons(self) -> dict[str, str]:
-        """Get mapping of category names to icons (excludes nulls)."""
+        """Get mapping of category names to icons.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping of category name to icon emoji. Categories with a NULL icon
+            are excluded from the result.
+        """
         rows = self.db.execute(select(Category)).scalars().all()
         return {row.name: row.icon for row in rows if row.icon is not None}
 
     def update_category_icon(self, category: str, icon: str) -> bool:
-        """Update a category's icon. Returns False if unchanged."""
+        """Update a category's icon.
+
+        Parameters
+        ----------
+        category : str
+            Name of the category whose icon should be updated.
+        icon : str
+            New icon emoji to assign.
+
+        Returns
+        -------
+        bool
+            True if the icon was updated, False if it was already set to the same value.
+        """
         cat = self._get_category(category)
         if cat.icon == icon:
             return False

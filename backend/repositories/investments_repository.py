@@ -31,6 +31,12 @@ class InvestmentsRepository:
     notes_col = InvestmentsTableFields.NOTES.value
 
     def __init__(self, db: Session):
+        """
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session.
+        """
         self.db = db
 
     def _assure_table_exists(self) -> None:
@@ -51,7 +57,39 @@ class InvestmentsRepository:
         maturity_date: str = None,
         notes: str = None,
     ) -> None:
-        """Create a new investment record."""
+        """Create a new investment record.
+
+        Parameters
+        ----------
+        category : str
+            Tag category the investment belongs to (e.g. "Stocks").
+        tag : str
+            Tag name identifying this investment within its category.
+        type_ : str
+            Investment type (e.g. "savings_account", "etf").
+        name : str
+            Human-readable display name for the investment.
+        interest_rate : float, optional
+            Annual interest rate expressed as a decimal.
+        interest_rate_type : str
+            Whether the rate is "fixed" or "variable". Defaults to "fixed".
+        commission_deposit : float, optional
+            Commission rate applied on deposits.
+        commission_management : float, optional
+            Ongoing management fee rate.
+        commission_withdrawal : float, optional
+            Commission rate applied on withdrawals.
+        liquidity_date : str, optional
+            Date when funds become accessible, in YYYY-MM-DD format.
+        maturity_date : str, optional
+            Maturity date of the investment, in YYYY-MM-DD format.
+        notes : str, optional
+            Free-text notes about the investment.
+
+        Returns
+        -------
+        None
+        """
         # Check if already exists? Original SQL used UNIQUE constraint on (category, tag).
         # We rely on DB constraint or catch IntegrityError if needed, but for now simple insert.
         new_inv = Investment(
@@ -73,7 +111,19 @@ class InvestmentsRepository:
         self.db.commit()
 
     def get_all_investments(self, include_closed: bool = False) -> pd.DataFrame:
-        """Get all investments, optionally including closed ones."""
+        """Get all investments, optionally including closed ones.
+
+        Parameters
+        ----------
+        include_closed : bool
+            When True, closed investments are included in the result.
+            Defaults to False.
+
+        Returns
+        -------
+        pd.DataFrame
+            All matching investment records with full investment columns.
+        """
         stmt = select(Investment)
         if not include_closed:
             stmt = stmt.where(Investment.is_closed == 0)
@@ -81,7 +131,23 @@ class InvestmentsRepository:
         return pd.read_sql(stmt, self.db.bind)
 
     def get_by_id(self, investment_id: int) -> pd.DataFrame:
-        """Get an investment by its ID."""
+        """Get an investment by its ID.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to retrieve.
+
+        Returns
+        -------
+        pd.DataFrame
+            Single-row DataFrame containing the investment record.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
+        """
         stmt = select(Investment).where(Investment.id == investment_id)
         df = pd.read_sql(stmt, self.db.bind)
         if df.empty:
@@ -91,14 +157,40 @@ class InvestmentsRepository:
         return df
 
     def get_by_category_tag(self, category: str, tag: str) -> pd.DataFrame:
-        """Get an investment by category and tag."""
+        """Get an investment by category and tag.
+
+        Parameters
+        ----------
+        category : str
+            Category name to filter by.
+        tag : str
+            Tag name to filter by.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching investment rows, or empty DataFrame if not found.
+        """
         stmt = select(Investment).where(
             Investment.category == category, Investment.tag == tag
         )
         return pd.read_sql(stmt, self.db.bind)
 
     def update_investment(self, investment_id: int, **fields) -> None:
-        """Update an investment by ID."""
+        """Update an investment by ID.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to update.
+        **fields
+            Keyword arguments mapping column names to their new values.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
+        """
         if not fields:
             return
 
@@ -112,7 +204,20 @@ class InvestmentsRepository:
             )
 
     def update_prior_wealth(self, investment_id: int, amount: float) -> None:
-        """Update the stored prior_wealth_amount for an investment."""
+        """Update the stored prior_wealth_amount for an investment.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to update.
+        amount : float
+            New prior_wealth_amount value to store.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
+        """
         stmt = (
             update(Investment)
             .where(Investment.id == investment_id)
@@ -126,7 +231,15 @@ class InvestmentsRepository:
             )
 
     def close_investment(self, investment_id: int, closed_date: str) -> None:
-        """Close an investment by setting is_closed flag and closed_date."""
+        """Close an investment by setting is_closed flag and closed_date.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to close.
+        closed_date : str
+            Date the investment was closed, in YYYY-MM-DD format.
+        """
         stmt = (
             update(Investment)
             .where(Investment.id == investment_id)
@@ -136,7 +249,13 @@ class InvestmentsRepository:
         self.db.commit()
 
     def reopen_investment(self, investment_id: int) -> None:
-        """Reopen a closed investment."""
+        """Reopen a closed investment.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to reopen.
+        """
         stmt = (
             update(Investment)
             .where(Investment.id == investment_id)
@@ -146,7 +265,18 @@ class InvestmentsRepository:
         self.db.commit()
 
     def delete_investment(self, investment_id: int) -> None:
-        """Delete an investment by ID."""
+        """Delete an investment by ID.
+
+        Parameters
+        ----------
+        investment_id : int
+            Primary key of the investment to delete.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
+        """
         stmt = delete(Investment).where(Investment.id == investment_id)
         result = self.db.execute(stmt)
         self.db.commit()

@@ -199,7 +199,15 @@ class TransactionsService:
                         )
 
     def get_table_columns_for_display(self) -> List[str]:
-        """Get the columns of the transactions table."""
+        """
+        Get the ordered list of column names used for display purposes.
+
+        Returns
+        -------
+        list[str]
+            Column name strings from ``TransactionsTableFields`` in the
+            canonical display order.
+        """
         return [
             TransactionsTableFields.PROVIDER.value,
             TransactionsTableFields.ACCOUNT_NAME.value,
@@ -219,7 +227,25 @@ class TransactionsService:
     def get_data_for_analysis(
         self, include_split_parents: bool = False
     ) -> pd.DataFrame:
-        """Get table data for analysis purposes, including bank prior wealth."""
+        """
+        Get the merged transactions table for analysis, including prior-wealth rows.
+
+        Combines credit cards, banks, cash, and manual investment tables.
+        Appends synthetic prior-wealth rows from bank balances and investment
+        ``prior_wealth_amount`` fields.
+
+        Parameters
+        ----------
+        include_split_parents : bool, optional
+            When ``True``, includes parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Merged DataFrame with all transaction sources and prior-wealth rows.
+            Returns an empty DataFrame if no data exists.
+        """
         cc_data = self.get_table_for_analysis("credit_cards", include_split_parents)
         bank_data = self.get_table_for_analysis("banks", include_split_parents)
         cash_data = self.get_table_for_analysis("cash", include_split_parents)
@@ -309,7 +335,25 @@ class TransactionsService:
     def update_tagging_by_id(
         self, table_name: str, unique_id: int, category: str | None, tag: str | None
     ) -> None:
-        """Update the category and tag for a transaction by ID."""
+        """
+        Update the category and tag for a transaction identified by table and ID.
+
+        Parameters
+        ----------
+        table_name : str
+            Name of the source table (e.g. ``"credit_card_transactions"``).
+        unique_id : int
+            Unique ID of the transaction to update.
+        category : str or None
+            New category value. Empty strings are normalised to ``None``.
+        tag : str or None
+            New tag value. Empty strings are normalised to ``None``.
+
+        Raises
+        ------
+        ValueError
+            If ``table_name`` does not match any known transaction table.
+        """
         category = self._normalize_empty_string(category)
         tag = self._normalize_empty_string(tag)
         if table_name == Tables.CREDIT_CARD.value:
@@ -332,7 +376,21 @@ class TransactionsService:
             raise ValueError(f"Invalid table name: {table_name}")
 
     def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
-        """Update a transaction by ID with the given field updates."""
+        """
+        Update a transaction by ID, searching across CC, bank, and cash tables.
+
+        Parameters
+        ----------
+        transaction_id : str
+            Transaction ID to search for across tables.
+        updates : dict
+            Field names and new values to apply.
+
+        Returns
+        -------
+        bool
+            ``True`` if the transaction was found and updated in at least one table.
+        """
         cc_res = self.transactions_repository.cc_repo.update_transaction_by_id(
             transaction_id, updates
         )
@@ -345,7 +403,19 @@ class TransactionsService:
         return cc_res or bank_res or cash_res
 
     def delete_transaction_by_id(self, transaction_id: str) -> bool:
-        """Delete a transaction by ID. Supports cash transactions only."""
+        """
+        Delete a cash transaction by its unique ID.
+
+        Parameters
+        ----------
+        transaction_id : str
+            Unique ID of the cash transaction to delete.
+
+        Returns
+        -------
+        bool
+            ``True`` if the transaction was found and deleted.
+        """
         return self.transactions_repository.cash_repo.delete_transaction_by_unique_id(
             transaction_id
         )
@@ -353,7 +423,22 @@ class TransactionsService:
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
     ) -> pd.DataFrame:
-        """Get all transactions filtered by category and optionally tag."""
+        """
+        Get all transactions filtered by category and optionally tag.
+
+        Parameters
+        ----------
+        category : str
+            Category to filter by.
+        tag : str, optional
+            Tag to further filter by. If ``None``, all tags in the category
+            are returned.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching transactions, reset index. Empty if no data.
+        """
         df = self.get_data_for_analysis()
         if df.empty:
             return df
@@ -367,7 +452,24 @@ class TransactionsService:
     def get_all_transactions(
         self, service: Literal["credit_cards", "banks", "cash"]
     ) -> pd.DataFrame:
-        """Get all transactions for the specified service."""
+        """
+        Get all transactions for the specified service.
+
+        Parameters
+        ----------
+        service : {"credit_cards", "banks", "cash"}
+            Service whose transaction table to return.
+
+        Returns
+        -------
+        pd.DataFrame
+            All transactions from the requested service table.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` is not one of the supported values.
+        """
         if service not in ["credit_cards", "banks", "cash"]:
             raise ValueError(
                 f"service must be one of 'credit_cards', 'banks', 'cash'. Got '{service}'"
@@ -430,13 +532,26 @@ class TransactionsService:
         """
         Update a transaction with source-based permission constraints.
 
-        Manual sources (cash, manual_investment_transactions) can edit
-        description, amount, and provider. All sources can update category/tag.
+        Manual sources (``cash``, ``manual_investment_transactions``) may edit
+        ``description``, ``amount``, and ``provider`` in addition to
+        ``category`` and ``tag``. Scraped sources can only update ``category``
+        and ``tag``. Empty strings in category/tag are normalised to ``None``.
+
+        Parameters
+        ----------
+        unique_id : int
+            Unique ID of the transaction to update.
+        source : str
+            Source table name (e.g. ``"cash"``, ``"credit_card_transactions"``).
+        updates : dict
+            Fields to update. Recognised keys: ``description``, ``amount``,
+            ``provider``, ``category``, ``tag``.
 
         Returns
         -------
         bool
-            True if updates were applied, False if no changes were needed.
+            ``True`` if updates were applied, ``False`` if no applicable fields
+            were provided.
         """
         target_repo = self.transactions_repository.get_repo_by_source(source)
         is_manual = source in ["cash", "manual_investment_transactions"]
@@ -464,14 +579,29 @@ class TransactionsService:
 
     def delete_transaction(self, unique_id: int, source: str) -> None:
         """
-        Delete a transaction with source and protection checks.
+        Delete a transaction with source validation and protection checks.
+
+        Only ``cash_transactions`` and ``manual_investment_transactions`` sources
+        are deletable. System-generated Prior Wealth transactions (identified by
+        matching tag and account name) are protected and cannot be deleted.
+        After deletion, the cash prior-wealth offset or investment prior-wealth
+        is recalculated as needed.
+
+        Parameters
+        ----------
+        unique_id : int
+            Unique ID of the transaction to delete.
+        source : str
+            Source table name; must be ``"cash_transactions"`` or
+            ``"manual_investment_transactions"``.
 
         Raises
         ------
         PermissionError
-            If the source does not allow deletion or the transaction is protected.
+            If the source does not allow deletion or the transaction is a
+            protected system-generated record.
         ValueError
-            If the transaction is not found.
+            If the transaction is not found or deletion fails.
         """
         if source not in ["cash_transactions", "manual_investment_transactions"]:
             raise PermissionError(
@@ -521,7 +651,20 @@ class TransactionsService:
         category: str | None,
         tag: str | None,
     ) -> None:
-        """Apply tagging to multiple transactions of the same source."""
+        """
+        Apply the same category and tag to multiple transactions of the same source.
+
+        Parameters
+        ----------
+        transaction_ids : list[int]
+            List of unique IDs to update.
+        source : str
+            Source table name shared by all transactions.
+        category : str or None
+            Category to apply. Empty strings are normalised to ``None``.
+        tag : str or None
+            Tag to apply. Empty strings are normalised to ``None``.
+        """
         tx_list = [
             {"unique_id": uid, "source": source} for uid in transaction_ids
         ]
@@ -536,7 +679,22 @@ class TransactionsService:
         service: Literal["credit_cards", "banks"],
         account_number: Optional[str] = None,
     ) -> pd.DataFrame:
-        """Get transactions that don't have categories assigned."""
+        """
+        Get transactions that have no category assigned.
+
+        Parameters
+        ----------
+        service : {"credit_cards", "banks"}
+            Service to query.
+        account_number : str, optional
+            For bank transactions, further filter by account number.
+            Ignored for credit card transactions.
+
+        Returns
+        -------
+        pd.DataFrame
+            Transactions where the ``category`` column is ``NaN`` / ``None``.
+        """
         transactions = self.transactions_repository.get_table(service)
         category_col = TransactionsTableFields.CATEGORY.value
         untagged = transactions[transactions[category_col].isna()]
@@ -548,7 +706,18 @@ class TransactionsService:
         return untagged
 
     def get_latest_data_date(self) -> datetime:
-        """Get the latest date of transactions across all tables."""
+        """
+        Get the minimum of the latest transaction dates across all tables.
+
+        Returns the minimum so that the displayed "latest date" reflects the
+        most outdated source (i.e. all sources have data up to at least this date).
+
+        Returns
+        -------
+        datetime
+            The minimum latest-date across all tables. Falls back to
+            365 days ago for tables with no data.
+        """
         latest_dates = []
         tables = self.transactions_repository.get_all_table_names()
 
@@ -566,7 +735,15 @@ class TransactionsService:
         )
 
     def get_earliest_data_date(self) -> datetime:
-        """Get the earliest date of transactions across all tables."""
+        """
+        Get the earliest transaction date across all tables.
+
+        Returns
+        -------
+        datetime
+            The minimum date found across all transaction tables.
+            Falls back to ``datetime.now()`` if no data exists.
+        """
         earliest_dates = []
         tables = self.transactions_repository.get_all_table_names()
 
@@ -588,10 +765,26 @@ class TransactionsService:
         include_split_parents: bool = False,
     ) -> pd.DataFrame:
         """
-        Returns the transactions table with split transactions expanded.
+        Get a service's transaction table with split transactions expanded.
 
-        Split rows replace the original transaction rows unless include_split_parents
-        is True, in which case parent transactions are also included.
+        Split rows replace their parent transaction rows by default. When
+        ``include_split_parents`` is ``True``, parent rows are retained and
+        marked with ``type = "split_parent"`` so callers can exclude them
+        from amount calculations while still displaying them.
+
+        Parameters
+        ----------
+        service : {"credit_cards", "banks", "cash", "manual_investments"}
+            Service whose transaction table to return.
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Transactions with splits expanded, limited to the canonical
+            analysis column set.
         """
         df = self.transactions_repository.get_table(service).copy()
 
@@ -676,7 +869,29 @@ class TransactionsService:
         )
 
     def get_kpis(self, df: pd.DataFrame) -> dict:
-        """Calculate KPIs for the given DataFrame."""
+        """
+        Calculate key financial KPIs from a transactions DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions DataFrame (typically from ``get_data_for_analysis``).
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``income`` – total income.
+            - ``expenses`` – total expenses (absolute value).
+            - ``savings_and_investments`` – total invested (absolute value).
+            - ``bank_balance_increase`` – income minus expenses minus debt payments minus investments.
+            - ``savings_rate`` – ``(bank_balance_increase + investments) / income * 100``.
+            - ``liabilities_paid`` – absolute value of outgoing liability payments.
+            - ``liabilities_received`` – incoming liability amounts (loans).
+            - ``largest_expense_cat_name`` – category name with highest spend.
+            - ``largest_expense_cat_val`` – spend amount for that category.
+        """
         data = self.split_data_by_category_types(df)
         amount_col = TransactionsTableFields.AMOUNT.value
         category_col = TransactionsTableFields.CATEGORY.value
@@ -730,7 +945,21 @@ class TransactionsService:
 
     @staticmethod
     def split_data_by_category_types(df: pd.DataFrame) -> dict:
-        """Split data into expenses, savings, income, and liabilities."""
+        """
+        Partition a transactions DataFrame into category-type groups.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions DataFrame with a ``category`` column.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys ``expenses``, ``investments``, ``income``,
+            and ``liabilities``, each containing the relevant subset of ``df``.
+            The ``expenses`` group includes all rows not in any special category.
+        """
         category_col = TransactionsTableFields.CATEGORY.value
         investment_categories = [e.value for e in InvestmentCategories]
         income_categories = [e.value for e in IncomeCategories]
@@ -745,7 +974,29 @@ class TransactionsService:
         }
 
     def get_liabilities_summary(self, filtered_df: pd.DataFrame) -> dict:
-        """Get liabilities summary including totals and per-tag breakdown."""
+        """
+        Get a liabilities summary with all-time totals and per-tag breakdown.
+
+        All-time totals are computed from the full dataset regardless of
+        the date filter applied to ``filtered_df``.
+
+        Parameters
+        ----------
+        filtered_df : pd.DataFrame
+            Date-filtered transactions DataFrame used for the per-tag breakdown.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``total_received`` – all-time total of incoming liability amounts (loans).
+            - ``total_paid`` – all-time total paid on liabilities.
+            - ``outstanding_balance`` – ``total_received - total_paid``.
+            - ``tag_summary`` – DataFrame with columns ``Name``, ``Received``,
+              ``Paid``, ``Outstanding Balance`` grouped by tag (from ``filtered_df``).
+            - ``filtered_liabilities`` – liability rows from ``filtered_df``.
+        """
         amount_col = TransactionsTableFields.AMOUNT.value
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
@@ -790,7 +1041,24 @@ class TransactionsService:
     def get_providers_for_service(
         service: Literal["credit_cards", "banks"],
     ) -> List[str]:
-        """Get a list of providers for the specified service."""
+        """
+        Get the list of provider identifiers for the specified service.
+
+        Parameters
+        ----------
+        service : {"credit_cards", "banks"}
+            Service type to query.
+
+        Returns
+        -------
+        list[str]
+            Provider enum values for the requested service.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` is not ``"credit_cards"`` or ``"banks"``.
+        """
         if service == Services.CREDIT_CARD.value:
             return [e.value for e in CreditCards]
         elif service == Services.BANK.value:
@@ -802,5 +1070,12 @@ class TransactionsService:
 
     @staticmethod
     def get_all_providers() -> List[str]:
-        """Get a list of all providers across both services."""
+        """
+        Get the combined list of all provider identifiers across credit cards and banks.
+
+        Returns
+        -------
+        list[str]
+            All credit card provider values followed by all bank provider values.
+        """
         return [e.value for e in CreditCards] + [e.value for e in Banks]

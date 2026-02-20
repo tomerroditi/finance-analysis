@@ -33,6 +33,8 @@ class IncomeCategories(Enum):
 
 
 class LiabilitiesCategories(Enum):
+    """Enum defining categories that represent liabilities or debt payments."""
+
     LIABILITIES = "Liabilities"
 
 

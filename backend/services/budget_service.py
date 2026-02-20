@@ -53,7 +53,15 @@ class BudgetService:
         self.pending_refunds_service = PendingRefundsService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
-        """Get all budget rules with parsed tags."""
+        """
+        Get all budget rules with tags parsed from semicolon strings to lists.
+
+        Returns
+        -------
+        pd.DataFrame
+            All budget rules. The ``tags`` column is a list of strings
+            instead of the raw semicolon-separated string stored in the DB.
+        """
         rules = self.budget_repository.read_all()
         if not rules.empty:
             rules[TAGS] = rules[TAGS].apply(
@@ -70,12 +78,45 @@ class BudgetService:
         month: Optional[int] = None,
         year: Optional[int] = None,
     ) -> None:
-        """Add a new budget rule with tag conversion."""
+        """
+        Add a new budget rule, converting tags to semicolon-separated storage format.
+
+        Parameters
+        ----------
+        name : str
+            Human-readable label for the rule.
+        amount : float
+            Budget limit amount (must be positive).
+        category : str
+            Category the rule applies to, or ``"Total Budget"`` for an overall cap.
+        tags : str or list[str]
+            One or more tags the rule covers. Lists are joined with ``;``.
+        month : int, optional
+            Calendar month (1–12). ``None`` for project budgets.
+        year : int, optional
+            Calendar year. ``None`` for project budgets.
+        """
         tags_str = ";".join(tags) if isinstance(tags, list) else tags
         self.budget_repository.add(name, amount, category, tags_str, month, year)
 
     def update_rule(self, id_: int, **fields):
-        """Update a budget rule with validation and tag conversion."""
+        """
+        Update a budget rule with validation and tag list-to-string conversion.
+
+        Parameters
+        ----------
+        id_ : int
+            ID of the budget rule to update.
+        **fields
+            Keyword arguments for fields to update. Allowed keys are
+            ``name``, ``amount``, ``category``, and ``tags``.
+            If ``tags`` is a list, it is joined with ``;`` before saving.
+
+        Raises
+        ------
+        AssertionError
+            If any key in ``fields`` is not one of the allowed field names.
+        """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
         assert all(k in valid_fields for k in fields), (
             f"Invalid fields for update. Valid fields: {valid_fields}"
@@ -87,7 +128,14 @@ class BudgetService:
         self.budget_repository.update(id_, **fields)
 
     def delete_rule(self, id_: int) -> None:
-        """Delete a budget rule by ID."""
+        """
+        Delete a budget rule by ID.
+
+        Parameters
+        ----------
+        id_ : int
+            ID of the budget rule to delete.
+        """
         self.budget_repository.delete(id_)
 
     @staticmethod
@@ -101,7 +149,38 @@ class BudgetService:
         month: int | None,
         id_: int | None,
     ) -> tuple[bool, str]:
-        """Validate budget rule inputs before saving or updating."""
+        """
+        Validate budget rule inputs before creating or updating.
+
+        Checks include: name uniqueness, non-empty fields, positive amount,
+        and that adding/changing the rule does not exceed the total budget cap.
+        For project rules (month/year are ``None``), validates against the
+        project total instead of the monthly total.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            All existing budget rules (from ``get_all_rules``).
+        name : str
+            Proposed rule name.
+        category : str
+            Category the rule applies to.
+        tags : list[str]
+            Tags the rule covers.
+        amount : float
+            Proposed budget amount.
+        year : int or None
+            Rule year; ``None`` for project rules.
+        month : int or None
+            Rule month; ``None`` for project rules.
+        id_ : int or None
+            Existing rule ID when updating, ``None`` when creating.
+
+        Returns
+        -------
+        tuple[bool, str]
+            ``(True, "")`` if valid, or ``(False, error_message)`` if not.
+        """
         if id_ is not None:
             rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
             if (
@@ -214,17 +293,49 @@ class MonthlyBudgetService(BudgetService):
     """Service for managing monthly budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
+        """
+        Get all monthly budget rules (excludes project rules).
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules where both ``year`` and ``month`` are non-null.
+        """
         rules = super().get_all_rules()
         return rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
 
     def delete_rules_by_month(self, year: int, month: int) -> None:
-        """Delete all budget rules for a specific month."""
+        """
+        Delete all budget rules for a specific month.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year of the rules to delete.
+        month : int
+            Calendar month (1–12) of the rules to delete.
+        """
         self.budget_repository.delete_by_month(year, month)
 
     def get_available_tags_for_each_category(
         self, budget_rules: pd.DataFrame
     ) -> dict[str, list[str]]:
-        """Get available tags for each category not already used."""
+        """
+        Get tags available for new budget rules (not already fully covered).
+
+        Removes categories and tags that are already allocated in the given
+        budget rules. If a rule uses ``all_tags``, the entire category is removed.
+
+        Parameters
+        ----------
+        budget_rules : pd.DataFrame
+            Existing budget rules for the relevant month or project.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping of category name to remaining available tags.
+        """
         cats_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
         for _, rule in budget_rules.iterrows():
             used_tags = rule[TAGS]
@@ -244,7 +355,28 @@ class MonthlyBudgetService(BudgetService):
     def copy_last_month_rules(
         self, year: int, month: int, budget_rules: pd.DataFrame
     ) -> Optional[str]:
-        """Copy budget rules from the previous month."""
+        """
+        Copy budget rules from the previous month to the target month.
+
+        Deletes any existing rules for the target month first, then
+        recreates them from the prior month's rules.
+
+        Parameters
+        ----------
+        year : int
+            Target year to copy rules into.
+        month : int
+            Target month (1–12) to copy rules into.
+        budget_rules : pd.DataFrame
+            All existing monthly budget rules (from ``get_all_rules``).
+
+        Returns
+        -------
+        str or None
+            A summary message such as ``"Copied N rules from YYYY-M"`` if
+            rules were found and copied, or ``None`` if the prior month
+            has no rules.
+        """
         last_month = month - 1 if month != 1 else 12
         last_year = year if month != 1 else year - 1
 
@@ -272,7 +404,23 @@ class MonthlyBudgetService(BudgetService):
     def get_month_rules(
         self, year: int, month: int, budget_rules: pd.DataFrame | None = None
     ) -> pd.DataFrame:
-        """Get all budget rules for a specific month."""
+        """
+        Get all budget rules for a specific month.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        budget_rules : pd.DataFrame, optional
+            Pre-fetched rules DataFrame. If ``None``, ``get_all_rules`` is called.
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules filtered to the given year and month.
+        """
         if budget_rules is None:
             budget_rules = self.get_all_rules()
         return budget_rules[
@@ -288,7 +436,31 @@ class MonthlyBudgetService(BudgetService):
         month: int | None = None,
         year: int | None = None,
     ) -> None:
-        """Create a budget rule with validation and tag parsing."""
+        """
+        Create a budget rule with input validation and tag normalization.
+
+        Validates via ``validate_rule_inputs`` before persisting.
+
+        Parameters
+        ----------
+        name : str
+            Human-readable label for the rule.
+        amount : float
+            Budget limit amount.
+        category : str
+            Category the rule applies to.
+        tags : str or list[str]
+            Tags the rule covers (string or list; stored as semicolon-separated).
+        month : int or None, optional
+            Calendar month (1–12). ``None`` for project budgets.
+        year : int or None, optional
+            Calendar year. ``None`` for project budgets.
+
+        Raises
+        ------
+        ValueError
+            If validation fails (invalid inputs or budget cap exceeded).
+        """
         parsed_tags = tags.split(";") if isinstance(tags, str) else tags
         budget_rules = self.get_all_rules()
         is_valid, msg = self.validate_rule_inputs(
@@ -302,7 +474,31 @@ class MonthlyBudgetService(BudgetService):
     def get_monthly_analysis(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> dict:
-        """Get full monthly budget analysis combining budget view, project spending, and pending refunds."""
+        """
+        Get full monthly budget analysis combining budget view, project spending, and pending refunds.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``rules`` – list of budget rule view dicts (from ``get_monthly_budget_view``),
+              or empty list if no rules are defined.
+            - ``project_spending`` – dict with a ``projects`` list summarising
+              project spend for the month (from ``get_monthly_project_spending_summary``).
+            - ``pending_refunds`` – dict with ``items`` (pending refund list) and
+              ``total_expected`` (sum of expected amounts).
+        """
         view = self.get_monthly_budget_view(year, month, include_split_parents)
         project_summary = self.get_monthly_project_spending_summary(
             year, month, include_split_parents
@@ -325,7 +521,36 @@ class MonthlyBudgetService(BudgetService):
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
-        """Compute budget rule usage view for a given month."""
+        """
+        Compute budget rule usage view for a given month.
+
+        Matches transactions to budget rules and calculates actual spend per rule.
+        Project-category transactions and pending-refund transactions are excluded.
+        If spend remains after all rules are matched, an ``"Other Expenses"`` entry
+        is appended using the unallocated portion of the total budget.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        list[dict] or None
+            ``None`` if no budget rules exist for the month. Otherwise a list of
+            rule view dicts, each with keys:
+
+            - ``rule`` – the budget rule dict.
+            - ``current_amount`` – actual spend matched to this rule (positive float).
+            - ``data`` – list of transaction dicts matched to this rule.
+            - ``allow_edit`` – whether the rule amount can be changed.
+            - ``allow_delete`` – whether the rule can be deleted.
+        """
         budget_rules = self.get_all_rules()
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
@@ -455,7 +680,22 @@ class MonthlyBudgetService(BudgetService):
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[pd.DataFrame]:
         """
-        Get project-related transactions for a specific month.
+        Get expense transactions belonging to project categories for a specific month.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        include_split_parents : bool, optional
+            When ``True``, include split parent transactions. Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame or None
+            Filtered transactions DataFrame, or ``None`` if there are no project
+            categories or no matching transactions for the month.
         """
         budget_rules = self.budget_repository.read_all()
         all_data = self.transactions_service.get_data_for_analysis(
@@ -492,7 +732,28 @@ class MonthlyBudgetService(BudgetService):
     def get_monthly_project_spending_summary(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> dict:
-        """Get summary of project spending for a month, grouped by project."""
+        """
+        Get a summary of project spending for a month, grouped by project category.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        include_split_parents : bool, optional
+            When ``True``, include split parent transactions. Default is ``False``.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``projects`` – list of per-project dicts with ``category``, ``spent``,
+              and ``transactions`` keys. Empty list if no project transactions exist.
+            - ``total_spent`` – sum of spend across all projects (only present
+              when at least one project transaction exists).
+        """
         project_txns = self.get_monthly_project_transactions(
             year, month, include_split_parents
         )
@@ -525,13 +786,39 @@ class ProjectBudgetService(BudgetService):
     """Service for managing project-based budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
+        """
+        Get all project budget rules (excludes monthly rules).
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules where both ``year`` and ``month`` are null,
+            with those columns dropped.
+        """
         rules = super().get_all_rules()
         return rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()].drop(
             columns=[YEAR, MONTH]
         )
 
     def get_rules_for_project(self, category: str) -> pd.DataFrame:
-        """Get all budget rules for a specific project."""
+        """
+        Get all budget rules for a specific project category.
+
+        Parameters
+        ----------
+        category : str
+            Project category name.
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules for the project.
+
+        Raises
+        ------
+        ValueError
+            If no rules exist for the given project category.
+        """
         rules = self.get_all_rules()
         if rules.empty:
             raise ValueError(f"Project {category} not found")
@@ -540,7 +827,19 @@ class ProjectBudgetService(BudgetService):
         return rules
 
     def create_project(self, category: str, total_budget: float) -> None:
-        """Create a new project budget."""
+        """
+        Create a new project budget with a total rule and per-tag sub-rules.
+
+        Adds a ``Total Budget`` rule for the category and individual zero-amount
+        rules for every tag in the category.
+
+        Parameters
+        ----------
+        category : str
+            Project category name (must already exist in categories config).
+        total_budget : float
+            Overall spending limit for the project.
+        """
         self.add_rule(
             name=TOTAL_BUDGET,
             amount=total_budget,
@@ -558,36 +857,90 @@ class ProjectBudgetService(BudgetService):
             )
 
     def update_project(self, category: str, total_budget: float) -> None:
-        """Update the total budget for a project."""
+        """
+        Update the total budget amount for an existing project.
+
+        Parameters
+        ----------
+        category : str
+            Project category name.
+        total_budget : float
+            New overall spending limit for the project.
+        """
         rules = self.get_rules_for_project(category)
         total_rule = rules.loc[rules[TAGS] == [ALL_TAGS]]
         rule_id = int(total_rule.iloc[0][ID])
         self.update_rule(rule_id, amount=total_budget)
 
     def delete_project(self, category: str) -> None:
-        """Delete all budget rules for a project."""
+        """
+        Delete all budget rules for a project category.
+
+        Parameters
+        ----------
+        category : str
+            Project category name whose rules should be deleted.
+        """
         self.budget_repository.delete_by_category(category)
 
     def delete_project_tag_rule(self, category: str, tag: str) -> None:
-        """Delete a specific tag rule from a project."""
+        """
+        Delete a specific tag rule from a project.
+
+        Parameters
+        ----------
+        category : str
+            Project category name.
+        tag : str
+            Tag whose budget rule should be deleted.
+        """
         self.budget_repository.delete_by_category_and_tags(category, tag)
 
     def get_project_transactions(
         self, project: str, include_split_parents: bool = False
     ) -> pd.DataFrame:
-        """Get all transactions for a specific project."""
+        """
+        Get all transactions categorised under a project category.
+
+        Parameters
+        ----------
+        project : str
+            Project category name.
+        include_split_parents : bool, optional
+            When ``True``, include split parent transactions. Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Transactions where category equals ``project``.
+        """
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
         return all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
 
     def get_all_projects_names(self) -> list[str]:
-        """Get all project names."""
+        """
+        Get the names of all project categories that have budget rules.
+
+        Returns
+        -------
+        list[str]
+            Unique category names from all project budget rules.
+        """
         rules = self.get_all_rules()
         return rules[CATEGORY].unique().tolist()
 
     def get_available_categories_for_new_project(self) -> list[str]:
-        """Get available categories for a new project."""
+        """
+        Get categories that can be used for a new project (not already tracked).
+
+        Returns
+        -------
+        list[str]
+            Category names from the categories config that are not already
+            used as project budget categories.
+        """
         current_projects = self.get_all_projects_names()
         new_possible_projects = [
             cat
@@ -602,8 +955,27 @@ class ProjectBudgetService(BudgetService):
         self, project: str, include_split_parents: bool = False
     ) -> dict:
         """
-        Get project details including rules and transactions, with an 'Other' category
-        for unmatched transactions.
+        Get project details including rules and transactions.
+
+        Matches project transactions to budget rules. Any transactions whose
+        tag does not match an existing rule automatically trigger creation of
+        a new zero-budget rule for that tag (side-effect for new tags).
+
+        Parameters
+        ----------
+        project : str
+            Project category name.
+        include_split_parents : bool, optional
+            When ``True``, include split parent transactions. Default is ``False``.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``name`` – project category name.
+            - ``rules`` – list of rule view dicts (same shape as ``get_monthly_budget_view``).
+            - ``total_spent`` – total amount spent on the project.
         """
         rules = self.get_rules_for_project(project)
         transactions = self.get_project_transactions(project, include_split_parents)

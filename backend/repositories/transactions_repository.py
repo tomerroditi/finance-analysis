@@ -64,17 +64,40 @@ class ServiceRepository:
     unique_columns = ["id", "provider", "date", "amount"]
 
     def __init__(self, db: Session):
+        """Initialize the repository with a database session.
+
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session.
+        """
         self.db = db
 
     def get_table(self) -> pd.DataFrame:
-        """Get the transactions table as a DataFrame."""
+        """Get all transactions as a DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            All rows from this service's transaction table.
+        """
         stmt = select(self.model)
         return pd.read_sql(stmt, self.db.bind)
 
     def update_tagging_by_unique_id(
         self, unique_id: int, category: str, tag: str
     ) -> None:
-        """Update category and tag for a transaction by ID."""
+        """Update category and tag for a transaction by unique_id.
+
+        Parameters
+        ----------
+        unique_id : int
+            Transaction unique_id to update.
+        category : str
+            New category value (may be None to clear).
+        tag : str
+            New tag value (may be None to clear).
+        """
         stmt = (
             update(self.model)
             .where(self.model.unique_id == int(unique_id))
@@ -84,7 +107,18 @@ class ServiceRepository:
         self.db.commit()
 
     def delete_transaction_by_unique_id(self, unique_id: int) -> bool:
-        """Delete a transaction by its unique_id."""
+        """Delete a transaction by its unique_id.
+
+        Parameters
+        ----------
+        unique_id : int
+            unique_id of the transaction to delete.
+
+        Returns
+        -------
+        bool
+            True if the transaction was deleted, False if not found or on error.
+        """
         try:
             import logging
 
@@ -105,7 +139,20 @@ class ServiceRepository:
             return False
 
     def update_transaction_by_unique_id(self, unique_id: int, updates: dict) -> bool:
-        """Update a transaction by its unique_id."""
+        """Update arbitrary fields of a transaction by unique_id.
+
+        Parameters
+        ----------
+        unique_id : int
+            unique_id of the transaction to update.
+        updates : dict
+            Mapping of field names to new values. No-op if empty.
+
+        Returns
+        -------
+        bool
+            True if the transaction was updated, False if not found or on error.
+        """
         if not updates:
             return True
 
@@ -123,6 +170,13 @@ class ServiceRepository:
             return False
 
     def nullify_category(self, category: str) -> None:
+        """Set category and tag to NULL for all transactions with the given category.
+
+        Parameters
+        ----------
+        category : str
+            Category name to match.
+        """
         stmt = (
             update(self.model)
             .where(self.model.category == category)
@@ -134,6 +188,17 @@ class ServiceRepository:
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
     ) -> None:
+        """Reassign category for all transactions with a specific category/tag pair.
+
+        Parameters
+        ----------
+        old_category : str
+            Current category to match.
+        new_category : str
+            New category to assign.
+        tag : str
+            Tag to match (only transactions with this tag are updated).
+        """
         stmt = (
             update(self.model)
             .where(self.model.category == old_category)
@@ -144,6 +209,15 @@ class ServiceRepository:
         self.db.commit()
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """Set category and tag to NULL for transactions matching both values.
+
+        Parameters
+        ----------
+        category : str
+            Category to match.
+        tag : str
+            Tag to match.
+        """
         stmt = (
             update(self.model)
             .where(self.model.category == category)
@@ -154,7 +228,22 @@ class ServiceRepository:
         self.db.commit()
 
     def add_transaction(self, transaction: ManualTransactionDTO) -> bool:
-        """Add a new transaction to the database."""
+        """Insert a manually created transaction into this service's table.
+
+        Parameters
+        ----------
+        transaction : ManualTransactionDTO
+            Data transfer object with all transaction fields.
+
+        Returns
+        -------
+        bool
+            True if successfully inserted, False on error.
+
+        Notes
+        -----
+        Assigns a new id by incrementing the current maximum id in the table.
+        """
         try:
             # id is stored as TEXT but contains number strings; cast to integer for MAX
             max_id = self.db.execute(
@@ -190,7 +279,15 @@ class CreditCardRepository(ServiceRepository):
     table = Tables.CREDIT_CARD.value
 
     def get_unique_accounts_tags(self) -> list:
-        """get unique accounts according to provider, account name, and account number."""
+        """Get unique account tag strings for all credit card accounts.
+
+        Returns
+        -------
+        list[str]
+            Strings in the format ``"provider - account_name - XXXX"`` where
+            XXXX is the last 4 digits of the account number.  One entry per
+            unique (provider, account_name, account_number) combination.
+        """
         accounts = (
             self.db.query(
                 self.model.provider, self.model.account_name, self.model.account_number
@@ -235,6 +332,19 @@ class TransactionsRepository:
     unique_columns = ["id", "provider", "date", "amount"]
 
     def __init__(self, db: Session):
+        """Initialize the repository with sub-repositories for each transaction type.
+
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session shared across all sub-repositories.
+
+        Notes
+        -----
+        Builds a ``repo_map`` keyed by both table name and service name variants
+        (e.g. ``"credit_card_transactions"`` and ``"credit_card"``) to support
+        flexible source-based dispatch.
+        """
         self.db = db
         self.cc_repo = CreditCardRepository(db)
         self.bank_repo = BankRepository(db)
@@ -254,8 +364,25 @@ class TransactionsRepository:
         }
 
     def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
-        """
-        Save scraped transactions avoiding duplicates.
+        """Persist scraped transactions, skipping rows that already exist.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame of scraped transactions to insert.  Must contain columns:
+            id, provider, date, amount plus any other transaction fields.
+        table_name : str
+            Target table name; must be one of the four supported tables.
+
+        Raises
+        ------
+        ValueError
+            If ``table_name`` is not in the list of supported tables.
+
+        Notes
+        -----
+        Deduplication is based on the composite key (id, provider, date, amount).
+        Only rows not already present in the DB are inserted.
         """
         if table_name not in self.tables:
             raise ValueError(f"table_name should be one of {self.tables}")
@@ -312,6 +439,25 @@ class TransactionsRepository:
         transaction: ManualTransactionDTO,
         service: str,
     ) -> bool:
+        """Add a manually created transaction to the appropriate sub-repository.
+
+        Parameters
+        ----------
+        transaction : ManualTransactionDTO
+            Data transfer object with all transaction fields.
+        service : str
+            Target service; must be ``"cash"`` or ``"manual_investments"``.
+
+        Returns
+        -------
+        bool
+            True if successfully inserted.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` is not ``"cash"`` or ``"manual_investments"``.
+        """
         if service == Services.CASH.value:
             return self.cash_repo.add_transaction(transaction)
         elif service == Services.MANUAL_INVESTMENTS.value:
@@ -338,6 +484,14 @@ class TransactionsRepository:
         exclude_services : list[T_service] | None
             When fetching all services (``service=None``), skip these services.
             Ignored when ``service`` is specified.
+
+        Returns
+        -------
+        pd.DataFrame
+            Combined transactions from all requested sources.  Split parents are
+            replaced by their split children (type ``"split_child"``) unless
+            ``include_split_parents=True``.  Date column is normalized to
+            ``YYYY-MM-DD`` string format.
         """
         df = self._get_base_transactions(service, exclude_services)
 
@@ -354,7 +508,21 @@ class TransactionsRepository:
         service: T_service | None,
         exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
-        """Fetch base transactions from repositories."""
+        """Fetch raw transactions from the appropriate repositories.
+
+        Parameters
+        ----------
+        service : T_service | None
+            If provided, fetch only from that service's repository.
+            If None, fetch from all repositories minus any exclusions.
+        exclude_services : list[T_service] | None
+            Services to skip when fetching all (ignored when service is given).
+
+        Returns
+        -------
+        pd.DataFrame
+            Concatenated transactions; empty DataFrame if no data found.
+        """
         if service is not None:
             repo = self.get_repo_by_source(service)
             return repo.get_table()
@@ -384,13 +552,37 @@ class TransactionsRepository:
         return pd.concat(dfs, ignore_index=True)
 
     def _filter_split_parents(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove split parent transactions from the dataframe."""
+        """Drop rows where type is ``"split_parent"`` from the DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input transactions DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with split_parent rows removed.
+        """
         if df.empty or "type" not in df.columns:
             return df
         return df[df["type"] != "split_parent"]
 
     def _build_split_child(self, split: pd.Series) -> dict | None:
-        """Build a split child row from a split record and its parent transaction."""
+        """Construct a split-child row dict from a split record and its parent.
+
+        Parameters
+        ----------
+        split : pd.Series
+            A row from the split_transactions table.
+
+        Returns
+        -------
+        dict | None
+            Row dict with parent transaction fields overridden by split-specific
+            values (unique_id, amount, category, tag, type="split_child").
+            Returns None if the parent transaction cannot be found.
+        """
         parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
         source = split[SplitTransactionsTableFields.SOURCE.value]
 
@@ -424,7 +616,20 @@ class TransactionsRepository:
         service: T_service | None,
         exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
-        """Get all split children, optionally filtered by service."""
+        """Build split-child rows for all splits, filtered by service if given.
+
+        Parameters
+        ----------
+        service : T_service | None
+            If provided, include only splits whose source maps to this service.
+        exclude_services : list[T_service] | None
+            If provided, exclude splits whose source maps to any of these services.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame of split-child rows; empty if no splits exist or all filtered.
+        """
         splits_df = self.split_repo.get_data()
 
         if splits_df.empty:
@@ -470,7 +675,22 @@ class TransactionsRepository:
         service: T_service | None,
         exclude_services: list[T_service] | None = None,
     ) -> pd.DataFrame:
-        """Add split children to the transactions dataframe."""
+        """Concatenate split-child rows onto the transactions DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Base transactions DataFrame (with split parents already filtered).
+        service : T_service | None
+            Passed through to ``_get_split_children`` for filtering.
+        exclude_services : list[T_service] | None
+            Passed through to ``_get_split_children`` for filtering.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with split children appended; original df if none exist.
+        """
         children_df = self._get_split_children(service, exclude_services)
 
         if children_df.empty:
@@ -479,7 +699,19 @@ class TransactionsRepository:
         return pd.concat([df, children_df], ignore_index=True)
 
     def _normalize_dates(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Normalize date column to YYYY-MM-DD format."""
+        """Convert the date column to consistent YYYY-MM-DD string format.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame containing a ``date`` column.
+
+        Returns
+        -------
+        pd.DataFrame
+            Same DataFrame with ``date`` column cast to ``"%Y-%m-%d"`` strings.
+            Returns df unchanged if empty or if ``date`` column is absent.
+        """
         if df.empty or "date" not in df.columns:
             return df
         df["date"] = pd.to_datetime(df["date"]).dt.strftime(r"%Y-%m-%d")
@@ -488,6 +720,29 @@ class TransactionsRepository:
     def split_transaction(
         self, unique_id: int, source: str, splits: list[dict]
     ) -> bool:
+        """Split a transaction into multiple partial amounts across categories.
+
+        Parameters
+        ----------
+        unique_id : int
+            unique_id of the transaction to split.
+        source : str
+            Table name of the source repository.
+        splits : list[dict]
+            List of split dicts, each with keys: amount, category, tag.
+
+        Returns
+        -------
+        bool
+            True if the split was committed successfully, False on error
+            (rolls back the transaction in that case).
+
+        Notes
+        -----
+        Marks the original transaction as type ``"split_parent"`` and creates
+        one split_transaction record per element in ``splits``.  Any existing
+        splits for this transaction are replaced.
+        """
         try:
             repo = self.get_repo_by_source(source)
             repo.update_transaction_by_unique_id(
@@ -509,6 +764,25 @@ class TransactionsRepository:
             return False
 
     def revert_split(self, unique_id: int, source: str) -> bool:
+        """Revert a split transaction back to a normal transaction.
+
+        Parameters
+        ----------
+        unique_id : int
+            unique_id of the split-parent transaction to revert.
+        source : str
+            Table name of the source repository.
+
+        Returns
+        -------
+        bool
+            True if reverted successfully, False on error.
+
+        Notes
+        -----
+        Sets the transaction type back to ``"normal"`` and deletes all associated
+        split_transaction records.
+        """
         try:
             repo = self.get_repo_by_source(source)
             repo.update_transaction_by_unique_id(str(unique_id), {"type": "normal"})
@@ -520,6 +794,24 @@ class TransactionsRepository:
             return False
 
     def get_repo_by_source(self, source: str) -> ServiceRepository:
+        """Look up the sub-repository for a given source/service name.
+
+        Parameters
+        ----------
+        source : str
+            Table name or service name (e.g. ``"credit_card_transactions"`` or
+            ``"credit_card"``).
+
+        Returns
+        -------
+        ServiceRepository
+            The matching sub-repository instance.
+
+        Raises
+        ------
+        ValueError
+            If ``source`` is not a recognized key in the repo_map.
+        """
         try:
             return self.repo_map.get(source)
         except Exception:
@@ -528,14 +820,36 @@ class TransactionsRepository:
     def bulk_update_tagging(
         self, transactions: list[dict], category: Optional[str], tag: Optional[str]
     ) -> None:
-        """
-        Update tagging for multiple transactions.
+        """Update category and tag for a batch of transactions.
+
+        Parameters
+        ----------
+        transactions : list[dict]
+            Each dict must have keys ``"source"`` (table name) and
+            ``"unique_id"`` identifying the transaction to update.
+        category : str | None
+            New category to assign (None clears the field).
+        tag : str | None
+            New tag to assign (None clears the field).
         """
         for tx in transactions:
             repo = self.get_repo_by_source(tx["source"])
             repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
+        """Get the most recent transaction date in a given table.
+
+        Parameters
+        ----------
+        table_name : str
+            Source table name to query.
+
+        Returns
+        -------
+        datetime | None
+            Latest transaction date parsed from ``YYYY-MM-DD``, or None if
+            the table is empty or the date cannot be parsed.
+        """
         repo = self.get_repo_by_source(table_name)
         result = self.db.execute(
             select(repo.model.date).order_by(repo.model.date.desc()).limit(1)
@@ -549,6 +863,19 @@ class TransactionsRepository:
         return None
 
     def get_earliest_date_from_table(self, table_name: str) -> datetime | None:
+        """Get the earliest transaction date in a given table.
+
+        Parameters
+        ----------
+        table_name : str
+            Source table name to query.
+
+        Returns
+        -------
+        datetime | None
+            Earliest transaction date parsed from ``YYYY-MM-DD``, or None if
+            the table is empty or the date cannot be parsed.
+        """
         repo = self.get_repo_by_source(table_name)
         result = self.db.execute(
             select(repo.model.date).order_by(repo.model.date.asc()).limit(1)
@@ -562,9 +889,31 @@ class TransactionsRepository:
         return None
 
     def get_all_table_names(self) -> list[str]:
+        """Return the list of all transaction table names.
+
+        Returns
+        -------
+        list[str]
+            Copy of the class-level ``tables`` list containing the four
+            transaction table name strings.
+        """
         return self.tables.copy()
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
+        """Set category and tag to NULL across all transaction tables.
+
+        Parameters
+        ----------
+        category : str
+            Category to match.
+        tag : str
+            Tag to match.
+
+        Notes
+        -----
+        Delegates to all four sub-repositories (credit card, bank, cash,
+        manual investments).
+        """
         self.cc_repo.nullify_category_and_tag(category, tag)
         self.bank_repo.nullify_category_and_tag(category, tag)
         self.cash_repo.nullify_category_and_tag(category, tag)
@@ -573,6 +922,21 @@ class TransactionsRepository:
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
     ) -> None:
+        """Update category for a specific tag across all transaction tables.
+
+        Parameters
+        ----------
+        old_category : str
+            Current category to match.
+        new_category : str
+            New category to assign.
+        tag : str
+            Tag to match.
+
+        Notes
+        -----
+        Delegates to all four sub-repositories.
+        """
         self.cc_repo.update_category_for_tag(old_category, new_category, tag)
         self.bank_repo.update_category_for_tag(old_category, new_category, tag)
         self.cash_repo.update_category_for_tag(old_category, new_category, tag)
@@ -581,12 +945,41 @@ class TransactionsRepository:
         )
 
     def nullify_category(self, category: str) -> None:
+        """Set category and tag to NULL for all transactions in a category.
+
+        Parameters
+        ----------
+        category : str
+            Category name to clear across all transaction tables.
+
+        Notes
+        -----
+        Delegates to all four sub-repositories.
+        """
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)
         self.cash_repo.nullify_category(category)
         self.manual_investments_repo.nullify_category(category)
 
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
+        """Retrieve a single transaction row by its unique_id.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The unique_id to look up.
+
+        Returns
+        -------
+        pd.Series
+            The matching transaction row.
+
+        Raises
+        ------
+        ValueError
+            If no transaction with that unique_id is found, or if multiple rows
+            match (which should not happen in practice).
+        """
         df = self.get_table()
         transaction = df[df["unique_id"] == transaction_id]
         if transaction.empty:

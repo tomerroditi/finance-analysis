@@ -7,8 +7,13 @@ import os
 
 
 class AppConfig:
-    """
-    Singleton configuration manager.
+    """Singleton configuration manager for the Finance Analysis backend.
+
+    Provides a single shared instance (via ``__new__``) that controls whether
+    the application runs in production or test mode. In test mode all paths
+    point to an isolated ``test_env/`` subdirectory so tests never touch
+    production data. Paths can also be overridden via environment variables
+    (``FAD_USER_DIR``, ``FAD_DB_PATH``, ``FAD_CREDENTIALS_PATH``, etc.).
     """
 
     _instance = None
@@ -20,15 +25,27 @@ class AppConfig:
     )
 
     def __new__(cls):
+        """Return the shared singleton instance, creating it on first call."""
         if cls._instance is None:
             cls._instance = super(AppConfig, cls).__new__(cls)
         return cls._instance
 
     @property
     def is_test_mode(self) -> bool:
+        """Return ``True`` when the application is running in test mode."""
         return self._test_mode
 
     def set_test_mode(self, enabled: bool):
+        """Enable or disable test mode.
+
+        When enabling, the test user directory is created if it does not exist.
+
+        Parameters
+        ----------
+        enabled : bool
+            ``True`` to switch to the isolated test environment,
+            ``False`` to switch back to production.
+        """
         self._test_mode = enabled
         # Ensure test directory exists if entering test mode
         if enabled:

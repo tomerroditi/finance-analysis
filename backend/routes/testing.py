@@ -1,3 +1,11 @@
+"""
+Testing / development utility routes.
+
+Provides endpoints for toggling test mode, which switches the application
+to an isolated environment (separate DB, credentials, and categories) to
+allow safe testing without affecting production data.
+"""
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -20,11 +28,23 @@ async def toggle_test_mode(
     request: TestModeRequest,
     db: Session = Depends(get_database),
 ) -> dict[str, str | bool]:
-    """
-    Toggle the application's test mode.
+    """Toggle the application's test mode on or off.
 
-    When enabled, the application switches to a separate test environment
-    (database, credentials, categories).
+    When enabled, the app switches to an isolated test environment with a
+    separate SQLite database, test credentials, and test categories. The
+    database engine and credentials cache are reset so all subsequent
+    requests use the test environment. When disabling, the engine resets
+    back to the production database.
+
+    Parameters
+    ----------
+    request : TestModeRequest
+        ``enabled`` flag indicating the desired test mode state.
+
+    Returns
+    -------
+    dict
+        ``{"status": "success", "test_mode": bool}`` reflecting the new state.
     """
     config = AppConfig()
 

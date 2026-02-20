@@ -105,7 +105,25 @@ async def delete_budget_rule(
 async def copy_previous_month_rules(
     year: int, month: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Copy budget rules from the previous month."""
+    """Copy budget rules from the previous calendar month into the given month.
+
+    Parameters
+    ----------
+    year : int
+        Target year to copy rules into.
+    month : int
+        Target month (1–12) to copy rules into.
+
+    Returns
+    -------
+    dict
+        ``{"status": "success", "message": str}`` on success.
+
+    Raises
+    ------
+    HTTPException
+        404 if the previous month has no rules to copy.
+    """
     service = MonthlyBudgetService(db)
     budget_rules = service.get_all_rules()
     result = service.copy_last_month_rules(year, month, budget_rules)
@@ -126,7 +144,24 @@ async def get_monthly_analysis(
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
-    """Get full monthly budget analysis."""
+    """Return full budget vs. actual analysis for a calendar month.
+
+    Parameters
+    ----------
+    year : int
+        The year of the month to analyse.
+    month : int
+        The month (1–12) to analyse.
+    include_split_parents : bool, optional
+        When ``True``, include the original parent transactions of splits
+        alongside the individual split rows. Defaults to ``False``.
+
+    Returns
+    -------
+    dict
+        Monthly analysis including budget rules, actual spending per
+        category/tag, and remaining amounts.
+    """
     service = MonthlyBudgetService(db)
     return service.get_monthly_analysis(year, month, include_split_parents)
 

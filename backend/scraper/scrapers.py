@@ -45,24 +45,32 @@ def get_scraper(
     start_date: datetime,
     process_id: int,
 ):
-    """
-    Get the scraper object for the specified service and provider
+    """Return the appropriate Scraper subclass for the given service and provider.
 
     Parameters
     ----------
     service_name : str
-        The name of the service of the scraper. banks, credit_cards, insurance, etc.
+        Service type: ``credit_cards``, ``banks``, or ``insurance``.
     provider_name : str
-        The name of the provider of the scraper. isracard, hapoalim, max, etc.
+        Provider identifier (e.g. ``isracard``, ``hapoalim``, ``max``).
     account_name : str
-        The name of the account to log the data into the database. used to allow multiple accounts for the same provider
+        User-assigned account label; allows multiple accounts per provider.
     credentials : dict
-        A dictionary containing the credentials to log in to the websites
+        Login fields for the provider (keys vary per provider).
+    start_date : datetime.date
+        Oldest transaction date to fetch.
+    process_id : int
+        Scraping history record ID for status tracking.
 
     Returns
     -------
     Scraper
-        The scraper object for the specified service and provider
+        Concrete scraper instance ready to call ``pull_data_to_db``.
+
+    Raises
+    ------
+    ValueError
+        If ``service_name`` is not supported.
     """
     if service_name == "credit_cards":
         if provider_name == "isracard":
@@ -201,16 +209,20 @@ class Scraper(ABC):
         start_date: datetime.date,
         process_id: int,
     ):
-        """
-        Initialize the Scraper object with the credentials to be used to log in to the websites
+        """Initialise the scraper with account details and session metadata.
 
         Parameters
         ----------
         account_name : str
-            The name of the account to use to log data into the database
+            User-assigned label for the account; used to identify rows in the DB.
         credentials : dict
-            A dictionary containing the credentials to log in to the websites
-
+            Provider login fields (keys vary by provider, e.g. ``username``,
+            ``password``, ``id``, ``phoneNumber``). Passwords are retrieved from
+            the OS Keyring by the service layer before being passed here.
+        start_date : datetime.date
+            Oldest transaction date to fetch from the provider.
+        process_id : int
+            Scraping history record ID used to update the status on completion.
         """
         self.account_name = account_name
         self.credentials = credentials
@@ -278,11 +290,12 @@ class Scraper(ABC):
         pass
 
     def pull_data_to_db(self):
-        """
-        Pull data from the specified provider and save it to the database
+        """Scrape transactions and persist them to the database.
 
-        Parameters
-        ----------
+        Calls ``scrape_data``, enriches the DataFrame with account/provider
+        columns, saves to the appropriate table, applies auto-tagging rules,
+        and (for bank scrapers) recalculates bank balances. Records the outcome
+        in the scraping history table regardless of success or failure.
         """
         print(
             f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {self.provider_name}: {self.account_name}: Scraping data from {self.provider_name} ({self.start_date}) started",
@@ -648,13 +661,12 @@ class Scraper(ABC):
         self.otp_event.set()  # Notify that the OTP code is available
 
     def _record_scraping_attempt(self, id_: int):
-        """
-        Record the scraping attempt in the history database.
+        """Update the scraping history record with the final status.
 
         Parameters
         ----------
-        start_date : str | datetime.date
-            The date from which to start pulling the data
+        id_ : int
+            Scraping history record ID (same as ``process_id`` passed at init).
         """
         # Determine the status based on whether we have data and no errors
         if (
@@ -731,6 +743,12 @@ class Scraper(ABC):
 # Credit Card Scrapers
 ############################################
 class CreditCardScraper(Scraper, ABC):
+    """Abstract base class for all credit card provider scrapers.
+
+    Subclasses must implement ``script_path`` and ``scrape_data``.
+    Writes to the ``credit_card_transactions`` table.
+    """
+
     service_name = "credit_cards"
     table_name = "credit_card_transactions"
     table_unique_key = "id"
@@ -1009,6 +1027,13 @@ class DummyCreditCardTFAScraper(CreditCardScraper):
 # Bank Scrapers
 ############################################
 class BankScraper(Scraper, ABC):
+    """Abstract base class for all bank provider scrapers.
+
+    Subclasses must implement ``script_path`` and ``scrape_data``.
+    Writes to the ``bank_transactions`` table and triggers bank balance
+    recalculation after each successful scrape.
+    """
+
     service_name = "banks"
     table_name = "bank_transactions"
     table_unique_key = "id"
@@ -1431,6 +1456,12 @@ class YahavScraper(BankScraper):
 # Insurance Scrapers
 ############################################
 class InsuranceScraper(Scraper):
+    """Scraper base for insurance providers (currently a placeholder).
+
+    Insurance scraping is not fully implemented; this class exists as a
+    stub for future provider scrapers. ``script_path`` remains abstract.
+    """
+
     service_name = "insurance"
     table_name = "insurance_data"
     table_unique_key = "id"

@@ -26,6 +26,18 @@ class InvestmentsService:
     """
 
     def __init__(self, db: Session):
+        """
+        Initialize the investments service.
+
+        ``TransactionsService`` is imported lazily to avoid a circular import:
+        ``TransactionsService`` also lazy-imports ``InvestmentsService`` inside
+        its ``create_transaction`` and ``delete_transaction`` methods.
+
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy session for database operations.
+        """
         self.db = db
         self.investments_repo = InvestmentsRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -34,13 +46,37 @@ class InvestmentsService:
         self.transactions_service = TransactionsService(db)
 
     def get_all_investments(self, include_closed: bool = False) -> List[Dict[str, Any]]:
-        """Get all investments as a list of JSON-safe dicts."""
+        """
+        Get all investments as a list of JSON-safe dicts.
+
+        Parameters
+        ----------
+        include_closed : bool, optional
+            When ``True``, closed investments are included. Default is ``False``.
+
+        Returns
+        -------
+        list[dict]
+            Investment records with ``NaN`` values replaced by ``None``.
+        """
         df = self.investments_repo.get_all_investments(include_closed=include_closed)
         df = df.replace({np.nan: None})
         return df.to_dict(orient="records")
 
     def get_investment(self, investment_id: int) -> Dict[str, Any]:
-        """Get a single investment by ID as a JSON-safe dict."""
+        """
+        Get a single investment by ID as a JSON-safe dict.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to retrieve.
+
+        Returns
+        -------
+        dict
+            Investment record with ``NaN`` values replaced by ``None``.
+        """
         df = self.investments_repo.get_by_id(investment_id)
         df = df.replace({np.nan: None})
         return df.iloc[0].to_dict()
@@ -51,7 +87,29 @@ class InvestmentsService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get detailed analysis for a specific investment with date defaults."""
+        """
+        Get detailed profit/loss metrics and balance history for an investment.
+
+        Defaults ``start_date`` to the first transaction date (or one year ago)
+        and ``end_date`` to today when not provided.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to analyse.
+        start_date : str, optional
+            ISO date string (``YYYY-MM-DD``) for the start of the balance history.
+        end_date : str, optional
+            ISO date string (``YYYY-MM-DD``) for the end of the balance history.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``metrics`` – profit/loss metrics dict (from ``calculate_profit_loss``).
+            - ``history`` – list of daily balance dicts (from ``calculate_balance_over_time``).
+        """
         metrics = self.calculate_profit_loss(investment_id)
         if not start_date:
             start_date = metrics.get("first_transaction_date") or (
@@ -64,23 +122,62 @@ class InvestmentsService:
         return {"metrics": metrics, "history": history}
 
     def create_investment(self, **kwargs) -> None:
-        """Create a new investment."""
+        """
+        Create a new investment record.
+
+        Parameters
+        ----------
+        **kwargs
+            Field values forwarded to ``InvestmentsRepository.create_investment``.
+        """
         self.investments_repo.create_investment(**kwargs)
 
     def update_investment(self, investment_id: int, **updates) -> None:
-        """Update an investment."""
+        """
+        Update an investment record.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to update.
+        **updates
+            Field names and new values forwarded to the repository.
+        """
         self.investments_repo.update_investment(investment_id, **updates)
 
     def close_investment(self, investment_id: int, closed_date: str) -> None:
-        """Close an investment."""
+        """
+        Mark an investment as closed.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to close.
+        closed_date : str
+            Closure date in ``YYYY-MM-DD`` format.
+        """
         self.investments_repo.close_investment(investment_id, closed_date)
 
     def reopen_investment(self, investment_id: int) -> None:
-        """Reopen a closed investment."""
+        """
+        Reopen a previously closed investment.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to reopen.
+        """
         self.investments_repo.reopen_investment(investment_id)
 
     def delete_investment(self, investment_id: int) -> None:
-        """Delete an investment."""
+        """
+        Delete an investment record.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment to delete.
+        """
         self.investments_repo.delete_investment(investment_id)
 
     def recalculate_prior_wealth(self, investment_id: int) -> None:
@@ -148,7 +245,18 @@ class InvestmentsService:
 
     def get_portfolio_overview(self) -> Dict[str, Any]:
         """
-        Get portfolio-level metrics and allocation data.
+        Get portfolio-level metrics and allocation data for all open investments.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``total_value`` – sum of current balances across all open investments.
+            - ``total_profit`` – total value minus net invested (deposits - withdrawals).
+            - ``portfolio_roi`` – ``(total_value / total_deposits - 1) * 100`` percentage.
+            - ``allocation`` – list of ``{"name": str, "balance": float, "type": str}``
+              dicts per investment.
         """
         investments = self.investments_repo.get_all_investments(include_closed=False)
 
@@ -194,7 +302,19 @@ class InvestmentsService:
 
     def calculate_current_balance(self, investment_id: int) -> float:
         """
-        Calculate current balance from ALL transaction sources.
+        Calculate the current balance for an investment from all its transactions.
+
+        Returns ``0.0`` for closed investments.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment.
+
+        Returns
+        -------
+        float
+            Current balance (deposits negated, so positive deposits → positive balance).
         """
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
@@ -214,8 +334,26 @@ class InvestmentsService:
         self, investment_id: int, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
         """
-        Calculate balance at daily intervals for charting.
-        Returns a list of dicts suitable for JSON response.
+        Calculate balance at daily intervals between two dates for charting.
+
+        For closed investments, the date range is capped at the closed date.
+        An extra ``{"date": closed_date, "balance": 0.0}`` point is appended
+        to visualise the closure.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment.
+        start_date : str
+            Start of the date range in ``YYYY-MM-DD`` format.
+        end_date : str
+            End of the date range in ``YYYY-MM-DD`` format.
+
+        Returns
+        -------
+        list[dict]
+            List of ``{"date": str, "balance": float}`` dicts, one per day.
+            Empty if the investment has no transactions.
         """
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
@@ -252,7 +390,30 @@ class InvestmentsService:
 
     def calculate_profit_loss(self, investment_id: int) -> Dict[str, Any]:
         """
-        Calculate comprehensive profit/loss metrics.
+        Calculate comprehensive profit/loss metrics for an investment.
+
+        For closed investments, ``current_balance`` is ``0.0`` and
+        ``absolute_profit_loss`` is ``total_withdrawals - total_deposits``.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``total_deposits`` – absolute sum of negative transaction amounts.
+            - ``total_withdrawals`` – sum of positive transaction amounts.
+            - ``net_invested`` – deposits minus withdrawals.
+            - ``current_balance`` – current reconstructed balance (0 if closed).
+            - ``absolute_profit_loss`` – current balance minus net invested.
+            - ``roi_percentage`` – ``(final_value / total_deposits - 1) * 100``.
+            - ``total_years`` – years between first transaction and today/close date.
+            - ``cagr_percentage`` – compound annual growth rate as a percentage.
+            - ``first_transaction_date`` – date string of the first transaction.
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
@@ -392,7 +553,21 @@ class InvestmentsService:
     def _get_all_transactions_for_investment(
         self, category: str, tag: str
     ) -> pd.DataFrame:
-        """Fetch ALL transactions for given category/tag."""
+        """
+        Fetch all transactions for a given investment identified by category and tag.
+
+        Parameters
+        ----------
+        category : str
+            Investment category (e.g. ``"Investments"``).
+        tag : str
+            Investment tag identifying the specific instrument.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching transactions from the merged analysis table.
+        """
         return self.transactions_service.get_transactions_by_tag(category, tag)
 
     def _calculate_balance_from_transactions(

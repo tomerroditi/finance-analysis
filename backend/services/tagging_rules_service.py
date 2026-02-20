@@ -27,9 +27,23 @@ TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
 class TaggingRulesService:
     """
     Service for managing rule-based tagging operations with recursive logic.
+
+    Rules are stored as recursive condition trees (``AND``/``OR`` groups and
+    ``CONDITION`` leaves). The service supports creating, updating, deleting,
+    applying, and previewing rules across ``credit_card_transactions`` and
+    ``bank_transactions`` tables. Conflict detection prevents overlapping rules
+    that would assign different category/tag pairs to the same transactions.
     """
 
     def __init__(self, db: Session):
+        """
+        Initialize the tagging rules service.
+
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy session for database operations.
+        """
         self.db = db
         self.rules_repo = TaggingRulesRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -37,7 +51,15 @@ class TaggingRulesService:
         self.transactions_service = TransactionsService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
-        """Get all rules."""
+        """
+        Get all tagging rules.
+
+        Returns
+        -------
+        pd.DataFrame
+            All rules with columns including ``id``, ``name``, ``conditions``,
+            ``category``, ``tag``, and ``priority``.
+        """
         return self.rules_repo.get_all_rules()
 
     def add_rule(
@@ -49,6 +71,32 @@ class TaggingRulesService:
     ) -> Tuple[int, int]:
         """
         Add a new tagging rule with integrity and conflict checks.
+
+        Validates the condition structure, checks for conflicts with existing
+        rules, persists the rule, and immediately applies it to matching
+        untagged transactions.
+
+        Parameters
+        ----------
+        name : str
+            Human-readable name for the rule.
+        conditions : dict
+            Recursive condition tree (``AND``/``OR``/``CONDITION`` nodes).
+        category : str
+            Category to assign to matching transactions.
+        tag : str
+            Tag to assign to matching transactions.
+
+        Returns
+        -------
+        tuple[int, int]
+            ``(rule_id, n_tagged)`` where ``rule_id`` is the new rule's ID
+            and ``n_tagged`` is the number of transactions immediately tagged.
+
+        Raises
+        ------
+        BadRequestException
+            If condition validation or conflict checking fails.
         """
         # 1. Integrity Check
         self.validate_rule_integrity(conditions)
@@ -122,7 +170,28 @@ class TaggingRulesService:
 
     def update_rule(self, rule_id: int, **kwargs) -> int:
         """
-        Update an existing rule with validation and conflict checks.
+        Update an existing tagging rule with validation and conflict checks.
+
+        After updating, the rule is immediately re-applied to matching transactions.
+
+        Parameters
+        ----------
+        rule_id : int
+            ID of the rule to update.
+        **kwargs
+            Fields to update (e.g. ``name``, ``conditions``, ``category``, ``tag``).
+
+        Returns
+        -------
+        int
+            Number of transactions tagged by the updated rule.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule with ``rule_id`` exists.
+        BadRequestException
+            If condition validation or conflict checking fails.
         """
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if not rule:
@@ -150,7 +219,24 @@ class TaggingRulesService:
         return n_tagged
 
     def delete_rule(self, rule_id: int) -> bool:
-        """Delete a rule."""
+        """
+        Delete a tagging rule.
+
+        Parameters
+        ----------
+        rule_id : int
+            ID of the rule to delete.
+
+        Returns
+        -------
+        bool
+            ``True`` if the rule was deleted.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule with ``rule_id`` exists.
+        """
         success = self.rules_repo.delete_rule(rule_id)
         if not success:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
@@ -158,7 +244,21 @@ class TaggingRulesService:
 
     def apply_rules(self, overwrite: bool = False) -> int:
         """
-        Apply all active rules to transactions.
+        Apply all tagging rules to matching transactions.
+
+        Rules are applied in the order returned by the repository (priority DESC).
+        Counts unique ``(table, unique_id)`` pairs modified to avoid double-counting.
+
+        Parameters
+        ----------
+        overwrite : bool, optional
+            When ``True``, re-tags already-tagged transactions that currently have
+            a different category/tag. Default is ``False`` (only tags untagged rows).
+
+        Returns
+        -------
+        int
+            Total number of unique transactions that were tagged or re-tagged.
         """
         result = self.rules_repo.get_all_rules()
         rules = result.to_dict(orient="records")
@@ -172,7 +272,27 @@ class TaggingRulesService:
         return len(modified_transactions)
 
     def apply_rule_by_id(self, rule_id: int, overwrite: bool = False) -> int:
-        """Apply a single rule by ID."""
+        """
+        Apply a single tagging rule to matching transactions.
+
+        Parameters
+        ----------
+        rule_id : int
+            ID of the rule to apply.
+        overwrite : bool, optional
+            When ``True``, re-tags transactions that already have a different
+            category/tag. Default is ``False``.
+
+        Returns
+        -------
+        int
+            Number of transactions tagged.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule with ``rule_id`` exists.
+        """
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if not rule:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
@@ -346,7 +466,23 @@ class TaggingRulesService:
                         )
 
     def _apply_single_rule(self, rule: Dict[str, Any], overwrite: bool = False) -> int:
-        """Legacy wrapper returning count."""
+        """
+        Apply a single rule dict and return the count of modified transactions.
+
+        Legacy wrapper around ``_apply_single_rule_returning_ids``.
+
+        Parameters
+        ----------
+        rule : dict
+            Rule dict with ``conditions``, ``category``, and ``tag`` keys.
+        overwrite : bool, optional
+            When ``True``, re-tags already-tagged transactions. Default is ``False``.
+
+        Returns
+        -------
+        int
+            Number of transactions modified.
+        """
         ids = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
         return len(ids)
 
@@ -415,7 +551,21 @@ class TaggingRulesService:
         return False  # Fallback: match nothing
 
     def _build_single_filter(self, condition: Dict[str, Any], model: Type[TransactionBase]):
-        """Build a single SQLAlchemy filter from a condition dict."""
+        """
+        Build a single SQLAlchemy filter expression from a leaf condition dict.
+
+        Parameters
+        ----------
+        condition : dict
+            Leaf condition with ``field``, ``operator``, and ``value`` keys.
+        model : type
+            SQLAlchemy model class to build the filter against.
+
+        Returns
+        -------
+        SQLAlchemy expression
+            Filter clause, or ``True`` if the field is unrecognised.
+        """
         field = condition.get("field")
         operator = condition.get("operator")
         value = condition.get("value")
@@ -446,7 +596,22 @@ class TaggingRulesService:
         return True
 
     def _get_model_column(self, field: str, model: Type[TransactionBase]):
-        """Map a condition field name to a SQLAlchemy model column."""
+        """
+        Map a condition field name to the corresponding SQLAlchemy model column.
+
+        Parameters
+        ----------
+        field : str
+            Condition field name (e.g. ``"description"``, ``"amount"``).
+        model : type
+            SQLAlchemy model class.
+
+        Returns
+        -------
+        SQLAlchemy column or None
+            The model column, or ``None`` for the ``"service"`` field
+            (which is handled at the table-selection level).
+        """
         field_mapping = {
             "description": model.description,
             "amount": model.amount,
@@ -481,7 +646,17 @@ class TaggingRulesService:
 
         return tables
 
-    def _collect_services(self, node: Dict[str, Any], services: Set[str]):
+    def _collect_services(self, node: Dict[str, Any], services: Set[str]) -> None:
+        """
+        Recursively collect ``service`` field values from a condition tree.
+
+        Parameters
+        ----------
+        node : dict
+            Condition tree node.
+        services : set[str]
+            Mutable set that is updated in-place with any service values found.
+        """
         if node.get("type") in ["AND", "OR"]:
             for sub in node.get("subconditions", []):
                 self._collect_services(sub, services)
@@ -492,10 +667,24 @@ class TaggingRulesService:
 
     def auto_tag_credit_cards_bills(self) -> int:
         """
-        This function auto-tags credit card bills by matching the month of the transaction with the month of the credit card bill.
+        Auto-tag bank debit transactions as credit card bill payments.
 
-        Returns:
-            int: The number of transactions that were auto-tagged.
+        For each untagged bank transaction, checks whether its amount matches the
+        total credit card charges for any known CC account in the same calendar month
+        (CC dates are shifted +1 month +1 day to align billing cycles). Matching is
+        done within a ±0.01 tolerance. Exactly one matching bank transaction per
+        CC account per month is tagged with ``"Credit Cards"`` category and the
+        corresponding CC tag.
+
+        Returns
+        -------
+        int
+            Number of bank transactions that were tagged as credit card bill payments.
+
+        Notes
+        -----
+        A TODO in the implementation notes frequent mismatches between the CC monthly
+        total and the bank debit amount; this function may under-tag in practice.
         """
         # TODO: figure out why we have so many missmatches between credit card monthly amount and bank cc bill
         bank_data = self.transactions_repo.get_table(service=Tables.BANK.value)

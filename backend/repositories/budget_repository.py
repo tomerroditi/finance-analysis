@@ -28,6 +28,12 @@ class BudgetRepository:
     month_col = MONTH
 
     def __init__(self, db: Session):
+        """
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session.
+        """
         self.db = db
 
     def add(
@@ -39,7 +45,27 @@ class BudgetRepository:
         month: Optional[int],
         year: Optional[int],
     ) -> None:
-        """Create a new budget rule."""
+        """Create a new budget rule.
+
+        Parameters
+        ----------
+        name : str
+            Display name for the budget rule.
+        amount : float
+            Budget amount limit.
+        category : str
+            Category the rule applies to.
+        tags : str
+            Semicolon-separated list of tags (e.g. "tag1;tag2;tag3").
+        month : Optional[int]
+            Calendar month (1-12). None for project rules.
+        year : Optional[int]
+            Calendar year. None for project rules.
+
+        Returns
+        -------
+        None
+        """
         new_rule = BudgetRule(
             name=name,
             amount=amount,
@@ -52,31 +78,82 @@ class BudgetRepository:
         self.db.commit()
 
     def read_all(self) -> pd.DataFrame:
-        """Read all budget rules from the database."""
+        """Read all budget rules from the database.
+
+        Returns
+        -------
+        pd.DataFrame
+            All budget rules with columns: id, name, amount, category, tags,
+            month, year, created_at, updated_at.
+        """
         stmt = select(BudgetRule)
         return pd.read_sql(stmt, self.db.bind)
 
     def read_by_id(self, id_: int) -> pd.DataFrame:
-        """Read a specific budget rule by ID."""
+        """Read a specific budget rule by ID.
+
+        Parameters
+        ----------
+        id_ : int
+            Primary key of the budget rule to retrieve.
+
+        Returns
+        -------
+        pd.DataFrame
+            Single-row DataFrame for the matching rule, or empty DataFrame if
+            not found.
+        """
         stmt = select(BudgetRule).where(BudgetRule.id == id_)
         return pd.read_sql(stmt, self.db.bind)
 
     def read_by_month(self, year: int, month: int) -> pd.DataFrame:
-        """Read budget rules for a specific month."""
+        """Read budget rules for a specific month.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year to filter by.
+        month : int
+            Calendar month (1-12) to filter by.
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules matching the given year and month.
+        """
         stmt = select(BudgetRule).where(
             BudgetRule.year == year, BudgetRule.month == month
         )
         return pd.read_sql(stmt, self.db.bind)
 
     def read_project_rules(self) -> pd.DataFrame:
-        """Read project budget rules (no year/month set)."""
+        """Read project budget rules (no year/month set).
+
+        Returns
+        -------
+        pd.DataFrame
+            Budget rules where both year and month are NULL.
+        """
         stmt = select(BudgetRule).where(
             BudgetRule.year.is_(None), BudgetRule.month.is_(None)
         )
         return pd.read_sql(stmt, self.db.bind)
 
     def update(self, id_: int, **fields) -> None:
-        """Update a budget rule by ID."""
+        """Update a budget rule by ID.
+
+        Parameters
+        ----------
+        id_ : int
+            Primary key of the budget rule to update.
+        **fields
+            Keyword arguments mapping column names to their new values.
+
+        Raises
+        ------
+        ValueError
+            If no rule with the given ID exists.
+        """
         if not fields:
             return
 
@@ -87,13 +164,27 @@ class BudgetRepository:
         self.db.commit()
 
     def delete(self, id_: int) -> None:
-        """Delete a budget rule by ID."""
+        """Delete a budget rule by ID.
+
+        Parameters
+        ----------
+        id_ : int
+            Primary key of the budget rule to delete.
+        """
         stmt = delete(BudgetRule).where(BudgetRule.id == id_)
         self.db.execute(stmt)
         self.db.commit()
 
     def delete_by_month(self, year: int, month: int) -> None:
-        """Delete budget rules by year and month."""
+        """Delete budget rules by year and month.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year to match.
+        month : int
+            Calendar month (1-12) to match.
+        """
         stmt = delete(BudgetRule).where(
             BudgetRule.year == year, BudgetRule.month == month
         )
@@ -101,7 +192,17 @@ class BudgetRepository:
         self.db.commit()
 
     def delete_by_category(self, category: str) -> None:
-        """Delete budget rules by category (project rules only)."""
+        """Delete budget rules by category (project rules only).
+
+        Parameters
+        ----------
+        category : str
+            Category name to match for deletion.
+
+        Notes
+        -----
+        Only deletes project rules, i.e. rows where both year and month are NULL.
+        """
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
             BudgetRule.year.is_(None),
@@ -111,7 +212,19 @@ class BudgetRepository:
         self.db.commit()
 
     def delete_by_category_and_tags(self, category: str, tags: str) -> None:
-        """Delete budget rules by category and tags (project rules only)."""
+        """Delete budget rules by category and tags (project rules only).
+
+        Parameters
+        ----------
+        category : str
+            Category name to match for deletion.
+        tags : str
+            Semicolon-separated tag string to match exactly.
+
+        Notes
+        -----
+        Only deletes project rules where both year and month are NULL.
+        """
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
             BudgetRule.tags == tags,

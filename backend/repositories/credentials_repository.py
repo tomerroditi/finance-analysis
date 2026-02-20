@@ -24,11 +24,25 @@ class CredentialsRepository:
     """Repository for credential storage backed by SQLite + OS Keyring."""
 
     def __init__(self, db: Session):
+        """
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session used for all ORM operations.
+        """
         self.db = db
 
     @property
     def keyring_service(self) -> str:
-        """Keyring service name, with test suffix in test mode."""
+        """Keyring service name, with test suffix in test mode.
+
+        Returns
+        -------
+        str
+            Keyring service identifier used to namespace all stored secrets.
+            Appends "-test" suffix when the application is running in test mode
+            to avoid polluting production keyring entries.
+        """
         service = _KEYRING_SERVICE
         if AppConfig().is_test_mode:
             service += "-test"
@@ -37,13 +51,53 @@ class CredentialsRepository:
     def _keyring_key(
         self, service: str, provider: str, account_name: str, field: str
     ) -> str:
-        """Generate a standardized keyring key."""
+        """Generate a standardized keyring key.
+
+        Parameters
+        ----------
+        service : str
+            Financial service name (e.g. "credit_cards", "banks").
+        provider : str
+            Provider name within the service (e.g. "isracard", "hapoalim").
+        account_name : str
+            Identifier of the account.
+        field : str
+            Credential field name to store (e.g. "password", "otpLongTermToken").
+
+        Returns
+        -------
+        str
+            Colon-delimited key in the format "service:provider:account_name:field"
+            used as the username argument when reading or writing keyring entries.
+        """
         return f"{service}:{provider}:{account_name}:{field}"
 
     def _find_credential(
         self, service: str, provider: str, account_name: str
     ) -> Credential:
-        """Fetch a credential row or raise EntityNotFoundException."""
+        """Fetch a credential row or raise EntityNotFoundException.
+
+        Parameters
+        ----------
+        service : str
+            Financial service name (e.g. "credit_cards", "banks").
+        provider : str
+            Provider name within the service (e.g. "isracard", "hapoalim").
+        account_name : str
+            Identifier of the account.
+
+        Returns
+        -------
+        Credential
+            The ORM model instance matching the given service, provider, and
+            account_name.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no credential row matching the given combination is found in the
+            database.
+        """
         cred = self.db.execute(
             select(Credential).where(
                 Credential.service == service,
@@ -60,7 +114,29 @@ class CredentialsRepository:
     def get_credentials(
         self, service: str, provider: str, account_name: str
     ) -> Dict:
-        """Get credentials for an account, merging in keyring password."""
+        """Get credentials for an account, merging in keyring password.
+
+        Parameters
+        ----------
+        service : str
+            Financial service name (e.g. "credit_cards", "banks").
+        provider : str
+            Provider name within the service (e.g. "isracard", "hapoalim").
+        account_name : str
+            Identifier of the account.
+
+        Returns
+        -------
+        Dict
+            Credential fields dict for the account with the password merged in
+            from the OS Keyring. The "password" key is always present; it is an
+            empty string if no password has been stored in the keyring.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no credential row for the given account is found in the database.
+        """
         cred = self._find_credential(service, provider, account_name)
         result = dict(cred.fields)
         result["password"] = (
@@ -79,7 +155,30 @@ class CredentialsRepository:
         account_name: str,
         credentials: Dict,
     ) -> None:
-        """Save credentials: sensitive fields to keyring, rest to DB."""
+        """Persist credentials for an account, routing sensitive fields to the OS Keyring.
+
+        Parameters
+        ----------
+        service : str
+            Financial service name (e.g. "credit_cards", "banks").
+        provider : str
+            Provider name within the service (e.g. "isracard", "hapoalim").
+        account_name : str
+            Identifier of the account.
+        credentials : Dict
+            All credential fields for the account, including the password.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        Fields matching ``_SENSITIVE_FIELDS`` (password, otpLongTermToken) are
+        stored in the OS Keyring; all remaining fields are persisted to the
+        database. This method upserts: it creates a new credential row if one
+        does not exist, or updates the fields on the existing row.
+        """
         fields = dict(credentials)
 
         for sensitive_field in _SENSITIVE_FIELDS:
@@ -115,7 +214,28 @@ class CredentialsRepository:
     def delete_credentials(
         self, service: str, provider: str, account_name: str
     ) -> None:
-        """Delete a credential from DB and clean up keyring entries."""
+        """Delete a credential from DB and clean up keyring entries.
+
+        Parameters
+        ----------
+        service : str
+            Financial service name (e.g. "credit_cards", "banks").
+        provider : str
+            Provider name within the service (e.g. "isracard", "hapoalim").
+        account_name : str
+            Identifier of the account.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no credential row for the given account is found in the database.
+
+        Notes
+        -----
+        After removing the database row, also attempts to delete the password,
+        secret, otp_key, and otpLongTermToken entries from the OS Keyring.
+        Keyring entries that do not exist are silently ignored.
+        """
         cred = self._find_credential(service, provider, account_name)
         self.db.delete(cred)
         self.db.commit()
@@ -130,7 +250,14 @@ class CredentialsRepository:
                 pass
 
     def list_accounts(self) -> List[Dict[str, str]]:
-        """Get a flat list of all configured accounts."""
+        """Get a flat list of all configured accounts.
+
+        Returns
+        -------
+        List[Dict[str, str]]
+            List of dicts, one per stored credential row, each containing the
+            keys: service, provider, and account_name.
+        """
         rows = self.db.execute(select(Credential)).scalars().all()
         return [
             {
@@ -142,7 +269,18 @@ class CredentialsRepository:
         ]
 
     def get_all_credentials(self) -> Dict:
-        """Get all credentials as nested dict with keyring passwords filled in."""
+        """Get all credentials as nested dict with keyring passwords filled in.
+
+        Returns
+        -------
+        Dict
+            Nested dict in the form
+            ``{service: {provider: {account_name: {field: value}}}}``
+            for all stored credential rows, with the "password" field for each
+            account merged in from the OS Keyring. The "password" key is always
+            present; it is an empty string if no password has been stored in the
+            keyring.
+        """
         rows = self.db.execute(select(Credential)).scalars().all()
         result: Dict = {}
         for row in rows:

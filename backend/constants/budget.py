@@ -1,3 +1,10 @@
+"""
+Budget-related field name constants and special sentinel values.
+
+Column name strings used when accessing budget rule DataFrames, and the
+``TOTAL_BUDGET`` sentinel that represents an overall monthly spending cap.
+"""
+
 ID = "id"
 CATEGORY = "category"
 TAGS = "tags"

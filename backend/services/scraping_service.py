@@ -16,16 +16,46 @@ _tfa_scrapers_waiting: Dict[str, Tuple[Scraper, Thread]] = {}
 class ScrapingService:
     """
     Service for managing data scraping operations.
-    Handles background threads and 2FA wait states.
+
+    Handles launching scrapers in background threads, tracking 2FA wait
+    states, recording scraping history, and computing start dates from
+    the last successful scrape. Scrapers that require 2FA are kept in
+    the module-level ``_tfa_scrapers_waiting`` dict until a code is submitted
+    or the process is aborted.
     """
 
     def __init__(self, db: Session):
+        """
+        Initialize the scraping service.
+
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy session for database operations.
+        """
         self.db = db
         self.scraping_history_repo = ScrapingHistoryRepository(db)
         self.credentials_repo = CredentialsRepository(db)
 
     def get_scraping_status(self, scraping_process_id: int) -> Dict[str, str | int]:
-        """Get the current scraping status."""
+        """
+        Get the current status of a scraping process.
+
+        Parameters
+        ----------
+        scraping_process_id : int
+            ID of the scraping history record to query.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``status`` – status string (e.g. ``"IN_PROGRESS"``, ``"SUCCESS"``,
+              ``"FAILED"``, ``"WAITING_FOR_2FA"``) or ``"unknown"`` if not found.
+            - ``process_id`` – echoed back ``scraping_process_id``.
+            - ``error_message`` – error detail if status is ``"FAILED"``, else ``None``.
+        """
         status = self.scraping_history_repo.get_scraping_status(
             int(scraping_process_id)
         )
@@ -61,7 +91,13 @@ class ScrapingService:
 
     def start_scraping(self, accounts: List[Dict]) -> None:
         """
-        Start the scraping process for multiple accounts.
+        Start the scraping process for multiple accounts sequentially.
+
+        Parameters
+        ----------
+        accounts : list[dict]
+            List of account dicts, each containing ``service``, ``provider``,
+            and ``account`` keys.
         """
         for account in accounts:
             self.start_scraping_single(
@@ -70,7 +106,25 @@ class ScrapingService:
 
     def start_scraping_single(self, service: str, provider: str, account: str) -> int:
         """
-        Start the scraping process for a specific account.
+        Start the scraping process for a single account in a background thread.
+
+        Records a new scraping history entry, creates the appropriate scraper,
+        and starts it in a background thread. If the provider requires 2FA,
+        the scraper is stored in ``_tfa_scrapers_waiting`` until an OTP is submitted.
+
+        Parameters
+        ----------
+        service : str
+            Service type (e.g. ``"credit_cards"``, ``"banks"``).
+        provider : str
+            Provider identifier (e.g. ``"isracard"``, ``"hapoalim"``).
+        account : str
+            Account name used to look up credentials.
+
+        Returns
+        -------
+        int
+            The ``process_id`` of the new scraping history record.
         """
         start_date = self._get_scraper_start_date(service, provider, account)
         creds = self.credentials_repo.get_credentials(service, provider, account)
@@ -100,7 +154,28 @@ class ScrapingService:
     def submit_2fa_code(
         self, service: str, provider: str, account: str, code: str
     ) -> None:
-        """Handle 2FA code submission."""
+        """
+        Submit a 2FA OTP code to an awaiting scraper.
+
+        Pass the string ``"cancel"`` (via the scraper's ``CANCEL`` constant)
+        to abort the scraping process instead.
+
+        Parameters
+        ----------
+        service : str
+            Service type of the waiting scraper.
+        provider : str
+            Provider identifier of the waiting scraper.
+        account : str
+            Account name of the waiting scraper.
+        code : str
+            OTP code to forward to the scraper, or the scraper's cancel sentinel.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no 2FA-waiting scraper is found for the given service/provider/account.
+        """
         name = f"{service} - {provider} - {account}"
         if name not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
@@ -109,7 +184,18 @@ class ScrapingService:
         scraper.set_otp_code(code)
 
     def abort_scraping_process(self, process_id: int) -> None:
-        """Abort any scraping process by its ID."""
+        """
+        Abort an in-progress or 2FA-waiting scraping process.
+
+        If the process is waiting for a 2FA code, the scraper is cancelled
+        via its OTP channel and removed from ``_tfa_scrapers_waiting``.
+        The history record is always marked ``FAILED`` regardless.
+
+        Parameters
+        ----------
+        process_id : int
+            ID of the scraping history record to abort.
+        """
         # Check if it's a 2FA-waiting scraper
         target_name = None
         for name, (scraper, _) in _tfa_scrapers_waiting.items():
@@ -130,6 +216,27 @@ class ScrapingService:
     def _get_scraper_start_date(
         self, service: str, provider: str, account: str
     ) -> datetime.date:
+        """
+        Calculate the start date for a scraping run.
+
+        Uses the last successful scrape date minus 7 days as a buffer to
+        catch any late-posted transactions. Falls back to 365 days ago if
+        no prior successful scrape exists or the stored date cannot be parsed.
+
+        Parameters
+        ----------
+        service : str
+            Service type of the account.
+        provider : str
+            Provider identifier of the account.
+        account : str
+            Account name.
+
+        Returns
+        -------
+        datetime.date
+            Earliest date from which to fetch transactions.
+        """
         last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
             service, provider, account
         )
@@ -145,6 +252,27 @@ class ScrapingService:
         return start_date
 
     def _collect_scrapers(self, credentials: Dict) -> Tuple[Dict, Dict]:
+        """
+        Build scraper instances for all accounts in a credentials dict.
+
+        Parameters
+        ----------
+        credentials : dict
+            Nested credentials dict in the form
+            ``{service: {provider: {account: creds}}}``.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            A ``(normal, tfa)`` pair where ``normal`` maps account name strings
+            to scrapers that do not require 2FA, and ``tfa`` maps to scrapers
+            that do require 2FA.
+
+        Notes
+        -----
+        This method is not called by the current scraping flow (which creates
+        scrapers one at a time via ``start_scraping_single``) and may be unused.
+        """
         normal = {}
         tfa = {}
         for service, providers in credentials.items():

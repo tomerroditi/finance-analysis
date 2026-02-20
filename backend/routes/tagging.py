@@ -56,7 +56,11 @@ async def add_category(category: CategoryCreate, db: Session = Depends(get_datab
 
 @router.delete("/categories/{name}")
 async def delete_category(name: str, db: Session = Depends(get_database)):
-    """Delete a category and its tags, nullifying them in the DB."""
+    """Delete a category and all its tags.
+
+    Transactions that were assigned to this category or any of its tags
+    have their ``category`` and ``tag`` fields set to ``NULL`` in the DB.
+    """
     CategoriesTagsService(db).delete_category(name)
     return {"status": "success"}
 
@@ -70,14 +74,22 @@ async def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
 
 @router.delete("/tags/{category}/{name}")
 async def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
-    """Delete a tag from a category, nullifying it in the DB."""
+    """Delete a tag from a category.
+
+    Transactions tagged with this tag have their ``tag`` field (and optionally
+    ``category``) set to ``NULL`` in the DB.
+    """
     CategoriesTagsService(db).delete_tag(category, name)
     return {"status": "success"}
 
 
 @router.post("/tags/relocate")
 async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
-    """Relocate a tag to a different category, reflecting in the DB."""
+    """Move a tag from one category to another.
+
+    Updates the YAML config and re-categorises transactions that carry this
+    tag so their ``category`` field reflects the new parent category.
+    """
     CategoriesTagsService(db).reallocate_tag(
         data.old_category, data.new_category, data.tag
     )
@@ -101,6 +113,12 @@ async def update_category_icon(
 
 @router.post("/add-new-credit-card-tags")
 async def add_new_credit_card_tags(db: Session = Depends(get_database)):
-    """Add new credit card tags."""
+    """Discover credit card accounts from transaction data and register them as tags.
+
+    Scans credit card transactions for unique provider/account combinations and
+    adds each as a tag under the ``Credit Cards`` category. These tags are later
+    used by the auto-tag credit card bills feature to match bank debit lines to
+    the corresponding monthly credit card charges.
+    """
     CategoriesTagsService(db).add_new_credit_card_tags()
     return {"status": "success"}

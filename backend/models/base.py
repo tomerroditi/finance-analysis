@@ -9,8 +9,14 @@ Base = declarative_base()
 
 
 class TimestampMixin:
-    """
-    Mixin to add created_at and updated_at columns to a model.
+    """Mixin that adds audit timestamp columns to any SQLAlchemy ORM model.
+
+    Attributes
+    ----------
+    created_at : DateTime
+        Timestamp set automatically when the row is first inserted.
+    updated_at : DateTime
+        Timestamp set on insert and updated automatically on every subsequent write.
     """
 
     created_at = Column(DateTime, default=func.now(), nullable=False)

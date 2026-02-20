@@ -184,6 +184,7 @@ app.include_router(
 async def entity_not_found_exception_handler(
     request: Request, exc: EntityNotFoundException
 ):
+    """Return a 404 JSON response for EntityNotFoundException."""
     return JSONResponse(
         status_code=404,
         content={"detail": exc.message},
@@ -194,6 +195,7 @@ async def entity_not_found_exception_handler(
 async def entity_already_exists_exception_handler(
     request: Request, exc: EntityAlreadyExistsException
 ):
+    """Return a 409 JSON response for EntityAlreadyExistsException."""
     return JSONResponse(
         status_code=409,
         content={"detail": exc.message},
@@ -202,6 +204,7 @@ async def entity_already_exists_exception_handler(
 
 @app.exception_handler(ValidationException)
 async def validation_exception_handler(request: Request, exc: ValidationException):
+    """Return a 400 JSON response for ValidationException."""
     return JSONResponse(
         status_code=400,
         content={"detail": exc.message},

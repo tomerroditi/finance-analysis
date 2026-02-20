@@ -15,20 +15,46 @@ class SplitTransactionsRepository:
     """
 
     def __init__(self, db: Session):
+        """
+        Parameters
+        ----------
+        db : Session
+            SQLAlchemy database session.
+        """
         self.db = db
 
     def _assure_table_exists(self) -> None:
         pass
 
     def get_data(self) -> pd.DataFrame:
-        """Get all split transactions."""
+        """Get all split transactions.
+
+        Returns
+        -------
+        pd.DataFrame
+            All split transaction rows with columns id, transaction_id, source,
+            amount, category, tag.
+        """
         stmt = select(SplitTransaction)
         return pd.read_sql(stmt, self.db.bind)
 
     def get_splits_for_transaction(
         self, transaction_id: int, source: str
     ) -> pd.DataFrame:
-        """Get all splits for a specific transaction."""
+        """Get all splits for a specific transaction.
+
+        Parameters
+        ----------
+        transaction_id : int
+            Unique ID of the parent transaction.
+        source : str
+            Table name of the parent transaction's source (e.g. 'bank_transactions').
+
+        Returns
+        -------
+        pd.DataFrame
+            Split rows belonging to the specified parent transaction.
+        """
         stmt = select(SplitTransaction).where(
             SplitTransaction.transaction_id == transaction_id,
             SplitTransaction.source == source,
@@ -38,9 +64,25 @@ class SplitTransactionsRepository:
     def add_split(
         self, transaction_id: int, source: str, amount: float, category: str, tag: str
     ) -> int:
-        """
-        Add a new split for a transaction.
-        Returns the ID of the newly created split.
+        """Add a new split for a transaction.
+
+        Parameters
+        ----------
+        transaction_id : int
+            Unique ID of the parent transaction.
+        source : str
+            Table name of the parent transaction's source (e.g. 'bank_transactions').
+        amount : float
+            Split amount. Negative values represent expenses.
+        category : str or None
+            Category to assign to this split.
+        tag : str or None
+            Tag to assign to this split.
+
+        Returns
+        -------
+        int
+            ID of the newly created split record.
         """
         split = SplitTransaction(
             transaction_id=transaction_id,
@@ -56,7 +98,19 @@ class SplitTransactionsRepository:
     def update_split(
         self, split_id: int, amount: float, category: str, tag: str
     ) -> None:
-        """Update an existing split."""
+        """Update an existing split.
+
+        Parameters
+        ----------
+        split_id : int
+            Primary key of the split record to update.
+        amount : float
+            New split amount. Negative values represent expenses.
+        category : str or None
+            New category to assign.
+        tag : str or None
+            New tag to assign.
+        """
         stmt = (
             update(SplitTransaction)
             .where(SplitTransaction.id == split_id)
@@ -66,7 +120,13 @@ class SplitTransactionsRepository:
         self.db.commit()
 
     def delete_split(self, split_id: int) -> None:
-        """Delete a split by ID."""
+        """Delete a split by ID.
+
+        Parameters
+        ----------
+        split_id : int
+            Primary key of the split record to delete.
+        """
         stmt = delete(SplitTransaction).where(SplitTransaction.id == split_id)
         self.db.execute(stmt)
         self.db.commit()
@@ -74,7 +134,15 @@ class SplitTransactionsRepository:
     def delete_all_splits_for_transaction(
         self, transaction_id: int, source: str
     ) -> None:
-        """Delete all splits for a specific transaction."""
+        """Delete all splits for a specific transaction.
+
+        Parameters
+        ----------
+        transaction_id : int
+            Unique ID of the parent transaction.
+        source : str
+            Table name of the parent transaction's source.
+        """
         stmt = delete(SplitTransaction).where(
             SplitTransaction.transaction_id == transaction_id,
             SplitTransaction.source == source,
@@ -83,7 +151,16 @@ class SplitTransactionsRepository:
         self.db.commit()
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
-        """Set category and tag to NULL for matching splits."""
+        """Set category and tag to NULL for matching splits.
+
+        Parameters
+        ----------
+        category : str
+            Category value to match against.
+        tag : str
+            Tag value to match against. Splits must match both category AND tag
+            for their fields to be set to NULL.
+        """
         stmt = (
             update(SplitTransaction)
             .where(SplitTransaction.category == category)
@@ -96,7 +173,17 @@ class SplitTransactionsRepository:
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
     ) -> None:
-        """Update category for splits with specified old_category and tag."""
+        """Update category for splits with specified old_category and tag.
+
+        Parameters
+        ----------
+        old_category : str
+            Current category value to match against.
+        new_category : str
+            Replacement category value to assign.
+        tag : str
+            Tag value to filter by alongside old_category.
+        """
         stmt = (
             update(SplitTransaction)
             .where(SplitTransaction.category == old_category)
@@ -107,7 +194,18 @@ class SplitTransactionsRepository:
         self.db.commit()
 
     def nullify_category(self, category: str) -> None:
-        """Set category and tag to NULL for splits with specified category."""
+        """Set category and tag to NULL for splits with specified category.
+
+        Parameters
+        ----------
+        category : str
+            Category value to match against.
+
+        Notes
+        -----
+        Also nullifies the tag field for all matching splits, not just the
+        category field.
+        """
         stmt = (
             update(SplitTransaction)
             .where(SplitTransaction.category == category)

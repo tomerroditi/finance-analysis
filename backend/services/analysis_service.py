@@ -196,7 +196,7 @@ class AnalysisService:
 
     def _get_investment_prior_wealth_total(self) -> float:
         """Get total prior wealth from all open investments."""
-        df = self.investments_repo.get_all_investments(include_closed=True)
+        df = self.investments_repo.get_all_investments()
         if df.empty:
             return 0.0
         return float(df["prior_wealth_amount"].sum())
@@ -351,10 +351,10 @@ class AnalysisService:
         if end_date:
             df = df[df["date"] <= end_date]
 
-        df = df[df['category'] != CREDIT_CARDS]
-
         if df.empty:
             return {"nodes": [], "links": []}
+
+        df = df[df['category'] != CREDIT_CARDS]
 
         # --- Processing ---
         IGNORE = NonExpensesCategories.IGNORE.value

@@ -97,7 +97,27 @@ async def create_transaction(
 async def update_transaction(
     unique_id: str, data: TransactionUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Update a transaction with source-based constraints."""
+    """Update editable fields of a transaction.
+
+    The set of editable fields depends on the transaction source: scraped
+    transactions (bank, credit_card) allow only category/tag edits, while
+    manual entries (cash, manual_investments) allow description and amount
+    edits as well.
+
+    Parameters
+    ----------
+    unique_id : str
+        Transaction ID as a string.
+    data : TransactionUpdate
+        Fields to update plus the ``source`` (e.g. ``credit_card``, ``bank``,
+        ``cash``) used to determine which table to update.
+
+    Returns
+    -------
+    dict
+        ``{"status": "success"}`` if any field was updated,
+        ``{"status": "no_changes"}`` if nothing changed.
+    """
     service = TransactionsService(db)
     try:
         updated = service.update_transaction(
@@ -196,7 +216,23 @@ async def update_transaction_tag(
     service: str = Query(..., description="Service: credit_card, bank, cash"),
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
-    """Update category and tag for a transaction (Legacy support)."""
+    """Update the category and tag of a single transaction.
+
+    Legacy endpoint retained for backwards compatibility; prefer the
+    general ``PUT /{unique_id}`` endpoint for new integrations.
+
+    Parameters
+    ----------
+    transaction_id : str
+        Transaction ID as a string.
+    category : str
+        Category to assign.
+    tag : str
+        Tag to assign within the category.
+    service : str
+        Service identifier (``credit_card``, ``bank``, ``cash``) used to
+        target the correct table.
+    """
     tx_service = TransactionsService(db)
     try:
         tx_service.update_tagging_by_id(service, transaction_id, category, tag)
