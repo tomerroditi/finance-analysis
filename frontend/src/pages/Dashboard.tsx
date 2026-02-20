@@ -1,10 +1,7 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Wallet, PiggyBank, Landmark } from "lucide-react";
 import Plot from "react-plotly.js";
-import { format } from "date-fns";
 import { analyticsApi, bankBalancesApi } from "../services/api";
-import { DateRangePicker, type DateRange } from "../components/DateRangePicker";
 import { SankeyChart } from "../components/SankeyChart";
 import { ScrapingWidget } from "../components/dashboard/ScrapingWidget";
 import { useTestMode } from "../context/TestModeContext";
@@ -38,101 +35,45 @@ function StatCard({
 
 export function Dashboard() {
   const { isTestMode } = useTestMode();
-  const [dateRange, setDateRange] = useState<DateRange>({
-    start: null,
-    end: null,
-  });
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ["overview", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["overview", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getOverview(start, end);
+      const res = await analyticsApi.getOverview();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: ["income-outcome", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["income-outcome", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getIncomeExpensesOverTime(start, end);
+      const res = await analyticsApi.getIncomeExpensesOverTime();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const { data: categoryData } = useQuery({
-    queryKey: [
-      "analytics-category",
-      dateRange.start,
-      dateRange.end,
-      isTestMode,
-    ],
+    queryKey: ["analytics-category", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getByCategory(start, end);
+      const res = await analyticsApi.getByCategory();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
-
-
   const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
-    queryKey: ["sankey", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["sankey", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getSankeyData(start, end);
+      const res = await analyticsApi.getSankeyData();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const { data: netBalanceData } = useQuery({
-    queryKey: ["net-balance-trend", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["net-balance-trend", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getNetBalanceOverTime(start, end);
+      const res = await analyticsApi.getNetBalanceOverTime();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const { data: bankBalances } = useQuery({
@@ -141,33 +82,19 @@ export function Dashboard() {
   });
 
   const { data: netWorthData } = useQuery({
-    queryKey: ["net-worth-over-time", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["net-worth-over-time", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start ? format(dateRange.start, "yyyy-MM-dd") : undefined;
-      const end = dateRange.end ? format(dateRange.end, "yyyy-MM-dd") : undefined;
-      const res = await analyticsApi.getNetWorthOverTime(start, end);
+      const res = await analyticsApi.getNetWorthOverTime();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const { data: incomeBySourceData } = useQuery({
-    queryKey: ["income-by-source", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["income-by-source", isTestMode],
     queryFn: async () => {
-      const start = dateRange.start
-        ? format(dateRange.start, "yyyy-MM-dd")
-        : undefined;
-      const end = dateRange.end
-        ? format(dateRange.end, "yyyy-MM-dd")
-        : undefined;
-      const res = await analyticsApi.getIncomeBySourceOverTime(start, end);
+      const res = await analyticsApi.getIncomeBySourceOverTime();
       return res.data;
     },
-    enabled:
-      (dateRange.start === null && dateRange.end === null) ||
-      (!!dateRange.start && !!dateRange.end),
   });
 
   const formatCurrency = (val: number) =>
@@ -185,14 +112,11 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            Overview of your financial data
-          </p>
-        </div>
-        <DateRangePicker value={dateRange} onChange={setDateRange} />
+      <div>
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <p className="text-[var(--text-muted)] mt-1">
+          Overview of your financial data
+        </p>
       </div>
 
       {/* Stats Grid */}
@@ -342,28 +266,28 @@ export function Dashboard() {
               !netBalanceData || netBalanceData.length === 0
                 ? []
                 : [
-                  {
-                    x: netBalanceData.map((d) => d.month),
-                    y: netBalanceData.map((d) => d.net_change),
-                    name: "Monthly Net",
-                    type: "bar",
-                    marker: {
-                      color: netBalanceData.map((d) =>
-                        d.net_change >= 0 ? "#10b981" : "#ef4444"
-                      ),
+                    {
+                      x: netBalanceData.map((d) => d.month),
+                      y: netBalanceData.map((d) => d.net_change),
+                      name: "Monthly Net",
+                      type: "bar",
+                      marker: {
+                        color: netBalanceData.map((d) =>
+                          d.net_change >= 0 ? "#10b981" : "#ef4444"
+                        ),
+                      },
+                      yaxis: "y",
                     },
-                    yaxis: "y",
-                  },
-                  {
-                    x: netBalanceData.map((d) => d.month),
-                    y: netBalanceData.map((d) => d.cumulative_balance),
-                    name: "Cumulative Balance",
-                    type: "scatter",
-                    mode: "lines+markers",
-                    line: { color: "#3b82f6", width: 3 },
-                    marker: { size: 8, color: "#3b82f6" },
-                  },
-                ]
+                    {
+                      x: netBalanceData.map((d) => d.month),
+                      y: netBalanceData.map((d) => d.cumulative_balance),
+                      name: "Cumulative Balance",
+                      type: "scatter",
+                      mode: "lines+markers",
+                      line: { color: "#3b82f6", width: 3 },
+                      marker: { size: 8, color: "#3b82f6" },
+                    },
+                  ]
             }
             layout={{
               ...chartTheme,

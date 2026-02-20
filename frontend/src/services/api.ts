@@ -224,46 +224,31 @@ export const investmentsApi = {
 
 // Analytics API
 export const analyticsApi = {
-  getOverview: (startDate?: string, endDate?: string) =>
+  getOverview: () =>
     api.get<{
       latest_data_date: string | null;
       total_transactions: number;
       total_income: number;
       total_expenses: number;
       net_balance_change: number;
-    }>("/analytics/overview", {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-  getNetBalanceOverTime: (startDate?: string, endDate?: string) =>
+    }>("/analytics/overview"),
+  getNetBalanceOverTime: () =>
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
-      "/analytics/net-balance-over-time",
-      { params: { start_date: startDate, end_date: endDate } }
+      "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: (startDate?: string, endDate?: string) =>
+  getIncomeExpensesOverTime: () =>
     api.get<{ month: string; income: number; expenses: number }[]>(
-      "/analytics/income-expenses-over-time",
-      {
-        params: { start_date: startDate, end_date: endDate },
-      }
+      "/analytics/income-expenses-over-time"
     ),
-  getByCategory: (startDate?: string, endDate?: string) =>
-    api.get("/analytics/by-category", {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-
-  getSankeyData: (startDate?: string, endDate?: string) =>
-    api.get("/analytics/sankey", {
-      params: { start_date: startDate, end_date: endDate },
-    }),
-  getNetWorthOverTime: (startDate?: string, endDate?: string) =>
+  getByCategory: () => api.get("/analytics/by-category"),
+  getSankeyData: () => api.get("/analytics/sankey"),
+  getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; net_worth: number }[]>(
-      "/analytics/net-worth-over-time",
-      { params: { start_date: startDate, end_date: endDate } }
+      "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: (startDate?: string, endDate?: string) =>
+  getIncomeBySourceOverTime: () =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
-      "/analytics/income-by-source-over-time",
-      { params: { start_date: startDate, end_date: endDate } }
+      "/analytics/income-by-source-over-time"
     ),
 };
 
