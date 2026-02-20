@@ -7,6 +7,7 @@ This package contains SQLAlchemy ORM models for database tables.
 from backend.models.bank_balance import BankBalance
 from backend.models.base import Base, TimestampMixin
 from backend.models.category import Category
+from backend.models.credential import Credential
 from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
 from backend.models.pending_refund import PendingRefund, RefundLink
@@ -33,6 +34,7 @@ __all__ = [
     # Other models
     "BankBalance",
     "Category",
+    "Credential",
     "BudgetRule",
     "Investment",
     "TaggingRule",
