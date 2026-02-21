@@ -28,6 +28,7 @@ import {
   transactionsApi,
   taggingApi,
   pendingRefundsApi,
+  cashBalancesApi,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
@@ -154,6 +155,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: () => taggingApi.getCategories().then((res) => res.data),
+    enabled: showBulkActions,
+  });
+
+  // Fetch cash balances for bulk account dropdown
+  const { data: cashBalances = [] } = useQuery({
+    queryKey: ["cash-balances"],
+    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
     enabled: showBulkActions,
   });
 
@@ -993,9 +1001,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 </div>
                 {allSelectedAreCash && (
                   <div className="flex items-center gap-2 pt-1 border-t border-[var(--surface-light)]">
-                    <input
-                      type="text"
-                      placeholder="Account name"
+                    <select
                       value={bulkCashData.account_name}
                       onChange={(e) =>
                         setBulkCashData({
@@ -1003,8 +1009,15 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           account_name: e.target.value,
                         })
                       }
-                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-36 placeholder:text-[var(--text-muted)]"
-                    />
+                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                    >
+                      <option value="">Account</option>
+                      {cashBalances.map((b: any) => (
+                        <option key={b.account_name} value={b.account_name}>
+                          {b.account_name}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       type="text"
                       placeholder="Description"

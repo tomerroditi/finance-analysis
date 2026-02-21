@@ -13,6 +13,7 @@ from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
+from backend.services.cash_balance_service import CashBalanceService
 
 
 class AnalysisService:
@@ -39,6 +40,7 @@ class AnalysisService:
         self.investments_repo = InvestmentsRepository(db)
         self.investments_service = InvestmentsService(db)
         self.bank_balance_service = BankBalanceService(db)
+        self.cash_balance_service = CashBalanceService(db)
 
     def get_overview(self):
         """
@@ -59,13 +61,8 @@ class AnalysisService:
         latest_date = df["date"].max()
 
         income, investments, expenses = self.get_income_investments_and_expenses(df)
-        income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
-
-        # Add cash prior wealth to total income (same as bank/investment prior wealth)
-        from backend.services.cash_balance_service import CashBalanceService
-        cash_service = CashBalanceService(self.db)
-        cash_prior_wealth = cash_service.get_total_prior_wealth()
-        income += cash_prior_wealth
+        prior_wealth = self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth() + self.cash_balance_service.get_total_prior_wealth()
+        income += prior_wealth
 
         return {
             "latest_data_date": latest_date,
