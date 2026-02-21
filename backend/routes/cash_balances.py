@@ -39,3 +39,27 @@ async def set_cash_balance(
         account_name=request.account_name,
         balance=request.balance,
     )
+
+
+@router.post("/migrate")
+async def migrate_cash_balances(
+    db: Session = Depends(get_database),
+) -> list[dict]:
+    """Migrate existing cash transactions to cash_balances table.
+
+    Idempotent: skips accounts that are already migrated.
+    Deletes the old synthetic 'Prior Wealth' transaction.
+    """
+    service = CashBalanceService(db)
+    return service.migrate_from_transactions()
+
+
+@router.delete("/{account_name}")
+async def delete_cash_balance(
+    account_name: str,
+    db: Session = Depends(get_database),
+) -> dict:
+    """Delete a cash balance record by account name."""
+    service = CashBalanceService(db)
+    service.delete_for_account(account_name)
+    return {"status": "deleted", "account_name": account_name}
