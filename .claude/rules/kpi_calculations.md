@@ -23,7 +23,7 @@ How we calculate financial KPIs across the dashboard. Every analytics method mus
 |-------|-----------|--------------|
 | **Income** | Salary, Other Income | Counted as income (positive amounts) |
 | **Liabilities** | Liabilities | Positive = loan receipt (income), Negative = debt payment (expense) |
-| **Non-Expense** | Salary, Other Income, Investments, Liabilities | Base exclusion set via `NonExpensesCategories` enum (but negative Liabilities override — see below) |
+| **Non-Expense** | Salary, Other Income, Investments, Liabilities | Base exclusion set via constants: `IVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, and `IncomeCategories` enum (but negative Liabilities override — see below) |
 | **Credit Cards** | Credit Cards | Bank-side CC bill payments — excluded from most KPIs (see CC Deduplication) |
 | **Expense** | Everything else (Food, Transport, etc.) | Standard expense categories |
 
@@ -33,8 +33,8 @@ A transaction is **income** if:
 - Category is `Liabilities` AND amount > 0 (loan receipt)
 
 A transaction is an **expense** if:
-- NOT matching the income mask, AND NOT in `NonExpensesCategories`, OR
-- Category is `Liabilities` AND amount < 0 (debt payment — overrides `NonExpensesCategories` exclusion)
+- NOT matching the income mask, AND NOT in the non-expense categories (`IVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, or `IncomeCategories`), OR
+- Category is `Liabilities` AND amount < 0 (debt payment — overrides non-expense category exclusion)
 
 This ensures debt payments are counted as real money outflows in income/expense calculations.
 
@@ -58,11 +58,11 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 
 | Method | Strategy | How |
 |--------|----------|-----|
-| `get_income_and_expenses()` | Keep bank view, drop CC items | Filter `source != "credit_card_transactions"` |
+| `get_income_investments_and_expenses()` | Keep bank view, drop CC items | Filter `source != "credit_card_transactions"` |
 | `get_net_balance_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
 | `get_net_worth_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
 | `get_income_by_source_over_time()` | Keep bank view, drop CC items | Filter `source != "credit_card_transactions"` |
-| `get_expenses_by_category()` | Uses itemized CC view | Filter out `NonExpensesCategories` (which excludes the bank CC bill category) and the `Credit Cards` category |
+| `get_expenses_by_category()` | Uses itemized CC view | Filter out non-expense categories (`IVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, `IncomeCategories`, `CREDIT_CARDS`) |
 | `get_sankey_data()` | Hybrid — uses both to calculate gap | Calculates CC gap, then filters out `Credit Cards` category |
 
 **Rule of thumb:**
@@ -114,8 +114,8 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### `get_overview()`
 - **Purpose:** Dashboard stat cards (Total Income, Total Expenses, Total Bank Balance, Total Investments)
-- **CC handling:** Excludes CC source in `get_income_and_expenses()`
-- **Expenses:** Excludes `NonExpensesCategories`, but negative Liabilities (debt payments) are included as expenses
+- **CC handling:** Excludes CC source in `get_income_investments_and_expenses()`
+- **Expenses:** Excludes non-expense categories, but negative Liabilities (debt payments) are included as expenses
 - **Prior wealth:** All investment prior wealth (open + closed) added to income
 - **Investments:** Transaction-based total: `-sum(all investment transactions)` — money directed to investments, not reflecting profit/loss
 - **Bank balance:** Displayed from `bankBalancesApi` (frontend), not computed in overview API
@@ -123,7 +123,7 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### `get_income_expenses_over_time()`
 - **Purpose:** Monthly income vs expenses bar chart
-- **CC handling:** Excludes CC source in `get_income_and_expenses()`
+- **CC handling:** Excludes CC source in `get_income_investments_and_expenses()`
 - **Expenses:** Includes negative Liabilities (debt payments) as expenses
 - **Prior wealth:** Not included (monthly view shows transaction-based activity only)
 
@@ -135,7 +135,7 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### `get_expenses_by_category()`
 - **Purpose:** Expense pie chart with category breakdown
-- **CC handling:** Excludes `NonExpensesCategories` and `Credit Cards`. Uses itemized CC purchases for category-level detail.
+- **CC handling:** Excludes non-expense categories and `Credit Cards`. Uses itemized CC purchases for category-level detail.
 - **Output:** Splits into `expenses` (net negative categories) and `refunds` (net positive categories)
 
 ### `get_net_worth_over_time()`
@@ -178,8 +178,9 @@ Where `final_value = current_balance + total_withdrawals` (open) or `total_withd
 ## Resolved Misalignments
 
 All previously identified code misalignments have been fixed:
-- `get_expenses_by_category()` now excludes `Credit Cards` category alongside `NonExpensesCategories`
-- `get_income_and_expenses()` now filters `NonExpensesCategories` from expenses, with negative Liabilities overriding back into expenses
+- `get_expenses_by_category()` now excludes `Credit Cards` category alongside other non-expense categories
+- `get_income_investments_and_expenses()` now filters non-expense categories from expenses, with negative Liabilities overriding back into expenses
 - Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
-- Ignore category has no special treatment in KPI calculations — not in `NonExpensesCategories`, not filtered
+- Ignore category has no special treatment in KPI calculations — not in non-expense categories, not filtered
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`
+- `NonExpensesCategories` enum removed; non-expense categories now built from individual constants (`IVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`) and `IncomeCategories` enum
