@@ -499,7 +499,6 @@ class TransactionsService:
             raise RuntimeError("Failed to create transaction")
 
         if service == "cash":
-            self.sync_prior_wealth_offset(target_service="cash")
             # Recalculate cash balance if this is a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
             CashBalanceService(self.db).recalculate_current_balance(data["account_name"])
@@ -639,7 +638,6 @@ class TransactionsService:
             raise ValueError("Transaction not found or deletion failed")
 
         if source == "cash_transactions":
-            self.sync_prior_wealth_offset(target_service="cash")
             # Recalculate cash balance if this was a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
             CashBalanceService(self.db).recalculate_current_balance(account_name)

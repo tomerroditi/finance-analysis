@@ -534,7 +534,8 @@ class TestTransactionsServicePriorWealth:
             "tag": "Groceries",
         }
         service.create_transaction(data, "cash")
-        # create_transaction calls sync_prior_wealth_offset internally
+        # Explicitly call sync_prior_wealth_offset (no longer called by create_transaction)
+        service.sync_prior_wealth_offset(target_service="cash")
 
         # Check that a Prior Wealth offset was created
         cash_df = service.get_all_transactions("cash")
@@ -604,6 +605,8 @@ class TestTransactionsServicePriorWealth:
             "tag": "Coffee",
         }
         service.create_transaction(data, "cash")
+        # Explicitly call sync_prior_wealth_offset to create the offset
+        service.sync_prior_wealth_offset(target_service="cash")
 
         # Verify offset exists
         cash_df = service.get_all_transactions("cash")
@@ -615,8 +618,9 @@ class TestTransactionsServicePriorWealth:
         deposit_uid = int(non_pw.iloc[0]["unique_id"])
         service.delete_transaction(deposit_uid, "cash_transactions")
 
-        # After deletion, sync_prior_wealth_offset is called, which should
-        # delete the offset since no negative amounts remain
+        # Explicitly call sync_prior_wealth_offset (no longer called by delete_transaction)
+        # This should delete the offset since no negative amounts remain
+        service.sync_prior_wealth_offset(target_service="cash")
         cash_df_after = service.get_all_transactions("cash")
         pw_after = cash_df_after[cash_df_after["tag"] == PRIOR_WEALTH_TAG]
         assert len(pw_after) == 0
