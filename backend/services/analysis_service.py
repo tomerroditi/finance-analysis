@@ -61,6 +61,12 @@ class AnalysisService:
         income, investments, expenses = self.get_income_investments_and_expenses(df)
         income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
 
+        # Add cash prior wealth to total income (same as bank/investment prior wealth)
+        from backend.services.cash_balance_service import CashBalanceService
+        cash_service = CashBalanceService(self.db)
+        cash_prior_wealth = cash_service.get_total_prior_wealth()
+        income += cash_prior_wealth
+
         return {
             "latest_data_date": latest_date,
             "total_income": income,
