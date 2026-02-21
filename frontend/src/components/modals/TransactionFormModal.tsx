@@ -181,21 +181,28 @@ export function TransactionFormModal({
                                     Account / Wallet Name
                                 </label>
                                 {isCashTransaction ? (
-                                    <select
-                                        value={formData.account_name}
-                                        onChange={(e) =>
-                                            setFormData({ ...formData, account_name: e.target.value })
-                                        }
-                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all"
-                                        required
-                                    >
-                                        <option value="">Select an Envelope</option>
-                                        {cashBalances.map((balance: any) => (
-                                            <option key={balance.account_name} value={balance.account_name}>
-                                                {balance.account_name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <select
+                                            value={formData.account_name}
+                                            onChange={(e) =>
+                                                setFormData({ ...formData, account_name: e.target.value })
+                                            }
+                                            className="w-full appearance-none bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 pr-10 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all cursor-pointer"
+                                            required
+                                        >
+                                            <option value="">Select an Envelope</option>
+                                            {cashBalances.map((balance: any) => (
+                                                <option key={balance.account_name} value={balance.account_name}>
+                                                    {balance.account_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                            <svg className="h-4 w-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </div>
+                                    </div>
                                 ) : (
                                     <input
                                         type="text"
