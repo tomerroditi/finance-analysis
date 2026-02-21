@@ -144,6 +144,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   // Bulk tagging state
   const [isBulkTagging, setIsBulkTagging] = useState(false);
   const [bulkTagData, setBulkTagData] = useState({ category: "", tag: "" });
+  const [bulkCashData, setBulkCashData] = useState({
+    description: "",
+    account_name: "",
+    date: "",
+  });
 
   // Fetch categories for bulk tagging
   const { data: categories } = useQuery({
@@ -157,9 +162,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (data: any) => transactionsApi.bulkTag(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
       setSelectedIds(new Set());
       setIsBulkTagging(false);
       setBulkTagData({ category: "", tag: "" });
+      setBulkCashData({ description: "", account_name: "", date: "" });
       onTransactionUpdated?.();
     },
   });
@@ -302,6 +309,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     );
   }, [paginatedTransactions, selectedIds]);
 
+  const allSelectedAreCash = useMemo(() => {
+    if (selectedIds.size === 0) return false;
+    return transactions
+      .filter((tx) => selectedIds.has(getTransactionId(tx)))
+      .every((tx) => tx.source?.includes("cash"));
+  }, [transactions, selectedIds]);
+
   const handleDelete = (tx: Transaction) => {
     setDeletingTransaction(tx);
   };
@@ -326,7 +340,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Bulk tagging handlers
   const handleBulkTag = () => {
-
     const selectedTxs = transactions.filter((tx) =>
       selectedIds.has(getTransactionId(tx)),
     );
@@ -338,11 +351,22 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     }, {});
 
     Object.entries(bySource).forEach(([source, ids]: [any, any]) => {
+      const isCashSource = (source as string).includes("cash");
       bulkTagMutation.mutate({
         transaction_ids: ids,
         source,
-        category: bulkTagData.category,
-        tag: bulkTagData.tag,
+        category: bulkTagData.category || undefined,
+        tag: bulkTagData.tag || undefined,
+        description:
+          isCashSource && bulkCashData.description
+            ? bulkCashData.description
+            : undefined,
+        account_name:
+          isCashSource && bulkCashData.account_name
+            ? bulkCashData.account_name
+            : undefined,
+        date:
+          isCashSource && bulkCashData.date ? bulkCashData.date : undefined,
       });
     });
   };
@@ -913,60 +937,96 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           <div className="w-px h-8 bg-[var(--surface-light)]" />
           <div className="flex items-center gap-3">
             {isBulkTagging ? (
-              <div className="flex items-center gap-2">
-                <select
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                  value={bulkTagData.category}
-                  onChange={(e) =>
-                    setBulkTagData({
-                      ...bulkTagData,
-                      category: e.target.value,
-                      tag: "",
-                    })
-                  }
-                >
-                  <option value="">Category</option>
-                  {categories &&
-                    Object.keys(categories).map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                </select>
-                <select
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none disabled:opacity-50"
-                  value={bulkTagData.tag}
-                  onChange={(e) =>
-                    setBulkTagData({ ...bulkTagData, tag: e.target.value })
-                  }
-                  disabled={false}
-
-                >
-                  <option value="">Tag</option>
-                  {bulkTagData.category &&
-                    categories?.[bulkTagData.category]?.map((tag: string) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                </select>
-                <button
-                  className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
-                  onClick={handleBulkTag}
-                  disabled={bulkTagMutation.isPending}
-
-                >
-                  <CheckCircle2 size={20} />
-                </button>
-                <button
-                  className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
-                  onClick={() => {
-                    setIsBulkTagging(false);
-                    setBulkTagData({ category: "", tag: "" });
-                  }}
-                >
-                  <X size={20} />
-                </button>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <select
+                    className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={bulkTagData.category}
+                    onChange={(e) =>
+                      setBulkTagData({
+                        ...bulkTagData,
+                        category: e.target.value,
+                        tag: "",
+                      })
+                    }
+                  >
+                    <option value="">Category</option>
+                    {categories &&
+                      Object.keys(categories).map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                  </select>
+                  <select
+                    className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={bulkTagData.tag}
+                    onChange={(e) =>
+                      setBulkTagData({ ...bulkTagData, tag: e.target.value })
+                    }
+                  >
+                    <option value="">Tag</option>
+                    {bulkTagData.category &&
+                      categories?.[bulkTagData.category]?.map((tag: string) => (
+                        <option key={tag} value={tag}>
+                          {tag}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
+                    onClick={handleBulkTag}
+                    disabled={bulkTagMutation.isPending}
+                  >
+                    <CheckCircle2 size={20} />
+                  </button>
+                  <button
+                    className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
+                    onClick={() => {
+                      setIsBulkTagging(false);
+                      setBulkTagData({ category: "", tag: "" });
+                      setBulkCashData({ description: "", account_name: "", date: "" });
+                    }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                {allSelectedAreCash && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-[var(--surface-light)]">
+                    <input
+                      type="text"
+                      placeholder="Account name"
+                      value={bulkCashData.account_name}
+                      onChange={(e) =>
+                        setBulkCashData({
+                          ...bulkCashData,
+                          account_name: e.target.value,
+                        })
+                      }
+                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-36 placeholder:text-[var(--text-muted)]"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Description"
+                      value={bulkCashData.description}
+                      onChange={(e) =>
+                        setBulkCashData({
+                          ...bulkCashData,
+                          description: e.target.value,
+                        })
+                      }
+                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-48 placeholder:text-[var(--text-muted)]"
+                    />
+                    <input
+                      type="date"
+                      value={bulkCashData.date}
+                      onChange={(e) =>
+                        setBulkCashData({ ...bulkCashData, date: e.target.value })
+                      }
+                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <>

@@ -31,6 +31,8 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
+    date: Optional[str] = None
+    account_name: Optional[str] = None
     description: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
@@ -42,8 +44,11 @@ class TransactionUpdate(BaseModel):
 class BulkTagUpdate(BaseModel):
     transaction_ids: List[int]
     source: str
-    category: Optional[str]
-    tag: Optional[str]
+    category: Optional[str] = None
+    tag: Optional[str] = None
+    description: Optional[str] = None
+    account_name: Optional[str] = None
+    date: Optional[str] = None
 
 
 class SplitItem(BaseModel):
@@ -184,11 +189,17 @@ async def revert_split(
 async def bulk_tag_transactions(
     data: BulkTagUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Apply tagging to multiple transactions of the same source."""
+    """Apply tagging and optional field updates to multiple transactions of the same source."""
     service = TransactionsService(db)
     try:
         service.bulk_tag_transactions(
-            data.transaction_ids, data.source, data.category, data.tag
+            data.transaction_ids,
+            data.source,
+            data.category,
+            data.tag,
+            data.description,
+            data.account_name,
+            data.date,
         )
         return {"status": "success"}
     except Exception as e:

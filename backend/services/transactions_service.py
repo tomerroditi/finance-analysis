@@ -516,9 +516,12 @@ class TransactionsService:
         Update a transaction with source-based permission constraints.
 
         Manual sources (``cash``, ``manual_investment_transactions``) may edit
-        ``description``, ``amount``, and ``provider`` in addition to
-        ``category`` and ``tag``. Scraped sources can only update ``category``
-        and ``tag``. Empty strings in category/tag are normalised to ``None``.
+        ``description``, ``amount``, ``provider``, ``date``, and
+        ``account_name`` in addition to ``category`` and ``tag``. Scraped
+        sources can only update ``category`` and ``tag``. When
+        ``account_name`` changes on a cash transaction, balances are
+        recalculated for both the old and new account. Empty strings in
+        category/tag are normalised to ``None``.
 
         Parameters
         ----------
@@ -528,7 +531,7 @@ class TransactionsService:
             Source table name (e.g. ``"cash"``, ``"credit_card_transactions"``).
         updates : dict
             Fields to update. Recognised keys: ``description``, ``amount``,
-            ``provider``, ``category``, ``tag``.
+            ``provider``, ``date``, ``account_name``, ``category``, ``tag``.
 
         Returns
         -------
@@ -536,11 +539,29 @@ class TransactionsService:
             ``True`` if updates were applied, ``False`` if no applicable fields
             were provided.
         """
+        from sqlalchemy import select
+
         target_repo = self.transactions_repository.get_repo_by_source(source)
         is_manual = source in ["cash", "manual_investment_transactions"]
 
+        # Capture old account_name before updating — needed to recalculate the
+        # old account's balance when account_name changes on a cash transaction.
+        old_account_name: str | None = None
+        if source == "cash" and updates.get("account_name") is not None:
+            tx_before = self.transactions_repository.db.execute(
+                select(target_repo.model).where(
+                    target_repo.model.unique_id == unique_id
+                )
+            ).scalar_one_or_none()
+            if tx_before:
+                old_account_name = getattr(tx_before, "account_name", None)
+
         filtered_updates = {}
         if is_manual:
+            if updates.get("date") is not None:
+                filtered_updates["date"] = updates["date"]
+            if updates.get("account_name") is not None:
+                filtered_updates["account_name"] = updates["account_name"]
             if updates.get("description") is not None:
                 filtered_updates["description"] = updates["description"]
             if updates.get("amount") is not None:
@@ -560,19 +581,27 @@ class TransactionsService:
 
         result = target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
 
-        # Recalculate cash balance if this is a cash transaction
+        # Recalculate cash balance(s) when a cash transaction is updated.
         if result and source == "cash":
-            from sqlalchemy import select
-            tx_record = self.transactions_repository.db.execute(
-                select(target_repo.model).where(
-                    target_repo.model.unique_id == unique_id
-                )
-            ).scalar_one_or_none()
-            if tx_record:
-                account_name = getattr(tx_record, "account_name", None)
-                if account_name:
-                    from backend.services.cash_balance_service import CashBalanceService
-                    CashBalanceService(self.db).recalculate_current_balance(account_name)
+            from backend.services.cash_balance_service import CashBalanceService
+            cash_balance_svc = CashBalanceService(self.db)
+
+            new_account_name = filtered_updates.get("account_name")
+            if new_account_name and old_account_name and new_account_name != old_account_name:
+                # account_name changed: recalculate both old and new accounts.
+                cash_balance_svc.recalculate_current_balance(old_account_name)
+                cash_balance_svc.recalculate_current_balance(new_account_name)
+            else:
+                # No account change: recalculate the current account.
+                tx_record = self.transactions_repository.db.execute(
+                    select(target_repo.model).where(
+                        target_repo.model.unique_id == unique_id
+                    )
+                ).scalar_one_or_none()
+                if tx_record:
+                    account_name = getattr(tx_record, "account_name", None)
+                    if account_name:
+                        cash_balance_svc.recalculate_current_balance(account_name)
 
         return result
 
@@ -651,9 +680,17 @@ class TransactionsService:
         source: str,
         category: str | None,
         tag: str | None,
+        description: str | None = None,
+        account_name: str | None = None,
+        date: str | None = None,
     ) -> None:
         """
-        Apply the same category and tag to multiple transactions of the same source.
+        Apply the same category, tag, and optional fields to multiple transactions.
+
+        For manual sources (``cash``, ``manual_investment_transactions``),
+        ``description``, ``account_name``, and ``date`` are also applied when
+        provided. Permission checks and side effects (e.g. cash balance
+        recalculation) are handled by ``update_transaction``.
 
         Parameters
         ----------
@@ -665,15 +702,26 @@ class TransactionsService:
             Category to apply. Empty strings are normalised to ``None``.
         tag : str or None
             Tag to apply. Empty strings are normalised to ``None``.
+        description : str or None, optional
+            Description to apply. Only written for manual sources.
+        account_name : str or None, optional
+            Account name to apply. Only written for manual sources.
+        date : str or None, optional
+            Date string to apply. Only written for manual sources.
         """
-        tx_list = [
-            {"unique_id": uid, "source": source} for uid in transaction_ids
-        ]
-        self.transactions_repository.bulk_update_tagging(
-            tx_list,
-            self._normalize_empty_string(category),
-            self._normalize_empty_string(tag),
-        )
+        updates: dict = {
+            "category": category,
+            "tag": tag,
+        }
+        if description is not None:
+            updates["description"] = description
+        if account_name is not None:
+            updates["account_name"] = account_name
+        if date is not None:
+            updates["date"] = date
+
+        for uid in transaction_ids:
+            self.update_transaction(uid, source, updates)
 
     def get_untagged_transactions(
         self,

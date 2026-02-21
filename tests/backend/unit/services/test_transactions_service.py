@@ -295,6 +295,104 @@ class TestTransactionsServiceCRUD:
         assert updated_row["category"] == "Transport"
         assert updated_row["tag"] == "Gas"
 
+    def test_update_cash_transaction_date(self, db_session):
+        """Verify updating a cash transaction's date is persisted."""
+        service = TransactionsService(db_session)
+
+        data = {
+            "date": date(2024, 4, 1),
+            "account_name": "Cash Wallet",
+            "description": "Date update test",
+            "amount": -30.0,
+            "provider": "cash",
+        }
+        service.create_transaction(data, "cash")
+
+        cash_df = service.get_all_transactions("cash")
+        non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
+        unique_id = int(non_pw.iloc[0]["unique_id"])
+
+        result = service.update_transaction(unique_id, "cash", {"date": "2024-06-15"})
+        assert result is True
+
+        updated_df = service.get_all_transactions("cash")
+        updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
+        assert "2024-06-15" in str(updated_row["date"])
+
+    def test_update_cash_transaction_account_name_recalculates_both_balances(
+        self, db_session
+    ):
+        """Verify changing account_name recalculates balances for old and new accounts."""
+        from backend.models.transaction import CashTransaction
+        from backend.services.cash_balance_service import CashBalanceService
+
+        service = TransactionsService(db_session)
+        cash_balance_svc = CashBalanceService(db_session)
+
+        # Seed balance records for both accounts so recalculate_current_balance has a record to update.
+        cash_balance_svc.set_balance("Wallet A", 200.0)
+        cash_balance_svc.set_balance("Wallet B", 0.0)
+
+        # Create a cash transaction on Wallet A.
+        tx = CashTransaction(
+            id="cash_acct_change_1",
+            date="2024-05-01",
+            provider="cash",
+            account_name="Wallet A",
+            description="Account change test",
+            amount=-50.0,
+            category="Food",
+            tag="Groceries",
+            source="cash_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(tx)
+        db_session.commit()
+        db_session.refresh(tx)
+
+        # Move the transaction from Wallet A to Wallet B.
+        result = service.update_transaction(
+            tx.unique_id, "cash", {"account_name": "Wallet B"}
+        )
+        assert result is True
+
+        # Wallet A should now reflect no transaction (balance recalculated).
+        wallet_a = cash_balance_svc.get_by_account_name("Wallet A")
+        wallet_b = cash_balance_svc.get_by_account_name("Wallet B")
+
+        assert wallet_a is not None
+        assert wallet_b is not None
+        # Wallet A had prior_wealth calculated from set_balance; transaction moved away,
+        # so its balance should exclude the -50 transaction.
+        # Wallet B now has the -50 transaction, balance should reflect it.
+        assert wallet_b["balance"] < wallet_a["balance"]
+
+    def test_update_transaction_date_ignored_for_scraped_source(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify date and account_name updates are ignored for scraped (non-manual) sources."""
+        service = TransactionsService(db_session)
+
+        cc_df = service.get_all_transactions("credit_cards")
+        unique_id = int(cc_df.iloc[0]["unique_id"])
+        original_date = cc_df.iloc[0]["date"]
+
+        # Pass date and account_name for a CC (scraped) source — should be filtered.
+        result = service.update_transaction(
+            unique_id,
+            "credit_card_transactions",
+            {"date": "2099-01-01", "account_name": "Hacked", "category": "Food"},
+        )
+        assert result is True
+
+        updated_df = service.get_all_transactions("credit_cards")
+        updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
+        # Date must not have changed.
+        assert str(updated_row["date"]) == str(original_date)
+        # Category must have changed (it is always allowed).
+        assert updated_row["category"] == "Food"
+
     def test_delete_transaction_cash(self, db_session):
         """Verify deleting a cash transaction."""
         service = TransactionsService(db_session)

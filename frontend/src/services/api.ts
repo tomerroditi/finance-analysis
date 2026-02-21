@@ -37,6 +37,9 @@ export const transactionsApi = {
     source: string;
     category?: string;
     tag?: string;
+    description?: string;
+    account_name?: string;
+    date?: string;
   }) => api.post("/transactions/bulk-tag", data),
   split: (
     id: number,
