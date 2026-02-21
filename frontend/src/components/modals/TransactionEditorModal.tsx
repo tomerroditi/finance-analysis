@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { taggingApi, transactionsApi } from "../../services/api";
+import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
 
 interface TransactionEditorModalProps {
   transaction: any;
@@ -17,6 +17,7 @@ export function TransactionEditorModal({
   const isManual =
     transaction.source?.includes("cash") ||
     transaction.source?.includes("manual_investment");
+  const isCash = transaction.source?.includes("cash");
 
   const [formData, setFormData] = useState({
     date: transaction.date,
@@ -30,6 +31,12 @@ export function TransactionEditorModal({
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: () => taggingApi.getCategories().then((res) => res.data),
+  });
+
+  const { data: cashBalances = [] } = useQuery({
+    queryKey: ["cash-balances"],
+    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
+    enabled: isCash,
   });
 
   const availableTags =
@@ -91,14 +98,31 @@ export function TransactionEditorModal({
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
                   Account / Wallet Name
                 </label>
-                <input
-                  type="text"
-                  value={formData.account_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, account_name: e.target.value })
-                  }
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] transition-all"
-                />
+                {isCash ? (
+                  <select
+                    value={formData.account_name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, account_name: e.target.value })
+                    }
+                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] transition-all"
+                  >
+                    <option value="">Select an Envelope</option>
+                    {cashBalances.map((balance: any) => (
+                      <option key={balance.account_name} value={balance.account_name}>
+                        {balance.account_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={formData.account_name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, account_name: e.target.value })
+                    }
+                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] transition-all"
+                  />
+                )}
               </div>
             )}
 
