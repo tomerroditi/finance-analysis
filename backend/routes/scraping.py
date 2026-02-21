@@ -5,6 +5,8 @@ Provides endpoints to start, monitor, abort, and handle 2FA for
 automated scraping of Israeli financial institutions.
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ class StartScrapingRequest(BaseModel):
     service: str
     provider: str
     account: str
+    scraping_period_days: Optional[int] = None
 
 
 class TFAFinishRequest(BaseModel):
@@ -55,7 +58,10 @@ async def start_scraping_single(
     """
     service = ScrapingService(db)
     scraping_process_id = service.start_scraping_single(
-        service=data.service, provider=data.provider, account=data.account
+        service=data.service,
+        provider=data.provider,
+        account=data.account,
+        scraping_period_days=data.scraping_period_days,
     )
     return scraping_process_id
 

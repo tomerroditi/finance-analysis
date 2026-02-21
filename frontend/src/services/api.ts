@@ -182,7 +182,12 @@ export const credentialsApi = {
 export const scrapingApi = {
   getStatus: (processId: number) =>
     api.get("/scraping/status", { params: { scraping_process_id: processId } }),
-  start: (payload: { service: string; provider: string; account: string }) => {
+  start: (payload: {
+    service: string;
+    provider: string;
+    account: string;
+    scraping_period_days?: number;
+  }) => {
     return api.post("/scraping/start", payload);
   },
   submit2fa: (

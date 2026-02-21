@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from threading import Thread
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -89,7 +89,13 @@ class ScrapingService:
             )
         return result
 
-    def start_scraping_single(self, service: str, provider: str, account: str) -> int:
+    def start_scraping_single(
+        self,
+        service: str,
+        provider: str,
+        account: str,
+        scraping_period_days: Optional[int] = None,
+    ) -> int:
         """
         Start the scraping process for a single account in a background thread.
 
@@ -105,13 +111,19 @@ class ScrapingService:
             Provider identifier (e.g. ``"isracard"``, ``"hapoalim"``).
         account : str
             Account name used to look up credentials.
+        scraping_period_days : int, optional
+            Number of days to scrape back from today. If ``None``, falls back
+            to the automatic start date based on last scrape history.
 
         Returns
         -------
         int
             The ``process_id`` of the new scraping history record.
         """
-        start_date = self._get_scraper_start_date(service, provider, account)
+        if scraping_period_days is not None:
+            start_date = date.today() - timedelta(days=scraping_period_days)
+        else:
+            start_date = self._get_scraper_start_date(service, provider, account)
         creds = self.credentials_repo.get_credentials(service, provider, account)
         requires_2fa = is_2fa_required(service, provider)
 

@@ -9,6 +9,7 @@ import {
   XCircle,
   Info,
   Clock,
+  ChevronDown,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { scrapingApi, credentialsApi } from "../../services/api";
@@ -44,6 +45,16 @@ function isToday(dateString: string): boolean {
   );
 }
 
+const SCRAPING_PERIODS = [
+  { label: "Auto", days: null },
+  { label: "2 Weeks", days: 14 },
+  { label: "1 Month", days: 30 },
+  { label: "2 Months", days: 60 },
+  { label: "3 Months", days: 90 },
+  { label: "6 Months", days: 180 },
+  { label: "12 Months", days: 365 },
+] as const;
+
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -62,6 +73,9 @@ export function ScrapingWidget() {
   const [tfaCode, setTfaCode] = useState("");
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(
     new Set(),
+  );
+  const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(
+    null,
   );
 
   // Map of process_id -> ScraperState
@@ -100,6 +114,9 @@ export function ScrapingWidget() {
         service: acc.service,
         provider: acc.provider,
         account: acc.account_name,
+        ...(scrapingPeriodDays !== null && {
+          scraping_period_days: scrapingPeriodDays,
+        }),
       });
       handleScrapeSuccess(res, acc);
     } catch (e) {
@@ -361,6 +378,28 @@ export function ScrapingWidget() {
         {/* Service Selection */}
         <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
           <div className="flex gap-2 mb-2">
+            <div className="relative">
+              <select
+                value={scrapingPeriodDays ?? "auto"}
+                onChange={(e) =>
+                  setScrapingPeriodDays(
+                    e.target.value === "auto" ? null : Number(e.target.value),
+                  )
+                }
+                disabled={isRunning}
+                className="appearance-none bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-xl px-3 pr-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer h-full"
+              >
+                {SCRAPING_PERIODS.map((p) => (
+                  <option key={p.label} value={p.days ?? "auto"}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={12}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
+              />
+            </div>
             <button
               onClick={handleStartAll}
               disabled={isRunning}
