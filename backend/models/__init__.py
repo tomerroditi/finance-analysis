@@ -11,6 +11,7 @@ from backend.models.category import Category
 from backend.models.credential import Credential
 from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
+from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.models.scraping import ScrapingHistory
 from backend.models.tagging_rules import TaggingRule
@@ -39,6 +40,7 @@ __all__ = [
     "Credential",
     "BudgetRule",
     "Investment",
+    "InvestmentBalanceSnapshot",
     "TaggingRule",
     "ScrapingHistory",
     # Refund linking
