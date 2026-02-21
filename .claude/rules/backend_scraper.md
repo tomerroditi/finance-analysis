@@ -1,5 +1,7 @@
 ---
-globs: backend/scraper/**/*.py, backend/services/scraping_service.py
+paths:
+  - "backend/scraper/**/*.py"
+  - "backend/services/scraping_service.py"
 ---
 
 # Scraper Module - Web Scraping for Israeli Financial Providers

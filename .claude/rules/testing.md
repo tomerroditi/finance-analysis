@@ -1,5 +1,8 @@
 ---
-globs: tests/**/*.py, pytest.ini, conftest.py
+paths:
+  - "tests/**/*.py"
+  - "pytest.ini"
+  - "conftest.py"
 ---
 
 # Testing Standards

@@ -1,5 +1,6 @@
 ---
-globs: backend/resources/**/*
+paths:
+  - "backend/resources/**/*"
 ---
 
 # Resources Directory - Configuration & Static Data

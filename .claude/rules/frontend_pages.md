@@ -1,5 +1,6 @@
 ---
-globs: frontend/src/pages/**/*.{ts,tsx}
+paths:
+  - "frontend/src/pages/**/*.{ts,tsx}"
 ---
 
 # Frontend Pages - Route Views

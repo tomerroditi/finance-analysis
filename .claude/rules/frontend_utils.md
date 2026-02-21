@@ -1,5 +1,6 @@
 ---
-globs: frontend/src/utils/**/*.{ts,tsx}
+paths:
+  - "frontend/src/utils/**/*.{ts,tsx}"
 ---
 
 # Frontend Utils Layer - Helper Functions

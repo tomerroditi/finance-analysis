@@ -1,5 +1,6 @@
 ---
-globs: frontend/src/components/**/*.{ts,tsx}
+paths:
+  - "frontend/src/components/**/*.{ts,tsx}"
 ---
 
 # Frontend Components - UI Implementation

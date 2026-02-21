@@ -1,5 +1,8 @@
 ---
-globs: backend/repositories/**/*.py, backend/database.py, backend/models/**/*.py
+paths:
+  - "backend/repositories/**/*.py"
+  - "backend/database.py"
+  - "backend/models/**/*.py"
 ---
 
 # Data Access Layer - Repository Pattern

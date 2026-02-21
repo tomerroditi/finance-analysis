@@ -1,5 +1,6 @@
 ---
-globs: backend/services/**/*.py
+paths:
+  - "backend/services/**/*.py"
 ---
 
 # Services Layer - Business Logic
