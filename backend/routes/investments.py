@@ -38,6 +38,16 @@ class InvestmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class BalanceSnapshotCreate(BaseModel):
+    date: str
+    balance: float
+
+
+class BalanceSnapshotUpdate(BaseModel):
+    date: Optional[str] = None
+    balance: Optional[float] = None
+
+
 @router.get("/")
 async def get_investments(
     include_closed: bool = False, db: Session = Depends(get_database)
@@ -165,4 +175,66 @@ async def delete_investment(
     """Delete an investment."""
     service = InvestmentsService(db)
     service.delete_investment(investment_id)
+    return {"status": "success"}
+
+
+# ── Balance Snapshot Routes ───────────────────────────────────────
+
+
+@router.get("/{investment_id}/balances")
+async def get_balance_snapshots(
+    investment_id: int, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
+    """Get all balance snapshots for an investment."""
+    service = InvestmentsService(db)
+    return service.get_balance_snapshots(investment_id)
+
+
+@router.post("/{investment_id}/balances")
+async def create_balance_snapshot(
+    investment_id: int,
+    snapshot: BalanceSnapshotCreate,
+    db: Session = Depends(get_database),
+) -> dict[str, str]:
+    """Create or update a balance snapshot for a specific date."""
+    service = InvestmentsService(db)
+    service.create_balance_snapshot(investment_id, snapshot.date, snapshot.balance)
+    return {"status": "success"}
+
+
+@router.post("/{investment_id}/balances/calculate")
+async def calculate_fixed_rate_snapshots(
+    investment_id: int,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_database),
+) -> dict[str, str]:
+    """Trigger fixed-rate auto-calculation of balance snapshots."""
+    service = InvestmentsService(db)
+    service.calculate_fixed_rate_snapshots(investment_id, end_date=end_date)
+    return {"status": "success"}
+
+
+@router.put("/{investment_id}/balances/{snapshot_id}")
+async def update_balance_snapshot(
+    investment_id: int,
+    snapshot_id: int,
+    snapshot: BalanceSnapshotUpdate,
+    db: Session = Depends(get_database),
+) -> dict[str, str]:
+    """Update an existing balance snapshot."""
+    service = InvestmentsService(db)
+    updates = {k: v for k, v in snapshot.dict().items() if v is not None}
+    service.update_balance_snapshot(snapshot_id, **updates)
+    return {"status": "success"}
+
+
+@router.delete("/{investment_id}/balances/{snapshot_id}")
+async def delete_balance_snapshot(
+    investment_id: int,
+    snapshot_id: int,
+    db: Session = Depends(get_database),
+) -> dict[str, str]:
+    """Delete a balance snapshot."""
+    service = InvestmentsService(db)
+    service.delete_balance_snapshot(snapshot_id)
     return {"status": "success"}
