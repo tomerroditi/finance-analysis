@@ -14,6 +14,7 @@ import {
   Percent,
 } from "lucide-react";
 import { investmentsApi, taggingApi } from "../services/api";
+import { SelectDropdown } from "../components/common/SelectDropdown";
 import Plot from "react-plotly.js";
 
 function StatCard({
@@ -630,67 +631,53 @@ export function Investments() {
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   Category
                 </label>
-                <select
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all appearance-none font-medium"
+                <SelectDropdown
+                  options={Object.keys(filteredCategories).map((cat) => ({ label: cat, value: cat }))}
                   value={newInvestment.category}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setNewInvestment({
                       ...newInvestment,
-                      category: e.target.value,
+                      category: val,
                       tag: "",
                     })
                   }
-                >
-                  <option value="">Select Category</option>
-                  {Object.keys(filteredCategories).map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select Category"
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   Tag
                 </label>
-                <select
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all appearance-none font-medium"
+                <SelectDropdown
+                  options={newInvestment.category && filteredCategories[newInvestment.category] ? filteredCategories[newInvestment.category].map((tag: string) => ({ label: tag, value: tag })) : []}
                   value={newInvestment.tag}
-                  onChange={(e) =>
-                    setNewInvestment({ ...newInvestment, tag: e.target.value })
+                  onChange={(val) =>
+                    setNewInvestment({ ...newInvestment, tag: val })
                   }
+                  placeholder="Select Tag"
                   disabled={!newInvestment.category}
-                >
-                  <option value="">Select Tag</option>
-                  {newInvestment.category &&
-                    filteredCategories[newInvestment.category]?.map(
-                      (tag: string) => (
-                        <option key={tag} value={tag}>
-                          {tag}
-                        </option>
-                      ),
-                    )}
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   Type
                 </label>
-                <select
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all appearance-none font-medium"
+                <SelectDropdown
+                  options={[
+                    { label: "Stocks", value: "stocks" },
+                    { label: "Crypto", value: "crypto" },
+                    { label: "Bonds", value: "bonds" },
+                    { label: "Real Estate", value: "real_estate" },
+                    { label: "Pension", value: "pension" },
+                    { label: "Brokerage Account", value: "brokerage_account" },
+                    { label: "Other", value: "other" },
+                  ]}
                   value={newInvestment.type}
-                  onChange={(e) =>
-                    setNewInvestment({ ...newInvestment, type: e.target.value })
+                  onChange={(val) =>
+                    setNewInvestment({ ...newInvestment, type: val })
                   }
-                >
-                  <option value="stocks">Stocks</option>
-                  <option value="crypto">Crypto</option>
-                  <option value="bonds">Bonds</option>
-                  <option value="real_estate">Real Estate</option>
-                  <option value="pension">Pension</option>
-                  <option value="brokerage_account">Brokerage Account</option>
-                  <option value="other">Other</option>
-                </select>
+                  placeholder="Select Type"
+                />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">

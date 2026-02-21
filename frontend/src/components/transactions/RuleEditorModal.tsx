@@ -5,6 +5,7 @@ import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
 import { RuleBuilder } from "./RuleBuilder";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -298,30 +299,28 @@ function RuleForm({
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Category</label>
-                        <select
+                        <div className="mt-1">
+                        <SelectDropdown
+                            options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
                             value={category}
-                            onChange={e => setCategory(e.target.value)}
-                            className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
-                        >
-                            <option value="">Select...</option>
-                            {Object.keys(categories).map(c => (
-                                <option key={c} value={c}>{c}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setCategory(val)}
+                            placeholder="Select..."
+                            size="sm"
+                        />
+                        </div>
                     </div>
                     <div>
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Tag</label>
-                        <select
+                        <div className="mt-1">
+                        <SelectDropdown
+                            options={availableTags.map((t: string) => ({ label: t, value: t }))}
                             value={tag}
-                            onChange={e => setTag(e.target.value)}
+                            onChange={(val) => setTag(val)}
+                            placeholder="Select..."
                             disabled={!category}
-                            className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50"
-                        >
-                            <option value="">Select...</option>
-                            {availableTags.map(t => (
-                                <option key={t} value={t}>{t}</option>
-                            ))}
-                        </select>
+                            size="sm"
+                        />
+                        </div>
                     </div>
                 </div>
             </div>

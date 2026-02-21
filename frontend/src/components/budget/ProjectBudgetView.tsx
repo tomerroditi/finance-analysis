@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, PenSquare } from "lucide-react";
 import { budgetApi, pendingRefundsApi } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
@@ -216,29 +217,15 @@ export const ProjectBudgetView: React.FC = () => {
           <label className="font-semibold text-[var(--text-default)]">
             Select Project:
           </label>
-          <div className="relative">
-            <select
+          <div className="w-64">
+            <SelectDropdown
+              options={projects.length > 0 ? projects.map((p: string) => ({ label: p, value: p })) : []}
               value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              className="appearance-none bg-[var(--surface-base)] border border-[var(--surface-light)] text-[var(--text-default)] text-sm rounded-lg focus:ring-[var(--primary)] focus:border-[var(--primary)] block w-64 p-2.5 pr-8 transition-colors hover:bg-[var(--surface-light)]"
+              onChange={(val) => setSelectedProject(val)}
+              placeholder={projects.length === 0 ? "No Projects" : "Select Project"}
               disabled={projects.length === 0}
-            >
-              {projects.length === 0 && <option>No Projects</option>}
-              {projects.map((p: string) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-[var(--text-muted)]">
-              <svg
-                className="fill-current h-4 w-4"
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-              >
-                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-              </svg>
-            </div>
+              size="sm"
+            />
           </div>
         </div>
 

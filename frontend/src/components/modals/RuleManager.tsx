@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface RuleManagerProps {
   onClose: () => void;
@@ -196,45 +197,34 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
                   Category
                 </label>
-                <select
-                  className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
+                <SelectDropdown
+                  options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
                   value={newRule.category}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setNewRule({
                       ...newRule,
-                      category: e.target.value,
+                      category: val,
                       tag: "",
                     })
                   }
-                >
-                  <option value="">Select Category</option>
-                  {categories &&
-                    Object.keys(categories).map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="Select Category"
+                  size="sm"
+                />
               </div>
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
                   Tag
                 </label>
-                <select
-                  className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50"
+                <SelectDropdown
+                  options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
                   value={newRule.tag}
-                  onChange={(e) =>
-                    setNewRule({ ...newRule, tag: e.target.value })
+                  onChange={(val) =>
+                    setNewRule({ ...newRule, tag: val })
                   }
+                  placeholder="Select Tag"
                   disabled={!newRule.category}
-                >
-                  <option value="">Select Tag</option>
-                  {availableTags.map((tag: string) => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  size="sm"
+                />
               </div>
             </div>
             <div className="flex gap-2 mt-4 justify-end">

@@ -33,6 +33,7 @@ import {
 import { formatDate } from "../utils/dateFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
+import { SelectDropdown } from "./common/SelectDropdown";
 
 export interface Transaction {
   id?: any;
@@ -945,40 +946,32 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           <div className="flex items-center gap-3">
             {bulkMode === "tag" ? (
               <div className="flex items-center gap-2">
-                <select
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                <div className="w-40">
+                <SelectDropdown
+                  options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
                   value={bulkTagData.category}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setBulkTagData({
                       ...bulkTagData,
-                      category: e.target.value,
+                      category: val,
                       tag: "",
                     })
                   }
-                >
-                  <option value="">Category</option>
-                  {categories &&
-                    Object.keys(categories).map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                </select>
-                <select
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                  placeholder="Category"
+                  size="sm"
+                />
+                </div>
+                <div className="w-40">
+                <SelectDropdown
+                  options={bulkTagData.category && categories?.[bulkTagData.category] ? categories[bulkTagData.category].map((tag: string) => ({ label: tag, value: tag })) : []}
                   value={bulkTagData.tag}
-                  onChange={(e) =>
-                    setBulkTagData({ ...bulkTagData, tag: e.target.value })
+                  onChange={(val) =>
+                    setBulkTagData({ ...bulkTagData, tag: val })
                   }
-                >
-                  <option value="">Tag</option>
-                  {bulkTagData.category &&
-                    categories?.[bulkTagData.category]?.map((tag: string) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                </select>
+                  placeholder="Tag"
+                  size="sm"
+                />
+                </div>
                 <button
                   className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
                   onClick={handleBulkTag}
@@ -998,23 +991,20 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </div>
             ) : bulkMode === "account" ? (
               <div className="flex items-center gap-2">
-                <select
+                <div className="w-40">
+                <SelectDropdown
+                  options={cashBalances.map((b: any) => ({ label: b.account_name, value: b.account_name }))}
                   value={bulkCashData.account_name}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setBulkCashData({
                       ...bulkCashData,
-                      account_name: e.target.value,
+                      account_name: val,
                     })
                   }
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                >
-                  <option value="">Account</option>
-                  {cashBalances.map((b: any) => (
-                    <option key={b.account_name} value={b.account_name}>
-                      {b.account_name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Account"
+                  size="sm"
+                />
+                </div>
                 <button
                   className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
                   onClick={handleBulkTag}

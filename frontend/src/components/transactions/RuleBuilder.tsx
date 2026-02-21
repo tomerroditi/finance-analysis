@@ -6,6 +6,7 @@ import {
     FileText
 } from "lucide-react";
 import type { ConditionNode, ConditionType, Operator } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface RuleBuilderProps {
     value: ConditionNode;
@@ -82,14 +83,17 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                 <div className="flex items-center gap-2 p-2 bg-[var(--surface-light)]/20 border-b border-[var(--surface-light)]">
                     <div className="flex items-center gap-1">
                         <Layers size={14} className="text-[var(--primary)]" />
-                        <select
+                        <div className="w-40">
+                        <SelectDropdown
+                            options={[
+                                { label: "AND (All match)", value: "AND" },
+                                { label: "OR (Any match)", value: "OR" },
+                            ]}
                             value={value.type}
-                            onChange={(e) => onChange({ ...value, type: e.target.value as "AND" | "OR" })}
-                            className="bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-0.5 text-xs font-bold text-white focus:border-[var(--primary)] outline-none"
-                        >
-                            <option value="AND">AND (All match)</option>
-                            <option value="OR">OR (Any match)</option>
-                        </select>
+                            onChange={(val) => onChange({ ...value, type: val as "AND" | "OR" })}
+                            size="sm"
+                        />
+                        </div>
                     </div>
 
                     <div className="flex-1" />
@@ -160,25 +164,23 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                 <FileText size={14} />
             </div>
 
-            <select
-                value={value.field}
-                onChange={(e) => handleFieldChange(e.target.value)}
-                className="bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"
-            >
-                {FIELDS.map(f => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
-                ))}
-            </select>
+            <div className="w-32">
+            <SelectDropdown
+                options={FIELDS.map(f => ({ label: f.label, value: f.value }))}
+                value={value.field || "description"}
+                onChange={(val) => handleFieldChange(val)}
+                size="sm"
+            />
+            </div>
 
-            <select
-                value={value.operator}
-                onChange={(e) => onChange({ ...value, operator: e.target.value as Operator })}
-                className="bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)] w-24"
-            >
-                {operators.map(op => (
-                    <option key={op.value} value={op.value}>{op.label}</option>
-                ))}
-            </select>
+            <div className="w-32">
+            <SelectDropdown
+                options={operators.map(op => ({ label: op.label, value: op.value }))}
+                value={value.operator || "contains"}
+                onChange={(val) => onChange({ ...value, operator: val as Operator })}
+                size="sm"
+            />
+            </div>
 
             {value.operator === "between" ? (
                 <div className="flex items-center gap-1">

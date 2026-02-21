@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { budgetApi } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -81,24 +82,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 disabled
               />
             ) : (
-              <select
+              <SelectDropdown
+                options={availableCategories.map((cat: string) => ({ label: cat, value: cat }))}
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                onChange={(val) => setCategory(val)}
+                placeholder="Select a category"
                 required
-              >
-                <option value="" disabled>
-                  Select a category
-                </option>
-                {availableCategories.map((cat: string) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-                {availableCategories.length === 0 && (
-                  <option disabled>No categories available</option>
-                )}
-              </select>
+              />
             )}
             {!isEdit && availableCategories.length === 0 && (
               <p className="mt-1 text-xs text-amber-500">

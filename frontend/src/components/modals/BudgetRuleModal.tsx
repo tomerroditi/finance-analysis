@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface BudgetRuleModalProps {
   isOpen: boolean;
@@ -150,28 +151,21 @@ export function BudgetRuleModal({
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
               Category
             </label>
-            <select
-              required
+            <SelectDropdown
+              options={categories.map((c: string) => ({ label: c, value: c }))}
               value={category}
-              onChange={(e) => {
-                const newCategory = e.target.value;
-                setCategory(newCategory);
-                if (categoriesMap && (categoriesMap as any)[newCategory]) {
-                  setSelectedTags((categoriesMap as any)[newCategory]);
+              onChange={(val) => {
+                setCategory(val);
+                if (categoriesMap && (categoriesMap as any)[val]) {
+                  setSelectedTags((categoriesMap as any)[val]);
                 } else {
                   setSelectedTags([]);
                 }
               }}
-              className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium appearance-none disabled:opacity-50"
+              placeholder="Select Category"
+              required
               disabled={isProjectRule && !!initialData}
-            >
-              <option value="">Select Category</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>

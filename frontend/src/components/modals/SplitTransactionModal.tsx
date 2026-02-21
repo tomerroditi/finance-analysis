@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { X, Plus, Trash2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 
 interface SplitTransactionModalProps {
   transaction: any;
@@ -137,41 +138,27 @@ export function SplitTransactionModal({
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
                     Category
                   </label>
-                  <select
+                  <SelectDropdown
+                    options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
                     value={split.category}
-                    onChange={(e) =>
-                      updateSplit(index, "category", e.target.value)
-                    }
-                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
-                  >
-                    <option value="">Select Category</option>
-                    {categories &&
-                      Object.keys(categories).map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                  </select>
+                    onChange={(val) => updateSplit(index, "category", val)}
+                    placeholder="Select Category"
+                    size="sm"
+                  />
                 </div>
 
                 <div className="flex-[1.5] space-y-2">
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
                     Tag
                   </label>
-                  <select
+                  <SelectDropdown
+                    options={split.category && categories?.[split.category] ? categories[split.category].map((tag: string) => ({ label: tag, value: tag })) : []}
                     value={split.tag}
-                    onChange={(e) => updateSplit(index, "tag", e.target.value)}
+                    onChange={(val) => updateSplit(index, "tag", val)}
+                    placeholder="Select Tag"
                     disabled={!split.category}
-                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all"
-                  >
-                    <option value="">Select Tag</option>
-                    {split.category &&
-                      categories?.[split.category]?.map((tag: string) => (
-                        <option key={tag} value={tag}>
-                          {tag}
-                        </option>
-                      ))}
-                  </select>
+                    size="sm"
+                  />
                 </div>
 
                 <button
