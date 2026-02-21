@@ -10,8 +10,7 @@ import { Plus, Trash2, DollarSign, X } from "lucide-react";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 
-function CashBalancesCard() {
-  const queryClient = useQueryClient();
+function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -238,6 +237,7 @@ function CashBalancesCard() {
 }
 
 export function Transactions() {
+  const queryClient = useQueryClient();
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -295,6 +295,8 @@ export function Transactions() {
   const refreshAll = () => {
     refetch();
     refetchPending();
+    // Invalidate cash balances when transactions change (they recalculate on backend)
+    queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
   };
 
   const services = [
@@ -348,7 +350,7 @@ export function Transactions() {
             </div>
           ) : (
             <>
-              {selectedService === "cash" && <CashBalancesCard />}
+              {selectedService === "cash" && <CashBalancesCard queryClient={queryClient} />}
               <TransactionsTable
                 transactions={transactions || []}
                 showSelection
