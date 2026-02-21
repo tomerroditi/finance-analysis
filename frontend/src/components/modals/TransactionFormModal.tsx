@@ -84,11 +84,13 @@ export function TransactionFormModal({
         enabled: isOpen,
     });
 
-    // Fetch cash balances (envelopes) for new cash transactions
+    // Fetch cash balances (envelopes) for cash transactions (both new and edit)
+    const isCashTransaction = (!isEditMode && service === "cash") ||
+                               (isEditMode && transaction?.source?.includes("cash"));
     const { data: cashBalances = [] } = useQuery({
         queryKey: ["cash-balances"],
         queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-        enabled: isOpen && !isEditMode && service === "cash",
+        enabled: isOpen && isCashTransaction,
     });
 
     const availableTags =
@@ -178,7 +180,7 @@ export function TransactionFormModal({
                                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
                                     Account / Wallet Name
                                 </label>
-                                {!isEditMode && service === "cash" ? (
+                                {isCashTransaction ? (
                                     <select
                                         value={formData.account_name}
                                         onChange={(e) =>
@@ -201,7 +203,7 @@ export function TransactionFormModal({
                                         onChange={(e) =>
                                             setFormData({ ...formData, account_name: e.target.value })
                                         }
-                                        placeholder="e.g., Wallet, Safe, Mattress"
+                                        placeholder="e.g., Investment Account"
                                         className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all"
                                         required
                                     />
