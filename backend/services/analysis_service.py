@@ -211,15 +211,27 @@ class AnalysisService:
             - ``net_change`` – sum of all transaction amounts for the month.
             - ``cumulative_balance`` – running total up to and including this month.
         """
+        bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
+        investment_prior_wealth = self.investments_service.get_total_prior_wealth()
+
         df = self.repo.get_table(exclude_services=["credit_card_transactions"])
 
         if df.empty:
             return []
+        
+        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        cumulative = bank_prior_wealth + investment_prior_wealth
+
 
         trend = []
-        cumulative = 0.0
+        trend .append(
+            {
+                "month": (pd.to_datetime(df["date"].min()) - pd.DateOffset(months=1)).strftime("%Y-%m"),
+                "net_change": 0.0,
+                "cumulative_balance": round(cumulative, 2),
+            }
+        )
 
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
         for month in sorted(df["month"].unique()):
             group = df[df["month"] == month]
 

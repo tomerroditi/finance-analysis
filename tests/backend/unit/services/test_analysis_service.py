@@ -67,22 +67,28 @@ class TestAnalysisServiceTimeSeries:
         service = AnalysisService(db_session)
         result = service.get_net_balance_over_time()
 
-        assert len(result) == 3
+        assert len(result) == 4
+
+        # anchor point before first month (cumulative balance = prior wealth = 0 - cash prior wealth is being ignored atm, we should add it in the future)
+        anchor = result[0]
+        assert anchor["month"] == "2023-12"
+        assert anchor["net_change"] == 0.0
+        assert anchor["cumulative_balance"] == 0
 
         # Jan bank+cash: 8000 - 3000 - 500 + 500 - 15 - 10 = 4975
-        jan = result[0]
+        jan = result[1]
         assert jan["month"] == "2024-01"
         assert jan["net_change"] == 4975.0
         assert jan["cumulative_balance"] == 4975.0
 
         # Feb bank+cash: 8500 - 3000 - 18 - 12 + 3500 = 8970
-        feb = result[1]
+        feb = result[2]
         assert feb["month"] == "2024-02"
         assert feb["net_change"] == 8970.0
         assert feb["cumulative_balance"] == 4975.0 + 8970.0
 
         # Mar bank+cash: 8200 - 3000 - 700 + 700 - 12 - 8 = 5180
-        mar = result[2]
+        mar = result[3]
         assert mar["month"] == "2024-03"
         assert mar["net_change"] == 5180.0
         assert mar["cumulative_balance"] == 4975.0 + 8970.0 + 5180.0
