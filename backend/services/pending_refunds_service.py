@@ -236,6 +236,8 @@ class PendingRefundsService:
                                 "description": tx.description,
                                 "account_name": tx.account_name,
                                 "provider": tx.provider,
+                                "category": tx.category,
+                                "tag": tx.tag,
                                 "original_currency": "ILS",  # Assumption
                             }
                 except Exception:
@@ -273,6 +275,8 @@ class PendingRefundsService:
                                         "description": f"Split: {parent.description}",
                                         "account_name": parent.account_name,
                                         "provider": parent.provider,
+                                        "category": split.category,
+                                        "tag": split.tag,
                                         "original_currency": "ILS",
                                     }
                 except Exception:

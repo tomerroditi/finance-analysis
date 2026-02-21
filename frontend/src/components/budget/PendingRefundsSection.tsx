@@ -85,6 +85,12 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                 <span className="uppercase">
                   {item.provider || item.source_table}
                 </span>
+                {item.category && (
+                  <>
+                    <span>•</span>
+                    <span>{item.category}{item.tag ? ` / ${item.tag}` : ""}</span>
+                  </>
+                )}
                 {item.notes && (
                   <>
                     <span>•</span>
