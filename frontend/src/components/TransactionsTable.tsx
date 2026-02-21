@@ -373,7 +373,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           transaction_ids: ids,
           source,
           account_name: bulkCashData.account_name || undefined,
-          date: bulkCashData.date || undefined,
         });
       }
     });
@@ -1016,14 +1015,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     </option>
                   ))}
                 </select>
-                <input
-                  type="date"
-                  value={bulkCashData.date}
-                  onChange={(e) =>
-                    setBulkCashData({ ...bulkCashData, date: e.target.value })
-                  }
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                />
                 <button
                   className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
                   onClick={handleBulkTag}
