@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check, Search } from "lucide-react";
+import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
 
 interface SelectDropdownProps {
   options: { label: string; value: string }[];
@@ -10,6 +10,7 @@ interface SelectDropdownProps {
   required?: boolean;
   disabled?: boolean;
   size?: "default" | "sm";
+  onCreateNew?: (value: string) => Promise<void> | void;
 }
 
 export const SelectDropdown: React.FC<SelectDropdownProps> = ({
@@ -20,6 +21,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   required,
   disabled,
   size = "default",
+  onCreateNew,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -29,6 +31,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
+  const [isCreating, setIsCreating] = useState(false);
+  const [createValue, setCreateValue] = useState("");
+  const createInputRef = useRef<HTMLInputElement>(null);
 
   const showSearch = options.length > 5;
 
@@ -55,6 +60,8 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     if (!isOpen) {
       setSearch("");
       setHighlightIndex(-1);
+      setIsCreating(false);
+      setCreateValue("");
       return;
     }
     updatePosition();
@@ -136,6 +143,30 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     },
     [isOpen, highlightIndex, filteredOptions, onChange],
   );
+
+  const handleStartCreate = () => {
+    setCreateValue(search);
+    setIsCreating(true);
+    requestAnimationFrame(() => createInputRef.current?.focus());
+  };
+
+  const handleConfirmCreate = async () => {
+    const trimmed = createValue.trim();
+    if (!trimmed) return;
+    try {
+      await onCreateNew?.(trimmed);
+      setIsCreating(false);
+      setCreateValue("");
+      setIsOpen(false);
+    } catch {
+      // Stay in creation mode so user can retry
+    }
+  };
+
+  const handleCancelCreate = () => {
+    setIsCreating(false);
+    setCreateValue("");
+  };
 
   const selectedLabel = options.find((o) => o.value === value)?.label;
 
@@ -256,6 +287,60 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                 <div className="px-4 py-3 text-sm text-[var(--text-muted)] text-center">
                   {search ? "No matches found" : "No options available"}
                 </div>
+              )}
+              {onCreateNew && (
+                <>
+                  {(filteredOptions.length > 0 || isCreating) && (
+                    <div className="border-t border-[var(--surface-light)]" />
+                  )}
+                  {isCreating ? (
+                    <div className="p-1.5">
+                      <div className="flex items-center gap-1">
+                        <input
+                          ref={createInputRef}
+                          type="text"
+                          value={createValue}
+                          onChange={(e) => setCreateValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleConfirmCreate();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              handleCancelCreate();
+                            }
+                            e.stopPropagation();
+                          }}
+                          placeholder="Enter name..."
+                          className="flex-1 px-3 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleConfirmCreate}
+                          className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelCreate}
+                          className="p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartCreate}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-[var(--primary)] hover:bg-[var(--surface-light)] transition-colors"
+                    >
+                      <Plus size={14} />
+                      Create new
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>,
