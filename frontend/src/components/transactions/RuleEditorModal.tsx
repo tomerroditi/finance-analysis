@@ -24,7 +24,6 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     const queryClient = useQueryClient();
 
     // Form state
-    const [name, setName] = useState("");
     const [category, setCategory] = useState("");
     const [tag, setTag] = useState("");
     const [conditions, setConditions] = useState<ConditionNode>(EMPTY_CONDITIONS);
@@ -37,16 +36,15 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     });
 
     const availableTags = category && categories ? categories[category] || [] : [];
+    const name = tag ? `Auto: ${category} - ${tag}` : "";
 
     // Initialize form when editing
     useEffect(() => {
         if (editingRule) {
-            setName(editingRule.name);
             setCategory(editingRule.category);
             setTag(editingRule.tag);
             setConditions(editingRule.conditions);
         } else {
-            setName("");
             setCategory("");
             setTag("");
             setConditions(EMPTY_CONDITIONS);
@@ -95,8 +93,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
 
     const handleSave = () => {
         setError(null);
-        if (!name || !category) {
-            setError("Name and category are required");
+        if (!category || !tag) {
+            setError("Category and tag are required");
             return;
         }
 
@@ -145,7 +143,6 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                             <div className="h-full overflow-y-auto p-6">
                                 <RuleForm
                                     name={name}
-                                    setName={setName}
                                     category={category}
                                     setCategory={(c) => { setCategory(c); setTag(""); }}
                                     tag={tag}
@@ -177,7 +174,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                         </button>
                         <button
                             onClick={handleSave}
-                            disabled={!name || !category || isSaving}
+                            disabled={!category || !tag || isSaving}
                             className={`px-6 py-2.5 text-white rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
                                 error ? "bg-red-500 hover:bg-red-600 animate-[shake_0.3s_ease-in-out]" : "bg-[var(--primary)] hover:bg-[var(--primary-dark)]"
                             }`}
@@ -274,13 +271,13 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
 
 // Rule Form Component
 function RuleForm({
-    name, setName,
+    name,
     category, setCategory,
     tag, setTag,
     conditions, setConditions,
     categories, availableTags,
 }: {
-    name: string; setName: (v: string) => void;
+    name: string;
     category: string; setCategory: (v: string) => void;
     tag: string; setTag: (v: string) => void;
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
@@ -291,16 +288,11 @@ function RuleForm({
         <div className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-4 p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
-                <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Rule Details</h4>
-
-                <div>
-                    <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Name</label>
-                    <input
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        placeholder="e.g. Auto: Food - Restaurants"
-                        className="w-full mt-1 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-colors"
-                    />
+                <div className="flex items-center justify-between">
+                    <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Rule Details</h4>
+                    {name && (
+                        <span className="text-xs text-[var(--text-muted)] font-mono">{name}</span>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
