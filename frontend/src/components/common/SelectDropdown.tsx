@@ -23,9 +23,11 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [highlightIndex, setHighlightIndex] = useState(-1);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
 
   const showSearch = options.length > 5;
@@ -52,12 +54,16 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setSearch("");
+      setHighlightIndex(-1);
       return;
     }
     updatePosition();
-    // Focus search input after portal renders
     requestAnimationFrame(() => {
-      searchRef.current?.focus();
+      if (showSearch) {
+        searchRef.current?.focus();
+      } else {
+        dropdownRef.current?.focus();
+      }
     });
     const onScroll = () => updatePosition();
     window.addEventListener("scroll", onScroll, true);
@@ -66,7 +72,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
-  }, [isOpen, updatePosition]);
+  }, [isOpen, updatePosition, showSearch]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,6 +89,54 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     return () => document.removeEventListener("mousedown", handler);
   }, [isOpen]);
 
+  // Reset highlight when filtered options change
+  useEffect(() => {
+    setHighlightIndex(-1);
+  }, [search]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlightIndex < 0 || !listRef.current) return;
+    const items = listRef.current.children;
+    if (items[highlightIndex]) {
+      (items[highlightIndex] as HTMLElement).scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightIndex]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!isOpen) return;
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setHighlightIndex((prev) =>
+            prev < filteredOptions.length - 1 ? prev + 1 : 0,
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setHighlightIndex((prev) =>
+            prev > 0 ? prev - 1 : filteredOptions.length - 1,
+          );
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (highlightIndex >= 0 && filteredOptions[highlightIndex]) {
+            onChange(filteredOptions[highlightIndex].value);
+            setIsOpen(false);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          setIsOpen(false);
+          buttonRef.current?.focus();
+          break;
+      }
+    },
+    [isOpen, highlightIndex, filteredOptions, onChange],
+  );
+
   const selectedLabel = options.find((o) => o.value === value)?.label;
 
   const sizeClasses =
@@ -95,6 +149,12 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
       <button
         ref={buttonRef}
         onClick={() => !disabled && setIsOpen(!isOpen)}
+        onKeyDown={(e) => {
+          if (!isOpen && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            setIsOpen(true);
+          }
+        }}
         type="button"
         className={`w-full flex items-center justify-between bg-[var(--surface-base)] border border-[var(--surface-light)] outline-none transition-all text-left ${sizeClasses} ${
           disabled
@@ -134,7 +194,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col"
+            tabIndex={-1}
+            onKeyDown={handleKeyDown}
+            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none"
             style={{
               top: pos.openUp ? undefined : pos.top + 4,
               bottom: pos.openUp
@@ -157,22 +219,28 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     placeholder="Search..."
                     className="w-full pl-7 pr-2 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                   />
                 </div>
               </div>
             )}
-            <div className="overflow-y-auto flex-1">
-              {filteredOptions.map((opt) => (
+            <div ref={listRef} className="overflow-y-auto flex-1">
+              {filteredOptions.map((opt, idx) => (
                 <button
                   key={opt.value}
                   type="button"
+                  onMouseEnter={() => setHighlightIndex(idx)}
                   onClick={() => {
                     onChange(opt.value);
                     setIsOpen(false);
                   }}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--surface-light)] transition-colors text-left"
+                  className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors text-left ${
+                    idx === highlightIndex
+                      ? "bg-[var(--surface-light)]"
+                      : "hover:bg-[var(--surface-light)]"
+                  }`}
                 >
                   <span className="text-[var(--text-default)]">
                     {opt.label}
