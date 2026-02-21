@@ -24,6 +24,8 @@ class Tables(Enum):
         Name of the table storing scraping history and daily limits.
     INVESTMENTS : str
         Name of the table storing investment tracking data.
+    INVESTMENT_BALANCE_SNAPSHOTS : str
+        Name of the table storing investment balance snapshots over time.
     MANUAL_INVESTMENT_TRANSACTIONS : str
         Name of the table storing manual inserted investment transactions (for unreachable data).
     PENDING_REFUNDS : str
@@ -48,6 +50,7 @@ class Tables(Enum):
     SPLIT_TRANSACTIONS = "split_transactions"
     SCRAPING_HISTORY = "scraping_history"
     INVESTMENTS = "investments"
+    INVESTMENT_BALANCE_SNAPSHOTS = "investment_balance_snapshots"
     MANUAL_INVESTMENT_TRANSACTIONS = "manual_investment_transactions"
     PENDING_REFUNDS = "pending_refunds"
     REFUND_LINKS = "refund_links"
@@ -146,3 +149,13 @@ class InvestmentsTableFields(Enum):
     CREATED_DATE = "created_date"
     CLOSED_DATE = "closed_date"
     NOTES = "notes"
+
+
+class InvestmentBalanceSnapshotsTableFields(Enum):
+    """Field names for the investment_balance_snapshots table."""
+
+    ID = "id"
+    INVESTMENT_ID = "investment_id"
+    DATE = "date"
+    BALANCE = "balance"
+    SOURCE = "source"
