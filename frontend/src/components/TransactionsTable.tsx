@@ -10,7 +10,6 @@ import {
   ChevronsRight,
   Search,
   X,
-  Edit2,
   Split,
   Trash2,
   CheckCircle2,
@@ -21,7 +20,6 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
-import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
 import {
@@ -137,8 +135,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Modal state
-  const [editingTransaction, setEditingTransaction] =
-    useState<Transaction | null>(null);
   const [splittingTransaction, setSplittingTransaction] =
     useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] =
@@ -147,12 +143,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     useState<Transaction | null>(null);
 
   // Bulk actions state
-  const [bulkMode, setBulkMode] = useState<"tag" | "account" | null>(null);
-  const [bulkTagData, setBulkTagData] = useState({ category: "", tag: "" });
-  const [bulkCashData, setBulkCashData] = useState({
-    description: "",
-    account_name: "",
+  const [bulkEditData, setBulkEditData] = useState({
     date: "",
+    description: "",
+    amount: "",
+    account_name: "",
+    category: "",
+    tag: "",
   });
 
   // Fetch categories for bulk tagging
@@ -176,9 +173,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
       setSelectedIds(new Set());
-      setBulkMode(null);
-      setBulkTagData({ category: "", tag: "" });
-      setBulkCashData({ description: "", account_name: "", date: "" });
+      setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
       onTransactionUpdated?.();
     },
   });
@@ -229,6 +224,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   useEffect(() => {
     onSelectionChange?.(selectedIds);
   }, [selectedIds, onSelectionChange]);
+
+  // Reset bulk edit data when selection clears
+  useEffect(() => {
+    if (selectedIds.size === 0) {
+      setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
+    }
+  }, [selectedIds]);
 
   // Sort transactions
   const sortedTransactions = useMemo(() => {
@@ -328,6 +330,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       .every((tx) => tx.source?.includes("cash"));
   }, [transactions, selectedIds]);
 
+  const allSelectedAreManual = useMemo(() => {
+    if (selectedIds.size === 0) return false;
+    return transactions
+      .filter((tx) => selectedIds.has(getTransactionId(tx)))
+      .every((tx) => tx.source?.includes("cash") || tx.source?.includes("manual_investment"));
+  }, [transactions, selectedIds]);
+
   const handleDelete = (tx: Transaction) => {
     setDeletingTransaction(tx);
   };
@@ -345,40 +354,41 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   };
 
   const handleModalSuccess = () => {
-    setEditingTransaction(null);
     setSplittingTransaction(null);
     onTransactionUpdated?.();
   };
 
-  // Bulk tagging handlers
-  const handleBulkTag = () => {
+  // Bulk edit handler
+  const handleBulkApply = () => {
     const selectedTxs = transactions.filter((tx) =>
       selectedIds.has(getTransactionId(tx)),
     );
-    const bySource = selectedTxs.reduce((acc: any, tx) => {
-      const source = tx.source || "unknown";
-      if (!acc[source]) acc[source] = [];
-      acc[source].push(tx.unique_id || tx.id);
-      return acc;
-    }, {});
+    const bySource = selectedTxs.reduce(
+      (acc: Record<string, number[]>, tx) => {
+        const source = tx.source || "unknown";
+        if (!acc[source]) acc[source] = [];
+        acc[source].push(tx.unique_id || tx.id);
+        return acc;
+      },
+      {},
+    );
 
-    Object.entries(bySource).forEach(([source, ids]: [any, any]) => {
-      const isCashSource = (source as string).includes("cash");
-
-      if (bulkMode === "tag") {
-        bulkTagMutation.mutate({
-          transaction_ids: ids,
-          source,
-          category: bulkTagData.category || undefined,
-          tag: bulkTagData.tag || undefined,
-        });
-      } else if (bulkMode === "account" && isCashSource) {
-        bulkTagMutation.mutate({
-          transaction_ids: ids,
-          source,
-          account_name: bulkCashData.account_name || undefined,
-        });
+    Object.entries(bySource).forEach(([source, ids]) => {
+      const isManualSource =
+        source.includes("cash") || source.includes("manual_investment");
+      const payload: any = {
+        transaction_ids: ids,
+        source,
+      };
+      if (bulkEditData.category) payload.category = bulkEditData.category;
+      if (bulkEditData.tag) payload.tag = bulkEditData.tag;
+      if (isManualSource) {
+        if (bulkEditData.date) payload.date = bulkEditData.date;
+        if (bulkEditData.description) payload.description = bulkEditData.description;
+        if (bulkEditData.amount) payload.amount = parseFloat(bulkEditData.amount);
+        if (bulkEditData.account_name) payload.account_name = bulkEditData.account_name;
       }
+      bulkTagMutation.mutate(payload);
     });
   };
 
@@ -621,7 +631,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               return (
                 <tr
                   key={id || idx}
-                  className={`hover:bg-[var(--surface-light)]/50 transition-colors ${isSelected ? "bg-[var(--primary)]/5" : ""}`}
+                  className={`hover:bg-[var(--surface-light)]/50 transition-colors ${isSelected ? "bg-[var(--primary)]/5" : ""} ${showSelection ? "cursor-pointer" : ""}`}
+                  onClick={(e) => {
+                    if (!showSelection) return;
+                    const target = e.target as HTMLElement;
+                    if (target.closest("input, button, a, select")) return;
+                    toggleSelection(id);
+                  }}
                 >
                   {showSelection && (
                     <td
@@ -683,13 +699,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   {showActions && (
                     <td className={`px-4 ${compact ? "py-2" : "py-3"}`}>
                       <div className="flex items-center justify-center gap-1">
-                        <button
-                          className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
-                          title="Edit"
-                          onClick={() => setEditingTransaction(tx)}
-                        >
-                          <Edit2 size={14} />
-                        </button>
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title="Split"
@@ -951,137 +960,112 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <span className="text-sm font-medium">Selected</span>
           </div>
           <div className="w-px h-8 bg-[var(--surface-light)]" />
-          <div className="flex items-center gap-3">
-            {bulkMode === "tag" ? (
-              <div className="flex items-center gap-2">
-                <div className="w-40">
-                <SelectDropdown
-                  options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
-                  value={bulkTagData.category}
-                  onChange={(val) =>
-                    setBulkTagData({
-                      ...bulkTagData,
-                      category: val,
-                      tag: "",
-                    })
-                  }
-                  placeholder="Category"
-                  size="sm"
-                  onCreateNew={async (name) => {
-                    const formatted = await createCategory(name);
-                    setBulkTagData({ ...bulkTagData, category: formatted, tag: "" });
-                  }}
-                />
-                </div>
-                <div className="w-40">
-                <SelectDropdown
-                  options={bulkTagData.category && categories?.[bulkTagData.category] ? categories[bulkTagData.category].map((tag: string) => ({ label: tag, value: tag })) : []}
-                  value={bulkTagData.tag}
-                  onChange={(val) =>
-                    setBulkTagData({ ...bulkTagData, tag: val })
-                  }
-                  placeholder="Tag"
-                  size="sm"
-                  onCreateNew={async (name) => {
-                    const formatted = await createTag(bulkTagData.category, name);
-                    setBulkTagData({ ...bulkTagData, tag: formatted });
-                  }}
-                />
-                </div>
-                <button
-                  className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
-                  onClick={handleBulkTag}
-                  disabled={bulkTagMutation.isPending}
-                >
-                  <CheckCircle2 size={20} />
-                </button>
-                <button
-                  className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
-                  onClick={() => {
-                    setBulkMode(null);
-                    setBulkTagData({ category: "", tag: "" });
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            ) : bulkMode === "account" ? (
-              <div className="flex items-center gap-2">
-                <div className="w-40">
-                <SelectDropdown
-                  options={cashBalances.map((b: any) => ({ label: b.account_name, value: b.account_name }))}
-                  value={bulkCashData.account_name}
-                  onChange={(val) =>
-                    setBulkCashData({
-                      ...bulkCashData,
-                      account_name: val,
-                    })
-                  }
-                  placeholder="Account"
-                  size="sm"
-                />
-                </div>
-                <button
-                  className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
-                  onClick={handleBulkTag}
-                  disabled={bulkTagMutation.isPending}
-                >
-                  <CheckCircle2 size={20} />
-                </button>
-                <button
-                  className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
-                  onClick={() => {
-                    setBulkMode(null);
-                    setBulkCashData({ description: "", account_name: "", date: "" });
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            ) : (
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Details group - only for manual transactions */}
+            {allSelectedAreManual && (
               <>
-                <button
-                  className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all"
-                  onClick={() => setBulkMode("tag")}
-                >
-                  Tag Selection
-                </button>
-                {allSelectedAreCash && (
-                  <button
-                    className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all"
-                    onClick={() => setBulkMode("account")}
-                  >
-                    Edit Account
-                  </button>
-                )}
-                {showDelete && (
-                  <button
-                    className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-sm font-medium transition-all"
-                    onClick={handleBulkDelete}
-                  >
-                    Delete
-                  </button>
-                )}
-                <button
-                  className="px-4 py-2 rounded-lg hover:bg-[var(--surface-light)] text-sm font-medium transition-all"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  Cancel
-                </button>
+                <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Details</span>
+                <input
+                  type="date"
+                  value={bulkEditData.date}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, date: e.target.value })}
+                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-[var(--primary)]/50"
+                  placeholder="Date"
+                />
+                <input
+                  type="text"
+                  value={bulkEditData.description}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, description: e.target.value })}
+                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[var(--primary)]/50"
+                  placeholder="Description"
+                />
+                <input
+                  type="number"
+                  value={bulkEditData.amount}
+                  onChange={(e) => setBulkEditData({ ...bulkEditData, amount: e.target.value })}
+                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:border-[var(--primary)]/50"
+                  placeholder="Amount"
+                  step="0.01"
+                />
+                <div className="w-36">
+                  <SelectDropdown
+                    options={
+                      allSelectedAreCash
+                        ? cashBalances.map((b: any) => ({ label: b.account_name, value: b.account_name }))
+                        : []
+                    }
+                    value={bulkEditData.account_name}
+                    onChange={(val) => setBulkEditData({ ...bulkEditData, account_name: val })}
+                    placeholder="Account"
+                    size="sm"
+                  />
+                </div>
+                <div className="w-px h-6 bg-[var(--surface-light)]" />
               </>
             )}
+            {/* Tags group - always visible */}
+            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Tags</span>
+            <div className="w-40">
+              <SelectDropdown
+                options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
+                value={bulkEditData.category}
+                onChange={(val) => setBulkEditData({ ...bulkEditData, category: val, tag: "" })}
+                placeholder="Category"
+                size="sm"
+                onCreateNew={async (name) => {
+                  const formatted = await createCategory(name);
+                  setBulkEditData({ ...bulkEditData, category: formatted, tag: "" });
+                }}
+              />
+            </div>
+            <div className="w-40">
+              <SelectDropdown
+                options={
+                  bulkEditData.category && categories?.[bulkEditData.category]
+                    ? categories[bulkEditData.category].map((tag: string) => ({ label: tag, value: tag }))
+                    : []
+                }
+                value={bulkEditData.tag}
+                onChange={(val) => setBulkEditData({ ...bulkEditData, tag: val })}
+                placeholder="Tag"
+                size="sm"
+                onCreateNew={async (name) => {
+                  const formatted = await createTag(bulkEditData.category, name);
+                  setBulkEditData({ ...bulkEditData, tag: formatted });
+                }}
+              />
+            </div>
+            <div className="w-px h-6 bg-[var(--surface-light)]" />
+            {/* Actions */}
+            <button
+              className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
+              onClick={handleBulkApply}
+              disabled={bulkTagMutation.isPending}
+              title="Apply changes"
+            >
+              <CheckCircle2 size={20} />
+            </button>
+            {showDelete && (
+              <button
+                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all"
+                onClick={handleBulkDelete}
+                title="Delete selected"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
+            <button
+              className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
+              onClick={() => setSelectedIds(new Set())}
+              title="Cancel selection"
+            >
+              <X size={20} />
+            </button>
           </div>
         </div>
       )}
 
       {/* Modals */}
-      {editingTransaction && (
-        <TransactionEditorModal
-          transaction={editingTransaction}
-          onClose={() => setEditingTransaction(null)}
-          onSuccess={handleModalSuccess}
-        />
-      )}
       {splittingTransaction && (
         <SplitTransactionModal
           transaction={splittingTransaction}
