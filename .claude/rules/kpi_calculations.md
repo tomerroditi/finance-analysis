@@ -80,7 +80,7 @@ Prior wealth represents money that existed **before the system started tracking 
 |--------|-----------|-------------|----------|
 | **Bank prior wealth** | `bank_balances.prior_wealth_amount` | `user_entered_balance - sum(all bank txns for account)` | Auto-computed when user enters current bank balance (after scraping) |
 | **Investment prior wealth** | `investments.prior_wealth_amount` | `-(sum of manual_investment_transactions)` | Auto-recalculated when manually inserted investment transactions change |
-| **Cash prior wealth** | Cash transactions tagged `"Prior Wealth"` under `"Other Income"` | Direct transaction amounts | Manually created by user in cash transactions only |
+| **Cash prior wealth** | `cash_balances.prior_wealth_amount` | Calculated when user enters current balance via API (`POST /api/cash-balances`). Auto-recalculates after transaction changes via service integration. |
 
 ### Why Investment Prior Wealth Lives in Bank Balance
 
@@ -101,6 +101,25 @@ The anchor point (1 month before earliest data) shows all prior wealth as `bank_
 
 - **Overview `total_income`**: Adds `bank_prior_wealth + investment_prior_wealth` (all investments) to transaction-based income. Represents "total resources available" (starting capital + earned income).
 - **Sankey "Prior Wealth" source node**: Sums all three sources — transaction-tagged prior wealth + bank prior wealth + investment prior wealth.
+
+### Cash Prior Wealth Calculation
+
+Cash balance tracking uses a dedicated `cash_balances` table with per-envelope balance and prior wealth records:
+
+**Formula:**
+```
+prior_wealth = user_entered_balance - sum(all cash transactions for account_name)
+current_balance = prior_wealth + sum(all cash transactions for account_name to date)
+```
+
+**Triggers:**
+- **Prior wealth recalculates ONLY when:** User manually calls `POST /api/cash-balances` to enter new balance
+- **Current balance auto-updates WHEN:** Cash transaction is created, updated, or deleted
+
+**Envelopes:**
+- Multiple cash envelopes supported, identified by `account_name` field
+- Each envelope has independent prior wealth and balance
+- Total cash prior wealth sums across all envelopes
 
 ### Overview Accounting Identity
 
