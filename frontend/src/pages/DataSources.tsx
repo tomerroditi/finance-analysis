@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Trash2,
-  Shield,
   Globe,
   Landmark,
   CreditCard,
@@ -15,6 +14,14 @@ import {
   EyeOff,
   DollarSign,
   Check,
+  RefreshCw,
+  PlayCircle,
+  ChevronDown,
+  Smartphone,
+  XCircle,
+  Info,
+  CheckCircle2,
+  Clock,
 } from "lucide-react";
 import {
   credentialsApi,
@@ -24,6 +31,29 @@ import {
 import type { BankBalance } from "../services/api";
 
 import { useTestMode } from "../context/TestModeContext";
+import { useScraping } from "../hooks/useScraping";
+
+function formatRelativeDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+const SCRAPING_PERIODS = [
+  { label: "Auto", days: null },
+  { label: "2 Weeks", days: 14 },
+  { label: "1 Month", days: 30 },
+  { label: "2 Months", days: 60 },
+  { label: "3 Months", days: 90 },
+  { label: "6 Months", days: 180 },
+  { label: "12 Months", days: 365 },
+] as const;
 
 export function DataSources() {
   const { isTestMode } = useTestMode();
@@ -42,6 +72,14 @@ export function DataSources() {
   );
   const [editingAccount, setEditingAccount] = useState<any>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
+
+  const {
+    startScraper, scrapeAll, submitTfa, resendTfa, abortScraper,
+    getScraperForAccount, isAnyScraping, tfaIsPending,
+  } = useScraping();
+
+  const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(null);
+  const [tfaCodes, setTfaCodes] = useState<Record<string, string>>({});
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["credentials-accounts", isTestMode],
@@ -218,12 +256,37 @@ export function DataSources() {
             credentials
           </p>
         </div>
-        <button
-          onClick={() => setIsAddOpen(true)}
-          className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
-        >
-          <Plus size={18} /> Connect Account
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <select
+              value={scrapingPeriodDays ?? "auto"}
+              onChange={(e) =>
+                setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
+              }
+              disabled={isAnyScraping}
+              className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pr-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {SCRAPING_PERIODS.map((p) => (
+                <option key={p.label} value={p.days ?? "auto"}>{p.label}</option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+          </div>
+          <button
+            onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
+            disabled={isAnyScraping || !accounts?.length}
+            className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
+            {isAnyScraping ? "Scraping..." : "Scrape All"}
+          </button>
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
+          >
+            <Plus size={18} /> Connect Account
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -246,11 +309,20 @@ export function DataSources() {
           </div>
         ) : (
           <div className="space-y-4">
-            {accounts?.map((acc: any, idx: number) => (
+            {accounts?.map((acc: any, idx: number) => {
+              const scraper = getScraperForAccount(acc);
+              const isActive = scraper && (scraper.status === "in_progress" || scraper.status === "waiting_for_2fa");
+              const lastScrape = lastScrapes?.find(
+                (s: any) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
+              );
+              const tfaKey = `${acc.service}_${acc.provider}_${acc.account_name}`;
+
+              return (
               <div
                 key={idx}
-                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5 flex items-center justify-between hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
+                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
               >
+                <div className="flex items-center justify-between">
                 <div className="flex items-center gap-5">
                   <div
                     className={`p-3.5 rounded-2xl ${acc.service === "banks" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"}`}
@@ -276,9 +348,7 @@ export function DataSources() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
-                    <Shield size={12} /> Secure Connection
-                  </div>
+                  <div className="w-[160px] flex items-center justify-end">
                   {acc.service === "banks" &&
                     (() => {
                       const bal = getAccountBalance(
@@ -380,7 +450,82 @@ export function DataSources() {
                         </div>
                       );
                     })()}
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                  </div>
+
+                  {/* Scraping Status */}
+                  <div className="flex items-center gap-2 min-w-[100px] justify-end">
+                    {scraper?.status === "in_progress" && (
+                      <div className="flex items-center gap-1.5">
+                        <RefreshCw size={14} className="animate-spin text-blue-400" />
+                        <span className="text-xs font-semibold text-blue-400">Scraping...</span>
+                      </div>
+                    )}
+                    {scraper?.status === "waiting_for_2fa" && (
+                      <div className="flex items-center gap-1.5">
+                        <Smartphone size={14} className="text-amber-400 animate-pulse" />
+                        <span className="text-xs font-semibold text-amber-400">2FA Required</span>
+                      </div>
+                    )}
+                    {scraper?.status === "success" && (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                        <CheckCircle2 size={12} className="text-emerald-400" />
+                        <span className="text-[10px] font-semibold text-emerald-400">Synced</span>
+                      </div>
+                    )}
+                    {scraper?.status === "failed" && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-red-400">Failed</span>
+                        {scraper.error_message && (
+                          <div className="relative group/err">
+                            <Info size={12} className="text-red-400 cursor-help" />
+                            <div className="absolute bottom-full right-0 mb-1 hidden group-hover/err:block z-50">
+                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
+                                {scraper.error_message}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {(!scraper || !["in_progress", "waiting_for_2fa", "success", "failed"].includes(scraper.status)) && (
+                      <>
+                        {!lastScrape?.last_scrape_date ? (
+                          <span className="text-[10px] text-[var(--text-muted)] italic">Never synced</span>
+                        ) : isScrapedToday(acc.provider, acc.account_name) ? (
+                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                            <CheckCircle2 size={12} className="text-emerald-400" />
+                            <span className="text-[10px] font-semibold text-emerald-400">Synced</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-[var(--text-muted)]">
+                            <Clock size={12} />
+                            <span className="text-[10px]">{formatRelativeDate(lastScrape.last_scrape_date)}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    {/* Scrape / Abort Button */}
+                    {isActive ? (
+                      <button
+                        onClick={() => abortScraper(scraper!)}
+                        className="p-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all"
+                        title="Abort Scraping"
+                      >
+                        <XCircle size={20} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => startScraper(acc, scrapingPeriodDays)}
+                        disabled={isAnyScraping}
+                        className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Scrape This Source"
+                      >
+                        <PlayCircle size={20} />
+                      </button>
+                    )}
                     <button
                       onClick={() => handleView(acc)}
                       className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
@@ -407,8 +552,72 @@ export function DataSources() {
                     </button>
                   </div>
                 </div>
+                </div>
+
+                {/* 2FA Inline Section */}
+                {scraper?.status === "waiting_for_2fa" && (
+                  <div className="mt-4 pt-4 border-t border-amber-500/20">
+                    <div className="flex items-center gap-3">
+                      <Smartphone className="text-amber-400 shrink-0" size={18} />
+                      <span className="text-xs text-amber-100/70">
+                        Enter 2FA code for <span className="text-white font-bold capitalize">{acc.provider}</span>
+                      </span>
+                      <div className="flex items-center gap-2 ml-auto">
+                        <input
+                          type="text"
+                          placeholder="Code"
+                          maxLength={10}
+                          className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
+                          value={tfaCodes[tfaKey] || ""}
+                          onChange={(e) =>
+                            setTfaCodes((prev) => ({
+                              ...prev,
+                              [tfaKey]: e.target.value,
+                            }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const code = tfaCodes[tfaKey];
+                              if (code) {
+                                submitTfa(scraper, code);
+                                setTfaCodes((prev) => ({
+                                  ...prev,
+                                  [tfaKey]: "",
+                                }));
+                              }
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            const code = tfaCodes[tfaKey];
+                            if (code) {
+                              submitTfa(scraper, code);
+                              setTfaCodes((prev) => ({
+                                ...prev,
+                                [tfaKey]: "",
+                              }));
+                            }
+                          }}
+                          disabled={!tfaCodes[tfaKey] || tfaIsPending}
+                          className="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
+                        >
+                          Verify
+                        </button>
+                        <button
+                          onClick={() => resendTfa(scraper, scrapingPeriodDays)}
+                          disabled={tfaIsPending}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
+                        >
+                          Resend
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
