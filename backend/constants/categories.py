@@ -3,11 +3,12 @@ from enum import Enum
 
 PRIOR_WEALTH_TAG = "Prior Wealth"
 CREDIT_CARDS = "Credit Cards"
+IGNORE_CATEGORY = "Ignore"
 
 PROTECTED_TAGS = [PRIOR_WEALTH_TAG]
 PROTECTED_CATEGORIES = [
     CREDIT_CARDS,
-    "Salay",
+    "Salary",
     "Other Income",
     "Investments",
     "Ignore",
@@ -47,8 +48,6 @@ class NonExpensesCategories(Enum):
 
     Attributes
     ----------
-    IGNORE : str
-        Transactions to be ignored in analysis.
     SALARY : str
         Income from employment.
     INVESTMENTS : str
@@ -59,7 +58,6 @@ class NonExpensesCategories(Enum):
         Payments related to liabilities.
     """
 
-    IGNORE = "Ignore"
     INVESTMENTS = InvestmentCategories.INVESTMENTS.value
     SALARY = IncomeCategories.SALARY.value
     OTHER_INCOME = IncomeCategories.OTHER_INCOME.value

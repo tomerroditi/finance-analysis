@@ -229,16 +229,23 @@ class InvestmentsService:
             return
         self.recalculate_prior_wealth(int(inv_df.iloc[0]["id"]))
 
-    def get_total_prior_wealth(self) -> float:
+    def get_total_prior_wealth(self, include_closed: bool = True) -> float:
         """
-        Sum prior_wealth_amount across all investments (open and closed).
+        Sum prior_wealth_amount across investments.
+
+        Parameters
+        ----------
+        include_closed : bool, optional
+            When ``True`` (default), includes closed investments.
+            Use ``False`` for overview identity calculations where closed
+            investment capital is already reflected in bank balances.
 
         Returns
         -------
         float
-            Total prior wealth across all investments.
+            Total prior wealth across selected investments.
         """
-        df = self.investments_repo.get_all_investments(include_closed=True)
+        df = self.investments_repo.get_all_investments(include_closed=include_closed)
         if df.empty:
             return 0.0
         return float(df["prior_wealth_amount"].sum())

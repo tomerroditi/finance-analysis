@@ -227,9 +227,9 @@ export const analyticsApi = {
   getOverview: () =>
     api.get<{
       latest_data_date: string | null;
-      total_transactions: number;
       total_income: number;
       total_expenses: number;
+      total_investments: number;
       net_balance_change: number;
     }>("/analytics/overview"),
   getNetBalanceOverTime: () =>

@@ -168,12 +168,7 @@ export function AutoTaggingPanel() {
                                                 <h4 className="font-bold text-sm">{rule.name}</h4>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
-                                                        onClick={() => {
-                                                            const overwrite = confirm(
-                                                                "Do you want to OVERWRITE existing tags?\n\nOK = Overwrite\nCancel = Only tag untagged"
-                                                            );
-                                                            applySingleMutation.mutate({ id: rule.id, overwrite });
-                                                        }}
+                                                        onClick={() => applySingleMutation.mutate({ id: rule.id, overwrite: false })}
                                                         className="p-1 hover:bg-emerald-500/10 text-emerald-400 rounded"
                                                         title="Apply Rule"
                                                     >

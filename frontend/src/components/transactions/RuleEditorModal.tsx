@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { X, Save, Loader2 } from "lucide-react";
+import { X, Save, Loader2, AlertTriangle } from "lucide-react";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
 import { RuleBuilder } from "./RuleBuilder";
@@ -154,7 +154,6 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                                     setConditions={setConditions}
                                     categories={categories || {}}
                                     availableTags={availableTags}
-                                    error={error}
                                 />
                             </div>
                         }
@@ -162,21 +161,31 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
-                    <button
-                        onClick={onClose}
-                        className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={!name || !category || isSaving}
-                        className="px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                        {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                        Save Rule
-                    </button>
+                <div className="flex items-center gap-3 px-6 py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
+                    {error && (
+                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in slide-in-from-left-2 duration-200">
+                            <AlertTriangle size={16} className="shrink-0" />
+                            <span className="line-clamp-2">{error}</span>
+                        </div>
+                    )}
+                    <div className="flex items-center gap-3 ml-auto">
+                        <button
+                            onClick={onClose}
+                            className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={!name || !category || isSaving}
+                            className={`px-6 py-2.5 text-white rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
+                                error ? "bg-red-500 hover:bg-red-600 animate-[shake_0.3s_ease-in-out]" : "bg-[var(--primary)] hover:bg-[var(--primary-dark)]"
+                            }`}
+                        >
+                            {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                            Save Rule
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -270,7 +279,6 @@ function RuleForm({
     tag, setTag,
     conditions, setConditions,
     categories, availableTags,
-    error
 }: {
     name: string; setName: (v: string) => void;
     category: string; setCategory: (v: string) => void;
@@ -278,16 +286,9 @@ function RuleForm({
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
     categories: Record<string, string[]>;
     availableTags: string[];
-    error: string | null;
 }) {
     return (
         <div className="space-y-6">
-            {error && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-                    {error}
-                </div>
-            )}
-
             {/* Basic Info */}
             <div className="space-y-4 p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
                 <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Rule Details</h4>

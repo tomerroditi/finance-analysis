@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, Landmark } from "lucide-react";
+import { TrendingUp, TrendingDown, LineChart, Landmark } from "lucide-react";
 import Plot from "react-plotly.js";
 import { analyticsApi, bankBalancesApi } from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
@@ -140,15 +140,15 @@ export function Dashboard() {
           color="bg-red-500/20 text-red-400"
         />
         <StatCard
-          title="Net Balance"
-          value={overviewLoading ? "..." : formatCurrency(overview?.net_balance_change || 0)}
-          icon={Wallet}
-          color="bg-blue-500/20 text-blue-400"
+          title="Total Bank Balance"
+          value={formatCurrency(bankBalances?.reduce((sum, b) => sum + b.balance, 0) ?? 0)}
+          icon={Landmark}
+          color="bg-amber-500/20 text-amber-400"
         />
         <StatCard
-          title="Transactions"
-          value={overviewLoading ? "..." : overview?.total_transactions || 0}
-          icon={PiggyBank}
+          title="Total Investments"
+          value={overviewLoading ? "..." : formatCurrency(overview?.total_investments || 0)}
+          icon={LineChart}
           color="bg-purple-500/20 text-purple-400"
         />
       </div>
@@ -158,12 +158,6 @@ export function Dashboard() {
         <div>
           <h2 className="text-lg font-semibold text-[var(--text-muted)] mb-4">Bank Balances</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              title="Total Bank Balance"
-              value={formatCurrency(bankBalances.reduce((sum, b) => sum + b.balance, 0))}
-              icon={Landmark}
-              color="bg-amber-500/20 text-amber-400"
-            />
             {bankBalances.map((b) => (
               <StatCard
                 key={`${b.provider}-${b.account_name}`}

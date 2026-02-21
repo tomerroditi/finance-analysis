@@ -265,7 +265,7 @@ class TestBudgetPipeline:
         categories_in_view = {
             tx["category"] for tx in total_data if tx.get("category")
         }
-        non_expense = {"Salary", "Ignore", "Other Income", "Investments", "Liabilities"}
+        non_expense = {"Salary", "Other Income", "Investments", "Liabilities"}
         assert categories_in_view.isdisjoint(non_expense), (
             f"Non-expense categories found in budget: {categories_in_view & non_expense}"
         )

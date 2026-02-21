@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -52,23 +50,24 @@ class AnalysisService:
             Dictionary with keys:
 
             - ``latest_data_date`` – latest transaction date across all data.
-            - ``total_transactions`` – number of transactions in the range.
-            - ``total_income`` – total income (positive amounts) in the range.
+            - ``total_income`` – total income (positive amounts) plus prior wealth.
             - ``total_expenses`` – total expenses (absolute value of negative amounts).
+            - ``total_investments`` – current portfolio value across all open investments.
             - ``net_balance_change`` – income minus expenses.
         """
-        # Get latest dates (always base on all data for status check)
         df = self.repo.get_table()
         latest_date = df["date"].max()
 
         income, expenses = self.get_income_and_expenses(df)
         income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
 
+        portfolio = self.investments_service.get_portfolio_overview()
+
         return {
             "latest_data_date": latest_date,
-            "total_transactions": len(df),
             "total_income": income,
             "total_expenses": expenses,
+            "total_investments": portfolio["total_value"],
             "net_balance_change": income - expenses,
         }
 
@@ -112,9 +111,9 @@ class AnalysisService:
         Compute total income and total expenses from a transactions DataFrame.
 
         Credit card source rows are excluded to avoid double-counting.
-        Income is determined by ``_get_income_mask``; all other rows are
-        treated as expenses. If ``include_prior_wealth`` is ``True``, bank
-        and investment prior-wealth totals are added to income.
+        Income is determined by ``_get_income_mask``. Expenses exclude
+        ``NonExpensesCategories`` (Investments, Liabilities, etc.) so only
+        real spending categories remain.
 
         Parameters
         ----------
@@ -130,7 +129,12 @@ class AnalysisService:
         df = df[df["source"] != "credit_card_transactions"]
         income_mask = self._get_income_mask(df)
         income = float(df[income_mask]["amount"].sum())
-        expenses = float(df[~income_mask]["amount"].sum()) * -1
+        non_expense_mask = df["category"].isin([c.value for c in NonExpensesCategories])
+        neg_liability_mask = df["category"].isin(
+            [c.value for c in LiabilitiesCategories]
+        ) & (df["amount"] < 0)
+        expense_df = df[(~income_mask & ~non_expense_mask) | neg_liability_mask]
+        expenses = float(expense_df["amount"].sum()) * -1
         return income, expenses
 
     def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
@@ -221,7 +225,8 @@ class AnalysisService:
         if df.empty:
             return []
 
-        expense_mask = ~df["category"].isin([c.value for c in NonExpensesCategories])
+        exclude_categories = [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
+        expense_mask = ~df["category"].isin(exclude_categories)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
         grouped = expenses.groupby("category")["amount"].sum()
@@ -274,7 +279,6 @@ class AnalysisService:
         df = df[df['category'] != CREDIT_CARDS]
 
         # --- Processing ---
-        IGNORE = NonExpensesCategories.IGNORE.value
         SALARY = IncomeCategories.SALARY.value
         OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
         LIABILITIES = LiabilitiesCategories.LIABILITIES.value
@@ -286,8 +290,6 @@ class AnalysisService:
         sources = {}  # name -> amount
         destinations = {}  # name -> amount
         helpers = {}  # name -> amount
-
-        df = df[df["category"] != IGNORE]
 
         sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
         # Split out Prior Wealth from Other Income
@@ -311,7 +313,7 @@ class AnalysisService:
         )
         # destinations["Investments Deposit"] = abs(df[(df['category'] == INVESTMENTS) & (df['amount'] < 0)]['amount'].sum())
 
-        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES, INVESTMENTS, IGNORE]
+        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES, INVESTMENTS]
         expenses_df = df[~df["category"].isin(exclude_cats)]
         for cat, group in expenses_df.groupby("category"):
             net = group["amount"].sum()
@@ -476,7 +478,7 @@ class AnalysisService:
         months = sorted(df["month"].unique())
 
         # --- Investment transactions: fetch once, filter per month in-memory ---
-        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
+        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=False)
         if not inv_df.empty:
             inv_df["date_parsed"] = pd.to_datetime(inv_df["date"])
 
