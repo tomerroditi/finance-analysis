@@ -229,7 +229,10 @@ class TestTransactionsServiceCRUD:
             service.create_transaction(data, "credit_cards")
 
     def test_update_transaction_manual_source(self, db_session):
-        """Verify manual sources can edit description/amount/provider."""
+        """Verify manual sources can edit description/amount/provider.
+
+        For cash transactions, provider is always forced to "CASH" regardless of input.
+        """
         service = TransactionsService(db_session)
 
         # Create a cash transaction first
@@ -248,7 +251,8 @@ class TestTransactionsServiceCRUD:
         non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
         unique_id = int(non_pw.iloc[0]["unique_id"])
 
-        # Update description, amount, and provider
+        # Update description, amount, and attempt to set provider to something else
+        # For cash transactions, provider is always forced to "CASH"
         updates = {
             "description": "Updated description",
             "amount": -75.0,
@@ -262,7 +266,7 @@ class TestTransactionsServiceCRUD:
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == "Updated description"
         assert updated_row["amount"] == -75.0
-        assert updated_row["provider"] == "updated_provider"
+        assert updated_row["provider"] == "CASH"  # Always "CASH" for cash transactions
 
     def test_update_transaction_scraped_source_only_tags(
         self, db_session, seed_base_transactions

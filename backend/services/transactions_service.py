@@ -484,12 +484,15 @@ class TransactionsService:
         if service not in ["cash", "manual_investments"]:
             raise ValueError("Can only create cash or manual_investments transactions")
 
+        # For cash transactions, always set provider to "CASH"
+        provider = "CASH" if service == "cash" else data.get("provider")
+
         tx = ManualTransactionDTO(
             date=datetime.combine(data["date"], datetime.min.time()),
             account_name=data["account_name"],
             description=data["description"],
             amount=data["amount"],
-            provider=data.get("provider"),
+            provider=provider,
             account_number=data.get("account_number"),
             category=self._normalize_empty_string(data.get("category")),
             tag=self._normalize_empty_string(data.get("tag")),
@@ -566,7 +569,10 @@ class TransactionsService:
                 filtered_updates["description"] = updates["description"]
             if updates.get("amount") is not None:
                 filtered_updates["amount"] = updates["amount"]
-            if updates.get("provider") is not None:
+            # For cash transactions, always set provider to "CASH"
+            if source == "cash_transactions":
+                filtered_updates["provider"] = "CASH"
+            elif updates.get("provider") is not None:
                 filtered_updates["provider"] = updates["provider"]
 
         if updates.get("category") is not None:
