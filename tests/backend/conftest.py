@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.bank_balance import BankBalance
 from backend.models.budget import BudgetRule
+from backend.models.cash_balance import CashBalance
 from backend.models.investment import Investment
 from backend.models.tagging_rules import TaggingRule
 from backend.models.transaction import (
@@ -568,6 +569,13 @@ def seed_prior_wealth_transactions(db_session: Session) -> dict:
         status="completed",
     )
 
+    cash_balance = CashBalance(
+        account_name="Cash Wallet",
+        balance=5000.0,
+        prior_wealth_amount=5000.0,
+        last_manual_update="2024-01-01",
+    )
+
     bank_balance_1 = BankBalance(
         provider="hapoalim",
         account_name="Checking",
@@ -583,13 +591,14 @@ def seed_prior_wealth_transactions(db_session: Session) -> dict:
         last_manual_update="2024-01-01",
     )
 
-    db_session.add_all([cash_pw, bank_balance_1, bank_balance_2])
+    db_session.add_all([cash_pw, cash_balance, bank_balance_1, bank_balance_2])
     db_session.commit()
-    for obj in [cash_pw, bank_balance_1, bank_balance_2]:
+    for obj in [cash_pw, cash_balance, bank_balance_1, bank_balance_2]:
         db_session.refresh(obj)
 
     return {
         "cash": cash_pw,
+        "cash_balance": cash_balance,
         "bank_balances": [bank_balance_1, bank_balance_2],
     }
 

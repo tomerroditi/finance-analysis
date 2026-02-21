@@ -345,9 +345,10 @@ class AnalysisService:
         sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
         # Split out Prior Wealth from Other Income
         other_income_df = df[df["category"] == OTHER_INCOME]
-        txn_prior_wealth = other_income_df[
-            other_income_df["tag"] == PRIOR_WEALTH_TAG
-        ]["amount"].sum()
+        # Note: txn_prior_wealth now comes from cash_balances table instead of synthetic transaction
+        from backend.services.cash_balance_service import CashBalanceService
+        cash_prior_wealth = CashBalanceService(self.db).get_total_prior_wealth()
+        txn_prior_wealth = cash_prior_wealth
         bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
         sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth + investment_prior_wealth
