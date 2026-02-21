@@ -402,24 +402,6 @@ class TransactionsService:
         )
         return cc_res or bank_res or cash_res
 
-    def delete_transaction_by_id(self, transaction_id: str) -> bool:
-        """
-        Delete a cash transaction by its unique ID.
-
-        Parameters
-        ----------
-        transaction_id : str
-            Unique ID of the cash transaction to delete.
-
-        Returns
-        -------
-        bool
-            ``True`` if the transaction was found and deleted.
-        """
-        return self.transactions_repository.cash_repo.delete_transaction_by_unique_id(
-            transaction_id
-        )
-
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
     ) -> pd.DataFrame:

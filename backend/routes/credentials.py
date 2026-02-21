@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import LoginFields
 from backend.dependencies import get_database
-from backend.repositories.credentials_repository import CredentialsRepository
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
 
@@ -58,11 +57,11 @@ async def get_credential_details(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get details for a specific credential."""
-    repo = CredentialsRepository(db)
-    creds = repo.get_credentials(service, provider, account_name)
-    if not creds:
+    creds_service = CredentialsService(db)
+    filtered = creds_service.get_scraper_credentials(service, provider, account_name)
+    if not filtered or service not in filtered or provider not in filtered[service]:
         raise HTTPException(status_code=404, detail="Credential not found")
-    return creds
+    return filtered[service][provider][account_name]
 
 
 @router.get("/providers")
@@ -77,13 +76,14 @@ async def create_credential(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Create or update a credential."""
-    repo = CredentialsRepository(db)
-    repo.save_credentials(
-        service=credential.service,
-        provider=credential.provider,
-        account_name=credential.account_name,
-        credentials=credential.credentials,
-    )
+    creds_service = CredentialsService(db)
+    creds_service.save_credentials({
+        credential.service: {
+            credential.provider: {
+                credential.account_name: credential.credentials
+            }
+        }
+    })
     return {"status": "success"}
 
 

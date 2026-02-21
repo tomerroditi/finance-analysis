@@ -89,21 +89,6 @@ class ScrapingService:
             )
         return result
 
-    def start_scraping(self, accounts: List[Dict]) -> None:
-        """
-        Start the scraping process for multiple accounts sequentially.
-
-        Parameters
-        ----------
-        accounts : list[dict]
-            List of account dicts, each containing ``service``, ``provider``,
-            and ``account`` keys.
-        """
-        for account in accounts:
-            self.start_scraping_single(
-                account["service"], account["provider"], account["account"]
-            )
-
     def start_scraping_single(self, service: str, provider: str, account: str) -> int:
         """
         Start the scraping process for a single account in a background thread.
