@@ -32,7 +32,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> D
 - **Routes** define entry points, handle HTTP concerns, and use Pydantic models for request/response validation.
 - **Services** orchestrate business logic and call repositories.
 - **Repositories** handle ALL database operations using the Repository Pattern with SQLAlchemy ORM.
-- **Models** define DB schemas (SQLAlchemy ORM models in `backend/models/`) and Pydantic validation schemas.
+- **Models** define DB schemas (SQLAlchemy ORM models in `backend/models/`). Pydantic request/response schemas are defined inline in route files.
 
 **Service Naming Convention:**
 - Frontend and API use **plural** service names: `banks`, `credit_cards`, `cash`, `manual_investments`
@@ -111,12 +111,13 @@ Single transaction can be split across multiple categories/tags. Original remain
 3. Use TanStack Query for data fetching.
 
 ## Error Handling
-- Define custom exceptions in `backend/errors.py` (inherit from `AppException`).
+- Define custom exceptions in `backend/errors.py` (inherit from `AppException`): `EntityNotFoundException` (404), `EntityAlreadyExistsException` (409), `ValidationException` (400), `BadRequestException` (400).
 - Register global handlers in `backend/main.py`.
 - Raise exceptions in repositories/services — routes stay clean (no try/except for domain errors).
 
 ## Testing
 - **Backend:** `poetry run pytest`. Use markers like `@pytest.mark.sensitive`.
+- **Test structure:** `tests/backend/unit/` (unit tests), `tests/backend/routes/` (endpoint tests), `tests/backend/integration/` (pipeline tests).
 - **Frontend:** (Planned) Vitest for unit tests.
 
 ## Development Workflow
@@ -134,18 +135,29 @@ Single transaction can be split across multiple categories/tags. Original remain
 finance-analysis/
 ├── backend/            # FastAPI application
 │   ├── constants/      # Enums & constants (tables, providers, categories, budget)
-│   ├── routes/         # API endpoints
+│   ├── routes/         # API endpoints (includes inline Pydantic schemas)
 │   ├── services/       # Business logic
 │   ├── repositories/   # DB access (Repository Pattern)
-│   ├── models/         # Pydantic & SQLAlchemy models
+│   ├── models/         # SQLAlchemy ORM models
+│   ├── scraper/        # Web scraping module (israeli-bank-scrapers integration)
+│   ├── resources/      # YAML config files (default categories, icons)
+│   ├── utils/          # Utility functions
 │   └── database.py     # DB connection session
 ├── frontend/           # React application
 │   ├── src/
 │   │   ├── components/ # Reusable UI components
 │   │   ├── pages/      # View components
 │   │   ├── services/   # API client (api.ts)
-│   │   └── hooks/      # Custom React hooks
+│   │   ├── hooks/      # Custom React hooks
+│   │   ├── stores/     # Zustand state stores
+│   │   ├── utils/      # Utility functions
+│   │   └── context/    # React Context providers
 │   └── public/
+├── tests/              # Test suite
+│   └── backend/
+│       ├── unit/       # Unit tests (models, repos, services, utils)
+│       ├── routes/     # Endpoint/integration tests
+│       └── integration/# Pipeline tests
 ├── fad/                # DEPRECATED: Legacy code / Original Streamlit package (ignore)
 └── .claude/            # Agent rules and scripts
 ```
