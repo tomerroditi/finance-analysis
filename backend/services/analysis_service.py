@@ -216,6 +216,7 @@ class AnalysisService:
         """
         bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
+        cash_prior_wealth = self.cash_balance_service.get_total_prior_wealth()
 
         df = self.repo.get_table(exclude_services=["credit_card_transactions"])
 
@@ -223,7 +224,7 @@ class AnalysisService:
             return []
         
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
-        cumulative = bank_prior_wealth + investment_prior_wealth
+        cumulative = bank_prior_wealth + investment_prior_wealth + cash_prior_wealth
 
 
         trend = []

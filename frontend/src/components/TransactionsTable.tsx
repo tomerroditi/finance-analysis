@@ -142,8 +142,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [deletingTransaction, setDeletingTransaction] =
     useState<Transaction | null>(null);
 
-  // Bulk tagging state
-  const [isBulkTagging, setIsBulkTagging] = useState(false);
+  // Bulk actions state
+  const [bulkMode, setBulkMode] = useState<"tag" | "account" | null>(null);
   const [bulkTagData, setBulkTagData] = useState({ category: "", tag: "" });
   const [bulkCashData, setBulkCashData] = useState({
     description: "",
@@ -172,7 +172,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
       setSelectedIds(new Set());
-      setIsBulkTagging(false);
+      setBulkMode(null);
       setBulkTagData({ category: "", tag: "" });
       setBulkCashData({ description: "", account_name: "", date: "" });
       onTransactionUpdated?.();
@@ -360,22 +360,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
     Object.entries(bySource).forEach(([source, ids]: [any, any]) => {
       const isCashSource = (source as string).includes("cash");
-      bulkTagMutation.mutate({
-        transaction_ids: ids,
-        source,
-        category: bulkTagData.category || undefined,
-        tag: bulkTagData.tag || undefined,
-        description:
-          isCashSource && bulkCashData.description
-            ? bulkCashData.description
-            : undefined,
-        account_name:
-          isCashSource && bulkCashData.account_name
-            ? bulkCashData.account_name
-            : undefined,
-        date:
-          isCashSource && bulkCashData.date ? bulkCashData.date : undefined,
-      });
+
+      if (bulkMode === "tag") {
+        bulkTagMutation.mutate({
+          transaction_ids: ids,
+          source,
+          category: bulkTagData.category || undefined,
+          tag: bulkTagData.tag || undefined,
+        });
+      } else if (bulkMode === "account" && isCashSource) {
+        bulkTagMutation.mutate({
+          transaction_ids: ids,
+          source,
+          description: bulkCashData.description || undefined,
+          account_name: bulkCashData.account_name || undefined,
+          date: bulkCashData.date || undefined,
+        });
+      }
     });
   };
 
@@ -944,111 +945,131 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           </div>
           <div className="w-px h-8 bg-[var(--surface-light)]" />
           <div className="flex items-center gap-3">
-            {isBulkTagging ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <select
-                    className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={bulkTagData.category}
-                    onChange={(e) =>
-                      setBulkTagData({
-                        ...bulkTagData,
-                        category: e.target.value,
-                        tag: "",
-                      })
-                    }
-                  >
-                    <option value="">Category</option>
-                    {categories &&
-                      Object.keys(categories).map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                  </select>
-                  <select
-                    className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={bulkTagData.tag}
-                    onChange={(e) =>
-                      setBulkTagData({ ...bulkTagData, tag: e.target.value })
-                    }
-                  >
-                    <option value="">Tag</option>
-                    {bulkTagData.category &&
-                      categories?.[bulkTagData.category]?.map((tag: string) => (
-                        <option key={tag} value={tag}>
-                          {tag}
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
-                    onClick={handleBulkTag}
-                    disabled={bulkTagMutation.isPending}
-                  >
-                    <CheckCircle2 size={20} />
-                  </button>
-                  <button
-                    className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
-                    onClick={() => {
-                      setIsBulkTagging(false);
-                      setBulkTagData({ category: "", tag: "" });
-                      setBulkCashData({ description: "", account_name: "", date: "" });
-                    }}
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-                {allSelectedAreCash && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-[var(--surface-light)]">
-                    <select
-                      value={bulkCashData.account_name}
-                      onChange={(e) =>
-                        setBulkCashData({
-                          ...bulkCashData,
-                          account_name: e.target.value,
-                        })
-                      }
-                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                    >
-                      <option value="">Account</option>
-                      {cashBalances.map((b: any) => (
-                        <option key={b.account_name} value={b.account_name}>
-                          {b.account_name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Description"
-                      value={bulkCashData.description}
-                      onChange={(e) =>
-                        setBulkCashData({
-                          ...bulkCashData,
-                          description: e.target.value,
-                        })
-                      }
-                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-48 placeholder:text-[var(--text-muted)]"
-                    />
-                    <input
-                      type="date"
-                      value={bulkCashData.date}
-                      onChange={(e) =>
-                        setBulkCashData({ ...bulkCashData, date: e.target.value })
-                      }
-                      className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
-                    />
-                  </div>
-                )}
+            {bulkMode === "tag" ? (
+              <div className="flex items-center gap-2">
+                <select
+                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                  value={bulkTagData.category}
+                  onChange={(e) =>
+                    setBulkTagData({
+                      ...bulkTagData,
+                      category: e.target.value,
+                      tag: "",
+                    })
+                  }
+                >
+                  <option value="">Category</option>
+                  {categories &&
+                    Object.keys(categories).map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                </select>
+                <select
+                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                  value={bulkTagData.tag}
+                  onChange={(e) =>
+                    setBulkTagData({ ...bulkTagData, tag: e.target.value })
+                  }
+                >
+                  <option value="">Tag</option>
+                  {bulkTagData.category &&
+                    categories?.[bulkTagData.category]?.map((tag: string) => (
+                      <option key={tag} value={tag}>
+                        {tag}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
+                  onClick={handleBulkTag}
+                  disabled={bulkTagMutation.isPending}
+                >
+                  <CheckCircle2 size={20} />
+                </button>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
+                  onClick={() => {
+                    setBulkMode(null);
+                    setBulkTagData({ category: "", tag: "" });
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            ) : bulkMode === "account" ? (
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkCashData.account_name}
+                  onChange={(e) =>
+                    setBulkCashData({
+                      ...bulkCashData,
+                      account_name: e.target.value,
+                    })
+                  }
+                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                >
+                  <option value="">Account</option>
+                  {cashBalances.map((b: any) => (
+                    <option key={b.account_name} value={b.account_name}>
+                      {b.account_name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Description"
+                  value={bulkCashData.description}
+                  onChange={(e) =>
+                    setBulkCashData({
+                      ...bulkCashData,
+                      description: e.target.value,
+                    })
+                  }
+                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-48 placeholder:text-[var(--text-muted)]"
+                />
+                <input
+                  type="date"
+                  value={bulkCashData.date}
+                  onChange={(e) =>
+                    setBulkCashData({ ...bulkCashData, date: e.target.value })
+                  }
+                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none"
+                />
+                <button
+                  className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
+                  onClick={handleBulkTag}
+                  disabled={bulkTagMutation.isPending}
+                >
+                  <CheckCircle2 size={20} />
+                </button>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
+                  onClick={() => {
+                    setBulkMode(null);
+                    setBulkCashData({ description: "", account_name: "", date: "" });
+                  }}
+                >
+                  <X size={20} />
+                </button>
               </div>
             ) : (
               <>
                 <button
                   className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all"
-                  onClick={() => setIsBulkTagging(true)}
+                  onClick={() => setBulkMode("tag")}
                 >
                   Tag Selection
                 </button>
+                {allSelectedAreCash && (
+                  <button
+                    className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-medium transition-all"
+                    onClick={() => setBulkMode("account")}
+                  >
+                    Edit Account
+                  </button>
+                )}
                 {showDelete && (
                   <button
                     className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-sm font-medium transition-all"
