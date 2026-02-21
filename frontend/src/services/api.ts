@@ -228,6 +228,19 @@ export const investmentsApi = {
     api.get(`/investments/${id}/analysis`, {
       params: { start_date: startDate, end_date: endDate },
     }),
+  // Balance snapshots
+  getBalanceSnapshots: (id: number) =>
+    api.get(`/investments/${id}/balances`),
+  createBalanceSnapshot: (id: number, data: { date: string; balance: number }) =>
+    api.post(`/investments/${id}/balances`, data),
+  updateBalanceSnapshot: (investmentId: number, snapshotId: number, data: { date?: string; balance?: number }) =>
+    api.put(`/investments/${investmentId}/balances/${snapshotId}`, data),
+  deleteBalanceSnapshot: (investmentId: number, snapshotId: number) =>
+    api.delete(`/investments/${investmentId}/balances/${snapshotId}`),
+  calculateFixedRateSnapshots: (id: number, endDate?: string) =>
+    api.post(`/investments/${id}/balances/calculate`, null, {
+      params: endDate ? { end_date: endDate } : {},
+    }),
 };
 
 // Analytics API
@@ -315,6 +328,8 @@ export interface PendingRefund {
   description?: string;
   account_name?: string;
   provider?: string;
+  category?: string;
+  tag?: string;
 }
 
 export interface RefundLink {
