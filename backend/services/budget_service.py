@@ -21,7 +21,7 @@ from backend.constants.budget import (
     TOTAL_BUDGET,
     YEAR,
 )
-from backend.constants.categories import NonExpensesCategories
+from backend.constants.categories import IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.pending_refunds_service import PendingRefundsService
@@ -558,7 +558,7 @@ class MonthlyBudgetService(BudgetService):
 
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
+                [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
@@ -705,7 +705,7 @@ class MonthlyBudgetService(BudgetService):
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
+                [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(

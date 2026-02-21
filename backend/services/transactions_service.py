@@ -13,10 +13,9 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     PROTECTED_TAGS,
-    IncomeCategories,
-    InvestmentCategories,
-    LiabilitiesCategories,
-    NonExpensesCategories,
+    IVESTMENTS_CATEGORY,
+    LIABILITIES_CATEGORY,
+    IncomeCategories
 )
 from backend.constants.providers import Banks, CreditCards, Services
 from backend.constants.tables import (
@@ -943,16 +942,14 @@ class TransactionsService:
             The ``expenses`` group includes all rows not in any special category.
         """
         category_col = TransactionsTableFields.CATEGORY.value
-        investment_categories = [e.value for e in InvestmentCategories]
         income_categories = [e.value for e in IncomeCategories]
-        liabilities_categories = [e.value for e in LiabilitiesCategories]
-        non_expenses_categories = [e.value for e in NonExpensesCategories]
+        non_expenses_categories = [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY] + income_categories
 
         return {
             "expenses": df[~df[category_col].isin(non_expenses_categories)],
-            "investments": df[df[category_col].isin(investment_categories)].copy(),
+            "investments": df[df[category_col] == IVESTMENTS_CATEGORY].copy(),
             "income": df[df[category_col].isin(income_categories)],
-            "liabilities": df[df[category_col].isin(liabilities_categories)],
+            "liabilities": df[df[category_col] == LIABILITIES_CATEGORY].copy(),
         }
 
     def get_liabilities_summary(self, filtered_df: pd.DataFrame) -> dict:
@@ -982,13 +979,10 @@ class TransactionsService:
         amount_col = TransactionsTableFields.AMOUNT.value
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
-        liabilities_categories = [e.value for e in LiabilitiesCategories]
 
         all_data = self.get_data_for_analysis()
-        all_liabilities = all_data[all_data[category_col].isin(liabilities_categories)]
-        filtered_liabilities = filtered_df[
-            filtered_df[category_col].isin(liabilities_categories)
-        ]
+        all_liabilities = all_data[all_data[category_col] == LIABILITIES_CATEGORY]
+        filtered_liabilities = filtered_df[filtered_df[category_col] == LIABILITIES_CATEGORY]
 
         total_received = all_liabilities[all_liabilities[amount_col] > 0][
             amount_col

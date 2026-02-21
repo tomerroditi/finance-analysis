@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
+    IVESTMENTS_CATEGORY,
+    LIABILITIES_CATEGORY,
     IncomeCategories,
-    LiabilitiesCategories,
-    NonExpensesCategories,
 )
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
@@ -58,17 +58,14 @@ class AnalysisService:
         df = self.repo.get_table()
         latest_date = df["date"].max()
 
-        income, expenses = self.get_income_and_expenses(df)
+        income, investments, expenses = self.get_income_investments_and_expenses(df)
         income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
-
-        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
-        total_investments = -float(inv_df["amount"].sum()) if not inv_df.empty else 0.0
 
         return {
             "latest_data_date": latest_date,
             "total_income": income,
             "total_expenses": expenses,
-            "total_investments": total_investments,
+            "total_investments": investments,
             "net_balance_change": income - expenses,
         }
 
@@ -94,27 +91,23 @@ class AnalysisService:
         monthly_data = []
         for month in sorted(df["month"].unique()):
             month_df = df[df["month"] == month]
-            income, expenses = self.get_income_and_expenses(month_df)
+            income, investments, expenses = self.get_income_investments_and_expenses(month_df)
             monthly_data.append(
                 {
                     "month": month,
                     "income": income,
+                    "investments": investments,
                     "expenses": expenses,
                 }
             )
 
         return monthly_data
 
-    def get_income_and_expenses(
+    def get_income_investments_and_expenses(
         self, df: pd.DataFrame
     ) -> tuple[float, float]:
         """
-        Compute total income and total expenses from a transactions DataFrame.
-
-        Credit card source rows are excluded to avoid double-counting.
-        Income is determined by ``_get_income_mask``. Expenses exclude
-        ``NonExpensesCategories`` (Investments, Liabilities, etc.) so only
-        real spending categories remain.
+        Calculate total income, investments, and expenses from a transactions DataFrame.
 
         Parameters
         ----------
@@ -128,22 +121,45 @@ class AnalysisService:
             ``expenses`` is the absolute value of the sum of negative amounts.
         """
         df = df[df["source"] != "credit_card_transactions"]
-        income_mask = self._get_income_mask(df)
+
+        income_mask, investment_mask, expensses_mask = self.get_transactions_masks(df).values()
+
         income = float(df[income_mask]["amount"].sum())
-        non_expense_mask = df["category"].isin([c.value for c in NonExpensesCategories])
-        neg_liability_mask = df["category"].isin(
-            [c.value for c in LiabilitiesCategories]
-        ) & (df["amount"] < 0)
-        expense_df = df[(~income_mask & ~non_expense_mask) | neg_liability_mask]
-        expenses = float(expense_df["amount"].sum()) * -1
-        return income, expenses
+        investments = float(df[investment_mask]["amount"].sum()) * -1
+        expenses = float(df[expensses_mask]["amount"].sum()) * -1
+        return income, investments, expenses
+    
+    def get_transactions_masks(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        """
+        Get boolean masks for income, investments, and expenses.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions DataFrame (typically the full merged table).
+
+        Returns
+        -------
+        dict[str, pd.Series]
+            Dictionary with keys "income", "investments", and "expenses" mapping to
+            boolean Series aligned with ``df``.
+        """
+        income_mask = self._get_income_mask(df)
+        investment_mask = self._get_investment_mask(df)
+        expensses_mask = ~income_mask & ~investment_mask
+
+        return {
+            "income": income_mask,
+            "investments": investment_mask,
+            "expenses": expensses_mask,
+        }
 
     def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
         """
         Build a boolean mask identifying income rows in a transactions DataFrame.
 
         A row is classified as income if its category is in ``IncomeCategories``,
-        or if its category is in ``LiabilitiesCategories`` with a positive amount
+        or if its category is exactly ``Liabilities_CATEGORY`` with a positive amount
         (loan receipts / liability refunds).
 
         Parameters
@@ -157,9 +173,27 @@ class AnalysisService:
             Boolean Series aligned with ``df`` — ``True`` for income rows.
         """
         return df["category"].isin([c.value for c in IncomeCategories]) | (
-            df["category"].isin([c.value for c in LiabilitiesCategories])
+            (df["category"] == LIABILITIES_CATEGORY)
             & (df["amount"] > 0)
         )
+    
+    def _get_investment_mask(self, df: pd.DataFrame) -> pd.Series:
+        """
+        Build a boolean mask identifying investment rows in a transactions DataFrame.
+
+        A row is classified as an investment if its category is exactly ``IVESTMENTS_CATEGORY``.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions DataFrame with at least a ``category`` column.
+
+        Returns
+        -------
+        pd.Series
+            Boolean Series aligned with ``df`` — ``True`` for investment rows.
+        """
+        return df["category"] == IVESTMENTS_CATEGORY
 
     def get_net_balance_over_time(self) -> list[dict]:
         """
@@ -226,7 +260,7 @@ class AnalysisService:
         if df.empty:
             return []
 
-        exclude_categories = [c.value for c in NonExpensesCategories] + [CREDIT_CARDS]
+        exclude_categories = [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
         expense_mask = ~df["category"].isin(exclude_categories)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
@@ -282,8 +316,6 @@ class AnalysisService:
         # --- Processing ---
         SALARY = IncomeCategories.SALARY.value
         OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
-        LIABILITIES = LiabilitiesCategories.LIABILITIES.value
-        INVESTMENTS = NonExpensesCategories.INVESTMENTS.value
 
         total_income_node = "Total Income"
 
@@ -304,17 +336,17 @@ class AnalysisService:
         sources[OTHER_INCOME] = other_income_df[
             other_income_df["tag"] != PRIOR_WEALTH_TAG
         ]["amount"].sum()
-        sources["Loans"] = df[(df["category"] == LIABILITIES) & (df["amount"] > 0)][
+        sources["Loans"] = df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] > 0)][
             "amount"
         ].sum()
         # sources["Investments Withdrawal"] = df[(df['category'] == INVESTMENTS) & (df['amount'] > 0)]['amount'].sum()
 
         destinations["Paid Debt"] = abs(
-            df[(df["category"] == LIABILITIES) & (df["amount"] < 0)]["amount"].sum()
+            df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)]["amount"].sum()
         )
         # destinations["Investments Deposit"] = abs(df[(df['category'] == INVESTMENTS) & (df['amount'] < 0)]['amount'].sum())
 
-        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES, INVESTMENTS]
+        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES_CATEGORY, IVESTMENTS_CATEGORY]
         expenses_df = df[~df["category"].isin(exclude_cats)]
         for cat, group in expenses_df.groupby("category"):
             net = group["amount"].sum()
@@ -327,7 +359,7 @@ class AnalysisService:
             destinations["Unknown"] = cc_gap
 
         # TODO: we need to account for payments and allocations from filtered out data to correctly calculate it
-        helpers["Debt To Be Paid"] = df[(df["category"] == LIABILITIES)]["amount"].sum()
+        helpers["Debt To Be Paid"] = df[(df["category"] == LIABILITIES_CATEGORY)]["amount"].sum()
         net = sum(sources.values()) - sum(destinations.values())
         if net < 0:
             sources["Wealth Deficit"] = abs(net)
@@ -436,7 +468,7 @@ class AnalysisService:
         category = row["category"]
 
         # Positive liabilities = loans
-        if category == LiabilitiesCategories.LIABILITIES.value:
+        if category == LIABILITIES_CATEGORY and row["amount"] > 0:
             return "Loans"
 
         tag = row.get("tag")

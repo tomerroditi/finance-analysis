@@ -1,12 +1,7 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(python -m py_compile:*)",
-      "Bash(wc:*)"
-    ],
-    "additionalDirectories": [
-      "/Users/tomer/Desktop/finance-analysis/.claude"
-    ]
+    "allow": [],
+    "additionalDirectories": []
   },
   "enabledPlugins": {
     "ralph-loop@claude-plugins-official": true,

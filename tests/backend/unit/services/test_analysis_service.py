@@ -181,9 +181,9 @@ class TestAnalysisServiceIncomeExpenses:
         """Verify income vs expense calculation via direct method call."""
         service = AnalysisService(db_session)
 
-        # Call get_income_and_expenses directly with the full transactions df
+        # Call get_income_investments_and_expenses directly with the full transactions df
         df = service.repo.get_table()
-        income, expenses = service.get_income_and_expenses(df)
+        income, investments, expenses = service.get_income_investments_and_expenses(df)
 
         # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500
         assert income == 28200.0
