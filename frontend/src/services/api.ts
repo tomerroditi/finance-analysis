@@ -40,6 +40,7 @@ export const transactionsApi = {
     description?: string;
     account_name?: string;
     date?: string;
+    amount?: number;
   }) => api.post("/transactions/bulk-tag", data),
   split: (
     id: number,

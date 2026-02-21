@@ -689,14 +689,15 @@ class TransactionsService:
         description: str | None = None,
         account_name: str | None = None,
         date: str | None = None,
+        amount: float | None = None,
     ) -> None:
         """
         Apply the same category, tag, and optional fields to multiple transactions.
 
         For manual sources (``cash``, ``manual_investment_transactions``),
-        ``description``, ``account_name``, and ``date`` are also applied when
-        provided. Permission checks and side effects (e.g. cash balance
-        recalculation) are handled by ``update_transaction``.
+        ``description``, ``account_name``, ``date``, and ``amount`` are also
+        applied when provided. Permission checks and side effects (e.g. cash
+        balance recalculation) are handled by ``update_transaction``.
 
         Parameters
         ----------
@@ -714,6 +715,8 @@ class TransactionsService:
             Account name to apply. Only written for manual sources.
         date : str or None, optional
             Date string to apply. Only written for manual sources.
+        amount : float or None, optional
+            Amount to apply. Only written for manual sources.
         """
         updates: dict = {
             "category": category,
@@ -725,6 +728,8 @@ class TransactionsService:
             updates["account_name"] = account_name
         if date is not None:
             updates["date"] = date
+        if amount is not None:
+            updates["amount"] = amount
 
         for uid in transaction_ids:
             self.update_transaction(uid, source, updates)

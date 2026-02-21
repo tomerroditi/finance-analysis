@@ -49,6 +49,7 @@ class BulkTagUpdate(BaseModel):
     description: Optional[str] = None
     account_name: Optional[str] = None
     date: Optional[str] = None
+    amount: Optional[float] = None
 
 
 class SplitItem(BaseModel):
@@ -200,6 +201,7 @@ async def bulk_tag_transactions(
             data.description,
             data.account_name,
             data.date,
+            data.amount,
         )
         return {"status": "success"}
     except Exception as e:
