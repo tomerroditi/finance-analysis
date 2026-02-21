@@ -194,6 +194,26 @@ class TestTransactionsServiceCRUD:
         assert user_rows.iloc[0]["description"] == "Test cash purchase"
         assert user_rows.iloc[0]["amount"] == -50.0
 
+    def test_create_cash_transaction_always_sets_provider_cash(self, db_session):
+        """Verify creating a cash transaction always sets provider to 'CASH'.
+
+        Regardless of what provider value is passed in, cash transactions
+        should always have provider='CASH'.
+        """
+        service = TransactionsService(db_session)
+        data = {
+            "date": date(2024, 4, 1),
+            "account_name": "Cash Wallet",
+            "description": "Test provider",
+            "amount": -30.0,
+            "provider": "MANUAL",  # Should be overridden to "CASH"
+        }
+        service.create_transaction(data, "cash")
+
+        result = service.get_all_transactions("cash")
+        user_rows = result[result["tag"] != PRIOR_WEALTH_TAG]
+        assert user_rows.iloc[0]["provider"] == "CASH"
+
     def test_create_manual_investments_transaction(self, db_session):
         """Verify creating a manual investment transaction."""
         service = TransactionsService(db_session)

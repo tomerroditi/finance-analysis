@@ -173,18 +173,87 @@ class TestCashBalanceService:
         assert total == 1500.0
 
     def test_delete_for_account(self, db_session: Session):
-        """Verify delete_for_account removes the balance record."""
+        """Verify delete_for_account removes the balance record and migrates transactions."""
         service = CashBalanceService(db_session)
 
-        service.set_balance("Main Wallet", 500.0)
+        # Create both Wallet (default) and another account
+        service.set_balance("Wallet", 0.0)
+        service.set_balance("Savings", 500.0)
 
-        # Verify it exists
-        result = service.get_by_account_name("Main Wallet")
+        # Add a transaction to Savings
+        txn = CashTransaction(
+            id="cash_del_1",
+            date="2024-01-01",
+            account_name="Savings",
+            description="Test",
+            amount=-100.0,
+            category="Food",
+            tag="Groceries",
+            source="cash_transactions",
+            type="expense",
+            status="completed",
+        )
+        db_session.add(txn)
+        db_session.commit()
+
+        # Delete Savings — transactions should migrate to Wallet
+        service.delete_for_account("Savings")
+
+        # Verify Savings is gone
+        assert service.get_by_account_name("Savings") is None
+
+        # Verify the transaction moved to Wallet
+        db_session.expire_all()
+        migrated_txn = db_session.query(CashTransaction).filter_by(
+            id="cash_del_1"
+        ).first()
+        assert migrated_txn.account_name == "Wallet"
+
+    def test_delete_wallet_raises_error(self, db_session: Session):
+        """Verify delete_for_account prevents deletion of the default Wallet account."""
+        service = CashBalanceService(db_session)
+        service.set_balance("Wallet", 500.0)
+
+        with pytest.raises(ValueError, match="Cannot delete the default 'Wallet' account"):
+            service.delete_for_account("Wallet")
+
+        # Verify it still exists
+        result = service.get_by_account_name("Wallet")
         assert result is not None
 
-        # Delete it
-        service.delete_for_account("Main Wallet")
+    def test_delete_for_account_recalculates_wallet_balance(self, db_session: Session):
+        """Verify deleting an account recalculates the Wallet balance after migration.
 
-        # Verify it's gone
-        result = service.get_by_account_name("Main Wallet")
-        assert result is None
+        When transactions are migrated from a deleted account to Wallet,
+        Wallet's balance should be recalculated to include those transactions.
+        """
+        service = CashBalanceService(db_session)
+
+        # Set up Wallet with prior_wealth=1000, no transactions → balance=1000
+        service.set_balance("Wallet", 1000.0)
+        # Set up Savings with prior_wealth=500, no transactions → balance=500
+        service.set_balance("Savings", 500.0)
+
+        # Add a -200 transaction to Savings
+        txn = CashTransaction(
+            id="cash_recalc_1",
+            date="2024-01-01",
+            account_name="Savings",
+            description="Expense",
+            amount=-200.0,
+            category="Food",
+            tag="Groceries",
+            source="cash_transactions",
+            type="expense",
+            status="completed",
+        )
+        db_session.add(txn)
+        db_session.commit()
+
+        # Delete Savings — its -200 transaction migrates to Wallet
+        service.delete_for_account("Savings")
+
+        # Wallet balance should be recalculated: prior_wealth(1000) + txn_sum(-200) = 800
+        wallet = service.get_by_account_name("Wallet")
+        assert wallet["balance"] == 800.0
+        assert wallet["prior_wealth_amount"] == 1000.0

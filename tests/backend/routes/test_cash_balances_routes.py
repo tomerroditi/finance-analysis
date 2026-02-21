@@ -60,3 +60,73 @@ class TestCashBalancesRoutes:
         )
         assert savings_balance is not None
         assert savings_balance["balance"] == 1000.0
+
+    def test_delete_wallet_returns_400(self, test_client):
+        """DELETE /api/cash-balances/Wallet returns 400 because Wallet is protected."""
+        # Create Wallet first
+        test_client.post("/api/cash-balances/", json={
+            "account_name": "Wallet",
+            "balance": 500.0,
+        })
+
+        response = test_client.delete("/api/cash-balances/Wallet")
+        assert response.status_code == 400
+        assert "Cannot delete" in response.json()["detail"]
+
+    def test_delete_non_wallet_succeeds(self, test_client):
+        """DELETE /api/cash-balances/{name} deletes a non-Wallet account."""
+        # Create Wallet (required as migration target) and Savings
+        test_client.post("/api/cash-balances/", json={
+            "account_name": "Wallet",
+            "balance": 0.0,
+        })
+        test_client.post("/api/cash-balances/", json={
+            "account_name": "Savings",
+            "balance": 300.0,
+        })
+
+        response = test_client.delete("/api/cash-balances/Savings")
+        assert response.status_code == 200
+        assert response.json()["status"] == "deleted"
+
+        # Verify it's gone
+        all_balances = test_client.get("/api/cash-balances/").json()
+        names = [b["account_name"] for b in all_balances]
+        assert "Savings" not in names
+        assert "Wallet" in names
+
+    def test_delete_account_migrates_transactions_to_wallet(self, test_client):
+        """DELETE /api/cash-balances/{name} migrates transactions to Wallet.
+
+        When an envelope is deleted, its transactions should move to Wallet
+        and both cash balances should be recalculated.
+        """
+        # Create Wallet and Savings envelopes
+        test_client.post("/api/cash-balances/", json={
+            "account_name": "Wallet",
+            "balance": 1000.0,
+        })
+        test_client.post("/api/cash-balances/", json={
+            "account_name": "Savings",
+            "balance": 500.0,
+        })
+
+        # Create a cash transaction in Savings
+        test_client.post("/api/transactions/", json={
+            "date": "2024-06-01",
+            "description": "Groceries",
+            "amount": -50.0,
+            "account_name": "Savings",
+            "service": "cash",
+        })
+
+        # Delete Savings
+        response = test_client.delete("/api/cash-balances/Savings")
+        assert response.status_code == 200
+
+        # Verify the transaction was migrated to Wallet
+        txns = test_client.get("/api/transactions/", params={"service": "cash"}).json()
+        savings_txns = [t for t in txns if t["account_name"] == "Savings"]
+        wallet_txns = [t for t in txns if t["account_name"] == "Wallet"]
+        assert len(savings_txns) == 0
+        assert any(t["description"] == "Groceries" for t in wallet_txns)
