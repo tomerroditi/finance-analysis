@@ -219,7 +219,6 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={handleKeyDown}
                     placeholder="Search..."
                     className="w-full pl-7 pr-2 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                   />
