@@ -68,6 +68,10 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - Frontend proxies `/api/*` to backend via Vite config
 - Custom exceptions: `EntityNotFoundException` (404), `EntityAlreadyExistsException` (409), `ValidationException` (400)
 
+## UI Testing
+
+When smoke-testing UI changes in the browser, **enable Test Mode first** (toggle in the top-right header). Test Mode switches the backend to a separate test database so real financial data is not accidentally modified. Remember to disable it when done.
+
 ## Gotchas
 
 - Passwords stored in OS Keyring, never in YAML or code

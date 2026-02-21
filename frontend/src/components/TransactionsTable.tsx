@@ -151,6 +151,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     category: "",
     tag: "",
   });
+  const [amountType, setAmountType] = useState<"expense" | "income">("expense");
 
   // Fetch categories for bulk tagging
   const { data: categories } = useQuery({
@@ -229,6 +230,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   useEffect(() => {
     if (selectedIds.size === 0) {
       setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
+      setAmountType("expense");
     }
   }, [selectedIds]);
 
@@ -385,7 +387,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       if (isManualSource) {
         if (bulkEditData.date) payload.date = bulkEditData.date;
         if (bulkEditData.description) payload.description = bulkEditData.description;
-        if (bulkEditData.amount) payload.amount = parseFloat(bulkEditData.amount);
+        if (bulkEditData.amount) {
+          const absAmount = Math.abs(parseFloat(bulkEditData.amount));
+          payload.amount = amountType === "expense" ? -absAmount : absAmount;
+        }
         if (bulkEditData.account_name) payload.account_name = bulkEditData.account_name;
       }
       bulkTagMutation.mutate(payload);
@@ -979,6 +984,22 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[var(--primary)]/50"
                   placeholder="Description"
                 />
+                <div className="flex bg-[var(--surface-light)] rounded-lg border border-[var(--surface-light)] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setAmountType("expense")}
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "expense" ? "bg-red-500/20 text-red-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
+                  >
+                    Expense
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAmountType("income")}
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "income" ? "bg-emerald-500/20 text-emerald-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
+                  >
+                    Income
+                  </button>
+                </div>
                 <input
                   type="number"
                   value={bulkEditData.amount}
