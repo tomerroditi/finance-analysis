@@ -172,11 +172,27 @@ class CashBalanceService:
         """
         Delete the cash balance record for a cash account.
 
+        Prevents deletion of the default "Wallet" account and migrates any
+        transactions from the deleted account to "Wallet" before deletion.
+
         Parameters
         ----------
         account_name : str
             Cash account name.
+
+        Raises
+        ------
+        ValueError
+            If attempting to delete the "Wallet" account.
         """
+        # Prevent deletion of default Wallet account
+        if account_name == "Wallet":
+            raise ValueError("Cannot delete the default 'Wallet' account")
+
+        # Migrate transactions from deleted account to "Wallet"
+        self._migrate_transactions_to_wallet(account_name)
+
+        # Delete the balance record
         self.cash_balance_repo.delete_by_account_name(account_name)
 
     def _get_account_transaction_sum(self, account_name: str) -> float:
@@ -274,6 +290,33 @@ class CashBalanceService:
             )
         )
         self.db.commit()
+
+    def _migrate_transactions_to_wallet(self, account_name: str) -> None:
+        """
+        Migrate all transactions from a deleted account to "Wallet".
+
+        Updates the account_name field for all transactions from the source
+        account to "Wallet", then recalculates balances for both accounts.
+
+        Parameters
+        ----------
+        account_name : str
+            Source account name to migrate from.
+        """
+        from sqlalchemy import update
+
+        # Update all transactions from source account to "Wallet"
+        stmt = (
+            update(CashTransaction)
+            .where(CashTransaction.account_name == account_name)
+            .values(account_name="Wallet")
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
+        # Recalculate balances for both accounts
+        self.recalculate_current_balance(account_name)
+        self.recalculate_current_balance("Wallet")
 
     @staticmethod
     def _record_to_dict(record) -> dict:

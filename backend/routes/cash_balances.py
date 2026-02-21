@@ -4,7 +4,7 @@ Cash Balance API routes.
 Provides endpoints for managing cash account balances and prior wealth.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -59,7 +59,14 @@ async def delete_cash_balance(
     account_name: str,
     db: Session = Depends(get_database),
 ) -> dict:
-    """Delete a cash balance record by account name."""
+    """Delete a cash balance record by account name.
+
+    Migrates any transactions from the deleted account to "Wallet".
+    Cannot delete the default "Wallet" account.
+    """
     service = CashBalanceService(db)
-    service.delete_for_account(account_name)
-    return {"status": "deleted", "account_name": account_name}
+    try:
+        service.delete_for_account(account_name)
+        return {"status": "deleted", "account_name": account_name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
