@@ -372,7 +372,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         bulkTagMutation.mutate({
           transaction_ids: ids,
           source,
-          description: bulkCashData.description || undefined,
           account_name: bulkCashData.account_name || undefined,
           date: bulkCashData.date || undefined,
         });
@@ -1017,18 +1016,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     </option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  placeholder="Description"
-                  value={bulkCashData.description}
-                  onChange={(e) =>
-                    setBulkCashData({
-                      ...bulkCashData,
-                      description: e.target.value,
-                    })
-                  }
-                  className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm outline-none w-48 placeholder:text-[var(--text-muted)]"
-                />
                 <input
                   type="date"
                   value={bulkCashData.date}
