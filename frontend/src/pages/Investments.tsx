@@ -49,6 +49,7 @@ function InvestmentCard({
   onClose,
   onReopen,
   onDelete,
+  onUpdateBalance,
 }: any) {
   return (
     <div
@@ -100,6 +101,14 @@ function InvestmentCard({
         </div>
       </div>
 
+      {!inv.is_closed && (
+        <button
+          onClick={() => onUpdateBalance(inv.id)}
+          className="w-full py-2.5 mb-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 font-bold transition-all flex items-center justify-center gap-2 text-sm"
+        >
+          <DollarSign size={14} /> Update Balance
+        </button>
+      )}
       <button
         onClick={() => onViewAnalysis(inv.id)}
         className="w-full py-3 mb-4 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--primary)] text-[var(--text-muted)] hover:text-white font-bold transition-all flex items-center justify-center gap-2"
@@ -167,6 +176,11 @@ export function Investments() {
   });
 
   const [includeClosed, setIncludeClosed] = useState(false);
+  const [balanceForm, setBalanceForm] = useState<{
+    investmentId: number | null;
+    date: string;
+    balance: string;
+  }>({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
 
   // Queries
   const {
@@ -195,6 +209,17 @@ export function Investments() {
       selectedAnalysisId
         ? investmentsApi
             .getInvestmentAnalysis(selectedAnalysisId)
+            .then((res) => res.data)
+        : null,
+    enabled: !!selectedAnalysisId,
+  });
+
+  const { data: selectedSnapshots } = useQuery({
+    queryKey: ["investment-snapshots", selectedAnalysisId],
+    queryFn: () =>
+      selectedAnalysisId
+        ? investmentsApi
+            .getBalanceSnapshots(selectedAnalysisId)
             .then((res) => res.data)
         : null,
     enabled: !!selectedAnalysisId,
@@ -239,6 +264,40 @@ export function Investments() {
     mutationFn: (id: number) => investmentsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["investments"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+    },
+  });
+
+  const balanceSnapshotMutation = useMutation({
+    mutationFn: (data: { investmentId: number; date: string; balance: number }) =>
+      investmentsApi.createBalanceSnapshot(data.investmentId, {
+        date: data.date,
+        balance: data.balance,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      setBalanceForm({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
+    },
+  });
+
+  const deleteSnapshotMutation = useMutation({
+    mutationFn: ({ investmentId, snapshotId }: { investmentId: number; snapshotId: number }) =>
+      investmentsApi.deleteBalanceSnapshot(investmentId, snapshotId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+    },
+  });
+
+  const calculateMutation = useMutation({
+    mutationFn: (investmentId: number) =>
+      investmentsApi.calculateFixedRateSnapshots(investmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
     },
   });
@@ -420,6 +479,13 @@ export function Investments() {
                   onClose={closeMutation.mutate}
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
+                  onUpdateBalance={(id: number) =>
+                    setBalanceForm({
+                      investmentId: id,
+                      date: new Date().toISOString().split("T")[0],
+                      balance: "",
+                    })
+                  }
                 />
               ))}
             </div>
@@ -455,6 +521,13 @@ export function Investments() {
                 onClose={closeMutation.mutate}
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
+                onUpdateBalance={(id: number) =>
+                  setBalanceForm({
+                    investmentId: id,
+                    date: new Date().toISOString().split("T")[0],
+                    balance: "",
+                  })
+                }
               />
             ))}
           </div>
@@ -582,12 +655,161 @@ export function Investments() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Fixed-Rate Calculation */}
+                  {investments?.find((i: any) => i.id === selectedAnalysisId)
+                    ?.interest_rate_type === "fixed" &&
+                    investments?.find((i: any) => i.id === selectedAnalysisId)
+                      ?.interest_rate && (
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => calculateMutation.mutate(selectedAnalysisId!)}
+                        disabled={calculateMutation.isPending}
+                        className="px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        {calculateMutation.isPending
+                          ? "Calculating..."
+                          : "Calculate Fixed Rate"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Balance Snapshots */}
+                  {selectedSnapshots && selectedSnapshots.length > 0 && (
+                    <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold">Balance Snapshots</h3>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {selectedSnapshots.length} entries
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+                              <th className="text-left py-2 font-bold">Date</th>
+                              <th className="text-right py-2 font-bold">Balance</th>
+                              <th className="text-center py-2 font-bold">Source</th>
+                              <th className="text-right py-2 font-bold"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedSnapshots.map((snap: any) => (
+                              <tr
+                                key={snap.id}
+                                className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
+                              >
+                                <td className="py-2 text-white font-medium">
+                                  {snap.date}
+                                </td>
+                                <td className="py-2 text-right text-white font-bold">
+                                  {formatCurrency(snap.balance)}
+                                </td>
+                                <td className="py-2 text-center">
+                                  <span
+                                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                                      snap.source === "manual"
+                                        ? "bg-blue-500/20 text-blue-400"
+                                        : snap.source === "calculated"
+                                          ? "bg-purple-500/20 text-purple-400"
+                                          : "bg-emerald-500/20 text-emerald-400"
+                                    }`}
+                                  >
+                                    {snap.source}
+                                  </span>
+                                </td>
+                                <td className="py-2 text-right">
+                                  <button
+                                    onClick={() =>
+                                      deleteSnapshotMutation.mutate({
+                                        investmentId: selectedAnalysisId!,
+                                        snapshotId: snap.id,
+                                      })
+                                    }
+                                    className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center py-20 text-[var(--text-muted)]">
                   Loading analysis...
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Balance Modal */}
+      {balanceForm.investmentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold mb-4">Update Balance</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                  value={balanceForm.date}
+                  onChange={(e) =>
+                    setBalanceForm({ ...balanceForm, date: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                  Current Market Value
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 125000"
+                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                  value={balanceForm.balance}
+                  onChange={(e) =>
+                    setBalanceForm({ ...balanceForm, balance: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() =>
+                  setBalanceForm({
+                    investmentId: null,
+                    date: new Date().toISOString().split("T")[0],
+                    balance: "",
+                  })
+                }
+                className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!balanceForm.balance || balanceSnapshotMutation.isPending}
+                onClick={() =>
+                  balanceSnapshotMutation.mutate({
+                    investmentId: balanceForm.investmentId!,
+                    date: balanceForm.date,
+                    balance: parseFloat(balanceForm.balance),
+                  })
+                }
+                className="flex-[2] py-3 bg-blue-500 rounded-xl text-white font-bold hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {balanceSnapshotMutation.isPending ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
         </div>
