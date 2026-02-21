@@ -71,6 +71,45 @@ class TestTransactionsRoutes:
         )
         assert response.status_code == 200
 
+    def test_update_cash_transaction_account_name(self, test_client):
+        """PUT /api/transactions/{id} updates cash transaction account_name."""
+        # Create a cash transaction first
+        create_resp = test_client.post(
+            "/api/transactions",
+            json={
+                "date": "2024-06-01",
+                "description": "Test account update",
+                "amount": -30.0,
+                "account_name": "Wallet A",
+                "service": "cash",
+            },
+        )
+        assert create_resp.status_code == 200
+
+        # Get the transaction to find its ID
+        get_resp = test_client.get("/api/transactions?service=cash")
+        txs = get_resp.json()
+        tx = next((t for t in txs if t.get("description") == "Test account update"), None)
+        assert tx is not None
+        uid = tx["unique_id"]
+
+        # Update the account_name
+        response = test_client.put(
+            f"/api/transactions/{uid}",
+            json={
+                "account_name": "Wallet B",
+                "source": "cash_transactions",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+
+        # Verify the update was applied
+        get_resp2 = test_client.get(f"/api/transactions/{uid}")
+        assert get_resp2.status_code == 200
+        updated_tx = get_resp2.json()
+        assert updated_tx["account_name"] == "Wallet B"
+
     def test_delete_cash_transaction(self, test_client):
         """DELETE /api/transactions/{id} deletes cash transaction."""
         # Create one first

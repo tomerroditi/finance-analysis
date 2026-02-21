@@ -254,7 +254,7 @@ class TestTransactionsServiceCRUD:
             "amount": -75.0,
             "provider": "updated_provider",
         }
-        result = service.update_transaction(unique_id, "cash", updates)
+        result = service.update_transaction(unique_id, "cash_transactions", updates)
         assert result is True
 
         # Verify the update
@@ -312,7 +312,7 @@ class TestTransactionsServiceCRUD:
         non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
         unique_id = int(non_pw.iloc[0]["unique_id"])
 
-        result = service.update_transaction(unique_id, "cash", {"date": "2024-06-15"})
+        result = service.update_transaction(unique_id, "cash_transactions", {"date": "2024-06-15"})
         assert result is True
 
         updated_df = service.get_all_transactions("cash")
@@ -353,7 +353,7 @@ class TestTransactionsServiceCRUD:
 
         # Move the transaction from Wallet A to Wallet B.
         result = service.update_transaction(
-            tx.unique_id, "cash", {"account_name": "Wallet B"}
+            tx.unique_id, "cash_transactions", {"account_name": "Wallet B"}
         )
         assert result is True
 

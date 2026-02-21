@@ -542,12 +542,12 @@ class TransactionsService:
         from sqlalchemy import select
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-        is_manual = source in ["cash", "manual_investment_transactions"]
+        is_manual = source in ["cash_transactions", "manual_investment_transactions"]
 
         # Capture old account_name before updating — needed to recalculate the
         # old account's balance when account_name changes on a cash transaction.
         old_account_name: str | None = None
-        if source == "cash" and updates.get("account_name") is not None:
+        if source == "cash_transactions" and updates.get("account_name") is not None:
             tx_before = self.transactions_repository.db.execute(
                 select(target_repo.model).where(
                     target_repo.model.unique_id == unique_id
@@ -582,7 +582,7 @@ class TransactionsService:
         result = target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
 
         # Recalculate cash balance(s) when a cash transaction is updated.
-        if result and source == "cash":
+        if result and source == "cash_transactions":
             from backend.services.cash_balance_service import CashBalanceService
             cash_balance_svc = CashBalanceService(self.db)
 
