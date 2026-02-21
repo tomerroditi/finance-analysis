@@ -32,6 +32,8 @@ class Tables(Enum):
         Name of the table storing refund links.
     BANK_BALANCES : str
         Name of the table storing bank account balance snapshots.
+    CASH_BALANCES : str
+        Name of the table storing cash balance snapshots and prior wealth.
     CATEGORIES : str
         Name of the table storing categories, tags, and icons.
     CREDENTIALS : str
@@ -50,6 +52,7 @@ class Tables(Enum):
     PENDING_REFUNDS = "pending_refunds"
     REFUND_LINKS = "refund_links"
     BANK_BALANCES = "bank_balances"
+    CASH_BALANCES = "cash_balances"
     CATEGORIES = "categories"
     CREDENTIALS = "credentials"
 
