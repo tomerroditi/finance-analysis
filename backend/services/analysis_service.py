@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
-    IVESTMENTS_CATEGORY,
+    INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories,
 )
@@ -181,7 +181,7 @@ class AnalysisService:
         """
         Build a boolean mask identifying investment rows in a transactions DataFrame.
 
-        A row is classified as an investment if its category is exactly ``IVESTMENTS_CATEGORY``.
+        A row is classified as an investment if its category is exactly ``INVESTMENTS_CATEGORY``.
 
         Parameters
         ----------
@@ -193,7 +193,7 @@ class AnalysisService:
         pd.Series
             Boolean Series aligned with ``df`` — ``True`` for investment rows.
         """
-        return df["category"] == IVESTMENTS_CATEGORY
+        return df["category"] == INVESTMENTS_CATEGORY
 
     def get_net_balance_over_time(self) -> list[dict]:
         """
@@ -260,7 +260,7 @@ class AnalysisService:
         if df.empty:
             return []
 
-        exclude_categories = [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+        exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
         expense_mask = ~df["category"].isin(exclude_categories)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
@@ -346,7 +346,7 @@ class AnalysisService:
         )
         # destinations["Investments Deposit"] = abs(df[(df['category'] == INVESTMENTS) & (df['amount'] < 0)]['amount'].sum())
 
-        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES_CATEGORY, IVESTMENTS_CATEGORY]
+        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES_CATEGORY, INVESTMENTS_CATEGORY]
         expenses_df = df[~df["category"].isin(exclude_cats)]
         for cat, group in expenses_df.groupby("category"):
             net = group["amount"].sum()

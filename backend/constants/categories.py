@@ -4,7 +4,7 @@ from enum import Enum
 PRIOR_WEALTH_TAG = "Prior Wealth"
 CREDIT_CARDS = "Credit Cards"
 IGNORE_CATEGORY = "Ignore"
-IVESTMENTS_CATEGORY = "Investments"
+INVESTMENTS_CATEGORY = "Investments"
 LIABILITIES_CATEGORY = "Liabilities"
 
 PROTECTED_TAGS = [PRIOR_WEALTH_TAG]

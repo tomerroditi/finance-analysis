@@ -8,7 +8,7 @@ import pytest
 from backend.constants.categories import (
     IncomeCategories,
     PRIOR_WEALTH_TAG,
-    IVESTMENTS_CATEGORY,
+    INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     CREDIT_CARDS,
 )
@@ -450,7 +450,7 @@ class TestTransactionsServiceKPIs:
         assert all(data["income"][category_col].isin(income_cats))
 
         # Expenses should NOT contain non-expense categories
-        non_expense_cats = [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *[e.value for e in IncomeCategories]]
+        non_expense_cats = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *[e.value for e in IncomeCategories]]
         assert not data["expenses"].empty, "Expected expense data from seed fixture"
         assert not any(data["expenses"][category_col].isin(non_expense_cats))
 

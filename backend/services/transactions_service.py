@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     PROTECTED_TAGS,
-    IVESTMENTS_CATEGORY,
+    INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories
 )
@@ -943,11 +943,11 @@ class TransactionsService:
         """
         category_col = TransactionsTableFields.CATEGORY.value
         income_categories = [e.value for e in IncomeCategories]
-        non_expenses_categories = [IVESTMENTS_CATEGORY, LIABILITIES_CATEGORY] + income_categories
+        non_expenses_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY] + income_categories
 
         return {
             "expenses": df[~df[category_col].isin(non_expenses_categories)],
-            "investments": df[df[category_col] == IVESTMENTS_CATEGORY].copy(),
+            "investments": df[df[category_col] == INVESTMENTS_CATEGORY].copy(),
             "income": df[df[category_col].isin(income_categories)],
             "liabilities": df[df[category_col] == LIABILITIES_CATEGORY].copy(),
         }
