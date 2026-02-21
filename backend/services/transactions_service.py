@@ -500,6 +500,9 @@ class TransactionsService:
 
         if service == "cash":
             self.sync_prior_wealth_offset(target_service="cash")
+            # Recalculate cash balance if this is a cash transaction
+            from backend.services.cash_balance_service import CashBalanceService
+            CashBalanceService(self.db).recalculate_current_balance(data["account_name"])
         elif service == "manual_investments":
             category = data.get("category")
             tag = data.get("tag")
@@ -556,7 +559,23 @@ class TransactionsService:
         if not filtered_updates:
             return False
 
-        return target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
+        result = target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
+
+        # Recalculate cash balance if this is a cash transaction
+        if result and source == "cash":
+            from sqlalchemy import select
+            tx_record = self.transactions_repository.db.execute(
+                select(target_repo.model).where(
+                    target_repo.model.unique_id == unique_id
+                )
+            ).scalar_one_or_none()
+            if tx_record:
+                account_name = getattr(tx_record, "account_name", None)
+                if account_name:
+                    from backend.services.cash_balance_service import CashBalanceService
+                    CashBalanceService(self.db).recalculate_current_balance(account_name)
+
+        return result
 
     def delete_transaction(self, unique_id: int, source: str) -> None:
         """
@@ -621,6 +640,9 @@ class TransactionsService:
 
         if source == "cash_transactions":
             self.sync_prior_wealth_offset(target_service="cash")
+            # Recalculate cash balance if this was a cash transaction
+            from backend.services.cash_balance_service import CashBalanceService
+            CashBalanceService(self.db).recalculate_current_balance(account_name)
         elif source == "manual_investment_transactions" and inv_category and inv_tag:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
