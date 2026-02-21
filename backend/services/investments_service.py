@@ -51,6 +51,9 @@ class InvestmentsService:
         """
         Get all investments as a list of JSON-safe dicts.
 
+        Each record is enriched with ``latest_snapshot_date`` indicating the
+        most recent balance snapshot, or ``None`` if no snapshots exist.
+
         Parameters
         ----------
         include_closed : bool, optional
@@ -63,7 +66,15 @@ class InvestmentsService:
         """
         df = self.investments_repo.get_all_investments(include_closed=include_closed)
         df = df.replace({np.nan: None})
-        return df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
+
+        for record in records:
+            latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
+                record["id"], date.today().strftime("%Y-%m-%d")
+            )
+            record["latest_snapshot_date"] = latest["date"] if latest else None
+
+        return records
 
     def get_investment(self, investment_id: int) -> Dict[str, Any]:
         """

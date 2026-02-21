@@ -51,6 +51,13 @@ function InvestmentCard({
   onDelete,
   onUpdateBalance,
 }: any) {
+  const snapshotAgeDays = inv.latest_snapshot_date
+    ? Math.floor(
+        (new Date().getTime() - new Date(inv.latest_snapshot_date).getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+    : 0;
+
   return (
     <div
       className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
@@ -100,6 +107,20 @@ function InvestmentCard({
           </p>
         </div>
       </div>
+
+      {inv.latest_snapshot_date && (
+        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] -mt-4 mb-8">
+          <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
+            Last Balance Update
+          </p>
+          <p className={`text-xs font-bold mt-1.5 ${
+            snapshotAgeDays > 30 ? "text-amber-400" : "text-white"
+          }`}>
+            {inv.latest_snapshot_date}
+            {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
+          </p>
+        </div>
+      )}
 
       {!inv.is_closed && (
         <button
