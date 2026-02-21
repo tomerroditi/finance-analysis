@@ -15,7 +15,6 @@ class TestAnalysisServiceOverview:
         service = AnalysisService(db_session)
         result = service.get_overview()
 
-        assert result["total_transactions"] == len(seed_base_transactions)
         assert result["latest_data_date"] is not None
 
         # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500

@@ -97,13 +97,6 @@ net_worth = bank_balance + investment_value
 
 The anchor point (1 month before earliest data) shows all prior wealth as `bank_balance` with `investment_value = 0`, representing the state before any tracked transactions.
 
-### Closed vs Open Investments and Prior Wealth
-
-Closed investments have `current_balance = 0` — all money was withdrawn back to the bank. This affects how prior wealth is used:
-
-- **Net worth chart**: Uses ALL prior wealth (open + closed) in `bank_balance`. Closed investment capital is correctly reflected in the bank since withdrawals returned the money. Investment line shows only **open** investments (`include_closed=False`).
-- **Overview/Sankey**: Uses ALL prior wealth (open + closed). Closed investment prior wealth represents starting capital that is now in the bank.
-
 ### Prior Wealth in Overview & Sankey
 
 - **Overview `total_income`**: Adds `bank_prior_wealth + investment_prior_wealth` (all investments) to transaction-based income. Represents "total resources available" (starting capital + earned income).
@@ -113,7 +106,9 @@ Closed investments have `current_balance = 0` — all money was withdrawn back t
 
 The dashboard targets: `Total Income ≈ Total Expenses + Total Bank Balance + Total Investments`
 
-Known structural residual: **realized investment profit** from closed investments. When an investment is closed at a profit, the gain sits in the bank balance but is not captured by income or expenses. This is a small, expected gap.
+Both the overview KPI and the net worth chart calculate investment value the same way: `-sum(all investment transactions)`. This is the total money directed to investments, not reflecting investment profits (that's what the investments page is for). Since `investment_prior_wealth = -sum(all inv txns)`, the prior wealth on the income side and the investment total on the holdings side cancel, keeping the identity balanced.
+
+Known structural residual: **net cash position** from cash transactions. Cash income/expenses are in Total Income/Expenses, but there is no "cash balance" KPI on the right side.
 
 ## KPI Method Reference
 
@@ -122,13 +117,14 @@ Known structural residual: **realized investment profit** from closed investment
 - **CC handling:** Excludes CC source in `get_income_and_expenses()`
 - **Expenses:** Excludes `NonExpensesCategories`, but negative Liabilities (debt payments) are included as expenses
 - **Prior wealth:** All investment prior wealth (open + closed) added to income
-- **Investments:** Current portfolio value from `investments_service.get_portfolio_overview()` (open only)
+- **Investments:** Transaction-based total: `-sum(all investment transactions)` — money directed to investments, not reflecting profit/loss
 - **Bank balance:** Displayed from `bankBalancesApi` (frontend), not computed in overview API
 - **Formula:** `net_balance_change = income (+ prior_wealth) - expenses`
 
 ### `get_income_expenses_over_time()`
 - **Purpose:** Monthly income vs expenses bar chart
 - **CC handling:** Excludes CC source in `get_income_and_expenses()`
+- **Expenses:** Includes negative Liabilities (debt payments) as expenses
 - **Prior wealth:** Not included (monthly view shows transaction-based activity only)
 
 ### `get_net_balance_over_time()`
@@ -145,8 +141,8 @@ Known structural residual: **realized investment profit** from closed investment
 ### `get_net_worth_over_time()`
 - **Purpose:** Net worth trend with bank balance and investment value lines
 - **CC handling:** `exclude_services=["credit_card_transactions"]`
-- **Prior wealth:** All prior wealth (open + closed) starts in `bank_balance`; investment movements shift value between the two lines
-- **Investments:** Only **open** investment transactions (`include_closed=False`). Closed investment money is reflected in `bank_balance` via withdrawals.
+- **Prior wealth:** All prior wealth starts in `bank_balance`; investment movements shift value between the two lines
+- **Investments:** `-sum(all investment transactions to date)` — same formula as overview KPI, applied cumulatively per month
 - **Formula:** See "Why Investment Prior Wealth Lives in Bank Balance" above
 
 ### `get_sankey_data()`
@@ -184,6 +180,6 @@ Where `final_value = current_balance + total_withdrawals` (open) or `total_withd
 All previously identified code misalignments have been fixed:
 - `get_expenses_by_category()` now excludes `Credit Cards` category alongside `NonExpensesCategories`
 - `get_income_and_expenses()` now filters `NonExpensesCategories` from expenses, with negative Liabilities overriding back into expenses
-- `get_net_worth_over_time()` investment line uses `include_closed=False` to match portfolio KPI
+- Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
 - Ignore category has no special treatment in KPI calculations — not in `NonExpensesCategories`, not filtered
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`

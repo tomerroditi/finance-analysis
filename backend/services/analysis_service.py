@@ -61,13 +61,14 @@ class AnalysisService:
         income, expenses = self.get_income_and_expenses(df)
         income += self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth()
 
-        portfolio = self.investments_service.get_portfolio_overview()
+        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
+        total_investments = -float(inv_df["amount"].sum()) if not inv_df.empty else 0.0
 
         return {
             "latest_data_date": latest_date,
             "total_income": income,
             "total_expenses": expenses,
-            "total_investments": portfolio["total_value"],
+            "total_investments": total_investments,
             "net_balance_change": income - expenses,
         }
 
@@ -478,7 +479,7 @@ class AnalysisService:
         months = sorted(df["month"].unique())
 
         # --- Investment transactions: fetch once, filter per month in-memory ---
-        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=False)
+        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
         if not inv_df.empty:
             inv_df["date_parsed"] = pd.to_datetime(inv_df["date"])
 

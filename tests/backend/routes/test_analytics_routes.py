@@ -12,12 +12,10 @@ class TestAnalyticsRoutes:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
-        assert "total_transactions" in data
         assert "total_income" in data
         assert "total_expenses" in data
         assert "net_balance_change" in data
         assert "latest_data_date" in data
-        assert data["total_transactions"] == len(seed_base_transactions)
         assert data["total_income"] > 0
         assert data["total_expenses"] > 0
 
