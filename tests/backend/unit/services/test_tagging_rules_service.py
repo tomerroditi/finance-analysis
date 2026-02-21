@@ -174,6 +174,75 @@ class TestTaggingRulesService:
         )
         # Should pass (redundant but safe)
 
+    def test_check_conflicts_no_false_positive_on_shared_source_id(
+        self, service, db_session
+    ):
+        """Test that transactions sharing the same source id but different
+        descriptions are not falsely reported as conflicting.
+
+        Regression: ``check_conflicts`` previously used the non-unique ``id``
+        column (source institution id) instead of ``unique_id`` (primary key).
+        Multiple distinct transactions can share the same ``id``, which caused
+        the overlap query to return false positives.
+        """
+        # Two distinct bank transactions that share the same source id
+        db_session.add(BankTransaction(
+            id="710",
+            date="2024-01-01",
+            amount=-21.90,
+            description="Mastercard",
+            account_name="Acc",
+            provider="Bank",
+            source="bank_transactions",
+        ))
+        db_session.add(BankTransaction(
+            id="710",
+            date="2024-01-02",
+            amount=-6000.0,
+            description="ATM Withdrawal",
+            account_name="Acc",
+            provider="Bank",
+            source="bank_transactions",
+        ))
+        db_session.commit()
+
+        # Rule A: matches the ATM transaction
+        service.add_rule(
+            "ATM Rule",
+            {
+                "type": "CONDITION",
+                "field": "description",
+                "operator": "contains",
+                "value": "ATM",
+            },
+            "Other",
+            "ATM",
+        )
+
+        # Rule B: matches the Mastercard transaction (different row, same source id)
+        # Should NOT conflict — the rules match entirely different transactions.
+        service.check_conflicts(
+            {
+                "type": "AND",
+                "subconditions": [
+                    {
+                        "type": "CONDITION",
+                        "field": "description",
+                        "operator": "contains",
+                        "value": "Mastercard",
+                    },
+                    {
+                        "type": "CONDITION",
+                        "field": "amount",
+                        "operator": "equals",
+                        "value": -21.90,
+                    },
+                ],
+            },
+            "Subscriptions",
+            "Streaming",
+        )
+
     def test_update_conflicts_excluding_self(self, service, setup_transactions):
         """Test updating a rule checks conflicts but ignores itself."""
         # Rule A: matches GitHub -> Software

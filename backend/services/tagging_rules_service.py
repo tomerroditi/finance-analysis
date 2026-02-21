@@ -414,10 +414,10 @@ class TaggingRulesService:
         for table in tables:
             model = TABLE_TO_MODEL[table]
             filter_expr = self._build_recursive_filter(conditions, model)
-            stmt = select(model.id).where(filter_expr)
+            stmt = select(model.unique_id).where(filter_expr)
             df = pd.read_sql(stmt, self.db.bind)
             if not df.empty:
-                matching_tx_ids_by_table[table] = set(df["id"].tolist())
+                matching_tx_ids_by_table[table] = set(df["unique_id"].tolist())
 
         if not any(matching_tx_ids_by_table.values()):
             return
@@ -456,7 +456,7 @@ class TaggingRulesService:
                 for i in range(0, len(ids_to_check), batch_size):
                     batch = ids_to_check[i : i + batch_size]
                     stmt = select(func.count()).select_from(model).where(
-                        and_(model.id.in_(batch), r_filter)
+                        and_(model.unique_id.in_(batch), r_filter)
                     )
                     res = self.db.execute(stmt).scalar()
                     if res > 0:
