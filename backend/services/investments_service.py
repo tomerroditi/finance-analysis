@@ -4,7 +4,7 @@ Investments service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for investment tracking and analysis.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -12,6 +12,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.investments_repository import InvestmentsRepository
+from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 
 # TransactionsService is imported lazily inside __init__ to avoid a
@@ -41,6 +42,7 @@ class InvestmentsService:
         self.db = db
         self.investments_repo = InvestmentsRepository(db)
         self.transactions_repo = TransactionsRepository(db)
+        self.snapshots_repo = InvestmentSnapshotsRepository(db)
         from backend.services.transactions_service import TransactionsService
 
         self.transactions_service = TransactionsService(db)
@@ -180,6 +182,162 @@ class InvestmentsService:
         """
         self.investments_repo.delete_investment(investment_id)
 
+    # ── Balance Snapshot Methods ──────────────────────────────────────
+
+    def create_balance_snapshot(
+        self,
+        investment_id: int,
+        date: str,
+        balance: float,
+        source: str = "manual",
+    ) -> None:
+        """Create or update a balance snapshot for an investment.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment.
+        date : str
+            Snapshot date in ``YYYY-MM-DD`` format.
+        balance : float
+            Market value on this date.
+        source : str
+            Origin: ``"manual"``, ``"scraped"``, or ``"calculated"``.
+        """
+        self.snapshots_repo.upsert_snapshot(investment_id, date, balance, source)
+
+    def get_balance_snapshots(self, investment_id: int) -> List[Dict[str, Any]]:
+        """Get all balance snapshots for an investment.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment.
+
+        Returns
+        -------
+        list[dict]
+            Snapshot records ordered by date, with ``NaN`` replaced by ``None``.
+        """
+        df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+        if df.empty:
+            return []
+        df = df.replace({np.nan: None})
+        return df.to_dict(orient="records")
+
+    def update_balance_snapshot(self, snapshot_id: int, **fields) -> None:
+        """Update a balance snapshot.
+
+        Parameters
+        ----------
+        snapshot_id : int
+            ID of the snapshot to update.
+        **fields
+            Column names and new values.
+        """
+        self.snapshots_repo.update_snapshot(snapshot_id, **fields)
+
+    def delete_balance_snapshot(self, snapshot_id: int) -> None:
+        """Delete a balance snapshot by ID.
+
+        Parameters
+        ----------
+        snapshot_id : int
+            ID of the snapshot to delete.
+        """
+        self.snapshots_repo.delete_snapshot(snapshot_id)
+
+    def calculate_fixed_rate_snapshots(
+        self,
+        investment_id: int,
+        end_date: Optional[str] = None,
+    ) -> None:
+        """Generate calculated balance snapshots for a fixed-rate investment.
+
+        Replays the transaction timeline with daily compounding to produce
+        monthly snapshots. Existing ``"calculated"`` snapshots are cleared first;
+        manual/scraped snapshots are preserved.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the investment (must have ``interest_rate_type == "fixed"``
+            and a non-null ``interest_rate``).
+        end_date : str, optional
+            End date for calculation in ``YYYY-MM-DD`` format.
+            Defaults to today.
+        """
+        investment = self.investments_repo.get_by_id(investment_id)
+        inv = investment.iloc[0]
+
+        if not inv.get("interest_rate") or inv.get("interest_rate_type") != "fixed":
+            return
+
+        annual_rate = float(inv["interest_rate"]) / 100.0
+        daily_rate = (1 + annual_rate) ** (1 / 365) - 1
+
+        transactions_df = self._get_all_transactions_for_investment(
+            inv["category"], inv["tag"]
+        )
+        if transactions_df.empty:
+            return
+
+        transactions_df = transactions_df.copy()
+        transactions_df["date"] = pd.to_datetime(transactions_df["date"])
+        transactions_df["amount"] = pd.to_numeric(
+            transactions_df["amount"], errors="coerce"
+        ).fillna(0.0)
+        transactions_df = transactions_df.sort_values("date")
+
+        start = transactions_df["date"].min().date()
+        end = (
+            datetime.strptime(end_date, "%Y-%m-%d").date()
+            if end_date
+            else date.today()
+        )
+
+        # Build a dict of date -> total transaction amount for that day
+        txn_by_date = {}
+        for _, row in transactions_df.iterrows():
+            d = row["date"].date()
+            txn_by_date[d] = txn_by_date.get(d, 0.0) + row["amount"]
+
+        # Clear previous calculated snapshots
+        self.snapshots_repo.delete_snapshots_for_investment(
+            investment_id, source="calculated"
+        )
+
+        # Collect dates with manual/scraped snapshots to avoid overwriting
+        existing_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+        protected_dates: set = set()
+        if not existing_df.empty:
+            protected_dates = set(existing_df["date"].tolist())
+
+        # Simulate daily compounding
+        balance = 0.0
+        current = start
+
+        while current <= end:
+            # Apply transactions for this day (negative = deposit adds to balance)
+            if current in txn_by_date:
+                balance -= txn_by_date[current]  # negate: deposit(-1000) -> +1000
+
+            # Apply daily interest
+            if balance > 0:
+                balance *= 1 + daily_rate
+
+            # Store monthly snapshots (first of month or end date)
+            date_str = current.strftime("%Y-%m-%d")
+            if (current.day == 1 or current == end) and date_str not in protected_dates:
+                self.snapshots_repo.upsert_snapshot(
+                    investment_id,
+                    date_str,
+                    round(balance, 2),
+                    "calculated",
+                )
+
+            current += timedelta(days=1)
+
     def recalculate_prior_wealth(self, investment_id: int) -> None:
         """
         Calculate and store prior_wealth_amount for an investment.
@@ -308,9 +466,10 @@ class InvestmentsService:
         }
 
     def calculate_current_balance(self, investment_id: int) -> float:
-        """
-        Calculate the current balance for an investment from all its transactions.
+        """Calculate the current balance for an investment.
 
+        Uses the latest balance snapshot if available, otherwise falls back
+        to the transaction-based calculation ``-(sum of amounts)``.
         Returns ``0.0`` for closed investments.
 
         Parameters
@@ -321,7 +480,7 @@ class InvestmentsService:
         Returns
         -------
         float
-            Current balance (deposits negated, so positive deposits → positive balance).
+            Current balance.
         """
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
@@ -332,6 +491,14 @@ class InvestmentsService:
         if inv["is_closed"]:
             return 0.0
 
+        # Try snapshot first
+        latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
+            investment_id, date.today().strftime("%Y-%m-%d")
+        )
+        if latest is not None:
+            return float(latest["balance"])
+
+        # Fall back to transaction-based
         transactions_df = self._get_all_transactions_for_investment(
             inv["category"], inv["tag"]
         )
@@ -340,12 +507,11 @@ class InvestmentsService:
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
-        """
-        Calculate balance at daily intervals between two dates for charting.
+        """Calculate balance at daily intervals between two dates for charting.
 
-        For closed investments, the date range is capped at the closed date.
-        An extra ``{"date": closed_date, "balance": 0.0}`` point is appended
-        to visualise the closure.
+        When balance snapshots exist, interpolates linearly between snapshot
+        points. Falls back to the transaction-based approach for dates before
+        the first snapshot or when no snapshots exist.
 
         Parameters
         ----------
@@ -360,7 +526,6 @@ class InvestmentsService:
         -------
         list[dict]
             List of ``{"date": str, "balance": float}`` dicts, one per day.
-            Empty if the investment has no transactions.
         """
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
@@ -381,14 +546,52 @@ class InvestmentsService:
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
             actual_end_date = min(closed_date, requested_end_date).strftime("%Y-%m-%d")
 
-        dates = pd.date_range(start=start_date, end=actual_end_date, freq="D")
+        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
 
-        balances = []
-        for date in dates:
-            balance = self._calculate_balance_from_transactions(
-                transactions_df, as_of_date=date.strftime("%Y-%m-%d")
-            )
-            balances.append({"date": date.strftime("%Y-%m-%d"), "balance": balance})
+        if snapshots_df.empty:
+            # No snapshots — use transaction-based approach
+            dates = pd.date_range(start=start_date, end=actual_end_date, freq="D")
+            balances = []
+            for d in dates:
+                balance = self._calculate_balance_from_transactions(
+                    transactions_df, as_of_date=d.strftime("%Y-%m-%d")
+                )
+                balances.append({"date": d.strftime("%Y-%m-%d"), "balance": balance})
+        else:
+            # Snapshot-aware: interpolate between snapshots
+            snapshots_df = snapshots_df.copy()
+            snapshots_df["date"] = pd.to_datetime(snapshots_df["date"])
+            snapshots_df = snapshots_df.sort_values("date")
+
+            dates = pd.date_range(start=start_date, end=actual_end_date, freq="D")
+            balances = []
+
+            for d in dates:
+                d_str = d.strftime("%Y-%m-%d")
+                before = snapshots_df[snapshots_df["date"] <= d]
+                after = snapshots_df[snapshots_df["date"] >= d]
+
+                if not before.empty and not after.empty:
+                    prev = before.iloc[-1]
+                    nxt = after.iloc[0]
+
+                    if prev["date"] == nxt["date"]:
+                        balance = float(prev["balance"])
+                    else:
+                        total_days = (nxt["date"] - prev["date"]).days
+                        elapsed_days = (d - prev["date"]).days
+                        frac = elapsed_days / total_days if total_days > 0 else 0
+                        balance = float(prev["balance"]) + frac * (
+                            float(nxt["balance"]) - float(prev["balance"])
+                        )
+                elif not before.empty:
+                    balance = float(before.iloc[-1]["balance"])
+                else:
+                    balance = self._calculate_balance_from_transactions(
+                        transactions_df, as_of_date=d_str
+                    )
+
+                balances.append({"date": d_str, "balance": balance})
 
         if inv["is_closed"] and inv["closed_date"]:
             balances.append({"date": inv["closed_date"], "balance": 0.0})
@@ -460,7 +663,14 @@ class InvestmentsService:
             current_balance = 0.0
             absolute_profit_loss = total_withdrawals - total_deposits
         else:
-            current_balance = self._calculate_balance_from_transactions(transactions_df)
+            # Try snapshot first, fall back to transaction-based
+            latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
+                investment_id, date.today().strftime("%Y-%m-%d")
+            )
+            if latest is not None:
+                current_balance = float(latest["balance"])
+            else:
+                current_balance = self._calculate_balance_from_transactions(transactions_df)
             absolute_profit_loss = current_balance - net_invested
 
         final_value = (
