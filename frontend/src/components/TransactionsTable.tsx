@@ -48,6 +48,7 @@ export interface Transaction {
   tag?: string;
   provider?: string;
   account_name?: string;
+  account_number?: string;
   pending_refund_id?: number; // ID if this transaction has a pending refund
 }
 
@@ -641,7 +642,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   </td>
                   <td
                     className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
-                    title={`${tx.provider || "Manual"} - ${tx.account_name}`}
+                    title={`${tx.provider || "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
                   >
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
@@ -650,6 +651,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       </span>
                       <span className="truncate font-medium text-[var(--text-default)]">
                         {tx.account_name}
+                        {tx.source === "credit_card_transactions" && tx.account_number && (
+                          <span className="text-[var(--text-muted)] ml-1">
+                            ({tx.account_number.slice(-4)})
+                          </span>
+                        )}
                       </span>
                     </div>
                   </td>
