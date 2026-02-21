@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 export interface Transaction {
     id?: any;
@@ -78,6 +79,8 @@ export function TransactionFormModal({
             setTransactionType("expense");
         }
     }, [isOpen, transaction]);
+
+    const { createCategory, createTag } = useCategoryTagCreate();
 
     const { data: categories } = useQuery({
         queryKey: ["categories"],
@@ -289,6 +292,10 @@ export function TransactionFormModal({
                                         })
                                     }
                                     placeholder="Select Category"
+                                    onCreateNew={async (name) => {
+                                        const formatted = await createCategory(name);
+                                        setFormData({ ...formData, category: formatted, tag: "" });
+                                    }}
                                 />
                             </div>
 
@@ -304,6 +311,10 @@ export function TransactionFormModal({
                                     }
                                     placeholder="Select Tag"
                                     disabled={!formData.category}
+                                    onCreateNew={async (name) => {
+                                        const formatted = await createTag(formData.category, name);
+                                        setFormData({ ...formData, tag: formatted });
+                                    }}
                                 />
                             </div>
                         </div>

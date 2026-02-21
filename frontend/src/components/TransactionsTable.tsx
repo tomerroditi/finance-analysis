@@ -34,6 +34,7 @@ import { formatDate } from "../utils/dateFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { SelectDropdown } from "./common/SelectDropdown";
+import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 
 export interface Transaction {
   id?: any;
@@ -115,6 +116,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   compact = false,
 }) => {
   const queryClient = useQueryClient();
+  const { createCategory, createTag } = useCategoryTagCreate();
   // State
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(initialRowsPerPage);
@@ -959,6 +961,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   }
                   placeholder="Category"
                   size="sm"
+                  onCreateNew={async (name) => {
+                    const formatted = await createCategory(name);
+                    setBulkTagData({ ...bulkTagData, category: formatted, tag: "" });
+                  }}
                 />
                 </div>
                 <div className="w-40">
@@ -970,6 +976,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   }
                   placeholder="Tag"
                   size="sm"
+                  onCreateNew={async (name) => {
+                    const formatted = await createTag(bulkTagData.category, name);
+                    setBulkTagData({ ...bulkTagData, tag: formatted });
+                  }}
                 />
                 </div>
                 <button

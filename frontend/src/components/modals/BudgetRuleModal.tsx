@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 interface BudgetRuleModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export function BudgetRuleModal({
   selectedYear,
   selectedMonth,
 }: BudgetRuleModalProps) {
+  const { createCategory } = useCategoryTagCreate();
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
@@ -165,6 +167,11 @@ export function BudgetRuleModal({
               placeholder="Select Category"
               required
               disabled={isProjectRule && !!initialData}
+              onCreateNew={async (name) => {
+                const formatted = await createCategory(name);
+                setCategory(formatted);
+                setSelectedTags([]);
+              }}
             />
           </div>
 

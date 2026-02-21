@@ -6,6 +6,7 @@ import type { TaggingRule, ConditionNode } from "../../services/api";
 import { RuleBuilder } from "./RuleBuilder";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -23,6 +24,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
 
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
     const queryClient = useQueryClient();
+    const { createCategory, createTag } = useCategoryTagCreate();
 
     // Form state
     const [category, setCategory] = useState("");
@@ -176,6 +178,15 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                                     setConditions={setConditions}
                                     availableCategories={availableCategories}
                                     availableTags={availableTags}
+                                    onCreateCategory={async (name) => {
+                                        const formatted = await createCategory(name);
+                                        setCategory(formatted);
+                                        setTag("");
+                                    }}
+                                    onCreateTag={async (name) => {
+                                        const formatted = await createTag(category, name);
+                                        setTag(formatted);
+                                    }}
                                 />
                             </div>
                         }
@@ -301,6 +312,7 @@ function RuleForm({
     tag, setTag,
     conditions, setConditions,
     availableCategories, availableTags,
+    onCreateCategory, onCreateTag,
 }: {
     name: string;
     category: string; setCategory: (v: string) => void;
@@ -308,6 +320,8 @@ function RuleForm({
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
     availableCategories: string[];
     availableTags: string[];
+    onCreateCategory: (name: string) => Promise<void>;
+    onCreateTag: (name: string) => Promise<void>;
 }) {
     return (
         <div className="space-y-6">
@@ -330,6 +344,7 @@ function RuleForm({
                             onChange={(val) => setCategory(val)}
                             placeholder="Select..."
                             size="sm"
+                            onCreateNew={onCreateCategory}
                         />
                         </div>
                     </div>
@@ -343,6 +358,7 @@ function RuleForm({
                             placeholder="Select..."
                             disabled={!category}
                             size="sm"
+                            onCreateNew={onCreateTag}
                         />
                         </div>
                     </div>

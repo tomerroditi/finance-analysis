@@ -3,6 +3,7 @@ import { X, Plus, Trash2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 interface SplitTransactionModalProps {
   transaction: any;
@@ -30,6 +31,8 @@ export function SplitTransactionModal({
     },
     { amount: originalAmount / 2, category: "", tag: "" },
   ]);
+
+  const { createCategory, createTag } = useCategoryTagCreate();
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -144,6 +147,10 @@ export function SplitTransactionModal({
                     onChange={(val) => updateSplit(index, "category", val)}
                     placeholder="Select Category"
                     size="sm"
+                    onCreateNew={async (name) => {
+                      const formatted = await createCategory(name);
+                      updateSplit(index, "category", formatted);
+                    }}
                   />
                 </div>
 
@@ -158,6 +165,10 @@ export function SplitTransactionModal({
                     placeholder="Select Tag"
                     disabled={!split.category}
                     size="sm"
+                    onCreateNew={async (name) => {
+                      const formatted = await createTag(split.category, name);
+                      updateSplit(index, "tag", formatted);
+                    }}
                   />
                 </div>
 
