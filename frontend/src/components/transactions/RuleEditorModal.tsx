@@ -15,10 +15,10 @@ interface RuleEditorModalProps {
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
-    type: "CONDITION",
-    field: "description",
-    operator: "contains",
-    value: ""
+    type: "AND",
+    subconditions: [
+        { type: "CONDITION", field: "description", operator: "contains", value: "" }
+    ]
 };
 
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
@@ -36,7 +36,31 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         queryFn: () => taggingApi.getCategories().then(res => res.data as Record<string, string[]>)
     });
 
-    const availableTags = category && categories ? categories[category] || [] : [];
+    // Existing rules - used to filter out tags that already have a rule
+    const { data: existingRules } = useQuery({
+        queryKey: ["tagging-rules"],
+        queryFn: () => taggingApi.getRules().then(res => res.data as TaggingRule[])
+    });
+
+    // Build set of tags that already have rules (excluding the rule being edited)
+    const takenTags = new Set(
+        (existingRules || [])
+            .filter(r => !editingRule || r.id !== editingRule.id)
+            .map(r => `${r.category}::${r.tag}`)
+    );
+
+    // Filter categories to only those with at least one available (unruled) tag
+    const availableCategories = categories
+        ? Object.keys(categories).filter(cat =>
+            (categories[cat] || []).some(t => !takenTags.has(`${cat}::${t}`))
+        )
+        : [];
+
+    // Filter tags to only those without an existing rule
+    const availableTags = category && categories
+        ? (categories[category] || []).filter(t => !takenTags.has(`${category}::${t}`))
+        : [];
+
     const name = tag ? `Auto: ${category} - ${tag}` : "";
 
     // Initialize form when editing
@@ -150,7 +174,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                                     setTag={setTag}
                                     conditions={conditions}
                                     setConditions={setConditions}
-                                    categories={categories || {}}
+                                    availableCategories={availableCategories}
                                     availableTags={availableTags}
                                 />
                             </div>
@@ -276,13 +300,13 @@ function RuleForm({
     category, setCategory,
     tag, setTag,
     conditions, setConditions,
-    categories, availableTags,
+    availableCategories, availableTags,
 }: {
     name: string;
     category: string; setCategory: (v: string) => void;
     tag: string; setTag: (v: string) => void;
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
-    categories: Record<string, string[]>;
+    availableCategories: string[];
     availableTags: string[];
 }) {
     return (
@@ -301,7 +325,7 @@ function RuleForm({
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Category</label>
                         <div className="mt-1">
                         <SelectDropdown
-                            options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
+                            options={availableCategories.map((c) => ({ label: c, value: c }))}
                             value={category}
                             onChange={(val) => setCategory(val)}
                             placeholder="Select..."
