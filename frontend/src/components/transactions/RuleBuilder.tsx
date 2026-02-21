@@ -57,7 +57,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
 
         onChange({
             ...value,
-            subconditions: [...(value.subconditions || []), newNode]
+            subconditions: [newNode, ...(value.subconditions || [])]
         });
     };
 
