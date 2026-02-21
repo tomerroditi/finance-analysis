@@ -163,8 +163,8 @@ class TransactionsService:
                         TransactionsTableFields.UNIQUE_ID.value
                     ]
                     target_date = self.get_earliest_data_date()
-                    repo.update_transaction_by_id(
-                        str(first_id),
+                    repo.update_transaction_by_unique_id(
+                        first_id,
                         {
                             "amount": offset_needed,
                             "date": target_date.strftime("%Y-%m-%d"),
@@ -390,13 +390,13 @@ class TransactionsService:
         bool
             ``True`` if the transaction was found and updated in at least one table.
         """
-        cc_res = self.transactions_repository.cc_repo.update_transaction_by_id(
+        cc_res = self.transactions_repository.cc_repo.update_transaction_by_unique_id(
             transaction_id, updates
         )
-        bank_res = self.transactions_repository.bank_repo.update_transaction_by_id(
+        bank_res = self.transactions_repository.bank_repo.update_transaction_by_unique_id(
             transaction_id, updates
         )
-        cash_res = self.transactions_repository.cash_repo.update_transaction_by_id(
+        cash_res = self.transactions_repository.cash_repo.update_transaction_by_unique_id(
             transaction_id, updates
         )
         return cc_res or bank_res or cash_res
