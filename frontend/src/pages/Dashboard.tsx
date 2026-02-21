@@ -3,7 +3,6 @@ import { TrendingUp, TrendingDown, LineChart, Landmark } from "lucide-react";
 import Plot from "react-plotly.js";
 import { analyticsApi, bankBalancesApi } from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
-import { ScrapingWidget } from "../components/dashboard/ScrapingWidget";
 import { useTestMode } from "../context/TestModeContext";
 import { formatDate } from "../utils/dateFormatting";
 
@@ -245,9 +244,6 @@ export function Dashboard() {
               <SankeyChart data={sankeyData} height={500} />
             </div>
           </div>
-        </div>
-        <div>
-          <ScrapingWidget />
         </div>
       </div>
 
