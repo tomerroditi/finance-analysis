@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search } from "lucide-react";
 
 interface SelectDropdownProps {
   options: { label: string; value: string }[];
@@ -22,9 +22,19 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   size = "default",
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
+
+  const showSearch = options.length > 5;
+
+  const filteredOptions = search
+    ? options.filter((o) =>
+        o.label.toLowerCase().includes(search.toLowerCase()),
+      )
+    : options;
 
   const updatePosition = useCallback(() => {
     if (!buttonRef.current) return;
@@ -40,8 +50,15 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setSearch("");
+      return;
+    }
     updatePosition();
+    // Focus search input after portal renders
+    requestAnimationFrame(() => {
+      searchRef.current?.focus();
+    });
     const onScroll = () => updatePosition();
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onScroll);
@@ -117,39 +134,63 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed max-h-48 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl overflow-y-auto"
+            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col"
             style={{
               top: pos.openUp ? undefined : pos.top + 4,
-              bottom: pos.openUp ? window.innerHeight - pos.top + 4 : undefined,
+              bottom: pos.openUp
+                ? window.innerHeight - pos.top + 4
+                : undefined,
               left: pos.left,
               width: pos.width,
               zIndex: 9999,
             }}
           >
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--surface-light)] transition-colors text-left"
-              >
-                <span className="text-[var(--text-default)]">{opt.label}</span>
-                {value === opt.value && (
-                  <Check
-                    size={14}
-                    className="text-[var(--primary)] shrink-0"
+            {showSearch && (
+              <div className="p-1.5 border-b border-[var(--surface-light)]">
+                <div className="relative">
+                  <Search
+                    size={12}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
                   />
-                )}
-              </button>
-            ))}
-            {options.length === 0 && (
-              <div className="px-4 py-3 text-sm text-[var(--text-muted)] text-center">
-                No options available
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search..."
+                    className="w-full pl-7 pr-2 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                  />
+                </div>
               </div>
             )}
+            <div className="overflow-y-auto flex-1">
+              {filteredOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-[var(--surface-light)] transition-colors text-left"
+                >
+                  <span className="text-[var(--text-default)]">
+                    {opt.label}
+                  </span>
+                  {value === opt.value && (
+                    <Check
+                      size={14}
+                      className="text-[var(--primary)] shrink-0"
+                    />
+                  )}
+                </button>
+              ))}
+              {filteredOptions.length === 0 && (
+                <div className="px-4 py-3 text-sm text-[var(--text-muted)] text-center">
+                  {search ? "No matches found" : "No options available"}
+                </div>
+              )}
+            </div>
           </div>,
           document.body,
         )}
