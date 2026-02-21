@@ -5,6 +5,7 @@ prior wealth calculations, and balance recalculation based on transactions.
 """
 
 from typing import Optional
+import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -169,7 +170,7 @@ class CashBalanceService:
 
     def delete_for_account(self, account_name: str) -> None:
         """
-        Delete the balance record for a cash account.
+        Delete the cash balance record for a cash account.
 
         Parameters
         ----------
@@ -207,6 +208,72 @@ class CashBalanceService:
             return 0.0
 
         return float(account_df["amount"].sum())
+
+    def migrate_from_transactions(self) -> list[dict]:
+        """
+        Seed cash_balances from existing cash transaction history.
+
+        For each unique account_name in cash_transactions (excluding "Prior Wealth"):
+          txn_sum = sum(all transactions for account)
+          prior_wealth = max(0.0, -txn_sum)
+          balance = prior_wealth + txn_sum
+
+        Skips accounts that already have a cash_balances record.
+        Deletes the old synthetic "Prior Wealth" row from cash_transactions.
+
+        Returns
+        -------
+        list[dict]
+            List of migrated account dicts with keys: id, account_name, balance,
+            prior_wealth_amount, last_manual_update.
+        """
+        cash_df = self.cash_repo.get_table()
+        migrated = []
+
+        if not cash_df.empty:
+            # Exclude the old "Prior Wealth" synthetic transaction
+            PRIOR_WEALTH_TAG = "Prior Wealth"
+            user_txns = cash_df[cash_df["account_name"] != PRIOR_WEALTH_TAG]
+
+            for account_name, group in user_txns.groupby("account_name"):
+                # Skip if already migrated
+                if self.cash_balance_repo.get_by_account_name(account_name):
+                    continue
+
+                # Calculate prior wealth and balance
+                txn_sum = float(pd.to_numeric(group["amount"], errors="coerce").fillna(0).sum())
+                prior_wealth = max(0.0, -txn_sum)
+                balance = prior_wealth + txn_sum
+
+                # Create/update record
+                record = self.cash_balance_repo.upsert(
+                    account_name=account_name,
+                    balance=balance,
+                    prior_wealth_amount=prior_wealth,
+                )
+
+                migrated.append({
+                    "id": record.id,
+                    "account_name": record.account_name,
+                    "balance": record.balance,
+                    "prior_wealth_amount": record.prior_wealth_amount,
+                    "last_manual_update": record.last_manual_update,
+                })
+
+        # Delete old synthetic Prior Wealth row
+        self._delete_prior_wealth_transaction()
+        return migrated
+
+    def _delete_prior_wealth_transaction(self) -> None:
+        """Delete the synthetic Prior Wealth offset row from cash_transactions."""
+        from sqlalchemy import delete
+        self.db.execute(
+            delete(CashTransaction).where(
+                (CashTransaction.tag == "Prior Wealth") &
+                (CashTransaction.account_name == "Prior Wealth")
+            )
+        )
+        self.db.commit()
 
     @staticmethod
     def _record_to_dict(record) -> dict:
