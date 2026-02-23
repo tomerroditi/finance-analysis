@@ -4,7 +4,7 @@ Analytics API routes.
 Provides endpoints for financial analysis and reporting.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -105,6 +105,33 @@ async def get_income_by_source_over_time(
     """
     service = AnalysisService(db)
     return service.get_income_by_source_over_time()
+
+
+@router.get("/monthly-expenses")
+async def get_monthly_expenses(
+    exclude_pending_refunds: bool = Query(True),
+    db: Session = Depends(get_database),
+):
+    """Return monthly expense totals and rolling averages.
+
+    Calculates expenses using the same methodology as the monthly budget:
+    split-aware, excludes non-expense categories, and optionally excludes
+    pending refund transactions.
+
+    Parameters
+    ----------
+    exclude_pending_refunds : bool
+        When True, excludes transactions marked as pending refunds.
+        Default is True.
+
+    Returns
+    -------
+    dict
+        Dictionary with ``months`` list and ``avg_3_months``,
+        ``avg_6_months``, ``avg_12_months`` averages.
+    """
+    service = AnalysisService(db)
+    return service.get_monthly_expenses(exclude_pending_refunds)
 
 
 @router.get("/net-worth-over-time")

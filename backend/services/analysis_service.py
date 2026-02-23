@@ -8,6 +8,7 @@ from backend.constants.categories import (
     LIABILITIES_CATEGORY,
     IncomeCategories,
 )
+from backend.constants.tables import TransactionsTableFields
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -562,3 +563,80 @@ class AnalysisService:
             })
 
         return result
+
+    def get_monthly_expenses(self, exclude_pending_refunds: bool = True) -> dict:
+        """
+        Get monthly expense totals and rolling averages, calculated like the monthly budget.
+
+        Delegates filtering to ``MonthlyBudgetService.get_filtered_expenses``
+        so that category exclusions, project exclusions, pending-refund
+        handling, and split-parent removal are always consistent with
+        the budget view.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            When ``True``, excludes transactions marked as pending refunds.
+            Default is ``True``.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``months`` -- list of ``{month, expenses}`` dicts ordered chronologically.
+            - ``avg_3_months`` -- average monthly expenses over the last 3 months.
+            - ``avg_6_months`` -- average monthly expenses over the last 6 months.
+            - ``avg_12_months`` -- average monthly expenses over the last 12 months.
+        """
+        from backend.services.budget_service import MonthlyBudgetService
+
+        empty_result = {
+            "months": [],
+            "avg_3_months": 0.0,
+            "avg_6_months": 0.0,
+            "avg_12_months": 0.0,
+        }
+
+        budget_service = MonthlyBudgetService(self.db)
+        expenses = budget_service.get_filtered_expenses(
+            exclude_pending_refunds=exclude_pending_refunds,
+        )
+
+        if expenses.empty:
+            return empty_result
+
+        # Group by month and sum (amounts are negative, multiply by -1)
+        expenses = expenses.copy()
+        expenses["month"] = expenses[
+            TransactionsTableFields.DATE.value
+        ].dt.strftime("%Y-%m")
+
+        monthly = (
+            expenses.groupby("month")[TransactionsTableFields.AMOUNT.value]
+            .sum()
+            .mul(-1)
+            .sort_index()
+        )
+
+        months_list = [
+            {"month": month, "expenses": round(float(amt), 2)}
+            for month, amt in monthly.items()
+        ]
+
+        # Calculate averages relative to current month
+        today = pd.Timestamp.today()
+
+        def avg_last_n_months(n: int) -> float:
+            month_keys = [
+                (today - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(n)
+            ]
+            total = sum(monthly.get(m, 0.0) for m in month_keys)
+            return round(float(total / n), 2)
+
+        return {
+            "months": months_list,
+            "avg_3_months": avg_last_n_months(3),
+            "avg_6_months": avg_last_n_months(6),
+            "avg_12_months": avg_last_n_months(12),
+        }

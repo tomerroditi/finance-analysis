@@ -518,6 +518,78 @@ class MonthlyBudgetService(BudgetService):
             },
         }
 
+    def get_filtered_expenses(
+        self,
+        exclude_pending_refunds: bool = True,
+        include_split_parents: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Get expense transactions with budget-style filtering applied.
+
+        Loads all transactions (split-aware), then excludes non-expense
+        categories, project categories, and optionally pending refund
+        transactions. Split parent rows are excluded from the result.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            When ``True``, excludes transactions marked as pending refunds.
+            Default is ``True``.
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered expense transactions with parsed dates. Amounts are
+            negative (raw convention). The caller should negate to get
+            positive expense values.
+        """
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
+
+        if all_data.empty:
+            return all_data
+
+        # Filter to expense categories
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
+                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+            )
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+
+        # Exclude project categories
+        projects = ProjectBudgetService(self.db).get_all_projects_names()
+        if projects:
+            expenses = expenses.loc[
+                ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
+            ]
+
+        # Optionally exclude pending refunds
+        if exclude_pending_refunds:
+            pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
+            tx_ids = pending_refs["transaction_ids"]
+            split_ids = pending_refs["split_ids"]
+
+            expenses = expenses[
+                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
+            ]
+            if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
+                expenses = expenses[
+                    ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
+                ]
+
+        # Exclude split_parent transactions from amounts
+        if "type" in expenses.columns:
+            expenses = expenses[expenses["type"] != "split_parent"]
+
+        return expenses
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -552,39 +624,15 @@ class MonthlyBudgetService(BudgetService):
             - ``allow_delete`` – whether the rule can be deleted.
         """
         budget_rules = self.get_all_rules()
-        all_data = self.transactions_service.get_data_for_analysis(
-            include_split_parents
+        expenses = self.get_filtered_expenses(
+            exclude_pending_refunds=True,
+            include_split_parents=include_split_parents,
         )
 
-        expenses = all_data.loc[
-            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
-            )
-        ].copy()
-        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
-            expenses[TransactionsTableFields.DATE.value]
-        )
-
-        projects = ProjectBudgetService(self.db).get_all_projects_names()
         month_data = expenses.loc[
             (expenses[TransactionsTableFields.DATE.value].dt.year == year)
             & (expenses[TransactionsTableFields.DATE.value].dt.month == month)
-            & ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
-        ]
-
-        # Filter out pending refunds
-        pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
-        tx_ids = pending_refs["transaction_ids"]
-        split_ids = pending_refs["split_ids"]
-
-        month_data = month_data[
-            ~month_data[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
-        ]
-
-        if TransactionsTableFields.SPLIT_ID.value in month_data.columns:
-            month_data = month_data[
-                ~month_data[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
-            ]
+        ] if not expenses.empty else expenses
 
         rules = budget_rules[
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
@@ -596,12 +644,7 @@ class MonthlyBudgetService(BudgetService):
 
         total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
         if not total_rule.empty:
-            # Exclude split_parent transactions from total calculation
-            if "type" in month_data.columns:
-                month_data_for_calc = month_data[month_data["type"] != "split_parent"]
-            else:
-                month_data_for_calc = month_data
-            total = month_data_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+            total = month_data[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append(
                 {
                     "rule": total_rule.iloc[0].to_dict(),
@@ -625,12 +668,7 @@ class MonthlyBudgetService(BudgetService):
                     cat_data[TransactionsTableFields.TAG.value].isin(tags)
                 ]
 
-            # Exclude split_parent transactions from amount calculation
-            if "type" in cat_data.columns:
-                cat_data_for_calc = cat_data[cat_data["type"] != "split_parent"]
-            else:
-                cat_data_for_calc = cat_data
-            amt = cat_data_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append(
                 {
                     "rule": rule.to_dict(),
@@ -648,13 +686,6 @@ class MonthlyBudgetService(BudgetService):
         if not remaining_data.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
             total_amt = total_rule.iloc[0][AMOUNT] - total_alloc
-            # Exclude split_parent transactions from amount calculation
-            if "type" in remaining_data.columns:
-                remaining_for_calc = remaining_data[
-                    remaining_data["type"] != "split_parent"
-                ]
-            else:
-                remaining_for_calc = remaining_data
             view.append(
                 {
                     "rule": {
@@ -664,7 +695,7 @@ class MonthlyBudgetService(BudgetService):
                         TAGS: "Other Expenses",
                         ID: f"{year}{month}_Other_Expenses",
                     },
-                    "current_amount": remaining_for_calc[
+                    "current_amount": remaining_data[
                         TransactionsTableFields.AMOUNT.value
                     ].sum()
                     * -1,

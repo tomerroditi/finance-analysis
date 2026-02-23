@@ -272,6 +272,15 @@ export const analyticsApi = {
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time"
     ),
+  getMonthlyExpenses: (excludePendingRefunds = true) =>
+    api.get<{
+      months: { month: string; expenses: number }[];
+      avg_3_months: number;
+      avg_6_months: number;
+      avg_12_months: number;
+    }>("/analytics/monthly-expenses", {
+      params: { exclude_pending_refunds: excludePendingRefunds },
+    }),
 };
 
 // Bank Balances API
