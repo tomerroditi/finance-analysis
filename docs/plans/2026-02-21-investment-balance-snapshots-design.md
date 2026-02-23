@@ -74,7 +74,7 @@ No changes -- stays transaction-based. Future opt-in enhancement.
 
 ### Closed Investments
 
-When closing, prompt for a final balance snapshot (actual payout). If provided, profit/loss reflects reality. If not, falls back to transaction-based.
+Closing an investment automatically creates a balance snapshot of 0 on the **last transaction date** for that investment (closed = no remaining value). The close date itself can be specified when closing (date picker modal) and edited after closing via the `closed_date` field on the `InvestmentUpdate` schema. Closed investment cards display the close date with an edit button.
 
 ## API Endpoints
 

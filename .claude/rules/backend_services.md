@@ -54,7 +54,7 @@ class BudgetService:
 | `ScrapingService` | Orchestrate scraping, keyring passwords, 2FA coordination |
 | `CredentialsService` | Read/write credentials YAML + Keyring interactions |
 | `AnalysisService` | Dashboard aggregations, monthly summaries, trends |
-| `InvestmentsService` | Portfolio tracking, balance updates |
+| `InvestmentsService` | Portfolio tracking, balance snapshots, profit/loss, fixed-rate calculation, close/reopen lifecycle |
 
 ## Key Business Rules
 

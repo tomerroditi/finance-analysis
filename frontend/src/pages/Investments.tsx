@@ -12,6 +12,7 @@ import {
   Wallet,
   DollarSign,
   Percent,
+  Pencil,
 } from "lucide-react";
 import { investmentsApi, taggingApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
@@ -50,6 +51,7 @@ function InvestmentCard({
   onReopen,
   onDelete,
   onUpdateBalance,
+  onEditCloseDate,
 }: any) {
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
@@ -119,6 +121,26 @@ function InvestmentCard({
             {inv.latest_snapshot_date}
             {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
           </p>
+        </div>
+      )}
+
+      {!!inv.is_closed && inv.closed_date && (
+        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] -mt-4 mb-8 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
+              Closed Date
+            </p>
+            <p className="text-xs font-bold text-red-400 mt-1.5">
+              {inv.closed_date}
+            </p>
+          </div>
+          <button
+            onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
+            title="Edit close date"
+          >
+            <Pencil size={12} />
+          </button>
         </div>
       )}
 
@@ -203,6 +225,12 @@ export function Investments() {
     balance: string;
   }>({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
 
+  const [closeForm, setCloseForm] = useState<{
+    investmentId: number | null;
+    date: string;
+    mode: "close" | "edit";
+  }>({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
+
   // Queries
   const {
     data: investments,
@@ -265,11 +293,25 @@ export function Investments() {
   });
 
   const closeMutation = useMutation({
-    mutationFn: (id: number) =>
-      investmentsApi.close(id, new Date().toISOString().split("T")[0]),
+    mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
+      investmentsApi.close(id, closedDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
+    },
+  });
+
+  const updateCloseDateMutation = useMutation({
+    mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
+      investmentsApi.update(id, { closed_date: closedDate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investments"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
+      setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
     },
   });
 
@@ -296,6 +338,7 @@ export function Investments() {
         balance: data.balance,
       }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
@@ -307,6 +350,7 @@ export function Investments() {
     mutationFn: ({ investmentId, snapshotId }: { investmentId: number; snapshotId: number }) =>
       investmentsApi.deleteBalanceSnapshot(investmentId, snapshotId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
       queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
@@ -317,6 +361,7 @@ export function Investments() {
     mutationFn: (investmentId: number) =>
       investmentsApi.calculateFixedRateSnapshots(investmentId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
       queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
@@ -497,7 +542,9 @@ export function Investments() {
                   key={inv.id}
                   inv={inv}
                   onViewAnalysis={setSelectedAnalysisId}
-                  onClose={closeMutation.mutate}
+                  onClose={(id: number) =>
+                    setCloseForm({ investmentId: id, date: new Date().toISOString().split("T")[0], mode: "close" })
+                  }
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
                   onUpdateBalance={(id: number) =>
@@ -507,6 +554,7 @@ export function Investments() {
                       balance: "",
                     })
                   }
+                  onEditCloseDate={() => {}}
                 />
               ))}
             </div>
@@ -539,7 +587,9 @@ export function Investments() {
                 key={inv.id}
                 inv={inv}
                 onViewAnalysis={setSelectedAnalysisId}
-                onClose={closeMutation.mutate}
+                onClose={(id: number) =>
+                  setCloseForm({ investmentId: id, date: new Date().toISOString().split("T")[0], mode: "close" })
+                }
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
                 onUpdateBalance={(id: number) =>
@@ -548,6 +598,9 @@ export function Investments() {
                     date: new Date().toISOString().split("T")[0],
                     balance: "",
                   })
+                }
+                onEditCloseDate={(id: number, closedDate: string) =>
+                  setCloseForm({ investmentId: id, date: closedDate, mode: "edit" })
                 }
               />
             ))}
@@ -680,7 +733,7 @@ export function Investments() {
                   {/* Fixed-Rate Calculation */}
                   {investments?.find((i: any) => i.id === selectedAnalysisId)
                     ?.interest_rate_type === "fixed" &&
-                    investments?.find((i: any) => i.id === selectedAnalysisId)
+                    !!investments?.find((i: any) => i.id === selectedAnalysisId)
                       ?.interest_rate && (
                     <div className="flex justify-end">
                       <button
@@ -696,7 +749,7 @@ export function Investments() {
                   )}
 
                   {/* Balance Snapshots */}
-                  {selectedSnapshots && selectedSnapshots.length > 0 && (
+                  {selectedSnapshots?.length > 0 && (
                     <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-bold">Balance Snapshots</h3>
@@ -830,6 +883,57 @@ export function Investments() {
                 className="flex-[2] py-3 bg-blue-500 rounded-xl text-white font-bold hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {balanceSnapshotMutation.isPending ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Close / Edit Close Date Modal */}
+      {closeForm.investmentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold mb-4">
+              {closeForm.mode === "close" ? "Close Investment" : "Edit Close Date"}
+            </h3>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                Close Date
+              </label>
+              <input
+                type="date"
+                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                value={closeForm.date}
+                onChange={(e) =>
+                  setCloseForm({ ...closeForm, date: e.target.value })
+                }
+              />
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() =>
+                  setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" })
+                }
+                className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!closeForm.date || closeMutation.isPending || updateCloseDateMutation.isPending}
+                onClick={() => {
+                  if (closeForm.mode === "close") {
+                    closeMutation.mutate({ id: closeForm.investmentId!, closedDate: closeForm.date });
+                  } else {
+                    updateCloseDateMutation.mutate({ id: closeForm.investmentId!, closedDate: closeForm.date });
+                  }
+                }}
+                className="flex-[2] py-3 bg-red-500 rounded-xl text-white font-bold hover:bg-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {closeMutation.isPending || updateCloseDateMutation.isPending
+                  ? "Saving..."
+                  : closeForm.mode === "close"
+                    ? "Close Investment"
+                    : "Update Date"}
               </button>
             </div>
           </div>

@@ -95,6 +95,7 @@ Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend
 | `SplitTransactionsRepository` | DB | Transaction splits across categories |
 | `ScrapingHistoryRepository` | DB | Scrape audit trail, rate limiting |
 | `InvestmentsRepository` | DB | Investment portfolio tracking |
+| `InvestmentSnapshotsRepository` | DB | Balance snapshot CRUD (upsert, get, delete by investment/source) |
 | `CredentialsRepository` | YAML + Keyring | Provider credentials (passwords in Keyring) |
 
 ### Repository Composition

@@ -162,6 +162,10 @@ class InvestmentsService:
         """
         Mark an investment as closed.
 
+        Automatically creates a balance snapshot of 0 on the last transaction
+        date for this investment, since a closed investment has no remaining
+        value. If no transactions exist, uses the closure date.
+
         Parameters
         ----------
         investment_id : int
@@ -170,6 +174,15 @@ class InvestmentsService:
             Closure date in ``YYYY-MM-DD`` format.
         """
         self.investments_repo.close_investment(investment_id, closed_date)
+
+        inv = self.investments_repo.get_by_id(investment_id).iloc[0]
+        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        if not txns.empty:
+            txns["date_parsed"] = pd.to_datetime(txns["date"])
+            last_txn_date = txns["date_parsed"].max().strftime("%Y-%m-%d")
+        else:
+            last_txn_date = closed_date
+        self.create_balance_snapshot(investment_id, last_txn_date, 0.0)
 
     def reopen_investment(self, investment_id: int) -> None:
         """

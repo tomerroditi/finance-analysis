@@ -180,14 +180,37 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 ### Transaction Sign Convention for Investments
 - **Deposit (money into investment):** Negative amount (money leaving bank)
 - **Withdrawal (money from investment):** Positive amount (money returning to bank)
-- **Balance:** `-(sum of all transactions)` — depositing -1000 gives balance +1000
+- **Balance (transaction-based):** `-(sum of all transactions)` — depositing -1000 gives balance +1000
+
+### Balance Snapshots
+
+Balance snapshots (`investment_balance_snapshots` table) store timestamped market-value observations per investment. They override the transaction-based balance calculation when present.
+
+**Resolution order for `current_balance`:**
+1. Latest snapshot on or before today → use snapshot balance
+2. No snapshots → fall back to `-(sum of all transactions)`
+
+**Balance history chart (`calculate_balance_over_time`):**
+- When snapshots exist: linear interpolation between snapshot points
+- For dates before the first snapshot: transaction-based calculation
+- For dates after the last snapshot: holds last snapshot value
+- When no snapshots: daily transaction-based cumulative balance
+
+**Snapshot sources:**
+- `manual` — user-entered via UI
+- `calculated` — auto-generated for fixed-rate investments (daily compounding)
+- `scraped` — reserved for future scraping integration
+
+**Fixed-rate auto-calculation:** For investments with `interest_rate_type = "fixed"`, the system generates monthly snapshots using daily compounding: `daily_rate = (1 + annual_rate)^(1/365) - 1`. Manual/scraped snapshots are never overwritten (protected dates).
+
+**Closing an investment:** Automatically creates a balance snapshot of 0 on the **last transaction date** for that investment (closed = no remaining value). The close date itself is user-selectable and editable after closing via the `closed_date` field on the `InvestmentUpdate` schema.
 
 ### Key Metrics (`calculate_profit_loss`)
 ```
 total_deposits    = abs(sum of negative amounts)
 total_withdrawals = sum of positive amounts
 net_invested      = total_deposits - total_withdrawals
-current_balance   = -(sum of all amounts)  [0 if closed]
+current_balance   = snapshot_balance OR -(sum of all amounts)  [0 if closed]
 profit_loss       = current_balance - net_invested  [withdrawals - deposits if closed]
 roi               = (final_value / total_deposits - 1) * 100
 ```

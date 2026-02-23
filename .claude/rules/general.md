@@ -76,6 +76,13 @@ Single transaction can be split across multiple categories/tags. Original remain
 - **Investments:** Allocated funds.
 - **Liabilities:** Debt payments.
 
+### 6. Investment Balance Snapshots
+- **Balance snapshots** store timestamped market-value observations per investment (`investment_balance_snapshots` table).
+- **Resolution:** Snapshot-first, transaction-based fallback (`-(sum of all transactions)`).
+- **Sources:** `manual` (user-entered), `calculated` (fixed-rate daily compounding), `scraped` (future).
+- **Closing:** Auto-creates a 0-balance snapshot on the last transaction date. Close date is user-selectable and editable after closing.
+- **Fixed-rate:** Daily compounding with protected dates (manual/scraped snapshots never overwritten).
+
 ## Code Quality Standards
 
 ### What NOT to Do

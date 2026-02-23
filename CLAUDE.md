@@ -76,6 +76,9 @@ When smoke-testing UI changes in the browser, **enable Test Mode first** (toggle
 
 - Passwords stored in OS Keyring, never in YAML or code
 - SQLite uses `NullPool` and `check_same_thread=False` for FastAPI compatibility
+- SQLite stores booleans as `0`/`1` integers — in React JSX, `{0 && <Component />}` renders "0". Always use `!!value &&` or `value > 0 &&` for SQLite boolean fields in JSX conditionals
 - Frontend `TransactionsTable.tsx` changes require updating all consumers: `Transactions.tsx` and `TransactionCollapsibleList.tsx`
 - Scraping has 5-minute timeout and daily rate limit (one scrape per account per day)
 - CORS only allows localhost:5173 by default (configurable via `CORS_ORIGINS` env var)
+- Closing an investment auto-creates a balance snapshot of 0 on the last transaction date (not the closure date)
+- Investment balance snapshots override transaction-based balance when present (snapshot-first, transaction fallback)

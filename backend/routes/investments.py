@@ -35,6 +35,7 @@ class InvestmentUpdate(BaseModel):
     name: Optional[str] = None
     interest_rate: Optional[float] = None
     interest_rate_type: Optional[str] = None
+    closed_date: Optional[str] = None
     notes: Optional[str] = None
 
 
