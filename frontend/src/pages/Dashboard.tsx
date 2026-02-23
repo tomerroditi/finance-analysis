@@ -1,10 +1,13 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, LineChart, Landmark } from "lucide-react";
+import { TrendingUp, TrendingDown, LineChart, Landmark, Calculator } from "lucide-react";
 import Plot from "react-plotly.js";
 import { analyticsApi, bankBalancesApi } from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
 import { useTestMode } from "../context/TestModeContext";
 import { formatDate } from "../utils/dateFormatting";
+
+type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 
 function StatCard({
   title,
@@ -34,6 +37,7 @@ function StatCard({
 
 export function Dashboard() {
   const { isTestMode } = useTestMode();
+  const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ["overview", isTestMode],
@@ -67,14 +71,6 @@ export function Dashboard() {
     },
   });
 
-  const { data: netBalanceData } = useQuery({
-    queryKey: ["net-balance-trend", isTestMode],
-    queryFn: async () => {
-      const res = await analyticsApi.getNetBalanceOverTime();
-      return res.data;
-    },
-  });
-
   const { data: bankBalances } = useQuery({
     queryKey: ["bank-balances", isTestMode],
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
@@ -96,6 +92,16 @@ export function Dashboard() {
     },
   });
 
+  const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
+
+  const { data: monthlyExpenses } = useQuery({
+    queryKey: ["monthly-expenses", excludePendingRefunds, isTestMode],
+    queryFn: async () => {
+      const res = await analyticsApi.getMonthlyExpenses(excludePendingRefunds);
+      return res.data;
+    },
+  });
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("he-IL", {
       style: "currency",
@@ -107,6 +113,87 @@ export function Dashboard() {
     plot_bgcolor: "rgba(0,0,0,0)",
     font: { color: "#94a3b8", family: "Inter, sans-serif" },
     margin: { t: 40, b: 40, l: 40, r: 20 },
+  };
+
+  const netWorthDeltas = useMemo(() => {
+    if (!netWorthData || netWorthData.length < 2) return null;
+    return netWorthData.slice(1).map((d, i) => ({
+      month: d.month,
+      bank_balance: d.bank_balance,
+      investment_value: d.investment_value,
+      net_worth: d.net_worth,
+      bank_balance_delta: d.bank_balance - netWorthData[i].bank_balance,
+      investment_value_delta: d.investment_value - netWorthData[i].investment_value,
+      net_worth_delta: d.net_worth - netWorthData[i].net_worth,
+    }));
+  }, [netWorthData]);
+
+  const seriesConfig = {
+    bank_balance: { label: "Bank Balance", color: "#f59e0b", dataKey: "bank_balance", deltaKey: "bank_balance_delta" },
+    investments: { label: "Investments", color: "#6366f1", dataKey: "investment_value", deltaKey: "investment_value_delta" },
+    net_worth: { label: "Net Worth", color: "#10b981", dataKey: "net_worth", deltaKey: "net_worth_delta" },
+  } as const;
+
+  const getNetWorthTraces = (): Plotly.Data[] => {
+    if (!netWorthData || netWorthData.length === 0) return [];
+
+    if (netWorthView === "all") {
+      return [
+        {
+          x: netWorthData.map((d) => d.month),
+          y: netWorthData.map((d) => d.bank_balance),
+          name: "Bank Balance",
+          type: "scatter",
+          mode: "lines+markers",
+          line: { color: "#f59e0b", width: 2 },
+          marker: { size: 4, color: "#f59e0b" },
+        },
+        {
+          x: netWorthData.map((d) => d.month),
+          y: netWorthData.map((d) => d.investment_value),
+          name: "Investments",
+          type: "scatter",
+          mode: "lines+markers",
+          line: { color: "#6366f1", width: 2 },
+          marker: { size: 4, color: "#6366f1" },
+        },
+        {
+          x: netWorthData.map((d) => d.month),
+          y: netWorthData.map((d) => d.net_worth),
+          name: "Net Worth",
+          type: "scatter",
+          mode: "lines+markers",
+          line: { color: "#10b981", width: 3 },
+          marker: { size: 5, color: "#10b981" },
+        },
+      ];
+    }
+
+    if (!netWorthDeltas) return [];
+    const config = seriesConfig[netWorthView];
+
+    return [
+      {
+        x: netWorthDeltas.map((d) => d.month),
+        y: netWorthDeltas.map((d) => d[config.deltaKey]),
+        name: "Monthly Change",
+        type: "bar",
+        marker: {
+          color: netWorthDeltas.map((d) =>
+            d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444"
+          ),
+        },
+      },
+      {
+        x: netWorthDeltas.map((d) => d.month),
+        y: netWorthDeltas.map((d) => d[config.dataKey]),
+        name: config.label,
+        type: "scatter",
+        mode: "lines+markers",
+        line: { color: config.color, width: 3 },
+        marker: { size: 8, color: config.color },
+      },
+    ];
   };
 
   return (
@@ -170,41 +257,113 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Monthly Expenses Section */}
+      {monthlyExpenses && monthlyExpenses.months.length > 0 && (
+        <div className="space-y-6">
+          {/* Expense Average KPI Cards */}
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-muted)] mb-4">
+              Monthly Expense Averages
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <StatCard
+                title="Avg Last 3 Months"
+                value={formatCurrency(monthlyExpenses.avg_3_months)}
+                icon={Calculator}
+                color="bg-rose-500/20 text-rose-400"
+              />
+              <StatCard
+                title="Avg Last 6 Months"
+                value={formatCurrency(monthlyExpenses.avg_6_months)}
+                icon={Calculator}
+                color="bg-orange-500/20 text-orange-400"
+              />
+              <StatCard
+                title="Avg Last 12 Months"
+                value={formatCurrency(monthlyExpenses.avg_12_months)}
+                icon={Calculator}
+                color="bg-amber-500/20 text-amber-400"
+              />
+            </div>
+          </div>
+
+          {/* Monthly Expenses Bar Chart */}
+          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Monthly Expenses</h3>
+              <button
+                onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                  excludePendingRefunds
+                    ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                }`}
+              >
+                {excludePendingRefunds
+                  ? "Pending Refunds Excluded"
+                  : "Pending Refunds Included"}
+              </button>
+            </div>
+            <div className="h-[350px]">
+              <Plot
+                data={[
+                  {
+                    x: monthlyExpenses.months.map((d) => d.month),
+                    y: monthlyExpenses.months.map((d) => d.expenses),
+                    type: "bar",
+                    marker: { color: "#f43f5e" },
+                    name: "Expenses",
+                  },
+                ]}
+                layout={{
+                  ...chartTheme,
+                  autosize: true,
+                  height: 350,
+                  yaxis: {
+                    title: {
+                      text: "Amount (ILS)",
+                      font: { color: "#94a3b8" },
+                    },
+                    tickfont: { color: "#94a3b8" },
+                  },
+                }}
+                style={{ width: "100%", height: "100%" }}
+                config={{ displayModeBar: false, responsive: true }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Net Worth Over Time */}
       {netWorthData && netWorthData.length > 0 && (
         <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-          <h3 className="text-lg font-bold mb-4">Net Worth Over Time</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold">Net Worth Over Time</h3>
+            <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+              {([
+                { key: "all", label: "All" },
+                { key: "bank_balance", label: "Bank Balance" },
+                { key: "investments", label: "Investments" },
+                { key: "net_worth", label: "Net Worth" },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setNetWorthView(key)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                    netWorthView === key
+                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="h-[350px]">
             <Plot
-              data={[
-                {
-                  x: netWorthData.map((d) => d.month),
-                  y: netWorthData.map((d) => d.bank_balance),
-                  name: "Bank Balance",
-                  type: "scatter",
-                  mode: "lines+markers",
-                  line: { color: "#f59e0b", width: 2 },
-                  marker: { size: 4, color: "#f59e0b" },
-                },
-                {
-                  x: netWorthData.map((d) => d.month),
-                  y: netWorthData.map((d) => d.investment_value),
-                  name: "Investments",
-                  type: "scatter",
-                  mode: "lines+markers",
-                  line: { color: "#6366f1", width: 2 },
-                  marker: { size: 4, color: "#6366f1" },
-                },
-                {
-                  x: netWorthData.map((d) => d.month),
-                  y: netWorthData.map((d) => d.net_worth),
-                  name: "Net Worth",
-                  type: "scatter",
-                  mode: "lines+markers",
-                  line: { color: "#10b981", width: 3 },
-                  marker: { size: 5, color: "#10b981" },
-                },
-              ]}
+              data={getNetWorthTraces()}
               layout={{
                 ...chartTheme,
                 autosize: true,
@@ -244,59 +403,6 @@ export function Dashboard() {
               <SankeyChart data={sankeyData} height={500} />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Net Balance Over Time Chart */}
-      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-        <h3 className="text-lg font-bold mb-4">Net Balance Over Time</h3>
-        <div className="h-[350px]">
-          <Plot
-            data={
-              !netBalanceData || netBalanceData.length === 0
-                ? []
-                : [
-                    {
-                      x: netBalanceData.map((d) => d.month),
-                      y: netBalanceData.map((d) => d.net_change),
-                      name: "Monthly Net",
-                      type: "bar",
-                      marker: {
-                        color: netBalanceData.map((d) =>
-                          d.net_change >= 0 ? "#10b981" : "#ef4444"
-                        ),
-                      },
-                      yaxis: "y",
-                    },
-                    {
-                      x: netBalanceData.map((d) => d.month),
-                      y: netBalanceData.map((d) => d.cumulative_balance),
-                      name: "Cumulative Balance",
-                      type: "scatter",
-                      mode: "lines+markers",
-                      line: { color: "#3b82f6", width: 3 },
-                      marker: { size: 8, color: "#3b82f6" },
-                    },
-                  ]
-            }
-            layout={{
-              ...chartTheme,
-              autosize: true,
-              height: 350,
-              yaxis: {
-                title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
-                tickfont: { color: "#94a3b8" },
-              },
-              legend: {
-                orientation: "h",
-                y: -0.15,
-                x: 0.5,
-                xanchor: "center",
-              },
-            }}
-            style={{ width: "100%", height: "100%" }}
-            config={{ displayModeBar: false, responsive: true }}
-          />
         </div>
       </div>
 
