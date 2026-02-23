@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, LineChart, Landmark, Calculator } from "lucide-react";
 import Plot from "react-plotly.js";
-import { analyticsApi, bankBalancesApi } from "../services/api";
+import { analyticsApi, bankBalancesApi, investmentsApi } from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
 import { useTestMode } from "../context/TestModeContext";
 import { formatDate } from "../utils/dateFormatting";
@@ -90,6 +90,11 @@ export function Dashboard() {
       const res = await analyticsApi.getIncomeBySourceOverTime();
       return res.data;
     },
+  });
+
+  const { data: portfolioAnalysis } = useQuery({
+    queryKey: ["portfolio-analysis", isTestMode],
+    queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
@@ -225,112 +230,127 @@ export function Dashboard() {
           icon={TrendingDown}
           color="bg-red-500/20 text-red-400"
         />
-        <StatCard
-          title="Total Bank Balance"
-          value={formatCurrency(bankBalances?.reduce((sum, b) => sum + b.balance, 0) ?? 0)}
-          icon={Landmark}
-          color="bg-amber-500/20 text-amber-400"
-        />
-        <StatCard
-          title="Total Investments"
-          value={overviewLoading ? "..." : formatCurrency(overview?.total_investments || 0)}
-          icon={LineChart}
-          color="bg-purple-500/20 text-purple-400"
-        />
-      </div>
-
-      {/* Bank Balances */}
-      {bankBalances && bankBalances.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--text-muted)] mb-4">Bank Balances</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {bankBalances.map((b) => (
-              <StatCard
-                key={`${b.provider}-${b.account_name}`}
-                title={b.account_name}
-                value={formatCurrency(b.balance)}
-                icon={Landmark}
-                color="bg-amber-500/20 text-amber-300"
-              />
-            ))}
+        <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[var(--text-muted)] text-sm">Total Bank Balance</p>
+              <p className="text-2xl font-bold mt-1">
+                {formatCurrency(bankBalances?.reduce((sum, b) => sum + b.balance, 0) ?? 0)}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-amber-500/20 text-amber-400">
+              <Landmark size={24} />
+            </div>
           </div>
+          {bankBalances && bankBalances.length > 1 && (
+            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
+              {bankBalances.map((b) => (
+                <div key={`${b.provider}-${b.account_name}`} className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">{b.account_name}</span>
+                  <span className="font-medium">{formatCurrency(b.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+        <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[var(--text-muted)] text-sm">Total Investments</p>
+              <p className="text-2xl font-bold mt-1">
+                {overviewLoading ? "..." : formatCurrency(overview?.total_investments || 0)}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-purple-500/20 text-purple-400">
+              <LineChart size={24} />
+            </div>
+          </div>
+          {portfolioAnalysis?.allocation && portfolioAnalysis.allocation.length > 1 && (
+            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
+              {portfolioAnalysis.allocation.map((inv: any) => (
+                <div key={inv.name} className="flex items-center justify-between text-sm">
+                  <span className="text-[var(--text-muted)]">{inv.name}</span>
+                  <span className="font-medium">{formatCurrency(inv.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Monthly Expenses Section */}
       {monthlyExpenses && monthlyExpenses.months.length > 0 && (
-        <div className="space-y-6">
-          {/* Expense Average KPI Cards */}
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--text-muted)] mb-4">
-              Monthly Expense Averages
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <StatCard
-                title="Avg Last 3 Months"
-                value={formatCurrency(monthlyExpenses.avg_3_months)}
-                icon={Calculator}
-                color="bg-rose-500/20 text-rose-400"
-              />
-              <StatCard
-                title="Avg Last 6 Months"
-                value={formatCurrency(monthlyExpenses.avg_6_months)}
-                icon={Calculator}
-                color="bg-orange-500/20 text-orange-400"
-              />
-              <StatCard
-                title="Avg Last 12 Months"
-                value={formatCurrency(monthlyExpenses.avg_12_months)}
-                icon={Calculator}
-                color="bg-amber-500/20 text-amber-400"
-              />
+        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold">Monthly Expenses</h3>
+            <button
+              onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                excludePendingRefunds
+                  ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                  : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+              }`}
+            >
+              {excludePendingRefunds
+                ? "Pending Refunds Excluded"
+                : "Pending Refunds Included"}
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                <Calculator size={18} />
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
+                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_3_months)}</p>
+              </div>
+            </div>
+            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
+                <Calculator size={18} />
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
+                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_6_months)}</p>
+              </div>
+            </div>
+            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                <Calculator size={18} />
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
+                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_12_months)}</p>
+              </div>
             </div>
           </div>
-
-          {/* Monthly Expenses Bar Chart */}
-          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Monthly Expenses</h3>
-              <button
-                onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                  excludePendingRefunds
-                    ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {excludePendingRefunds
-                  ? "Pending Refunds Excluded"
-                  : "Pending Refunds Included"}
-              </button>
-            </div>
-            <div className="h-[350px]">
-              <Plot
-                data={[
-                  {
-                    x: monthlyExpenses.months.map((d) => d.month),
-                    y: monthlyExpenses.months.map((d) => d.expenses),
-                    type: "bar",
-                    marker: { color: "#f43f5e" },
-                    name: "Expenses",
+          <div className="h-[350px]">
+            <Plot
+              data={[
+                {
+                  x: monthlyExpenses.months.map((d) => d.month),
+                  y: monthlyExpenses.months.map((d) => d.expenses),
+                  type: "bar",
+                  marker: { color: "#f43f5e" },
+                  name: "Expenses",
+                },
+              ]}
+              layout={{
+                ...chartTheme,
+                autosize: true,
+                height: 350,
+                yaxis: {
+                  title: {
+                    text: "Amount (ILS)",
+                    font: { color: "#94a3b8" },
                   },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  autosize: true,
-                  height: 350,
-                  yaxis: {
-                    title: {
-                      text: "Amount (ILS)",
-                      font: { color: "#94a3b8" },
-                    },
-                    tickfont: { color: "#94a3b8" },
-                  },
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={{ displayModeBar: false, responsive: true }}
-              />
-            </div>
+                  tickfont: { color: "#94a3b8" },
+                },
+              }}
+              style={{ width: "100%", height: "100%" }}
+              config={{ displayModeBar: false, responsive: true }}
+            />
           </div>
         </div>
       )}
