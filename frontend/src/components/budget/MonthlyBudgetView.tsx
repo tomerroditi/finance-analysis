@@ -140,6 +140,47 @@ export const MonthlyBudgetView: React.FC = () => {
 
   const { rules = [], project_spending } = analysis || {};
 
+  // Summary calculations (skip Total Budget which is always first if present)
+  const budgetRules = rules.filter(
+    (item: any) => item.rule.name !== "Total Budget",
+  );
+  const totalSpent = budgetRules.reduce(
+    (sum: number, item: any) => sum + Math.abs(item.current_amount || 0),
+    0,
+  );
+  const totalBudget = budgetRules.reduce(
+    (sum: number, item: any) => sum + (item.rule.amount || 0),
+    0,
+  );
+  const onTrackCount = budgetRules.filter(
+    (item: any) =>
+      Math.abs(item.current_amount || 0) <= (item.rule.amount || 0),
+  ).length;
+  const overCount = budgetRules.length - onTrackCount;
+  const biggestOverspend = budgetRules
+    .filter(
+      (item: any) =>
+        item.rule.amount > 0 &&
+        Math.abs(item.current_amount || 0) > item.rule.amount,
+    )
+    .sort(
+      (a: any, b: any) =>
+        Math.abs(b.current_amount) / b.rule.amount -
+        Math.abs(a.current_amount) / a.rule.amount,
+    )[0];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysLeft =
+    year === today.getFullYear() && month === today.getMonth() + 1
+      ? daysInMonth - today.getDate()
+      : daysInMonth;
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("he-IL", {
+      style: "currency",
+      currency: "ILS",
+      maximumFractionDigits: 0,
+    }).format(val);
+
   return (
     <div className="space-y-8">
       {/* Month Navigation */}
@@ -197,70 +238,156 @@ export const MonthlyBudgetView: React.FC = () => {
         </div>
       </div>
 
+      {/* Summary Header Strip */}
+      {budgetRules.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+              Total Spent
+            </p>
+            <p className="text-xl font-bold mt-1">
+              {formatCurrency(totalSpent)}
+            </p>
+            <p className="text-xs text-[var(--text-muted)]">
+              of {formatCurrency(totalBudget)}
+            </p>
+          </div>
+          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+              Budget Health
+            </p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-xl font-bold text-emerald-400">
+                {onTrackCount}
+              </span>
+              <span className="text-xs text-[var(--text-muted)]">on track</span>
+              {overCount > 0 && (
+                <>
+                  <span className="text-xl font-bold text-rose-400">
+                    {overCount}
+                  </span>
+                  <span className="text-xs text-[var(--text-muted)]">over</span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+              Biggest Overspend
+            </p>
+            {biggestOverspend ? (
+              <>
+                <p className="text-lg font-bold mt-1 text-rose-400">
+                  {biggestOverspend.rule.name}
+                </p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {Math.round(
+                    (Math.abs(biggestOverspend.current_amount) /
+                      biggestOverspend.rule.amount) *
+                      100,
+                  )}
+                  %
+                </p>
+              </>
+            ) : (
+              <p className="text-lg font-bold mt-1 text-emerald-400">
+                All good!
+              </p>
+            )}
+          </div>
+          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
+              Days Left
+            </p>
+            <p className="text-xl font-bold mt-1">{daysLeft}</p>
+            <p className="text-xs text-[var(--text-muted)]">
+              in{" "}
+              {new Date(year, month - 1).toLocaleString("en", {
+                month: "long",
+              })}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Budget Rules */}
       <div className="space-y-4">
-        {rules.map((item: any) => (
-          <BudgetProgressBar
-            key={item.rule.id}
-            label={item.rule.name}
-            subLabel={
-              item.rule.category !== item.rule.name
-                ? item.rule.category
-                : undefined
-            }
-            current={item.current_amount}
-            total={item.rule.amount}
-            onToggleExpand={() => toggleExpand(String(item.rule.id))}
-            isExpanded={expandedRuleId === String(item.rule.id)}
-            actions={
-              <>
-                {item.allow_edit && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingRule(item.rule);
-                      setIsRuleModalOpen(true);
-                    }}
-                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                    title="Edit Rule"
-                  >
-                    <PenSquare size={16} />
-                  </button>
-                )}
-                {item.allow_delete && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (
-                        confirm("Are you sure you want to delete this rule?")
-                      ) {
-                        deleteMutation.mutate(item.rule.id);
-                      }
-                    }}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                    title="Delete Rule"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </>
-            }
-          >
-            <TransactionCollapsibleList
-              transactions={item.data}
-              isOpen={expandedRuleId === String(item.rule.id)}
-              showActions
-              onTransactionUpdated={() =>
-                queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] })
-              }
-              pendingRefundsMap={pendingRefundsMap}
-              refundLinksMap={refundLinksMap}
-              showSplitParentsFilter
-              includeSplitParents={includeSplitParents}
-              onIncludeSplitParentsChange={setIncludeSplitParents}
-            />
-          </BudgetProgressBar>
-        ))}
+        {rules.map((item: any) => {
+          const isTotalBudget = item.rule.name === "Total Budget";
+          const isOtherExpenses = item.rule.name === "Other Expenses";
+
+          return (
+            <div
+              key={item.rule.id}
+              className={isOtherExpenses ? "opacity-60" : ""}
+            >
+              <BudgetProgressBar
+                label={item.rule.name}
+                subLabel={
+                  item.rule.category !== item.rule.name
+                    ? item.rule.category
+                    : undefined
+                }
+                current={item.current_amount}
+                total={item.rule.amount}
+                compact={!isTotalBudget}
+                onToggleExpand={() => toggleExpand(String(item.rule.id))}
+                isExpanded={expandedRuleId === String(item.rule.id)}
+                actions={
+                  <>
+                    {item.allow_edit && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingRule(item.rule);
+                          setIsRuleModalOpen(true);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
+                        title="Edit Rule"
+                      >
+                        <PenSquare size={16} />
+                      </button>
+                    )}
+                    {item.allow_delete && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (
+                            confirm(
+                              "Are you sure you want to delete this rule?",
+                            )
+                          ) {
+                            deleteMutation.mutate(item.rule.id);
+                          }
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
+                        title="Delete Rule"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </>
+                }
+              >
+                <TransactionCollapsibleList
+                  transactions={item.data}
+                  isOpen={expandedRuleId === String(item.rule.id)}
+                  showActions
+                  onTransactionUpdated={() =>
+                    queryClient.invalidateQueries({
+                      queryKey: ["budgetAnalysis"],
+                    })
+                  }
+                  pendingRefundsMap={pendingRefundsMap}
+                  refundLinksMap={refundLinksMap}
+                  showSplitParentsFilter
+                  includeSplitParents={includeSplitParents}
+                  onIncludeSplitParentsChange={setIncludeSplitParents}
+                />
+              </BudgetProgressBar>
+            </div>
+          );
+        })}
       </div>
 
       {/* Pending Refunds Section */}
