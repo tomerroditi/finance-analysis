@@ -93,8 +93,8 @@ class CredentialsRepository:
     @property
     def keyring_service(self):
         service = _KEYRING_SERVICE
-        if AppConfig().is_test_mode:
-            service += "-test"
+        if AppConfig().is_demo_mode:
+            service += "-demo"
         return service
 
     def get_password_from_keyring(self, key: str) -> Optional[str]:

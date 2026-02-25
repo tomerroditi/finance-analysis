@@ -331,14 +331,14 @@ export const pendingRefundsApi = {
     api.delete(`/pending-refunds/links/${linkId}`),
 };
 
-export const testingApi = {
-  toggleTestMode: (enabled: boolean) =>
-    api.post<{ status: string; test_mode: boolean }>(
-      "/testing/toggle_test_mode",
+export const demoApi = {
+  toggleDemoMode: (enabled: boolean) =>
+    api.post<{ status: string; demo_mode: boolean }>(
+      "/testing/toggle_demo_mode",
       { enabled },
     ),
-  getTestModeStatus: () =>
-    api.get<{ test_mode: boolean }>("/testing/test_mode_status"),
+  getDemoModeStatus: () =>
+    api.get<{ demo_mode: boolean }>("/testing/demo_mode_status"),
 };
 
 export default api;

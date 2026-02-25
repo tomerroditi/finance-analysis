@@ -23,10 +23,10 @@ import {
 } from "../services/api";
 import type { BankBalance } from "../services/api";
 
-import { useTestMode } from "../context/TestModeContext";
+import { useDemoMode } from "../context/TestModeContext";
 
 export function DataSources() {
-  const { isTestMode } = useTestMode();
+  const { isDemoMode } = useDemoMode();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
@@ -44,12 +44,12 @@ export function DataSources() {
   const [isViewOnly, setIsViewOnly] = useState(false);
 
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ["credentials-accounts", isTestMode],
+    queryKey: ["credentials-accounts", isDemoMode],
     queryFn: () => credentialsApi.getAccounts().then((res) => res.data),
   });
 
   const { data: providers } = useQuery({
-    queryKey: ["providers", isTestMode],
+    queryKey: ["providers", isDemoMode],
     queryFn: () => credentialsApi.getProviders().then((res) => res.data),
   });
 
@@ -84,12 +84,12 @@ export function DataSources() {
 
   // Bank Balances
   const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isTestMode],
+    queryKey: ["bank-balances", isDemoMode],
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
   const { data: lastScrapes } = useQuery({
-    queryKey: ["last-scrapes", isTestMode],
+    queryKey: ["last-scrapes", isDemoMode],
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
   });
 

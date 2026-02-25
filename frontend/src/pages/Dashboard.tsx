@@ -7,7 +7,7 @@ import { analyticsApi, bankBalancesApi } from "../services/api";
 import { DateRangePicker, type DateRange } from "../components/DateRangePicker";
 import { SankeyChart } from "../components/SankeyChart";
 import { ScrapingWidget } from "../components/dashboard/ScrapingWidget";
-import { useTestMode } from "../context/TestModeContext";
+import { useDemoMode } from "../context/TestModeContext";
 import { formatDate } from "../utils/dateFormatting";
 
 function StatCard({
@@ -37,14 +37,14 @@ function StatCard({
 }
 
 export function Dashboard() {
-  const { isTestMode } = useTestMode();
+  const { isDemoMode } = useDemoMode();
   const [dateRange, setDateRange] = useState<DateRange>({
     start: null,
     end: null,
   });
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ["overview", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["overview", dateRange.start, dateRange.end, isDemoMode],
     queryFn: async () => {
       const start = dateRange.start
         ? format(dateRange.start, "yyyy-MM-dd")
@@ -61,7 +61,7 @@ export function Dashboard() {
   });
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: ["income-outcome", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["income-outcome", dateRange.start, dateRange.end, isDemoMode],
     queryFn: async () => {
       const start = dateRange.start
         ? format(dateRange.start, "yyyy-MM-dd")
@@ -82,7 +82,7 @@ export function Dashboard() {
       "analytics-category",
       dateRange.start,
       dateRange.end,
-      isTestMode,
+      isDemoMode,
     ],
     queryFn: async () => {
       const start = dateRange.start
@@ -102,7 +102,7 @@ export function Dashboard() {
 
 
   const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
-    queryKey: ["sankey", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["sankey", dateRange.start, dateRange.end, isDemoMode],
     queryFn: async () => {
       const start = dateRange.start
         ? format(dateRange.start, "yyyy-MM-dd")
@@ -119,7 +119,7 @@ export function Dashboard() {
   });
 
   const { data: netBalanceData } = useQuery({
-    queryKey: ["net-balance-trend", dateRange.start, dateRange.end, isTestMode],
+    queryKey: ["net-balance-trend", dateRange.start, dateRange.end, isDemoMode],
     queryFn: async () => {
       const start = dateRange.start
         ? format(dateRange.start, "yyyy-MM-dd")
@@ -136,7 +136,7 @@ export function Dashboard() {
   });
 
   const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isTestMode],
+    queryKey: ["bank-balances", isDemoMode],
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 

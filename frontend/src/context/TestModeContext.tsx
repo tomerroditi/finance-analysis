@@ -5,63 +5,63 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { testingApi } from "../services/api";
+import { demoApi } from "../services/api";
 import { useQueryClient } from "@tanstack/react-query";
 
-interface TestModeContextType {
-  isTestMode: boolean;
-  toggleTestMode: (enabled: boolean) => Promise<void>;
+interface DemoModeContextType {
+  isDemoMode: boolean;
+  toggleDemoMode: (enabled: boolean) => Promise<void>;
   isLoading: boolean;
 }
 
-const TestModeContext = createContext<TestModeContextType | undefined>(
+const DemoModeContext = createContext<DemoModeContextType | undefined>(
   undefined,
 );
 
-export function TestModeProvider({ children }: { children: ReactNode }) {
-  const [isTestMode, setIsTestMode] = useState(false);
+export function DemoModeProvider({ children }: { children: ReactNode }) {
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {
     // Fetch initial status
-    testingApi
-      .getTestModeStatus()
+    demoApi
+      .getDemoModeStatus()
       .then((res) => {
-        setIsTestMode(res.data.test_mode);
+        setIsDemoMode(res.data.demo_mode);
       })
       .catch((err) => {
-        console.error("Failed to fetch test mode status:", err);
+        console.error("Failed to fetch demo mode status:", err);
       })
       .finally(() => {
         setIsLoading(false);
       });
   }, []);
 
-  const toggleTestMode = async (enabled: boolean) => {
+  const toggleDemoMode = async (enabled: boolean) => {
     try {
-      const res = await testingApi.toggleTestMode(enabled);
-      setIsTestMode(res.data.test_mode);
+      const res = await demoApi.toggleDemoMode(enabled);
+      setIsDemoMode(res.data.demo_mode);
       // Reset all queries to clear cache and force refetch
       // This prevents stale data from the other mode from being shown
       await queryClient.resetQueries();
     } catch (err) {
-      console.error("Failed to toggle test mode:", err);
+      console.error("Failed to toggle demo mode:", err);
       throw err;
     }
   };
 
   return (
-    <TestModeContext.Provider value={{ isTestMode, toggleTestMode, isLoading }}>
+    <DemoModeContext.Provider value={{ isDemoMode, toggleDemoMode, isLoading }}>
       {children}
-    </TestModeContext.Provider>
+    </DemoModeContext.Provider>
   );
 }
 
-export function useTestMode() {
-  const context = useContext(TestModeContext);
+export function useDemoMode() {
+  const context = useContext(DemoModeContext);
   if (context === undefined) {
-    throw new Error("useTestMode must be used within a TestModeProvider");
+    throw new Error("useDemoMode must be used within a DemoModeProvider");
   }
   return context;
 }

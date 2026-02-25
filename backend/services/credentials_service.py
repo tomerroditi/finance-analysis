@@ -224,10 +224,10 @@ class CredentialsService:
 
     @staticmethod
     def get_available_providers() -> Dict[str, List[str]]:
-        """Get available providers filtered by test/production mode."""
-        is_test = AppConfig().is_test_mode
-        banks = [p for p in bank_providers if ("test_" in p) == is_test]
-        ccs = [p for p in cc_providers if ("test_" in p) == is_test]
+        """Get available providers filtered by demo/production mode."""
+        is_demo = AppConfig().is_demo_mode
+        banks = [p for p in bank_providers if ("test_" in p) == is_demo]
+        ccs = [p for p in cc_providers if ("test_" in p) == is_demo]
         return {"banks": banks, "credit_cards": ccs}
 
     def delete_credential(self, service: str, provider: str, account_name: str) -> None:
