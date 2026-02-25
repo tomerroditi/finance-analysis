@@ -144,7 +144,9 @@ export function Categories() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {categories &&
-          Object.entries(categories as Record<string, string[]>).map(
+          Object.entries(categories as Record<string, string[]>)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(
             ([category, tags]) => (
               <div
                 key={category}
