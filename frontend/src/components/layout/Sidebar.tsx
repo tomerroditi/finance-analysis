@@ -9,7 +9,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "../../stores/appStore";
+import { transactionsApi, scrapingApi } from "../../services/api";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -22,6 +24,42 @@ const navItems = [
 
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
+
+  // Count uncategorized transactions
+  const { data: allTransactions } = useQuery({
+    queryKey: ["transactions", "all", false],
+    queryFn: () => transactionsApi.getAll("all", false).then((res) => res.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const uncategorizedCount =
+    allTransactions?.filter(
+      (t: any) => !t.category || t.category === "Uncategorized",
+    ).length ?? 0;
+
+  // Check for stale data sources (>7 days since last scrape)
+  const { data: lastScrapes } = useQuery({
+    queryKey: ["last-scrapes"],
+    queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const staleSourceCount =
+    lastScrapes?.filter((s: any) => {
+      if (!s.last_scrape_date) return true;
+      const daysSince =
+        (Date.now() - new Date(s.last_scrape_date).getTime()) /
+        (1000 * 60 * 60 * 24);
+      return daysSince > 7;
+    }).length ?? 0;
+
+  const getBadge = (path: string): number | null => {
+    if (path === "/transactions" && uncategorizedCount > 0)
+      return uncategorizedCount;
+    if (path === "/data-sources" && staleSourceCount > 0)
+      return staleSourceCount;
+    return null;
+  };
 
   return (
     <aside
@@ -51,7 +89,7 @@ export function Sidebar() {
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              `relative flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                 isActive
                   ? "bg-[var(--primary)] text-white"
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
@@ -60,6 +98,14 @@ export function Sidebar() {
           >
             <item.icon size={20} />
             {sidebarOpen && <span>{item.label}</span>}
+            {(() => {
+              const badge = getBadge(item.path);
+              return badge != null ? (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              ) : null;
+            })()}
           </NavLink>
         ))}
       </nav>
