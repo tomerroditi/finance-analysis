@@ -5,20 +5,18 @@ echo ==================================================
 echo      Finance Analysis App - One-Time Setup
 echo ==================================================
 
-:: Set working directory to the root of the project
+:: Set working directory to project root (one level above build/)
 cd /d "%~dp0"
-cd ../..
+cd ..
 
-:: App folder and user data dir
-set "APP_DIR=Finance Analysis"
 set "ENV_DIR=.venv"
 set "USER_DIR=%USERPROFILE%\.finance-analysis"
 
 :: -------------------------
-:: Check Python
+:: Check Python 3.12
 python --version >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
-    echo Python not found. Installing...
+    echo Python not found. Installing Python 3.12...
     powershell -Command "& {Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.6/python-3.12.6-amd64.exe' -OutFile 'python_installer.exe'}"
     start /wait python_installer.exe /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
     del python_installer.exe
@@ -27,11 +25,11 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 :: -------------------------
-:: Check Node.js
+:: Check Node.js (needed for scraper)
 node --version >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
     echo Node.js not found. Installing...
-    powershell -Command "& {Invoke-WebRequest -Uri 'https://nodejs.org/dist/v18.18.2/node-v18.18.2-x64.msi' -OutFile 'node_installer.msi'}"
+    powershell -Command "& {Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi' -OutFile 'node_installer.msi'}"
     msiexec /i node_installer.msi /quiet
     del node_installer.msi
 ) ELSE (
@@ -39,38 +37,11 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 :: -------------------------
-:: Check Google Chrome
-reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" >nul 2>&1
-IF %ERRORLEVEL% NEQ 0 (
-    echo Google Chrome not found. Installing...
-    powershell -Command "& {Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/latest/chrome_installer.exe' -OutFile 'chrome_installer.exe'}"
-    start /wait chrome_installer.exe /silent /install
-    del chrome_installer.exe
-) ELSE (
-    echo Google Chrome is installed.
-)
-
-:: -------------------------
 :: Set up user data directory
 if not exist "%USER_DIR%" mkdir "%USER_DIR%"
-if not exist "%USER_DIR%\data.db" (
-    echo Creating empty SQLite DB...
-    type nul > "%USER_DIR%\data.db"
-)
-
-:: -------------------------
-:: Create .streamlit/secrets.toml and .streamlit/credentials.toml (defaults to no email)
-echo Creating secrets.toml for Streamlit...
-mkdir "%APP_DIR%\.streamlit" >nul 2>&1
-echo [connections.data] > "%APP_DIR%\.streamlit\secrets.toml"
-echo url = "sqlite:///%USER_DIR:\=/%/data.db" >> "%APP_DIR%\.streamlit\secrets.toml"
-echo [general] > "%APP_DIR%\.streamlit\credentials.toml"
-echo email = "" >> "%APP_DIR%\.streamlit\credentials.toml"
 
 :: -------------------------
 :: Set up Python virtual environment
-cd %APP_DIR%
-echo %cd%
 IF NOT EXIST %ENV_DIR% (
     echo Creating virtual environment...
     python -m venv %ENV_DIR%
@@ -86,15 +57,16 @@ pip install poetry
 poetry install --no-root --no-interaction
 
 :: -------------------------
-:: Install Node packages
-IF EXIST fad\scraper\node\package.json (
-    cd fad\scraper\node
-    IF EXIST node_modules (
-        echo Node modules already installed.
+:: Install scraper Node packages
+IF EXIST backend\scraper\node\package.json (
+    cd backend\scraper\node
+    IF NOT EXIST node_modules (
+        echo Installing scraper Node packages...
+        npm install --yes --loglevel=error
     ) ELSE (
-        echo Installing Node packages...
-      npm install --yes --loglevel=error
+        echo Scraper Node modules already installed.
     )
+    cd ..\..\..
 )
 
 IF %ERRORLEVEL% NEQ 0 (
