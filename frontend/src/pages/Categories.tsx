@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, MoveRight, Wallet } from "lucide-react";
 import { taggingApi } from "../services/api";
+import { Skeleton } from "../components/common/Skeleton";
 
 const PREDEFINED_EMOJIS = [
   "💰",
@@ -122,7 +123,17 @@ export function Categories() {
 
   if (isLoading)
     return (
-      <div className="p-8 text-center text-[var(--text-muted)]">Loading...</div>
+      <div className="space-y-8 p-8">
+        <Skeleton variant="text" lines={2} className="w-64" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <Skeleton variant="card" className="h-48" />
+          <Skeleton variant="card" className="h-48" />
+          <Skeleton variant="card" className="h-48" />
+          <Skeleton variant="card" className="h-48" />
+          <Skeleton variant="card" className="h-48" />
+          <Skeleton variant="card" className="h-48" />
+        </div>
+      </div>
     );
 
   return (

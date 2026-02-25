@@ -1,43 +1,482 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, LineChart, Landmark, Calculator } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  Calculator,
+} from "lucide-react";
 import Plot from "react-plotly.js";
-import { analyticsApi, bankBalancesApi, investmentsApi } from "../services/api";
+import {
+  analyticsApi,
+  bankBalancesApi,
+  investmentsApi,
+  budgetApi,
+  transactionsApi,
+  taggingApi,
+} from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
+import { Sparkline } from "../components/common/Sparkline";
+import { SemiGauge } from "../components/common/SemiGauge";
+import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
 import { formatDate } from "../utils/dateFormatting";
+import { isToday, isYesterday, format } from "date-fns";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
+const formatCurrency = (val: number) =>
+  new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 0,
+  }).format(val);
+
+const chartTheme = {
+  paper_bgcolor: "rgba(0,0,0,0)",
+  plot_bgcolor: "rgba(0,0,0,0)",
+  font: { color: "#94a3b8", family: "Inter, sans-serif" },
+  margin: { t: 40, b: 40, l: 40, r: 20 },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Section 1 — Financial Health Header                               */
+/* ------------------------------------------------------------------ */
+
+function FinancialHealthHeader({
+  netWorthData,
+  bankBalances,
+  portfolioAnalysis,
+  isLoading,
 }: {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  color: string;
+  netWorthData:
+    | { month: string; bank_balance: number; investment_value: number; net_worth: number }[]
+    | undefined;
+  bankBalances: { provider: string; account_name: string; balance: number }[] | undefined;
+  portfolioAnalysis: { total_value: number; allocation: { name: string; balance: number }[] } | undefined;
+  isLoading: boolean;
 }) {
-  return (
-    <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)]">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[var(--text-muted)] text-sm">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+
+  const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
+  const previousNetWorth =
+    netWorthData && netWorthData.length >= 2 ? netWorthData[netWorthData.length - 2] : null;
+
+  const momDelta = latestNetWorth && previousNetWorth ? latestNetWorth.net_worth - previousNetWorth.net_worth : null;
+  const momPercent =
+    momDelta !== null && previousNetWorth && previousNetWorth.net_worth !== 0
+      ? (momDelta / Math.abs(previousNetWorth.net_worth)) * 100
+      : null;
+
+  const last6Bank = netWorthData?.slice(-6).map((d) => d.bank_balance) ?? [];
+  const last6Investments = netWorthData?.slice(-6).map((d) => d.investment_value) ?? [];
+
+  const toggleCard = (card: string) => setExpandedCard(expandedCard === card ? null : card);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+        <Skeleton variant="text" lines={2} className="mb-4" />
+        <div className="grid grid-cols-3 gap-4">
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
         </div>
-        <div className={`p-3 rounded-lg ${color}`}>
-          <Icon size={24} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
+      {/* Hero row */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-6 pt-6 pb-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Net Worth
+          </p>
+          <p className="text-3xl font-bold mt-0.5">
+            {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
+          </p>
+        </div>
+        {momDelta !== null && (
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${
+              momDelta >= 0
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "bg-rose-500/10 text-rose-400"
+            }`}
+          >
+            {momDelta >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+            <span>
+              {momDelta >= 0 ? "+" : ""}
+              {formatCurrency(momDelta)}
+              {momPercent !== null && ` (${momPercent >= 0 ? "+" : ""}${momPercent.toFixed(1)}%)`}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Sub-cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--surface-light)] border-t border-[var(--surface-light)]">
+        {/* Bank Balance */}
+        <button
+          onClick={() => toggleCard("bank")}
+          className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-xs text-[var(--text-muted)]">Bank Balance</p>
+              <p className="text-lg font-bold mt-0.5">
+                {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+              </p>
+            </div>
+            {last6Bank.length >= 2 && <Sparkline data={last6Bank} color="#f59e0b" />}
+          </div>
+          {expandedCard === "bank" && bankBalances && bankBalances.length > 1 && (
+            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
+              {bankBalances.map((b) => (
+                <div
+                  key={`${b.provider}-${b.account_name}`}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="text-[var(--text-muted)]">{b.account_name}</span>
+                  <span className="font-medium">{formatCurrency(b.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </button>
+
+        {/* Investments */}
+        <button
+          onClick={() => toggleCard("investments")}
+          className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-xs text-[var(--text-muted)]">Investments</p>
+              <p className="text-lg font-bold mt-0.5">
+                {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+              </p>
+            </div>
+            {last6Investments.length >= 2 && <Sparkline data={last6Investments} color="#6366f1" />}
+          </div>
+          {expandedCard === "investments" &&
+            portfolioAnalysis?.allocation &&
+            portfolioAnalysis.allocation.length > 1 && (
+              <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
+                {portfolioAnalysis.allocation.map((inv) => (
+                  <div key={inv.name} className="flex items-center justify-between text-sm">
+                    <span className="text-[var(--text-muted)]">{inv.name}</span>
+                    <span className="font-medium">{formatCurrency(inv.balance)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+        </button>
+
+        {/* Cash */}
+        <div className="px-5 py-4">
+          <p className="text-xs text-[var(--text-muted)]">Cash</p>
+          <p className="text-lg font-bold mt-0.5">{formatCurrency(0)}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">(no data)</p>
         </div>
       </div>
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Section 2 — Monthly Spending Gauge                                */
+/* ------------------------------------------------------------------ */
+
+interface BudgetRule {
+  id: number;
+  name: string;
+  category: string;
+  tags: string | null;
+  budget_amount: number;
+  spent_amount: number;
+}
+
+function getProgressColor(pct: number): string {
+  if (pct > 100) return "bg-rose-500";
+  if (pct >= 75) return "bg-amber-500";
+  return "bg-emerald-500";
+}
+
+function MonthlySpendingGauge({
+  budgetAnalysis,
+  categoryIcons,
+  isLoading,
+}: {
+  budgetAnalysis: { rules: BudgetRule[]; total_budget?: number; total_spent?: number } | undefined;
+  categoryIcons: Record<string, string> | undefined;
+  isLoading: boolean;
+}) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const monthName = format(now, "MMMM yyyy");
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysRemaining = daysInMonth - now.getDate();
+
+  const totalBudget =
+    budgetAnalysis?.total_budget ??
+    (budgetAnalysis?.rules?.reduce((sum, r) => sum + r.budget_amount, 0) ?? 0);
+  const totalSpent =
+    budgetAnalysis?.total_spent ??
+    (budgetAnalysis?.rules?.reduce((sum, r) => sum + r.spent_amount, 0) ?? 0);
+
+  // Filter out "Other Expenses" catch-all and "Total Budget" special rules
+  const miniRules = useMemo(() => {
+    if (!budgetAnalysis?.rules) return [];
+    return budgetAnalysis.rules.filter(
+      (r) => r.name !== "Other Expenses" && r.name !== "Total Budget",
+    );
+  }, [budgetAnalysis]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+        <Skeleton variant="text" lines={1} className="mb-4" />
+        <Skeleton variant="chart" className="h-40" />
+      </div>
+    );
+  }
+
+  if (!budgetAnalysis || budgetAnalysis.rules.length === 0) return null;
+
+  return (
+    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            This Month &mdash; {monthName}
+          </p>
+        </div>
+        <span className="text-xs text-[var(--text-muted)]">
+          {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+        </span>
+      </div>
+
+      {/* Gauge */}
+      <div className="flex justify-center mb-6">
+        <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
+      </div>
+
+      {/* Mini budget cards */}
+      {miniRules.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+          {miniRules.map((rule) => {
+            const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
+            const icon = categoryIcons?.[rule.category] ?? "";
+            return (
+              <div
+                key={rule.id}
+                className="bg-[var(--surface-light)] rounded-xl p-3 space-y-1.5"
+              >
+                <div className="flex items-center gap-1.5">
+                  {icon && <span className="text-sm">{icon}</span>}
+                  <span className="text-xs font-semibold truncate">{rule.name}</span>
+                </div>
+                <p className="text-sm font-bold">
+                  {formatCurrency(rule.spent_amount)}
+                  <span className="text-xs font-normal text-[var(--text-muted)]">
+                    {" "}
+                    / {formatCurrency(rule.budget_amount)}
+                  </span>
+                </p>
+                {/* Thin progress bar */}
+                <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Link to budget page */}
+      <div className="text-right">
+        <Link
+          to="/budget"
+          className="text-sm font-medium text-[var(--primary)] hover:underline"
+        >
+          View All Budget Rules &rarr;
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Section 3 — Recent Transactions Feed                              */
+/* ------------------------------------------------------------------ */
+
+interface Transaction {
+  date: string;
+  description: string;
+  amount: number;
+  category: string;
+  tag: string;
+  source: string;
+  provider: string;
+  account_name: string;
+}
+
+function formatTransactionDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isToday(d)) return "Today";
+  if (isYesterday(d)) return "Yesterday";
+  return format(d, "d MMM");
+}
+
+function RecentTransactionsFeed({
+  transactions,
+  categoryIcons,
+  isLoading,
+}: {
+  transactions: Transaction[] | undefined;
+  categoryIcons: Record<string, string> | undefined;
+  isLoading: boolean;
+}) {
+  const recent = useMemo(() => {
+    if (!transactions) return [];
+    const sorted = [...transactions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+    return sorted.slice(0, 7);
+  }, [transactions]);
+
+  // Group by date label
+  const grouped = useMemo(() => {
+    const groups: { label: string; items: Transaction[] }[] = [];
+    let currentLabel = "";
+    for (const tx of recent) {
+      const label = formatTransactionDate(tx.date);
+      if (label !== currentLabel) {
+        groups.push({ label, items: [] });
+        currentLabel = label;
+      }
+      groups[groups.length - 1].items.push(tx);
+    }
+    return groups;
+  }, [recent]);
+
+  if (isLoading) {
+    return (
+      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+        <Skeleton variant="text" lines={1} className="mb-4" />
+        <Skeleton variant="text" lines={5} />
+      </div>
+    );
+  }
+
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Recent Transactions
+        </p>
+        <Link
+          to="/transactions"
+          className="text-sm font-medium text-[var(--primary)] hover:underline"
+        >
+          View All &rarr;
+        </Link>
+      </div>
+
+      <div className="space-y-4">
+        {grouped.map((group) => (
+          <div key={group.label}>
+            <p className="text-xs font-semibold text-[var(--text-muted)] mb-2">{group.label}</p>
+            <div className="space-y-1">
+              {group.items.map((tx, i) => {
+                const icon = categoryIcons?.[tx.category] ?? "";
+                const isPositive = tx.amount >= 0;
+                return (
+                  <div
+                    key={`${tx.date}-${tx.description}-${i}`}
+                    className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors"
+                  >
+                    <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
+                    <span className="text-sm truncate flex-1 min-w-0">
+                      {tx.description.length > 40
+                        ? tx.description.slice(0, 40) + "..."
+                        : tx.description}
+                    </span>
+                    <span className="text-xs text-[var(--text-muted)] flex-shrink-0">
+                      {tx.category}
+                    </span>
+                    <span
+                      className={`text-sm font-semibold flex-shrink-0 tabular-nums ${
+                        isPositive ? "text-emerald-400" : "text-rose-400"
+                      }`}
+                    >
+                      {isPositive ? "+" : ""}
+                      {formatCurrency(tx.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Section 4 — Collapsible Insights (accordion wrapper)              */
+/* ------------------------------------------------------------------ */
+
+function AccordionSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
+      >
+        <h3 className="text-lg font-bold">{title}</h3>
+        <ChevronDown
+          size={20}
+          className={`text-[var(--text-muted)] transition-transform duration-200 ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {isOpen && <div className="px-6 pb-6">{children}</div>}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Main Dashboard Component                                          */
+/* ================================================================== */
+
 export function Dashboard() {
   const { isDemoMode } = useDemoMode();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
+  const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
+
+  // ---- Existing queries (kept) ----
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
     queryKey: ["overview", isDemoMode],
@@ -76,7 +515,7 @@ export function Dashboard() {
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
-  const { data: netWorthData } = useQuery({
+  const { data: netWorthData, isLoading: netWorthLoading } = useQuery({
     queryKey: ["net-worth-over-time", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getNetWorthOverTime();
@@ -97,8 +536,6 @@ export function Dashboard() {
     queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
-  const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
-
   const { data: monthlyExpenses } = useQuery({
     queryKey: ["monthly-expenses", excludePendingRefunds, isDemoMode],
     queryFn: async () => {
@@ -107,18 +544,37 @@ export function Dashboard() {
     },
   });
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(val);
+  // ---- New queries ----
 
-  const chartTheme = {
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: "#94a3b8", family: "Inter, sans-serif" },
-    margin: { t: 40, b: 40, l: 40, r: 20 },
-  };
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  const { data: budgetAnalysis, isLoading: budgetLoading } = useQuery({
+    queryKey: ["budget-analysis", currentYear, currentMonth, isDemoMode],
+    queryFn: async () => {
+      const res = await budgetApi.getAnalysis(currentYear, currentMonth, false);
+      return res.data;
+    },
+  });
+
+  const { data: allTransactions, isLoading: transactionsLoading } = useQuery({
+    queryKey: ["all-transactions", isDemoMode],
+    queryFn: async () => {
+      const res = await transactionsApi.getAll("all", false);
+      return res.data;
+    },
+  });
+
+  const { data: categoryIcons } = useQuery({
+    queryKey: ["category-icons", isDemoMode],
+    queryFn: async () => {
+      const res = await taggingApi.getIcons();
+      return res.data;
+    },
+  });
+
+  // ---- Computed values for charts (kept) ----
 
   const netWorthDeltas = useMemo(() => {
     if (!netWorthData || netWorthData.length < 2) return null;
@@ -134,9 +590,24 @@ export function Dashboard() {
   }, [netWorthData]);
 
   const seriesConfig = {
-    bank_balance: { label: "Bank Balance", color: "#f59e0b", dataKey: "bank_balance", deltaKey: "bank_balance_delta" },
-    investments: { label: "Investments", color: "#6366f1", dataKey: "investment_value", deltaKey: "investment_value_delta" },
-    net_worth: { label: "Net Worth", color: "#10b981", dataKey: "net_worth", deltaKey: "net_worth_delta" },
+    bank_balance: {
+      label: "Bank Balance",
+      color: "#f59e0b",
+      dataKey: "bank_balance",
+      deltaKey: "bank_balance_delta",
+    },
+    investments: {
+      label: "Investments",
+      color: "#6366f1",
+      dataKey: "investment_value",
+      deltaKey: "investment_value_delta",
+    },
+    net_worth: {
+      label: "Net Worth",
+      color: "#10b981",
+      dataKey: "net_worth",
+      deltaKey: "net_worth_delta",
+    },
   } as const;
 
   const getNetWorthTraces = (): Plotly.Data[] => {
@@ -185,7 +656,7 @@ export function Dashboard() {
         type: "bar",
         marker: {
           color: netWorthDeltas.map((d) =>
-            d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444"
+            d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444",
           ),
         },
       },
@@ -201,416 +672,394 @@ export function Dashboard() {
     ];
   };
 
+  // ================================================================
+  //  Render
+  // ================================================================
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-[var(--text-muted)] mt-1">
-          Overview of your financial data
-        </p>
+        <p className="text-[var(--text-muted)] mt-1">Your financial snapshot at a glance</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Income"
-          value={
-            overviewLoading ? "..." : formatCurrency(overview?.total_income || 0)
-          }
-          icon={TrendingUp}
-          color="bg-emerald-500/20 text-emerald-400"
-        />
-        <StatCard
-          title="Total Expenses"
-          value={
-            overviewLoading
-              ? "..."
-              : formatCurrency(overview?.total_expenses || 0)
-          }
-          icon={TrendingDown}
-          color="bg-red-500/20 text-red-400"
-        />
-        <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[var(--text-muted)] text-sm">Total Bank Balance</p>
-              <p className="text-2xl font-bold mt-1">
-                {formatCurrency(bankBalances?.reduce((sum, b) => sum + b.balance, 0) ?? 0)}
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-amber-500/20 text-amber-400">
-              <Landmark size={24} />
-            </div>
-          </div>
-          {bankBalances && bankBalances.length > 1 && (
-            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
-              {bankBalances.map((b) => (
-                <div key={`${b.provider}-${b.account_name}`} className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--text-muted)]">{b.account_name}</span>
-                  <span className="font-medium">{formatCurrency(b.balance)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[var(--text-muted)] text-sm">Total Investments</p>
-              <p className="text-2xl font-bold mt-1">
-                {overviewLoading ? "..." : formatCurrency(overview?.total_investments || 0)}
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-purple-500/20 text-purple-400">
-              <LineChart size={24} />
-            </div>
-          </div>
-          {portfolioAnalysis?.allocation && portfolioAnalysis.allocation.length > 1 && (
-            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
-              {portfolioAnalysis.allocation.map((inv: any) => (
-                <div key={inv.name} className="flex items-center justify-between text-sm">
-                  <span className="text-[var(--text-muted)]">{inv.name}</span>
-                  <span className="font-medium">{formatCurrency(inv.balance)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Section 1: Financial Health Header */}
+      <FinancialHealthHeader
+        netWorthData={netWorthData}
+        bankBalances={bankBalances}
+        portfolioAnalysis={portfolioAnalysis}
+        isLoading={netWorthLoading}
+      />
 
-      {/* Monthly Expenses Section */}
-      {monthlyExpenses && monthlyExpenses.months.length > 0 && (
-        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold">Monthly Expenses</h3>
-            <button
-              onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                excludePendingRefunds
-                  ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                  : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-              }`}
-            >
-              {excludePendingRefunds
-                ? "Pending Refunds Excluded"
-                : "Pending Refunds Included"}
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
-                <Calculator size={18} />
-              </div>
-              <div>
-                <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
-                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_3_months)}</p>
-              </div>
-            </div>
-            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
-                <Calculator size={18} />
-              </div>
-              <div>
-                <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
-                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_6_months)}</p>
-              </div>
-            </div>
-            <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
-                <Calculator size={18} />
-              </div>
-              <div>
-                <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
-                <p className="text-lg font-bold">{formatCurrency(monthlyExpenses.avg_12_months)}</p>
-              </div>
-            </div>
-          </div>
-          <div className="h-[350px]">
-            <Plot
-              data={[
-                {
-                  x: monthlyExpenses.months.map((d) => d.month),
-                  y: monthlyExpenses.months.map((d) => d.expenses),
-                  type: "bar",
-                  marker: { color: "#f43f5e" },
-                  name: "Expenses",
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                autosize: true,
-                height: 350,
-                yaxis: {
-                  title: {
-                    text: "Amount (ILS)",
-                    font: { color: "#94a3b8" },
-                  },
-                  tickfont: { color: "#94a3b8" },
-                },
-              }}
-              style={{ width: "100%", height: "100%" }}
-              config={{ displayModeBar: false, responsive: true }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Net Worth Over Time */}
-      {netWorthData && netWorthData.length > 0 && (
-        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold">Net Worth Over Time</h3>
-            <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
-              {([
-                { key: "all", label: "All" },
-                { key: "bank_balance", label: "Bank Balance" },
-                { key: "investments", label: "Investments" },
-                { key: "net_worth", label: "Net Worth" },
-              ] as const).map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setNetWorthView(key)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                    netWorthView === key
-                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="h-[350px]">
-            <Plot
-              data={getNetWorthTraces()}
-              layout={{
-                ...chartTheme,
-                autosize: true,
-                height: 350,
-                yaxis: {
-                  title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
-                  tickfont: { color: "#94a3b8" },
-                },
-                legend: {
-                  orientation: "h",
-                  y: -0.15,
-                  x: 0.5,
-                  xanchor: "center",
-                },
-              }}
-              style={{ width: "100%", height: "100%" }}
-              config={{ displayModeBar: false, responsive: true }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Actions & Status Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          {/* Sankey Flow Diagram */}
-          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden h-full">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Cash Flow</h3>
-              {sankeyLoading && (
-                <span className="text-sm text-[var(--text-muted)]">
-                  Loading...
-                </span>
-              )}
-            </div>
-            <div className="h-[500px]">
-              <SankeyChart data={sankeyData} height={500} />
-            </div>
-          </div>
-        </div>
-      </div>
-
+      {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Monthly Trend Chart */}
-        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-          <h3 className="text-lg font-bold mb-4">Monthly Income vs Expenses</h3>
-          <div className="h-[350px]">
-            <Plot
-              data={[
-                {
-                  x: incomeOutcome?.map((d: any) => d.month) || [],
-                  y: incomeOutcome?.map((d: any) => d.income) || [],
-                  name: "Income",
-                  type: "bar",
-                  marker: { color: "#059669" },
-                },
-                {
-                  x: incomeOutcome?.map((d: any) => d.month) || [],
-                  y: incomeOutcome?.map((d: any) => d.expenses) || [],
-                  name: "Expenses",
-                  type: "bar",
-                  marker: { color: "#f43f5e" },
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                barmode: "group",
-                autosize: true,
-                height: 350,
-              }}
-              style={{ width: "100%", height: "100%" }}
-              config={{ displayModeBar: false, responsive: true }}
-            />
-          </div>
-        </div>
+        <MonthlySpendingGauge
+          budgetAnalysis={budgetAnalysis}
+          categoryIcons={categoryIcons}
+          isLoading={budgetLoading}
+        />
+        <RecentTransactionsFeed
+          transactions={allTransactions}
+          categoryIcons={categoryIcons}
+          isLoading={transactionsLoading}
+        />
+      </div>
 
-        {/* Income Breakdown by Source */}
-        {incomeBySourceData && incomeBySourceData.length > 0 && (() => {
-          // Collect all unique source labels across all months
-          const allSources = Array.from(
-            new Set(incomeBySourceData.flatMap((d) => Object.keys(d.sources)))
-          );
-
-          // Green-toned palette for income sources
-          const colors = [
-            "#059669", "#10b981", "#34d399", "#6ee7b7",
-            "#a7f3d0", "#047857", "#065f46", "#064e3b",
-          ];
-
-          return (
-            <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-              <h3 className="text-lg font-bold mb-4">Income by Source</h3>
-              <div className="h-[350px]">
-                <Plot
-                  data={allSources.map((source, i) => ({
-                    x: incomeBySourceData.map((d) => d.month),
-                    y: incomeBySourceData.map((d) => d.sources[source] || 0),
-                    name: source,
-                    type: "bar" as const,
-                    marker: { color: colors[i % colors.length] },
-                  }))}
-                  layout={{
-                    ...chartTheme,
-                    barmode: "stack",
-                    autosize: true,
-                    height: 350,
-                    yaxis: {
-                      title: { text: "Amount (ILS)", font: { color: "#94a3b8" } },
-                      tickfont: { color: "#94a3b8" },
-                    },
-                    legend: {
-                      orientation: "h",
-                      y: -0.15,
-                      x: 0.5,
-                      xanchor: "center",
-                    },
-                  }}
-                  style={{ width: "100%", height: "100%" }}
-                  config={{ displayModeBar: false, responsive: true }}
-                />
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Category Breakdown Charts */}
-        <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)] shadow-xl overflow-hidden">
-          <h3 className="text-lg font-bold mb-4">Category Breakdown</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
-            {/* Expenses Chart */}
-            <div className="relative">
-              <p className="text-sm font-bold text-center text-red-400 mb-2 uppercase tracking-wider">
-                Expenses
-              </p>
-              <div className="h-full">
-                <Plot
-                  data={[
-                    {
-                      values:
-                        categoryData?.expenses?.map((d: any) => d.amount) || [],
-                      labels:
-                        categoryData?.expenses?.map((d: any) => d.category) ||
-                        [],
-                      type: "pie",
-                      hole: 0.4,
-                      marker: {
-                        colors: [
-                          "#ef4444",
-                          "#f87171",
-                          "#fca5a5",
-                          "#fecaca",
-                          "#fee2e2",
-                        ],
+      {/* Section 4: Collapsible Insights */}
+      <div>
+        <h2 className="text-xl font-bold mb-4 text-[var(--text-muted)]">More Insights</h2>
+        <div className="space-y-4">
+          {/* Monthly Expenses */}
+          <AccordionSection title="Monthly Expenses">
+            {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
+              <>
+                <div className="flex items-center justify-end mb-4">
+                  <button
+                    onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                      excludePendingRefunds
+                        ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                        : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {excludePendingRefunds
+                      ? "Pending Refunds Excluded"
+                      : "Pending Refunds Included"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                      <Calculator size={18} />
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(monthlyExpenses.avg_3_months)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
+                      <Calculator size={18} />
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(monthlyExpenses.avg_6_months)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                      <Calculator size={18} />
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
+                      <p className="text-lg font-bold">
+                        {formatCurrency(monthlyExpenses.avg_12_months)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="h-[350px]">
+                  <Plot
+                    data={[
+                      {
+                        x: monthlyExpenses.months.map((d) => d.month),
+                        y: monthlyExpenses.months.map((d) => d.expenses),
+                        type: "bar",
+                        marker: { color: "#f43f5e" },
+                        name: "Expenses",
                       },
-                      textinfo: "label+percent",
-                      hoverinfo: "label+value+percent",
-                    },
-                  ]}
-                  layout={{
-                    ...chartTheme,
-                    autosize: true,
-                    showlegend: false,
-                    margin: { t: 0, b: 0, l: 0, r: 0 },
-                  }}
-                  style={{ width: "95%", height: "95%" }}
-                  config={{ displayModeBar: false, responsive: true }}
-                />
-              </div>
-            </div>
-
-            {/* Refunds Chart */}
-            <div className="relative">
-              <p className="text-sm font-bold text-center text-emerald-400 mb-2 uppercase tracking-wider">
-                Refunds
-              </p>
-              <div className="h-full">
-                <Plot
-                  data={[
-                    {
-                      values:
-                        categoryData?.refunds?.map((d: any) => d.amount) || [],
-                      labels:
-                        categoryData?.refunds?.map((d: any) => d.category) ||
-                        [],
-                      type: "pie",
-                      hole: 0.4,
-                      marker: {
-                        colors: [
-                          "#10b981",
-                          "#34d399",
-                          "#6ee7b7",
-                          "#a7f3d0",
-                          "#d1fae5",
-                        ],
+                    ]}
+                    layout={{
+                      ...chartTheme,
+                      autosize: true,
+                      height: 350,
+                      yaxis: {
+                        title: {
+                          text: "Amount (ILS)",
+                          font: { color: "#94a3b8" },
+                        },
+                        tickfont: { color: "#94a3b8" },
                       },
-                      textinfo: "label+percent",
-                      hoverinfo: "label+value+percent",
-                    },
-                  ]}
-                  layout={{
-                    ...chartTheme,
-                    autosize: true,
-                    showlegend: false,
-                    margin: { t: 0, b: 0, l: 0, r: 0 },
-                  }}
-                  style={{ width: "95%", height: "95%" }}
-                  config={{ displayModeBar: false, responsive: true }}
-                />
+                    }}
+                    style={{ width: "100%", height: "100%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-[var(--text-muted)] text-sm">No expense data available.</p>
+            )}
+          </AccordionSection>
+
+          {/* Net Worth Over Time */}
+          <AccordionSection title="Net Worth Over Time">
+            {netWorthData && netWorthData.length > 0 ? (
+              <>
+                <div className="flex justify-end mb-4">
+                  <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                    {(
+                      [
+                        { key: "all", label: "All" },
+                        { key: "bank_balance", label: "Bank Balance" },
+                        { key: "investments", label: "Investments" },
+                        { key: "net_worth", label: "Net Worth" },
+                      ] as const
+                    ).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setNetWorthView(key)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          netWorthView === key
+                            ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                            : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-[350px]">
+                  <Plot
+                    data={getNetWorthTraces()}
+                    layout={{
+                      ...chartTheme,
+                      autosize: true,
+                      height: 350,
+                      yaxis: {
+                        title: {
+                          text: "Amount (ILS)",
+                          font: { color: "#94a3b8" },
+                        },
+                        tickfont: { color: "#94a3b8" },
+                      },
+                      legend: {
+                        orientation: "h",
+                        y: -0.15,
+                        x: 0.5,
+                        xanchor: "center",
+                      },
+                    }}
+                    style={{ width: "100%", height: "100%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-[var(--text-muted)] text-sm">No net worth data available.</p>
+            )}
+          </AccordionSection>
+
+          {/* Cash Flow (Sankey) */}
+          <AccordionSection title="Cash Flow">
+            {sankeyLoading ? (
+              <Skeleton variant="chart" className="h-[500px]" />
+            ) : (
+              <div className="h-[500px]">
+                <SankeyChart data={sankeyData} height={500} />
+              </div>
+            )}
+          </AccordionSection>
+
+          {/* Monthly Income vs Expenses */}
+          <AccordionSection title="Monthly Income vs Expenses">
+            <div className="h-[350px]">
+              <Plot
+                data={[
+                  {
+                    x: incomeOutcome?.map((d: any) => d.month) || [],
+                    y: incomeOutcome?.map((d: any) => d.income) || [],
+                    name: "Income",
+                    type: "bar",
+                    marker: { color: "#059669" },
+                  },
+                  {
+                    x: incomeOutcome?.map((d: any) => d.month) || [],
+                    y: incomeOutcome?.map((d: any) => d.expenses) || [],
+                    name: "Expenses",
+                    type: "bar",
+                    marker: { color: "#f43f5e" },
+                  },
+                ]}
+                layout={{
+                  ...chartTheme,
+                  barmode: "group",
+                  autosize: true,
+                  height: 350,
+                }}
+                style={{ width: "100%", height: "100%" }}
+                config={{ displayModeBar: false, responsive: true }}
+              />
+            </div>
+          </AccordionSection>
+
+          {/* Income by Source */}
+          {incomeBySourceData &&
+            incomeBySourceData.length > 0 && (
+              <AccordionSection title="Income by Source">
+                {(() => {
+                  const allSources = Array.from(
+                    new Set(
+                      incomeBySourceData.flatMap((d) => Object.keys(d.sources)),
+                    ),
+                  );
+                  const colors = [
+                    "#059669",
+                    "#10b981",
+                    "#34d399",
+                    "#6ee7b7",
+                    "#a7f3d0",
+                    "#047857",
+                    "#065f46",
+                    "#064e3b",
+                  ];
+                  return (
+                    <div className="h-[350px]">
+                      <Plot
+                        data={allSources.map((source, i) => ({
+                          x: incomeBySourceData.map((d) => d.month),
+                          y: incomeBySourceData.map(
+                            (d) => d.sources[source] || 0,
+                          ),
+                          name: source,
+                          type: "bar" as const,
+                          marker: { color: colors[i % colors.length] },
+                        }))}
+                        layout={{
+                          ...chartTheme,
+                          barmode: "stack",
+                          autosize: true,
+                          height: 350,
+                          yaxis: {
+                            title: {
+                              text: "Amount (ILS)",
+                              font: { color: "#94a3b8" },
+                            },
+                            tickfont: { color: "#94a3b8" },
+                          },
+                          legend: {
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
+                          },
+                        }}
+                        style={{ width: "100%", height: "100%" }}
+                        config={{ displayModeBar: false, responsive: true }}
+                      />
+                    </div>
+                  );
+                })()}
+              </AccordionSection>
+            )}
+
+          {/* Category Breakdown */}
+          <AccordionSection title="Category Breakdown">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
+              {/* Expenses Chart */}
+              <div className="relative">
+                <p className="text-sm font-bold text-center text-red-400 mb-2 uppercase tracking-wider">
+                  Expenses
+                </p>
+                <div className="h-full">
+                  <Plot
+                    data={[
+                      {
+                        values:
+                          categoryData?.expenses?.map((d: any) => d.amount) ||
+                          [],
+                        labels:
+                          categoryData?.expenses?.map(
+                            (d: any) => d.category,
+                          ) || [],
+                        type: "pie",
+                        hole: 0.4,
+                        marker: {
+                          colors: [
+                            "#ef4444",
+                            "#f87171",
+                            "#fca5a5",
+                            "#fecaca",
+                            "#fee2e2",
+                          ],
+                        },
+                        textinfo: "label+percent",
+                        hoverinfo: "label+value+percent",
+                      },
+                    ]}
+                    layout={{
+                      ...chartTheme,
+                      autosize: true,
+                      showlegend: false,
+                      margin: { t: 0, b: 0, l: 0, r: 0 },
+                    }}
+                    style={{ width: "95%", height: "95%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
+              </div>
+
+              {/* Refunds Chart */}
+              <div className="relative">
+                <p className="text-sm font-bold text-center text-emerald-400 mb-2 uppercase tracking-wider">
+                  Refunds
+                </p>
+                <div className="h-full">
+                  <Plot
+                    data={[
+                      {
+                        values:
+                          categoryData?.refunds?.map((d: any) => d.amount) ||
+                          [],
+                        labels:
+                          categoryData?.refunds?.map(
+                            (d: any) => d.category,
+                          ) || [],
+                        type: "pie",
+                        hole: 0.4,
+                        marker: {
+                          colors: [
+                            "#10b981",
+                            "#34d399",
+                            "#6ee7b7",
+                            "#a7f3d0",
+                            "#d1fae5",
+                          ],
+                        },
+                        textinfo: "label+percent",
+                        hoverinfo: "label+value+percent",
+                      },
+                    ]}
+                    layout={{
+                      ...chartTheme,
+                      autosize: true,
+                      showlegend: false,
+                      margin: { t: 0, b: 0, l: 0, r: 0 },
+                    }}
+                    style={{ width: "95%", height: "95%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          </AccordionSection>
         </div>
       </div>
 
-      {/* Latest Data Info */}
-      <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)] flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold mb-1">Data Status</h2>
-          <p className="text-[var(--text-muted)] text-sm">
-            Latest transaction date:{" "}
-            {overview?.latest_data_date
-              ? formatDate(overview.latest_data_date)
-              : "No data available"}
-          </p>
-        </div>
+      {/* Data Status — small bar at the bottom */}
+      <div className="bg-[var(--surface)] rounded-xl px-6 py-3 border border-[var(--surface-light)] flex items-center justify-between">
+        <p className="text-[var(--text-muted)] text-xs">
+          Latest transaction:{" "}
+          {overview?.latest_data_date
+            ? formatDate(overview.latest_data_date)
+            : "No data available"}
+        </p>
         <div className="text-[var(--primary)] font-bold text-xs uppercase tracking-widest px-3 py-1 bg-[var(--primary)]/10 rounded-full border border-[var(--primary)]/20">
-          Live Updates Active
+          {overviewLoading ? <Skeleton variant="text" lines={1} className="w-24" /> : "Live Updates Active"}
         </div>
       </div>
     </div>

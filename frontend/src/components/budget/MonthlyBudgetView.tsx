@@ -9,6 +9,7 @@ import {
   Copy,
 } from "lucide-react";
 import { budgetApi, pendingRefundsApi } from "../../services/api";
+import { Skeleton } from "../common/Skeleton";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
@@ -133,8 +134,17 @@ export const MonthlyBudgetView: React.FC = () => {
 
   if (isLoading)
     return (
-      <div className="p-8 text-center text-[var(--text-muted)]">
-        Loading budget data...
+      <div className="space-y-6 p-8">
+        <Skeleton variant="card" className="h-16" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Skeleton variant="card" className="h-24" />
+          <Skeleton variant="card" className="h-24" />
+          <Skeleton variant="card" className="h-24" />
+          <Skeleton variant="card" className="h-24" />
+        </div>
+        <Skeleton variant="card" className="h-20" />
+        <Skeleton variant="card" className="h-20" />
+        <Skeleton variant="card" className="h-20" />
       </div>
     );
 

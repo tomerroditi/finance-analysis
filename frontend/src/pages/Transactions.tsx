@@ -7,6 +7,7 @@ import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
 import RefundsView from "../components/transactions/RefundsView";
 import { pendingRefundsApi } from "../services/api";
 import { Plus, Trash2, DollarSign, X } from "lucide-react";
+import { Skeleton } from "../components/common/Skeleton";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 
@@ -104,7 +105,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
       </div>
 
       {isLoading ? (
-        <p className="text-[var(--text-muted)]">Loading...</p>
+        <Skeleton variant="text" lines={3} className="py-2" />
       ) : balances.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-[var(--text-muted)] text-sm">
@@ -346,8 +347,9 @@ export function Transactions() {
           {selectedService === "refunds" ? (
             <RefundsView />
           ) : isLoading ? (
-            <div className="p-8 text-center text-[var(--text-muted)]">
-              Loading...
+            <div className="p-8 space-y-4">
+              <Skeleton variant="text" lines={1} className="w-48" />
+              <Skeleton variant="card" className="h-64" />
             </div>
           ) : (
             <>

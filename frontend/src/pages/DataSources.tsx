@@ -32,6 +32,7 @@ import type { BankBalance } from "../services/api";
 
 import { useDemoMode } from "../context/DemoModeContext";
 import { useScraping } from "../hooks/useScraping";
+import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 
 function formatRelativeDate(dateString: string): string {
@@ -244,7 +245,13 @@ export function DataSources() {
 
   if (isLoading)
     return (
-      <div className="p-8 text-center text-[var(--text-muted)]">Loading...</div>
+      <div className="space-y-8 p-8">
+        <Skeleton variant="text" lines={2} className="w-64" />
+        <div className="grid grid-cols-1 gap-4">
+          <Skeleton variant="card" className="h-28" />
+          <Skeleton variant="card" className="h-28" />
+        </div>
+      </div>
     );
 
   return (
