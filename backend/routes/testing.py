@@ -6,6 +6,10 @@ to an isolated environment (separate DB, credentials, and categories) to
 allow safe testing without affecting production data.
 """
 
+import os
+import shutil
+from datetime import date, timedelta
+
 from sqlalchemy import inspect, text
 
 from fastapi import APIRouter
@@ -18,6 +22,10 @@ from backend.services.credentials_service import CredentialsService
 from backend.models import Base
 
 router = APIRouter()
+
+# Reference date used when generating demo_data.db.
+# All dates in the DB are relative to this date.
+DEMO_REFERENCE_DATE = date(2026, 2, 25)
 
 
 def _sync_missing_columns(engine) -> None:
@@ -40,6 +48,73 @@ def _sync_missing_columns(engine) -> None:
                         text(f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}")
                     )
                     conn.commit()
+
+
+def _prepare_demo_database() -> None:
+    """Copy the pre-built demo DB and shift all dates to be relative to today.
+
+    Copies ``backend/resources/demo_data.db`` to the demo environment directory
+    and runs SQL UPDATE statements to shift every date column by the offset
+    between the reference date (when the DB was generated) and today.
+    """
+    config = AppConfig()
+    demo_db_path = config.get_db_path()
+    source_db = os.path.join(
+        os.path.dirname(__file__), "..", "resources", "demo_data.db"
+    )
+
+    # Copy pre-built DB (overwrites any previous demo data)
+    if os.path.exists(source_db):
+        shutil.copy2(source_db, demo_db_path)
+
+    # Shift dates
+    offset_days = (date.today() - DEMO_REFERENCE_DATE).days
+    if offset_days == 0:
+        return
+
+    engine = database.get_engine()
+    with engine.connect() as conn:
+        offset_str = f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
+
+        # Shift date columns in transaction tables
+        for table in [
+            "bank_transactions",
+            "credit_card_transactions",
+            "cash_transactions",
+            "manual_investment_transactions",
+        ]:
+            conn.execute(text(
+                f"UPDATE {table} SET date = date(date, :offset)"
+            ), {"offset": offset_str})
+
+        # Shift investment balance snapshots
+        conn.execute(text(
+            "UPDATE investment_balance_snapshots SET date = date(date, :offset)"
+        ), {"offset": offset_str})
+
+        # Shift investment date fields
+        for col in ["created_date", "closed_date", "liquidity_date", "maturity_date"]:
+            conn.execute(text(
+                f"UPDATE investments SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
+            ), {"offset": offset_str})
+
+        # Shift scraping history
+        conn.execute(text(
+            "UPDATE scraping_history SET date = date(date, :offset)"
+        ), {"offset": offset_str})
+
+        # Shift budget rules year/month
+        rows = conn.execute(text(
+            "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"
+        )).fetchall()
+        for row in rows:
+            old_date = date(row[1], row[2], 1)
+            new_date = old_date + timedelta(days=offset_days)
+            conn.execute(text(
+                "UPDATE budget_rules SET year = :year, month = :month WHERE id = :id"
+            ), {"year": new_date.year, "month": new_date.month, "id": row[0]})
+
+        conn.commit()
 
 
 class DemoModeRequest(BaseModel):
@@ -84,9 +159,8 @@ async def toggle_demo_mode(
             engine = database.get_engine()
             Base.metadata.create_all(bind=engine)
             _sync_missing_columns(engine)
+            _prepare_demo_database()
 
-            # Use a fresh session from the NEW engine (demo DB) — the old
-            # Depends(get_database) session still points at the production DB.
             with get_db_context() as demo_db:
                 creds_service = CredentialsService(demo_db)
                 creds_service.seed_demo_credentials()
