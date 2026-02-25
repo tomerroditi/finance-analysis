@@ -46,6 +46,6 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchOpen: (open) => set({ searchOpen: open }),
 
   // Auto Tagging Panel
-  autoTaggingPanelOpen: true,
+  autoTaggingPanelOpen: false,
   toggleAutoTaggingPanel: () => set((state) => ({ autoTaggingPanelOpen: !state.autoTaggingPanelOpen })),
 }));

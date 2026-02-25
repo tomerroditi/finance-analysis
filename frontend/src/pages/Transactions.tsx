@@ -241,6 +241,7 @@ export function Transactions() {
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [filterOnlyUntagged, setFilterOnlyUntagged] = useState(false);
 
   const {
     data: transactions,
@@ -351,6 +352,19 @@ export function Transactions() {
           ) : (
             <>
               {selectedService === "cash" && <CashBalancesCard queryClient={queryClient} />}
+              {(() => {
+                const uncategorizedCount = transactions?.filter(
+                  (t: { category?: string }) => !t.category || t.category === "Uncategorized"
+                ).length ?? 0;
+                return uncategorizedCount > 0 && (
+                  <button
+                    onClick={() => setFilterOnlyUntagged(true)}
+                    className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-500/20 transition-colors text-left mb-4"
+                  >
+                    <strong>{uncategorizedCount} uncategorized transactions</strong> — click to filter
+                  </button>
+                );
+              })()}
               <TransactionsTable
                 transactions={transactions || []}
                 showSelection
@@ -366,6 +380,7 @@ export function Transactions() {
                 onTransactionUpdated={refreshAll}
                 pendingRefundsMap={pendingRefundsMap}
                 refundLinksMap={refundLinksMap}
+                onlyUntagged={filterOnlyUntagged}
                 onAddTransaction={
                   (selectedService === "cash" || selectedService === "manual_investments")
                     ? () => setIsCreateModalOpen(true)

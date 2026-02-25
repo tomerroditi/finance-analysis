@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpDown,
@@ -19,6 +19,7 @@ import {
   Filter,
   ChevronUp,
   ChevronDown,
+  Settings2,
 } from "lucide-react";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
@@ -76,6 +77,9 @@ export interface TransactionsTableProps {
   pendingRefundsMap?: Map<string, any>;
   refundLinksMap?: Map<string, number>;
 
+  // External filter control
+  onlyUntagged?: boolean;
+
   // Styling
   compact?: boolean;
 }
@@ -112,6 +116,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onAddTransaction,
   pendingRefundsMap,
   refundLinksMap,
+  onlyUntagged: onlyUntaggedProp,
   compact = false,
 }) => {
   const queryClient = useQueryClient();
@@ -123,6 +128,47 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     key: "date",
     direction: "desc",
   });
+
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
+    () => new Set(["date", "description", "category", "amount"])
+  );
+  const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
+  const columnDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Category icons
+  const { data: categoryIcons } = useQuery({
+    queryKey: ["category-icons"],
+    queryFn: () => taggingApi.getIcons().then((res) => res.data),
+  });
+
+  // Close column dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        columnDropdownRef.current &&
+        !columnDropdownRef.current.contains(event.target as Node)
+      ) {
+        setColumnDropdownOpen(false);
+      }
+    };
+    if (columnDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [columnDropdownOpen]);
+
+  const toggleColumn = (column: string) => {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(column)) {
+        next.delete(column);
+      } else {
+        next.add(column);
+      }
+      return next;
+    });
+  };
   const {
     filters,
     options: filterOptions,
@@ -220,6 +266,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   useEffect(() => {
     setCurrentPage(1);
   }, [transactions, filters]);
+
+  // Sync external onlyUntagged prop with internal filter
+  useEffect(() => {
+    if (onlyUntaggedProp !== undefined) {
+      updateFilters({ onlyUntagged: onlyUntaggedProp });
+    }
+  }, [onlyUntaggedProp, updateFilters]);
 
   // Sync selection with parent
   useEffect(() => {
@@ -472,7 +525,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   );
 
   // Calculate column count for empty state
-  const columnCount = 5 + (showSelection ? 1 : 0) + (showActions ? 1 : 0);
+  const columnCount = visibleColumns.size + (showSelection ? 1 : 0) + (showActions ? 1 : 0);
 
 
   return (
@@ -520,6 +573,44 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 >
                   <X size={14} />
                 </button>
+              )}
+            </div>
+            <div className="relative" ref={columnDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setColumnDropdownOpen(!columnDropdownOpen)}
+                className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors shrink-0 ${
+                  columnDropdownOpen
+                    ? "bg-[var(--primary)]/10 border-[var(--primary)]/30 text-[var(--primary)]"
+                    : "bg-[var(--surface-base)] border-[var(--surface-light)] text-[var(--text-muted)] hover:border-[var(--primary)]/50"
+                }`}
+                title="Toggle columns"
+              >
+                <Settings2 size={14} />
+              </button>
+              {columnDropdownOpen && (
+                <div className="absolute top-full right-0 mt-1 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl z-30 py-1 min-w-[160px]">
+                  {[
+                    { key: "date", label: "Date" },
+                    { key: "description", label: "Description" },
+                    { key: "category", label: "Category" },
+                    { key: "account", label: "Account" },
+                    { key: "amount", label: "Amount" },
+                  ].map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-default)] hover:bg-[var(--surface-light)] cursor-pointer select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.has(key)}
+                        onChange={() => toggleColumn(key)}
+                        className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
@@ -601,20 +692,30 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   />
                 </th>
               )}
-              <SortableHeader label="Date" sortKey="date" width="120px" />
-              <SortableHeader label="Account" sortKey="account" width="180px" />
-              <SortableHeader label="Description" sortKey="desc" />
-              <SortableHeader
-                label="Category"
-                sortKey="category"
-                width="180px"
-              />
-              <SortableHeader
-                label="Amount"
-                sortKey="amount"
-                align="right"
-                width="120px"
-              />
+              {visibleColumns.has("date") && (
+                <SortableHeader label="Date" sortKey="date" width="120px" />
+              )}
+              {visibleColumns.has("account") && (
+                <SortableHeader label="Account" sortKey="account" width="180px" />
+              )}
+              {visibleColumns.has("description") && (
+                <SortableHeader label="Description" sortKey="desc" />
+              )}
+              {visibleColumns.has("category") && (
+                <SortableHeader
+                  label="Category"
+                  sortKey="category"
+                  width="180px"
+                />
+              )}
+              {visibleColumns.has("amount") && (
+                <SortableHeader
+                  label="Amount"
+                  sortKey="amount"
+                  align="right"
+                  width="120px"
+                />
+              )}
               {showActions && (
                 <th
                   className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-sm font-medium text-[var(--text-muted)]`}
@@ -656,51 +757,63 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       />
                     </td>
                   )}
-                  <td
-                    className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-[var(--text-muted)]`}
-                  >
-                    {formatDate(tx.date)}
-                  </td>
-                  <td
-                    className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
-                    title={`${tx.provider || "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
-                        {tx.provider ||
-                          (tx.source?.includes("cash") ? "Cash" : "Manual")}
+                  {visibleColumns.has("date") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-[var(--text-muted)]`}
+                    >
+                      {formatDate(tx.date)}
+                    </td>
+                  )}
+                  {visibleColumns.has("account") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
+                      title={`${tx.provider || "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
+                          {tx.provider ||
+                            (tx.source?.includes("cash") ? "Cash" : "Manual")}
+                        </span>
+                        <span className="truncate font-medium text-[var(--text-default)]">
+                          {tx.account_name}
+                          {tx.source === "credit_card_transactions" && tx.account_number && (
+                            <span className="text-[var(--text-muted)] ml-1">
+                              ({tx.account_number.slice(-4)})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </td>
+                  )}
+                  {visibleColumns.has("description") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium truncate max-w-[200px]`}
+                      title={getDescription(tx)}
+                    >
+                      {getDescription(tx)}
+                    </td>
+                  )}
+                  {visibleColumns.has("category") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-muted)]`}
+                    >
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap">
+                        {categoryIcons?.[tx.category as string] && <span>{categoryIcons[tx.category as string]}</span>}
+                        <span>{tx.category || "-"}</span>
+                        {tx.tag && <span className="text-[var(--text-muted)]">/ {tx.tag}</span>}
                       </span>
-                      <span className="truncate font-medium text-[var(--text-default)]">
-                        {tx.account_name}
-                        {tx.source === "credit_card_transactions" && tx.account_number && (
-                          <span className="text-[var(--text-muted)] ml-1">
-                            ({tx.account_number.slice(-4)})
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </td>
-                  <td
-                    className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium truncate max-w-[200px]`}
-                    title={getDescription(tx)}
-                  >
-                    {getDescription(tx)}
-                  </td>
-                  <td
-                    className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-muted)]`}
-                  >
-                    <span className="px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs text-[var(--text-muted)] border border-[var(--surface-light)]">
-                      {tx.category || "-"} / {tx.tag || "-"}
-                    </span>
-                  </td>
-                  <td
-                    className={`px-4 ${compact ? "py-2" : "py-3"} text-right font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
-                  >
-                    {new Intl.NumberFormat("he-IL", {
-                      style: "currency",
-                      currency: "ILS",
-                    }).format(tx.amount)}
-                  </td>
+                    </td>
+                  )}
+                  {visibleColumns.has("amount") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-right font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
+                    >
+                      {new Intl.NumberFormat("he-IL", {
+                        style: "currency",
+                        currency: "ILS",
+                      }).format(tx.amount)}
+                    </td>
+                  )}
                   {showActions && (
                     <td className={`px-4 ${compact ? "py-2" : "py-3"}`}>
                       <div className="flex items-center justify-center gap-1">
