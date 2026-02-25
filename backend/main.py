@@ -6,11 +6,13 @@ This module sets up the FastAPI application with CORS, routes, and exception han
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import AppConfig
 from backend.database import get_db_context, get_engine
@@ -215,17 +217,21 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     )
 
 
-@app.get("/")
-async def root():
-    """Root endpoint returning API info."""
-    return {
-        "name": "Finance Analysis API",
-        "version": "1.0.0",
-        "docs": "/docs",
-    }
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# Serve frontend static build in production
+_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="static-assets")
+
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        """Serve the React SPA for all non-API routes."""
+        file_path = _frontend_dist / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_frontend_dist / "index.html")
