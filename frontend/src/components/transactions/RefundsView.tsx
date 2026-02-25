@@ -9,6 +9,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
+import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 
 const RefundsView: React.FC = () => {
   const { data: refunds, isLoading } = useQuery({
@@ -73,8 +74,8 @@ const RefundsView: React.FC = () => {
               <span className="font-semibold text-lg">
                 {item.description || "Unknown Expense"}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)] uppercase">
-                {item.provider || item.source_table}
+              <span className="text-xs px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
+                {item.provider ? humanizeProvider(item.provider) : humanizeService(item.source_table)}
               </span>
             </div>
             <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
@@ -141,8 +142,8 @@ const RefundsView: React.FC = () => {
                     ({link.date})
                   </span>
                 </div>
-                <div className="text-xs text-[var(--text-muted)] uppercase opacity-50 group-hover:opacity-100 transition-opacity">
-                  {link.refund_source}
+                <div className="text-xs text-[var(--text-muted)] opacity-50 group-hover:opacity-100 transition-opacity">
+                  {humanizeService(link.refund_source)}
                 </div>
               </div>
             ))}

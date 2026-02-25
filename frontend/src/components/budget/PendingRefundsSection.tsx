@@ -2,6 +2,7 @@ import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Link2, X } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
+import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -82,8 +83,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                     <span>•</span>
                   </>
                 )}
-                <span className="uppercase">
-                  {item.provider || item.source_table}
+                <span>
+                  {item.provider ? humanizeProvider(item.provider) : humanizeService(item.source_table)}
                 </span>
                 {item.category && (
                   <>

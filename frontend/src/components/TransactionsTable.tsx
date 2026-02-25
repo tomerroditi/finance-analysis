@@ -30,6 +30,7 @@ import {
   cashBalancesApi,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
+import { humanizeProvider, humanizeService } from "../utils/textFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { SelectDropdown } from "./common/SelectDropdown";
@@ -767,12 +768,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   {visibleColumns.has("account") && (
                     <td
                       className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
-                      title={`${tx.provider || "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
+                      title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
                     >
                       <div className="flex flex-col">
                         <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
-                          {tx.provider ||
-                            (tx.source?.includes("cash") ? "Cash" : "Manual")}
+                          {tx.provider
+                            ? humanizeProvider(tx.provider)
+                            : tx.source?.includes("cash") ? "Cash" : "Manual"}
                         </span>
                         <span className="truncate font-medium text-[var(--text-default)]">
                           {tx.account_name}

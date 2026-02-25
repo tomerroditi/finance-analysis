@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
+import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 
 interface LinkRefundModalProps {
   isOpen: boolean;
@@ -160,8 +161,8 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         {pending.description || "Unknown Expense"}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                        <span className="uppercase">
-                          {pending.provider || pending.source_table}
+                        <span>
+                          {pending.provider ? humanizeProvider(pending.provider) : humanizeService(pending.source_table)}
                         </span>
                         <span>•</span>
                         <span>{pending.date || "No date"}</span>
