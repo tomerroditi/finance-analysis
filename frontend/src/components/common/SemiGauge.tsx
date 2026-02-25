@@ -10,36 +10,12 @@ const formatCurrency = (n: number) =>
         style: "currency",
         currency: "ILS",
         maximumFractionDigits: 0,
-    }).format(n);
+    }).format(n || 0);
 
 function getGaugeColor(percentage: number): string {
     if (percentage > 100) return "#ef4444";
     if (percentage >= 75) return "#f59e0b";
     return "#22c55e";
-}
-
-function describeArc(
-    cx: number,
-    cy: number,
-    r: number,
-    startAngle: number,
-    endAngle: number,
-): string {
-    const startX = cx + r * Math.cos(startAngle);
-    const startY = cy - r * Math.sin(startAngle);
-    const endX = cx + r * Math.cos(endAngle);
-    const endY = cy - r * Math.sin(endAngle);
-
-    // The arc spans from startAngle down to endAngle (going clockwise in SVG).
-    // Since startAngle = π and endAngle decreases toward 0, the angular span
-    // is startAngle - endAngle. largeArcFlag = 1 when span > π.
-    const angularSpan = startAngle - endAngle;
-    const largeArcFlag = angularSpan > Math.PI ? 1 : 0;
-
-    // sweep-flag = 0 for clockwise in standard math (which is counterclockwise
-    // in SVG's flipped y-axis, but since we negate sin for y, we use sweep = 0
-    // to go from left to right along the top of the semicircle).
-    return `M ${startX} ${startY} A ${r} ${r} 0 ${largeArcFlag} 0 ${endX} ${endY}`;
 }
 
 export function SemiGauge({
@@ -51,27 +27,21 @@ export function SemiGauge({
     const percentage = budget > 0 ? (spent / budget) * 100 : 0;
     const color = getGaugeColor(percentage);
 
+    const strokeWidth = 14;
     const cx = size / 2;
-    const cy = size / 2 + 10;
-    const r = size / 2 - 16;
+    const cy = size / 2;
+    const r = cx - strokeWidth;
 
-    // Background arc: full semicircle from π (left) to 0 (right)
-    const bgPath = describeArc(cx, cy, r, Math.PI, 0);
+    // Arc lengths: using stroke-dasharray on a circle
+    const circumference = 2 * Math.PI * r;
+    const semicircle = circumference / 2;
 
-    // Filled arc: proportional to percentage, capped at 120% visually
+    // Fill: percentage of the semicircle, capped at 120% visually
     const fillRatio = Math.min(percentage, 120) / 100;
-    const showFilled = spent > 0 && budget > 0;
+    const fillLength = fillRatio * semicircle;
 
-    // The filled arc goes from π toward 0. At 100%, endAngle = 0.
-    // At 120%, endAngle goes slightly past 0 — but we cap at 0 since
-    // our semicircle only spans π to 0. We map 0–120% to π–0 range.
-    const filledEndAngle = Math.PI * (1 - fillRatio);
-    const filledPath = showFilled
-        ? describeArc(cx, cy, r, Math.PI, Math.max(filledEndAngle, 0))
-        : "";
-
-    // SVG height: only need the top half of the circle plus some padding
-    const svgHeight = cy + 4;
+    // SVG only needs the top half of the circle + padding for stroke
+    const svgHeight = cy + strokeWidth;
 
     return (
         <div className={className}>
@@ -80,30 +50,38 @@ export function SemiGauge({
                 height={svgHeight}
                 viewBox={`0 0 ${size} ${svgHeight}`}
             >
-                {/* Background arc */}
-                <path
-                    d={bgPath}
+                {/* Background track: full semicircle */}
+                <circle
+                    cx={cx}
+                    cy={cy}
+                    r={r}
                     fill="none"
                     stroke="var(--surface-light)"
-                    strokeWidth={12}
+                    strokeWidth={strokeWidth}
                     strokeLinecap="round"
+                    strokeDasharray={`${semicircle} ${circumference}`}
+                    transform={`rotate(180 ${cx} ${cy})`}
                 />
 
                 {/* Filled arc */}
-                {showFilled && (
-                    <path
-                        d={filledPath}
+                {spent > 0 && budget > 0 && (
+                    <circle
+                        cx={cx}
+                        cy={cy}
+                        r={r}
                         fill="none"
                         stroke={color}
-                        strokeWidth={12}
+                        strokeWidth={strokeWidth}
                         strokeLinecap="round"
+                        strokeDasharray={`${fillLength} ${circumference}`}
+                        transform={`rotate(180 ${cx} ${cy})`}
                     />
                 )}
 
                 {/* Center text: spent amount */}
                 <text
                     x={cx}
-                    y={cy - 28}
+                    y={cy - 24}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fill="currentColor"
@@ -116,7 +94,7 @@ export function SemiGauge({
                 {/* Subtext: of budget */}
                 <text
                     x={cx}
-                    y={cy - 4}
+                    y={cy - 2}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fill="var(--text-muted)"
