@@ -107,10 +107,10 @@ class TestTaggingRepositoryLoad:
 @pytest.fixture(autouse=True)
 def reset_config():
     """Reset AppConfig singleton state between tests."""
-    AppConfig._test_mode = False
+    AppConfig._demo_mode = False
     AppConfig._base_user_dir = None
     yield
-    AppConfig._test_mode = False
+    AppConfig._demo_mode = False
     AppConfig._base_user_dir = None
 ```
 

@@ -70,7 +70,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 
 ## UI Testing
 
-When smoke-testing UI changes in the browser, **enable Test Mode first** (toggle in the top-right header). Test Mode switches the backend to a separate test database so real financial data is not accidentally modified. Remember to disable it when done.
+When smoke-testing UI changes in the browser, **enable Demo Mode first** (toggle in the top-right header). Demo Mode switches the backend to a separate demo database with pre-built sample data, so real financial data is not accidentally modified. Remember to disable it when done.
 
 ## Gotchas
 
