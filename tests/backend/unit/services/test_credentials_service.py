@@ -135,7 +135,7 @@ class TestCredentialsService:
 
     def test_get_available_providers(self, monkeypatch):
         """Verify providers filtered by test mode (production excludes test_ prefixed)."""
-        monkeypatch.setattr("backend.config.AppConfig.is_test_mode", False)
+        monkeypatch.setattr("backend.config.AppConfig.is_demo_mode", False)
 
         providers = CredentialsService.get_available_providers()
 

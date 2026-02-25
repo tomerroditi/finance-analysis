@@ -34,18 +34,18 @@ class CredentialsRepository:
 
     @property
     def keyring_service(self) -> str:
-        """Keyring service name, with test suffix in test mode.
+        """Keyring service name, with demo suffix in demo mode.
 
         Returns
         -------
         str
             Keyring service identifier used to namespace all stored secrets.
-            Appends "-test" suffix when the application is running in test mode
+            Appends "-demo" suffix when the application is running in demo mode
             to avoid polluting production keyring entries.
         """
         service = _KEYRING_SERVICE
-        if AppConfig().is_test_mode:
-            service += "-test"
+        if AppConfig().is_demo_mode:
+            service += "-demo"
         return service
 
     def _keyring_key(

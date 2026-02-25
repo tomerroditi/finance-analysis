@@ -234,9 +234,9 @@ class CredentialsService:
     @staticmethod
     def get_available_providers() -> Dict[str, List[str]]:
         """
-        Get available providers filtered by the current test/production mode.
+        Get available providers filtered by the current demo/production mode.
 
-        Providers whose names contain ``"test_"`` are only shown in test mode,
+        Providers whose names contain ``"test_"`` are only shown in demo mode,
         and excluded in production mode.
 
         Returns
@@ -245,9 +245,9 @@ class CredentialsService:
             Dictionary with keys ``"banks"`` and ``"credit_cards"``, each
             containing a list of provider identifier strings.
         """
-        is_test = AppConfig().is_test_mode
-        banks = [p for p in bank_providers if ("test_" in p) == is_test]
-        ccs = [p for p in cc_providers if ("test_" in p) == is_test]
+        is_demo = AppConfig().is_demo_mode
+        banks = [p for p in bank_providers if ("test_" in p) == is_demo]
+        ccs = [p for p in cc_providers if ("test_" in p) == is_demo]
         return {"banks": banks, "credit_cards": ccs}
 
     def delete_credential(self, service: str, provider: str, account_name: str) -> None:
@@ -266,9 +266,9 @@ class CredentialsService:
         self.repository.delete_credentials(service, provider, account_name)
         self._invalidate_cache()
 
-    def seed_test_credentials(self) -> None:
+    def seed_demo_credentials(self) -> None:
         """
-        Seed dummy credentials for all test scrapers if not already present.
+        Seed dummy credentials for all demo scrapers if not already present.
 
         Creates credentials for ``test_bank``, ``test_bank_2fa``,
         ``test_credit_card``, and ``test_credit_card_2fa`` providers.
