@@ -28,7 +28,7 @@ export function Sidebar() {
   // Count uncategorized transactions
   const { data: allTransactions } = useQuery({
     queryKey: ["transactions", "all", false],
-    queryFn: () => transactionsApi.getAll("all", false).then((res) => res.data),
+    queryFn: () => transactionsApi.getAll(undefined, false).then((res) => res.data),
     staleTime: 5 * 60 * 1000,
   });
 

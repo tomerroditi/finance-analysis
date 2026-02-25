@@ -31,7 +31,7 @@ const formatCurrency = (val: number) =>
     style: "currency",
     currency: "ILS",
     maximumFractionDigits: 0,
-  }).format(val);
+  }).format(val || 0);
 
 const chartTheme = {
   paper_bgcolor: "rgba(0,0,0,0)",
@@ -550,7 +550,7 @@ export function Dashboard() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
 
-  const { data: budgetAnalysis, isLoading: budgetLoading } = useQuery({
+  const { data: rawBudgetAnalysis, isLoading: budgetLoading } = useQuery({
     queryKey: ["budget-analysis", currentYear, currentMonth, isDemoMode],
     queryFn: async () => {
       const res = await budgetApi.getAnalysis(currentYear, currentMonth, false);
@@ -558,10 +558,29 @@ export function Dashboard() {
     },
   });
 
+  // Transform nested API response into flat BudgetRule objects
+  const budgetAnalysis = useMemo(() => {
+    if (!rawBudgetAnalysis?.rules) return undefined;
+    const rules: BudgetRule[] = rawBudgetAnalysis.rules.map((item: any) => ({
+      id: item.rule.id,
+      name: item.rule.name,
+      category: item.rule.category,
+      tags: item.rule.tags,
+      budget_amount: item.rule.amount,
+      spent_amount: item.current_amount,
+    }));
+    const totalRule = rules.find((r) => r.name === "Total Budget");
+    return {
+      rules,
+      total_budget: totalRule?.budget_amount,
+      total_spent: totalRule?.spent_amount,
+    };
+  }, [rawBudgetAnalysis]);
+
   const { data: allTransactions, isLoading: transactionsLoading } = useQuery({
     queryKey: ["all-transactions", isDemoMode],
     queryFn: async () => {
-      const res = await transactionsApi.getAll("all", false);
+      const res = await transactionsApi.getAll(undefined, false);
       return res.data;
     },
   });
