@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
@@ -22,7 +22,6 @@ import { Sparkline } from "../components/common/Sparkline";
 import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
-import { formatDate } from "../utils/dateFormatting";
 import { isToday, isYesterday, format } from "date-fns";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
@@ -60,7 +59,7 @@ function FinancialHealthHeader({
   portfolioAnalysis: { total_value: number; allocation: { name: string; balance: number }[] } | undefined;
   isLoading: boolean;
 }) {
-  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
   const previousNetWorth =
@@ -75,7 +74,7 @@ function FinancialHealthHeader({
   const last6Bank = netWorthData?.slice(-6).map((d) => d.bank_balance) ?? [];
   const last6Investments = netWorthData?.slice(-6).map((d) => d.investment_value) ?? [];
 
-  const toggleCard = (card: string) => setExpandedCard(expandedCard === card ? null : card);
+  const toggleExpanded = () => setExpanded((prev) => !prev);
 
   if (isLoading) {
     return (
@@ -96,7 +95,7 @@ function FinancialHealthHeader({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-6 pt-6 pb-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Net Worth
+            💰 Net Worth
           </p>
           <p className="text-3xl font-bold mt-0.5">
             {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
@@ -124,19 +123,19 @@ function FinancialHealthHeader({
       <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--surface-light)] border-t border-[var(--surface-light)]">
         {/* Bank Balance */}
         <button
-          onClick={() => toggleCard("bank")}
+          onClick={toggleExpanded}
           className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
         >
           <div className="flex items-center justify-between">
             <div className="min-w-0">
-              <p className="text-xs text-[var(--text-muted)]">Bank Balance</p>
+              <p className="text-xs text-[var(--text-muted)]">🏦 Bank Balance</p>
               <p className="text-lg font-bold mt-0.5">
                 {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
               </p>
             </div>
             {last6Bank.length >= 2 && <Sparkline data={last6Bank} color="#f59e0b" />}
           </div>
-          {expandedCard === "bank" && bankBalances && bankBalances.length > 1 && (
+          {expanded && bankBalances && bankBalances.length > 0 && (
             <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
               {bankBalances.map((b) => (
                 <div
@@ -153,21 +152,21 @@ function FinancialHealthHeader({
 
         {/* Investments */}
         <button
-          onClick={() => toggleCard("investments")}
+          onClick={toggleExpanded}
           className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
         >
           <div className="flex items-center justify-between">
             <div className="min-w-0">
-              <p className="text-xs text-[var(--text-muted)]">Investments</p>
+              <p className="text-xs text-[var(--text-muted)]">📈 Investments</p>
               <p className="text-lg font-bold mt-0.5">
                 {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
               </p>
             </div>
             {last6Investments.length >= 2 && <Sparkline data={last6Investments} color="#6366f1" />}
           </div>
-          {expandedCard === "investments" &&
+          {expanded &&
             portfolioAnalysis?.allocation &&
-            portfolioAnalysis.allocation.length > 1 && (
+            portfolioAnalysis.allocation.length > 0 && (
               <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
                 {portfolioAnalysis.allocation.map((inv) => (
                   <div key={inv.name} className="flex items-center justify-between text-sm">
@@ -185,16 +184,16 @@ function FinancialHealthHeader({
           const hasCash = cashBalances && cashBalances.length > 0;
           return hasCash ? (
             <button
-              onClick={() => toggleCard("cash")}
+              onClick={toggleExpanded}
               className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
             >
               <div className="flex items-center justify-between">
                 <div className="min-w-0">
-                  <p className="text-xs text-[var(--text-muted)]">Cash</p>
+                  <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
                   <p className="text-lg font-bold mt-0.5">{formatCurrency(totalCash)}</p>
                 </div>
               </div>
-              {expandedCard === "cash" && cashBalances.length > 1 && (
+              {expanded && cashBalances.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
                   {cashBalances.map((c) => (
                     <div key={c.account_name} className="flex items-center justify-between text-sm">
@@ -207,9 +206,9 @@ function FinancialHealthHeader({
             </button>
           ) : (
             <div className="px-5 py-4">
-              <p className="text-xs text-[var(--text-muted)]">Cash</p>
+              <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
               <p className="text-lg font-bold mt-0.5">{formatCurrency(0)}</p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">(no data)</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">📭 (no data)</p>
             </div>
           );
         })()}
@@ -260,12 +259,12 @@ function MonthlySpendingGauge({
     budgetAnalysis?.total_spent ??
     (budgetAnalysis?.rules?.reduce((sum, r) => sum + r.spent_amount, 0) ?? 0);
 
-  // Filter out "Other Expenses" catch-all and "Total Budget" special rules
+  // Filter out "Total Budget" special rule, sort by spent descending
   const miniRules = useMemo(() => {
     if (!budgetAnalysis?.rules) return [];
-    return budgetAnalysis.rules.filter(
-      (r) => r.name !== "Other Expenses" && r.name !== "Total Budget",
-    );
+    return budgetAnalysis.rules
+      .filter((r) => r.name !== "Total Budget")
+      .sort((a, b) => b.spent_amount - a.spent_amount);
   }, [budgetAnalysis]);
 
   if (isLoading) {
@@ -285,11 +284,11 @@ function MonthlySpendingGauge({
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            This Month &mdash; {monthName}
+            🎯 This Month &mdash; {monthName}
           </p>
         </div>
         <span className="text-xs text-[var(--text-muted)]">
-          {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+          ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
         </span>
       </div>
 
@@ -298,35 +297,53 @@ function MonthlySpendingGauge({
         <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
       </div>
 
-      {/* Mini budget cards */}
+      {/* Budget rule cards */}
       {miniRules.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           {miniRules.map((rule) => {
             const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
+            const remaining = rule.budget_amount - rule.spent_amount;
             const icon = categoryIcons?.[rule.category] ?? "";
             return (
               <div
                 key={rule.id}
-                className="bg-[var(--surface-light)] rounded-xl p-3 space-y-1.5"
+                className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
               >
-                <div className="flex items-center gap-1.5">
-                  {icon && <span className="text-sm">{icon}</span>}
-                  <span className="text-xs font-semibold truncate">{rule.name}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
+                    <span className="text-xs font-semibold truncate">{rule.name}</span>
+                  </div>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                    pct > 100
+                      ? "bg-rose-500/20 text-rose-400"
+                      : pct >= 75
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "bg-emerald-500/20 text-emerald-400"
+                  }`}>
+                    {Math.round(pct)}%
+                  </span>
                 </div>
                 <p className="text-sm font-bold">
                   {formatCurrency(rule.spent_amount)}
                   <span className="text-xs font-normal text-[var(--text-muted)]">
-                    {" "}
-                    / {formatCurrency(rule.budget_amount)}
+                    {" "}/ {formatCurrency(rule.budget_amount)}
                   </span>
                 </p>
-                {/* Thin progress bar */}
+                {/* Progress bar */}
                 <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
                     style={{ width: `${Math.min(pct, 100)}%` }}
                   />
                 </div>
+                <p className={`text-[10px] font-medium ${
+                  remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
+                }`}>
+                  {remaining >= 0
+                    ? `${formatCurrency(remaining)} left`
+                    : `${formatCurrency(Math.abs(remaining))} over budget`}
+                </p>
               </div>
             );
           })}
@@ -339,7 +356,7 @@ function MonthlySpendingGauge({
           to="/budget"
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          View All Budget Rules &rarr;
+          📋 View All Budget Rules &rarr;
         </Link>
       </div>
     </div>
@@ -368,6 +385,8 @@ function formatTransactionDate(dateStr: string): string {
   return format(d, "d MMM");
 }
 
+const TRANSACTIONS_PAGE_SIZE = 20;
+
 function RecentTransactionsFeed({
   transactions,
   categoryIcons,
@@ -377,19 +396,51 @@ function RecentTransactionsFeed({
   categoryIcons: Record<string, string> | undefined;
   isLoading: boolean;
 }) {
-  const recent = useMemo(() => {
+  const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const sorted = useMemo(() => {
     if (!transactions) return [];
-    const sorted = [...transactions].sort(
+    return [...transactions].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
-    return sorted.slice(0, 7);
+  }, [transactions]);
+
+  const visible = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
+  const hasMore = visibleCount < sorted.length;
+
+  // IntersectionObserver to auto-load more when sentinel enters viewport
+  const handleObserver = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasMore) {
+        setVisibleCount((prev) => Math.min(prev + TRANSACTIONS_PAGE_SIZE, sorted.length));
+      }
+    },
+    [hasMore, sorted.length],
+  );
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(handleObserver, {
+      root: node.closest("[data-scroll-root]"),
+      rootMargin: "200px",
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [handleObserver]);
+
+  // Reset visible count when transactions change (e.g. demo mode toggle)
+  useEffect(() => {
+    setVisibleCount(TRANSACTIONS_PAGE_SIZE);
   }, [transactions]);
 
   // Group by date label
   const grouped = useMemo(() => {
     const groups: { label: string; items: Transaction[] }[] = [];
     let currentLabel = "";
-    for (const tx of recent) {
+    for (const tx of visible) {
       const label = formatTransactionDate(tx.date);
       if (label !== currentLabel) {
         groups.push({ label, items: [] });
@@ -398,7 +449,7 @@ function RecentTransactionsFeed({
       groups[groups.length - 1].items.push(tx);
     }
     return groups;
-  }, [recent]);
+  }, [visible]);
 
   if (isLoading) {
     return (
@@ -409,26 +460,31 @@ function RecentTransactionsFeed({
     );
   }
 
-  if (recent.length === 0) return null;
+  if (sorted.length === 0) return null;
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Recent Transactions
+          🧾 Recent Transactions
         </p>
         <Link
           to="/transactions"
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          View All &rarr;
+          👀 View All &rarr;
         </Link>
       </div>
 
-      <div className="space-y-4">
+      <div
+        data-scroll-root=""
+        className="max-h-[500px] overflow-y-auto space-y-4 pr-1 scrollbar-thin"
+      >
         {grouped.map((group) => (
           <div key={group.label}>
-            <p className="text-xs font-semibold text-[var(--text-muted)] mb-2">{group.label}</p>
+            <p className="text-xs font-semibold text-[var(--text-muted)] mb-2 sticky top-0 bg-[var(--surface)] py-1 z-10">
+              {group.label}
+            </p>
             <div className="space-y-1">
               {group.items.map((tx, i) => {
                 const icon = categoryIcons?.[tx.category] ?? "";
@@ -461,6 +517,18 @@ function RecentTransactionsFeed({
             </div>
           </div>
         ))}
+
+        {/* Sentinel element for infinite scroll */}
+        <div ref={sentinelRef} className="h-1" />
+
+        {hasMore && (
+          <div className="flex justify-center py-2">
+            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              <div className="w-4 h-4 border-2 border-[var(--primary)]/30 border-t-[var(--primary)] rounded-full animate-spin" />
+              Loading more...
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -505,17 +573,10 @@ function AccordionSection({
 export function Dashboard() {
   const { isDemoMode } = useDemoMode();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
+  const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
 
   // ---- Existing queries (kept) ----
-
-  const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ["overview", isDemoMode],
-    queryFn: async () => {
-      const res = await analyticsApi.getOverview();
-      return res.data;
-    },
-  });
 
   const { data: incomeOutcome } = useQuery({
     queryKey: ["income-outcome", isDemoMode],
@@ -734,8 +795,8 @@ export function Dashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-[var(--text-muted)] mt-1">Your financial snapshot at a glance</p>
+        <h1 className="text-3xl font-bold">📊 Dashboard</h1>
+        <p className="text-[var(--text-muted)] mt-1">✨ Your financial snapshot at a glance</p>
       </div>
 
       {/* Section 1: Financial Health Header */}
@@ -763,10 +824,10 @@ export function Dashboard() {
 
       {/* Section 4: Collapsible Insights */}
       <div>
-        <h2 className="text-xl font-bold mb-4 text-[var(--text-muted)]">More Insights</h2>
+        <h2 className="text-xl font-bold mb-4 text-[var(--text-muted)]">🔍 More Insights</h2>
         <div className="space-y-4">
           {/* Monthly Expenses */}
-          <AccordionSection title="Monthly Expenses">
+          <AccordionSection title="💸 Monthly Expenses">
             {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
               <>
                 <div className="flex items-center justify-end mb-4">
@@ -779,8 +840,8 @@ export function Dashboard() {
                     }`}
                   >
                     {excludePendingRefunds
-                      ? "Pending Refunds Excluded"
-                      : "Pending Refunds Included"}
+                      ? "🚫 Pending Refunds Excluded"
+                      : "✅ Pending Refunds Included"}
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -789,7 +850,7 @@ export function Dashboard() {
                       <Calculator size={18} />
                     </div>
                     <div>
-                      <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
+                      <p className="text-[var(--text-muted)] text-xs">🔥 Avg 3 Months</p>
                       <p className="text-lg font-bold">
                         {formatCurrency(monthlyExpenses.avg_3_months)}
                       </p>
@@ -800,7 +861,7 @@ export function Dashboard() {
                       <Calculator size={18} />
                     </div>
                     <div>
-                      <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
+                      <p className="text-[var(--text-muted)] text-xs">📊 Avg 6 Months</p>
                       <p className="text-lg font-bold">
                         {formatCurrency(monthlyExpenses.avg_6_months)}
                       </p>
@@ -811,7 +872,7 @@ export function Dashboard() {
                       <Calculator size={18} />
                     </div>
                     <div>
-                      <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
+                      <p className="text-[var(--text-muted)] text-xs">📅 Avg 12 Months</p>
                       <p className="text-lg font-bold">
                         {formatCurrency(monthlyExpenses.avg_12_months)}
                       </p>
@@ -847,12 +908,12 @@ export function Dashboard() {
                 </div>
               </>
             ) : (
-              <p className="text-[var(--text-muted)] text-sm">No expense data available.</p>
+              <p className="text-[var(--text-muted)] text-sm">📭 No expense data available.</p>
             )}
           </AccordionSection>
 
           {/* Net Worth Over Time */}
-          <AccordionSection title="Net Worth Over Time">
+          <AccordionSection title="📈 Net Worth Over Time">
             {netWorthData && netWorthData.length > 0 ? (
               <>
                 <div className="flex justify-end mb-4">
@@ -906,12 +967,12 @@ export function Dashboard() {
                 </div>
               </>
             ) : (
-              <p className="text-[var(--text-muted)] text-sm">No net worth data available.</p>
+              <p className="text-[var(--text-muted)] text-sm">📭 No net worth data available.</p>
             )}
           </AccordionSection>
 
           {/* Cash Flow (Sankey) */}
-          <AccordionSection title="Cash Flow">
+          <AccordionSection title="🌊 Cash Flow">
             {sankeyLoading ? (
               <Skeleton variant="chart" className="h-[500px]" />
             ) : (
@@ -921,105 +982,123 @@ export function Dashboard() {
             )}
           </AccordionSection>
 
-          {/* Monthly Income vs Expenses */}
-          <AccordionSection title="Monthly Income vs Expenses">
-            <div className="h-[350px]">
-              <Plot
-                data={[
-                  {
-                    x: incomeOutcome?.map((d: any) => d.month) || [],
-                    y: incomeOutcome?.map((d: any) => d.income) || [],
-                    name: "Income",
-                    type: "bar",
-                    marker: { color: "#059669" },
-                  },
-                  {
-                    x: incomeOutcome?.map((d: any) => d.month) || [],
-                    y: incomeOutcome?.map((d: any) => d.expenses) || [],
-                    name: "Expenses",
-                    type: "bar",
-                    marker: { color: "#f43f5e" },
-                  },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  barmode: "group",
-                  autosize: true,
-                  height: 350,
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={{ displayModeBar: false, responsive: true }}
-              />
+          {/* Monthly Income & Expenses (merged with Income by Source) */}
+          <AccordionSection title="⚖️ Income & Expenses">
+            <div className="flex justify-end mb-4">
+              <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                {([
+                  { key: "overview" as const, label: "📊 Overview" },
+                  { key: "by_source" as const, label: "💼 By Source" },
+                ]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setIncomeView(key)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                      incomeView === key
+                        ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </AccordionSection>
-
-          {/* Income by Source */}
-          {incomeBySourceData &&
-            incomeBySourceData.length > 0 && (
-              <AccordionSection title="Income by Source">
-                {(() => {
+            {incomeView === "overview" ? (
+              <div className="h-[350px]">
+                <Plot
+                  data={[
+                    {
+                      x: incomeOutcome?.map((d: any) => d.month) || [],
+                      y: incomeOutcome?.map((d: any) => d.income) || [],
+                      name: "💚 Income",
+                      type: "bar",
+                      marker: { color: "#059669" },
+                    },
+                    {
+                      x: incomeOutcome?.map((d: any) => d.month) || [],
+                      y: incomeOutcome?.map((d: any) => d.expenses) || [],
+                      name: "🔴 Expenses",
+                      type: "bar",
+                      marker: { color: "#f43f5e" },
+                    },
+                  ]}
+                  layout={{
+                    ...chartTheme,
+                    barmode: "group",
+                    autosize: true,
+                    height: 350,
+                    legend: {
+                      orientation: "h",
+                      y: -0.15,
+                      x: 0.5,
+                      xanchor: "center",
+                    },
+                  }}
+                  style={{ width: "100%", height: "100%" }}
+                  config={{ displayModeBar: false, responsive: true }}
+                />
+              </div>
+            ) : (
+              <div className="h-[350px]">
+                {incomeBySourceData && incomeBySourceData.length > 0 ? (() => {
                   const allSources = Array.from(
                     new Set(
                       incomeBySourceData.flatMap((d) => Object.keys(d.sources)),
                     ),
                   );
                   const colors = [
-                    "#059669",
-                    "#10b981",
-                    "#34d399",
-                    "#6ee7b7",
-                    "#a7f3d0",
-                    "#047857",
-                    "#065f46",
-                    "#064e3b",
+                    "#059669", "#10b981", "#34d399", "#6ee7b7",
+                    "#a7f3d0", "#047857", "#065f46", "#064e3b",
                   ];
                   return (
-                    <div className="h-[350px]">
-                      <Plot
-                        data={allSources.map((source, i) => ({
-                          x: incomeBySourceData.map((d) => d.month),
-                          y: incomeBySourceData.map(
-                            (d) => d.sources[source] || 0,
-                          ),
-                          name: source,
-                          type: "bar" as const,
-                          marker: { color: colors[i % colors.length] },
-                        }))}
-                        layout={{
-                          ...chartTheme,
-                          barmode: "stack",
-                          autosize: true,
-                          height: 350,
-                          yaxis: {
-                            title: {
-                              text: "Amount (ILS)",
-                              font: { color: "#94a3b8" },
-                            },
-                            tickfont: { color: "#94a3b8" },
+                    <Plot
+                      data={allSources.map((source, i) => ({
+                        x: incomeBySourceData.map((d) => d.month),
+                        y: incomeBySourceData.map(
+                          (d) => d.sources[source] || 0,
+                        ),
+                        name: source,
+                        type: "bar" as const,
+                        marker: { color: colors[i % colors.length] },
+                      }))}
+                      layout={{
+                        ...chartTheme,
+                        barmode: "stack",
+                        autosize: true,
+                        height: 350,
+                        yaxis: {
+                          title: {
+                            text: "Amount (ILS)",
+                            font: { color: "#94a3b8" },
                           },
-                          legend: {
-                            orientation: "h",
-                            y: -0.15,
-                            x: 0.5,
-                            xanchor: "center",
-                          },
-                        }}
-                        style={{ width: "100%", height: "100%" }}
-                        config={{ displayModeBar: false, responsive: true }}
-                      />
-                    </div>
+                          tickfont: { color: "#94a3b8" },
+                        },
+                        legend: {
+                          orientation: "h",
+                          y: -0.15,
+                          x: 0.5,
+                          xanchor: "center",
+                        },
+                      }}
+                      style={{ width: "100%", height: "100%" }}
+                      config={{ displayModeBar: false, responsive: true }}
+                    />
                   );
-                })()}
-              </AccordionSection>
+                })() : (
+                  <p className="text-[var(--text-muted)] text-sm">📭 No income source data available.</p>
+                )}
+              </div>
             )}
+          </AccordionSection>
 
           {/* Category Breakdown */}
-          <AccordionSection title="Category Breakdown">
+          <AccordionSection title="🍕 Category Breakdown">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
               {/* Expenses Chart */}
               <div className="relative">
                 <p className="text-sm font-bold text-center text-red-400 mb-2 uppercase tracking-wider">
-                  Expenses
+                  🔴 Expenses
                 </p>
                 <div className="h-full">
                   <Plot
@@ -1062,7 +1141,7 @@ export function Dashboard() {
               {/* Refunds Chart */}
               <div className="relative">
                 <p className="text-sm font-bold text-center text-emerald-400 mb-2 uppercase tracking-wider">
-                  Refunds
+                  🟢 Refunds
                 </p>
                 <div className="h-full">
                   <Plot
@@ -1106,18 +1185,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Data Status — small bar at the bottom */}
-      <div className="bg-[var(--surface)] rounded-xl px-6 py-3 border border-[var(--surface-light)] flex items-center justify-between">
-        <p className="text-[var(--text-muted)] text-xs">
-          Latest transaction:{" "}
-          {overview?.latest_data_date
-            ? formatDate(overview.latest_data_date)
-            : "No data available"}
-        </p>
-        <div className="text-[var(--primary)] font-bold text-xs uppercase tracking-widest px-3 py-1 bg-[var(--primary)]/10 rounded-full border border-[var(--primary)]/20">
-          {overviewLoading ? <Skeleton variant="text" lines={1} className="w-24" /> : "Live Updates Active"}
-        </div>
-      </div>
     </div>
   );
 }
