@@ -444,8 +444,8 @@ class InvestmentsService:
             - ``total_value`` – sum of current balances across all open investments.
             - ``total_profit`` – total value minus net invested (deposits - withdrawals).
             - ``portfolio_roi`` – ``(total_value / total_deposits - 1) * 100`` percentage.
-            - ``allocation`` – list of ``{"name": str, "balance": float, "type": str}``
-              dicts per investment.
+            - ``allocation`` – list of ``{"name": str, "balance": float, "type": str,
+              "profit_loss": float, "roi": float}`` dicts per investment.
         """
         investments = self.investments_repo.get_all_investments(include_closed=False)
 
@@ -474,6 +474,8 @@ class InvestmentsService:
                     "name": inv["name"],
                     "balance": metrics["current_balance"],
                     "type": inv["type"],
+                    "profit_loss": metrics["absolute_profit_loss"],
+                    "roi": metrics["roi_percentage"],
                 }
             )
 

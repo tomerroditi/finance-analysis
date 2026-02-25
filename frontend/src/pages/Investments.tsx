@@ -52,6 +52,7 @@ function InvestmentCard({
   onDelete,
   onUpdateBalance,
   onEditCloseDate,
+  analysisData,
 }: any) {
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
@@ -60,11 +61,18 @@ function InvestmentCard({
       )
     : 0;
 
+  const formatCardCurrency = (val: number) =>
+    new Intl.NumberFormat("he-IL", {
+      style: "currency",
+      currency: "ILS",
+      maximumFractionDigits: 0,
+    }).format(val);
+
   return (
     <div
       className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
     >
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-4">
           <div
             className={`p-3 rounded-xl ${inv.is_closed ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}
@@ -90,6 +98,22 @@ function InvestmentCard({
           {inv.is_closed ? "Closed" : "Active"}
         </div>
       </div>
+
+      {analysisData && (
+        <div className="mb-6 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+          <p className="text-2xl font-black text-white">
+            {formatCardCurrency(analysisData.balance)}
+          </p>
+          <p
+            className={`text-sm font-semibold mt-1 ${analysisData.profit_loss >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+          >
+            {analysisData.profit_loss >= 0 ? "+" : ""}
+            {formatCardCurrency(analysisData.profit_loss)}
+            {analysisData.roi != null &&
+              ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 mb-8">
         <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
@@ -555,6 +579,9 @@ export function Investments() {
                     })
                   }
                   onEditCloseDate={() => {}}
+                  analysisData={portfolioAnalysis?.allocation?.find(
+                    (a: any) => a.name === inv.name
+                  )}
                 />
               ))}
             </div>
