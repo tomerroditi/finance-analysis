@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 EXCLUDE_DIRS = {"__pycache__", "node_modules", ".mypy_cache", ".pytest_cache"}
-EXCLUDE_FILES = {"build_installer.py", "installer_script.nsi", "FinanceAppInstaller.exe"}
+EXCLUDE_FILES = {"build_installer.py", "installer_script.nsi", "FinanceAppInstaller.exe", "build_dmg.sh", "FinanceAnalysis.dmg"}
 
 # New full-stack source layout
 SOURCE_ITEMS = [

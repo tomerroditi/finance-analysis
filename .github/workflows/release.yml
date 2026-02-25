@@ -144,3 +144,53 @@ jobs:
           files: build/FinanceAppInstaller.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos-release:
+    needs: [get-version, bump-version]
+    if: needs.bump-version.outputs.version != needs.get-version.outputs.version
+    runs-on: macos-latest
+    name: Build macOS DMG and upload to release
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: cd frontend && npm ci && npm run build
+
+      - name: Build installer dist
+        run: python build/build_installer.py
+
+      - name: Build DMG
+        run: bash build/build_dmg.sh
+
+      - name: Verify DMG exists
+        run: |
+          if [ ! -f build/FinanceAnalysis.dmg ]; then
+            echo "DMG not found!"
+            exit 1
+          fi
+
+      - name: Upload DMG to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.bump-version.outputs.version }}
+          files: build/FinanceAnalysis.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
