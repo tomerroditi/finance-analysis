@@ -24,11 +24,11 @@ export const handlers = [
   ),
 
   // Testing API
-  http.get("/api/testing/test_mode_status", () =>
-    HttpResponse.json({ test_mode: false }),
+  http.get("/api/testing/demo_mode_status", () =>
+    HttpResponse.json({ demo_mode: false }),
   ),
-  http.post("/api/testing/toggle_test_mode", () =>
-    HttpResponse.json({ status: "ok", test_mode: true }),
+  http.post("/api/testing/toggle_demo_mode", () =>
+    HttpResponse.json({ status: "ok", demo_mode: true }),
   ),
 
   // Analytics API

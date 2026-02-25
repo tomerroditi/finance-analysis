@@ -4,7 +4,7 @@ import { TrendingUp, TrendingDown, LineChart, Landmark, Calculator } from "lucid
 import Plot from "react-plotly.js";
 import { analyticsApi, bankBalancesApi, investmentsApi } from "../services/api";
 import { SankeyChart } from "../components/SankeyChart";
-import { useTestMode } from "../context/TestModeContext";
+import { useDemoMode } from "../context/DemoModeContext";
 import { formatDate } from "../utils/dateFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
@@ -36,11 +36,11 @@ function StatCard({
 }
 
 export function Dashboard() {
-  const { isTestMode } = useTestMode();
+  const { isDemoMode } = useDemoMode();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
 
   const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ["overview", isTestMode],
+    queryKey: ["overview", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getOverview();
       return res.data;
@@ -48,7 +48,7 @@ export function Dashboard() {
   });
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: ["income-outcome", isTestMode],
+    queryKey: ["income-outcome", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getIncomeExpensesOverTime();
       return res.data;
@@ -56,7 +56,7 @@ export function Dashboard() {
   });
 
   const { data: categoryData } = useQuery({
-    queryKey: ["analytics-category", isTestMode],
+    queryKey: ["analytics-category", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getByCategory();
       return res.data;
@@ -64,7 +64,7 @@ export function Dashboard() {
   });
 
   const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
-    queryKey: ["sankey", isTestMode],
+    queryKey: ["sankey", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getSankeyData();
       return res.data;
@@ -72,12 +72,12 @@ export function Dashboard() {
   });
 
   const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isTestMode],
+    queryKey: ["bank-balances", isDemoMode],
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
   const { data: netWorthData } = useQuery({
-    queryKey: ["net-worth-over-time", isTestMode],
+    queryKey: ["net-worth-over-time", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getNetWorthOverTime();
       return res.data;
@@ -85,7 +85,7 @@ export function Dashboard() {
   });
 
   const { data: incomeBySourceData } = useQuery({
-    queryKey: ["income-by-source", isTestMode],
+    queryKey: ["income-by-source", isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getIncomeBySourceOverTime();
       return res.data;
@@ -93,14 +93,14 @@ export function Dashboard() {
   });
 
   const { data: portfolioAnalysis } = useQuery({
-    queryKey: ["portfolio-analysis", isTestMode],
+    queryKey: ["portfolio-analysis", isDemoMode],
     queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
 
   const { data: monthlyExpenses } = useQuery({
-    queryKey: ["monthly-expenses", excludePendingRefunds, isTestMode],
+    queryKey: ["monthly-expenses", excludePendingRefunds, isDemoMode],
     queryFn: async () => {
       const res = await analyticsApi.getMonthlyExpenses(excludePendingRefunds);
       return res.data;
