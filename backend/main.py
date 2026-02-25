@@ -228,10 +228,13 @@ _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _frontend_dist.is_dir():
     app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="static-assets")
 
-    @app.get("/{path:path}")
-    async def serve_spa(path: str):
-        """Serve the React SPA for all non-API routes."""
-        file_path = _frontend_dist / path
+    @app.exception_handler(404)
+    async def spa_fallback(request: Request, exc):
+        """Serve the React SPA for non-API 404s (client-side routing)."""
+        if request.url.path.startswith("/api/"):
+            detail = getattr(exc, "detail", "Not found")
+            return JSONResponse(status_code=404, content={"detail": detail})
+        file_path = _frontend_dist / request.url.path.lstrip("/")
         if file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(_frontend_dist / "index.html")
