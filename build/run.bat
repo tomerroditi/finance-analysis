@@ -11,8 +11,8 @@ cd ..
 :: Activate environment
 call .venv\Scripts\activate.bat
 
-:: Launch app
-streamlit run main.py --server.port 8501
-start http://localhost:8501/
+:: Launch FastAPI server (serves both API and frontend)
+start "" http://localhost:8765
+uvicorn backend.main:app --host 127.0.0.1 --port 8765
 
 endlocal
