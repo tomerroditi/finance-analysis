@@ -11,6 +11,7 @@ import Plot from "react-plotly.js";
 import {
   analyticsApi,
   bankBalancesApi,
+  cashBalancesApi,
   investmentsApi,
   budgetApi,
   transactionsApi,
@@ -47,6 +48,7 @@ const chartTheme = {
 function FinancialHealthHeader({
   netWorthData,
   bankBalances,
+  cashBalances,
   portfolioAnalysis,
   isLoading,
 }: {
@@ -54,6 +56,7 @@ function FinancialHealthHeader({
     | { month: string; bank_balance: number; investment_value: number; net_worth: number }[]
     | undefined;
   bankBalances: { provider: string; account_name: string; balance: number }[] | undefined;
+  cashBalances: { account_name: string; balance: number }[] | undefined;
   portfolioAnalysis: { total_value: number; allocation: { name: string; balance: number }[] } | undefined;
   isLoading: boolean;
 }) {
@@ -177,11 +180,39 @@ function FinancialHealthHeader({
         </button>
 
         {/* Cash */}
-        <div className="px-5 py-4">
-          <p className="text-xs text-[var(--text-muted)]">Cash</p>
-          <p className="text-lg font-bold mt-0.5">{formatCurrency(0)}</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">(no data)</p>
-        </div>
+        {(() => {
+          const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
+          const hasCash = cashBalances && cashBalances.length > 0;
+          return hasCash ? (
+            <button
+              onClick={() => toggleCard("cash")}
+              className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs text-[var(--text-muted)]">Cash</p>
+                  <p className="text-lg font-bold mt-0.5">{formatCurrency(totalCash)}</p>
+                </div>
+              </div>
+              {expandedCard === "cash" && cashBalances.length > 1 && (
+                <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
+                  {cashBalances.map((c) => (
+                    <div key={c.account_name} className="flex items-center justify-between text-sm">
+                      <span className="text-[var(--text-muted)]">{c.account_name}</span>
+                      <span className="font-medium">{formatCurrency(c.balance)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </button>
+          ) : (
+            <div className="px-5 py-4">
+              <p className="text-xs text-[var(--text-muted)]">Cash</p>
+              <p className="text-lg font-bold mt-0.5">{formatCurrency(0)}</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">(no data)</p>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -515,6 +546,11 @@ export function Dashboard() {
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
+  const { data: cashBalances } = useQuery({
+    queryKey: ["cash-balances", isDemoMode],
+    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
+  });
+
   const { data: netWorthData, isLoading: netWorthLoading } = useQuery({
     queryKey: ["net-worth-over-time", isDemoMode],
     queryFn: async () => {
@@ -706,6 +742,7 @@ export function Dashboard() {
       <FinancialHealthHeader
         netWorthData={netWorthData}
         bankBalances={bankBalances}
+        cashBalances={cashBalances}
         portfolioAnalysis={portfolioAnalysis}
         isLoading={netWorthLoading}
       />
