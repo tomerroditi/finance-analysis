@@ -32,6 +32,7 @@ import type { BankBalance } from "../services/api";
 
 import { useDemoMode } from "../context/DemoModeContext";
 import { useScraping } from "../hooks/useScraping";
+import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
@@ -308,8 +309,11 @@ export function DataSources() {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {accounts?.map((acc: any, idx: number) => {
+          (() => {
+            const bankAccounts = accounts?.filter((a: any) => a.service === "banks") ?? [];
+            const creditCardAccounts = accounts?.filter((a: any) => a.service === "credit_cards") ?? [];
+
+            const renderAccountCard = (acc: any, idx: number) => {
               const scraper = getScraperForAccount(acc);
               const isActive = scraper && (scraper.status === "in_progress" || scraper.status === "waiting_for_2fa");
               const lastScrape = lastScrapes?.find(
@@ -319,7 +323,7 @@ export function DataSources() {
 
               return (
               <div
-                key={idx}
+                key={`${acc.service}-${acc.provider}-${acc.account_name}-${idx}`}
                 className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
               >
                 <div className="flex items-center justify-between">
@@ -339,11 +343,11 @@ export function DataSources() {
                         {acc.account_name}
                       </h3>
                       <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
-                        {acc.provider}
+                        {humanizeProvider(acc.provider)}
                       </span>
                     </div>
-                    <p className="text-sm text-[var(--text-muted)] font-medium capitalize">
-                      {acc.service} Account
+                    <p className="text-sm text-[var(--text-muted)] font-medium">
+                      {humanizeAccountType(acc.service)}
                     </p>
                   </div>
                 </div>
@@ -560,7 +564,7 @@ export function DataSources() {
                     <div className="flex items-center gap-3">
                       <Smartphone className="text-amber-400 shrink-0" size={18} />
                       <span className="text-xs text-amber-100/70">
-                        Enter 2FA code for <span className="text-white font-bold capitalize">{acc.provider}</span>
+                        Enter 2FA code for <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
                       </span>
                       <div className="flex items-center gap-2 ml-auto">
                         <input
@@ -617,8 +621,29 @@ export function DataSources() {
                 )}
               </div>
               );
-            })}
-          </div>
+            };
+
+            return (
+              <div className="space-y-4">
+                {bankAccounts.length > 0 && (
+                  <>
+                    <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">
+                      Bank Accounts
+                    </h3>
+                    {bankAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                  </>
+                )}
+                {creditCardAccounts.length > 0 && (
+                  <>
+                    <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
+                      Credit Cards
+                    </h3>
+                    {creditCardAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                  </>
+                )}
+              </div>
+            );
+          })()
         )}
       </div>
 
@@ -720,9 +745,9 @@ export function DataSources() {
                           setSelectedProvider(p);
                           fetchFieldsMutation.mutate(p);
                         }}
-                        className="p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all font-bold text-center text-sm capitalize"
+                        className="p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all font-bold text-center text-sm"
                       >
-                        {p}
+                        {humanizeProvider(p)}
                       </button>
                     ))}
                 </div>
@@ -739,8 +764,8 @@ export function DataSources() {
               <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <p className="text-[var(--text-muted)] font-medium">
                   {isViewOnly ? "Current" : "Enter"} details for{" "}
-                  <span className="text-white font-black capitalize">
-                    {selectedProvider}
+                  <span className="text-white font-black">
+                    {humanizeProvider(selectedProvider)}
                   </span>
                   :
                 </p>
