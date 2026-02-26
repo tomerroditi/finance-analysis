@@ -19,6 +19,7 @@ from backend.config import AppConfig
 from backend import database
 from backend.database import get_db_context
 from backend.services.credentials_service import CredentialsService
+from backend.services.tagging_service import CategoriesTagsService
 from backend.models import Base
 
 router = APIRouter()
@@ -153,6 +154,7 @@ async def toggle_demo_mode(
         database.reset_engine()
 
         CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
 
         # If enabling demo mode, ensure the database schema exists and seed credentials
         if request.enabled:

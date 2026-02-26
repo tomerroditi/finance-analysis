@@ -236,8 +236,9 @@ class CredentialsService:
         """
         Get available providers filtered by the current demo/production mode.
 
-        Providers whose names contain ``"test_"`` are only shown in demo mode,
-        and excluded in production mode.
+        In production mode, test providers (``"test_"`` prefix) are hidden.
+        In demo mode, real providers are shown (test providers are hidden) —
+        the scraper layer transparently redirects them to test scrapers.
 
         Returns
         -------
@@ -245,9 +246,8 @@ class CredentialsService:
             Dictionary with keys ``"banks"`` and ``"credit_cards"``, each
             containing a list of provider identifier strings.
         """
-        is_demo = AppConfig().is_demo_mode
-        banks = [p for p in bank_providers if ("test_" in p) == is_demo]
-        ccs = [p for p in cc_providers if ("test_" in p) == is_demo]
+        banks = [p for p in bank_providers if "test_" not in p]
+        ccs = [p for p in cc_providers if "test_" not in p]
         return {"banks": banks, "credit_cards": ccs}
 
     def delete_credential(self, service: str, provider: str, account_name: str) -> None:
@@ -268,11 +268,12 @@ class CredentialsService:
 
     def seed_demo_credentials(self) -> None:
         """
-        Seed dummy credentials for all demo scrapers if not already present.
+        Seed dummy credentials for demo mode using real provider names.
 
-        Creates credentials for ``test_bank``, ``test_bank_2fa``,
-        ``test_credit_card``, and ``test_credit_card_2fa`` providers.
-        Each credential is only inserted if not already in the repository.
+        Creates credentials for real providers (hapoalim, max, visa cal)
+        with dummy login data. The scraper layer redirects these to test
+        scrapers in demo mode. Each credential is only inserted if not
+        already in the repository.
         """
         from backend.errors import EntityNotFoundException
 
@@ -286,28 +287,16 @@ class CredentialsService:
                 self._invalidate_cache()
 
         ensure_dummy_cred(
-            "banks", "test_bank", "Test Bank",
-            {Fields.USERNAME.value: "test", Fields.PASSWORD.value: "password"},
+            "banks", "hapoalim", "Main Account",
+            {Fields.USER_CODE.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            "banks", "test_bank_2fa", "Test Bank 2FA",
-            {
-                Fields.EMAIL.value: "test@example.com",
-                Fields.PASSWORD.value: "password",
-                Fields.PHONE_NUMBER.value: "12345678",
-            },
+            "credit_cards", "max", "Family Card",
+            {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            "credit_cards", "test_credit_card", "Test Credit Card",
-            {Fields.USERNAME.value: "test", Fields.PASSWORD.value: "password"},
-        )
-        ensure_dummy_cred(
-            "credit_cards", "test_credit_card_2fa", "Test Credit Card 2FA",
-            {
-                Fields.EMAIL.value: "test@example.com",
-                Fields.PASSWORD.value: "password",
-                Fields.PHONE_NUMBER.value: "12345678",
-            },
+            "credit_cards", "visa cal", "Online Shopping",
+            {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
 
     def _invalidate_cache(self) -> None:

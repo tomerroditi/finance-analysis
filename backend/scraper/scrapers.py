@@ -47,6 +47,9 @@ def get_scraper(
 ):
     """Return the appropriate Scraper subclass for the given service and provider.
 
+    In demo mode, all real providers are transparently redirected to test
+    scrapers so that scraping works without real credentials.
+
     Parameters
     ----------
     service_name : str
@@ -72,6 +75,19 @@ def get_scraper(
     ValueError
         If ``service_name`` is not supported.
     """
+    from backend.config import AppConfig
+
+    # In demo mode, redirect real providers to test scrapers
+    if AppConfig().is_demo_mode and "test_" not in provider_name:
+        if service_name == "credit_cards":
+            return DummyCreditCardScraper(
+                account_name, credentials, start_date, process_id
+            )
+        elif service_name == "banks":
+            return DummyRegularScraper(
+                account_name, credentials, start_date, process_id
+            )
+
     if service_name == "credit_cards":
         if provider_name == "isracard":
             return IsracardScraper(account_name, credentials, start_date, process_id)
