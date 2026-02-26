@@ -122,10 +122,8 @@ function FinancialHealthHeader({
             }`}
           >
             {momDelta >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-            <span>
-              {momDelta >= 0 ? "+" : ""}
-              {formatCurrency(momDelta)}
-              {momPercent !== null && ` (${momPercent >= 0 ? "+" : ""}${momPercent.toFixed(1)}%)`}
+            <span dir="ltr">
+              {`${momDelta >= 0 ? "+" : "-"}${new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(Math.abs(momDelta))} \u20AA${momPercent !== null ? ` (${momPercent >= 0 ? "+" : ""}${momPercent.toFixed(1)}%)` : ""}`}
             </span>
           </div>
         )}
