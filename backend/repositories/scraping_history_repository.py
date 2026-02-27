@@ -120,6 +120,24 @@ class ScrapingHistoryRepository:
         stmt = select(ScrapingHistory.status).where(ScrapingHistory.id == scrape_id)
         return self.db.execute(stmt).scalar()
 
+    def get_provider_name(self, scrape_id: int) -> str | None:
+        """Get the provider name for a scraping operation.
+
+        Parameters
+        ----------
+        scrape_id : int
+            ID of the scraping record to look up.
+
+        Returns
+        -------
+        str or None
+            Provider name string, or None if no record exists.
+        """
+        stmt = select(ScrapingHistory.provider_name).where(
+            ScrapingHistory.id == scrape_id
+        )
+        return self.db.execute(stmt).scalar()
+
     def get_error_message(self, scrape_id: int) -> str | None:
         """Get the error message for a failed scraping operation.
 

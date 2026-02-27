@@ -474,7 +474,9 @@ export function DataSources() {
                     {scraper?.status === "waiting_for_2fa" && (
                       <div className="flex items-center gap-1.5">
                         <Smartphone size={14} className="text-amber-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-amber-400">2FA Required</span>
+                        <span className="text-xs font-semibold text-amber-400">
+                          {scraper.tfa_type === "browser" ? "2FA - Check Browser" : "2FA Required"}
+                        </span>
                       </div>
                     )}
                     {scraper?.status === "success" && (
@@ -485,12 +487,13 @@ export function DataSources() {
                     )}
                     {scraper?.status === "failed" && (
                       <div className="flex items-center gap-1.5">
+                        <AlertCircle size={14} className="text-red-400" />
                         <span className="text-xs font-semibold text-red-400">Failed</span>
                         {scraper.error_message && (
                           <div className="relative group/err">
                             <Info size={12} className="text-red-400 cursor-help" />
                             <div className="absolute bottom-full right-0 mb-1 hidden group-hover/err:block z-50">
-                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
+                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[300px] whitespace-normal border border-gray-700">
                                 {scraper.error_message}
                               </div>
                             </div>
@@ -568,26 +571,56 @@ export function DataSources() {
                 {/* 2FA Inline Section */}
                 {scraper?.status === "waiting_for_2fa" && (
                   <div className="mt-4 pt-4 border-t border-amber-500/20">
-                    <div className="flex items-center gap-3">
-                      <Smartphone className="text-amber-400 shrink-0" size={18} />
-                      <span className="text-xs text-amber-100/70">
-                        Enter 2FA code for <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
-                      </span>
-                      <div className="flex items-center gap-2 ml-auto">
-                        <input
-                          type="text"
-                          placeholder="Code"
-                          maxLength={10}
-                          className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
-                          value={tfaCodes[tfaKey] || ""}
-                          onChange={(e) =>
-                            setTfaCodes((prev) => ({
-                              ...prev,
-                              [tfaKey]: e.target.value,
-                            }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                    {scraper.tfa_type === "browser" ? (
+                      /* Browser-based 2FA: user completes verification in the bank's browser window */
+                      <div className="flex items-center gap-3">
+                        <Smartphone className="text-amber-400 shrink-0" size={18} />
+                        <div className="flex-1">
+                          <span className="text-xs text-amber-100/70">
+                            <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span> requires 2FA verification.
+                            Complete it in the browser window that opened.
+                          </span>
+                          <p className="text-[10px] text-amber-100/40 mt-1">
+                            The scraper will continue automatically after verification is complete.
+                          </p>
+                        </div>
+                        <RefreshCw size={14} className="animate-spin text-amber-400 shrink-0" />
+                      </div>
+                    ) : (
+                      /* OTP-based 2FA: user enters code in the app */
+                      <div className="flex items-center gap-3">
+                        <Smartphone className="text-amber-400 shrink-0" size={18} />
+                        <span className="text-xs text-amber-100/70">
+                          Enter 2FA code for <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
+                        </span>
+                        <div className="flex items-center gap-2 ml-auto">
+                          <input
+                            type="text"
+                            placeholder="Code"
+                            maxLength={10}
+                            className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
+                            value={tfaCodes[tfaKey] || ""}
+                            onChange={(e) =>
+                              setTfaCodes((prev) => ({
+                                ...prev,
+                                [tfaKey]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const code = tfaCodes[tfaKey];
+                                if (code) {
+                                  submitTfa(scraper, code);
+                                  setTfaCodes((prev) => ({
+                                    ...prev,
+                                    [tfaKey]: "",
+                                  }));
+                                }
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => {
                               const code = tfaCodes[tfaKey];
                               if (code) {
                                 submitTfa(scraper, code);
@@ -596,32 +629,35 @@ export function DataSources() {
                                   [tfaKey]: "",
                                 }));
                               }
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={() => {
-                            const code = tfaCodes[tfaKey];
-                            if (code) {
-                              submitTfa(scraper, code);
-                              setTfaCodes((prev) => ({
-                                ...prev,
-                                [tfaKey]: "",
-                              }));
-                            }
-                          }}
-                          disabled={!tfaCodes[tfaKey] || tfaIsPending}
-                          className="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
-                        >
-                          Verify
-                        </button>
-                        <button
-                          onClick={() => resendTfa(scraper, scrapingPeriodDays)}
-                          disabled={tfaIsPending}
-                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
-                        >
-                          Resend
-                        </button>
+                            }}
+                            disabled={!tfaCodes[tfaKey] || tfaIsPending}
+                            className="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
+                          >
+                            Verify
+                          </button>
+                          <button
+                            onClick={() => resendTfa(scraper, scrapingPeriodDays)}
+                            disabled={tfaIsPending}
+                            className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
+                          >
+                            Resend
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Failed Scraping Error Banner */}
+                {scraper?.status === "failed" && scraper.error_message && (
+                  <div className="mt-4 pt-4 border-t border-red-500/20">
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/5 border border-red-500/15">
+                      <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={16} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-red-400">Scraping Failed</span>
+                        <p className="text-[11px] text-red-300/70 mt-1 break-words">
+                          {scraper.error_message}
+                        </p>
                       </div>
                     </div>
                   </div>

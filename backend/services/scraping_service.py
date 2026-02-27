@@ -10,6 +10,9 @@ from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import Scraper, get_scraper, is_2fa_required
 
+# Providers where 2FA is completed in the bank's browser window (not via OTP code in the app)
+BROWSER_2FA_PROVIDERS = {"hapoalim"}
+
 _tfa_scrapers_waiting: Dict[str, Tuple[Scraper, Thread]] = {}
 
 
@@ -62,11 +65,20 @@ class ScrapingService:
         error_message = self.scraping_history_repo.get_error_message(
             int(scraping_process_id)
         )
-        return {
+        result = {
             "status": status or "unknown",
             "process_id": scraping_process_id,
             "error_message": error_message,
         }
+        # Include tfa_type so the frontend knows which 2FA UI to show
+        if status == ScrapingHistoryRepository.WAITING_FOR_2FA:
+            provider = self.scraping_history_repo.get_provider_name(
+                int(scraping_process_id)
+            )
+            result["tfa_type"] = (
+                "browser" if provider in BROWSER_2FA_PROVIDERS else "otp"
+            )
+        return result
 
     def get_last_scrape_dates(self) -> List[Dict]:
         """

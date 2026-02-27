@@ -99,7 +99,8 @@ export async function runScraper(options, credentials, requires2FA = false) {
       ACCOUNT: "ACCOUNT",
       SERVICE: "SERVICE",
       RATE_LIMIT: "RATE_LIMIT",
-      SECURITY: "SECURITY"
+      SECURITY: "SECURITY",
+      TFA_REQUIRED: "TFA_REQUIRED"
     };
 
     // Categorize the error for better handling in Python
@@ -110,9 +111,13 @@ export async function runScraper(options, credentials, requires2FA = false) {
     if (e.message.includes("INVALID_PASSWORD") ||
       e.message.includes("INVALID_CREDENTIALS") ||
       e.message.includes("password") ||
-      e.message.includes("credentials") ||
-      e.message.includes("GENERIC")) {
+      e.message.includes("credentials")) {
       errorType = ErrorType.CREDENTIALS;
+    }
+    // Check for 2FA-related errors
+    else if (e.message.includes("TWO_FACTOR_RETRIEVER_MISSING") ||
+      e.message.includes("2fa") || e.message.includes("2FA")) {
+      errorType = ErrorType.TFA_REQUIRED;
     }
     // Check for connection errors
     else if (e.message.includes("ENOTFOUND") ||

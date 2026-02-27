@@ -45,6 +45,7 @@ class ErrorType(Enum):
     SERVICE = "SERVICE"
     RATE_LIMIT = "RATE_LIMIT"
     SECURITY = "SECURITY"
+    TFA_REQUIRED = "TFA_REQUIRED"
 
 
 class ScraperError(Exception):
@@ -145,4 +146,17 @@ class PasswordChangeError(CredentialsError):
     error_type = ErrorType.PASSWORD_CHANGE
 
     def __init__(self, message="Password change required", original_error=None):
+        super().__init__(message, original_error)
+
+
+class TwoFactorAuthRequiredError(ScraperError):
+    """Raised when the provider requires 2FA verification to proceed."""
+
+    error_type = ErrorType.TFA_REQUIRED
+
+    def __init__(
+        self,
+        message="Two-factor authentication required. Please complete 2FA on the bank's page.",
+        original_error=None,
+    ):
         super().__init__(message, original_error)

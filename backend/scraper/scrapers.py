@@ -31,6 +31,7 @@ from backend.scraper.exceptions import (
     SecurityError,
     ServiceError,
     TimeoutError,
+    TwoFactorAuthRequiredError,
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
@@ -356,6 +357,14 @@ class Scraper(ABC):
             )
             print(f"DEBUG: Login error details: {e.original_error}", flush=True)
             return
+        except TwoFactorAuthRequiredError as e:
+            print(
+                f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
+            )
+            print(
+                f"DEBUG: 2FA required error details: {e.original_error}", flush=True
+            )
+            return
         except ScraperError as e:
             print(
                 f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
@@ -622,6 +631,10 @@ class Scraper(ABC):
             ErrorType.SECURITY: (
                 SecurityError,
                 "Security verification required.",
+            ),
+            ErrorType.TFA_REQUIRED: (
+                TwoFactorAuthRequiredError,
+                "Two-factor authentication required. Please complete 2FA in the browser window.",
             ),
             ErrorType.GENERAL: (
                 ScraperError,
@@ -1289,18 +1302,90 @@ class DummyRegularScraper(BankScraper):
 class HapoalimScraper(BankScraper):
     script_path = os.path.join(NODE_JS_SCRIPTS_DIR, "banks", "hapoalim.js")
     provider_name = "hapoalim"
+    tfa_detected = False
 
     def scrape_data(self, start_date: str) -> None:
-        """
-        Get the data from the Hapoalim website
+        """Get data from Hapoalim with automatic 2FA detection and fallback.
+
+        Uses ``subprocess.Popen`` instead of ``subprocess.run`` to read stdout
+        line-by-line and detect the ``"2FA page detected"`` signal emitted by
+        the Node.js script.  When 2FA is detected the scraping history status
+        is updated to ``WAITING_FOR_2FA`` so the frontend can display the
+        appropriate message to the user.
 
         Parameters
         ----------
         start_date : str
-            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+            The date from which to start pulling the data, in ``YYYY-MM-DD``.
         """
-        args = (self.credentials["userCode"], self.credentials["password"])
-        self.data = self._scrape_data(start_date, *args)
+        args = [
+            "node",
+            self.script_path,
+            self.credentials["userCode"],
+            self.credentials["password"],
+            start_date,
+        ]
+        max_wait_time = 600  # 10 minutes total (includes 5-min 2FA retry)
+
+        process = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+
+        start_time = datetime.datetime.now()
+        self.tfa_detected = False
+
+        while True:
+            elapsed = (datetime.datetime.now() - start_time).total_seconds()
+            if elapsed > max_wait_time:
+                print(
+                    f"DEBUG: {self.provider_name}: Timed out waiting for scraper output",
+                    flush=True,
+                )
+                process.kill()
+                break
+
+            output = process.stdout.readline()
+            if output:
+                if "2FA page detected" in output:
+                    self.tfa_detected = True
+                    # Update scraping history status to waiting_for_2fa
+                    with get_db_context() as db:
+                        history_repo = ScrapingHistoryRepository(db)
+                        history_repo.record_scrape_end(
+                            self.process_id,
+                            ScrapingHistoryRepository.WAITING_FOR_2FA,
+                        )
+                    print(
+                        f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
+                        f"{self.provider_name}: {self.account_name}: "
+                        f"2FA page detected - retrying with extended timeout. "
+                        f"Please complete 2FA in the browser window.",
+                        flush=True,
+                    )
+                elif "writing scraped data to console" in output:
+                    # Data is about to be output, scraping succeeded
+                    break
+            elif process.poll() is not None:
+                # Process has exited
+                break
+            else:
+                sleep(0.3)
+
+        # Read remaining stdout
+        remaining_stdout = process.stdout.read() if process.poll() is None else ""
+        process.wait()
+        remaining_stdout += process.stdout.read()
+        self.result += remaining_stdout
+
+        stderr_output = process.stderr.read()
+        self._handle_error(stderr_output)
+
+        self.data = self._scraped_data_to_df(self.result)
 
 
 class LeumiScraper(BankScraper):
