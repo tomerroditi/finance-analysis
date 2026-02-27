@@ -45,3 +45,4 @@ class ScrapingHistory(Base, TimestampMixin):
         String, nullable=True
     )  # The 'start_date' parameter used for scraping
     error_message = Column(String, nullable=True)  # Error details for failed scrapes
+    error_type = Column(String, nullable=True)  # Error category (e.g. CREDENTIALS, TWO_FACTOR_REQUIRED)

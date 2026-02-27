@@ -53,9 +53,10 @@ class TestScrapingServiceStatus:
     """Tests for scraping status retrieval methods."""
 
     def test_get_scraping_status(self, service):
-        """Verify get_scraping_status returns dict with status, process_id, and error_message."""
+        """Verify get_scraping_status returns dict with status, process_id, error_message, and error_type."""
         service.scraping_history_repo.get_scraping_status.return_value = "in_progress"
         service.scraping_history_repo.get_error_message.return_value = None
+        service.scraping_history_repo.get_error_type.return_value = None
 
         result = service.get_scraping_status(42)
 
@@ -63,14 +64,17 @@ class TestScrapingServiceStatus:
             "status": "in_progress",
             "process_id": 42,
             "error_message": None,
+            "error_type": None,
         }
         service.scraping_history_repo.get_scraping_status.assert_called_once_with(42)
         service.scraping_history_repo.get_error_message.assert_called_once_with(42)
+        service.scraping_history_repo.get_error_type.assert_called_once_with(42)
 
     def test_get_scraping_status_unknown(self, service):
         """Verify status is 'unknown' when repository returns None."""
         service.scraping_history_repo.get_scraping_status.return_value = None
         service.scraping_history_repo.get_error_message.return_value = None
+        service.scraping_history_repo.get_error_type.return_value = None
 
         result = service.get_scraping_status(99)
 

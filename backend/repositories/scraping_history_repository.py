@@ -76,7 +76,11 @@ class ScrapingHistoryRepository:
         return history.id
 
     def record_scrape_end(
-        self, scrape_id: int, status: str, error_message: str = None
+        self,
+        scrape_id: int,
+        status: str,
+        error_message: str = None,
+        error_type: str = None,
     ) -> None:
         """Update a scraping record with its final status and optional error.
 
@@ -89,6 +93,9 @@ class ScrapingHistoryRepository:
             FAILED, or CANCELED.
         error_message : str, optional
             Human-readable error details if status is FAILED, by default None.
+        error_type : str, optional
+            Error category (e.g. ``CREDENTIALS``, ``TWO_FACTOR_REQUIRED``)
+            if status is FAILED, by default None.
 
         Returns
         -------
@@ -97,7 +104,11 @@ class ScrapingHistoryRepository:
         stmt = (
             update(ScrapingHistory)
             .where(ScrapingHistory.id == scrape_id)
-            .values(status=status, error_message=error_message)
+            .values(
+                status=status,
+                error_message=error_message,
+                error_type=error_type,
+            )
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -135,6 +146,25 @@ class ScrapingHistoryRepository:
             was recorded or no record with the given ID exists.
         """
         stmt = select(ScrapingHistory.error_message).where(
+            ScrapingHistory.id == scrape_id
+        )
+        return self.db.execute(stmt).scalar()
+
+    def get_error_type(self, scrape_id: int) -> str | None:
+        """Get the error type for a failed scraping operation.
+
+        Parameters
+        ----------
+        scrape_id : int
+            ID of the scraping record to look up.
+
+        Returns
+        -------
+        str or None
+            Error type string (e.g. ``CREDENTIALS``, ``TWO_FACTOR_REQUIRED``),
+            or None if no error type was recorded or no record exists.
+        """
+        stmt = select(ScrapingHistory.error_type).where(
             ScrapingHistory.id == scrape_id
         )
         return self.db.execute(stmt).scalar()

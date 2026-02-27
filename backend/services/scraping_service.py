@@ -55,17 +55,18 @@ class ScrapingService:
               ``"FAILED"``, ``"WAITING_FOR_2FA"``) or ``"unknown"`` if not found.
             - ``process_id`` – echoed back ``scraping_process_id``.
             - ``error_message`` – error detail if status is ``"FAILED"``, else ``None``.
+            - ``error_type`` – error category (e.g. ``"CREDENTIALS"``,
+              ``"TWO_FACTOR_REQUIRED"``) if failed, else ``None``.
         """
-        status = self.scraping_history_repo.get_scraping_status(
-            int(scraping_process_id)
-        )
-        error_message = self.scraping_history_repo.get_error_message(
-            int(scraping_process_id)
-        )
+        pid = int(scraping_process_id)
+        status = self.scraping_history_repo.get_scraping_status(pid)
+        error_message = self.scraping_history_repo.get_error_message(pid)
+        error_type = self.scraping_history_repo.get_error_type(pid)
         return {
             "status": status or "unknown",
             "process_id": scraping_process_id,
             "error_message": error_message,
+            "error_type": error_type,
         }
 
     def get_last_scrape_dates(self) -> List[Dict]:

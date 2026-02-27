@@ -14,6 +14,7 @@ export interface ScraperState {
   status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed'
   last_updated: number;
   error_message?: string;
+  error_type?: string; // e.g. 'CREDENTIALS', 'TWO_FACTOR_REQUIRED', 'TIMEOUT'
 }
 
 export function useScraping() {
@@ -164,6 +165,7 @@ export function useScraping() {
           const res = await scrapingApi.getStatus(scraper.process_id);
           const newStatus = res.data.status;
           const errorMessage = res.data.error_message;
+          const errorType = res.data.error_type;
 
           if (
             newStatus !== scraper.status ||
@@ -179,6 +181,7 @@ export function useScraping() {
                 ...scraper,
                 status: newStatus,
                 error_message: errorMessage,
+                error_type: errorType,
                 last_updated: Date.now(),
               },
             }));

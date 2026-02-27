@@ -22,6 +22,7 @@ import {
   Info,
   CheckCircle2,
   Clock,
+  ShieldAlert,
 } from "lucide-react";
 import {
   credentialsApi,
@@ -485,12 +486,22 @@ export function DataSources() {
                     )}
                     {scraper?.status === "failed" && (
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-red-400">Failed</span>
+                        {scraper.error_type === "TWO_FACTOR_REQUIRED" ? (
+                          <>
+                            <ShieldAlert size={14} className="text-amber-400" />
+                            <span className="text-xs font-semibold text-amber-400">2FA Required</span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle size={14} className="text-red-400" />
+                            <span className="text-xs font-semibold text-red-400">Failed</span>
+                          </>
+                        )}
                         {scraper.error_message && (
                           <div className="relative group/err">
-                            <Info size={12} className="text-red-400 cursor-help" />
+                            <Info size={12} className={scraper.error_type === "TWO_FACTOR_REQUIRED" ? "text-amber-400 cursor-help" : "text-red-400 cursor-help"} />
                             <div className="absolute bottom-full right-0 mb-1 hidden group-hover/err:block z-50">
-                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
+                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[250px] whitespace-normal border border-gray-700">
                                 {scraper.error_message}
                               </div>
                             </div>
@@ -623,6 +634,22 @@ export function DataSources() {
                           Resend
                         </button>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline Error Detail Section */}
+                {scraper?.status === "failed" && scraper.error_message && (
+                  <div className={`mt-4 pt-4 border-t ${scraper.error_type === "TWO_FACTOR_REQUIRED" ? "border-amber-500/20" : "border-red-500/20"}`}>
+                    <div className="flex items-start gap-3">
+                      {scraper.error_type === "TWO_FACTOR_REQUIRED" ? (
+                        <ShieldAlert className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                      ) : (
+                        <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={16} />
+                      )}
+                      <p className={`text-xs leading-relaxed ${scraper.error_type === "TWO_FACTOR_REQUIRED" ? "text-amber-100/70" : "text-red-100/70"}`}>
+                        {scraper.error_message}
+                      </p>
                     </div>
                   </div>
                 )}

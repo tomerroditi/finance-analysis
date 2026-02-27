@@ -45,6 +45,7 @@ class ErrorType(Enum):
     SERVICE = "SERVICE"
     RATE_LIMIT = "RATE_LIMIT"
     SECURITY = "SECURITY"
+    TWO_FACTOR_REQUIRED = "TWO_FACTOR_REQUIRED"
 
 
 class ScraperError(Exception):
@@ -136,6 +137,19 @@ class SecurityError(ScraperError):
     error_type = ErrorType.SECURITY
 
     def __init__(self, message="Security verification required", original_error=None):
+        super().__init__(message, original_error)
+
+
+class TwoFactorRequiredError(LoginError):
+    """Raised when the provider requires two-factor authentication to proceed"""
+
+    error_type = ErrorType.TWO_FACTOR_REQUIRED
+
+    def __init__(
+        self,
+        message="Two-factor authentication required. Please try again — you will be prompted to enter a verification code.",
+        original_error=None,
+    ):
         super().__init__(message, original_error)
 
 

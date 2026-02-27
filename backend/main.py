@@ -136,6 +136,26 @@ async def lifespan(app: FastAPI):
             for _, row in inv_all_df[pw_mask].iterrows():
                 manual_inv_repo.delete_transaction_by_unique_id(str(row[uid_col]))
 
+    # Migrate: add error_type column to scraping_history
+    with get_db_context() as db:
+        from sqlalchemy import text
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            cols = [
+                row[1]
+                for row in conn.execute(
+                    text("PRAGMA table_info(scraping_history)")
+                ).fetchall()
+            ]
+            if "error_type" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE scraping_history ADD COLUMN error_type TEXT"
+                    )
+                )
+                conn.commit()
+
     yield
     # Shutdown
     print("Shutting down Finance Analysis API...")

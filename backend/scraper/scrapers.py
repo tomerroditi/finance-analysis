@@ -31,6 +31,7 @@ from backend.scraper.exceptions import (
     SecurityError,
     ServiceError,
     TimeoutError,
+    TwoFactorRequiredError,
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
@@ -246,6 +247,7 @@ class Scraper(ABC):
         self.start_date = start_date
         self.result = ""
         self.error = ""
+        self.error_type = None
         self.data = None
 
         # 2fa related attributes
@@ -350,6 +352,14 @@ class Scraper(ABC):
             )
             print(f"DEBUG: Data error details: {e.original_error}", flush=True)
             return
+        except TwoFactorRequiredError as e:
+            print(
+                f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
+            )
+            print(
+                f"DEBUG: 2FA required error details: {e.original_error}", flush=True
+            )
+            return
         except LoginError as e:
             print(
                 f"{self.provider_name}: {self.account_name}: {self.error}", flush=True
@@ -372,6 +382,7 @@ class Scraper(ABC):
             print(f"{self.provider_name}: {self.account_name}: {error_msg}", flush=True)
             print(f"DEBUG: Unexpected error details: {str(e)}", flush=True)
             self.error = error_msg
+            self.error_type = ErrorType.GENERAL.value
             return
         finally:
             self._record_scraping_attempt(self.process_id)
@@ -623,6 +634,10 @@ class Scraper(ABC):
                 SecurityError,
                 "Security verification required.",
             ),
+            ErrorType.TWO_FACTOR_REQUIRED: (
+                TwoFactorRequiredError,
+                "Two-factor authentication required. Please try again — you will be prompted to enter a verification code.",
+            ),
             ErrorType.GENERAL: (
                 ScraperError,
                 f"Unexpected error: {error[:50]}..."
@@ -651,8 +666,9 @@ class Scraper(ABC):
         # Get the appropriate exception class and user message
         exception_class, user_message = error_handlers[error_type]
 
-        # Store the user-friendly error message
+        # Store the user-friendly error message and error type
         self.error = user_message
+        self.error_type = error_type.value
 
         # Raise the appropriate exception
         if error:
@@ -690,16 +706,19 @@ class Scraper(ABC):
         ):  # 2fa canceled by the user (self.data is an empty df)
             status = ScrapingHistoryRepository.CANCELED
             error_message = None
+            error_type = None
         elif self.data is not None and not self.error:
             status = ScrapingHistoryRepository.SUCCESS
             error_message = None
+            error_type = None
         else:
             status = ScrapingHistoryRepository.FAILED
             error_message = self.error
+            error_type = self.error_type
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(id_, status, error_message)
+            history_repo.record_scrape_end(id_, status, error_message, error_type)
 
     def _save_scraped_transactions(self):
         """
@@ -1291,8 +1310,7 @@ class HapoalimScraper(BankScraper):
     provider_name = "hapoalim"
 
     def scrape_data(self, start_date: str) -> None:
-        """
-        Get the data from the Hapoalim website
+        """Get the data from the Hapoalim website.
 
         Parameters
         ----------
@@ -1301,6 +1319,59 @@ class HapoalimScraper(BankScraper):
         """
         args = (self.credentials["userCode"], self.credentials["password"])
         self.data = self._scrape_data(start_date, *args)
+
+    def _handle_error(self, error: str):
+        """Handle errors with Hapoalim-specific 2FA detection.
+
+        Bank Hapoalim periodically requires 2FA (SMS verification) for
+        sessions it considers unrecognized. The upstream library returns
+        a GENERIC error when this happens because the 2FA page URL does
+        not match any known login result. This override detects that
+        scenario and provides actionable guidance.
+
+        Parameters
+        ----------
+        error : str
+            The error message from the scraping script's stderr.
+        """
+        original_error = error
+
+        error_parts = error.split("logging error: ")
+        parsed_error = error_parts[-1] if len(error_parts) > 1 else ""
+
+        if not parsed_error:
+            return
+
+        # Detect 2FA-related errors for Hapoalim
+        is_2fa = parsed_error.startswith(ErrorType.TWO_FACTOR_REQUIRED.value)
+
+        # Also detect GENERIC/GENERAL errors from Hapoalim that are likely 2FA
+        if not is_2fa and any(
+            parsed_error.startswith(prefix)
+            for prefix in ("GENERIC", "GENERAL_ERROR", "UNKNOWN_ERROR")
+        ):
+            lower_error = parsed_error.lower()
+            tfa_indicators = [
+                "navigation",
+                "waiting for",
+                "waitfor",
+                "unexpected",
+                "did not match",
+            ]
+            if any(indicator in lower_error for indicator in tfa_indicators):
+                is_2fa = True
+
+        if is_2fa:
+            self.error = (
+                "Two-factor authentication required by Bank Hapoalim. "
+                "Log in to the bank website manually once to verify your "
+                "device, then retry scraping."
+            )
+            self.error_type = ErrorType.TWO_FACTOR_REQUIRED.value
+            raise TwoFactorRequiredError(self.error, original_error)
+
+        # Fall back to the generic handler for all other errors
+        super()._handle_error(error)
 
 
 class LeumiScraper(BankScraper):
