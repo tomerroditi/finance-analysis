@@ -31,8 +31,12 @@ const ErrorType = {
 /**
  * Checks if a scrape failure was likely caused by a 2FA page redirect.
  * Hapoalim shows a 2FA verification page for unrecognized sessions,
- * which causes the scraper to fail with timeout or unknown errors since
- * the redirect URL doesn't match any expected login result.
+ * which causes the scraper to fail because the redirect URL doesn't
+ * match any expected login result (success/invalid password/change password).
+ *
+ * Important: We avoid treating generic TIMEOUT errors as 2FA since those
+ * can be caused by slow networks or bank server issues. Instead we look
+ * for specific error patterns that indicate an unexpected page redirect.
  */
 function is2FAError(scrapeResult) {
   if (scrapeResult.success) return false;
@@ -40,17 +44,16 @@ function is2FAError(scrapeResult) {
   const msg = (scrapeResult.errorMessage || '').toLowerCase();
   const type = (scrapeResult.errorType || '').toUpperCase();
 
-  // The library's TIMEOUT error when waitForRedirect times out on 2FA page
-  if (type === 'TIMEOUT') return true;
+  // The library explicitly reports TWO_FACTOR_RETRIEVAL when it detects 2FA
+  if (type === 'TWO_FACTOR_RETRIEVAL') return true;
 
-  // GENERAL_ERROR with "unexpected login result" indicates the page URL
-  // didn't match any known login result (success/invalid password/change password)
+  // When Hapoalim redirects to a 2FA verification page, the page URL
+  // doesn't match any known login result. The library reports this as
+  // "unexpected login result" — the clearest signal of a 2FA redirect.
   if (msg.includes('unexpected login result')) return true;
 
-  // "unknown error" from login result detection
-  if (msg.includes('unknown_error') || msg.includes('unknown error')) return true;
-
-  // Navigation timeout waiting for expected URLs
+  // Navigation timeout specifically during login redirect can indicate
+  // the page was redirected to the 2FA page instead of the expected URL.
   if (msg.includes('navigation timeout') || msg.includes('waiting for navigation')) return true;
 
   return false;
@@ -58,11 +61,14 @@ function is2FAError(scrapeResult) {
 
 /**
  * Categorize an error for the Python error handler.
+ * Maps error message keywords to ErrorType enum values that match the Python side.
  */
 function categorizeError(message) {
-  if (message.includes("INVALID_PASSWORD") || message.includes("INVALID_CREDENTIALS") ||
-      message.includes("password") || message.includes("credentials") || message.includes("GENERIC")) {
+  if (message.includes("INVALID_PASSWORD") || message.includes("INVALID_CREDENTIALS")) {
     return ErrorType.CREDENTIALS;
+  }
+  if (message.includes("TWO_FACTOR_RETRIEVER_MISSING") || message.includes("TWO_FACTOR_RETRIEVAL")) {
+    return ErrorType.TFA_REQUIRED;
   }
   if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED") ||
       message.includes("network") || message.includes("Network")) {
@@ -75,12 +81,10 @@ function categorizeError(message) {
       message.includes("change password")) {
     return ErrorType.PASSWORD_CHANGE;
   }
-  if (message.includes("account") || message.includes("blocked") ||
-      message.includes("suspended") || message.includes("locked")) {
+  if (message.includes("blocked") || message.includes("suspended") || message.includes("locked")) {
     return ErrorType.ACCOUNT;
   }
-  if (message.includes("login") || message.includes("authentication") ||
-      message.includes("auth") || message.includes("LOGIN")) {
+  if (message.includes("LOGIN") || message.includes("login failed")) {
     return ErrorType.LOGIN;
   }
   return ErrorType.GENERAL;
