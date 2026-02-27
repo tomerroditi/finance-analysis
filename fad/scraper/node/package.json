@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "israeli-bank-scrapers": "^5.2.2"
+    "israeli-bank-scrapers": "^5.2.2",
+    "puppeteer": "^22.12.1"
   }
 }

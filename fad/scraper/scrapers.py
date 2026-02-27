@@ -276,8 +276,8 @@ class Scraper(ABC):
 
     def _handle_error(self, error: str):
         """
-        Handle the error message from the scraping script. this is the most generic way to handle errors, each scraper
-        should implement its own error handling method since the error messages can be different for each provider.
+        Handle the error message from the scraping script. Maps error types from the israeli-bank-scrapers library
+        to user-friendly messages.
 
         Parameters
         ----------
@@ -294,12 +294,22 @@ class Scraper(ABC):
         error = error.split("logging error: ")
         error = error[-1] if len(error) > 1 else ''
 
-        if "GENERIC" in error:
-            error = "check your card 6 digits"
+        if "TWO_FACTOR_AUTH" in error or "TWO_FACTOR_RETRIEVER_MISSING" in error:
+            error = ("Two-factor authentication failed. The bank required 2FA verification "
+                     "but it could not be completed successfully")
         elif "INVALID_PASSWORD" in error:
-            error = "check your password/username/id"
+            error = "Invalid credentials - check your password/username/id"
         elif "CHANGE_PASSWORD" in error:
-            error = "The password has expired, please change it"
+            error = "The password has expired, the bank requires you to change it"
+        elif "ACCOUNT_BLOCKED" in error:
+            error = "Your account has been blocked by the bank"
+        elif "TIMEOUT" in error:
+            error = "Timeout: The bank website took too long to respond"
+        elif "GENERIC" in error:
+            error = "A scraping error occurred - check your credentials (card 6 digits, id, etc.)"
+        elif "GENERAL_ERROR" in error:
+            error = ("Login failed due to an unexpected page. This may be caused by 2FA, "
+                     "a temporary bank issue, or a website change")
 
         self.error = error
         if error:
@@ -579,10 +589,12 @@ class OneZeroScraper(BankScraper):
 class HapoalimScraper(BankScraper):
     script_path = os.path.join(NODE_JS_SCRIPTS_DIR, 'hapoalim.js')
     provider_name = 'hapoalim'
+    requires_2fa = True
 
     def scrape_data(self, start_date: str) -> None:
         """
-        Get the data from the Max website
+        Get the data from Bank Hapoalim. Supports 2FA - when the bank requires two-factor authentication,
+        the scraper will prompt for an OTP code via the UI dialog.
 
         Parameters
         ----------
@@ -591,6 +603,61 @@ class HapoalimScraper(BankScraper):
         """
         args = (self.credentials["userCode"], self.credentials["password"])
         self.data = self._scrape_data(start_date, *args)
+
+    def _scrape_data(self, start_date: str, *args) -> pd.DataFrame:
+        """
+        Scrape data from Bank Hapoalim using an interactive subprocess that supports 2FA.
+        When the bank triggers 2FA, the subprocess signals via stdout and waits for the OTP code on stdin.
+
+        Parameters
+        ----------
+        start_date : str
+            The date from which to start pulling the data, should be in the format of 'YYYY-MM-DD'
+        args : tuple
+            userCode and password
+
+        Returns
+        -------
+        pd.DataFrame
+            The scraped data as a pandas DataFrame. Empty DataFrame if no data was found or cancelled.
+        """
+        args = ['node', self.script_path, *args, start_date]
+        process = subprocess.Popen(args,
+                                   stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   text=True,
+                                   encoding='utf-8')
+
+        # Read stdout looking for OTP prompt (2FA triggered) or data marker (no 2FA needed)
+        while True:
+            output = process.stdout.readline()
+            if output:
+                if 'Enter OTP code:' in output:
+                    self.otp_code = "waiting for input"
+                    if not self.otp_event.wait(timeout=120):
+                        raise LoginError('Timeout: OTP code was not provided for 2FA')
+                    if self.otp_code == self.CANCEL:
+                        process.kill()
+                        return pd.DataFrame()
+                    process.stdin.write(self.otp_code + '\n')
+                    process.stdin.flush()
+                    process.stdin.close()
+                    break
+                elif 'writing scraped data to console' in output:
+                    self.otp_code = "not required"
+                    break
+            if process.poll() is not None:
+                break
+            sleep(0.3)
+
+        # Read the remaining output (transaction data)
+        while process.poll() is None:
+            self.result += process.stdout.readline()
+
+        self._handle_error(process.stderr.read())
+
+        return scraped_data_to_df(self.result)
 
 
 ############################################
