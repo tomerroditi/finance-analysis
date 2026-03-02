@@ -4,6 +4,8 @@ Budget service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for budget rule operations.
 """
 
+import calendar
+from datetime import date
 from typing import Optional
 
 import pandas as pd
@@ -400,6 +402,94 @@ class MonthlyBudgetService(BudgetService):
             )
 
         return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
+
+    def auto_fill_empty_months(
+        self, current_year: int, current_month: int, budget_rules: pd.DataFrame
+    ) -> Optional[str]:
+        """
+        Auto-fill budget rules for empty months between the latest month with
+        rules and the current month.
+
+        Finds the most recent month (before or equal to *current_month*) that
+        has budget rules. Then copies those rules into every empty month from
+        the source month + 1 through *current_month* inclusive.
+
+        Parameters
+        ----------
+        current_year : int
+            The current calendar year.
+        current_month : int
+            The current calendar month (1-12).
+        budget_rules : pd.DataFrame
+            All existing monthly budget rules (from ``get_all_rules``).
+
+        Returns
+        -------
+        str or None
+            A human-readable source month string (e.g. ``"January 2026"``) if
+            rules were copied, or ``None`` if the current month already has
+            rules or no source month was found.
+        """
+        # If current month already has rules, nothing to do
+        current_rules = self.get_month_rules(current_year, current_month, budget_rules)
+        if not current_rules.empty:
+            return None
+
+        # Find the latest month with rules, strictly before the current month
+        monthly_rules = budget_rules.dropna(subset=[YEAR, MONTH])
+        if monthly_rules.empty:
+            return None
+
+        # Filter to months before the current month
+        before_current = monthly_rules[
+            (monthly_rules[YEAR] < current_year)
+            | (
+                (monthly_rules[YEAR] == current_year)
+                & (monthly_rules[MONTH] < current_month)
+            )
+        ]
+        if before_current.empty:
+            return None
+
+        # Find the latest (year, month) pair
+        before_current = before_current.copy()
+        before_current["_sort"] = before_current[YEAR] * 12 + before_current[MONTH]
+        max_sort = before_current["_sort"].max()
+        source_row = before_current[before_current["_sort"] == max_sort].iloc[0]
+        source_year = int(source_row[YEAR])
+        source_month = int(source_row[MONTH])
+
+        # Get the source rules
+        source_rules = self.get_month_rules(source_year, source_month, budget_rules)
+
+        # Iterate from source+1 to current month, filling empty months
+        y, m = source_year, source_month
+        while True:
+            # Advance one month
+            if m == 12:
+                m = 1
+                y += 1
+            else:
+                m += 1
+
+            # Check if this month already has rules
+            month_rules = self.get_month_rules(y, m, budget_rules)
+            if month_rules.empty:
+                for _, rule in source_rules.iterrows():
+                    self.add_rule(
+                        name=rule[NAME],
+                        amount=rule[AMOUNT],
+                        category=rule[CATEGORY],
+                        tags=rule[TAGS],
+                        month=m,
+                        year=y,
+                    )
+
+            if y == current_year and m == current_month:
+                break
+
+        source_month_name = calendar.month_name[source_month]
+        return f"{source_month_name} {source_year}"
 
     def get_month_rules(
         self, year: int, month: int, budget_rules: pd.DataFrame | None = None

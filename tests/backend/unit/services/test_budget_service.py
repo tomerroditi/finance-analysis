@@ -894,3 +894,105 @@ class TestProjectBudgetServiceExtended:
         # Other categories should still be available
         assert "Food" in available
         assert "Transport" in available
+
+
+class TestAutoFillEmptyMonths:
+    """Tests for auto_fill_empty_months method."""
+
+    def test_fills_current_month_from_previous(self, db_session):
+        """Verify rules are copied from the latest month with rules to the current month."""
+        service = MonthlyBudgetService(db_session)
+
+        # Create rules for January 2026
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 1, 2026)
+
+        budget_rules = service.get_all_rules()
+        result = service.auto_fill_empty_months(2026, 3, budget_rules)
+
+        assert result is not None
+        assert "January 2026" in result
+
+        # February and March should both have rules now
+        feb_rules = service.get_month_rules(2026, 2)
+        mar_rules = service.get_month_rules(2026, 3)
+        assert len(feb_rules) == 2
+        assert len(mar_rules) == 2
+        assert set(feb_rules[NAME].tolist()) == {TOTAL_BUDGET, "Food"}
+        assert set(mar_rules[NAME].tolist()) == {TOTAL_BUDGET, "Food"}
+
+    def test_no_rules_anywhere_returns_none(self, db_session):
+        """Verify None returned when no monthly rules exist at all."""
+        service = MonthlyBudgetService(db_session)
+        budget_rules = service.get_all_rules()
+
+        result = service.auto_fill_empty_months(2026, 3, budget_rules)
+        assert result is None
+
+    def test_current_month_has_rules_returns_none(self, db_session):
+        """Verify no-op when the current month already has rules."""
+        service = MonthlyBudgetService(db_session)
+
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 3, 2026)
+
+        budget_rules = service.get_all_rules()
+        result = service.auto_fill_empty_months(2026, 3, budget_rules)
+        assert result is None
+
+    def test_skips_months_that_already_have_rules(self, db_session):
+        """Verify months with existing rules are not overwritten."""
+        service = MonthlyBudgetService(db_session)
+
+        # Jan has 2 rules, Feb has 1 custom rule, Mar is empty
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 1, 2026)
+        service.add_rule(TOTAL_BUDGET, 9000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2026)
+
+        budget_rules = service.get_all_rules()
+        result = service.auto_fill_empty_months(2026, 3, budget_rules)
+
+        assert result is not None
+        # Feb should still have its 1 custom rule, not overwritten
+        feb_rules = service.get_month_rules(2026, 2)
+        assert len(feb_rules) == 1
+        assert feb_rules.iloc[0][AMOUNT] == 9000.0
+
+        # Mar should have rules copied from the latest source (Jan),
+        # but since Feb exists and is closer, the source is Jan (the latest
+        # month with rules before the first gap). The method finds the latest
+        # month before current_month. That's Feb (month 2), which has 1 rule.
+        # So Mar gets 1 rule copied from Feb.
+        mar_rules = service.get_month_rules(2026, 3)
+        assert len(mar_rules) == 1
+        assert mar_rules.iloc[0][AMOUNT] == 9000.0
+
+    def test_year_boundary_fill(self, db_session):
+        """Verify filling across year boundary (Dec -> Jan)."""
+        service = MonthlyBudgetService(db_session)
+
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 11, 2025)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 11, 2025)
+
+        budget_rules = service.get_all_rules()
+        result = service.auto_fill_empty_months(2026, 2, budget_rules)
+
+        assert result is not None
+        assert "November 2025" in result
+
+        dec_rules = service.get_month_rules(2025, 12)
+        jan_rules = service.get_month_rules(2026, 1)
+        feb_rules = service.get_month_rules(2026, 2)
+        assert len(dec_rules) == 2
+        assert len(jan_rules) == 2
+        assert len(feb_rules) == 2
+
+    def test_ignores_future_months(self, db_session):
+        """Verify rules in future months are not used as source."""
+        service = MonthlyBudgetService(db_session)
+
+        # Only rules in a future month (Dec 2026), none before current (Mar 2026)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 12, 2026)
+
+        budget_rules = service.get_all_rules()
+        result = service.auto_fill_empty_months(2026, 3, budget_rules)
+        assert result is None
