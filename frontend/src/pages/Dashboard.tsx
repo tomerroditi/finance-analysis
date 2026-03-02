@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import {
   TrendingUp,
   TrendingDown,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Calculator,
@@ -888,36 +887,8 @@ function RecentTransactionsFeed({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Section 4 — Collapsible Insights (accordion wrapper)              */
+/*  Section 4 — Tabbed Insights                                       */
 /* ------------------------------------------------------------------ */
-
-function AccordionSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
-      >
-        <h3 className="text-lg font-bold">{title}</h3>
-        <ChevronDown
-          size={20}
-          className={`text-[var(--text-muted)] transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-      {isOpen && <div className="px-6 pb-6">{children}</div>}
-    </div>
-  );
-}
 
 /* ================================================================== */
 /*  Main Dashboard Component                                          */
@@ -928,6 +899,9 @@ export function Dashboard() {
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
   const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
+  const [insightTab, setInsightTab] = useState<
+    "monthly_expenses" | "net_worth" | "cash_flow" | "income_expenses" | "category"
+  >("monthly_expenses");
 
   // ---- Existing queries (kept) ----
 
@@ -1140,249 +1114,157 @@ export function Dashboard() {
         />
       </div>
 
-      {/* Section 4: Collapsible Insights */}
-      <div>
-        <h2 className="text-xl font-bold mb-4 text-[var(--text-muted)]">🔍 More Insights</h2>
-        <div className="space-y-4">
+      {/* Section 4: Tabbed Insights */}
+      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
+        {/* Tab bar */}
+        <div className="px-6 pt-5 pb-0">
+          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl flex-wrap gap-1">
+            {([
+              { key: "monthly_expenses" as const, label: "💸 Monthly Expenses" },
+              { key: "net_worth" as const, label: "📈 Net Worth" },
+              { key: "cash_flow" as const, label: "🌊 Cash Flow" },
+              { key: "income_expenses" as const, label: "⚖️ Income & Expenses" },
+              { key: "category" as const, label: "🍕 Categories" },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setInsightTab(key)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                  insightTab === key
+                    ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab content */}
+        <div className="px-6 pb-6 pt-4">
           {/* Monthly Expenses */}
-          <AccordionSection title="💸 Monthly Expenses">
-            {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
-              <>
-                <div className="flex items-center justify-end mb-4">
-                  <button
-                    onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                      excludePendingRefunds
-                        ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                        : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {excludePendingRefunds
-                      ? "🚫 Pending Refunds Excluded"
-                      : "✅ Pending Refunds Included"}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
-                      <Calculator size={18} />
+          {insightTab === "monthly_expenses" && (
+            <>
+              {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
+                <>
+                  <div className="flex items-center justify-end mb-4">
+                    <button
+                      onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                        excludePendingRefunds
+                          ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {excludePendingRefunds
+                        ? "🚫 Pending Refunds Excluded"
+                        : "✅ Pending Refunds Included"}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                        <Calculator size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-xs">🔥 Avg 3 Months</p>
+                        <p className="text-lg font-bold">
+                          {formatCurrency(monthlyExpenses.avg_3_months)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">🔥 Avg 3 Months</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_3_months)}
-                      </p>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
+                        <Calculator size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-xs">📊 Avg 6 Months</p>
+                        <p className="text-lg font-bold">
+                          {formatCurrency(monthlyExpenses.avg_6_months)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                        <Calculator size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-xs">📅 Avg 12 Months</p>
+                        <p className="text-lg font-bold">
+                          {formatCurrency(monthlyExpenses.avg_12_months)}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
-                      <Calculator size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">📊 Avg 6 Months</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_6_months)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
-                      <Calculator size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">📅 Avg 12 Months</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_12_months)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="h-[350px]">
-                  <Plot
-                    data={[
-                      {
-                        x: monthlyExpenses.months.map((d) => d.month),
-                        y: monthlyExpenses.months.map((d) => d.expenses),
-                        type: "bar",
-                        marker: { color: "#f43f5e" },
-                        name: "Expenses",
-                      },
-                    ]}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      height: 350,
-                      yaxis: {
-                        title: {
-                          text: "Amount (ILS)",
-                          font: { color: "#94a3b8" },
-                        },
-                        tickfont: { color: "#94a3b8" },
-                      },
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={{ displayModeBar: false, responsive: true }}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-[var(--text-muted)] text-sm">📭 No expense data available.</p>
-            )}
-          </AccordionSection>
-
-          {/* Net Worth Over Time */}
-          <AccordionSection title="📈 Net Worth Over Time">
-            {netWorthData && netWorthData.length > 0 ? (
-              <>
-                <div className="flex justify-end mb-4">
-                  <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
-                    {(
-                      [
-                        { key: "all", label: "All" },
-                        { key: "bank_balance", label: "Bank Balance" },
-                        { key: "investments", label: "Investments" },
-                        { key: "net_worth", label: "Net Worth" },
-                      ] as const
-                    ).map(({ key, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => setNetWorthView(key)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                          netWorthView === key
-                            ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                            : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="h-[350px]">
-                  <Plot
-                    data={getNetWorthTraces()}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      height: 350,
-                      yaxis: {
-                        title: {
-                          text: "Amount (ILS)",
-                          font: { color: "#94a3b8" },
-                        },
-                        tickfont: { color: "#94a3b8" },
-                      },
-                      legend: {
-                        orientation: "h",
-                        y: -0.15,
-                        x: 0.5,
-                        xanchor: "center",
-                      },
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={{ displayModeBar: false, responsive: true }}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-[var(--text-muted)] text-sm">📭 No net worth data available.</p>
-            )}
-          </AccordionSection>
-
-          {/* Cash Flow (Sankey) */}
-          <AccordionSection title="🌊 Cash Flow">
-            {sankeyLoading ? (
-              <Skeleton variant="chart" className="h-[500px]" />
-            ) : (
-              <div className="h-[500px]">
-                <SankeyChart data={sankeyData} height={500} />
-              </div>
-            )}
-          </AccordionSection>
-
-          {/* Monthly Income & Expenses (merged with Income by Source) */}
-          <AccordionSection title="⚖️ Income & Expenses">
-            <div className="flex justify-end mb-4">
-              <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
-                {([
-                  { key: "overview" as const, label: "📊 Overview" },
-                  { key: "by_source" as const, label: "💼 By Source" },
-                ]).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setIncomeView(key)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                      incomeView === key
-                        ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {incomeView === "overview" ? (
-              <div className="h-[350px]">
-                <Plot
-                  data={[
-                    {
-                      x: incomeOutcome?.map((d: any) => d.month) || [],
-                      y: incomeOutcome?.map((d: any) => d.income) || [],
-                      name: "💚 Income",
-                      type: "bar",
-                      marker: { color: "#059669" },
-                    },
-                    {
-                      x: incomeOutcome?.map((d: any) => d.month) || [],
-                      y: incomeOutcome?.map((d: any) => d.expenses) || [],
-                      name: "🔴 Expenses",
-                      type: "bar",
-                      marker: { color: "#f43f5e" },
-                    },
-                  ]}
-                  layout={{
-                    ...chartTheme,
-                    barmode: "group",
-                    autosize: true,
-                    height: 350,
-                    legend: {
-                      orientation: "h",
-                      y: -0.15,
-                      x: 0.5,
-                      xanchor: "center",
-                    },
-                  }}
-                  style={{ width: "100%", height: "100%" }}
-                  config={{ displayModeBar: false, responsive: true }}
-                />
-              </div>
-            ) : (
-              <div className="h-[350px]">
-                {incomeBySourceData && incomeBySourceData.length > 0 ? (() => {
-                  const allSources = Array.from(
-                    new Set(
-                      incomeBySourceData.flatMap((d) => Object.keys(d.sources)),
-                    ),
-                  );
-                  const colors = [
-                    "#059669", "#10b981", "#34d399", "#6ee7b7",
-                    "#a7f3d0", "#047857", "#065f46", "#064e3b",
-                  ];
-                  return (
+                  <div className="h-[350px]">
                     <Plot
-                      data={allSources.map((source, i) => ({
-                        x: incomeBySourceData.map((d) => d.month),
-                        y: incomeBySourceData.map(
-                          (d) => d.sources[source] || 0,
-                        ),
-                        name: source,
-                        type: "bar" as const,
-                        marker: { color: colors[i % colors.length] },
-                      }))}
+                      data={[
+                        {
+                          x: monthlyExpenses.months.map((d) => d.month),
+                          y: monthlyExpenses.months.map((d) => d.expenses),
+                          type: "bar",
+                          marker: { color: "#f43f5e" },
+                          name: "Expenses",
+                        },
+                      ]}
                       layout={{
                         ...chartTheme,
-                        barmode: "stack",
+                        autosize: true,
+                        height: 350,
+                        yaxis: {
+                          title: {
+                            text: "Amount (ILS)",
+                            font: { color: "#94a3b8" },
+                          },
+                          tickfont: { color: "#94a3b8" },
+                        },
+                      }}
+                      style={{ width: "100%", height: "100%" }}
+                      config={{ displayModeBar: false, responsive: true }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-[var(--text-muted)] text-sm">📭 No expense data available.</p>
+              )}
+            </>
+          )}
+
+          {/* Net Worth Over Time */}
+          {insightTab === "net_worth" && (
+            <>
+              {netWorthData && netWorthData.length > 0 ? (
+                <>
+                  <div className="flex justify-end mb-4">
+                    <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                      {(
+                        [
+                          { key: "all", label: "All" },
+                          { key: "bank_balance", label: "Bank Balance" },
+                          { key: "investments", label: "Investments" },
+                          { key: "net_worth", label: "Net Worth" },
+                        ] as const
+                      ).map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => setNetWorthView(key)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                            netWorthView === key
+                              ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="h-[350px]">
+                    <Plot
+                      data={getNetWorthTraces()}
+                      layout={{
+                        ...chartTheme,
                         autosize: true,
                         height: 350,
                         yaxis: {
@@ -1402,16 +1284,141 @@ export function Dashboard() {
                       style={{ width: "100%", height: "100%" }}
                       config={{ displayModeBar: false, responsive: true }}
                     />
-                  );
-                })() : (
-                  <p className="text-[var(--text-muted)] text-sm">📭 No income source data available.</p>
-                )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[var(--text-muted)] text-sm">📭 No net worth data available.</p>
+              )}
+            </>
+          )}
+
+          {/* Cash Flow (Sankey) */}
+          {insightTab === "cash_flow" && (
+            <>
+              {sankeyLoading ? (
+                <Skeleton variant="chart" className="h-[500px]" />
+              ) : (
+                <div className="h-[500px]">
+                  <SankeyChart data={sankeyData} height={500} />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Income & Expenses */}
+          {insightTab === "income_expenses" && (
+            <>
+              <div className="flex justify-end mb-4">
+                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                  {([
+                    { key: "overview" as const, label: "📊 Overview" },
+                    { key: "by_source" as const, label: "💼 By Source" },
+                  ]).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setIncomeView(key)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                        incomeView === key
+                          ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                          : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </AccordionSection>
+              {incomeView === "overview" ? (
+                <div className="h-[350px]">
+                  <Plot
+                    data={[
+                      {
+                        x: incomeOutcome?.map((d: any) => d.month) || [],
+                        y: incomeOutcome?.map((d: any) => d.income) || [],
+                        name: "💚 Income",
+                        type: "bar",
+                        marker: { color: "#059669" },
+                      },
+                      {
+                        x: incomeOutcome?.map((d: any) => d.month) || [],
+                        y: incomeOutcome?.map((d: any) => d.expenses) || [],
+                        name: "🔴 Expenses",
+                        type: "bar",
+                        marker: { color: "#f43f5e" },
+                      },
+                    ]}
+                    layout={{
+                      ...chartTheme,
+                      barmode: "group",
+                      autosize: true,
+                      height: 350,
+                      legend: {
+                        orientation: "h",
+                        y: -0.15,
+                        x: 0.5,
+                        xanchor: "center",
+                      },
+                    }}
+                    style={{ width: "100%", height: "100%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
+              ) : (
+                <div className="h-[350px]">
+                  {incomeBySourceData && incomeBySourceData.length > 0 ? (() => {
+                    const allSources = Array.from(
+                      new Set(
+                        incomeBySourceData.flatMap((d) => Object.keys(d.sources)),
+                      ),
+                    );
+                    const colors = [
+                      "#059669", "#10b981", "#34d399", "#6ee7b7",
+                      "#a7f3d0", "#047857", "#065f46", "#064e3b",
+                    ];
+                    return (
+                      <Plot
+                        data={allSources.map((source, i) => ({
+                          x: incomeBySourceData.map((d) => d.month),
+                          y: incomeBySourceData.map(
+                            (d) => d.sources[source] || 0,
+                          ),
+                          name: source,
+                          type: "bar" as const,
+                          marker: { color: colors[i % colors.length] },
+                        }))}
+                        layout={{
+                          ...chartTheme,
+                          barmode: "stack",
+                          autosize: true,
+                          height: 350,
+                          yaxis: {
+                            title: {
+                              text: "Amount (ILS)",
+                              font: { color: "#94a3b8" },
+                            },
+                            tickfont: { color: "#94a3b8" },
+                          },
+                          legend: {
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
+                          },
+                        }}
+                        style={{ width: "100%", height: "100%" }}
+                        config={{ displayModeBar: false, responsive: true }}
+                      />
+                    );
+                  })() : (
+                    <p className="text-[var(--text-muted)] text-sm">📭 No income source data available.</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
           {/* Category Breakdown */}
-          <AccordionSection title="🍕 Category Breakdown">
+          {insightTab === "category" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
               {/* Expenses Chart */}
               <div className="relative">
@@ -1499,7 +1506,7 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
-          </AccordionSection>
+          )}
         </div>
       </div>
 
