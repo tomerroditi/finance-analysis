@@ -132,7 +132,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    () => new Set(["date", "description", "category", "amount"])
+    () => new Set(["date", "account", "description", "category", "amount"])
   );
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
   const columnDropdownRef = useRef<HTMLDivElement>(null);
