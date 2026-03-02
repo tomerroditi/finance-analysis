@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  TrendingUp,
   TrendingDown,
   ChevronLeft,
   ChevronRight,
@@ -16,9 +15,7 @@ import {
 import Plot from "react-plotly.js";
 import {
   analyticsApi,
-  bankBalancesApi,
   cashBalancesApi,
-  investmentsApi,
   budgetApi,
   transactionsApi,
   taggingApi,
@@ -31,7 +28,6 @@ import { LinkRefundModal } from "../components/modals/LinkRefundModal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { SankeyChart } from "../components/SankeyChart";
-import { Sparkline } from "../components/common/Sparkline";
 import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
@@ -59,21 +55,15 @@ const chartTheme = {
 
 function FinancialHealthHeader({
   netWorthData,
-  bankBalances,
   cashBalances,
-  portfolioAnalysis,
   isLoading,
 }: {
   netWorthData:
     | { month: string; bank_balance: number; investment_value: number; net_worth: number }[]
     | undefined;
-  bankBalances: { provider: string; account_name: string; balance: number }[] | undefined;
   cashBalances: { account_name: string; balance: number }[] | undefined;
-  portfolioAnalysis: { total_value: number; allocation: { name: string; balance: number }[] } | undefined;
   isLoading: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
   const previousNetWorth =
     netWorthData && netWorthData.length >= 2 ? netWorthData[netWorthData.length - 2] : null;
@@ -84,145 +74,58 @@ function FinancialHealthHeader({
       ? (momDelta / Math.abs(previousNetWorth.net_worth)) * 100
       : null;
 
-  const last6Bank = netWorthData?.slice(-6).map((d) => d.bank_balance) ?? [];
-  const last6Investments = netWorthData?.slice(-6).map((d) => d.investment_value) ?? [];
-
-  const toggleExpanded = () => setExpanded((prev) => !prev);
+  const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
 
   if (isLoading) {
     return (
-      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-        <Skeleton variant="text" lines={2} className="mb-4" />
-        <div className="grid grid-cols-3 gap-4">
-          <Skeleton variant="card" className="h-20" />
-          <Skeleton variant="card" className="h-20" />
-          <Skeleton variant="card" className="h-20" />
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} variant="card" className="h-16" />
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
-      {/* Hero row */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-6 pt-6 pb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            💰 Net Worth
-          </p>
-          <p className="text-3xl font-bold mt-0.5">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Net Worth */}
+      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
+        <p className="text-xs text-[var(--text-muted)]">💰 Net Worth</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <p className="text-lg font-bold">
             {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
           </p>
-        </div>
-        {momDelta !== null && (
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold ${
-              momDelta >= 0
-                ? "bg-emerald-500/10 text-emerald-400"
-                : "bg-rose-500/10 text-rose-400"
-            }`}
-          >
-            {momDelta >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-            <span dir="ltr">
-              {`${momDelta >= 0 ? "+" : "-"}${new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(Math.abs(momDelta))} \u20AA${momPercent !== null ? ` (${momPercent >= 0 ? "+" : ""}${momPercent.toFixed(1)}%)` : ""}`}
+          {momDelta !== null && (
+            <span
+              dir="ltr"
+              className={`text-xs font-semibold ${momDelta >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+            >
+              {`${momDelta >= 0 ? "+" : ""}${momPercent !== null ? `${momPercent.toFixed(1)}%` : ""}`}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Sub-cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--surface-light)] border-t border-[var(--surface-light)]">
-        {/* Bank Balance */}
-        <button
-          onClick={toggleExpanded}
-          className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
-        >
-          <div className="flex items-center justify-between">
-            <div className="min-w-0">
-              <p className="text-xs text-[var(--text-muted)]">🏦 Bank Balance</p>
-              <p className="text-lg font-bold mt-0.5">
-                {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
-              </p>
-            </div>
-            {last6Bank.length >= 2 && <Sparkline data={last6Bank} color="#f59e0b" />}
-          </div>
-          {expanded && bankBalances && bankBalances.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
-              {bankBalances.map((b) => (
-                <div
-                  key={`${b.provider}-${b.account_name}`}
-                  className="flex items-center justify-between text-sm"
-                >
-                  <span className="text-[var(--text-muted)]">{b.account_name}</span>
-                  <span className="font-medium">{formatCurrency(b.balance)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </button>
+      {/* Bank Balance */}
+      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
+        <p className="text-xs text-[var(--text-muted)]">🏦 Bank Balance</p>
+        <p className="text-lg font-bold mt-0.5">
+          {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+        </p>
+      </div>
 
-        {/* Investments */}
-        <button
-          onClick={toggleExpanded}
-          className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
-        >
-          <div className="flex items-center justify-between">
-            <div className="min-w-0">
-              <p className="text-xs text-[var(--text-muted)]">📈 Investments</p>
-              <p className="text-lg font-bold mt-0.5">
-                {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
-              </p>
-            </div>
-            {last6Investments.length >= 2 && <Sparkline data={last6Investments} color="#6366f1" />}
-          </div>
-          {expanded &&
-            portfolioAnalysis?.allocation &&
-            portfolioAnalysis.allocation.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
-                {portfolioAnalysis.allocation.map((inv) => (
-                  <div key={inv.name} className="flex items-center justify-between text-sm">
-                    <span className="text-[var(--text-muted)]">{inv.name}</span>
-                    <span className="font-medium">{formatCurrency(inv.balance)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-        </button>
+      {/* Investments */}
+      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
+        <p className="text-xs text-[var(--text-muted)]">📈 Investments</p>
+        <p className="text-lg font-bold mt-0.5">
+          {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+        </p>
+      </div>
 
-        {/* Cash */}
-        {(() => {
-          const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
-          const hasCash = cashBalances && cashBalances.length > 0;
-          return hasCash ? (
-            <button
-              onClick={toggleExpanded}
-              className="text-left px-5 py-4 hover:bg-[var(--surface-light)]/40 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
-                  <p className="text-lg font-bold mt-0.5">{formatCurrency(totalCash)}</p>
-                </div>
-              </div>
-              {expanded && cashBalances.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-[var(--surface-light)] space-y-1.5">
-                  {cashBalances.map((c) => (
-                    <div key={c.account_name} className="flex items-center justify-between text-sm">
-                      <span className="text-[var(--text-muted)]">{c.account_name}</span>
-                      <span className="font-medium">{formatCurrency(c.balance)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </button>
-          ) : (
-            <div className="px-5 py-4">
-              <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
-              <p className="text-lg font-bold mt-0.5">{formatCurrency(0)}</p>
-              <p className="text-xs text-[var(--text-muted)] mt-1">📭 (no data)</p>
-            </div>
-          );
-        })()}
+      {/* Cash */}
+      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
+        <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
+        <p className="text-lg font-bold mt-0.5">{formatCurrency(totalCash)}</p>
       </div>
     </div>
   );
@@ -446,7 +349,7 @@ function MonthlySpendingGauge({
           to="/budget"
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          📋 View All Budget Rules &rarr;
+          View All Budget Rules &rarr;
         </Link>
       </div>
     </div>
@@ -694,7 +597,7 @@ function RecentTransactionsFeed({
           to="/transactions"
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          👀 View All &rarr;
+          View All &rarr;
         </Link>
       </div>
 
@@ -929,11 +832,6 @@ export function Dashboard() {
     },
   });
 
-  const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isDemoMode],
-    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
-  });
-
   const { data: cashBalances } = useQuery({
     queryKey: ["cash-balances", isDemoMode],
     queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
@@ -955,10 +853,6 @@ export function Dashboard() {
     },
   });
 
-  const { data: portfolioAnalysis } = useQuery({
-    queryKey: ["portfolio-analysis", isDemoMode],
-    queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
-  });
 
   const { data: monthlyExpenses } = useQuery({
     queryKey: ["monthly-expenses", excludePendingRefunds, isDemoMode],
@@ -1096,9 +990,7 @@ export function Dashboard() {
       {/* Section 1: Financial Health Header */}
       <FinancialHealthHeader
         netWorthData={netWorthData}
-        bankBalances={bankBalances}
         cashBalances={cashBalances}
-        portfolioAnalysis={portfolioAnalysis}
         isLoading={netWorthLoading}
       />
 
@@ -1118,7 +1010,7 @@ export function Dashboard() {
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
         {/* Tab bar */}
         <div className="px-6 pt-5 pb-0">
-          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl flex-wrap gap-1">
+          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1">
             {([
               { key: "monthly_expenses" as const, label: "💸 Monthly Expenses" },
               { key: "net_worth" as const, label: "📈 Net Worth" },
@@ -1129,7 +1021,7 @@ export function Dashboard() {
               <button
                 key={key}
                 onClick={() => setInsightTab(key)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                className={`flex-1 text-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
                   insightTab === key
                     ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                     : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1142,33 +1034,19 @@ export function Dashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="px-6 pb-6 pt-4">
+        <div className="px-6 pb-6 pt-4 h-[600px] overflow-y-auto flex flex-col">
           {/* Monthly Expenses */}
           {insightTab === "monthly_expenses" && (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
                 <>
-                  <div className="flex items-center justify-end mb-4">
-                    <button
-                      onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                        excludePendingRefunds
-                          ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {excludePendingRefunds
-                        ? "🚫 Pending Refunds Excluded"
-                        : "✅ Pending Refunds Included"}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">🔥 Avg 3 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_3_months)}
                         </p>
@@ -1179,7 +1057,7 @@ export function Dashboard() {
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">📊 Avg 6 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_6_months)}
                         </p>
@@ -1190,14 +1068,26 @@ export function Dashboard() {
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">📅 Avg 12 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_12_months)}
                         </p>
                       </div>
                     </div>
+                    <button
+                      onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                      className={`rounded-xl px-4 py-3 text-xs font-medium border transition-colors flex items-center justify-center ${
+                        excludePendingRefunds
+                          ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {excludePendingRefunds
+                        ? "Pending Refunds Excluded"
+                        : "Pending Refunds Included"}
+                    </button>
                   </div>
-                  <div className="h-[350px]">
+                  <div className="flex-1 min-h-0">
                     <Plot
                       data={[
                         {
@@ -1211,7 +1101,6 @@ export function Dashboard() {
                       layout={{
                         ...chartTheme,
                         autosize: true,
-                        height: 350,
                         yaxis: {
                           title: {
                             text: "Amount (ILS)",
@@ -1228,12 +1117,12 @@ export function Dashboard() {
               ) : (
                 <p className="text-[var(--text-muted)] text-sm">📭 No expense data available.</p>
               )}
-            </>
+            </div>
           )}
 
           {/* Net Worth Over Time */}
           {insightTab === "net_worth" && (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               {netWorthData && netWorthData.length > 0 ? (
                 <>
                   <div className="flex justify-end mb-4">
@@ -1260,13 +1149,12 @@ export function Dashboard() {
                       ))}
                     </div>
                   </div>
-                  <div className="h-[350px]">
+                  <div className="flex-1 min-h-0">
                     <Plot
                       data={getNetWorthTraces()}
                       layout={{
                         ...chartTheme,
                         autosize: true,
-                        height: 350,
                         yaxis: {
                           title: {
                             text: "Amount (ILS)",
@@ -1289,25 +1177,25 @@ export function Dashboard() {
               ) : (
                 <p className="text-[var(--text-muted)] text-sm">📭 No net worth data available.</p>
               )}
-            </>
+            </div>
           )}
 
           {/* Cash Flow (Sankey) */}
           {insightTab === "cash_flow" && (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               {sankeyLoading ? (
-                <Skeleton variant="chart" className="h-[500px]" />
+                <Skeleton variant="chart" className="flex-1" />
               ) : (
-                <div className="h-[500px]">
-                  <SankeyChart data={sankeyData} height={500} />
+                <div className="flex-1 min-h-0">
+                  <SankeyChart data={sankeyData} height={560} />
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Income & Expenses */}
           {insightTab === "income_expenses" && (
-            <>
+            <div className="flex flex-col flex-1 min-h-0">
               <div className="flex justify-end mb-4">
                 <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
                   {([
@@ -1329,20 +1217,20 @@ export function Dashboard() {
                 </div>
               </div>
               {incomeView === "overview" ? (
-                <div className="h-[350px]">
+                <div className="flex-1 min-h-0">
                   <Plot
                     data={[
                       {
                         x: incomeOutcome?.map((d: any) => d.month) || [],
                         y: incomeOutcome?.map((d: any) => d.income) || [],
-                        name: "💚 Income",
+                        name: "Income",
                         type: "bar",
                         marker: { color: "#059669" },
                       },
                       {
                         x: incomeOutcome?.map((d: any) => d.month) || [],
                         y: incomeOutcome?.map((d: any) => d.expenses) || [],
-                        name: "🔴 Expenses",
+                        name: "Expenses",
                         type: "bar",
                         marker: { color: "#f43f5e" },
                       },
@@ -1351,7 +1239,6 @@ export function Dashboard() {
                       ...chartTheme,
                       barmode: "group",
                       autosize: true,
-                      height: 350,
                       legend: {
                         orientation: "h",
                         y: -0.15,
@@ -1364,7 +1251,7 @@ export function Dashboard() {
                   />
                 </div>
               ) : (
-                <div className="h-[350px]">
+                <div className="flex-1 min-h-0">
                   {incomeBySourceData && incomeBySourceData.length > 0 ? (() => {
                     const allSources = Array.from(
                       new Set(
@@ -1390,7 +1277,6 @@ export function Dashboard() {
                           ...chartTheme,
                           barmode: "stack",
                           autosize: true,
-                          height: 350,
                           yaxis: {
                             title: {
                               text: "Amount (ILS)",
@@ -1414,99 +1300,115 @@ export function Dashboard() {
                   )}
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Category Breakdown */}
-          {insightTab === "category" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-[350px]">
-              {/* Expenses Chart */}
-              <div className="relative">
-                <p className="text-sm font-bold text-center text-red-400 mb-2 uppercase tracking-wider">
-                  🔴 Expenses
-                </p>
-                <div className="h-full">
-                  <Plot
-                    data={[
-                      {
-                        values:
-                          categoryData?.expenses?.map((d: any) => d.amount) ||
-                          [],
-                        labels:
-                          categoryData?.expenses?.map(
-                            (d: any) => d.category,
-                          ) || [],
-                        type: "pie",
-                        hole: 0.4,
-                        marker: {
-                          colors: [
-                            "#ef4444",
-                            "#f87171",
-                            "#fca5a5",
-                            "#fecaca",
-                            "#fee2e2",
-                          ],
-                        },
-                        textinfo: "label+percent",
-                        hoverinfo: "label+value+percent",
-                      },
-                    ]}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      showlegend: false,
-                      margin: { t: 0, b: 0, l: 0, r: 0 },
-                    }}
-                    style={{ width: "95%", height: "95%" }}
-                    config={{ displayModeBar: false, responsive: true }}
-                  />
-                </div>
-              </div>
+          {insightTab === "category" && (() => {
+            const expenses = categoryData?.expenses
+              ?.slice()
+              .sort((a: any, b: any) => b.amount - a.amount) || [];
+            const refunds = categoryData?.refunds
+              ?.slice()
+              .sort((a: any, b: any) => b.amount - a.amount) || [];
+            const totalExpenses = expenses.reduce((s: number, d: any) => s + d.amount, 0);
+            const totalRefunds = refunds.reduce((s: number, d: any) => s + d.amount, 0);
+            const topCategory = expenses[0];
+            const maxExpense = topCategory?.amount || 1;
+            const maxRefund = refunds[0]?.amount || 1;
 
-              {/* Refunds Chart */}
-              <div className="relative">
-                <p className="text-sm font-bold text-center text-emerald-400 mb-2 uppercase tracking-wider">
-                  🟢 Refunds
-                </p>
-                <div className="h-full">
-                  <Plot
-                    data={[
-                      {
-                        values:
-                          categoryData?.refunds?.map((d: any) => d.amount) ||
-                          [],
-                        labels:
-                          categoryData?.refunds?.map(
-                            (d: any) => d.category,
-                          ) || [],
-                        type: "pie",
-                        hole: 0.4,
-                        marker: {
-                          colors: [
-                            "#10b981",
-                            "#34d399",
-                            "#6ee7b7",
-                            "#a7f3d0",
-                            "#d1fae5",
-                          ],
-                        },
-                        textinfo: "label+percent",
-                        hoverinfo: "label+value+percent",
-                      },
-                    ]}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      showlegend: false,
-                      margin: { t: 0, b: 0, l: 0, r: 0 },
-                    }}
-                    style={{ width: "95%", height: "95%" }}
-                    config={{ displayModeBar: false, responsive: true }}
-                  />
+            return (
+              <div className="flex flex-col flex-1 min-h-0 space-y-5">
+                {/* Summary strip */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                      <TrendingDown size={18} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Total Expenses</p>
+                      <p className="text-lg font-bold text-rose-400">{formatCurrency(totalExpenses)}</p>
+                    </div>
+                  </div>
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 text-lg">
+                      {topCategory ? (categoryIcons?.[topCategory.category] || "📊") : "—"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Top Category</p>
+                      <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
+                    </div>
+                  </div>
+                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                      <Tag size={18} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Categories</p>
+                      <p className="text-lg font-bold">{expenses.length}</p>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Expenses bars */}
+                <div>
+                  <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">Expenses</p>
+                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
+                    {expenses.map((d: any, i: number) => {
+                      const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
+                      const barWidth = (d.amount / maxExpense) * 100;
+                      const icon = categoryIcons?.[d.category] ?? "";
+                      return (
+                        <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
+                          <span className="text-base w-6 text-center shrink-0">{icon || (d.category === "Uncategorized" ? "❓" : `${i + 1}.`)}</span>
+                          <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                          <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                        </div>
+                      );
+                    })}
+                    {expenses.length === 0 && (
+                      <p className="text-[var(--text-muted)] text-sm py-4 text-center">No expense data available.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Refunds bars (conditional) */}
+                {refunds.length > 0 && (
+                  <div>
+                    <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">Refunds</p>
+                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                      {refunds.map((d: any, i: number) => {
+                        const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;
+                        const barWidth = (d.amount / maxRefund) * 100;
+                        const icon = categoryIcons?.[d.category] ?? "";
+                        return (
+                          <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
+                            <span className="text-base w-6 text-center shrink-0">{icon || `${i + 1}.`}</span>
+                            <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                            <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
+                                style={{ width: `${barWidth}%` }}
+                              />
+                            </div>
+                            <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
+                            <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
