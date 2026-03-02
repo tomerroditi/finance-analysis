@@ -588,7 +588,19 @@ class MonthlyBudgetService(BudgetService):
               project spend for the month (from ``get_monthly_project_spending_summary``).
             - ``pending_refunds`` – dict with ``items`` (pending refund list) and
               ``total_expected`` (sum of expected amounts).
+            - ``copied_from`` – source month name if rules were auto-filled,
+              or ``None``.
         """
+        copied_from = None
+        today = date.today()
+
+        # Auto-fill empty months only when viewing the current calendar month
+        if year == today.year and month == today.month:
+            budget_rules = self.get_all_rules()
+            current_rules = self.get_month_rules(year, month, budget_rules)
+            if current_rules.empty:
+                copied_from = self.auto_fill_empty_months(year, month, budget_rules)
+
         view = self.get_monthly_budget_view(year, month, include_split_parents)
         project_summary = self.get_monthly_project_spending_summary(
             year, month, include_split_parents
@@ -606,6 +618,7 @@ class MonthlyBudgetService(BudgetService):
                 "items": pending_refunds,
                 "total_expected": budget_adjustment,
             },
+            "copied_from": copied_from,
         }
 
     def get_filtered_expenses(
