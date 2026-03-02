@@ -132,8 +132,10 @@ function FinancialHealthHeader({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Section 2 — Monthly Spending Gauge                                */
+/*  Section 2 — Budget Spending Gauge (Monthly + Projects)            */
 /* ------------------------------------------------------------------ */
+
+type BudgetViewMode = "monthly" | "projects";
 
 interface BudgetRule {
   id: number;
@@ -150,7 +152,67 @@ function getProgressColor(pct: number): string {
   return "bg-emerald-500";
 }
 
-function MonthlySpendingGauge({
+function BudgetRuleCards({
+  rules,
+  categoryIcons,
+}: {
+  rules: BudgetRule[];
+  categoryIcons: Record<string, string> | undefined;
+}) {
+  if (rules.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 mb-4 max-h-[340px] overflow-y-auto scrollbar-auto-hide">
+      {rules.map((rule) => {
+        const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
+        const remaining = rule.budget_amount - rule.spent_amount;
+        const icon = categoryIcons?.[rule.category] ?? "";
+        return (
+          <div
+            key={rule.id}
+            className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
+                <span className="text-xs font-semibold truncate">{rule.name}</span>
+              </div>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                pct > 100
+                  ? "bg-rose-500/20 text-rose-400"
+                  : pct >= 75
+                    ? "bg-amber-500/20 text-amber-400"
+                    : "bg-emerald-500/20 text-emerald-400"
+              }`}>
+                {Math.round(pct)}%
+              </span>
+            </div>
+            <p className="text-sm font-bold">
+              {formatCurrency(rule.spent_amount)}
+              <span className="text-xs font-normal text-[var(--text-muted)]">
+                {" "}/ {formatCurrency(rule.budget_amount)}
+              </span>
+            </p>
+            <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+            <p className={`text-[10px] font-medium ${
+              remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
+            }`}>
+              {remaining >= 0
+                ? `${formatCurrency(remaining)} left`
+                : `${formatCurrency(Math.abs(remaining))} over budget`}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BudgetSpendingGauge({
   categoryIcons,
 }: {
   categoryIcons: Record<string, string> | undefined;
@@ -160,6 +222,8 @@ function MonthlySpendingGauge({
   const currentMonth = now.getMonth() + 1;
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
+  const [viewMode, setViewMode] = useState<BudgetViewMode>("monthly");
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const { isDemoMode } = useDemoMode();
 
   const isCurrentMonth = year === currentYear && month === currentMonth;
@@ -204,12 +268,14 @@ function MonthlySpendingGauge({
     }
   }, [isDemoMode, currentYear, currentMonth, queryClient]);
 
-  const { data: rawBudgetAnalysis, isLoading } = useQuery({
+  // --- Monthly budget data ---
+  const { data: rawBudgetAnalysis, isLoading: monthlyLoading } = useQuery({
     queryKey: ["budget-analysis", year, month, isDemoMode],
     queryFn: async () => {
       const res = await budgetApi.getAnalysis(year, month, false);
       return res.data;
     },
+    enabled: viewMode === "monthly",
   });
 
   const budgetAnalysis = useMemo(() => {
@@ -230,128 +296,194 @@ function MonthlySpendingGauge({
     };
   }, [rawBudgetAnalysis]);
 
-  const totalBudget =
-    budgetAnalysis?.total_budget ??
-    (budgetAnalysis?.rules?.reduce((sum, r) => sum + r.budget_amount, 0) ?? 0);
-  const totalSpent =
-    budgetAnalysis?.total_spent ??
-    (budgetAnalysis?.rules?.reduce((sum, r) => sum + r.spent_amount, 0) ?? 0);
+  // --- Project budget data ---
+  const { data: projects } = useQuery({
+    queryKey: ["budget-projects", isDemoMode],
+    queryFn: async () => {
+      const res = await budgetApi.getProjects();
+      return res.data as string[];
+    },
+    enabled: viewMode === "projects",
+  });
 
-  // Filter out "Total Budget" special rule, sort by spent descending
+  // Auto-select first project when projects load
+  useEffect(() => {
+    if (projects && projects.length > 0 && !selectedProject) {
+      setSelectedProject(projects[0]);
+    }
+  }, [projects, selectedProject]);
+
+  const { data: rawProjectDetails, isLoading: projectLoading } = useQuery({
+    queryKey: ["budget-project-details", selectedProject, isDemoMode],
+    queryFn: async () => {
+      const res = await budgetApi.getProjectDetails(selectedProject!, false);
+      return res.data;
+    },
+    enabled: viewMode === "projects" && !!selectedProject,
+  });
+
+  const projectAnalysis = useMemo(() => {
+    if (!rawProjectDetails?.rules) return undefined;
+    const rules: BudgetRule[] = rawProjectDetails.rules.map((item: any) => ({
+      id: item.rule.id,
+      name: item.rule.name,
+      category: item.rule.category,
+      tags: item.rule.tags,
+      budget_amount: item.rule.amount,
+      spent_amount: item.current_amount,
+    }));
+    const totalRule = rules.find((r) => r.name === "Total Budget");
+    return {
+      rules,
+      total_budget: totalRule?.budget_amount,
+      total_spent: totalRule?.spent_amount ?? rawProjectDetails.total_spent,
+    };
+  }, [rawProjectDetails]);
+
+  // --- Computed values ---
+  const activeAnalysis = viewMode === "monthly" ? budgetAnalysis : projectAnalysis;
+  const isLoading = viewMode === "monthly" ? monthlyLoading : projectLoading;
+
+  const totalBudget =
+    activeAnalysis?.total_budget ??
+    (activeAnalysis?.rules?.reduce((sum, r) => sum + r.budget_amount, 0) ?? 0);
+  const totalSpent =
+    activeAnalysis?.total_spent ??
+    (activeAnalysis?.rules?.reduce((sum, r) => sum + r.spent_amount, 0) ?? 0);
+
   const miniRules = useMemo(() => {
-    if (!budgetAnalysis?.rules) return [];
-    return budgetAnalysis.rules
+    if (!activeAnalysis?.rules) return [];
+    return activeAnalysis.rules
       .filter((r) => r.name !== "Total Budget")
       .sort((a, b) => b.spent_amount - a.spent_amount);
-  }, [budgetAnalysis]);
+  }, [activeAnalysis]);
+
+  // --- Segmented control ---
+  const segmentedControl = (
+    <div className="flex bg-[var(--surface-light)] p-0.5 rounded-lg">
+      {([
+        { key: "monthly" as const, label: "Monthly" },
+        { key: "projects" as const, label: "Projects" },
+      ]).map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => setViewMode(key)}
+          className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+            viewMode === key
+              ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 
   if (isLoading) {
     return (
       <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-        <Skeleton variant="text" lines={1} className="mb-4" />
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            🎯 Budget
+          </p>
+          {segmentedControl}
+        </div>
         <Skeleton variant="chart" className="h-40" />
       </div>
     );
   }
 
-  if (!budgetAnalysis || budgetAnalysis.rules.length === 0) return null;
+  // For monthly: hide card if no data; for projects: show empty state
+  if (viewMode === "monthly" && (!activeAnalysis || activeAnalysis.rules.length === 0)) return null;
+
+  const hasNoProjects = viewMode === "projects" && (!projects || projects.length === 0);
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-      {/* Header */}
+      {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handlePreviousMonth}
-            className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
-            🎯 {monthName}
-          </p>
-          <button
-            onClick={handleNextMonth}
-            disabled={isCurrentMonth}
-            className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-        {isCurrentMonth && (
-          <span className="text-xs text-[var(--text-muted)]">
-            ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
-          </span>
-        )}
+        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          🎯 Budget
+        </p>
+        {segmentedControl}
       </div>
 
-      {/* Gauge */}
-      <div className="flex justify-center mb-6">
-        <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
-      </div>
-
-      {/* Budget rule cards */}
-      {miniRules.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 mb-4 max-h-[340px] overflow-y-auto scrollbar-auto-hide">
-          {miniRules.map((rule) => {
-            const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
-            const remaining = rule.budget_amount - rule.spent_amount;
-            const icon = categoryIcons?.[rule.category] ?? "";
-            return (
-              <div
-                key={rule.id}
-                className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
-                    <span className="text-xs font-semibold truncate">{rule.name}</span>
-                  </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    pct > 100
-                      ? "bg-rose-500/20 text-rose-400"
-                      : pct >= 75
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-emerald-500/20 text-emerald-400"
-                  }`}>
-                    {Math.round(pct)}%
-                  </span>
-                </div>
-                <p className="text-sm font-bold">
-                  {formatCurrency(rule.spent_amount)}
-                  <span className="text-xs font-normal text-[var(--text-muted)]">
-                    {" "}/ {formatCurrency(rule.budget_amount)}
-                  </span>
-                </p>
-                {/* Progress bar */}
-                <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-                <p className={`text-[10px] font-medium ${
-                  remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
-                }`}>
-                  {remaining >= 0
-                    ? `${formatCurrency(remaining)} left`
-                    : `${formatCurrency(Math.abs(remaining))} over budget`}
-                </p>
-              </div>
-            );
-          })}
+      {/* Sub-header: month nav or project selector */}
+      {viewMode === "monthly" ? (
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePreviousMonth}
+              className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
+              {monthName}
+            </p>
+            <button
+              onClick={handleNextMonth}
+              disabled={isCurrentMonth}
+              className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          {isCurrentMonth && (
+            <span className="text-xs text-[var(--text-muted)]">
+              ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+            </span>
+          )}
         </div>
+      ) : (
+        !hasNoProjects && (
+          <div className="flex items-center gap-2 mb-4">
+            <select
+              value={selectedProject ?? ""}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              className="flex-1 bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+            >
+              {projects?.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+        )
       )}
 
-      {/* Link to budget page */}
-      <div className="text-right">
-        <Link
-          to="/budget"
-          className="text-sm font-medium text-[var(--primary)] hover:underline"
-        >
-          View All Budget Rules &rarr;
-        </Link>
-      </div>
+      {/* Empty state for projects */}
+      {hasNoProjects ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)] mb-3">No project budgets yet</p>
+          <Link
+            to="/budget"
+            className="text-sm font-medium text-[var(--primary)] hover:underline"
+          >
+            Create a project budget &rarr;
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Gauge */}
+          <div className="flex justify-center mb-6">
+            <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
+          </div>
+
+          {/* Budget rule cards */}
+          <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
+
+          {/* Link to budget page */}
+          <div className="text-right">
+            <Link
+              to="/budget"
+              className="text-sm font-medium text-[var(--primary)] hover:underline"
+            >
+              View All Budget Rules &rarr;
+            </Link>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -996,7 +1128,7 @@ export function Dashboard() {
 
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <MonthlySpendingGauge
+        <BudgetSpendingGauge
           categoryIcons={categoryIcons}
         />
         <RecentTransactionsFeed
