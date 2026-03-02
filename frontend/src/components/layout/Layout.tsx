@@ -27,7 +27,7 @@ export function Layout() {
           sidebarOpen ? "ml-64" : "ml-20"
         }`}
       >
-        <div className="p-8 pt-12">
+        <div className="p-8 pt-6">
           <Outlet />
         </div>
       </main>

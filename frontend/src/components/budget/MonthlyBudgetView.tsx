@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
@@ -32,7 +32,23 @@ export const MonthlyBudgetView: React.FC = () => {
     queryKey: ["budgetAnalysis", year, month, includeSplitParents],
     queryFn: () =>
       budgetApi.getAnalysis(year, month, includeSplitParents).then((res) => res.data),
+    placeholderData: keepPreviousData,
   });
+
+  // Prefetch adjacent months (prev 2 + next 2) for instant navigation
+  useEffect(() => {
+    const offsets = [-2, -1, 1, 2];
+    for (const offset of offsets) {
+      const date = new Date(year, month - 1 + offset);
+      const prefetchYear = date.getFullYear();
+      const prefetchMonth = date.getMonth() + 1;
+      queryClient.prefetchQuery({
+        queryKey: ["budgetAnalysis", prefetchYear, prefetchMonth, includeSplitParents],
+        queryFn: () =>
+          budgetApi.getAnalysis(prefetchYear, prefetchMonth, includeSplitParents).then((res) => res.data),
+      });
+    }
+  }, [year, month, includeSplitParents, queryClient]);
 
   useEffect(() => {
     if (analysis?.copied_from) {

@@ -7,15 +7,12 @@ export const Budget: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"monthly" | "projects">("monthly");
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
-            Budget Management
-          </h1>
-          <p className="text-[var(--text-muted)] font-medium">
-            Track your spending, manage allocations, and monitor project
-            budgets.
+          <h1 className="text-3xl font-bold">Budget</h1>
+          <p className="text-[var(--text-muted)] mt-1">
+            Track your spending and manage allocations
           </p>
         </div>
 
