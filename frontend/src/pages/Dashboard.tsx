@@ -5,6 +5,8 @@ import {
   TrendingUp,
   TrendingDown,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Calculator,
   Split,
   RefreshCw,
@@ -247,20 +249,84 @@ function getProgressColor(pct: number): string {
 }
 
 function MonthlySpendingGauge({
-  budgetAnalysis,
   categoryIcons,
-  isLoading,
 }: {
-  budgetAnalysis: { rules: BudgetRule[]; total_budget?: number; total_spent?: number } | undefined;
   categoryIcons: Record<string, string> | undefined;
-  isLoading: boolean;
 }) {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const monthName = format(now, "MMMM yyyy");
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const [year, setYear] = useState(currentYear);
+  const [month, setMonth] = useState(currentMonth);
+  const { isDemoMode } = useDemoMode();
+
+  const isCurrentMonth = year === currentYear && month === currentMonth;
+  const monthDate = new Date(year, month - 1);
+  const monthName = format(monthDate, "MMMM yyyy");
   const daysInMonth = new Date(year, month, 0).getDate();
   const daysRemaining = daysInMonth - now.getDate();
+
+  const handlePreviousMonth = () => {
+    if (month === 1) {
+      setMonth(12);
+      setYear(year - 1);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 12) {
+      setMonth(1);
+      setYear(year + 1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
+
+  const queryClient = useQueryClient();
+
+  // Prefetch surrounding 11 months so navigation is instant
+  useEffect(() => {
+    for (let i = 1; i <= 11; i++) {
+      const d = new Date(currentYear, currentMonth - 1 - i);
+      const prefetchYear = d.getFullYear();
+      const prefetchMonth = d.getMonth() + 1;
+      queryClient.prefetchQuery({
+        queryKey: ["budget-analysis", prefetchYear, prefetchMonth, isDemoMode],
+        queryFn: async () => {
+          const res = await budgetApi.getAnalysis(prefetchYear, prefetchMonth, false);
+          return res.data;
+        },
+      });
+    }
+  }, [isDemoMode, currentYear, currentMonth, queryClient]);
+
+  const { data: rawBudgetAnalysis, isLoading } = useQuery({
+    queryKey: ["budget-analysis", year, month, isDemoMode],
+    queryFn: async () => {
+      const res = await budgetApi.getAnalysis(year, month, false);
+      return res.data;
+    },
+  });
+
+  const budgetAnalysis = useMemo(() => {
+    if (!rawBudgetAnalysis?.rules) return undefined;
+    const rules: BudgetRule[] = rawBudgetAnalysis.rules.map((item: any) => ({
+      id: item.rule.id,
+      name: item.rule.name,
+      category: item.rule.category,
+      tags: item.rule.tags,
+      budget_amount: item.rule.amount,
+      spent_amount: item.current_amount,
+    }));
+    const totalRule = rules.find((r) => r.name === "Total Budget");
+    return {
+      rules,
+      total_budget: totalRule?.budget_amount,
+      total_spent: totalRule?.spent_amount,
+    };
+  }, [rawBudgetAnalysis]);
 
   const totalBudget =
     budgetAnalysis?.total_budget ??
@@ -292,14 +358,29 @@ function MonthlySpendingGauge({
     <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            🎯 This Month &mdash; {monthName}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePreviousMonth}
+            className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
+            🎯 {monthName}
           </p>
+          <button
+            onClick={handleNextMonth}
+            disabled={isCurrentMonth}
+            className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
-        <span className="text-xs text-[var(--text-muted)]">
-          ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
-        </span>
+        {isCurrentMonth && (
+          <span className="text-xs text-[var(--text-muted)]">
+            ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+          </span>
+        )}
       </div>
 
       {/* Gauge */}
@@ -913,39 +994,6 @@ export function Dashboard() {
     },
   });
 
-  // ---- New queries ----
-
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-
-  const { data: rawBudgetAnalysis, isLoading: budgetLoading } = useQuery({
-    queryKey: ["budget-analysis", currentYear, currentMonth, isDemoMode],
-    queryFn: async () => {
-      const res = await budgetApi.getAnalysis(currentYear, currentMonth, false);
-      return res.data;
-    },
-  });
-
-  // Transform nested API response into flat BudgetRule objects
-  const budgetAnalysis = useMemo(() => {
-    if (!rawBudgetAnalysis?.rules) return undefined;
-    const rules: BudgetRule[] = rawBudgetAnalysis.rules.map((item: any) => ({
-      id: item.rule.id,
-      name: item.rule.name,
-      category: item.rule.category,
-      tags: item.rule.tags,
-      budget_amount: item.rule.amount,
-      spent_amount: item.current_amount,
-    }));
-    const totalRule = rules.find((r) => r.name === "Total Budget");
-    return {
-      rules,
-      total_budget: totalRule?.budget_amount,
-      total_spent: totalRule?.spent_amount,
-    };
-  }, [rawBudgetAnalysis]);
-
   const { data: allTransactions, isLoading: transactionsLoading } = useQuery({
     queryKey: ["all-transactions", isDemoMode],
     queryFn: async () => {
@@ -1083,9 +1131,7 @@ export function Dashboard() {
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <MonthlySpendingGauge
-          budgetAnalysis={budgetAnalysis}
           categoryIcons={categoryIcons}
-          isLoading={budgetLoading}
         />
         <RecentTransactionsFeed
           transactions={allTransactions}
