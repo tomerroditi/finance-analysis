@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -24,6 +24,7 @@ export const MonthlyBudgetView: React.FC = () => {
   const [editingRule, setEditingRule] = useState<any>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
+  const [copiedFromMsg, setCopiedFromMsg] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -32,6 +33,14 @@ export const MonthlyBudgetView: React.FC = () => {
     queryFn: () =>
       budgetApi.getAnalysis(year, month, includeSplitParents).then((res) => res.data),
   });
+
+  useEffect(() => {
+    if (analysis?.copied_from) {
+      setCopiedFromMsg(analysis.copied_from);
+      const timer = setTimeout(() => setCopiedFromMsg(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [analysis?.copied_from]);
 
   // Fetch pending refunds to know which transactions are already marked
   const { data: pendingRefunds } = useQuery({
@@ -247,6 +256,19 @@ export const MonthlyBudgetView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Auto-copy toast */}
+      {copiedFromMsg && (
+        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
+          <span>Budget rules copied from {copiedFromMsg}</span>
+          <button
+            onClick={() => setCopiedFromMsg(null)}
+            className="ml-4 text-blue-400/60 hover:text-blue-400 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Summary Header Strip */}
       {budgetRules.length > 0 && (
