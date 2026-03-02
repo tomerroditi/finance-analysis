@@ -4,8 +4,6 @@ import { Sidebar } from "./Sidebar";
 import { GlobalSearch } from "./GlobalSearch";
 import { useAppStore } from "../../stores/appStore";
 
-import { Header } from "./Header";
-
 export function Layout() {
   const { sidebarOpen, searchOpen, setSearchOpen } = useAppStore();
 
@@ -29,8 +27,7 @@ export function Layout() {
           sidebarOpen ? "ml-64" : "ml-20"
         }`}
       >
-        <Header />
-        <div className="p-8">
+        <div className="p-8 pt-12">
           <Outlet />
         </div>
       </main>

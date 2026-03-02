@@ -8,10 +8,12 @@ import {
   Database,
   ChevronLeft,
   ChevronRight,
+  Presentation,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
+import { useDemoMode } from "../../context/DemoModeContext";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -24,6 +26,7 @@ const navItems = [
 
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
+  const { isDemoMode, toggleDemoMode, isLoading: demoLoading } = useDemoMode();
 
   // Count uncategorized transactions
   const { data: allTransactions } = useQuery({
@@ -109,6 +112,41 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Demo Mode Toggle */}
+      {!demoLoading && (
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[var(--surface-light)]">
+          <div
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all cursor-pointer ${
+              isDemoMode
+                ? "bg-amber-500/10 hover:bg-amber-500/20"
+                : "hover:bg-[var(--surface-light)]"
+            }`}
+            onClick={() => toggleDemoMode(!isDemoMode)}
+          >
+            <Presentation
+              size={20}
+              className={`transition-colors shrink-0 ${isDemoMode ? "text-amber-500" : "text-[var(--text-muted)]"}`}
+            />
+            {sidebarOpen && (
+              <>
+                <span
+                  className={`text-sm font-bold ${isDemoMode ? "text-amber-500" : "text-[var(--text-muted)]"}`}
+                >
+                  Demo
+                </span>
+                <div
+                  className={`ml-auto w-8 h-4 rounded-full relative transition-colors ${isDemoMode ? "bg-amber-500" : "bg-[var(--surface-light)]"}`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isDemoMode ? "left-4.5" : "left-0.5"}`}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
