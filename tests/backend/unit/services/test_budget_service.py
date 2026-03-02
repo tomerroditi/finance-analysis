@@ -957,11 +957,8 @@ class TestAutoFillEmptyMonths:
         assert len(feb_rules) == 1
         assert feb_rules.iloc[0][AMOUNT] == 9000.0
 
-        # Mar should have rules copied from the latest source (Jan),
-        # but since Feb exists and is closer, the source is Jan (the latest
-        # month with rules before the first gap). The method finds the latest
-        # month before current_month. That's Feb (month 2), which has 1 rule.
-        # So Mar gets 1 rule copied from Feb.
+        # Mar gets 1 rule copied from Feb (the latest month with rules
+        # before current_month).
         mar_rules = service.get_month_rules(2026, 3)
         assert len(mar_rules) == 1
         assert mar_rules.iloc[0][AMOUNT] == 9000.0
