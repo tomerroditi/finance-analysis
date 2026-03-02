@@ -159,55 +159,58 @@ function BudgetRuleCards({
   rules: BudgetRule[];
   categoryIcons: Record<string, string> | undefined;
 }) {
-  if (rules.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 gap-3 mb-4 max-h-[340px] overflow-y-auto scrollbar-auto-hide">
-      {rules.map((rule) => {
-        const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
-        const remaining = rule.budget_amount - rule.spent_amount;
-        const icon = categoryIcons?.[rule.category] ?? "";
-        return (
-          <div
-            key={rule.id}
-            className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 min-w-0">
-                {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
-                <span className="text-xs font-semibold truncate">{rule.name}</span>
-              </div>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                pct > 100
-                  ? "bg-rose-500/20 text-rose-400"
-                  : pct >= 75
-                    ? "bg-amber-500/20 text-amber-400"
-                    : "bg-emerald-500/20 text-emerald-400"
-              }`}>
-                {Math.round(pct)}%
-              </span>
-            </div>
-            <p className="text-sm font-bold">
-              {formatCurrency(rule.spent_amount)}
-              <span className="text-xs font-normal text-[var(--text-muted)]">
-                {" "}/ {formatCurrency(rule.budget_amount)}
-              </span>
-            </p>
-            <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
+    <div className="h-[260px] overflow-y-auto scrollbar-auto-hide mb-4">
+      {rules.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {rules.map((rule) => {
+            const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
+            const remaining = rule.budget_amount - rule.spent_amount;
+            const icon = categoryIcons?.[rule.category] ?? "";
+            return (
               <div
-                className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
-                style={{ width: `${Math.min(pct, 100)}%` }}
-              />
-            </div>
-            <p className={`text-[10px] font-medium ${
-              remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
-            }`}>
-              {remaining >= 0
-                ? `${formatCurrency(remaining)} left`
-                : `${formatCurrency(Math.abs(remaining))} over budget`}
-            </p>
-          </div>
-        );
-      })}
+                key={rule.id}
+                className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
+                    <span className="text-xs font-semibold truncate">{rule.name}</span>
+                  </div>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                    pct > 100
+                      ? "bg-rose-500/20 text-rose-400"
+                      : pct >= 75
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "bg-emerald-500/20 text-emerald-400"
+                  }`}>
+                    {Math.round(pct)}%
+                  </span>
+                </div>
+                <p className="text-sm font-bold">
+                  {formatCurrency(rule.spent_amount)}
+                  <span className="text-xs font-normal text-[var(--text-muted)]">
+                    {" "}/ {formatCurrency(rule.budget_amount)}
+                  </span>
+                </p>
+                <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
+                </div>
+                <p className={`text-[10px] font-medium ${
+                  remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
+                }`}>
+                  {remaining >= 0
+                    ? `${formatCurrency(remaining)} left`
+                    : `${formatCurrency(Math.abs(remaining))} over budget`}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -358,130 +361,133 @@ function BudgetSpendingGauge({
       .sort((a, b) => b.spent_amount - a.spent_amount);
   }, [activeAnalysis]);
 
-  // --- Segmented control ---
-  const segmentedControl = (
-    <div className="flex bg-[var(--surface-light)] p-0.5 rounded-lg">
+  // For monthly: hide card entirely if no data at all
+  if (viewMode === "monthly" && !monthlyLoading && (!budgetAnalysis || budgetAnalysis.rules.length === 0)) return null;
+
+  const hasNoProjects = viewMode === "projects" && (!projects || projects.length === 0);
+
+  const toggleViewMode = () =>
+    setViewMode(viewMode === "monthly" ? "projects" : "monthly");
+
+  const segmentedControlEl = (
+    <button
+      onClick={toggleViewMode}
+      className="flex bg-[var(--surface-light)] p-0.5 rounded-lg cursor-pointer"
+    >
       {([
         { key: "monthly" as const, label: "Monthly" },
         { key: "projects" as const, label: "Projects" },
       ]).map(({ key, label }) => (
-        <button
+        <span
           key={key}
-          onClick={() => setViewMode(key)}
           className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
             viewMode === key
               ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+              : "text-[var(--text-muted)]"
           }`}
         >
           {label}
-        </button>
+        </span>
       ))}
-    </div>
+    </button>
   );
 
-  if (isLoading) {
-    return (
-      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            🎯 Budget
-          </p>
-          {segmentedControl}
-        </div>
-        <Skeleton variant="chart" className="h-40" />
-      </div>
-    );
-  }
-
-  // For monthly: hide card if no data; for projects: show empty state
-  if (viewMode === "monthly" && (!activeAnalysis || activeAnalysis.rules.length === 0)) return null;
-
-  const hasNoProjects = viewMode === "projects" && (!projects || projects.length === 0);
-
   return (
-    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+    <div
+      className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]"
+    >
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           🎯 Budget
         </p>
-        {segmentedControl}
+        {segmentedControlEl}
       </div>
 
-      {/* Sub-header: month nav or project selector */}
-      {viewMode === "monthly" ? (
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePreviousMonth}
-              className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
-              {monthName}
-            </p>
-            <button
-              onClick={handleNextMonth}
-              disabled={isCurrentMonth}
-              className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <ChevronRight size={16} />
-            </button>
+      {isLoading ? (
+        <>
+          <div className="h-9 mb-4">
+            <Skeleton variant="text" lines={1} className="h-full" />
           </div>
-          {isCurrentMonth && (
-            <span className="text-xs text-[var(--text-muted)]">
-              ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
-            </span>
-          )}
-        </div>
-      ) : (
-        !hasNoProjects && (
-          <div className="flex items-center gap-2 mb-4">
-            <select
-              value={selectedProject ?? ""}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              className="flex-1 bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm font-medium text-[var(--text)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
-            >
-              {projects?.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-        )
-      )}
-
-      {/* Empty state for projects */}
-      {hasNoProjects ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <p className="text-sm text-[var(--text-muted)] mb-3">No project budgets yet</p>
-          <Link
-            to="/budget"
-            className="text-sm font-medium text-[var(--primary)] hover:underline"
-          >
-            Create a project budget &rarr;
-          </Link>
-        </div>
+          <Skeleton variant="chart" className="h-40" />
+        </>
       ) : (
         <>
-          {/* Gauge */}
-          <div className="flex justify-center mb-6">
-            <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
+          {/* Sub-header: month nav or project selector — fixed h-9 so gauge stays in place */}
+          <div className="h-9 flex items-center mb-4">
+            {viewMode === "monthly" ? (
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handlePreviousMonth}
+                    className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
+                    {monthName}
+                  </p>
+                  <button
+                    onClick={handleNextMonth}
+                    disabled={isCurrentMonth}
+                    className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+                {isCurrentMonth && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+                  </span>
+                )}
+              </div>
+            ) : (
+              !hasNoProjects && (
+                <div className="w-full">
+                  <SelectDropdown
+                    options={(projects ?? []).map((p) => ({ label: p, value: p }))}
+                    value={selectedProject ?? ""}
+                    onChange={setSelectedProject}
+                    placeholder="Select project..."
+                    size="sm"
+                  />
+                </div>
+              )
+            )}
           </div>
 
-          {/* Budget rule cards */}
-          <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
+          {/* Empty state for projects */}
+          {hasNoProjects ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-sm text-[var(--text-muted)] mb-3">No project budgets yet</p>
+              <Link
+                to="/budget"
+                className="text-sm font-medium text-[var(--primary)] hover:underline"
+              >
+                Create a project budget &rarr;
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* Gauge */}
+              <div className="flex justify-center mb-6">
+                <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
+              </div>
 
-          {/* Link to budget page */}
-          <div className="text-right">
-            <Link
-              to="/budget"
-              className="text-sm font-medium text-[var(--primary)] hover:underline"
-            >
-              View All Budget Rules &rarr;
-            </Link>
-          </div>
+              {/* Budget rule cards */}
+              <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
+
+              {/* Link to budget page */}
+              <div className="text-right">
+                <Link
+                  to="/budget"
+                  className="text-sm font-medium text-[var(--primary)] hover:underline"
+                >
+                  View All Budget Rules &rarr;
+                </Link>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
