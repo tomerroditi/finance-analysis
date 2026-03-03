@@ -440,9 +440,46 @@ class InvestmentsService:
             return 0.0
         return float(df["prior_wealth_amount"].sum())
 
+    def _build_allocation_entry(
+        self, inv_id: int, inv_name: str, inv_type: str
+    ) -> Dict[str, Any]:
+        """Build a single allocation entry with metrics and sparkline history."""
+        metrics = self.calculate_profit_loss(inv_id)
+
+        start = metrics.get("first_transaction_date") or (
+            date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+        )
+        history = self.calculate_balance_over_time(
+            inv_id, start, date.today().strftime(r"%Y-%m-%d")
+        )
+        if len(history) > 30:
+            step = len(history) // 30
+            condensed = history[::step]
+            if history[-1] not in condensed:
+                condensed.append(history[-1])
+        else:
+            condensed = history
+
+        return {
+            "id": inv_id,
+            "name": inv_name,
+            "balance": metrics["current_balance"],
+            "type": inv_type,
+            "profit_loss": metrics["absolute_profit_loss"],
+            "roi": metrics["roi_percentage"],
+            "total_deposits": metrics["total_deposits"],
+            "total_withdrawals": metrics["total_withdrawals"],
+            "cagr": metrics["cagr_percentage"],
+            "history": [h["balance"] for h in condensed],
+        }
+
     def get_portfolio_overview(self) -> Dict[str, Any]:
         """
-        Get portfolio-level metrics and allocation data for all open investments.
+        Get portfolio-level metrics and allocation data for all investments.
+
+        Totals (total_value, total_profit, portfolio_roi) reflect open
+        investments only.  The allocation list includes both open and closed
+        investments so cards can be rendered from a single data source.
 
         Returns
         -------
@@ -452,12 +489,11 @@ class InvestmentsService:
             - ``total_value`` – sum of current balances across all open investments.
             - ``total_profit`` – total value minus net invested (deposits - withdrawals).
             - ``portfolio_roi`` – ``(total_value / total_deposits - 1) * 100`` percentage.
-            - ``allocation`` – list of ``{"name": str, "balance": float, "type": str,
-              "profit_loss": float, "roi": float}`` dicts per investment.
+            - ``allocation`` – list of dicts per investment (open and closed).
         """
-        investments = self.investments_repo.get_all_investments(include_closed=False)
+        all_investments = self.investments_repo.get_all_investments(include_closed=True)
 
-        if investments.empty:
+        if all_investments.empty:
             return {
                 "total_value": 0.0,
                 "total_profit": 0.0,
@@ -470,40 +506,17 @@ class InvestmentsService:
         total_withdrawals = 0.0
         allocation = []
 
-        for _, inv in investments.iterrows():
-            metrics = self.calculate_profit_loss(inv["id"])
-
-            total_value += metrics["current_balance"]
-            total_deposits += metrics["total_deposits"]
-            total_withdrawals += metrics["total_withdrawals"]
-
-            # Build condensed sparkline history
-            start = metrics.get("first_transaction_date") or (
-                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+        for _, inv in all_investments.iterrows():
+            entry = self._build_allocation_entry(
+                inv["id"], inv["name"], inv["type"]
             )
-            history = self.calculate_balance_over_time(
-                inv["id"], start, date.today().strftime(r"%Y-%m-%d")
-            )
-            if len(history) > 30:
-                step = len(history) // 30
-                condensed = history[::step]
-                if history[-1] not in condensed:
-                    condensed.append(history[-1])
-            else:
-                condensed = history
+            allocation.append(entry)
 
-            allocation.append(
-                {
-                    "name": inv["name"],
-                    "balance": metrics["current_balance"],
-                    "type": inv["type"],
-                    "profit_loss": metrics["absolute_profit_loss"],
-                    "roi": metrics["roi_percentage"],
-                    "total_deposits": metrics["total_deposits"],
-                    "total_withdrawals": metrics["total_withdrawals"],
-                    "history": [h["balance"] for h in condensed],
-                }
-            )
+            # Only open investments contribute to portfolio totals
+            if not inv["is_closed"]:
+                total_value += entry["balance"]
+                total_deposits += entry["total_deposits"]
+                total_withdrawals += entry["total_withdrawals"]
 
         total_profit = total_value - (total_deposits - total_withdrawals)
         portfolio_roi = (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Trash2,
@@ -159,7 +159,7 @@ function InvestmentCard({
       </div>
 
       {/* Metrics Strip */}
-      <div className={`grid ${RATE_TYPES.has(inv.type) && inv.interest_rate ? "grid-cols-3" : "grid-cols-2"} gap-3 mb-4`}>
+      <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Deposits</p>
           <p className="text-sm font-bold text-white mt-0.5">
@@ -172,12 +172,12 @@ function InvestmentCard({
             {analysisData ? formatCardCurrency(analysisData.total_withdrawals) : "—"}
           </p>
         </div>
-        {RATE_TYPES.has(inv.type) && !!inv.interest_rate && (
-          <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-            <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rate</p>
-            <p className="text-sm font-bold text-white mt-0.5">{inv.interest_rate}%</p>
-          </div>
-        )}
+        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">CAGR</p>
+          <p className="text-sm font-bold text-white mt-0.5">
+            {analysisData?.cagr != null ? `${analysisData.cagr >= 0 ? "+" : ""}${analysisData.cagr.toFixed(1)}%` : "—"}
+          </p>
+        </div>
       </div>
 
       {/* Metadata */}
@@ -511,41 +511,8 @@ export function Investments() {
   const closedInvestments =
     investments?.filter((inv: any) => inv.is_closed) || [];
 
-  const closedAnalysisQueries = useQueries({
-    queries: includeClosed
-      ? closedInvestments.map((inv: any) => ({
-          queryKey: ["investment-analysis", inv.id],
-          queryFn: () =>
-            investmentsApi.getInvestmentAnalysis(inv.id).then((res) => res.data),
-          staleTime: 5 * 60 * 1000,
-        }))
-      : [],
-  });
-
-  const getClosedAnalysisData = (invId: number) => {
-    const idx = closedInvestments.findIndex((inv: any) => inv.id === invId);
-    const query = closedAnalysisQueries[idx];
-    if (!query?.data) return undefined;
-    const d: any = query.data;
-    const history = d.history?.map((h: any) => h.balance) || [];
-    // Downsample to ~30 points for sparkline
-    let condensed = history;
-    if (history.length > 30) {
-      const step = Math.floor(history.length / 30);
-      condensed = history.filter((_: any, i: number) => i % step === 0);
-      if (condensed[condensed.length - 1] !== history[history.length - 1]) {
-        condensed.push(history[history.length - 1]);
-      }
-    }
-    return {
-      balance: d.metrics.current_balance,
-      profit_loss: d.metrics.absolute_profit_loss,
-      roi: d.metrics.roi_percentage,
-      total_deposits: d.metrics.total_deposits,
-      total_withdrawals: d.metrics.total_withdrawals,
-      history: condensed,
-    };
-  };
+  const getAllocationData = (invId: number) =>
+    portfolioAnalysis?.allocation?.find((a: any) => a.id === invId);
 
   if (isLoading)
     return (
@@ -772,9 +739,7 @@ export function Investments() {
                     interest_rate_type: inv.interest_rate_type || "variable",
                     notes: inv.notes || "",
                   })}
-                  analysisData={portfolioAnalysis?.allocation?.find(
-                    (a: any) => a.name === inv.name
-                  )}
+                  analysisData={getAllocationData(inv.id)}
                 />
               ))}
             </div>
@@ -830,7 +795,7 @@ export function Investments() {
                   interest_rate_type: inv.interest_rate_type || "variable",
                   notes: inv.notes || "",
                 })}
-                analysisData={getClosedAnalysisData(inv.id)}
+                analysisData={getAllocationData(inv.id)}
               />
             ))}
           </div>

@@ -166,7 +166,7 @@ class TestInvestmentsServiceCalculations:
         assert last_date == "2024-01-10"
 
     def test_get_portfolio_overview(self, db_session, seed_investments):
-        """Verify portfolio totals and allocation for open investments only."""
+        """Verify portfolio totals reflect open only; allocation includes all."""
         service = InvestmentsService(db_session)
 
         overview = service.get_portfolio_overview()
@@ -181,11 +181,12 @@ class TestInvestmentsServiceCalculations:
         # ROI = ((12000 / 12000) - 1) * 100 = 0%
         assert overview["portfolio_roi"] == pytest.approx(0.0)
 
-        # Allocation should contain one entry for the stock fund
-        assert len(overview["allocation"]) == 1
-        assert overview["allocation"][0]["name"] == "Migdal S&P 500 Fund"
-        assert overview["allocation"][0]["balance"] == 12000.0
-        assert overview["allocation"][0]["type"] == "mutual_fund"
+        # Allocation includes both open and closed investments
+        assert len(overview["allocation"]) == 2
+        stock = next(a for a in overview["allocation"] if a["name"] == "Migdal S&P 500 Fund")
+        assert stock["balance"] == 12000.0
+        assert stock["type"] == "mutual_fund"
+        assert stock["id"] == seed_investments["investments"][0].id
 
     def test_get_portfolio_overview_includes_sparkline_data(
         self, db_session, seed_investments
@@ -194,7 +195,7 @@ class TestInvestmentsServiceCalculations:
         service = InvestmentsService(db_session)
 
         overview = service.get_portfolio_overview()
-        alloc = overview["allocation"][0]
+        alloc = next(a for a in overview["allocation"] if a["name"] == "Migdal S&P 500 Fund")
 
         assert "total_deposits" in alloc
         assert "total_withdrawals" in alloc
