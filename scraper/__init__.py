@@ -39,12 +39,12 @@ def create_scraper(
     from scraper.providers.banks.onezero import OneZeroScraper
     from scraper.providers.banks.otsar_hahayal import OtsarHahayalScraper
     from scraper.providers.banks.pagi import PagiScraper
-    from scraper.providers.banks.union import UnionScraper
+    from scraper.providers.banks.union import UnionBankScraper
     from scraper.providers.banks.yahav import YahavScraper
     from scraper.providers.credit_cards.amex import AmexScraper
     from scraper.providers.credit_cards.behatsdaa import BehatsdaaScraper
     from scraper.providers.credit_cards.beyahad_bishvilha import (
-        BeyadBishvilhaScraper,
+        BeyahadBishvilhaScraper,
     )
     from scraper.providers.credit_cards.isracard import IsracardScraper
     from scraper.providers.credit_cards.max import MaxScraper
@@ -57,7 +57,7 @@ def create_scraper(
         "mercantile": MercantileScraper,
         "mizrahi": MizrahiScraper,
         "otsar hahayal": OtsarHahayalScraper,
-        "union": UnionScraper,
+        "union": UnionBankScraper,
         "beinleumi": BeinleumiScraper,
         "massad": MassadScraper,
         "yahav": YahavScraper,
@@ -67,7 +67,7 @@ def create_scraper(
         "visa cal": VisaCalScraper,
         "isracard": IsracardScraper,
         "amex": AmexScraper,
-        "beyahad bishvilha": BeyadBishvilhaScraper,
+        "beyahad bishvilha": BeyahadBishvilhaScraper,
         "behatsdaa": BehatsdaaScraper,
     }
 
