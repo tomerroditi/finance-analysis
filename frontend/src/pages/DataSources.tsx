@@ -576,6 +576,8 @@ export function DataSources() {
                       <div className="flex items-center gap-2 ml-auto">
                         <input
                           type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
                           placeholder="Code"
                           maxLength={10}
                           className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
