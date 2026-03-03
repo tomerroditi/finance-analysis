@@ -295,7 +295,6 @@ export function Investments() {
     notes: "",
   });
 
-  const [includeClosed, setIncludeClosed] = useState(false);
   const [editForm, setEditForm] = useState<{
     investmentId: number | null;
     name: string;
@@ -542,18 +541,12 @@ export function Investments() {
         </div>
         <div className="flex gap-4">
           <button
-            onClick={() => setIncludeClosed(!includeClosed)}
-            className={`px-4 py-2 rounded-xl text-sm font-bold border ${includeClosed ? "bg-[var(--surface-light)] border-[var(--surface-light)] text-white" : "border-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-          >
-            {includeClosed ? "Hide Closed" : "Show Closed"}
-          </button>
-          <button
             onClick={() => setIsAddOpen(true)}
             disabled={Object.keys(filteredCategories).length === 0}
             className="flex items-center gap-2 px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
             title={
               Object.keys(filteredCategories).length === 0
-                ? "All available tags in Savings/Investments are already in use"
+                ? "All available tags in Investments are already in use"
                 : ""
             }
           >
@@ -658,7 +651,7 @@ export function Investments() {
               </div>
 
               {/* Allocation Pie Chart */}
-              {portfolioAnalysis.allocation.length > 0 && (
+              {portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).length > 0 && (
                 <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
                   <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
                     Portfolio Allocation
@@ -667,10 +660,10 @@ export function Investments() {
                     <Plot
                       data={[
                         {
-                          values: portfolioAnalysis.allocation.map(
+                          values: portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).map(
                             (d: any) => d.balance,
                           ),
-                          labels: portfolioAnalysis.allocation.map(
+                          labels: portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).map(
                             (d: any) => d.name,
                           ),
                           type: "pie",
@@ -758,7 +751,7 @@ export function Investments() {
       </div>
 
       {/* Closed Investments */}
-      {includeClosed && closedInvestments.length > 0 && (
+      {closedInvestments.length > 0 && (
         <div className="pt-8 border-t border-[var(--surface-light)]">
           <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[var(--text-muted)]">
             Closed Investments
