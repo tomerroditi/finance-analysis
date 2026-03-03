@@ -225,6 +225,10 @@ export const investmentsApi = {
   reopen: (id: number) => api.post(`/investments/${id}/reopen`),
   delete: (id: number) => api.delete(`/investments/${id}`),
   getPortfolioAnalysis: () => api.get("/investments/analysis/portfolio"),
+  getPortfolioBalanceHistory: (includeClosed?: boolean) =>
+    api.get("/investments/analysis/balance-history", {
+      params: { include_closed: includeClosed },
+    }),
   getInvestmentAnalysis: (id: number, startDate?: string, endDate?: string) =>
     api.get(`/investments/${id}/analysis`, {
       params: { start_date: startDate, end_date: endDate },

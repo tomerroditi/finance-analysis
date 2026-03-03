@@ -83,6 +83,16 @@ async def get_portfolio_analysis(
     return service.get_portfolio_overview()
 
 
+@router.get("/analysis/balance-history")
+async def get_portfolio_balance_history(
+    include_closed: bool = False,
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Get balance-over-time data for all investments."""
+    service = InvestmentsService(db)
+    return service.get_portfolio_balance_history(include_closed=include_closed)
+
+
 @router.get("/{investment_id}/analysis")
 async def get_investment_analysis(
     investment_id: int,

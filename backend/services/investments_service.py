@@ -517,6 +517,78 @@ class InvestmentsService:
             "allocation": allocation,
         }
 
+    def get_portfolio_balance_history(
+        self, include_closed: bool = False
+    ) -> Dict[str, Any]:
+        """Get balance-over-time data for all investments, aligned by month.
+
+        Parameters
+        ----------
+        include_closed : bool, optional
+            When ``True``, closed investments are included. Default is ``False``.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``series`` – list of per-investment dicts with ``name`` and
+              ``data`` (list of ``{"date": str, "balance": float}``).
+            - ``total`` – aggregated balance across all investments per month.
+        """
+        investments = self.investments_repo.get_all_investments(
+            include_closed=include_closed
+        )
+        if investments.empty:
+            return {"series": [], "total": []}
+
+        all_series = []
+        for _, inv in investments.iterrows():
+            metrics = self.calculate_profit_loss(inv["id"])
+            start = metrics.get("first_transaction_date") or (
+                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+            )
+            history = self.calculate_balance_over_time(
+                inv["id"], start, date.today().strftime(r"%Y-%m-%d")
+            )
+            if not history:
+                continue
+
+            # Downsample to monthly (first of each month + last point)
+            df = pd.DataFrame(history)
+            df["date"] = pd.to_datetime(df["date"])
+            monthly = df.groupby(df["date"].dt.to_period("M")).last().reset_index(drop=True)
+            monthly["date"] = monthly["date"].dt.strftime("%Y-%m-%d")
+
+            all_series.append(
+                {
+                    "name": inv["name"],
+                    "data": monthly.to_dict(orient="records"),
+                }
+            )
+
+        # Build total line aligned across all dates
+        all_dates: set = set()
+        for s in all_series:
+            for point in s["data"]:
+                all_dates.add(point["date"])
+        sorted_dates = sorted(all_dates)
+
+        total = []
+        for d in sorted_dates:
+            balance_sum = 0.0
+            for s in all_series:
+                # Find latest point on or before this date for this series
+                latest_balance = 0.0
+                for point in s["data"]:
+                    if point["date"] <= d:
+                        latest_balance = point["balance"]
+                total_balance = latest_balance
+                balance_sum += total_balance
+            total.append({"date": d, "balance": balance_sum})
+
+        return {"series": all_series, "total": total}
+
     def calculate_current_balance(self, investment_id: int) -> float:
         """Calculate the current balance for an investment.
 

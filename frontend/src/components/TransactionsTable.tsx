@@ -30,7 +30,7 @@ import {
   cashBalancesApi,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
-import { humanizeProvider, humanizeService } from "../utils/textFormatting";
+import { humanizeProvider } from "../utils/textFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { SelectDropdown } from "./common/SelectDropdown";

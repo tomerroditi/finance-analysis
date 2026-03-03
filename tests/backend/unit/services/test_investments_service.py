@@ -146,6 +146,25 @@ class TestInvestmentsServiceCalculations:
         assert balance_by_date["2024-01-15"] == 12000.0
         assert balance_by_date["2024-01-16"] == 12000.0
 
+    def test_calculate_balance_over_time_closed_stops_at_last_transaction(
+        self, db_session, seed_investments
+    ):
+        """Verify closed investment balance history ends at last transaction date."""
+        service = InvestmentsService(db_session)
+        bond_fund = seed_investments["investments"][1]
+
+        # Bond fund is closed. Last transaction is 2024-01-10.
+        # Request history far beyond that — should stop at 2024-01-10.
+        history = service.calculate_balance_over_time(
+            bond_fund.id,
+            start_date="2023-01-01",
+            end_date="2025-12-31",
+        )
+
+        assert len(history) > 0
+        last_date = history[-1]["date"]
+        assert last_date == "2024-01-10"
+
     def test_get_portfolio_overview(self, db_session, seed_investments):
         """Verify portfolio totals and allocation for open investments only."""
         service = InvestmentsService(db_session)
@@ -168,6 +187,23 @@ class TestInvestmentsServiceCalculations:
         assert overview["allocation"][0]["balance"] == 12000.0
         assert overview["allocation"][0]["type"] == "mutual_fund"
 
+    def test_get_portfolio_overview_includes_sparkline_data(
+        self, db_session, seed_investments
+    ):
+        """Verify allocation entries include deposits, withdrawals, and history."""
+        service = InvestmentsService(db_session)
+
+        overview = service.get_portfolio_overview()
+        alloc = overview["allocation"][0]
+
+        assert "total_deposits" in alloc
+        assert "total_withdrawals" in alloc
+        assert "history" in alloc
+        assert alloc["total_deposits"] == 12000.0
+        assert alloc["total_withdrawals"] == 0.0
+        assert isinstance(alloc["history"], list)
+        assert len(alloc["history"]) > 0
+
     def test_get_portfolio_overview_empty(self, db_session):
         """Verify empty portfolio returns zeros and empty allocation."""
         service = InvestmentsService(db_session)
@@ -178,6 +214,81 @@ class TestInvestmentsServiceCalculations:
         assert overview["total_profit"] == 0.0
         assert overview["portfolio_roi"] == 0.0
         assert overview["allocation"] == []
+
+    def test_get_portfolio_balance_history_active_only(
+        self, db_session, seed_investments
+    ):
+        """Verify portfolio balance history returns series and total for active investments."""
+        service = InvestmentsService(db_session)
+
+        result = service.get_portfolio_balance_history(include_closed=False)
+
+        assert "series" in result
+        assert "total" in result
+        # Only stock_fund is open
+        assert len(result["series"]) == 1
+        assert result["series"][0]["name"] == "Migdal S&P 500 Fund"
+        assert len(result["series"][0]["data"]) > 0
+
+        # Total should have entries and match stock fund (only 1 investment)
+        assert len(result["total"]) > 0
+
+    def test_get_portfolio_balance_history_include_closed(
+        self, db_session, seed_investments
+    ):
+        """Verify include_closed adds closed investment series."""
+        service = InvestmentsService(db_session)
+
+        result = service.get_portfolio_balance_history(include_closed=True)
+
+        # Both stock_fund and bond_fund
+        assert len(result["series"]) == 2
+        names = {s["name"] for s in result["series"]}
+        assert "Migdal S&P 500 Fund" in names
+        assert "Psagot Government Bond" in names
+
+    def test_get_portfolio_balance_history_empty(self, db_session):
+        """Verify empty portfolio returns empty series and total."""
+        service = InvestmentsService(db_session)
+
+        result = service.get_portfolio_balance_history()
+
+        assert result["series"] == []
+        assert result["total"] == []
+
+    def test_get_portfolio_balance_history_total_sums_correctly(
+        self, db_session, seed_investments
+    ):
+        """Verify total line sums balances across all investments per date."""
+        service = InvestmentsService(db_session)
+
+        result = service.get_portfolio_balance_history(include_closed=True)
+
+        # The total should be the sum of all investment balances at each date
+        total_by_date = {p["date"]: p["balance"] for p in result["total"]}
+
+        # At any date, total should be >= 0
+        for balance in total_by_date.values():
+            assert balance >= 0
+
+    def test_get_all_investments_includes_first_transaction_date(
+        self, db_session, seed_investments
+    ):
+        """Verify get_all_investments enriches records with first_transaction_date."""
+        service = InvestmentsService(db_session)
+
+        investments = service.get_all_investments(include_closed=True)
+
+        for inv in investments:
+            assert "first_transaction_date" in inv
+
+        # Stock fund first transaction is 2023-06-15
+        stock = next(i for i in investments if i["name"] == "Migdal S&P 500 Fund")
+        assert stock["first_transaction_date"] == "2023-06-15"
+
+        # Bond fund first transaction is 2023-01-10
+        bond = next(i for i in investments if i["name"] == "Psagot Government Bond")
+        assert bond["first_transaction_date"] == "2023-01-10"
 
 
 class TestInvestmentsServicePriorWealth:

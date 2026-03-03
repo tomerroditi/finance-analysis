@@ -33,7 +33,11 @@ export function Sparkline({
     }));
 
     const linePath = points
-        .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+        .map((p, i) => {
+            if (i === 0) return `M ${p.x} ${p.y}`;
+            // Step: horizontal to new x, then vertical to new y
+            return `L ${p.x} ${points[i - 1].y} L ${p.x} ${p.y}`;
+        })
         .join(" ");
 
     const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
