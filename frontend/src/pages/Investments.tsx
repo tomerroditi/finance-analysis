@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Trash2,
@@ -17,6 +17,7 @@ import {
 import { investmentsApi, taggingApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
+import { Sparkline } from "../components/common/Sparkline";
 import Plot from "react-plotly.js";
 
 function StatCard({
@@ -100,74 +101,92 @@ function InvestmentCard({
         </div>
       </div>
 
-      {analysisData && (
-        <div className="mb-6 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-          <p className="text-2xl font-black text-white">
-            {formatCardCurrency(analysisData.balance)}
-          </p>
-          <p
-            className={`text-sm font-semibold mt-1 ${analysisData.profit_loss >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-          >
-            {analysisData.profit_loss >= 0 ? "+" : ""}
-            {formatCardCurrency(analysisData.profit_loss)}
-            {analysisData.roi != null &&
-              ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
-          </p>
+      {/* Balance + Sparkline */}
+      <div className="flex items-center justify-between mb-4 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+        <div>
+          {analysisData ? (
+            <>
+              <p className="text-2xl font-black text-white">
+                {formatCardCurrency(analysisData.balance)}
+              </p>
+              <p
+                className={`text-sm font-semibold mt-1 ${analysisData.profit_loss >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+              >
+                {analysisData.profit_loss >= 0 ? "+" : ""}
+                {formatCardCurrency(analysisData.profit_loss)}
+                {analysisData.roi != null &&
+                  ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
+              </p>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Skeleton variant="card" className="h-7 w-28" />
+              <Skeleton variant="card" className="h-4 w-20" />
+            </div>
+          )}
         </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-          <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
-            Interest Rate
-          </p>
-          <p className="text-lg font-black text-white">
-            {inv.interest_rate || 0}%
-          </p>
-        </div>
-        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-          <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
-            Created
-          </p>
-          <p className="text-xs font-bold text-white mt-1.5">
-            {inv.created_date}
-          </p>
+        <div className="flex-shrink-0 ml-4">
+          {analysisData?.history?.length >= 2 ? (
+            <Sparkline
+              data={analysisData.history}
+              width={100}
+              height={40}
+              color={analysisData.profit_loss >= 0 ? "#10b981" : "#f43f5e"}
+            />
+          ) : !analysisData ? (
+            <Skeleton variant="card" className="w-[100px] h-[40px]" />
+          ) : null}
         </div>
       </div>
 
-      {inv.latest_snapshot_date && (
-        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] -mt-4 mb-8">
-          <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
-            Last Balance Update
-          </p>
-          <p className={`text-xs font-bold mt-1.5 ${
-            snapshotAgeDays > 30 ? "text-amber-400" : "text-white"
-          }`}>
-            {inv.latest_snapshot_date}
-            {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
+      {/* Metrics Strip */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Deposits</p>
+          <p className="text-sm font-bold text-white mt-0.5">
+            {analysisData ? formatCardCurrency(analysisData.total_deposits) : "—"}
           </p>
         </div>
-      )}
+        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Withdrawals</p>
+          <p className="text-sm font-bold text-white mt-0.5">
+            {analysisData ? formatCardCurrency(analysisData.total_withdrawals) : "—"}
+          </p>
+        </div>
+        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Rate</p>
+          <p className="text-sm font-bold text-white mt-0.5">{inv.interest_rate || 0}%</p>
+        </div>
+      </div>
 
-      {!!inv.is_closed && inv.closed_date && (
-        <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] -mt-4 mb-8 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">
-              Closed Date
-            </p>
-            <p className="text-xs font-bold text-red-400 mt-1.5">
-              {inv.closed_date}
-            </p>
-          </div>
-          <button
-            onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-            title="Edit close date"
-          >
-            <Pencil size={12} />
-          </button>
-        </div>
-      )}
+      {/* Metadata */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)] font-medium mb-4 px-1">
+        <span>Opened {inv.first_transaction_date || inv.created_date}</span>
+        {inv.latest_snapshot_date && (
+          <>
+            <span>·</span>
+            <span className={snapshotAgeDays > 30 ? "text-amber-400" : ""}>
+              Updated {inv.latest_snapshot_date}
+              {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
+            </span>
+          </>
+        )}
+        {!!inv.is_closed && inv.closed_date && (
+          <>
+            <span>·</span>
+            <span className="text-red-400 inline-flex items-center gap-1">
+              Closed {inv.closed_date}
+              <button
+                onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
+                className="hover:text-white transition-all"
+                title="Edit close date"
+              >
+                <Pencil size={10} />
+              </button>
+            </span>
+          </>
+        )}
+      </div>
 
       {!inv.is_closed && (
         <button
@@ -432,6 +451,42 @@ export function Investments() {
   const closedInvestments =
     investments?.filter((inv: any) => inv.is_closed) || [];
 
+  const closedAnalysisQueries = useQueries({
+    queries: includeClosed
+      ? closedInvestments.map((inv: any) => ({
+          queryKey: ["investment-analysis", inv.id],
+          queryFn: () =>
+            investmentsApi.getInvestmentAnalysis(inv.id).then((res) => res.data),
+          staleTime: 5 * 60 * 1000,
+        }))
+      : [],
+  });
+
+  const getClosedAnalysisData = (invId: number) => {
+    const idx = closedInvestments.findIndex((inv: any) => inv.id === invId);
+    const query = closedAnalysisQueries[idx];
+    if (!query?.data) return undefined;
+    const d: any = query.data;
+    const history = d.history?.map((h: any) => h.balance) || [];
+    // Downsample to ~30 points for sparkline
+    let condensed = history;
+    if (history.length > 30) {
+      const step = Math.floor(history.length / 30);
+      condensed = history.filter((_: any, i: number) => i % step === 0);
+      if (condensed[condensed.length - 1] !== history[history.length - 1]) {
+        condensed.push(history[history.length - 1]);
+      }
+    }
+    return {
+      balance: d.metrics.current_balance,
+      profit_loss: d.metrics.absolute_profit_loss,
+      roi: d.metrics.roi_percentage,
+      total_deposits: d.metrics.total_deposits,
+      total_withdrawals: d.metrics.total_withdrawals,
+      history: condensed,
+    };
+  };
+
   if (isLoading)
     return (
       <div className="space-y-8 p-8">
@@ -642,6 +697,7 @@ export function Investments() {
                 onEditCloseDate={(id: number, closedDate: string) =>
                   setCloseForm({ investmentId: id, date: closedDate, mode: "edit" })
                 }
+                analysisData={getClosedAnalysisData(inv.id)}
               />
             ))}
           </div>

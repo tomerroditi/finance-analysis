@@ -74,6 +74,14 @@ class InvestmentsService:
             )
             record["latest_snapshot_date"] = latest["date"] if latest else None
 
+            txns = self._get_all_transactions_for_investment(
+                record["category"], record["tag"]
+            )
+            if not txns.empty:
+                record["first_transaction_date"] = pd.to_datetime(txns["date"]).min().strftime("%Y-%m-%d")
+            else:
+                record["first_transaction_date"] = None
+
         return records
 
     def get_investment(self, investment_id: int) -> Dict[str, Any]:
@@ -469,6 +477,21 @@ class InvestmentsService:
             total_deposits += metrics["total_deposits"]
             total_withdrawals += metrics["total_withdrawals"]
 
+            # Build condensed sparkline history
+            start = metrics.get("first_transaction_date") or (
+                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
+            )
+            history = self.calculate_balance_over_time(
+                inv["id"], start, date.today().strftime(r"%Y-%m-%d")
+            )
+            if len(history) > 30:
+                step = len(history) // 30
+                condensed = history[::step]
+                if history[-1] not in condensed:
+                    condensed.append(history[-1])
+            else:
+                condensed = history
+
             allocation.append(
                 {
                     "name": inv["name"],
@@ -476,6 +499,9 @@ class InvestmentsService:
                     "type": inv["type"],
                     "profit_loss": metrics["absolute_profit_loss"],
                     "roi": metrics["roi_percentage"],
+                    "total_deposits": metrics["total_deposits"],
+                    "total_withdrawals": metrics["total_withdrawals"],
+                    "history": [h["balance"] for h in condensed],
                 }
             )
 
