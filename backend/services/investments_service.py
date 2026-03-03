@@ -565,12 +565,12 @@ class InvestmentsService:
         if transactions_df.empty:
             return []
 
-        # For closed investments, stop at closed_date
+        # For closed investments, stop at the last transaction date
         actual_end_date = end_date
-        if inv["is_closed"] and inv["closed_date"]:
-            closed_date = datetime.strptime(inv["closed_date"], "%Y-%m-%d").date()
+        if inv["is_closed"] and not transactions_df.empty:
+            last_txn_date = pd.to_datetime(transactions_df["date"]).max().date()
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            actual_end_date = min(closed_date, requested_end_date).strftime("%Y-%m-%d")
+            actual_end_date = min(last_txn_date, requested_end_date).strftime("%Y-%m-%d")
 
         snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
 
@@ -618,9 +618,6 @@ class InvestmentsService:
                     )
 
                 balances.append({"date": d_str, "balance": balance})
-
-        if inv["is_closed"] and inv["closed_date"]:
-            balances.append({"date": inv["closed_date"], "balance": 0.0})
 
         return balances
 
