@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.errors import BadRequestException, EntityNotFoundException
-from backend.constants.tables import Tables
+from backend.constants.tables import Tables, TransactionsTableFields
 from backend.models.transaction import (
     BankTransaction,
     CreditCardTransaction,
