@@ -1,7 +1,27 @@
-import os
+from backend.scraper.adapter import ScraperAdapter
 
-NODE_JS_SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "node")
 
-from .scrapers import get_scraper, is_2fa_required, Scraper
+def is_2fa_required(service_name: str, provider_name: str) -> bool:
+    """Check if a provider requires two-factor authentication.
 
-__all__ = ["NODE_JS_SCRIPTS_DIR", "get_scraper", "is_2fa_required", "Scraper"]
+    Delegates to the scraper framework's ``PROVIDER_CONFIGS`` registry.
+
+    Parameters
+    ----------
+    service_name : str
+        Service type (e.g. ``"credit_cards"``, ``"banks"``).
+    provider_name : str
+        Provider identifier (e.g. ``"hapoalim"``, ``"onezero"``).
+
+    Returns
+    -------
+    bool
+        ``True`` if the provider requires 2FA.
+    """
+    from scraper.models.credentials import PROVIDER_CONFIGS
+
+    config = PROVIDER_CONFIGS.get(provider_name)
+    return config.requires_2fa if config else False
+
+
+__all__ = ["ScraperAdapter", "is_2fa_required"]
