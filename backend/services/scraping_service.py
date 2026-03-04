@@ -1,6 +1,6 @@
+import asyncio
 from datetime import date, datetime, timedelta
-from threading import Thread
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -8,19 +8,19 @@ from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.scraper import Scraper, get_scraper, is_2fa_required
+from backend.scraper import ScraperAdapter, is_2fa_required
 
-_tfa_scrapers_waiting: Dict[str, Tuple[Scraper, Thread]] = {}
+_tfa_scrapers_waiting: Dict[str, ScraperAdapter] = {}
 
 
 class ScrapingService:
     """
     Service for managing data scraping operations.
 
-    Handles launching scrapers in background threads, tracking 2FA wait
-    states, recording scraping history, and computing start dates from
-    the last successful scrape. Scrapers that require 2FA are kept in
-    the module-level ``_tfa_scrapers_waiting`` dict until a code is submitted
+    Handles launching scrapers as async tasks, tracking 2FA wait states,
+    recording scraping history, and computing start dates from the last
+    successful scrape. Scrapers that require 2FA are kept in the
+    module-level ``_tfa_scrapers_waiting`` dict until a code is submitted
     or the process is aborted.
     """
 
@@ -97,11 +97,12 @@ class ScrapingService:
         scraping_period_days: Optional[int] = None,
     ) -> int:
         """
-        Start the scraping process for a single account in a background thread.
+        Start the scraping process for a single account as an async task.
 
-        Records a new scraping history entry, creates the appropriate scraper,
-        and starts it in a background thread. If the provider requires 2FA,
-        the scraper is stored in ``_tfa_scrapers_waiting`` until an OTP is submitted.
+        Records a new scraping history entry, creates a ``ScraperAdapter``,
+        and launches it via ``asyncio.create_task``. If the provider requires
+        2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP
+        is submitted.
 
         Parameters
         ----------
@@ -138,13 +139,14 @@ class ScrapingService:
                 service, provider, account, start_date, status
             )
 
-        scraper = get_scraper(service, provider, account, creds, start_date, process_id)
-        thread = Thread(target=scraper.pull_data_to_db)
-        thread.start()
+        adapter = ScraperAdapter(
+            service, provider, account, creds, start_date, process_id
+        )
+        asyncio.create_task(adapter.run())
 
         if requires_2fa:
             name = f"{service} - {provider} - {account}"
-            _tfa_scrapers_waiting[name] = (scraper, thread)
+            _tfa_scrapers_waiting[name] = adapter
 
         return process_id
 
@@ -177,8 +179,8 @@ class ScrapingService:
         if name not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
 
-        scraper, thread = _tfa_scrapers_waiting[name]
-        scraper.set_otp_code(code)
+        adapter = _tfa_scrapers_waiting[name]
+        adapter.set_otp_code(code)
 
     def abort_scraping_process(self, process_id: int) -> None:
         """
@@ -195,15 +197,15 @@ class ScrapingService:
         """
         # Check if it's a 2FA-waiting scraper
         target_name = None
-        for name, (scraper, _) in _tfa_scrapers_waiting.items():
-            if scraper.process_id == process_id:
+        for name, adapter in _tfa_scrapers_waiting.items():
+            if adapter.process_id == process_id:
                 target_name = name
                 break
 
         if target_name:
             # Cancel the 2FA scraper
-            scraper, _ = _tfa_scrapers_waiting.pop(target_name)
-            scraper.set_otp_code(scraper.CANCEL)
+            adapter = _tfa_scrapers_waiting.pop(target_name)
+            adapter.set_otp_code(ScraperAdapter.CANCEL)
 
         # Mark as failed in the database regardless
         with get_db_context() as db:
@@ -248,9 +250,11 @@ class ScrapingService:
             start_date = date.today() - timedelta(days=365)
         return start_date
 
-    def _collect_scrapers(self, credentials: Dict) -> Tuple[Dict, Dict]:
+    def _collect_adapters(
+        self, credentials: Dict
+    ) -> tuple[Dict[str, ScraperAdapter], Dict[str, ScraperAdapter]]:
         """
-        Build scraper instances for all accounts in a credentials dict.
+        Build adapter instances for all accounts in a credentials dict.
 
         Parameters
         ----------
@@ -262,23 +266,26 @@ class ScrapingService:
         -------
         tuple[dict, dict]
             A ``(normal, tfa)`` pair where ``normal`` maps account name strings
-            to scrapers that do not require 2FA, and ``tfa`` maps to scrapers
+            to adapters that do not require 2FA, and ``tfa`` maps to adapters
             that do require 2FA.
 
         Notes
         -----
         This method is not called by the current scraping flow (which creates
-        scrapers one at a time via ``start_scraping_single``) and may be unused.
+        adapters one at a time via ``start_scraping_single``) and may be unused.
         """
-        normal = {}
-        tfa = {}
+        normal: Dict[str, ScraperAdapter] = {}
+        tfa: Dict[str, ScraperAdapter] = {}
         for service, providers in credentials.items():
             for provider, accounts in providers.items():
                 for account, acc_creds in accounts.items():
                     name = f"{service} - {provider} - {account}"
-                    scraper = get_scraper(service, provider, account, acc_creds)
-                    if scraper.requires_2fa:
-                        tfa[name] = scraper
+                    start = self._get_scraper_start_date(service, provider, account)
+                    adapter = ScraperAdapter(
+                        service, provider, account, acc_creds, start, 0
+                    )
+                    if is_2fa_required(service, provider):
+                        tfa[name] = adapter
                     else:
-                        normal[name] = scraper
+                        normal[name] = adapter
         return normal, tfa
