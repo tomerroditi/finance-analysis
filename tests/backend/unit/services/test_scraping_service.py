@@ -1,7 +1,7 @@
 """Tests for ScrapingService."""
 
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 from contextlib import contextmanager
 
 import backend.services.scraping_service as ss
@@ -103,14 +103,14 @@ class TestScrapingServiceStatus:
 class TestScrapingServiceStart:
     """Tests for starting scraping processes."""
 
-    @patch("backend.services.scraping_service.Thread")
-    @patch("backend.services.scraping_service.get_scraper")
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.ScraperAdapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_single(
-        self, mock_is_2fa, mock_get_db_ctx, mock_get_scraper, mock_thread, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
     ):
-        """Verify start_scraping_single returns a process_id and starts a thread."""
+        """Verify start_scraping_single returns a process_id and launches an async task."""
         mock_is_2fa.return_value = False
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
@@ -119,11 +119,9 @@ class TestScrapingServiceStart:
         mock_history_repo.IN_PROGRESS = "in_progress"
         mock_history_repo.record_scrape_start.return_value = 7
 
-        mock_inner_db = MagicMock()
-
         @contextmanager
         def fake_db_context():
-            yield mock_inner_db
+            yield MagicMock()
 
         mock_get_db_ctx.side_effect = fake_db_context
 
@@ -134,14 +132,15 @@ class TestScrapingServiceStart:
             process_id = service.start_scraping_single("banks", "hapoalim", "Main")
 
         assert process_id == 7
-        mock_thread.return_value.start.assert_called_once()
+        mock_adapter_cls.assert_called_once()
+        mock_asyncio.create_task.assert_called_once()
 
-    @patch("backend.services.scraping_service.Thread")
-    @patch("backend.services.scraping_service.get_scraper")
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.ScraperAdapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_creates_history(
-        self, mock_is_2fa, mock_get_db_ctx, mock_get_scraper, mock_thread, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
     ):
         """Verify that a history record is created via get_db_context."""
         mock_is_2fa.return_value = False
@@ -170,14 +169,14 @@ class TestScrapingServiceStart:
         assert call_args[0][1] == "isracard"
         assert call_args[0][2] == "Acc1"
 
-    @patch("backend.services.scraping_service.Thread")
-    @patch("backend.services.scraping_service.get_scraper")
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.ScraperAdapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_2fa_adds_to_waiting(
-        self, mock_is_2fa, mock_get_db_ctx, mock_get_scraper, mock_thread, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
     ):
-        """Verify scraper is added to _tfa_scrapers_waiting when 2FA is required."""
+        """Verify adapter is added to _tfa_scrapers_waiting when 2FA is required."""
         mock_is_2fa.return_value = True
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
@@ -186,8 +185,7 @@ class TestScrapingServiceStart:
         mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
         mock_history_repo.record_scrape_start.return_value = 15
 
-        mock_scraper = MagicMock()
-        mock_get_scraper.return_value = mock_scraper
+        mock_adapter = mock_adapter_cls.return_value
 
         @contextmanager
         def fake_db_context():
@@ -203,22 +201,21 @@ class TestScrapingServiceStart:
 
         expected_key = "banks - leumi - MyAcc"
         assert expected_key in ss._tfa_scrapers_waiting
-        assert ss._tfa_scrapers_waiting[expected_key][0] is mock_scraper
+        assert ss._tfa_scrapers_waiting[expected_key] is mock_adapter
 
 
 class TestScrapingService2FA:
     """Tests for 2FA code submission."""
 
     def test_submit_2fa_code(self, service):
-        """Verify set_otp_code is called on the correct scraper."""
-        mock_scraper = MagicMock()
-        mock_thread = MagicMock()
+        """Verify set_otp_code is called on the correct adapter."""
+        mock_adapter = MagicMock()
         name = "credit_cards - isracard - Main"
-        ss._tfa_scrapers_waiting[name] = (mock_scraper, mock_thread)
+        ss._tfa_scrapers_waiting[name] = mock_adapter
 
         service.submit_2fa_code("credit_cards", "isracard", "Main", "123456")
 
-        mock_scraper.set_otp_code.assert_called_once_with("123456")
+        mock_adapter.set_otp_code.assert_called_once_with("123456")
 
     def test_submit_2fa_code_not_found(self, service):
         """Verify EntityNotFoundException raised for unknown scraper."""
@@ -232,11 +229,10 @@ class TestScrapingServiceAbort:
     @patch("backend.services.scraping_service.get_db_context")
     def test_abort_scraping_process(self, mock_get_db_ctx, service):
         """Verify CANCEL is sent and history is recorded as failed."""
-        mock_scraper = MagicMock()
-        mock_scraper.process_id = 20
-        mock_scraper.CANCEL = "cancel"
-        mock_thread = MagicMock()
-        ss._tfa_scrapers_waiting["banks - leumi - Acc"] = (mock_scraper, mock_thread)
+        mock_adapter = MagicMock()
+        mock_adapter.process_id = 20
+        mock_adapter.CANCEL = "cancel"
+        ss._tfa_scrapers_waiting["banks - leumi - Acc"] = mock_adapter
 
         mock_history_repo = MagicMock()
         mock_history_repo.FAILED = "failed"
@@ -253,21 +249,17 @@ class TestScrapingServiceAbort:
         ):
             service.abort_scraping_process(20)
 
-        mock_scraper.set_otp_code.assert_called_once_with("cancel")
+        mock_adapter.set_otp_code.assert_called_once_with("cancel")
         mock_history_repo.record_scrape_end.assert_called_once_with(20, "failed")
         assert "banks - leumi - Acc" not in ss._tfa_scrapers_waiting
 
     @patch("backend.services.scraping_service.get_db_context")
     def test_abort_2fa_scraper(self, mock_get_db_ctx, service):
-        """Verify CANCEL is sent to 2FA scraper via set_otp_code."""
-        mock_scraper = MagicMock()
-        mock_scraper.process_id = 55
-        mock_scraper.CANCEL = "cancel"
-        mock_thread = MagicMock()
-        ss._tfa_scrapers_waiting["credit_cards - max - Card1"] = (
-            mock_scraper,
-            mock_thread,
-        )
+        """Verify CANCEL is sent to 2FA adapter via set_otp_code."""
+        mock_adapter = MagicMock()
+        mock_adapter.process_id = 55
+        mock_adapter.CANCEL = "cancel"
+        ss._tfa_scrapers_waiting["credit_cards - max - Card1"] = mock_adapter
 
         mock_history_repo = MagicMock()
         mock_history_repo.FAILED = "failed"
@@ -284,7 +276,7 @@ class TestScrapingServiceAbort:
         ):
             service.abort_scraping_process(55)
 
-        mock_scraper.set_otp_code.assert_called_once_with("cancel")
+        mock_adapter.set_otp_code.assert_called_once_with("cancel")
         assert "credit_cards - max - Card1" not in ss._tfa_scrapers_waiting
 
     @patch("backend.services.scraping_service.get_db_context")

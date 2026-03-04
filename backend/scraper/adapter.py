@@ -3,11 +3,17 @@
 Translates ``ScrapingResult`` objects from the ``scraper`` package into
 pandas DataFrames compatible with the existing transaction storage,
 auto-tagging, and bank-balance-recalculation pipeline.
+
+Note: imports from the root ``scraper`` package use ``_import_scraper_module``
+to avoid the naming collision with ``backend.scraper``.
 """
 
 import asyncio
 import datetime
+import importlib
 import logging
+import os
+import sys
 from datetime import date
 
 import pandas as pd
@@ -22,6 +28,18 @@ from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
 
 logger = logging.getLogger(__name__)
+
+
+def _import_scraper_module(name: str):
+    """Import a module from the root ``scraper`` package.
+
+    Ensures the project root is on ``sys.path`` so that the root-level
+    ``scraper`` package is found instead of ``backend.scraper``.
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    return importlib.import_module(name)
 
 # Maps frontend service names to DB table / source column values.
 _SERVICE_TO_TABLE = {
@@ -92,9 +110,10 @@ class ScraperAdapter:
         auto-tagging, and recalculates bank balances. Always records the
         outcome in the scraping history table.
         """
-        from scraper import create_scraper
-        from scraper import is_2fa_required as scraper_is_2fa_required
-        from scraper.base.base_scraper import ScraperOptions
+        _scraper_pkg = _import_scraper_module("scraper")
+        create_scraper = _scraper_pkg.create_scraper
+        scraper_is_2fa_required = _scraper_pkg.is_2fa_required
+        ScraperOptions = _import_scraper_module("scraper.base.base_scraper").ScraperOptions
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
@@ -173,10 +192,9 @@ class ScraperAdapter:
         )
 
         if AppConfig().is_demo_mode and "test_" not in self.provider_name:
-            from scraper.providers.test.dummy_regular import (
-                DummyCreditCardScraper,
-                DummyRegularScraper,
-            )
+            _dummy_mod = _import_scraper_module("scraper.providers.test.dummy_regular")
+            DummyCreditCardScraper = _dummy_mod.DummyCreditCardScraper
+            DummyRegularScraper = _dummy_mod.DummyRegularScraper
 
             if self.service_name == "credit_cards":
                 return DummyCreditCardScraper(self.provider_name, self.credentials, options)

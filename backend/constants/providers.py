@@ -236,7 +236,13 @@ class LoginFields:
         list[str]
             List of field names required for login to the specified provider.
         """
-        from scraper.models.credentials import PROVIDER_CONFIGS
+        import importlib
+        import os
+        import sys
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        PROVIDER_CONFIGS = importlib.import_module("scraper.models.credentials").PROVIDER_CONFIGS
 
         config = PROVIDER_CONFIGS.get(provider)
         if config:
