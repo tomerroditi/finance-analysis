@@ -296,7 +296,7 @@ class CreditCardRepository(ServiceRepository):
             .all()
         )
         accounts = [
-            " - ".join([provider, account_name, account_number[-4:]])
+            " - ".join([provider, account_name, (account_number or "")[-4:]])
             for (provider, account_name, account_number) in accounts
         ]
         return accounts
