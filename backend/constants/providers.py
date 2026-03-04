@@ -222,6 +222,10 @@ class LoginFields:
         """
         Get the required login fields for a specific provider.
 
+        Looks up the provider in the scraper framework's ``PROVIDER_CONFIGS``
+        first, falling back to the hardcoded ``providers_fields`` dict for
+        providers not yet in the new framework (e.g. insurance, legacy test).
+
         Parameters
         ----------
         provider : str
@@ -232,4 +236,9 @@ class LoginFields:
         list[str]
             List of field names required for login to the specified provider.
         """
-        return LoginFields.providers_fields[provider]
+        from scraper.models.credentials import PROVIDER_CONFIGS
+
+        config = PROVIDER_CONFIGS.get(provider)
+        if config:
+            return config.required_fields
+        return LoginFields.providers_fields.get(provider, [])
