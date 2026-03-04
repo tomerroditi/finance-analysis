@@ -233,13 +233,13 @@ def _convert_transactions(
         except (ValueError, TypeError):
             identifier = identifier_raw or None
 
-        # Determine amounts
+        # Determine amounts (API may return strings or numbers)
         if is_outbound:
-            original_amount = -txn.get("dealSumOutbound", 0)
-            charged_amount = -txn.get("paymentSumOutbound", 0)
+            original_amount = -float(txn.get("dealSumOutbound", 0))
+            charged_amount = -float(txn.get("paymentSumOutbound", 0))
         else:
-            original_amount = -txn.get("dealSum", 0)
-            charged_amount = -txn.get("paymentSum", 0)
+            original_amount = -float(txn.get("dealSum", 0))
+            charged_amount = -float(txn.get("paymentSum", 0))
 
         # Determine currencies
         original_currency = _convert_currency(

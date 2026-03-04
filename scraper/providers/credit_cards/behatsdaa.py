@@ -34,7 +34,7 @@ def _variant_to_transaction(variant: dict) -> Transaction:
     Transaction
         Converted transaction object.
     """
-    original_amount = -variant.get("customerPrice", 0)
+    original_amount = -float(variant.get("customerPrice", 0))
 
     order_date_str = variant.get("orderDate", "")
     try:
