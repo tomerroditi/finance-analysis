@@ -21,6 +21,10 @@ python .claude/scripts/with_server.py -- <command>     # Start both, run command
 
 # Scaffolding
 python .claude/scripts/scaffold_feature.py <name>      # Generate route/service/repo boilerplate
+
+# Scraper
+python -m scraper --list                               # List all providers
+python -m scraper <provider> --show-browser             # Run scraper with visible browser
 ```
 
 ## Environment Setup (New Clone / Worktree)
@@ -39,6 +43,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 ```
 
 - **Backend:** `backend/` — FastAPI, SQLAlchemy ORM, Pandas DataFrames
+- **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
 - **Rules:** `.claude/rules/` — detailed architecture docs (9 files covering services, repos, scraper, frontend, testing)
@@ -71,6 +76,17 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 ## UI Testing
 
 When smoke-testing UI changes in the browser, **enable Demo Mode first** (toggle in the top-right header). Demo Mode switches the backend to a separate demo database with pre-built sample data, so real financial data is not accidentally modified. Remember to disable it when done.
+
+## Scraper Framework
+
+The `scraper/` package at the project root is a pure-Python scraper framework using Playwright and httpx, replacing the old Node.js integration. It provides:
+
+- **18 provider scrapers** (11 banks + 7 credit cards) in `scraper/providers/`
+- **Base classes:** `BrowserScraper` (Playwright lifecycle + login), `ApiScraper` (API-via-browser)
+- **Backend integration:** `backend/scraper/adapter.py` bridges async scrapers to the sync pipeline
+- **Demo mode:** Automatically redirects to dummy scrapers that generate fake data
+- **Adding a new provider:** Create a class in `scraper/providers/banks/` or `credit_cards/`, register in `scraper/models/credentials.py` PROVIDER_CONFIGS, and export in the `__init__.py`
+- **Import caveat:** `backend/scraper/` and root `scraper/` share a name. Backend code uses `_import_scraper_module()` helper (in `adapter.py`) to resolve root package. Test dirs use `test_scraper/` prefix to avoid pytest collision.
 
 ## Gotchas
 
