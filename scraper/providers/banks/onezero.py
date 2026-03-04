@@ -614,6 +614,47 @@ def _sanitize_hebrew(text: str) -> str:
     return "".join(out)
 
 
+def _extract_result_data(response: dict, key: str) -> any:
+    """Extract a value from an API response's ``resultData``.
+
+    Raises a descriptive error when the response indicates failure or
+    the expected key is missing, instead of a bare ``KeyError``.
+
+    Parameters
+    ----------
+    response : dict
+        The parsed JSON response from the One Zero API.
+    key : str
+        The key to extract from ``resultData``.
+
+    Returns
+    -------
+    any
+        The value at ``response["resultData"][key]``.
+
+    Raises
+    ------
+    Exception
+        If the response is missing ``resultData`` or the requested key.
+    """
+    if not isinstance(response, dict):
+        raise Exception(f"Unexpected API response type: {type(response).__name__}")
+
+    result_data = response.get("resultData")
+    if result_data is None:
+        error_msg = response.get("errorMessage") or response.get("message") or ""
+        error_code = response.get("errorCode") or response.get("resultCode") or ""
+        detail = f" (code={error_code}, message={error_msg})" if error_code or error_msg else ""
+        raise Exception(f"API error — no resultData in response{detail}")
+
+    if key not in result_data:
+        raise Exception(
+            f"Missing '{key}' in resultData (keys: {list(result_data.keys())})"
+        )
+
+    return result_data[key]
+
+
 class OneZeroScraper(ApiScraper):
     """Scraper for One Zero Bank (https://www.onezerbank.com).
 
@@ -654,7 +695,7 @@ class OneZeroScraper(ApiScraper):
             {"extClientId": "mobile", "os": "Android"},
             client=self.client,
         )
-        device_token = device_token_response["resultData"]["deviceToken"]
+        device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug("Sending OTP to phone number %s", phone_number)
         otp_prepare_response = await fetch_post(
@@ -666,7 +707,7 @@ class OneZeroScraper(ApiScraper):
             },
             client=self.client,
         )
-        self._otp_context = otp_prepare_response["resultData"]["otpContext"]
+        self._otp_context = _extract_result_data(otp_prepare_response, "otpContext")
 
         return {"success": True}
 
@@ -702,7 +743,7 @@ class OneZeroScraper(ApiScraper):
             },
             client=self.client,
         )
-        otp_token = otp_verify_response["resultData"]["otpToken"]
+        otp_token = _extract_result_data(otp_verify_response, "otpToken")
         return {"success": True, "long_term_token": otp_token}
 
     async def _resolve_otp_token(self) -> str:
@@ -773,7 +814,7 @@ class OneZeroScraper(ApiScraper):
                 },
                 client=self.client,
             )
-            id_token = id_token_response["resultData"]["idToken"]
+            id_token = _extract_result_data(id_token_response, "idToken")
 
             logger.debug("Requesting session token")
             session_token_response = await fetch_post(
@@ -784,7 +825,7 @@ class OneZeroScraper(ApiScraper):
                 },
                 client=self.client,
             )
-            self._access_token = session_token_response["resultData"]["accessToken"]
+            self._access_token = _extract_result_data(session_token_response, "accessToken")
 
         except Exception as e:
             logger.error("Login failed: %s", e)
