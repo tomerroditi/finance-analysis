@@ -1,7 +1,7 @@
 from backend.scraper.adapter import ScraperAdapter
 
 # Providers that require 2FA. Kept in sync with scraper.models.credentials.
-_2FA_PROVIDERS = {"onezero", "test_bank_2fa", "test_credit_card_2fa"}
+_2FA_PROVIDERS = {"onezero", "hafenix", "test_bank_2fa", "test_credit_card_2fa"}
 
 
 def is_2fa_required(service_name: str, provider_name: str) -> bool:

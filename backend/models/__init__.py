@@ -19,6 +19,7 @@ from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
     CreditCardTransaction,
+    InsuranceTransaction,
     ManualInvestmentTransaction,
     SplitTransaction,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "BankTransaction",
     "CreditCardTransaction",
     "CashTransaction",
+    "InsuranceTransaction",
     "ManualInvestmentTransaction",
     "SplitTransaction",
     # Other models

@@ -1,6 +1,13 @@
 {
   "permissions": {
-    "allow": [],
+    "allow": [
+      "Bash(gh api repos/eshaham/israeli-bank-scrapers/git/trees/master?recursive=1 --jq '.tree[] | .path')",
+      "Bash(gh api repos/eshaham/israeli-bank-scrapers --jq '{name: .name, description: .description, language: .language, stars: .stargazers_count, forks: .forks_count, default_branch: .default_branch, topics: .topics}')",
+      "Bash(gh api repos/eshaham/israeli-bank-scrapers/contents/package.json --jq '.content')",
+      "Bash(gh api \"repos/eshaham/israeli-bank-scrapers/git/trees/master?recursive=1\" --jq '.tree[] | .path')",
+      "Bash(gh api repos/eshaham/israeli-bank-scrapers/contents/src/index.ts --jq '.content')",
+      "Bash(echo \"exit: $?\")"
+    ],
     "additionalDirectories": []
   },
   "enabledPlugins": {
@@ -8,6 +15,7 @@
     "security-guidance@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true
+    "code-simplifier@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true
   }
 }

@@ -20,6 +20,9 @@ from scraper.providers.credit_cards import (
     MaxScraper,
     VisaCalScraper,
 )
+from scraper.providers.insurances import (
+    HaPhoenixScraper,
+)
 
 __all__ = [
     "BeinleumiScraper",
@@ -40,4 +43,5 @@ __all__ = [
     "IsracardScraper",
     "MaxScraper",
     "VisaCalScraper",
+    "HaPhoenixScraper",
 ]

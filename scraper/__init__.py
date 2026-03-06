@@ -49,6 +49,7 @@ def create_scraper(
     from scraper.providers.credit_cards.isracard import IsracardScraper
     from scraper.providers.credit_cards.max import MaxScraper
     from scraper.providers.credit_cards.visa_cal import VisaCalScraper
+    from scraper.providers.insurances.hafenix import HaPhoenixScraper
 
     scrapers = {
         "hapoalim": HapoalimScraper,
@@ -69,6 +70,8 @@ def create_scraper(
         "amex": AmexScraper,
         "beyahad bishvilha": BeyahadBishvilhaScraper,
         "behatsdaa": BehatsdaaScraper,
+        # Insurances
+        "hafenix": HaPhoenixScraper,
     }
 
     scraper_class = scrapers.get(provider)

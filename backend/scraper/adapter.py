@@ -45,6 +45,7 @@ def _import_scraper_module(name: str):
 _SERVICE_TO_TABLE = {
     "credit_cards": Tables.CREDIT_CARD.value,
     "banks": Tables.BANK.value,
+    "insurances": Tables.INSURANCE.value,
 }
 
 

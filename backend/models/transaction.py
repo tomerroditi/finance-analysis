@@ -80,6 +80,12 @@ class ManualInvestmentTransaction(Base, TransactionBase):
     __tablename__ = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
 
 
+class InsuranceTransaction(Base, TransactionBase):
+    """ORM model for insurance transactions (``insurance_transactions`` table)."""
+
+    __tablename__ = Tables.INSURANCE.value
+
+
 class SplitTransaction(Base, TimestampMixin):
     """ORM model for a single portion of a split transaction.
 

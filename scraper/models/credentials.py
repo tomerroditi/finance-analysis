@@ -105,4 +105,11 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         required_fields=["id", "password"],
         service="credit_cards",
     ),
+    # Insurances
+    "hafenix": ProviderConfig(
+        name="HaPhoenix",
+        required_fields=["id", "phoneNumber"],
+        service="insurances",
+        requires_2fa=True,
+    ),
 }

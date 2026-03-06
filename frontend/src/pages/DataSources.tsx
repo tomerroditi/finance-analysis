@@ -22,6 +22,7 @@ import {
   Info,
   CheckCircle2,
   Clock,
+  Shield,
 } from "lucide-react";
 import {
   credentialsApi,
@@ -63,7 +64,7 @@ export function DataSources() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<
-    "banks" | "credit_cards" | ""
+    "banks" | "credit_cards" | "insurances" | ""
   >("");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -319,6 +320,7 @@ export function DataSources() {
           (() => {
             const bankAccounts = accounts?.filter((a: any) => a.service === "banks") ?? [];
             const creditCardAccounts = accounts?.filter((a: any) => a.service === "credit_cards") ?? [];
+            const insuranceAccounts = accounts?.filter((a: any) => a.service === "insurances") ?? [];
 
             const renderAccountCard = (acc: any, idx: number) => {
               const scraper = getScraperForAccount(acc);
@@ -650,6 +652,14 @@ export function DataSources() {
                     {creditCardAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
                   </>
                 )}
+                {insuranceAccounts.length > 0 && (
+                  <>
+                    <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
+                      Insurance
+                    </h3>
+                    {insuranceAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                  </>
+                )}
               </div>
             );
           })()
@@ -732,6 +742,28 @@ export function DataSources() {
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
                         Personal or Corporate credit cards
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="text-[var(--text-muted)]" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedService("insurances");
+                    setStep(2);
+                  }}
+                  className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
+                      <Shield size={24} />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-lg text-white">
+                        Insurance
+                      </p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        Pension, Keren Hishtalmut, Gemel
                       </p>
                     </div>
                   </div>

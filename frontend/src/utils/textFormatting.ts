@@ -31,6 +31,8 @@ const SERVICE_LABELS: Record<string, string> = {
   cash_transactions: "Cash",
   manual_investments: "Investment",
   manual_investment_transactions: "Investment",
+  insurances: "Insurance",
+  insurance_transactions: "Insurance",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -49,6 +51,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   massad: "Massad",
   yahav: "Yahav",
   fibi: "First International",
+  hafenix: "HaPhoenix",
 };
 
 export function humanizeService(service: string): string {

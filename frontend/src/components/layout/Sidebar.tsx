@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Presentation,
+  Shield,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "../../stores/appStore";
@@ -21,6 +22,7 @@ const navItems = [
   { path: "/budget", icon: Wallet, label: "Budget" },
   { path: "/categories", icon: Tags, label: "Categories" },
   { path: "/investments", icon: TrendingUp, label: "Investments" },
+  { path: "/insurances", icon: Shield, label: "Insurance" },
   { path: "/data-sources", icon: Database, label: "Data Sources" },
 ];
 

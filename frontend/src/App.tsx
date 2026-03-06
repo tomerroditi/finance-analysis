@@ -8,6 +8,7 @@ import {
   Budget,
   Categories,
   Investments,
+  Insurances,
   DataSources,
 } from "./pages";
 
@@ -32,6 +33,7 @@ function App() {
               <Route path="budget" element={<Budget />} />
               <Route path="categories" element={<Categories />} />
               <Route path="investments" element={<Investments />} />
+              <Route path="insurances" element={<Insurances />} />
               <Route path="data-sources" element={<DataSources />} />
             </Route>
           </Routes>

@@ -58,6 +58,7 @@ class Tables(Enum):
     CASH_BALANCES = "cash_balances"
     CATEGORIES = "categories"
     CREDENTIALS = "credentials"
+    INSURANCE = "insurance_transactions"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:

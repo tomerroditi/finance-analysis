@@ -29,6 +29,11 @@ bank_providers = [
 ]
 
 
+insurance_providers = [
+    "hafenix",
+]
+
+
 class Services(Enum):
     """
     Enum defining the types of financial services supported by the application.
@@ -209,7 +214,7 @@ class LoginFields:
         "menora": ["username", "password"],
         "clal": ["username", "password"],
         "harel": ["username", "password"],
-        "hafenix": ["username", "password"],
+        "hafenix": ["id", "phoneNumber"],
         # Test Providers
         "test_bank": ["username", "password"],
         "test_bank_2fa": ["email", "password", "phoneNumber"],

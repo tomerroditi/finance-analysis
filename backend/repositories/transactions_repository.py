@@ -14,6 +14,7 @@ from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
     CreditCardTransaction,
+    InsuranceTransaction,
     ManualInvestmentTransaction,
     TransactionBase,
 )
@@ -47,10 +48,12 @@ T_service = Literal[
     "bank",
     "cash",
     "manual_investments",
+    "insurances",
     "credit_card_transactions",
     "bank_transactions",
     "cash_transactions",
     "manual_investment_transactions",
+    "insurance_transactions",
 ]
 
 
@@ -317,6 +320,11 @@ class ManualInvestmentTransactionsRepository(ServiceRepository):
     table = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
 
 
+class InsuranceRepository(ServiceRepository):
+    model = InsuranceTransaction
+    table = Tables.INSURANCE.value
+
+
 class TransactionsRepository:
     """
     Main repository aggregating all transaction types.
@@ -327,6 +335,7 @@ class TransactionsRepository:
         Tables.BANK.value,
         Tables.CASH.value,
         Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+        Tables.INSURANCE.value,
     ]
 
     unique_columns = ["id", "provider", "date", "amount"]
@@ -350,6 +359,7 @@ class TransactionsRepository:
         self.bank_repo = BankRepository(db)
         self.cash_repo = CashRepository(db)
         self.manual_investments_repo = ManualInvestmentTransactionsRepository(db)
+        self.insurance_repo = InsuranceRepository(db)
         self.split_repo = SplitTransactionsRepository(db)
 
         self.repo_map = {
@@ -357,10 +367,12 @@ class TransactionsRepository:
             Tables.BANK.value: self.bank_repo,
             Tables.CASH.value: self.cash_repo,
             Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: self.manual_investments_repo,
+            Tables.INSURANCE.value: self.insurance_repo,
             Services.CREDIT_CARD.value: self.cc_repo,
             Services.BANK.value: self.bank_repo,
             Services.CASH.value: self.cash_repo,
             Services.MANUAL_INVESTMENTS.value: self.manual_investments_repo,
+            Services.INSURANCE.value: self.insurance_repo,
         }
 
     def add_scraped_transactions(self, df: pd.DataFrame, table_name: str) -> None:
@@ -538,6 +550,7 @@ class TransactionsRepository:
             self.bank_repo,
             self.cash_repo,
             self.manual_investments_repo,
+            self.insurance_repo,
         ]
         dfs = [
             repo.get_table()
@@ -918,6 +931,7 @@ class TransactionsRepository:
         self.bank_repo.nullify_category_and_tag(category, tag)
         self.cash_repo.nullify_category_and_tag(category, tag)
         self.manual_investments_repo.nullify_category_and_tag(category, tag)
+        self.insurance_repo.nullify_category_and_tag(category, tag)
 
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
@@ -943,6 +957,7 @@ class TransactionsRepository:
         self.manual_investments_repo.update_category_for_tag(
             old_category, new_category, tag
         )
+        self.insurance_repo.update_category_for_tag(old_category, new_category, tag)
 
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for all transactions in a category.
@@ -960,6 +975,7 @@ class TransactionsRepository:
         self.bank_repo.nullify_category(category)
         self.cash_repo.nullify_category(category)
         self.manual_investments_repo.nullify_category(category)
+        self.insurance_repo.nullify_category(category)
 
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
         """Retrieve a single transaction row by its unique_id.
