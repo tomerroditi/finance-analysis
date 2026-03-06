@@ -501,6 +501,7 @@ class AnalysisService:
         Bank balance is reconstructed as ``prior_wealth + cumulative bank transactions``.
         Investment value is ``cumulative investment transactions``
         (negative investment amounts are deposits, so balance is negated sum).
+        Cash balance is reconstructed as ``cash_prior_wealth + cumulative cash transactions``.
         An anchor data point one month before the earliest transaction shows
         the pure prior-wealth baseline.
 
@@ -512,10 +513,12 @@ class AnalysisService:
             - ``month`` – period in ``YYYY-MM`` format.
             - ``bank_balance`` – reconstructed bank balance at month end.
             - ``investment_value`` – reconstructed investment value at month end.
+            - ``cash`` – reconstructed cash balance at month end.
             - ``net_worth`` – ``bank_balance + investment_value``.
         """
         bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
+        cash_prior_wealth = self.cash_balance_service.get_total_prior_wealth()
         prior_wealth_total = bank_prior_wealth + investment_prior_wealth
 
         # --- Bank transactions (all sources except credit card) ---
@@ -527,6 +530,10 @@ class AnalysisService:
         df["date_parsed"] = pd.to_datetime(df["date"])
         df["month"] = df["date_parsed"].dt.strftime("%Y-%m")
         months = sorted(df["month"].unique())
+
+        # --- Cash transactions: separate from main df for cash balance line ---
+        cash_mask = df["source"] == "cash_transactions"
+        cash_df = df[cash_mask]
 
         # --- Investment transactions: fetch once, filter per month in-memory ---
         inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
@@ -540,6 +547,7 @@ class AnalysisService:
             "month": anchor_month,
             "bank_balance": round(prior_wealth_total, 2),
             "investment_value": 0.0,
+            "cash": round(cash_prior_wealth, 2),
             "net_worth": round(prior_wealth_total, 2),
         }]
 
@@ -555,10 +563,15 @@ class AnalysisService:
                 if not inv_df.empty else 0.0
             )
 
+            cash_balance = cash_prior_wealth + float(
+                cash_df.loc[cash_df["date_parsed"] <= month_end, "amount"].sum()
+            ) if not cash_df.empty else cash_prior_wealth
+
             result.append({
                 "month": month,
                 "bank_balance": round(bank_balance, 2),
                 "investment_value": round(inv_to_date, 2),
+                "cash": round(cash_balance, 2),
                 "net_worth": round(bank_balance + inv_to_date, 2),
             })
 

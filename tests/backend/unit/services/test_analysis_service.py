@@ -124,6 +124,68 @@ class TestAnalysisServiceTimeSeries:
         assert result == []
 
 
+class TestAnalysisServiceNetWorthOverTime:
+    """Tests for net worth over time including cash balance tracking."""
+
+    def test_get_net_worth_over_time_structure(self, db_session, seed_base_transactions):
+        """Verify each snapshot has all required keys including cash."""
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        assert len(result) == 4  # anchor + 3 months
+        for entry in result:
+            assert "month" in entry
+            assert "bank_balance" in entry
+            assert "investment_value" in entry
+            assert "cash" in entry
+            assert "net_worth" in entry
+
+    def test_get_net_worth_over_time_cash_values(self, db_session, seed_base_transactions):
+        """Verify cash balance is tracked cumulatively from cash transactions."""
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        # No cash_balances records seeded -> cash_prior_wealth = 0
+        # Cash txns: Jan(-15-10=-25), Feb(-18-12=-30), Mar(-12-8=-20)
+        anchor = result[0]
+        assert anchor["cash"] == 0.0
+
+        jan = result[1]
+        assert jan["cash"] == -25.0  # cumulative: -25
+
+        feb = result[2]
+        assert feb["cash"] == -55.0  # cumulative: -25 + -30
+
+        mar = result[3]
+        assert mar["cash"] == -75.0  # cumulative: -25 + -30 + -20
+
+    def test_get_net_worth_over_time_empty(self, db_session):
+        """Verify empty database returns empty list."""
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+        assert result == []
+
+    def test_get_net_worth_over_time_months(self, db_session, seed_base_transactions):
+        """Verify correct months returned with anchor point."""
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        months = [r["month"] for r in result]
+        assert months == ["2023-12", "2024-01", "2024-02", "2024-03"]
+
+    def test_get_net_worth_over_time_net_worth_equals_bank_plus_investments(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify net_worth = bank_balance + investment_value for each month."""
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        for entry in result:
+            assert entry["net_worth"] == pytest.approx(
+                entry["bank_balance"] + entry["investment_value"]
+            )
+
+
 class TestAnalysisServiceCategories:
     """Tests for AnalysisService category breakdown."""
 

@@ -269,7 +269,7 @@ export const analyticsApi = {
   getByCategory: () => api.get("/analytics/by-category"),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
-    api.get<{ month: string; bank_balance: number; investment_value: number; net_worth: number }[]>(
+    api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
   getIncomeBySourceOverTime: () =>

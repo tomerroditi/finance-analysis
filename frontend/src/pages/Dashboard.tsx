@@ -16,12 +16,15 @@ import Plot from "react-plotly.js";
 import {
   analyticsApi,
   cashBalancesApi,
+  bankBalancesApi,
+  investmentsApi,
   budgetApi,
   transactionsApi,
   taggingApi,
   pendingRefundsApi,
   type TaggingRule,
   type ConditionNode,
+  type BankBalance,
 } from "../services/api";
 import { SplitTransactionModal } from "../components/modals/SplitTransactionModal";
 import { LinkRefundModal } from "../components/modals/LinkRefundModal";
@@ -56,25 +59,38 @@ const chartTheme = {
 function FinancialHealthHeader({
   netWorthData,
   cashBalances,
+  bankBalances,
+  portfolioAllocation,
   isLoading,
 }: {
   netWorthData:
-    | { month: string; bank_balance: number; investment_value: number; net_worth: number }[]
+    | { month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]
     | undefined;
   cashBalances: { account_name: string; balance: number }[] | undefined;
+  bankBalances: BankBalance[] | undefined;
+  portfolioAllocation: { name: string; balance: number }[] | undefined;
   isLoading: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
   const previousNetWorth =
     netWorthData && netWorthData.length >= 2 ? netWorthData[netWorthData.length - 2] : null;
 
-  const momDelta = latestNetWorth && previousNetWorth ? latestNetWorth.net_worth - previousNetWorth.net_worth : null;
-  const momPercent =
-    momDelta !== null && previousNetWorth && previousNetWorth.net_worth !== 0
-      ? (momDelta / Math.abs(previousNetWorth.net_worth)) * 100
-      : null;
+  const calcMom = (current: number | undefined, previous: number | undefined) => {
+    if (current == null || previous == null) return null;
+    const delta = current - previous;
+    const percent = previous !== 0 ? (delta / Math.abs(previous)) * 100 : null;
+    return { delta, percent };
+  };
+
+  const netWorthMom = calcMom(latestNetWorth?.net_worth, previousNetWorth?.net_worth);
+  const bankMom = calcMom(latestNetWorth?.bank_balance, previousNetWorth?.bank_balance);
+  const investmentMom = calcMom(latestNetWorth?.investment_value, previousNetWorth?.investment_value);
+  const cashMom = calcMom(latestNetWorth?.cash, previousNetWorth?.cash);
 
   const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
+  const openInvestments = portfolioAllocation?.filter((i) => i.balance > 0);
 
   if (isLoading) {
     return (
@@ -86,8 +102,34 @@ function FinancialHealthHeader({
     );
   }
 
+  const MomBadge = ({ mom }: { mom: { delta: number; percent: number | null } | null }) => {
+    if (!mom) return null;
+    const { delta, percent } = mom;
+    const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
+    const sign = delta >= 0 ? "+" : "";
+    return (
+      <span dir="ltr" className={`text-[10px] font-semibold ${color} whitespace-nowrap`}>
+        {sign}{formatCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
+      </span>
+    );
+  };
+
+  const BreakdownList = ({ items }: { items: { name: string; amount: number }[] }) => (
+    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+      {items.map((item) => (
+        <div key={item.name} className="flex justify-between text-xs">
+          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
+          <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div
+      className="grid grid-cols-2 sm:grid-cols-4 gap-3 cursor-pointer"
+      onClick={() => setExpanded((v) => !v)}
+    >
       {/* Net Worth */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
         <p className="text-xs text-[var(--text-muted)]">💰 Net Worth</p>
@@ -95,37 +137,54 @@ function FinancialHealthHeader({
           <p className="text-lg font-bold">
             {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
           </p>
-          {momDelta !== null && (
-            <span
-              dir="ltr"
-              className={`text-xs font-semibold ${momDelta >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-            >
-              {`${momDelta >= 0 ? "+" : ""}${momPercent !== null ? `${momPercent.toFixed(1)}%` : ""}`}
-            </span>
-          )}
+          <MomBadge mom={netWorthMom} />
         </div>
       </div>
 
       {/* Bank Balance */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
         <p className="text-xs text-[var(--text-muted)]">🏦 Bank Balance</p>
-        <p className="text-lg font-bold mt-0.5">
-          {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
-        </p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <p className="text-lg font-bold">
+            {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+          </p>
+          <MomBadge mom={bankMom} />
+        </div>
+        {expanded && bankBalances && bankBalances.length > 0 && (
+          <BreakdownList
+            items={bankBalances.map((b) => ({ name: b.account_name, amount: b.balance }))}
+          />
+        )}
       </div>
 
       {/* Investments */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
         <p className="text-xs text-[var(--text-muted)]">📈 Investments</p>
-        <p className="text-lg font-bold mt-0.5">
-          {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
-        </p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <p className="text-lg font-bold">
+            {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+          </p>
+          <MomBadge mom={investmentMom} />
+        </div>
+        {expanded && openInvestments && openInvestments.length > 0 && (
+          <BreakdownList
+            items={openInvestments.map((i) => ({ name: i.name, amount: i.balance }))}
+          />
+        )}
       </div>
 
       {/* Cash */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
         <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
-        <p className="text-lg font-bold mt-0.5">{formatCurrency(totalCash)}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <p className="text-lg font-bold">{formatCurrency(totalCash)}</p>
+          <MomBadge mom={cashMom} />
+        </div>
+        {expanded && cashBalances && cashBalances.length > 0 && (
+          <BreakdownList
+            items={cashBalances.map((c) => ({ name: c.account_name, amount: c.balance }))}
+          />
+        )}
       </div>
     </div>
   );
@@ -975,6 +1034,16 @@ export function Dashboard() {
     queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
   });
 
+  const { data: bankBalances } = useQuery({
+    queryKey: ["bank-balances", isDemoMode],
+    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+  });
+
+  const { data: portfolioData } = useQuery({
+    queryKey: ["portfolio-analysis", isDemoMode],
+    queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
+  });
+
   const { data: netWorthData, isLoading: netWorthLoading } = useQuery({
     queryKey: ["net-worth-over-time", isDemoMode],
     queryFn: async () => {
@@ -1129,6 +1198,8 @@ export function Dashboard() {
       <FinancialHealthHeader
         netWorthData={netWorthData}
         cashBalances={cashBalances}
+        bankBalances={bankBalances}
+        portfolioAllocation={portfolioData?.allocation}
         isLoading={netWorthLoading}
       />
 
