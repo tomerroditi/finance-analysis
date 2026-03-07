@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 
@@ -7,11 +8,7 @@ from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
-from scraper.utils import (
-    fill_input,
-    sleep,
-    wait_until_element_found,
-)
+from scraper.utils import wait_until_element_found
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +32,53 @@ _CLICK_SEND_CODE_JS = """
 }
 """
 
-# JS to extract savings data from Angular sessionStorage cache
-_EXTRACT_SAVINGS_JS = """
+# JS: Extract savings account list from sessionStorage
+_EXTRACT_ACCOUNT_LIST_JS = """
 () => {
     const appState = JSON.parse(sessionStorage.getItem('appState') || '{}');
-    const resSavings = appState.share?.resSavings;
-    if (!resSavings) return null;
-    return resSavings;
+    const savingList = appState.share?.resSavings?.savingList;
+    if (!savingList) return null;
+    return savingList.map(s => ({
+        policyId: s.policyId || '',
+        policyType: s.policyType || '',
+        pensionType: s.pensionType || '',
+        balance: s.sum?.value || 0,
+        productDescription: s.productDescription || '',
+        balanceDate: s.tarNehunut || '',
+    }));
 }
 """
 
-# JS to extract deposits/charges from Angular sessionStorage cache
-_EXTRACT_DEPOSITS_JS = """
+# JS: Extract pension detail from sessionStorage
+_EXTRACT_PENSION_DETAIL_JS = """
 () => {
     const appState = JSON.parse(sessionStorage.getItem('appState') || '{}');
-    const chargesPayments = appState.depositsCharges?.chargesPayments;
-    if (!chargesPayments) return null;
-    return chargesPayments.list || [];
+    const policy = appState.pensionPolicies?.pensionPolicy;
+    if (!policy) return null;
+    return {
+        general: policy.general || {},
+        investmentRoutes: policy.investmentRoutes?.routes || [],
+        managementFee: policy.managementFee?.updatedMngFee || {},
+        depositsYear: policy.depositsYear || {},
+        covers: policy.covers?.list || [],
+        accountTransactions: policy.accountTransactions?.list || [],
+    };
+}
+"""
+
+# JS: Extract hishtalmut detail from sessionStorage (used in Task 6)
+_EXTRACT_HISHTALMUT_DETAIL_JS = """
+() => {
+    const appState = JSON.parse(sessionStorage.getItem('appState') || '{}');
+    const policy = appState.gemelPolicies?.hishtalmut;
+    if (!policy) return null;
+    return {
+        general: policy.general || {},
+        investmentRoutes: policy.investmentRoutesTransferConcentration?.investmentRoutes?.list || [],
+        managementFee: policy.managementFee?.updatedMngFee || {},
+        deposits: policy.deposits?.yearlyDeposits || {},
+        expectedPayments: policy.expectedPaymentsExcellence?.list || [],
+    };
 }
 """
 
@@ -100,22 +127,34 @@ class HaPhoenixScraper(BrowserScraper):
         try:
             # Step 1: Navigate to login page
             self._emit_progress("navigating to login page")
-            await self.navigate_to(LOGIN_URL)
-            await sleep(2.0)
+            await self.navigate_to(LOGIN_URL, wait_until="domcontentloaded")
 
-            # Wait for login form to render (SPA)
+            # Wait for login form to render (Angular SPA)
             self._emit_progress("waiting for login form")
             await wait_until_element_found(
-                self.page, ID_FIELD_SELECTOR, only_visible=True, timeout=15000
+                self.page, ID_FIELD_SELECTOR, only_visible=True, timeout=30000
             )
 
-            # Fill credentials
+            # Human-like: move mouse around, scroll a bit before interacting
+            await self._human_delay(1.0, 2.0)
+            await self._human_mouse_move()
+            await self._human_delay(0.3, 0.8)
+            await self._human_scroll()
+            await self._human_delay(0.5, 1.0)
+
+            # Fill credentials with human-like clicking and typing
             self._emit_progress("filling login credentials")
-            await fill_input(self.page, ID_FIELD_SELECTOR, self.credentials["id"])
-            await fill_input(
-                self.page, PHONE_FIELD_SELECTOR, self.credentials["phoneNumber"]
+            await self.page.click(ID_FIELD_SELECTOR)
+            await self._human_delay(0.2, 0.5)
+            await self._type_like_human(ID_FIELD_SELECTOR, self.credentials["id"])
+            await self._human_delay(0.5, 1.2)
+
+            await self.page.click(PHONE_FIELD_SELECTOR)
+            await self._human_delay(0.2, 0.5)
+            await self._type_like_human(
+                PHONE_FIELD_SELECTOR, self.credentials["phoneNumber"]
             )
-            await sleep(0.5)
+            await self._human_delay(0.5, 1.0)
 
             # Wait for submit button to become enabled, then click
             self._emit_progress("submitting credentials")
@@ -139,9 +178,13 @@ class HaPhoenixScraper(BrowserScraper):
             if otp_code == "cancel":
                 return LoginResult.UNKNOWN_ERROR
 
-            # Fill OTP and wait for submit button to become enabled
+            # Fill OTP with human-like typing
             self._emit_progress("submitting OTP code")
-            await fill_input(self.page, OTP_FIELD_SELECTOR, otp_code)
+            await self._human_delay(0.5, 1.0)
+            await self.page.click(OTP_FIELD_SELECTOR)
+            await self._human_delay(0.2, 0.5)
+            await self._type_like_human(OTP_FIELD_SELECTOR, otp_code)
+            await self._human_delay(0.3, 0.8)
             await self.page.wait_for_selector(
                 f"{OTP_SUBMIT_SELECTOR}:not([disabled])", timeout=10000
             )
@@ -181,21 +224,18 @@ class HaPhoenixScraper(BrowserScraper):
     async def fetch_data(self) -> list[AccountResult]:
         """Fetch pension/keren hishtalmut data from HaPhoenix.
 
-        Navigates to the savings page to trigger the Angular app's API calls,
-        then reads the cached response from sessionStorage.
+        Discovers all accounts from the savings page, then navigates to each
+        account's detail page to extract rich data (investment tracks,
+        commissions, deposits, covers).
 
         Returns
         -------
         list[AccountResult]
-            One AccountResult per savings account (pension/hishtalmut),
-            with balance and deposit transactions.
+            One AccountResult per policy with transactions and metadata.
         """
-        # Navigate to savings page to trigger data loading
-        self._emit_progress("loading savings data")
-        await self.navigate_to(SAVINGS_URL)
-        await sleep(2.0)
-
-        # Wait for savings data to be populated in sessionStorage
+        # Step 1: Navigate to savings page to discover accounts
+        self._emit_progress("discovering accounts")
+        await self.navigate_to(SAVINGS_URL, wait_until="domcontentloaded")
         await self.page.wait_for_function(
             """
             () => {
@@ -206,84 +246,262 @@ class HaPhoenixScraper(BrowserScraper):
             timeout=30000,
         )
 
-        # Extract savings accounts
-        savings_data = await self.page.evaluate(_EXTRACT_SAVINGS_JS)
-        if not savings_data:
-            logger.warning("No savings data found")
+        account_list = await self.page.evaluate(_EXTRACT_ACCOUNT_LIST_JS)
+        if not account_list:
+            logger.warning("No accounts found in savingList")
             return []
 
-        # Extract deposit/charge history
-        deposits_data = await self.page.evaluate(_EXTRACT_DEPOSITS_JS) or []
+        logger.info("Discovered %d accounts", len(account_list))
 
-        accounts: list[AccountResult] = []
-        for saving in savings_data.get("savingList", []):
-            policy_id = saving.get("policyId", "")
-            balance = saving.get("sum", {}).get("value", 0)
-            product = saving.get("productDescription", "")
-            policy_type = saving.get("policyType", "")
-            date_str = saving.get("tarNehunut", "")
+        # Step 2: Scrape each account's detail page
+        results: list[AccountResult] = []
+        for account_info in account_list:
+            try:
+                result = await self._scrape_account_detail(account_info)
+                if result:
+                    results.append(result)
+            except Exception as e:
+                logger.error(
+                    "Failed to scrape account %s: %s",
+                    account_info.get("policyId", "unknown"), e,
+                )
 
-            # Collect deposit transactions for this account
-            transactions = self._build_transactions(policy_id, deposits_data)
+        return results
 
-            account = AccountResult(
-                account_number=policy_id,
-                transactions=transactions,
-                balance=float(balance),
+    async def _scrape_account_detail(
+        self, account_info: dict
+    ) -> AccountResult | None:
+        """Navigate to an account's detail page and extract data.
+
+        Parameters
+        ----------
+        account_info : dict
+            Account summary from savingList with policyId, policyType, etc.
+
+        Returns
+        -------
+        AccountResult or None
+            Account data with transactions and metadata, or None on failure.
+        """
+        policy_id = account_info["policyId"]
+        policy_type = account_info.get("policyType", "").lower()
+
+        if "pension" in policy_type or "פנסי" in policy_type:
+            return await self._scrape_pension(account_info)
+        elif "hishtalmut" in policy_type or "השתלמות" in policy_type:
+            return await self._scrape_hishtalmut(account_info)
+        else:
+            logger.warning(
+                "Unknown policy type '%s' for %s, skipping",
+                policy_type, policy_id,
             )
-            accounts.append(account)
+            return None
 
-            logger.info(
-                "Found %s: %s (balance: ₪%s, as of %s, %d deposits)",
-                policy_type, product, balance, date_str, len(transactions),
-            )
+    async def _scrape_pension(self, account_info: dict) -> AccountResult:
+        """Scrape a pension account's detail page.
 
-        total = savings_data.get("savingDistribution", {}).get("totalSavings", {}).get("value", 0)
-        logger.info("Total savings: ₪%s across %d accounts", total, len(accounts))
+        Parameters
+        ----------
+        account_info : dict
+            Account summary from savingList.
 
-        return accounts
+        Returns
+        -------
+        AccountResult
+            Pension account data with deposit transactions and metadata.
+        """
+        policy_id = account_info["policyId"]
+        pension_type = account_info.get("pensionType", "makifa").lower()
+        balance = float(account_info.get("balance", 0))
+        balance_date = _parse_date(account_info.get("balanceDate", ""))
 
-    def _build_transactions(
-        self, policy_id: str, deposits_data: list[dict]
+        self._emit_progress(f"scraping pension {policy_id}")
+
+        # Navigate to pension detail page
+        url = f"https://my.fnx.co.il/policies/pension/{policy_id}/{pension_type}/info"
+        await self.navigate_to(url, wait_until="domcontentloaded")
+        await self._human_delay(1.0, 2.0)
+
+        # Wait for pension data to populate in sessionStorage
+        await self.page.wait_for_function(
+            """
+            () => {
+                const state = JSON.parse(sessionStorage.getItem('appState') || '{}');
+                return !!state.pensionPolicies?.pensionPolicy?.general;
+            }
+            """,
+            timeout=30000,
+        )
+        await self._human_delay(1.0, 2.0)
+
+        detail = await self.page.evaluate(_EXTRACT_PENSION_DETAIL_JS)
+        if not detail:
+            logger.warning("No pension detail for %s", policy_id)
+            return AccountResult(account_number=policy_id, balance=balance)
+
+        # Extract investment tracks
+        tracks = []
+        routes = detail.get("investmentRoutes", [])
+        for route in routes:
+            tracks.append({
+                "name": route.get("investmentRouteTitle", ""),
+                "yield_pct": route.get("yieldPercentage", 0),
+                # Single track = 100%. Multi-track: TODO improve when we have a reference
+                "allocation_pct": 100.0 if len(routes) == 1 else None,
+                "sum": None,
+            })
+
+        # Extract commissions
+        fee = detail.get("managementFee", {})
+        commission_deposits = fee.get("fromDeposit", {}).get("percentageData", {}).get("value")
+        commission_savings = fee.get("fromSaving", {}).get("percentageData", {}).get("value")
+
+        # Extract insurance covers
+        covers = []
+        for cover in detail.get("covers", []):
+            covers.append({
+                "title": cover.get("coverTitle", ""),
+                "desc": cover.get("coverDesc", ""),
+                "sum": cover.get("coverSum", 0),
+            })
+
+        # Build deposit transactions
+        transactions = self._build_pension_deposits(policy_id, detail)
+
+        # Build insurance cost transactions
+        transactions.extend(self._build_insurance_costs(policy_id, detail))
+
+        account_name = detail.get("general", {}).get("policyName", f"Pension {policy_id}")
+
+        logger.info(
+            "Pension %s: %s (balance: ₪%s, %d tracks, %d deposits, %d covers)",
+            policy_id, account_name, balance, len(tracks),
+            len(transactions), len(covers),
+        )
+
+        return AccountResult(
+            account_number=policy_id,
+            transactions=transactions,
+            balance=balance,
+            metadata={
+                "provider": "hafenix",
+                "policy_id": policy_id,
+                "policy_type": "pension",
+                "pension_type": pension_type,
+                "account_name": account_name,
+                "balance": balance,
+                "balance_date": balance_date,
+                "investment_tracks": json.dumps(tracks, ensure_ascii=False),
+                "commission_deposits_pct": commission_deposits,
+                "commission_savings_pct": commission_savings,
+                "insurance_covers": json.dumps(covers, ensure_ascii=False),
+                "liquidity_date": None,
+            },
+        )
+
+    async def _scrape_hishtalmut(self, account_info: dict) -> AccountResult | None:
+        """Placeholder for hishtalmut scraping (implemented in Task 6)."""
+        policy_id = account_info["policyId"]
+        logger.info("Hishtalmut %s: scraping not yet implemented", policy_id)
+        return AccountResult(
+            account_number=policy_id,
+            balance=float(account_info.get("balance", 0)),
+        )
+
+    def _build_pension_deposits(
+        self, policy_id: str, detail: dict
     ) -> list[Transaction]:
-        """Build Transaction objects from deposit/charge records for an account.
+        """Build Transaction objects from pension deposit records.
 
         Parameters
         ----------
         policy_id : str
-            The policy ID to filter deposits for.
-        deposits_data : list[dict]
-            Raw deposit/charge records from the API.
+            The policy ID.
+        detail : dict
+            Pension detail data from sessionStorage.
 
         Returns
         -------
         list[Transaction]
-            Deposit transactions matching the policy ID.
+            Deposit transactions across all available years.
         """
         transactions: list[Transaction] = []
+        deposits_year = detail.get("depositsYear", {})
 
-        for deposit in deposits_data:
-            dep_policy_id = deposit.get("policyId", "")
-            if dep_policy_id != policy_id:
+        for year_data in deposits_year.get("list", []):
+            for deposit in year_data.get("list", []):
+                date_raw = deposit.get("depositDate", "")
+                date_str = _parse_date(date_raw)
+                total = float(deposit.get("totalDeposit", 0))
+                employer_name = deposit.get("employerName", "")
+                employee = float(deposit.get("employeeDeposit", 0))
+                employer = float(deposit.get("employerDeposit", 0))
+                compensation = float(deposit.get("compensationDeposit", 0))
+
+                description = f"הפקדה - {employer_name}" if employer_name else "הפקדה"
+                memo_parts = []
+                if employee:
+                    memo_parts.append(f"עובד: {employee:.0f}")
+                if employer:
+                    memo_parts.append(f"מעסיק: {employer:.0f}")
+                if compensation:
+                    memo_parts.append(f"פיצויים: {compensation:.0f}")
+                memo = " / ".join(memo_parts) if memo_parts else None
+
+                transactions.append(
+                    Transaction(
+                        type=TransactionType.NORMAL,
+                        status=TransactionStatus.COMPLETED,
+                        date=date_str,
+                        processed_date=date_str,
+                        original_amount=total,
+                        original_currency="ILS",
+                        charged_amount=total,
+                        charged_currency="ILS",
+                        description=description,
+                        identifier=f"{policy_id}_{date_str}_{total}",
+                        memo=memo,
+                    )
+                )
+
+        return transactions
+
+    def _build_insurance_costs(
+        self, policy_id: str, detail: dict
+    ) -> list[Transaction]:
+        """Build Transaction objects from pension insurance cost records.
+
+        Parameters
+        ----------
+        policy_id : str
+            The policy ID.
+        detail : dict
+            Pension detail data from sessionStorage.
+
+        Returns
+        -------
+        list[Transaction]
+            Insurance cost transactions (negative amounts).
+        """
+        transactions: list[Transaction] = []
+        cost_keywords = ["עלות הביטוח לסיכוני נכות", "עלות הביטוח למקרה מוות"]
+
+        for item in detail.get("accountTransactions", []):
+            item_type = item.get("type", "")
+            if not any(kw in item_type for kw in cost_keywords):
                 continue
 
-            amount_data = deposit.get("amount", {})
+            amount_data = item.get("amount", {})
             amount_value = float(amount_data.get("value", 0))
-            sign = amount_data.get("sign", "")
-            if sign == "minus":
+            # Insurance costs are expenses — ensure negative
+            if amount_value > 0:
                 amount_value = -amount_value
 
-            date_raw = deposit.get("date", "")
+            date_raw = item.get("date", "")
             date_str = _parse_date(date_raw)
-            dep_type = deposit.get("type", "")
-            policy_name = deposit.get("policyName", "")
-            policy_type_data = deposit.get("policyTypeData", {})
-            type_name = policy_type_data.get("name", "")
-            method = deposit.get("method", "")
 
-            description = f"{type_name} - {dep_type}"
-            if method:
-                description += f" ({method})"
+            short_type = "נכות" if "נכות" in item_type else "מוות"
+            description = f"עלות ביטוח - {short_type}"
 
             transactions.append(
                 Transaction(
@@ -296,9 +514,7 @@ class HaPhoenixScraper(BrowserScraper):
                     charged_amount=amount_value,
                     charged_currency="ILS",
                     description=description,
-                    identifier=f"{policy_id}_{date_str}_{amount_value}",
-                    memo=policy_name,
+                    identifier=f"{policy_id}_{date_str}_insurance_{short_type}",
+                    memo=None,
                 )
             )
-
-        return transactions
