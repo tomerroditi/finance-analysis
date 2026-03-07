@@ -35,8 +35,10 @@ package-lock.json
 yarn.lock
 npm-debug.log*
 
-# VSCode
-.vscode/
+# VSCode (track launch/tasks, ignore the rest)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
 
 # pyCharm
 .idea/

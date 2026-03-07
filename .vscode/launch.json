@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dev (Backend + Frontend)",
+      "request": "launch",
+      "type": "node-terminal",
+      "command": "echo 'Starting dev servers...'",
+      "preLaunchTask": "Dev (Backend + Frontend)"
+    },
+    {
+      "name": "Prod (Single Server)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "./start.sh prod",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
