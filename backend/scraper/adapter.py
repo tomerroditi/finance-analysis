@@ -136,6 +136,8 @@ class ScraperAdapter:
                     self._save_scraped_transactions()
                     self._apply_auto_tagging()
                     self._recalculate_bank_balances()
+                    if self.service_name == "insurances":
+                        self._save_insurance_metadata(result)
             else:
                 self._error = result.error_message or result.error_type or "Unknown error"
                 logger.error(
@@ -331,6 +333,37 @@ class ScraperAdapter:
             logger.error(
                 "%s: %s: Error recalculating bank balance — %s",
                 self.provider_name, self.account_name, exc,
+            )
+
+    def _save_insurance_metadata(self, result) -> None:
+        """Persist insurance account metadata from AccountResult.metadata fields."""
+        from backend.models.insurance_account import InsuranceAccount
+
+        accounts_to_upsert = []
+        for account in result.accounts:
+            if account.metadata:
+                accounts_to_upsert.append(account.metadata)
+
+        if not accounts_to_upsert:
+            return
+
+        with get_db_context() as db:
+            for meta in accounts_to_upsert:
+                existing = db.query(InsuranceAccount).filter_by(
+                    policy_id=meta["policy_id"]
+                ).first()
+
+                if existing:
+                    for key, value in meta.items():
+                        if key != "policy_id":
+                            setattr(existing, key, value)
+                else:
+                    db.add(InsuranceAccount(**meta))
+
+            db.commit()
+            logger.info(
+                "%s: %s: Saved metadata for %d insurance accounts",
+                self.provider_name, self.account_name, len(accounts_to_upsert),
             )
 
     def _record_scraping_attempt(self, id_: int) -> None:
