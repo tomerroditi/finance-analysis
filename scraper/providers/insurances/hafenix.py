@@ -399,13 +399,101 @@ class HaPhoenixScraper(BrowserScraper):
             },
         )
 
-    async def _scrape_hishtalmut(self, account_info: dict) -> AccountResult | None:
-        """Placeholder for hishtalmut scraping (implemented in Task 6)."""
+    async def _scrape_hishtalmut(self, account_info: dict) -> AccountResult:
+        """Scrape a keren hishtalmut account's detail page.
+
+        Parameters
+        ----------
+        account_info : dict
+            Account summary from savingList.
+
+        Returns
+        -------
+        AccountResult
+            Hishtalmut account data with deposit transactions and metadata.
+        """
         policy_id = account_info["policyId"]
-        logger.info("Hishtalmut %s: scraping not yet implemented", policy_id)
+        balance = float(account_info.get("balance", 0))
+        balance_date = _parse_date(account_info.get("balanceDate", ""))
+
+        self._emit_progress(f"scraping hishtalmut {policy_id}")
+
+        # Navigate to hishtalmut detail page
+        encoded_id = policy_id.replace(" ", "%20")
+        url = f"https://my.fnx.co.il/policies/hishtalmut/{encoded_id}/info"
+        await self.navigate_to(url, wait_until="domcontentloaded")
+        await self._human_delay(1.0, 2.0)
+
+        # Wait for hishtalmut data to populate in sessionStorage
+        await self.page.wait_for_function(
+            """
+            () => {
+                const state = JSON.parse(sessionStorage.getItem('appState') || '{}');
+                return !!state.gemelPolicies?.hishtalmut?.general;
+            }
+            """,
+            timeout=30000,
+        )
+        await self._human_delay(1.0, 2.0)
+
+        detail = await self.page.evaluate(_EXTRACT_HISHTALMUT_DETAIL_JS)
+        if not detail:
+            logger.warning("No hishtalmut detail for %s", policy_id)
+            return AccountResult(account_number=policy_id, balance=balance)
+
+        # Extract investment tracks (hishtalmut has allocation %)
+        tracks = []
+        for route in detail.get("investmentRoutes", []):
+            tracks.append({
+                "name": route.get("investmentRouteTitle", ""),
+                "yield_pct": route.get("yieldPercentage", 0),
+                "allocation_pct": route.get("investmentPercent", {}).get("value"),
+                "sum": route.get("investmentSum", {}).get("value"),
+            })
+
+        # Extract commissions
+        fee = detail.get("managementFee", {})
+        commission_deposits = fee.get("fromDeposit", {}).get("percentageData", {}).get("value")
+        commission_savings = fee.get("fromSaving", {}).get("percentageData", {}).get("value")
+
+        # Extract liquidity date
+        liquidity_date = None
+        for payment in detail.get("expectedPayments", []):
+            title = payment.get("title", "")
+            if "משיכה חד פעמית" in title or "סכום למשיכה" in title:
+                sub_title = payment.get("subTitle", "")
+                liquidity_date = self._parse_liquidity_date(sub_title)
+                break
+
+        # Build deposit transactions
+        transactions = self._build_hishtalmut_deposits(policy_id, detail)
+
+        account_name = detail.get("general", {}).get("policyName", f"Hishtalmut {policy_id}")
+
+        logger.info(
+            "Hishtalmut %s: %s (balance: ₪%s, %d tracks, %d deposits, liquidity: %s)",
+            policy_id, account_name, balance, len(tracks),
+            len(transactions), liquidity_date,
+        )
+
         return AccountResult(
             account_number=policy_id,
-            balance=float(account_info.get("balance", 0)),
+            transactions=transactions,
+            balance=balance,
+            metadata={
+                "provider": "hafenix",
+                "policy_id": policy_id,
+                "policy_type": "hishtalmut",
+                "pension_type": None,
+                "account_name": account_name,
+                "balance": balance,
+                "balance_date": balance_date,
+                "investment_tracks": json.dumps(tracks, ensure_ascii=False),
+                "commission_deposits_pct": commission_deposits,
+                "commission_savings_pct": commission_savings,
+                "insurance_covers": None,
+                "liquidity_date": liquidity_date,
+            },
         )
 
     def _build_pension_deposits(
@@ -518,3 +606,70 @@ class HaPhoenixScraper(BrowserScraper):
                     memo=None,
                 )
             )
+
+        return transactions
+
+    def _build_hishtalmut_deposits(
+        self, policy_id: str, detail: dict
+    ) -> list[Transaction]:
+        """Build Transaction objects from hishtalmut deposit records.
+
+        Parameters
+        ----------
+        policy_id : str
+            The policy ID.
+        detail : dict
+            Hishtalmut detail data from sessionStorage.
+
+        Returns
+        -------
+        list[Transaction]
+            Deposit transactions across all available years.
+        """
+        transactions: list[Transaction] = []
+        yearly_deposits = detail.get("deposits", {})
+
+        for year_data in yearly_deposits.get("list", []):
+            for deposit in year_data.get("list", []):
+                date_raw = deposit.get("depositDate", "")
+                date_str = _parse_date(date_raw)
+                total = float(deposit.get("totalDeposit", 0))
+
+                transactions.append(
+                    Transaction(
+                        type=TransactionType.NORMAL,
+                        status=TransactionStatus.COMPLETED,
+                        date=date_str,
+                        processed_date=date_str,
+                        original_amount=total,
+                        original_currency="ILS",
+                        charged_amount=total,
+                        charged_currency="ILS",
+                        description="הפקדה",
+                        identifier=f"{policy_id}_{date_str}_{total}",
+                        memo=None,
+                    )
+                )
+
+        return transactions
+
+    @staticmethod
+    def _parse_liquidity_date(text: str) -> str | None:
+        """Parse liquidity date from Hebrew text like 'החל מ31.05.2029'.
+
+        Parameters
+        ----------
+        text : str
+            Hebrew text containing a date.
+
+        Returns
+        -------
+        str or None
+            Date in YYYY-MM-DD format, or None if parsing fails.
+        """
+        import re
+        match = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", text)
+        if match:
+            day, month, year = match.groups()
+            return f"{year}-{month}-{day}"
+        return None
