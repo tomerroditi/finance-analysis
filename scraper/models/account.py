@@ -10,3 +10,4 @@ class AccountResult:
     account_number: str
     transactions: list[Transaction] = field(default_factory=list)
     balance: Optional[float] = None
+    metadata: Optional[dict] = None
