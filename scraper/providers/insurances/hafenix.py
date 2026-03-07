@@ -334,6 +334,9 @@ class HaPhoenixScraper(BrowserScraper):
         )
         await self._human_delay(1.0, 2.0)
 
+        # Try to load all deposit years
+        await self._load_all_deposit_years()
+
         detail = await self.page.evaluate(_EXTRACT_PENSION_DETAIL_JS)
         if not detail:
             logger.warning("No pension detail for %s", policy_id)
@@ -436,6 +439,9 @@ class HaPhoenixScraper(BrowserScraper):
         )
         await self._human_delay(1.0, 2.0)
 
+        # Try to load all deposit years
+        await self._load_all_deposit_years()
+
         detail = await self.page.evaluate(_EXTRACT_HISHTALMUT_DETAIL_JS)
         if not detail:
             logger.warning("No hishtalmut detail for %s", policy_id)
@@ -495,6 +501,33 @@ class HaPhoenixScraper(BrowserScraper):
                 "liquidity_date": liquidity_date,
             },
         )
+
+    async def _load_all_deposit_years(self) -> None:
+        """Attempt to load all available deposit years by clicking year options.
+
+        This is a best-effort method — if the year selector is not found or
+        clicking fails, we proceed with whatever years are already loaded.
+
+        The exact selector may need adjustment based on live testing.
+        """
+        # TODO: The year selector mechanism needs live testing.
+        # The site may use a dropdown, tabs, or API calls for year switching.
+        # For now, we rely on whatever years are loaded by default.
+        try:
+            year_elements = await self.page.query_selector_all(
+                ".year-select option, .year-tab, [data-year]"
+            )
+            if not year_elements:
+                return
+
+            for el in year_elements:
+                try:
+                    await el.click()
+                    await self._human_delay(0.5, 1.0)
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug("Year iteration not available: %s", e)
 
     def _build_pension_deposits(
         self, policy_id: str, detail: dict
