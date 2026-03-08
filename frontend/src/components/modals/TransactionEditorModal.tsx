@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
@@ -16,6 +17,7 @@ export function TransactionEditorModal({
   onClose,
   onSuccess,
 }: TransactionEditorModalProps) {
+  const { t } = useTranslation();
   const isManual =
     transaction.source?.includes("cash") ||
     transaction.source?.includes("manual_investment");
@@ -64,7 +66,7 @@ export function TransactionEditorModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-          <h2 className="text-xl font-bold text-white">Edit Transaction</h2>
+          <h2 className="text-xl font-bold text-white">{t("modals.transactionForm.editTitle")}</h2>
           <button
             onClick={onClose}
             className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
@@ -76,15 +78,14 @@ export function TransactionEditorModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {!isManual && (
             <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
-              Note: For bank/credit card transactions, only Category and Tag can
-              be modified to maintain data integrity.
+              {t("modals.transactionForm.readOnlyNote")}
             </div>
           )}
 
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                Date
+                {t("common.date")}
               </label>
               <input
                 type="date"
@@ -100,7 +101,7 @@ export function TransactionEditorModal({
             {isManual && (
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                  Account / Wallet Name
+                  {t("modals.transactionForm.accountName")}
                 </label>
                 {isCash ? (
                   <SelectDropdown
@@ -112,7 +113,7 @@ export function TransactionEditorModal({
                     onChange={(val) =>
                       setFormData({ ...formData, account_name: val })
                     }
-                    placeholder="Select an Envelope"
+                    placeholder={t("modals.transactionForm.selectEnvelope")}
                   />
                 ) : (
                   <input
@@ -129,7 +130,7 @@ export function TransactionEditorModal({
 
             <div>
               <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                Description
+                {t("common.description")}
               </label>
               <input
                 type="text"
@@ -144,7 +145,7 @@ export function TransactionEditorModal({
 
             <div>
               <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                Amount
+                {t("common.amount")}
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">
@@ -169,7 +170,7 @@ export function TransactionEditorModal({
             <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                  Category
+                  {t("common.category")}
                 </label>
                 <SelectDropdown
                   options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
@@ -181,7 +182,7 @@ export function TransactionEditorModal({
                       tag: "",
                     })
                   }
-                  placeholder="Select Category"
+                  placeholder={t("modals.transactionForm.selectCategory")}
                   onCreateNew={async (name) => {
                     const formatted = await createCategory(name);
                     setFormData({ ...formData, category: formatted, tag: "" });
@@ -191,7 +192,7 @@ export function TransactionEditorModal({
 
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                  Tag
+                  {t("common.tag")}
                 </label>
                 <SelectDropdown
                   options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
@@ -199,7 +200,7 @@ export function TransactionEditorModal({
                   onChange={(val) =>
                     setFormData({ ...formData, tag: val })
                   }
-                  placeholder="Select Tag"
+                  placeholder={t("modals.transactionForm.selectTag")}
                   disabled={!formData.category}
                   onCreateNew={async (name) => {
                     const formatted = await createTag(formData.category, name);
@@ -216,13 +217,13 @@ export function TransactionEditorModal({
               onClick={onClose}
               className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--surface-light)] hover:bg-[var(--surface-light)] text-sm font-semibold transition-all"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all"
             >
-              Save Changes
+              {t("modals.transactionForm.saveChanges")}
             </button>
           </div>
         </form>

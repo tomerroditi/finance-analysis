@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
 
@@ -23,6 +24,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   size = "default",
   onCreateNew,
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(-1);
@@ -250,7 +252,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search..."
+                    placeholder={t("common.search") + "..."}
                     className="w-full pl-7 pr-2 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                   />
                 </div>
@@ -285,7 +287,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
               ))}
               {filteredOptions.length === 0 && (
                 <div className="px-4 py-3 text-sm text-[var(--text-muted)] text-center">
-                  {search ? "No matches found" : "No options available"}
+                  {search ? t("common.noMatchesFound") : t("common.noOptionsAvailable")}
                 </div>
               )}
               {onCreateNew && (
@@ -311,7 +313,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                             }
                             e.stopPropagation();
                           }}
-                          placeholder="Enter name..."
+                          placeholder={t("common.enterName")}
                           className="flex-1 px-3 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                         />
                         <button
@@ -337,7 +339,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                       className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-[var(--primary)] hover:bg-[var(--surface-light)] transition-colors"
                     >
                       <Plus size={14} />
-                      Create new
+                      {t("common.createNew")}
                     </button>
                   )}
                 </>

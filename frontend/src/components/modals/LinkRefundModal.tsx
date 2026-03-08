@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
@@ -21,6 +22,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   onClose,
   refundTransaction,
 }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
     null,
@@ -93,7 +95,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               <Link2 className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">Link Refund</h2>
+              <h2 className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
               {refundTransaction && (
                 <p className="text-sm text-[var(--text-muted)]">
                   {formatCurrency(refundTransaction.amount)} refund
@@ -119,7 +121,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
             />
             <input
               type="text"
-              placeholder="Search pending refunds..."
+              placeholder={t("modals.linkRefund.searchPending")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
@@ -129,11 +131,11 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           {/* Pending refunds list */}
           {isLoading ? (
             <div className="text-center py-8 text-[var(--text-muted)]">
-              Loading pending refunds...
+              {t("modals.linkRefund.loading")}
             </div>
           ) : filteredPending.length === 0 ? (
             <div className="text-center py-8 text-[var(--text-muted)]">
-              No pending refunds found
+              {t("modals.linkRefund.noPending")}
             </div>
           ) : (
             <div className="space-y-2">
@@ -158,14 +160,14 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-white truncate mb-0.5">
-                        {pending.description || "Unknown Expense"}
+                        {pending.description || t("modals.linkRefund.unknownExpense")}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                         <span>
                           {pending.provider ? humanizeProvider(pending.provider) : humanizeService(pending.source_table)}
                         </span>
                         <span>•</span>
-                        <span>{pending.date || "No date"}</span>
+                        <span>{pending.date || t("modals.linkRefund.noDate")}</span>
                         {pending.account_name && (
                           <>
                             <span>•</span>
@@ -188,7 +190,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                   {(pending.remaining ?? pending.expected_amount) !==
                     pending.expected_amount && (
                     <p className="text-xs text-emerald-400 mt-1">
-                      {formatCurrency(pending.remaining ?? 0)} remaining
+                      {formatCurrency(pending.remaining ?? 0)} {t("modals.split.remaining").toLowerCase()}
                     </p>
                   )}
                   {selectedPendingId === pending.id && (
@@ -205,7 +207,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           {selectedPendingId && (
             <div className="mt-4 p-4 bg-[var(--surface-base)] rounded-xl border border-[var(--surface-light)]">
               <label className="block text-sm font-medium text-[var(--text-muted)] mb-2">
-                Amount to link
+                {t("modals.linkRefund.amountToLink")}
               </label>
               <input
                 type="number"
@@ -226,7 +228,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-[var(--surface-light)] transition-colors"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             onClick={handleLink}
@@ -235,7 +237,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
             }
             className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {linkMutation.isPending ? "Linking..." : "Link Refund"}
+            {linkMutation.isPending ? t("modals.linkRefund.linking") : t("modals.linkRefund.title")}
           </button>
         </div>
       </div>

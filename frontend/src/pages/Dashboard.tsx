@@ -37,6 +37,7 @@ import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday, format } from "date-fns";
+import { useTranslation } from "react-i18next";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 
@@ -73,6 +74,7 @@ function FinancialHealthHeader({
   portfolioAllocation: { name: string; balance: number }[] | undefined;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
@@ -134,7 +136,7 @@ function FinancialHealthHeader({
     >
       {/* Net Worth */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💰 Net Worth</p>
+        <p className="text-xs text-[var(--text-muted)]">💰 {t("dashboard.netWorth")}</p>
         <div className="flex items-baseline gap-2 mt-0.5">
           <p className="text-lg font-bold">
             {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
@@ -145,7 +147,7 @@ function FinancialHealthHeader({
 
       {/* Bank Balance */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">🏦 Bank Balance</p>
+        <p className="text-xs text-[var(--text-muted)]">🏦 {t("dashboard.bankBalance")}</p>
         <div className="flex items-baseline gap-2 mt-0.5">
           <p className="text-lg font-bold">
             {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
@@ -161,7 +163,7 @@ function FinancialHealthHeader({
 
       {/* Investments */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">📈 Investments</p>
+        <p className="text-xs text-[var(--text-muted)]">📈 {t("dashboard.investmentValue")}</p>
         <div className="flex items-baseline gap-2 mt-0.5">
           <p className="text-lg font-bold">
             {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
@@ -177,7 +179,7 @@ function FinancialHealthHeader({
 
       {/* Cash */}
       <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💵 Cash</p>
+        <p className="text-xs text-[var(--text-muted)]">💵 {t("dashboard.cashBalance")}</p>
         <div className="flex items-baseline gap-2 mt-0.5">
           <p className="text-lg font-bold">{formatCurrency(totalCash)}</p>
           <MomBadge mom={cashMom} />
@@ -220,6 +222,7 @@ function BudgetRuleCards({
   rules: BudgetRule[];
   categoryIcons: Record<string, string> | undefined;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="h-[260px] overflow-y-auto scrollbar-auto-hide mb-4">
       {rules.length > 0 && (
@@ -264,8 +267,8 @@ function BudgetRuleCards({
                   remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
                 }`}>
                   {remaining >= 0
-                    ? `${formatCurrency(remaining)} left`
-                    : `${formatCurrency(Math.abs(remaining))} over budget`}
+                    ? `${formatCurrency(remaining)} ${t("budget.remaining").toLowerCase()}`
+                    : `${formatCurrency(Math.abs(remaining))} ${t("budget.overBudget").toLowerCase()}`}
                 </p>
               </div>
             );
@@ -281,6 +284,7 @@ function BudgetSpendingGauge({
 }: {
   categoryIcons: Record<string, string> | undefined;
 }) {
+  const { t } = useTranslation();
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -447,8 +451,8 @@ function BudgetSpendingGauge({
       className="flex bg-[var(--surface-light)] p-0.5 rounded-lg cursor-pointer"
     >
       {([
-        { key: "monthly" as const, label: "Monthly" },
-        { key: "projects" as const, label: "Projects" },
+        { key: "monthly" as const, label: t("budget.monthlyBudget") },
+        { key: "projects" as const, label: t("budget.projectBudgets") },
       ]).map(({ key, label }) => (
         <span
           key={key}
@@ -471,7 +475,7 @@ function BudgetSpendingGauge({
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          🎯 Budget
+          🎯 {t("budget.title")}
         </p>
         {segmentedControlEl}
       </div>
@@ -509,7 +513,7 @@ function BudgetSpendingGauge({
                 </div>
                 {isCurrentMonth && (
                   <span className="text-xs text-[var(--text-muted)]">
-                    ⏳ {daysRemaining} day{daysRemaining !== 1 ? "s" : ""} remaining
+                    ⏳ {t("dashboard.daysRemaining", { count: daysRemaining })}
                   </span>
                 )}
               </div>
@@ -540,13 +544,13 @@ function BudgetSpendingGauge({
           {/* Empty state for projects */}
           {hasNoProjects ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <p className="text-sm text-[var(--text-muted)] mb-3">No project budgets yet</p>
+              <p className="text-sm text-[var(--text-muted)] mb-3">{t("dashboard.noProjectBudgets")}</p>
               <button
                 onClick={() => setIsProjectModalOpen(true)}
                 className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
               >
                 <Plus size={16} />
-                Add new project
+                {t("budget.addProject")}
               </button>
             </div>
           ) : (
@@ -565,7 +569,7 @@ function BudgetSpendingGauge({
                   to="/budget"
                   className="text-sm font-medium text-[var(--primary)] hover:underline"
                 >
-                  View All Budget Rules &rarr;
+                  {t("dashboard.viewAllBudgetRules")} &rarr;
                 </Link>
               </div>
             </>
@@ -680,6 +684,7 @@ function RecentTransactionsFeed({
   categoryIcons: Record<string, string> | undefined;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { createCategory, createTag } = useCategoryTagCreate();
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
@@ -827,13 +832,13 @@ function RecentTransactionsFeed({
     <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          🧾 Recent Transactions
+          🧾 {t("dashboard.recentTransactions")}
         </p>
         <Link
           to="/transactions"
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          View All &rarr;
+          {t("dashboard.viewAll")} &rarr;
         </Link>
       </div>
 
@@ -937,7 +942,7 @@ function RecentTransactionsFeed({
                       <div className="mx-2 mb-2 ml-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2">
                           <div className="flex-1 min-w-0">
-                            <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">Category</label>
+                            <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
                             <SelectDropdown
                               options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
                               value={tx.category || ""}
@@ -948,7 +953,7 @@ function RecentTransactionsFeed({
                             />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">Tag</label>
+                            <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.tag")}</label>
                             <SelectDropdown
                               options={
                                 tx.category && categories[tx.category]
@@ -970,7 +975,7 @@ function RecentTransactionsFeed({
                             className="self-end mb-0.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]/80 transition-colors"
                             onClick={() => setEditingTxKey(null)}
                           >
-                            Done
+                            {t("dashboard.done")}
                           </button>
                         </div>
                       </div>
@@ -989,7 +994,7 @@ function RecentTransactionsFeed({
           <div className="flex justify-center py-2">
             <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
               <div className="w-4 h-4 border-2 border-[var(--primary)]/30 border-t-[var(--primary)] rounded-full animate-spin" />
-              Loading more...
+              {t("common.loading")}
             </div>
           </div>
         )}
@@ -1034,6 +1039,7 @@ function RecentTransactionsFeed({
 /* ================================================================== */
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
   const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
@@ -1141,24 +1147,24 @@ export function Dashboard() {
 
   const seriesConfig = {
     bank_balance: {
-      label: "Bank Balance",
+      label: t("dashboard.bankBalance"),
       color: "#f59e0b",
-      dataKey: "bank_balance",
-      deltaKey: "bank_balance_delta",
+      dataKey: "bank_balance" as const,
+      deltaKey: "bank_balance_delta" as const,
     },
     investments: {
-      label: "Investments",
+      label: t("dashboard.investmentValue"),
       color: "#6366f1",
-      dataKey: "investment_value",
-      deltaKey: "investment_value_delta",
+      dataKey: "investment_value" as const,
+      deltaKey: "investment_value_delta" as const,
     },
     net_worth: {
-      label: "Net Worth",
+      label: t("dashboard.netWorth"),
       color: "#10b981",
-      dataKey: "net_worth",
-      deltaKey: "net_worth_delta",
+      dataKey: "net_worth" as const,
+      deltaKey: "net_worth_delta" as const,
     },
-  } as const;
+  };
 
   const getNetWorthTraces = (): Plotly.Data[] => {
     if (!netWorthData || netWorthData.length === 0) return [];
@@ -1168,7 +1174,7 @@ export function Dashboard() {
         {
           x: netWorthData.map((d) => d.month),
           y: netWorthData.map((d) => d.bank_balance),
-          name: "Bank Balance",
+          name: t("dashboard.bankBalance"),
           type: "scatter",
           mode: "lines+markers",
           line: { color: "#f59e0b", width: 2 },
@@ -1177,7 +1183,7 @@ export function Dashboard() {
         {
           x: netWorthData.map((d) => d.month),
           y: netWorthData.map((d) => d.investment_value),
-          name: "Investments",
+          name: t("dashboard.investmentValue"),
           type: "scatter",
           mode: "lines+markers",
           line: { color: "#6366f1", width: 2 },
@@ -1186,7 +1192,7 @@ export function Dashboard() {
         {
           x: netWorthData.map((d) => d.month),
           y: netWorthData.map((d) => d.net_worth),
-          name: "Net Worth",
+          name: t("dashboard.netWorth"),
           type: "scatter",
           mode: "lines+markers",
           line: { color: "#10b981", width: 3 },
@@ -1202,7 +1208,7 @@ export function Dashboard() {
       {
         x: netWorthDeltas.map((d) => d.month),
         y: netWorthDeltas.map((d) => d[config.deltaKey]),
-        name: "Monthly Change",
+        name: t("dashboard.monthlyChange"),
         type: "bar",
         marker: {
           color: netWorthDeltas.map((d) =>
@@ -1229,8 +1235,8 @@ export function Dashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold">📊 Dashboard</h1>
-        <p className="text-[var(--text-muted)] mt-1">✨ Your financial snapshot at a glance</p>
+        <h1 className="text-3xl font-bold">📊 {t("dashboard.title")}</h1>
+        <p className="text-[var(--text-muted)] mt-1">✨ {t("dashboard.subtitle")}</p>
       </div>
 
       {/* Section 1: Financial Health Header */}
@@ -1260,11 +1266,11 @@ export function Dashboard() {
         <div className="px-6 pt-5 pb-0">
           <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1">
             {([
-              { key: "monthly_expenses" as const, label: "💸 Monthly Expenses" },
-              { key: "net_worth" as const, label: "📈 Net Worth" },
-              { key: "cash_flow" as const, label: "🌊 Cash Flow" },
-              { key: "income_expenses" as const, label: "⚖️ Income & Expenses" },
-              { key: "category" as const, label: "🍕 Categories" },
+              { key: "monthly_expenses" as const, label: `💸 ${t("dashboard.monthlyExpenses")}` },
+              { key: "net_worth" as const, label: `📈 ${t("dashboard.netWorth")}` },
+              { key: "cash_flow" as const, label: `🌊 ${t("dashboard.cashFlow")}` },
+              { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
+              { key: "category" as const, label: `🍕 ${t("dashboard.categories")}` },
             ]).map(({ key, label }) => (
               <button
                 key={key}
@@ -1294,7 +1300,7 @@ export function Dashboard() {
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">Avg 3 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg3Months")}</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_3_months)}
                         </p>
@@ -1305,7 +1311,7 @@ export function Dashboard() {
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">Avg 6 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg6Months")}</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_6_months)}
                         </p>
@@ -1316,7 +1322,7 @@ export function Dashboard() {
                         <Calculator size={18} />
                       </div>
                       <div>
-                        <p className="text-[var(--text-muted)] text-xs">Avg 12 Months</p>
+                        <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg12Months")}</p>
                         <p className="text-lg font-bold">
                           {formatCurrency(monthlyExpenses.avg_12_months)}
                         </p>
@@ -1331,8 +1337,8 @@ export function Dashboard() {
                       }`}
                     >
                       {excludePendingRefunds
-                        ? "Pending Refunds Excluded"
-                        : "Pending Refunds Included"}
+                        ? t("dashboard.pendingRefundsExcluded")
+                        : t("dashboard.pendingRefundsIncluded")}
                     </button>
                   </div>
                   <div className="flex-1 min-h-0">
@@ -1343,7 +1349,7 @@ export function Dashboard() {
                           y: monthlyExpenses.months.map((d) => d.expenses),
                           type: "bar",
                           marker: { color: "#f43f5e" },
-                          name: "Expenses",
+                          name: t("dashboard.expenses"),
                         },
                       ]}
                       layout={{
@@ -1351,7 +1357,7 @@ export function Dashboard() {
                         autosize: true,
                         yaxis: {
                           title: {
-                            text: "Amount (ILS)",
+                            text: t("dashboard.amountILS"),
                             font: { color: "#94a3b8" },
                           },
                           tickfont: { color: "#94a3b8" },
@@ -1363,7 +1369,7 @@ export function Dashboard() {
                   </div>
                 </>
               ) : (
-                <p className="text-[var(--text-muted)] text-sm">📭 No expense data available.</p>
+                <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noExpenseData")}</p>
               )}
             </div>
           )}
@@ -1377,10 +1383,10 @@ export function Dashboard() {
                     <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
                       {(
                         [
-                          { key: "all", label: "All" },
-                          { key: "bank_balance", label: "Bank Balance" },
-                          { key: "investments", label: "Investments" },
-                          { key: "net_worth", label: "Net Worth" },
+                          { key: "all", label: t("dashboard.all") },
+                          { key: "bank_balance", label: t("dashboard.bankBalance") },
+                          { key: "investments", label: t("dashboard.investmentValue") },
+                          { key: "net_worth", label: t("dashboard.netWorth") },
                         ] as const
                       ).map(({ key, label }) => (
                         <button
@@ -1405,7 +1411,7 @@ export function Dashboard() {
                         autosize: true,
                         yaxis: {
                           title: {
-                            text: "Amount (ILS)",
+                            text: t("dashboard.amountILS"),
                             font: { color: "#94a3b8" },
                           },
                           tickfont: { color: "#94a3b8" },
@@ -1423,7 +1429,7 @@ export function Dashboard() {
                   </div>
                 </>
               ) : (
-                <p className="text-[var(--text-muted)] text-sm">📭 No net worth data available.</p>
+                <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noNetWorthData")}</p>
               )}
             </div>
           )}
@@ -1447,8 +1453,8 @@ export function Dashboard() {
               <div className="flex justify-end mb-4">
                 <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
                   {([
-                    { key: "overview" as const, label: "📊 Overview" },
-                    { key: "by_source" as const, label: "💼 By Source" },
+                    { key: "overview" as const, label: `📊 ${t("dashboard.overview")}` },
+                    { key: "by_source" as const, label: `💼 ${t("dashboard.bySource")}` },
                   ]).map(({ key, label }) => (
                     <button
                       key={key}
@@ -1471,14 +1477,14 @@ export function Dashboard() {
                       {
                         x: incomeOutcome?.map((d: any) => d.month) || [],
                         y: incomeOutcome?.map((d: any) => d.income) || [],
-                        name: "Income",
+                        name: t("dashboard.income"),
                         type: "bar",
                         marker: { color: "#059669" },
                       },
                       {
                         x: incomeOutcome?.map((d: any) => d.month) || [],
                         y: incomeOutcome?.map((d: any) => d.expenses) || [],
-                        name: "Expenses",
+                        name: t("dashboard.expenses"),
                         type: "bar",
                         marker: { color: "#f43f5e" },
                       },
@@ -1527,7 +1533,7 @@ export function Dashboard() {
                           autosize: true,
                           yaxis: {
                             title: {
-                              text: "Amount (ILS)",
+                              text: t("dashboard.amountILS"),
                               font: { color: "#94a3b8" },
                             },
                             tickfont: { color: "#94a3b8" },
@@ -1544,7 +1550,7 @@ export function Dashboard() {
                       />
                     );
                   })() : (
-                    <p className="text-[var(--text-muted)] text-sm">📭 No income source data available.</p>
+                    <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noIncomeSourceData")}</p>
                   )}
                 </div>
               )}
@@ -1574,7 +1580,7 @@ export function Dashboard() {
                       <TrendingDown size={18} />
                     </div>
                     <div>
-                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Total Expenses</p>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{t("dashboard.totalExpenses")}</p>
                       <p className="text-lg font-bold text-rose-400">{formatCurrency(totalExpenses)}</p>
                     </div>
                   </div>
@@ -1583,7 +1589,7 @@ export function Dashboard() {
                       {topCategory ? (categoryIcons?.[topCategory.category] || "📊") : "—"}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Top Category</p>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{t("dashboard.topCategory")}</p>
                       <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
                     </div>
                   </div>
@@ -1592,7 +1598,7 @@ export function Dashboard() {
                       <Tag size={18} />
                     </div>
                     <div>
-                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Categories</p>
+                      <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{t("dashboard.categories")}</p>
                       <p className="text-lg font-bold">{expenses.length}</p>
                     </div>
                   </div>
@@ -1600,7 +1606,7 @@ export function Dashboard() {
 
                 {/* Expenses bars */}
                 <div>
-                  <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">Expenses</p>
+                  <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">{t("dashboard.expenses")}</p>
                   <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
                     {expenses.map((d: any, i: number) => {
                       const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
@@ -1622,7 +1628,7 @@ export function Dashboard() {
                       );
                     })}
                     {expenses.length === 0 && (
-                      <p className="text-[var(--text-muted)] text-sm py-4 text-center">No expense data available.</p>
+                      <p className="text-[var(--text-muted)] text-sm py-4 text-center">{t("dashboard.noExpenseData")}</p>
                     )}
                   </div>
                 </div>
@@ -1630,7 +1636,7 @@ export function Dashboard() {
                 {/* Refunds bars (conditional) */}
                 {refunds.length > 0 && (
                   <div>
-                    <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">Refunds</p>
+                    <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">{t("dashboard.refunds")}</p>
                     <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
                       {refunds.map((d: any, i: number) => {
                         const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;

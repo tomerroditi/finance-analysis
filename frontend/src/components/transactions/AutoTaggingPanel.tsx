@@ -11,12 +11,14 @@ import {
     ChevronLeft,
     ChevronRight,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "./RuleEditorModal";
 import { useAppStore } from "../../stores/appStore";
 
 export function AutoTaggingPanel() {
+    const { t } = useTranslation();
     const { autoTaggingPanelOpen, toggleAutoTaggingPanel } = useAppStore();
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
@@ -97,7 +99,7 @@ export function AutoTaggingPanel() {
                         <div className="p-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/10">
                             <div className="flex items-center gap-2">
                                 <ShieldCheck className="text-[var(--primary)]" size={20} />
-                                <h2 className="font-bold text-lg">Auto Tagging</h2>
+                                <h2 className="font-bold text-lg">{t("transactions.autoTagging.title")}</h2>
                             </div>
                             <button
                                 onClick={toggleAutoTaggingPanel}
@@ -117,14 +119,14 @@ export function AutoTaggingPanel() {
                                         onClick={openCreate}
                                         className="flex-1 py-2 flex items-center justify-center gap-2 bg-[var(--primary)]/10 text-[var(--primary)] rounded-xl border border-[var(--primary)]/20 hover:bg-[var(--primary)]/20 font-bold transition-all"
                                     >
-                                        <Plus size={18} /> New Rule
+                                        <Plus size={18} /> {t("transactions.autoTagging.newRule")}
                                     </button>
                                     <button
                                         onClick={() => applyMutation.mutate()}
                                         disabled={applyMutation.isPending}
                                         className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50"
                                     >
-                                        <Play size={18} /> Apply Rules
+                                        <Play size={18} /> {t("transactions.autoTagging.applyRules")}
                                     </button>
                                 </div>
 
@@ -134,7 +136,7 @@ export function AutoTaggingPanel() {
                                     <input
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="Search rules..."
+                                        placeholder={t("transactions.autoTagging.searchRules")}
                                         className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 pl-9 pr-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
                                     />
                                 </div>
@@ -156,10 +158,10 @@ export function AutoTaggingPanel() {
                             {/* Rules List */}
                             <div className="space-y-2">
                                 {rulesLoading ? (
-                                    <div className="text-center text-[var(--text-muted)] py-8">Loading rules...</div>
+                                    <div className="text-center text-[var(--text-muted)] py-8">{t("transactions.autoTagging.loadingRules")}</div>
                                 ) : filteredRules?.length === 0 ? (
                                     <div className="text-center p-8 border border-dashed border-[var(--surface-light)] rounded-xl text-[var(--text-muted)]">
-                                        {searchQuery ? "No matching rules found." : "No rules found. Create one to get started."}
+                                        {searchQuery ? t("transactions.autoTagging.noMatchingRules") : t("transactions.autoTagging.noRules")}
                                     </div>
                                 ) : (
                                     filteredRules?.map((rule: TaggingRule) => (
@@ -216,7 +218,7 @@ export function AutoTaggingPanel() {
                         <ChevronLeft size={18} className="text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-colors" />
                         <ShieldCheck size={20} className="text-[var(--primary)]" />
                         <span className="text-xs font-bold text-[var(--text-muted)] [writing-mode:vertical-lr] rotate-180 tracking-wider uppercase">
-                            Auto Tagging
+                            {t("transactions.autoTagging.title")}
                         </span>
                     </button>
                 )}

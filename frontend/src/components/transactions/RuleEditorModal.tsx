@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Save, Loader2, AlertTriangle } from "lucide-react";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
+import { useTranslation } from "react-i18next";
 import { RuleBuilder } from "./RuleBuilder";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { SelectDropdown } from "../common/SelectDropdown";
@@ -23,6 +24,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
 };
 
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
+    const { t } = useTranslation();
     const queryClient = useQueryClient();
     const { createCategory, createTag } = useCategoryTagCreate();
 
@@ -148,7 +150,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
                     <h2 className="text-xl font-bold">
-                        {editingRule ? "Edit Rule" : "Create Rule"}
+                        {editingRule ? t("transactions.autoTagging.editRule") : t("transactions.autoTagging.createRule")}
                     </h2>
                     <button
                         onClick={onClose}
@@ -206,7 +208,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                             onClick={onClose}
                             className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
                         >
-                            Cancel
+                            {t("common.cancel")}
                         </button>
                         <button
                             onClick={handleSave}
@@ -216,7 +218,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                             }`}
                         >
                             {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                            Save Rule
+                            {t("transactions.autoTagging.saveRule")}
                         </button>
                     </div>
                 </div>
@@ -238,6 +240,7 @@ function hasValidCondition(node: ConditionNode): boolean {
 
 // Transaction Preview Component
 function TransactionPreview({ matches, loading, count }: { matches: any[]; loading: boolean; count: number }) {
+    const { t } = useTranslation();
     const formatAmount = (amount: number) => {
         const formatted = Math.abs(amount).toLocaleString("he-IL", { style: "currency", currency: "ILS" });
         return amount < 0 ? `-${formatted}` : formatted;
@@ -246,9 +249,9 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
     return (
         <div className="h-full flex flex-col bg-[var(--surface)]">
             <div className="px-4 py-3 border-b border-[var(--surface-light)] flex items-center justify-between">
-                <h3 className="font-bold text-[var(--text-muted)]">Matching Transactions</h3>
+                <h3 className="font-bold text-[var(--text-muted)]">{t("transactions.autoTagging.matchingTransactions")}</h3>
                 <span className="text-sm text-[var(--text-muted)]">
-                    {loading ? "Loading..." : `${count} matches`}
+                    {loading ? t("common.loading") : `${count} ${t("transactions.autoTagging.matches")}`}
                 </span>
             </div>
 
@@ -256,21 +259,21 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
                 {loading ? (
                     <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
                         <Loader2 size={24} className="animate-spin mr-2" />
-                        Loading preview...
+                        {t("transactions.autoTagging.loadingPreview")}
                     </div>
                 ) : matches.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-[var(--text-muted)] p-8 text-center">
-                        No transactions match your conditions yet.<br />
-                        Start typing to see matches.
+                        {t("transactions.autoTagging.noMatchesYet")}<br />
+                        {t("transactions.autoTagging.startTyping")}
                     </div>
                 ) : (
                     <table className="w-full text-sm">
                         <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--surface-light)]">
                             <tr className="text-left text-[var(--text-muted)]">
-                                <th className="px-4 py-2 font-medium">Date</th>
-                                <th className="px-4 py-2 font-medium">Description</th>
-                                <th className="px-4 py-2 font-medium text-right">Amount</th>
-                                <th className="px-4 py-2 font-medium">Current Tag</th>
+                                <th className="px-4 py-2 font-medium">{t("common.date")}</th>
+                                <th className="px-4 py-2 font-medium">{t("common.description")}</th>
+                                <th className="px-4 py-2 font-medium text-right">{t("common.amount")}</th>
+                                <th className="px-4 py-2 font-medium">{t("transactions.autoTagging.currentTag")}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -292,7 +295,7 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
                                                 {tx.tag && <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{tx.tag}</span>}
                                             </span>
                                         ) : (
-                                            <span className="text-[var(--text-muted)] text-xs">Untagged</span>
+                                            <span className="text-[var(--text-muted)] text-xs">{t("transactions.autoTagging.untagged")}</span>
                                         )}
                                     </td>
                                 </tr>
@@ -323,12 +326,13 @@ function RuleForm({
     onCreateCategory: (name: string) => Promise<void>;
     onCreateTag: (name: string) => Promise<void>;
 }) {
+    const { t } = useTranslation();
     return (
         <div className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-4 p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
                 <div className="flex items-center justify-between">
-                    <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Rule Details</h4>
+                    <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">{t("transactions.autoTagging.ruleDetails")}</h4>
                     {name && (
                         <span className="text-xs text-[var(--text-muted)] font-mono">{name}</span>
                     )}
@@ -336,7 +340,7 @@ function RuleForm({
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Category</label>
+                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">{t("common.category")}</label>
                         <div className="mt-1">
                         <SelectDropdown
                             options={availableCategories.map((c) => ({ label: c, value: c }))}
@@ -349,7 +353,7 @@ function RuleForm({
                         </div>
                     </div>
                     <div>
-                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">Tag</label>
+                        <label className="text-xs text-[var(--text-muted)] uppercase font-bold">{t("common.tag")}</label>
                         <div className="mt-1">
                         <SelectDropdown
                             options={availableTags.map((t: string) => ({ label: t, value: t }))}
@@ -367,7 +371,7 @@ function RuleForm({
 
             {/* Conditions */}
             <div className="space-y-3">
-                <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">Conditions</h4>
+                <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">{t("transactions.autoTagging.conditions")}</h4>
                 <div className="p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
                     <RuleBuilder value={conditions} onChange={setConditions} />
                 </div>

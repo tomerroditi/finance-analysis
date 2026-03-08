@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi } from "../services/api";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
@@ -12,6 +13,7 @@ import { Skeleton } from "../components/common/Skeleton";
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
+  const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -93,7 +95,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)] mb-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[var(--text)] font-semibold flex items-center gap-2">
-          <span className="text-xl">💵</span> Cash Balances
+          <span className="text-xl">💵</span> {t("dashboard.cashBalances")}
         </h3>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
@@ -109,7 +111,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
       ) : balances.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-[var(--text-muted)] text-sm">
-            No cash accounts yet — click + to add one
+            {t("transactions.noCashAccounts")}
           </p>
         </div>
       ) : (
@@ -138,13 +140,13 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       onClick={() => handleSaveBalance(balance.account_name)}
                       className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors"
                     >
-                      Save
+                      {t("common.save")}
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
                       className="px-2 py-1 bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[var(--text)] rounded text-sm transition-colors"
                     >
-                      Cancel
+                      {t("common.cancel")}
                     </button>
                   </div>
                 ) : (
@@ -188,7 +190,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
         <div className="mt-4 bg-[var(--surface-light)] rounded-lg p-4 space-y-3">
           <div>
             <label className="block text-[var(--text-muted)] text-xs font-bold mb-1">
-              Envelope Name
+              {t("transactions.envelopeName")}
             </label>
             <input
               type="text"
@@ -203,7 +205,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
           </div>
           <div>
             <label className="block text-[var(--text-muted)] text-xs font-bold mb-1">
-              Current Balance
+              {t("transactions.currentBalance")}
             </label>
             <input
               type="number"
@@ -222,7 +224,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
               onClick={handleAddAccount}
               className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-colors"
             >
-              Add Envelope
+              {t("transactions.addEnvelope")}
             </button>
             <button
               onClick={() => setShowAddForm(false)}
@@ -238,6 +240,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
 }
 
 export function Transactions() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
@@ -302,12 +305,12 @@ export function Transactions() {
   };
 
   const services = [
-    { value: "all", label: "All" },
-    { value: "credit_cards", label: "Credit Card" },
-    { value: "banks", label: "Bank" },
-    { value: "cash", label: "Cash" },
-    { value: "manual_investments", label: "Investments" },
-    { value: "refunds", label: "Refunds" },
+    { value: "all", label: t("common.all") },
+    { value: "credit_cards", label: t("services.creditCard") },
+    { value: "banks", label: t("services.bank") },
+    { value: "cash", label: t("services.cash") },
+    { value: "manual_investments", label: t("services.investment") },
+    { value: "refunds", label: t("dashboard.refunds") },
   ] as const;
 
   return (
@@ -315,9 +318,9 @@ export function Transactions() {
       <div className="space-y-6 min-w-0 flex-1 transition-all duration-300">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Transactions</h1>
+            <h1 className="text-3xl font-bold">{t("transactions.title")}</h1>
             <p className="text-[var(--text-muted)]">
-              View and manage your transactions
+              {t("transactions.subtitle")}
             </p>
           </div>
 
@@ -363,7 +366,7 @@ export function Transactions() {
                     onClick={() => setFilterOnlyUntagged(true)}
                     className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-500/20 transition-colors text-left mb-4"
                   >
-                    <strong>{uncategorizedCount} uncategorized transactions</strong> — click to filter
+                    <strong>{t("transactions.uncategorizedCount", { count: uncategorizedCount })}</strong> — {t("transactions.clickToFilter")}
                   </button>
                 );
               })()}

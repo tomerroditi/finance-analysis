@@ -22,17 +22,19 @@ export function toTitleCase(text: string): string {
     .join("");
 }
 
-const SERVICE_LABELS: Record<string, string> = {
-  credit_cards: "Credit Card",
-  credit_card_transactions: "Credit Card",
-  banks: "Bank",
-  bank_transactions: "Bank",
-  cash: "Cash",
-  cash_transactions: "Cash",
-  manual_investments: "Investment",
-  manual_investment_transactions: "Investment",
-  insurances: "Insurance",
-  insurance_transactions: "Insurance",
+import i18n from "../i18n";
+
+const SERVICE_KEY_MAP: Record<string, string> = {
+  credit_cards: "creditCard",
+  credit_card_transactions: "creditCard",
+  banks: "bank",
+  bank_transactions: "bank",
+  cash: "cash",
+  cash_transactions: "cash",
+  manual_investments: "investment",
+  manual_investment_transactions: "investment",
+  insurances: "insurance",
+  insurance_transactions: "insurance",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -55,7 +57,8 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 
 export function humanizeService(service: string): string {
-  return SERVICE_LABELS[service] ?? toTitleCase(service.replace(/_/g, " "));
+  const key = SERVICE_KEY_MAP[service];
+  return key ? i18n.t(`services.${key}`) : toTitleCase(service.replace(/_/g, " "));
 }
 
 export function humanizeProvider(provider: string): string {
@@ -63,5 +66,5 @@ export function humanizeProvider(provider: string): string {
 }
 
 export function humanizeAccountType(service: string): string {
-  return `${humanizeService(service)} Account`;
+  return `${humanizeService(service)} ${i18n.t("common.account")}`;
 }

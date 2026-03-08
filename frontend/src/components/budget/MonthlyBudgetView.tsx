@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -17,6 +18,7 @@ import { PendingRefundsSection } from "./PendingRefundsSection";
 import { useMemo } from "react";
 
 export const MonthlyBudgetView: React.FC = () => {
+  const { t } = useTranslation();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -245,13 +247,13 @@ export const MonthlyBudgetView: React.FC = () => {
             onClick={handleCurrentMonth}
             className="px-4 py-2 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
           >
-            Current Month
+            {t("budget.currentMonth")}
           </button>
           <button
             onClick={() => {
               if (
                 confirm(
-                  "This will delete all current rules for this month and copy rules from the previous month. Continue?",
+                  t("budget.confirmCopyRules"),
                 )
               ) {
                 copyMutation.mutate();
@@ -261,14 +263,14 @@ export const MonthlyBudgetView: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2 bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
           >
             <Copy size={20} />
-            Replicate Previous Month
+            {t("budget.replicatePreviousMonth")}
           </button>
           <button
             onClick={openAddModal}
             className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
           >
             <Plus size={20} />
-            Add Rule
+            {t("budget.addRule")}
           </button>
         </div>
       </div>
@@ -276,7 +278,7 @@ export const MonthlyBudgetView: React.FC = () => {
       {/* Auto-copy toast */}
       {copiedFromMsg && (
         <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
-          <span>Budget rules copied from {copiedFromMsg}</span>
+          <span>{t("budget.rulesCopiedFrom", { month: copiedFromMsg })}</span>
           <button
             onClick={() => setCopiedFromMsg(null)}
             className="ml-4 text-blue-400/60 hover:text-blue-400 transition-colors"
@@ -291,37 +293,37 @@ export const MonthlyBudgetView: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Total Spent
+              {t("budget.totalSpent")}
             </p>
             <p className="text-xl font-bold mt-1">
               {formatCurrency(totalSpent)}
             </p>
             <p className="text-xs text-[var(--text-muted)]">
-              of {formatCurrency(totalBudget)}
+              {t("budget.ofBudget", { amount: formatCurrency(totalBudget) })}
             </p>
           </div>
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Budget Health
+              {t("budget.budgetHealth")}
             </p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-xl font-bold text-emerald-400">
                 {onTrackCount}
               </span>
-              <span className="text-xs text-[var(--text-muted)]">on track</span>
+              <span className="text-xs text-[var(--text-muted)]">{t("budget.onTrack")}</span>
               {overCount > 0 && (
                 <>
                   <span className="text-xl font-bold text-rose-400">
                     {overCount}
                   </span>
-                  <span className="text-xs text-[var(--text-muted)]">over</span>
+                  <span className="text-xs text-[var(--text-muted)]">{t("budget.over")}</span>
                 </>
               )}
             </div>
           </div>
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Biggest Overspend
+              {t("budget.biggestOverspend")}
             </p>
             {biggestOverspend ? (
               <>
@@ -339,20 +341,19 @@ export const MonthlyBudgetView: React.FC = () => {
               </>
             ) : (
               <p className="text-lg font-bold mt-1 text-emerald-400">
-                All good!
+                {t("budget.allGood")}
               </p>
             )}
           </div>
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              Days Left
+              {t("budget.daysLeft")}
             </p>
             <p className="text-xl font-bold mt-1">{daysLeft}</p>
             <p className="text-xs text-[var(--text-muted)]">
-              in{" "}
-              {new Date(year, month - 1).toLocaleString("en", {
+              {t("budget.inMonth", { month: new Date(year, month - 1).toLocaleString("en", {
                 month: "long",
-              })}
+              }) })}
             </p>
           </div>
         </div>
@@ -391,7 +392,7 @@ export const MonthlyBudgetView: React.FC = () => {
                           setIsRuleModalOpen(true);
                         }}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                        title="Edit Rule"
+                        title={t("budget.editRule")}
                       >
                         <PenSquare size={16} />
                       </button>
@@ -402,14 +403,14 @@ export const MonthlyBudgetView: React.FC = () => {
                           e.stopPropagation();
                           if (
                             confirm(
-                              "Are you sure you want to delete this rule?",
+                              t("budget.confirmDeleteRule"),
                             )
                           ) {
                             deleteMutation.mutate(item.rule.id);
                           }
                         }}
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                        title="Delete Rule"
+                        title={t("budget.deleteRule")}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -449,14 +450,14 @@ export const MonthlyBudgetView: React.FC = () => {
         project_spending.projects.length > 0 && (
           <div className="pt-8 border-t border-[var(--surface-light)]">
             <h3 className="text-lg font-bold text-[var(--text-muted)] mb-4 uppercase tracking-wider text-xs">
-              Project Spending
+              {t("budget.projectSpending")}
             </h3>
             <div className="space-y-4">
               {project_spending.projects.map((project: any) => (
                 <BudgetProgressBar
                   key={project.category}
                   label={project.category}
-                  subLabel="Project"
+                  subLabel={t("budget.project")}
                   current={project.spent}
                   total={project.spent}
                   onToggleExpand={() =>

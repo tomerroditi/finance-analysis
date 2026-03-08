@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import {
   Shield,
@@ -115,18 +116,18 @@ function parseMemo(memo: string | null): { employee: number | null; employer: nu
   return result;
 }
 
-function policyTypeBadge(type: string, pensionType: string | null) {
+function policyTypeBadge(type: string, pensionType: string | null, t: (key: string) => string) {
   if (type === "pension") {
-    const sub = pensionType === "makifa" ? "Makifa" : "Mashlima";
+    const sub = pensionType === "makifa" ? t("insurance.makifa") : t("insurance.mashlima");
     return (
       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400">
-        Pension · {sub}
+        {t("insurance.pension")} · {sub}
       </span>
     );
   }
   return (
     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400">
-      Keren Hishtalmut
+      {t("insurance.kerenHistahlmut")}
     </span>
   );
 }
@@ -164,6 +165,7 @@ function AccountCardFull({
   account: InsuranceAccount;
   transactions: InsuranceTransaction[];
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const tracks = parseTracks(account.investment_tracks);
   const covers = parseCovers(account.insurance_covers);
@@ -185,7 +187,7 @@ function AccountCardFull({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-white font-bold text-lg">{account.account_name}</h3>
-              {policyTypeBadge(account.policy_type, account.pension_type)}
+              {policyTypeBadge(account.policy_type, account.pension_type, t)}
             </div>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
               Policy {account.policy_id} · Updated {fmtDate(account.balance_date)}
@@ -194,7 +196,7 @@ function AccountCardFull({
         </div>
         <div className="text-right">
           <p className="text-2xl font-black text-white">{fmt(account.balance ?? 0)}</p>
-          <p className="text-xs text-[var(--text-muted)]">Current Balance</p>
+          <p className="text-xs text-[var(--text-muted)]">{t("insurance.currentBalance")}</p>
         </div>
       </div>
 
@@ -203,7 +205,7 @@ function AccountCardFull({
         {/* Investment Tracks */}
         <div className="bg-[var(--background)]/50 rounded-xl p-3">
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
-            Investment Tracks
+            {t("insurance.investmentTracks")}
           </p>
           {tracks.map((t, i) => (
             <div key={i} className="flex justify-between items-center text-xs mb-1">
@@ -234,15 +236,15 @@ function AccountCardFull({
 
         {/* Commissions */}
         <div className="bg-[var(--background)]/50 rounded-xl p-3">
-          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">Commissions</p>
+          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.commissions")}</p>
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-[var(--text-muted)]">From Deposits</span>
+            <span className="text-[var(--text-muted)]">{t("insurance.fromDeposits")}</span>
             <span className="text-amber-400 font-mono font-bold">
               {fmtPct(account.commission_deposits_pct)}
             </span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-[var(--text-muted)]">From Savings</span>
+            <span className="text-[var(--text-muted)]">{t("insurance.fromSavings")}</span>
             <span className="text-amber-400 font-mono font-bold">
               {fmtPct(account.commission_savings_pct)}
             </span>
@@ -253,7 +255,7 @@ function AccountCardFull({
         {covers.length > 0 ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
-              Insurance Covers
+              {t("insurance.insuranceCovers")}
             </p>
             {covers.map((c, i) => (
               <div key={i} className="flex justify-between text-xs mb-1">
@@ -265,32 +267,32 @@ function AccountCardFull({
         ) : account.liquidity_date ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
-              Liquidity Date
+              {t("insurance.liquidityDate")}
             </p>
             <div className="flex items-center gap-2">
               <Lock size={14} className="text-purple-400" />
               <span className="text-white font-bold text-sm">{fmtDate(account.liquidity_date)}</span>
             </div>
             <p className="text-[var(--text-muted)] text-[10px] mt-1">
-              {new Date(account.liquidity_date) > new Date() ? "Locked" : "Available"}
+              {new Date(account.liquidity_date) > new Date() ? t("insurance.locked") : t("insurance.available")}
             </p>
           </div>
         ) : (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
-            <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">Activity</p>
+            <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.activity")}</p>
             <p className="text-white font-bold text-lg">{deposits.length}</p>
-            <p className="text-[var(--text-muted)] text-[10px]">Deposits</p>
+            <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.deposits")}</p>
           </div>
         )}
 
         {/* Deposit Summary */}
         <div className="bg-[var(--background)]/50 rounded-xl p-3">
-          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">Deposits</p>
+          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
           <p className="text-emerald-400 font-black text-lg">{fmt(deposits.reduce((s, t) => s + t.amount, 0))}</p>
-          <p className="text-[var(--text-muted)] text-[10px]">{deposits.length} total deposits</p>
+          <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
           {totalCosts > 0 && (
             <p className="text-rose-400 text-[10px] mt-1 font-bold">
-              {fmt(-totalCosts)} insurance costs
+              {fmt(-totalCosts)} {t("insurance.insuranceCostsLabel")}
             </p>
           )}
         </div>
@@ -303,7 +305,7 @@ function AccountCardFull({
           className="w-full px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
         >
           <span>
-            {expanded ? "Hide" : "Show"} Deposit History ({txs.length} transactions)
+            {expanded ? t("insurance.hideDepositHistory") : t("insurance.showDepositHistory")} ({txs.length} {t("insurance.transactions")})
           </span>
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
@@ -312,12 +314,12 @@ function AccountCardFull({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
-                  <th className="text-left px-6 py-2 font-bold">Date</th>
-                  <th className="text-left px-6 py-2 font-bold">Description</th>
-                  <th className="text-right px-6 py-2 font-bold">Employee</th>
-                  <th className="text-right px-6 py-2 font-bold">Employer</th>
-                  <th className="text-right px-6 py-2 font-bold">Compensation</th>
-                  <th className="text-right px-6 py-2 font-bold">Total</th>
+                  <th className="text-left px-6 py-2 font-bold">{t("common.date")}</th>
+                  <th className="text-left px-6 py-2 font-bold">{t("common.description")}</th>
+                  <th className="text-right px-6 py-2 font-bold">{t("insurance.employee")}</th>
+                  <th className="text-right px-6 py-2 font-bold">{t("insurance.employer")}</th>
+                  <th className="text-right px-6 py-2 font-bold">{t("insurance.compensation")}</th>
+                  <th className="text-right px-6 py-2 font-bold">{t("common.total")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -361,6 +363,7 @@ function AccountCardFull({
 
 // ─── Main Page ───────────────────────────────────────────────────────────
 export function InsurancesPrototype() {
+  const { t } = useTranslation();
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
     queryKey: ["insurance-accounts"],
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
@@ -380,7 +383,7 @@ export function InsurancesPrototype() {
     return (
       <div className="flex items-center justify-center h-96 text-[var(--text-muted)]">
         <Loader2 size={24} className="animate-spin mr-2" />
-        Loading insurance data...
+        {t("insurance.loadingData")}
       </div>
     );
   }
@@ -389,8 +392,8 @@ export function InsurancesPrototype() {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-[var(--text-muted)] gap-4">
         <Shield size={48} className="opacity-30" />
-        <p className="text-lg">No insurance accounts found</p>
-        <p className="text-sm">Scrape an insurance provider from the Data Sources page to get started.</p>
+        <p className="text-lg">{t("insurance.noAccountsFound")}</p>
+        <p className="text-sm">{t("insurance.scrapeToGetStarted")}</p>
       </div>
     );
   }
@@ -437,25 +440,25 @@ export function InsurancesPrototype() {
           <Shield size={24} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Insurance</h1>
+          <h1 className="text-2xl font-bold text-white">{t("insurance.title")}</h1>
           <p className="text-sm text-[var(--text-muted)]">
-            Pension, Keren Hishtalmut & Gemel overview
+            {t("insurance.subtitle")}
           </p>
         </div>
       </header>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <StatCard title="Total Balance" value={fmt(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
+        <StatCard title={t("insurance.totalBalance")} value={fmt(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
         <StatCard
-          title="Total Deposits"
+          title={t("insurance.totalDeposits")}
           value={fmt(totalDeposits)}
           icon={ArrowUpRight}
           color="bg-emerald-500/10 text-emerald-400"
         />
-        <StatCard title="Insurance Costs" value={fmt(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
+        <StatCard title={t("insurance.insuranceCosts")} value={fmt(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
         <StatCard
-          title="Avg Commission"
+          title={t("insurance.avgCommission")}
           value={fmtPct(avgCommission)}
           icon={Percent}
           color="bg-amber-500/10 text-amber-400"
@@ -466,8 +469,8 @@ export function InsurancesPrototype() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Monthly deposits chart */}
         <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5">
-          <h3 className="text-white font-bold mb-1">Deposit Trends</h3>
-          <p className="text-[var(--text-muted)] text-xs mb-4">Monthly deposits and cumulative total</p>
+          <h3 className="text-white font-bold mb-1">{t("insurance.depositTrends")}</h3>
+          <p className="text-[var(--text-muted)] text-xs mb-4">{t("insurance.depositTrendsDesc")}</p>
           <Plot
             data={[
               {
@@ -518,8 +521,8 @@ export function InsurancesPrototype() {
 
         {/* Allocation pie */}
         <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5">
-          <h3 className="text-white font-bold mb-1">Investment Allocation</h3>
-          <p className="text-[var(--text-muted)] text-xs mb-4">Across all accounts and tracks</p>
+          <h3 className="text-white font-bold mb-1">{t("insurance.investmentAllocation")}</h3>
+          <p className="text-[var(--text-muted)] text-xs mb-4">{t("insurance.investmentAllocationDesc")}</p>
           {tracksWithSum.length > 0 ? (
             <Plot
               data={[
@@ -557,7 +560,7 @@ export function InsurancesPrototype() {
             />
           ) : (
             <div className="flex items-center justify-center h-[280px] text-[var(--text-muted)] text-sm">
-              No track allocation data available
+              {t("insurance.noTrackData")}
             </div>
           )}
         </div>

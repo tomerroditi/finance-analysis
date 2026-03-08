@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -60,6 +61,7 @@ function InvestmentCard({
   onEdit,
   analysisData,
 }: any) {
+  const { t } = useTranslation();
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
         (new Date().getTime() - new Date(inv.latest_snapshot_date).getTime()) /
@@ -100,7 +102,7 @@ function InvestmentCard({
         </div>
         {!!inv.is_closed && (
           <div className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter bg-red-500/20 text-red-400">
-            Closed
+            {t("investments.closed")}
           </div>
         )}
       </div>
@@ -161,19 +163,19 @@ function InvestmentCard({
       {/* Metrics Strip */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Deposits</p>
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
             {analysisData ? formatCardCurrency(analysisData.total_deposits) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Withdrawals</p>
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.withdrawals")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
             {analysisData ? formatCardCurrency(analysisData.total_withdrawals) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">CAGR</p>
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.cagr")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
             {analysisData?.cagr != null ? `${analysisData.cagr >= 0 ? "+" : ""}${analysisData.cagr.toFixed(1)}%` : "—"}
           </p>
@@ -182,12 +184,12 @@ function InvestmentCard({
 
       {/* Metadata */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)] font-medium mb-4 px-1">
-        <span>Opened {inv.first_transaction_date || inv.created_date}</span>
+        <span>{t("investments.opened")} {inv.first_transaction_date || inv.created_date}</span>
         {inv.latest_snapshot_date && (
           <>
             <span>·</span>
             <span className={snapshotAgeDays > 30 ? "text-amber-400" : ""}>
-              Updated {inv.latest_snapshot_date}
+              {t("investments.updated")} {inv.latest_snapshot_date}
               {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
             </span>
           </>
@@ -196,7 +198,7 @@ function InvestmentCard({
           <>
             <span>·</span>
             <span className="text-red-400 inline-flex items-center gap-1">
-              Closed {inv.closed_date}
+              {t("investments.closed")} {inv.closed_date}
               <button
                 onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
                 className="hover:text-white transition-all"
@@ -215,7 +217,7 @@ function InvestmentCard({
             <button
               onClick={() => onClose(inv.id)}
               className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-              title="Close"
+              title={t("common.close")}
             >
               <PowerOff size={16} />
             </button>
@@ -223,17 +225,17 @@ function InvestmentCard({
             <button
               onClick={() => onReopen(inv.id)}
               className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-              title="Reopen"
+              title={t("investments.reopen")}
             >
               <Power size={16} />
             </button>
           )}
           <button
             onClick={() => {
-              if (window.confirm("Delete investment record?")) onDelete(inv.id);
+              if (window.confirm(t("investments.confirmDelete"))) onDelete(inv.id);
             }}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
-            title="Delete"
+            title={t("common.delete")}
           >
             <Trash2 size={16} />
           </button>
@@ -252,7 +254,7 @@ function InvestmentCard({
           <button
             onClick={() => onEdit(inv)}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-            title="Edit"
+            title={t("common.edit")}
           >
             <Settings size={16} />
           </button>
@@ -260,7 +262,7 @@ function InvestmentCard({
             <button
               onClick={() => onUpdateBalance(inv.id)}
               className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all"
-              title="Update Balance"
+              title={t("investments.updateBalance")}
             >
               <DollarSign size={16} />
             </button>
@@ -268,7 +270,7 @@ function InvestmentCard({
           <button
             onClick={() => onViewAnalysis(inv.id)}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-            title="View Analysis"
+            title={t("investments.viewAnalysis")}
           >
             <BarChart2 size={16} />
           </button>
@@ -279,6 +281,7 @@ function InvestmentCard({
 }
 
 export function Investments() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<number | null>(
@@ -534,9 +537,9 @@ export function Investments() {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Investments</h1>
+          <h1 className="text-3xl font-bold">{t("investments.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
-            Track and manage your diverse investment portfolio
+            {t("investments.subtitle")}
           </p>
         </div>
         <div className="flex gap-4">
@@ -546,18 +549,18 @@ export function Investments() {
             className="flex items-center gap-2 px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
             title={
               Object.keys(filteredCategories).length === 0
-                ? "All available tags in Investments are already in use"
+                ? t("investments.allTagsInUse")
                 : ""
             }
           >
-            <Plus size={18} /> New Investment
+            <Plus size={18} /> {t("investments.newInvestment")}
           </button>
         </div>
       </div>
 
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium">
-          Failed to load investments.
+          {t("investments.failedToLoad")}
         </div>
       )}
 
@@ -566,13 +569,13 @@ export function Investments() {
         <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <StatCard
-                title="Total Value"
+                title={t("investments.totalValue")}
                 value={formatCurrency(portfolioAnalysis.total_value)}
                 icon={Wallet}
                 color="bg-blue-500/10 text-blue-400"
               />
               <StatCard
-                title="Total Profit/Loss"
+                title={t("investments.totalProfitLoss")}
                 value={formatCurrency(portfolioAnalysis.total_profit)}
                 icon={DollarSign}
                 color={
@@ -582,7 +585,7 @@ export function Investments() {
                 }
               />
               <StatCard
-                title="Portfolio ROI"
+                title={t("investments.portfolioRoi")}
                 value={formatPercent(portfolioAnalysis.portfolio_roi)}
                 icon={Percent}
                 color={
@@ -598,13 +601,13 @@ export function Investments() {
               <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)]">
-                    Balance Over Time
+                    {t("investments.balanceOverTime")}
                   </h3>
                   <button
                     onClick={() => setChartIncludeClosed(!chartIncludeClosed)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${chartIncludeClosed ? "bg-[var(--surface-light)] border-[var(--surface-light)] text-white" : "border-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
                   >
-                    {chartIncludeClosed ? "Hide Closed" : "Include Closed"}
+                    {chartIncludeClosed ? t("investments.hideClosed") : t("investments.includeClosed")}
                   </button>
                 </div>
                 <div className="h-[300px]">
@@ -644,7 +647,7 @@ export function Investments() {
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center text-[var(--text-muted)] text-sm">
-                      No balance history available
+                      {t("investments.noBalanceHistory")}
                     </div>
                   )}
                 </div>
@@ -654,7 +657,7 @@ export function Investments() {
               {portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).length > 0 && (
                 <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
                   <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
-                    Portfolio Allocation
+                    {t("investments.portfolioAllocation")}
                   </h3>
                   <div className="h-[300px]">
                     <Plot
@@ -700,7 +703,7 @@ export function Investments() {
         {activeInvestments.length > 0 ? (
           <>
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-              Active Investments
+              {t("investments.activeInvestments")}
               <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
                 {activeInvestments.length}
               </span>
@@ -742,9 +745,9 @@ export function Investments() {
             <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
               <TrendingUp size={32} />
             </div>
-            <h2 className="text-xl font-bold mb-2">No active investments</h2>
+            <h2 className="text-xl font-bold mb-2">{t("investments.noActiveInvestments")}</h2>
             <p className="text-[var(--text-muted)] max-w-sm mx-auto">
-              You don't have any active investments currently.
+              {t("investments.noActiveInvestmentsDesc")}
             </p>
           </div>
         )}
@@ -754,7 +757,7 @@ export function Investments() {
       {closedInvestments.length > 0 && (
         <div className="pt-8 border-t border-[var(--surface-light)]">
           <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[var(--text-muted)]">
-            Closed Investments
+            {t("investments.closedInvestments")}
             <span className="text-[10px] font-black bg-[var(--surface-light)] px-2 py-0.5 rounded-full">
               {closedInvestments.length}
             </span>
@@ -801,8 +804,7 @@ export function Investments() {
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
               <h2 className="text-2xl font-bold flex items-center gap-3">
-                <BarChart2 className="text-[var(--primary)]" /> Investment
-                Analysis
+                <BarChart2 className="text-[var(--primary)]" /> {t("investments.investmentAnalysis")}
               </h2>
               <button
                 onClick={() => setSelectedAnalysisId(null)}
@@ -817,7 +819,7 @@ export function Investments() {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <StatCard
-                      title="Current Balance"
+                      title={t("investments.currentBalance")}
                       value={formatCurrency(
                         selectedAnalysis.metrics.current_balance,
                       )}
@@ -825,7 +827,7 @@ export function Investments() {
                       color="bg-blue-500/10 text-blue-400"
                     />
                     <StatCard
-                      title="Profit/Loss"
+                      title={t("investments.profitLoss")}
                       value={formatCurrency(
                         selectedAnalysis.metrics.absolute_profit_loss,
                       )}
@@ -837,7 +839,7 @@ export function Investments() {
                       }
                     />
                     <StatCard
-                      title="ROI"
+                      title={t("investments.roi")}
                       value={formatPercent(
                         selectedAnalysis.metrics.roi_percentage,
                       )}
@@ -849,7 +851,7 @@ export function Investments() {
                       }
                     />
                     <StatCard
-                      title="CAGR"
+                      title={t("investments.cagr")}
                       value={formatPercent(
                         selectedAnalysis.metrics.cagr_percentage,
                       )}
@@ -859,7 +861,7 @@ export function Investments() {
                   </div>
 
                   <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                    <h3 className="text-lg font-bold mb-6">Balance History</h3>
+                    <h3 className="text-lg font-bold mb-6">{t("investments.balanceHistory")}</h3>
                     <div className="h-[400px]">
                       <Plot
                         data={[
@@ -889,7 +891,7 @@ export function Investments() {
                   <div className="grid grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
                     <div>
                       <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        Total Deposits
+                        {t("investments.totalDeposits")}
                       </p>
                       <p className="text-white text-lg font-bold">
                         {formatCurrency(
@@ -899,7 +901,7 @@ export function Investments() {
                     </div>
                     <div>
                       <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        Total Withdrawals
+                        {t("investments.totalWithdrawals")}
                       </p>
                       <p className="text-white text-lg font-bold">
                         {formatCurrency(
@@ -909,10 +911,10 @@ export function Investments() {
                     </div>
                     <div>
                       <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        Holding Period
+                        {t("investments.holdingPeriod")}
                       </p>
                       <p className="text-white text-lg font-bold">
-                        {selectedAnalysis.metrics.total_years.toFixed(1)} Years
+                        {selectedAnalysis.metrics.total_years.toFixed(1)} {t("investments.years")}
                       </p>
                     </div>
                   </div>
@@ -929,8 +931,8 @@ export function Investments() {
                         className="px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
                       >
                         {calculateMutation.isPending
-                          ? "Calculating..."
-                          : "Calculate Fixed Rate"}
+                          ? t("investments.calculating")
+                          : t("investments.calculateFixedRate")}
                       </button>
                     </div>
                   )}
@@ -939,7 +941,7 @@ export function Investments() {
                   {selectedSnapshots?.length > 0 && (
                     <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold">Balance Snapshots</h3>
+                        <h3 className="text-lg font-bold">{t("investments.balanceSnapshots")}</h3>
                         <span className="text-xs text-[var(--text-muted)]">
                           {selectedSnapshots.length} entries
                         </span>
@@ -948,9 +950,9 @@ export function Investments() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                              <th className="text-left py-2 font-bold">Date</th>
-                              <th className="text-right py-2 font-bold">Balance</th>
-                              <th className="text-center py-2 font-bold">Source</th>
+                              <th className="text-left py-2 font-bold">{t("common.date")}</th>
+                              <th className="text-right py-2 font-bold">{t("investments.balance")}</th>
+                              <th className="text-center py-2 font-bold">{t("investments.source")}</th>
                               <th className="text-right py-2 font-bold"></th>
                             </tr>
                           </thead>
@@ -1002,7 +1004,7 @@ export function Investments() {
                 </>
               ) : (
                 <div className="text-center py-20 text-[var(--text-muted)]">
-                  Loading analysis...
+                  {t("investments.loadingAnalysis")}
                 </div>
               )}
             </div>
@@ -1014,11 +1016,11 @@ export function Investments() {
       {balanceForm.investmentId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">Update Balance</h3>
+            <h3 className="text-lg font-bold mb-4">{t("investments.updateBalance")}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Date
+                  {t("common.date")}
                 </label>
                 <input
                   type="date"
@@ -1031,7 +1033,7 @@ export function Investments() {
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Current Market Value
+                  {t("investments.currentMarketValue")}
                 </label>
                 <input
                   type="number"
@@ -1056,7 +1058,7 @@ export function Investments() {
                 }
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 disabled={!balanceForm.balance || balanceSnapshotMutation.isPending}
@@ -1069,7 +1071,7 @@ export function Investments() {
                 }
                 className="flex-[2] py-3 bg-blue-500 rounded-xl text-white font-bold hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {balanceSnapshotMutation.isPending ? "Saving..." : "Save"}
+                {balanceSnapshotMutation.isPending ? t("investments.saving") : t("common.save")}
               </button>
             </div>
           </div>
@@ -1081,11 +1083,11 @@ export function Investments() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
-              {closeForm.mode === "close" ? "Close Investment" : "Edit Close Date"}
+              {closeForm.mode === "close" ? t("investments.closeInvestment") : t("investments.editCloseDate")}
             </h3>
             <div>
               <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                Close Date
+                {t("investments.closeDate")}
               </label>
               <input
                 type="date"
@@ -1103,7 +1105,7 @@ export function Investments() {
                 }
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 disabled={!closeForm.date || closeMutation.isPending || updateCloseDateMutation.isPending}
@@ -1117,10 +1119,10 @@ export function Investments() {
                 className="flex-[2] py-3 bg-red-500 rounded-xl text-white font-bold hover:bg-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {closeMutation.isPending || updateCloseDateMutation.isPending
-                  ? "Saving..."
+                  ? t("investments.saving")
                   : closeForm.mode === "close"
-                    ? "Close Investment"
-                    : "Update Date"}
+                    ? t("investments.closeInvestment")
+                    : t("investments.updateDate")}
               </button>
             </div>
           </div>
@@ -1131,11 +1133,11 @@ export function Investments() {
       {editForm.investmentId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">Edit Investment</h3>
+            <h3 className="text-lg font-bold mb-4">{t("investments.editInvestment")}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Name
+                  {t("investments.name")}
                 </label>
                 <input
                   type="text"
@@ -1148,7 +1150,7 @@ export function Investments() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      Interest Rate %
+                      {t("investments.interestRatePct")}
                     </label>
                     <input
                       type="number"
@@ -1160,22 +1162,22 @@ export function Investments() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      Rate Type
+                      {t("investments.rateType")}
                     </label>
                     <select
                       className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
                       value={editForm.interest_rate_type}
                       onChange={(e) => setEditForm({ ...editForm, interest_rate_type: e.target.value })}
                     >
-                      <option value="variable">Variable</option>
-                      <option value="fixed">Fixed</option>
+                      <option value="variable">{t("investments.variableRate")}</option>
+                      <option value="fixed">{t("investments.fixedRate")}</option>
                     </select>
                   </div>
                 </div>
               )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Notes
+                  {t("investments.notes")}
                 </label>
                 <textarea
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium resize-none"
@@ -1190,7 +1192,7 @@ export function Investments() {
                 onClick={() => setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" })}
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 disabled={!editForm.name || editMutation.isPending}
@@ -1207,7 +1209,7 @@ export function Investments() {
                 }
                 className="flex-[2] py-3 bg-[var(--primary)] rounded-xl text-white font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {editMutation.isPending ? "Saving..." : "Save"}
+                {editMutation.isPending ? t("investments.saving") : t("common.save")}
               </button>
             </div>
           </div>
@@ -1223,20 +1225,20 @@ export function Investments() {
               <div className="p-3 rounded-2xl bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20">
                 <TrendingUp size={24} />
               </div>
-              <h2 className="text-2xl font-bold">New Investment</h2>
+              <h2 className="text-2xl font-bold">{t("investments.newInvestment")}</h2>
             </div>
 
             {createMutation.isError && (
               <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
                 {(createMutation.error as any)?.response?.data?.detail ||
-                  "Failed to create investment."}
+                  t("investments.failedToCreate")}
               </div>
             )}
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Investment Name
+                  {t("investments.investmentName")}
                 </label>
                 <input
                   type="text"
@@ -1250,7 +1252,7 @@ export function Investments() {
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Category
+                  {t("common.category")}
                 </label>
                 <SelectDropdown
                   options={Object.keys(filteredCategories).map((cat) => ({ label: cat, value: cat }))}
@@ -1262,12 +1264,12 @@ export function Investments() {
                       tag: "",
                     })
                   }
-                  placeholder="Select Category"
+                  placeholder={t("investments.selectCategory")}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Tag
+                  {t("common.tag")}
                 </label>
                 <SelectDropdown
                   options={newInvestment.category && filteredCategories[newInvestment.category] ? filteredCategories[newInvestment.category].map((tag: string) => ({ label: tag, value: tag })) : []}
@@ -1275,35 +1277,35 @@ export function Investments() {
                   onChange={(val) =>
                     setNewInvestment({ ...newInvestment, tag: val })
                   }
-                  placeholder="Select Tag"
+                  placeholder={t("investments.selectTag")}
                   disabled={!newInvestment.category}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Type
+                  {t("investments.type")}
                 </label>
                 <SelectDropdown
                   options={[
-                    { label: "Stocks", value: "stocks" },
-                    { label: "Crypto", value: "crypto" },
-                    { label: "Bonds", value: "bonds" },
-                    { label: "Real Estate", value: "real_estate" },
-                    { label: "Pension", value: "pension" },
-                    { label: "Brokerage Account", value: "brokerage_account" },
-                    { label: "Other", value: "other" },
+                    { label: t("investments.types.stocks"), value: "stocks" },
+                    { label: t("investments.types.crypto"), value: "crypto" },
+                    { label: t("investments.types.bonds"), value: "bonds" },
+                    { label: t("investments.types.realEstate"), value: "real_estate" },
+                    { label: t("investments.types.pension"), value: "pension" },
+                    { label: t("investments.types.brokerageAccount"), value: "brokerage_account" },
+                    { label: t("investments.types.other"), value: "other" },
                   ]}
                   value={newInvestment.type}
                   onChange={(val) =>
                     setNewInvestment({ ...newInvestment, type: val })
                   }
-                  placeholder="Select Type"
+                  placeholder={t("investments.selectType")}
                 />
               </div>
               {RATE_TYPES.has(newInvestment.type) && (
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Int. Rate (%)
+                  {t("investments.intRate")}
                 </label>
                 <input
                   type="number"
@@ -1322,7 +1324,7 @@ export function Investments() {
               )}
               <div className="col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  Notes
+                  {t("investments.notes")}
                 </label>
                 <textarea
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all h-24 font-medium"
@@ -1342,7 +1344,7 @@ export function Investments() {
                 onClick={() => setIsAddOpen(false)}
                 className="flex-1 py-4 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 disabled={
@@ -1354,7 +1356,7 @@ export function Investments() {
                 onClick={() => createMutation.mutate(newInvestment)}
                 className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {createMutation.isPending ? "Creating..." : "Create Investment"}
+                {createMutation.isPending ? t("investments.creating") : t("investments.createInvestment")}
               </button>
             </div>
           </div>

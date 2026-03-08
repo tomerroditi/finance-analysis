@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
@@ -22,6 +23,7 @@ export function BudgetRuleModal({
   selectedYear,
   selectedMonth,
 }: BudgetRuleModalProps) {
+  const { t } = useTranslation();
   const { createCategory } = useCategoryTagCreate();
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
@@ -106,9 +108,9 @@ export function BudgetRuleModal({
           <h2 className="text-xl font-bold">
             {initialData
               ? isProjectRule
-                ? `Edit Rule: ${category} - ${Array.isArray(initialData.tags) ? initialData.tags.join(", ") : initialData.tags}`
-                : "Edit Rule"
-              : "Add Budget Rule"}
+                ? `${t("modals.budgetRule.editRule")}: ${category} - ${Array.isArray(initialData.tags) ? initialData.tags.join(", ") : initialData.tags}`
+                : t("modals.budgetRule.editRule")
+              : t("modals.budgetRule.addRule")}
           </h2>
           <button
             onClick={onClose}
@@ -121,14 +123,14 @@ export function BudgetRuleModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Rule Name
+              {t("modals.budgetRule.ruleName")}
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Monthly Groceries"
+              placeholder={t("modals.budgetRule.ruleNamePlaceholder")}
               className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50"
               disabled={isProjectRule && !!initialData}
             />
@@ -136,7 +138,7 @@ export function BudgetRuleModal({
 
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Amount (ILS)
+              {t("common.amount")} (ILS)
             </label>
             <input
               type="number"
@@ -151,7 +153,7 @@ export function BudgetRuleModal({
 
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Category
+              {t("common.category")}
             </label>
             <SelectDropdown
               options={categories.map((c: string) => ({ label: c, value: c }))}
@@ -164,7 +166,7 @@ export function BudgetRuleModal({
                   setSelectedTags([]);
                 }
               }}
-              placeholder="Select Category"
+              placeholder={t("modals.transactionForm.selectCategory")}
               required
               disabled={isProjectRule && !!initialData}
               onCreateNew={async (name) => {
@@ -178,7 +180,7 @@ export function BudgetRuleModal({
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="block text-xs font-bold uppercase text-[var(--text-muted)]">
-                Tags
+                {t("modals.budgetRule.tags")}
               </label>
               {availableTags.length > 0 && !isProjectRule && (
                 <button
@@ -193,8 +195,8 @@ export function BudgetRuleModal({
                   className="text-xs text-[var(--primary)] hover:underline font-medium"
                 >
                   {selectedTags.length === availableTags.length
-                    ? "Deselect All"
-                    : "Select All"}
+                    ? t("modals.budgetRule.deselectAll")
+                    : t("modals.budgetRule.selectAll")}
                 </button>
               )}
             </div>
@@ -227,8 +229,8 @@ export function BudgetRuleModal({
                 ) : (
                   <p className="text-sm text-[var(--text-muted)] italic">
                     {category
-                      ? "No tags available for this category"
-                      : "Select a category first"}
+                      ? t("modals.budgetRule.noTagsForCategory")
+                      : t("modals.budgetRule.selectCategoryFirst")}
                   </p>
                 )}
               </div>
@@ -241,14 +243,14 @@ export function BudgetRuleModal({
               onClick={onClose}
               className="flex-1 py-3 font-bold text-[var(--text-muted)] hover:text-white transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
               className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50"
             >
-              {isSubmitting ? "Saving..." : "Save Rule"}
+              {isSubmitting ? t("modals.budgetRule.saving") : t("modals.budgetRule.saveRule")}
             </button>
           </div>
         </form>

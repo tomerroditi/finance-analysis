@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
@@ -34,6 +35,7 @@ export function TransactionFormModal({
     service,
     onSuccess,
 }: TransactionFormModalProps) {
+    const { t } = useTranslation();
     const isEditMode = !!transaction;
 
     // If editing, check if it's a manual transaction (cash/investments)
@@ -142,7 +144,7 @@ export function TransactionFormModal({
             <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
                     <h2 className="text-xl font-bold text-white">
-                        {isEditMode ? "Edit Transaction" : "Add Transaction"}
+                        {isEditMode ? t("modals.transactionForm.editTitle") : t("modals.transactionForm.addTitle")}
                     </h2>
                     <button
                         onClick={onClose}
@@ -155,8 +157,7 @@ export function TransactionFormModal({
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     {isEditMode && !isManual && (
                         <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
-                            Note: For bank/credit card transactions, only Category and Tag can
-                            be modified to maintain data integrity.
+                            {t("modals.transactionForm.readOnlyNote")}
                         </div>
                     )}
 
@@ -164,7 +165,7 @@ export function TransactionFormModal({
                         {/* Date */}
                         <div>
                             <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                Date
+                                {t("common.date")}
                             </label>
                             <input
                                 type="date"
@@ -182,7 +183,7 @@ export function TransactionFormModal({
                         {(isManual) && (
                             <div>
                                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                    Account / Wallet Name
+                                    {t("modals.transactionForm.accountName")}
                                 </label>
                                 {isCashTransaction ? (
                                     <SelectDropdown
@@ -194,7 +195,7 @@ export function TransactionFormModal({
                                         onChange={(val) =>
                                             setFormData({ ...formData, account_name: val })
                                         }
-                                        placeholder="Select an Envelope"
+                                        placeholder={t("modals.transactionForm.selectEnvelope")}
                                         required
                                     />
                                 ) : (
@@ -204,7 +205,7 @@ export function TransactionFormModal({
                                         onChange={(e) =>
                                             setFormData({ ...formData, account_name: e.target.value })
                                         }
-                                        placeholder="e.g., Investment Account"
+                                        placeholder={t("modals.transactionForm.accountPlaceholder")}
                                         className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all"
                                         required
                                     />
@@ -215,7 +216,7 @@ export function TransactionFormModal({
                         {/* Description */}
                         <div>
                             <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                Description
+                                {t("common.description")}
                             </label>
                             <input
                                 type="text"
@@ -232,7 +233,7 @@ export function TransactionFormModal({
                         {/* Amount and Type */}
                         <div>
                             <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                Amount
+                                {t("common.amount")}
                             </label>
                             <div className="flex gap-2">
                                 {isManual && (
@@ -242,14 +243,14 @@ export function TransactionFormModal({
                                             onClick={() => setTransactionType("expense")}
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${transactionType === "expense" ? "bg-red-500/20 text-red-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
                                         >
-                                            Expense
+                                            {t("modals.transactionForm.expense")}
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setTransactionType("income")}
                                             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${transactionType === "income" ? "bg-emerald-500/20 text-emerald-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
                                         >
-                                            Income
+                                            {t("modals.transactionForm.income")}
                                         </button>
                                     </div>
                                 )}
@@ -279,7 +280,7 @@ export function TransactionFormModal({
                         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
                             <div>
                                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                    Category
+                                    {t("common.category")}
                                 </label>
                                 <SelectDropdown
                                     options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
@@ -291,7 +292,7 @@ export function TransactionFormModal({
                                             tag: "",
                                         })
                                     }
-                                    placeholder="Select Category"
+                                    placeholder={t("modals.transactionForm.selectCategory")}
                                     onCreateNew={async (name) => {
                                         const formatted = await createCategory(name);
                                         setFormData({ ...formData, category: formatted, tag: "" });
@@ -301,7 +302,7 @@ export function TransactionFormModal({
 
                             <div>
                                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
-                                    Tag
+                                    {t("common.tag")}
                                 </label>
                                 <SelectDropdown
                                     options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
@@ -309,7 +310,7 @@ export function TransactionFormModal({
                                     onChange={(val) =>
                                         setFormData({ ...formData, tag: val })
                                     }
-                                    placeholder="Select Tag"
+                                    placeholder={t("modals.transactionForm.selectTag")}
                                     disabled={!formData.category}
                                     onCreateNew={async (name) => {
                                         const formatted = await createTag(formData.category, name);
@@ -326,13 +327,13 @@ export function TransactionFormModal({
                             onClick={onClose}
                             className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--surface-light)] hover:bg-[var(--surface-light)] text-sm font-semibold transition-all"
                         >
-                            Cancel
+                            {t("common.cancel")}
                         </button>
                         <button
                             type="submit"
                             className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all"
                         >
-                            {isEditMode ? "Save Changes" : "Create Transaction"}
+                            {isEditMode ? t("modals.transactionForm.saveChanges") : t("modals.transactionForm.createTransaction")}
                         </button>
                     </div>
                 </form>

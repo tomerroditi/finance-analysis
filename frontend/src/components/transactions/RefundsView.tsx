@@ -8,10 +8,12 @@ import {
   Calendar,
   CreditCard,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 
 const RefundsView: React.FC = () => {
+  const { t } = useTranslation();
   const { data: refunds, isLoading } = useQuery({
     queryKey: ["pendingRefunds", "all"],
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
@@ -47,7 +49,7 @@ const RefundsView: React.FC = () => {
   if (isLoading) {
     return (
       <div className="p-8 text-center text-[var(--text-muted)]">
-        Loading refunds...
+        {t("transactions.refunds.loading")}
       </div>
     );
   }
@@ -72,7 +74,7 @@ const RefundsView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="font-semibold text-lg">
-                {item.description || "Unknown Expense"}
+                {item.description || t("transactions.refunds.unknownExpense")}
               </span>
               <span className="text-xs px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
                 {item.provider ? humanizeProvider(item.provider) : humanizeService(item.source_table)}
@@ -81,11 +83,11 @@ const RefundsView: React.FC = () => {
             <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
               <span className="flex items-center gap-1">
                 <Calendar size={14} />
-                {item.date || "No date"}
+                {item.date || t("transactions.refunds.noDate")}
               </span>
               <span className="flex items-center gap-1">
                 <CreditCard size={14} />
-                {item.account_name || "Unknown Account"}
+                {item.account_name || t("transactions.refunds.unknownAccount")}
               </span>
             </div>
             {item.notes && (
@@ -97,7 +99,7 @@ const RefundsView: React.FC = () => {
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="text-sm text-[var(--text-muted)]">
-            Expected Refund
+            {t("transactions.refunds.expectedRefund")}
           </div>
           <div className="text-xl font-bold font-mono text-[var(--text-primary)]">
             {formatCurrency(item.expected_amount)}
@@ -106,7 +108,7 @@ const RefundsView: React.FC = () => {
             item.remaining > 0 &&
             item.remaining < item.expected_amount && (
               <div className="text-xs text-amber-500">
-                Remaining: {formatCurrency(item.remaining)}
+                {t("budget.remaining")}: {formatCurrency(item.remaining)}
               </div>
             )}
         </div>
@@ -116,12 +118,12 @@ const RefundsView: React.FC = () => {
       <div className="p-4 border-t border-[var(--surface-light)]">
         <div className="text-sm font-medium text-[var(--text-muted)] mb-3 flex items-center gap-2">
           <Link size={14} />
-          Linked Refunds
+          {t("transactions.refunds.linkedRefunds")}
         </div>
 
         {!item.links || item.links.length === 0 ? (
           <div className="text-sm text-[var(--text-muted)] italic pl-6">
-            No refunds linked yet.
+            {t("transactions.refunds.noRefundsLinked")}
           </div>
         ) : (
           <div className="space-y-2 pl-2 border-l-2 border-[var(--surface-light)] ml-1">
@@ -136,7 +138,7 @@ const RefundsView: React.FC = () => {
                   </span>
                   <span className="text-[var(--text-muted)]">•</span>
                   <span className="text-sm">
-                    {link.description || "Refund Transaction"}
+                    {link.description || t("transactions.refunds.refundTransaction")}
                   </span>
                   <span className="text-xs text-[var(--text-muted)]">
                     ({link.date})
@@ -159,7 +161,7 @@ const RefundsView: React.FC = () => {
         <section className="mb-8">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-amber-400">
             <CircleDashed size={20} />
-            Active ({groupedRefunds.active.length})
+            {t("transactions.refunds.active")} ({groupedRefunds.active.length})
           </h2>
           {groupedRefunds.active.map(renderRefundCard)}
         </section>
@@ -169,7 +171,7 @@ const RefundsView: React.FC = () => {
         <section>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-emerald-400">
             <CheckCircle2 size={20} />
-            Resolved ({groupedRefunds.resolved.length})
+            {t("transactions.refunds.resolved")} ({groupedRefunds.resolved.length})
           </h2>
           {groupedRefunds.resolved.map(renderRefundCard)}
         </section>
@@ -178,10 +180,9 @@ const RefundsView: React.FC = () => {
       {(!refunds || refunds.length === 0) && (
         <div className="text-center py-12 text-[var(--text-muted)]">
           <ArrowLeftRight size={48} className="mx-auto mb-4 opacity-20" />
-          <p>No refund expectations found.</p>
+          <p>{t("transactions.refunds.noExpectations")}</p>
           <p className="text-sm mt-2">
-            Mark expenses as "Pending Refund" in your transactions list to track
-            them here.
+            {t("transactions.refunds.markExpenses")}
           </p>
         </div>
       )}

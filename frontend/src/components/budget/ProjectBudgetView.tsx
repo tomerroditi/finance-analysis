@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, PenSquare } from "lucide-react";
 import { budgetApi, pendingRefundsApi } from "../../services/api";
@@ -9,6 +10,7 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 
 export const ProjectBudgetView: React.FC = () => {
+  const { t } = useTranslation();
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
@@ -127,7 +129,7 @@ export const ProjectBudgetView: React.FC = () => {
 
   const handleDeleteProject = () => {
     if (
-      confirm(`Are you sure you want to delete project '${selectedProject}'?`)
+      confirm(t("budget.confirmDeleteProject", { name: selectedProject }))
     ) {
       deleteMutation.mutate(selectedProject);
     }
@@ -215,14 +217,14 @@ export const ProjectBudgetView: React.FC = () => {
       <div className="flex items-center justify-between bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
         <div className="flex items-center gap-4">
           <label className="font-semibold text-[var(--text-default)]">
-            Select Project:
+            {t("budget.selectProject")}
           </label>
           <div className="w-64">
             <SelectDropdown
               options={projects.length > 0 ? projects.map((p: string) => ({ label: p, value: p })) : []}
               value={selectedProject}
               onChange={(val) => setSelectedProject(val)}
-              placeholder={projects.length === 0 ? "No Projects" : "Select Project"}
+              placeholder={projects.length === 0 ? t("budget.noProjects") : t("budget.selectProject")}
               disabled={projects.length === 0}
               size="sm"
             />
@@ -235,7 +237,7 @@ export const ProjectBudgetView: React.FC = () => {
             className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium"
           >
             <Plus size={20} />
-            New Project
+            {t("budget.newProject")}
           </button>
           {selectedProject && (
             <button
@@ -243,7 +245,7 @@ export const ProjectBudgetView: React.FC = () => {
               className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium"
             >
               <Trash2 size={20} />
-              Delete
+              {t("common.delete")}
             </button>
           )}
         </div>
@@ -264,10 +266,10 @@ export const ProjectBudgetView: React.FC = () => {
             return (
               <BudgetProgressBar
                 key={item.rule.id}
-                label={isTotalRule ? "Total Project Budget" : item.rule.name}
+                label={isTotalRule ? t("budget.totalProjectBudget") : item.rule.name}
                 subLabel={
                   isTotalRule
-                    ? "Overall Allocation"
+                    ? t("budget.overallAllocation")
                     : Array.isArray(item.rule.tags)
                       ? item.rule.tags.join(", ")
                       : item.rule.tags
@@ -290,7 +292,7 @@ export const ProjectBudgetView: React.FC = () => {
                           }
                         }}
                         className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-                        title="Edit Rule"
+                        title={t("budget.editRule")}
                       >
                         <PenSquare size={16} />
                       </button>
@@ -320,11 +322,11 @@ export const ProjectBudgetView: React.FC = () => {
           {otherTransactions.length > 0 && (
             <div className="pt-4 border-t border-[var(--surface-light)] mt-8">
               <h3 className="text-sm font-bold text-[var(--text-muted)] mb-3 uppercase tracking-wider">
-                Other Project Transactions
+                {t("budget.otherProjectTransactions")}
               </h3>
               <BudgetProgressBar
-                label="Uncategorized Spending"
-                subLabel="(Transactions not covered by specific rules)"
+                label={t("budget.uncategorizedSpending")}
+                subLabel={t("budget.uncategorizedSubLabel")}
                 current={otherTransactions.reduce(
                   (acc: number, tx: any) => acc + Math.abs(tx.amount || 0),
                   0,
@@ -353,7 +355,7 @@ export const ProjectBudgetView: React.FC = () => {
 
           {projectDetails.rules.length === 0 && (
             <div className="text-center text-[var(--text-muted)] py-8">
-              No budget rules defined for this project.
+              {t("budget.noRulesForProject")}
             </div>
           )}
         </div>
@@ -361,8 +363,8 @@ export const ProjectBudgetView: React.FC = () => {
 
       {!selectedProject && projects.length === 0 && (
         <div className="text-center text-[var(--text-muted)] py-12 bg-[var(--surface)] rounded-xl border border-dashed border-[var(--surface-light)]">
-          <h3 className="text-lg font-medium mb-2">No Projects Found</h3>
-          <p className="mb-4">Create a new project to get started.</p>
+          <h3 className="text-lg font-medium mb-2">{t("budget.noProjectsFound")}</h3>
+          <p className="mb-4">{t("budget.createProjectToStart")}</p>
         </div>
       )}
 

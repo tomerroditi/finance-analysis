@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
@@ -9,6 +10,7 @@ interface RuleManagerProps {
 }
 
 export function RuleManager({ onClose }: RuleManagerProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isCreating, setIsCreating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -107,9 +109,9 @@ export function RuleManager({ onClose }: RuleManagerProps) {
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
           <div>
-            <h2 className="text-xl font-bold text-white">Auto-Tagging Rules</h2>
+            <h2 className="text-xl font-bold text-white">{t("modals.ruleManager.title")}</h2>
             <p className="text-sm text-[var(--text-muted)]">
-              Automatically tag transactions based on their description
+              {t("modals.ruleManager.subtitle")}
             </p>
           </div>
           <button
@@ -135,7 +137,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               }}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[var(--primary)]/10 text-[var(--primary)] hover:bg-[var(--primary)]/20 border border-[var(--primary)]/20 font-bold transition-all"
             >
-              <Plus size={18} /> New Rule
+              <Plus size={18} /> {t("modals.ruleManager.newRule")}
             </button>
             <button
               onClick={() => applyMutation.mutate()}
@@ -143,7 +145,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 font-bold transition-all disabled:opacity-50"
             >
               <Play size={18} />{" "}
-              {applyMutation.isPending ? "Applying..." : "Apply Rules Now"}
+              {applyMutation.isPending ? t("modals.ruleManager.applying") : t("modals.ruleManager.applyRulesNow")}
             </button>
           </div>
         </div>
@@ -157,12 +159,12 @@ export function RuleManager({ onClose }: RuleManagerProps) {
         {(isCreating || editingRuleId !== null) && (
           <div className="mb-6 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--primary)]/30 animate-in slide-in-from-top-2 duration-200">
             <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--primary)] mb-4">
-              {editingRuleId !== null ? "Edit Rule" : "Create New Rule"}
+              {editingRuleId !== null ? t("modals.ruleManager.editRule") : t("modals.ruleManager.createNewRule")}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                  Rule Name
+                  {t("modals.ruleManager.ruleName")}
                 </label>
                 <input
                   type="text"
@@ -176,7 +178,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               </div>
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                  Contains
+                  {t("modals.ruleManager.contains")}
                 </label>
                 <input
                   type="text"
@@ -195,7 +197,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                  Category
+                  {t("common.category")}
                 </label>
                 <SelectDropdown
                   options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
@@ -207,13 +209,13 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                       tag: "",
                     })
                   }
-                  placeholder="Select Category"
+                  placeholder={t("modals.transactionForm.selectCategory")}
                   size="sm"
                 />
               </div>
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
-                  Tag
+                  {t("common.tag")}
                 </label>
                 <SelectDropdown
                   options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
@@ -221,7 +223,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   onChange={(val) =>
                     setNewRule({ ...newRule, tag: val })
                   }
-                  placeholder="Select Tag"
+                  placeholder={t("modals.transactionForm.selectTag")}
                   disabled={!newRule.category}
                   size="sm"
                 />
@@ -235,7 +237,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 }}
                 className="px-4 py-2 text-sm font-medium hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -251,7 +253,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 disabled={!newRule.description_contains || !newRule.category}
                 className="px-6 py-2 rounded-lg bg-[var(--primary)] text-white text-sm font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all disabled:opacity-50"
               >
-                {editingRuleId !== null ? "Update Rule" : "Save Rule"}
+                {editingRuleId !== null ? t("modals.ruleManager.updateRule") : t("modals.ruleManager.saveRule")}
               </button>
             </div>
           </div>
@@ -260,11 +262,11 @@ export function RuleManager({ onClose }: RuleManagerProps) {
         <div className="space-y-2">
           {isLoading ? (
             <div className="text-center py-8 text-[var(--text-muted)]">
-              Loading rules...
+              {t("modals.ruleManager.loadingRules")}
             </div>
           ) : rules?.length === 0 ? (
             <div className="text-center py-8 text-[var(--text-muted)] bg-[var(--surface-base)] rounded-xl border border-dashed border-[var(--surface-light)]">
-              No rules defined yet
+              {t("modals.ruleManager.noRules")}
             </div>
           ) : (
             rules?.map((rule: any) => (
@@ -279,7 +281,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">
-                        If includes:
+                        {t("modals.ruleManager.ifIncludes")}:
                       </span>
                       <code className="text-xs bg-[var(--surface)] px-2 py-0.5 rounded border border-[var(--surface-light)] text-amber-400">
                         {rule.description_contains}
@@ -287,7 +289,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-[var(--text-muted)]">
-                        Set Category to
+                        {t("modals.ruleManager.setCategoryTo")}
                       </span>
                       <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">
                         {rule.category}
@@ -295,7 +297,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                       {rule.tag && (
                         <>
                           <span className="text-xs text-[var(--text-muted)]">
-                            & Tag to
+                            {t("modals.ruleManager.andTagTo")}
                           </span>
                           <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400">
                             {rule.tag}
@@ -343,7 +345,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
           onClick={onClose}
           className="px-6 py-2 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-semibold transition-all"
         >
-          Close
+          {t("common.close")}
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X, AlertTriangle } from "lucide-react";
 
 interface ConfirmationModalProps {
@@ -18,10 +19,13 @@ export function ConfirmationModal({
     onConfirm,
     title,
     message,
-    confirmLabel = "Confirm",
-    cancelLabel = "Cancel",
+    confirmLabel,
+    cancelLabel,
     isDestructive = false,
 }: ConfirmationModalProps) {
+    const { t } = useTranslation();
+    const resolvedConfirmLabel = confirmLabel ?? t("common.confirm");
+    const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
@@ -68,7 +72,7 @@ export function ConfirmationModal({
                         onClick={onClose}
                         className="flex-1 px-4 py-2 rounded-xl border border-[var(--surface-light)] hover:bg-[var(--surface-light)] text-sm font-semibold text-[var(--text-default)] transition-colors"
                     >
-                        {cancelLabel}
+                        {resolvedCancelLabel}
                     </button>
                     <button
                         onClick={() => {
@@ -80,7 +84,7 @@ export function ConfirmationModal({
                                 : "bg-[var(--primary)] hover:bg-[var(--primary-dark)] shadow-[var(--primary)]/20"
                             }`}
                     >
-                        {confirmLabel}
+                        {resolvedConfirmLabel}
                     </button>
                 </div>
             </div>

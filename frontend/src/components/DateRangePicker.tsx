@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   startOfMonth,
   endOfMonth,
@@ -20,36 +21,37 @@ interface DateRangePickerProps {
 }
 
 export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
   const presets = [
     {
-      label: "All Time",
+      label: t("dateRange.allTime"),
       getValue: () => ({ start: null, end: null }),
     },
     {
-      label: "Current Month",
+      label: t("dateRange.currentMonth"),
       getValue: () => ({
         start: startOfMonth(new Date()),
         end: endOfMonth(new Date()),
       }),
     },
     {
-      label: "Last Month",
+      label: t("dateRange.lastMonth"),
       getValue: () => {
         const lastMonth = subMonths(new Date(), 1);
         return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
       },
     },
     {
-      label: "Current Year",
+      label: t("dateRange.currentYear"),
       getValue: () => ({
         start: startOfYear(new Date()),
         end: endOfMonth(new Date()),
       }), // End of update is usually today or end of year
     },
     {
-      label: "Last Year",
+      label: t("dateRange.lastYear"),
       getValue: () => {
         const d = new Date();
         d.setFullYear(d.getFullYear() - 1);
@@ -57,7 +59,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
       },
     },
     {
-      label: "Last 12 Months",
+      label: t("dateRange.last12Months"),
       getValue: () => ({ start: subMonths(new Date(), 12), end: new Date() }),
     },
   ];
@@ -75,8 +77,8 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
           {value.start && value.end
             ? `${formatDate(value.start)} - ${formatDate(value.end)}`
             : value.start === null && value.end === null
-              ? "All Time"
-              : "Select Date Range"}
+              ? t("dateRange.allTime")
+              : t("dateRange.selectDateRange")}
         </span>
         <ChevronDown
           size={14}
@@ -108,7 +110,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
 
             <div className="border-t border-[var(--surface-light)] my-2 pt-2">
               <p className="text-xs text-[var(--text-muted)] px-3 mb-2">
-                Custom Range
+                {t("dateRange.customRange")}
               </p>
               <div className="grid grid-cols-2 gap-2 px-2">
                 <input

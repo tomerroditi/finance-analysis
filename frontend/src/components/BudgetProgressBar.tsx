@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface BudgetProgressBarProps {
@@ -24,6 +25,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
   actions,
   compact = false,
 }) => {
+  const { t } = useTranslation();
   // Current is usually negative (expenses), convert to positive for display
   const spent = Math.abs(current);
   // Avoid division by zero
@@ -144,7 +146,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
                 onClick={onToggleExpand}
                 className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] mt-1 transition-colors"
               >
-                {isExpanded ? "Hide Transactions" : "View Transactions"}
+                {isExpanded ? t("budget.hideTransactions") : t("budget.viewTransactions")}
               </button>
             )}
           </div>

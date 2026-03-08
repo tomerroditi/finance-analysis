@@ -1,18 +1,20 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Layers, Calendar } from "lucide-react";
 import { MonthlyBudgetView } from "../components/budget/MonthlyBudgetView";
 import { ProjectBudgetView } from "../components/budget/ProjectBudgetView";
 
 export const Budget: React.FC = () => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"monthly" | "projects">("monthly");
 
   return (
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold">Budget</h1>
+          <h1 className="text-3xl font-bold">{t("budget.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
-            Track your spending and manage allocations
+            {t("budget.subtitle")}
           </p>
         </div>
 
@@ -26,7 +28,7 @@ export const Budget: React.FC = () => {
               }`}
           >
             <Calendar size={18} />
-            Monthly Budget
+            {t("budget.monthlyBudget")}
           </button>
           <button
             onClick={() => setActiveTab("projects")}
@@ -36,7 +38,7 @@ export const Budget: React.FC = () => {
               }`}
           >
             <Layers size={18} />
-            Project Budgets
+            {t("budget.projectBudgets")}
           </button>
         </div>
       </div>

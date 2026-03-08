@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi } from "../../services/api";
@@ -22,6 +23,7 @@ export function SplitTransactionModal({
   onClose,
   onSuccess,
 }: SplitTransactionModalProps) {
+  const { t } = useTranslation();
   const originalAmount = parseFloat(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
@@ -89,7 +91,7 @@ export function SplitTransactionModal({
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
           <div>
-            <h2 className="text-xl font-bold text-white">Split Transaction</h2>
+            <h2 className="text-xl font-bold text-white">{t("modals.split.title")}</h2>
             <p className="text-sm text-[var(--text-muted)]">
               {transaction.description} •{" "}
               {new Intl.NumberFormat("he-IL", {
@@ -115,7 +117,7 @@ export function SplitTransactionModal({
               >
                 <div className="flex-1 space-y-2">
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
-                    Amount
+                    {t("common.amount")}
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
@@ -139,13 +141,13 @@ export function SplitTransactionModal({
 
                 <div className="flex-[1.5] space-y-2">
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
-                    Category
+                    {t("common.category")}
                   </label>
                   <SelectDropdown
                     options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
                     value={split.category}
                     onChange={(val) => updateSplit(index, "category", val)}
-                    placeholder="Select Category"
+                    placeholder={t("modals.transactionForm.selectCategory")}
                     size="sm"
                     onCreateNew={async (name) => {
                       const formatted = await createCategory(name);
@@ -156,13 +158,13 @@ export function SplitTransactionModal({
 
                 <div className="flex-[1.5] space-y-2">
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
-                    Tag
+                    {t("common.tag")}
                   </label>
                   <SelectDropdown
                     options={split.category && categories?.[split.category] ? categories[split.category].map((tag: string) => ({ label: tag, value: tag })) : []}
                     value={split.tag}
                     onChange={(val) => updateSplit(index, "tag", val)}
-                    placeholder="Select Tag"
+                    placeholder={t("modals.transactionForm.selectTag")}
                     disabled={!split.category}
                     size="sm"
                     onCreateNew={async (name) => {
@@ -187,7 +189,7 @@ export function SplitTransactionModal({
             onClick={addSplit}
             className="mt-4 flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-dark)] text-sm font-semibold transition-all"
           >
-            <Plus size={16} /> Add Split
+            <Plus size={16} /> {t("modals.split.addSplit")}
           </button>
         </div>
 
@@ -197,7 +199,7 @@ export function SplitTransactionModal({
               <div className="flex items-center gap-2 text-amber-400">
                 <AlertCircle size={18} />
                 <span className="text-sm font-medium">
-                  Remaining:{" "}
+                  {t("modals.split.remaining")}:{" "}
                   {new Intl.NumberFormat("he-IL", {
                     style: "currency",
                     currency: "ILS",
@@ -207,7 +209,7 @@ export function SplitTransactionModal({
             ) : (
               <div className="text-emerald-400 text-sm font-bold flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Balanced
+                {t("modals.split.balanced")}
               </div>
             )}
           </div>
@@ -217,14 +219,14 @@ export function SplitTransactionModal({
               onClick={onClose}
               className="px-6 py-2 rounded-xl border border-[var(--surface-light)] hover:bg-[var(--surface-light)] text-sm font-semibold transition-all"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               onClick={handleSubmit}
               disabled={!isValid}
               className="px-6 py-2 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all"
             >
-              Split Transaction
+              {t("modals.split.title")}
             </button>
           </div>
         </div>

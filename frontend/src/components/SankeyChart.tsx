@@ -1,5 +1,6 @@
 import Plot from "react-plotly.js";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 interface SankeyData {
   nodes: number[]; // Indices
@@ -18,6 +19,7 @@ interface SankeyChartProps {
 }
 
 export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
+  const { t } = useTranslation();
   const plotData = useMemo(() => {
     if (!data || data.nodes.length === 0) return [];
 
@@ -76,7 +78,7 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
   if (!data || !data.nodes || !data.nodes.length) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-        No data available for the selected period
+        {t("common.noData")}
       </div>
     );
   }

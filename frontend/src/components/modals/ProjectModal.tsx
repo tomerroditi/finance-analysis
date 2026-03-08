@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { budgetApi } from "../../services/api";
@@ -19,6 +20,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   initialData,
   isEdit = false,
 }) => {
+  const { t } = useTranslation();
   const [category, setCategory] = useState("");
   const [totalBudget, setTotalBudget] = useState<number>(0);
 
@@ -59,7 +61,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex justify-between items-center p-6 border-b border-[var(--surface-light)]">
           <h2 className="text-xl font-bold">
-            {isEdit ? `Edit Project: ${category} - Total` : "New Project"}
+            {isEdit ? `${t("modals.project.editProject")}: ${category} - ${t("common.total")}` : t("modals.project.newProject")}
           </h2>
           <button
             onClick={onClose}
@@ -71,7 +73,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Project Name (Category)
+              {t("modals.project.projectName")} ({t("common.category")})
             </label>
             {isEdit ? (
               <input
@@ -86,19 +88,19 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 options={availableCategories.map((cat: string) => ({ label: cat, value: cat }))}
                 value={category}
                 onChange={(val) => setCategory(val)}
-                placeholder="Select a category"
+                placeholder={t("modals.transactionForm.selectCategory")}
                 required
               />
             )}
             {!isEdit && availableCategories.length === 0 && (
               <p className="mt-1 text-xs text-amber-500">
-                All categories already have projects or none are defined.
+                {t("modals.project.noCategoriesAvailable")}
               </p>
             )}
           </div>
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
-              Total Budget
+              {t("budget.totalBudget")}
             </label>
             <input
               type="number"
@@ -115,13 +117,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               onClick={onClose}
               className="flex-1 py-3 font-bold text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
             >
-              {isEdit ? "Update" : "Create"}
+              {isEdit ? t("modals.project.update") : t("modals.project.create")}
             </button>
           </div>
         </form>

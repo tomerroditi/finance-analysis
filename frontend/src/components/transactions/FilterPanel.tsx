@@ -1,5 +1,6 @@
 import React from "react";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { MultiSelect } from "../common/MultiSelect";
 import type {
   TransactionFilterState,
@@ -23,13 +24,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   activeFilterCount,
   compact = false,
 }) => {
+  const { t } = useTranslation();
   return (
     <div
       className={`w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl animate-in slide-in-from-top-2 fade-in duration-200 ${compact ? "p-3" : "p-4"}`}
     >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
-          Advanced Filters
+          {t("transactions.filters.advancedFilters")}
         </h3>
         {activeFilterCount > 0 && (
           <button
@@ -37,7 +39,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             onClick={onReset}
             className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
           >
-            <X size={12} /> Clear All
+            <X size={12} /> {t("transactions.filters.clearAll")}
           </button>
         )}
       </div>
@@ -48,46 +50,46 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         {/* Account Multi-Select */}
         <div>
           <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">
-            Account
+            {t("common.account")}
           </label>
           <MultiSelect
             options={options.accounts}
             selected={filters.selectedAccounts}
             onChange={(v) => onFilterChange({ selectedAccounts: v })}
-            placeholder="All accounts"
+            placeholder={t("transactions.filters.allAccounts")}
           />
         </div>
 
         {/* Category Multi-Select */}
         <div>
           <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">
-            Category
+            {t("common.category")}
           </label>
           <MultiSelect
             options={options.categories}
             selected={filters.selectedCategories}
             onChange={(v) => onFilterChange({ selectedCategories: v })}
-            placeholder="All categories"
+            placeholder={t("transactions.filters.allCategories")}
           />
         </div>
 
         {/* Tag Multi-Select */}
         <div>
           <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">
-            Tag
+            {t("common.tag")}
           </label>
           <MultiSelect
             options={options.tags}
             selected={filters.selectedTags}
             onChange={(v) => onFilterChange({ selectedTags: v })}
-            placeholder="All tags"
+            placeholder={t("transactions.filters.allTags")}
           />
         </div>
 
         {/* Amount Range */}
         <div>
           <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">
-            Amount Range
+            {t("transactions.filters.amountRange")}
           </label>
           <div className="flex gap-2">
             <input
@@ -118,7 +120,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         {/* Date Range */}
         <div className="min-w-0">
           <label className="text-xs font-medium text-[var(--text-muted)] mb-1.5 block">
-            Date Range
+            {t("transactions.filters.dateRange")}
           </label>
           <div className="flex gap-2">
             <input

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -59,6 +60,7 @@ const SCRAPING_PERIODS = [
 ] as const;
 
 export function DataSources() {
+  const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -259,10 +261,9 @@ export function DataSources() {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Data Sources</h1>
+          <h1 className="text-3xl font-bold">{t("dataSources.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
-            Securely manage your connected financial institutions and
-            credentials
+            {t("dataSources.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -287,13 +288,13 @@ export function DataSources() {
             className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
-            {isAnyScraping ? "Scraping..." : "Scrape All"}
+            {isAnyScraping ? t("dataSources.scraping") : t("dataSources.scrapeAll")}
           </button>
           <button
             onClick={() => setIsAddOpen(true)}
             className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
           >
-            <Plus size={18} /> Connect Account
+            <Plus size={18} /> {t("dataSources.connectAccount")}
           </button>
         </div>
       </div>
@@ -304,16 +305,15 @@ export function DataSources() {
             <div className="mx-auto w-16 h-16 bg-[var(--surface-light)] rounded-2xl flex items-center justify-center text-[var(--text-muted)] mb-4">
               <Globe size={32} />
             </div>
-            <h3 className="text-xl font-bold mb-2">No Accounts Connected</h3>
+            <h3 className="text-xl font-bold mb-2">{t("dataSources.noAccountsConnected")}</h3>
             <p className="text-[var(--text-muted)] mb-8 max-w-sm mx-auto">
-              Connect your bank or credit card to automatically import
-              transactions and track your finances in real-time.
+              {t("dataSources.noAccountsDesc")}
             </p>
             <button
               onClick={() => setIsAddOpen(true)}
               className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--surface-light)] text-white rounded-xl font-bold hover:bg-[var(--surface-base)] transition-all border border-white/5"
             >
-              <Plus size={18} /> Add Your First Account
+              <Plus size={18} /> {t("dataSources.addFirstAccount")}
             </button>
           </div>
         ) : (
@@ -434,7 +434,7 @@ export function DataSources() {
                             </span>
                           ) : (
                             <span className="text-xs text-[var(--text-muted)] italic">
-                              No balance set
+                              {t("dataSources.noBalanceSet")}
                             </span>
                           )}
                           <button
@@ -454,8 +454,8 @@ export function DataSources() {
                             }`}
                             title={
                               canSetBalance
-                                ? "Set Balance"
-                                : "Scrape today first to set balance"
+                                ? t("dataSources.setBalance")
+                                : t("dataSources.scrapeFirstToSetBalance")
                             }
                           >
                             <DollarSign size={16} />
@@ -471,25 +471,25 @@ export function DataSources() {
                       <div className="flex items-center gap-1.5">
                         <RefreshCw size={14} className="animate-spin text-blue-400 shrink-0" />
                         <span className="text-xs font-semibold text-blue-400">
-                          Scraping...
+                          {t("dataSources.scraping")}
                         </span>
                       </div>
                     )}
                     {scraper?.status === "waiting_for_2fa" && (
                       <div className="flex items-center gap-1.5">
                         <Smartphone size={14} className="text-amber-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-amber-400">2FA Required</span>
+                        <span className="text-xs font-semibold text-amber-400">{t("dataSources.tfaRequired")}</span>
                       </div>
                     )}
                     {scraper?.status === "success" && (
                       <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
                         <CheckCircle2 size={12} className="text-emerald-400" />
-                        <span className="text-[10px] font-semibold text-emerald-400">Synced</span>
+                        <span className="text-[10px] font-semibold text-emerald-400">{t("dataSources.synced")}</span>
                       </div>
                     )}
                     {scraper?.status === "failed" && (
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-red-400">Failed</span>
+                        <span className="text-xs font-semibold text-red-400">{t("dataSources.failed")}</span>
                         {scraper.error_message && (
                           <div className="relative group/err">
                             <Info size={12} className="text-red-400 cursor-help" />
@@ -505,11 +505,11 @@ export function DataSources() {
                     {(!scraper || !["in_progress", "waiting_for_2fa", "success", "failed"].includes(scraper.status)) && (
                       <>
                         {!lastScrape?.last_scrape_date ? (
-                          <span className="text-[10px] text-[var(--text-muted)] italic">Never synced</span>
+                          <span className="text-[10px] text-[var(--text-muted)] italic">{t("dataSources.neverSynced")}</span>
                         ) : isScrapedToday(acc.provider, acc.account_name) ? (
                           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
                             <CheckCircle2 size={12} className="text-emerald-400" />
-                            <span className="text-[10px] font-semibold text-emerald-400">Synced</span>
+                            <span className="text-[10px] font-semibold text-emerald-400">{t("dataSources.synced")}</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 text-[var(--text-muted)]">
@@ -527,7 +527,7 @@ export function DataSources() {
                       <button
                         onClick={() => abortScraper(scraper!)}
                         className="p-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all"
-                        title="Abort Scraping"
+                        title={t("dataSources.abortScraping")}
                       >
                         <XCircle size={20} />
                       </button>
@@ -536,7 +536,7 @@ export function DataSources() {
                         onClick={() => startScraper(acc, scrapingPeriodDays)}
                         disabled={isAnyScraping}
                         className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Scrape This Source"
+                        title={t("dataSources.scrapeThisSource")}
                       >
                         <PlayCircle size={20} />
                       </button>
@@ -544,24 +544,24 @@ export function DataSources() {
                     <button
                       onClick={() => handleView(acc)}
                       className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-                      title="View Details"
+                      title={t("dataSources.viewDetails")}
                     >
                       <Eye size={20} />
                     </button>
                     <button
                       onClick={() => handleEdit(acc)}
                       className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all"
-                      title="Edit Account"
+                      title={t("dataSources.editAccount")}
                     >
                       <Edit2 size={20} />
                     </button>
                     <button
                       onClick={() => {
-                        if (window.confirm(`Disconnect "${acc.account_name}"?`))
+                        if (window.confirm(t("dataSources.confirmDisconnect", { name: acc.account_name })))
                           deleteMutation.mutate(acc);
                       }}
                       className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-                      title="Disconnect Account"
+                      title={t("dataSources.disconnectAccount")}
                     >
                       <Trash2 size={20} />
                     </button>
@@ -575,7 +575,7 @@ export function DataSources() {
                     <div className="flex items-center gap-3">
                       <Smartphone className="text-amber-400 shrink-0" size={18} />
                       <span className="text-xs text-amber-100/70">
-                        Enter 2FA code for <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
+                        {t("dataSources.enter2faCode")} <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
                       </span>
                       <div className="flex items-center gap-2 ml-auto">
                         <input
@@ -619,14 +619,14 @@ export function DataSources() {
                           disabled={!tfaCodes[tfaKey] || tfaIsPending}
                           className="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
                         >
-                          Verify
+                          {t("dataSources.verify")}
                         </button>
                         <button
                           onClick={() => resendTfa(scraper, scrapingPeriodDays)}
                           disabled={tfaIsPending}
                           className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
                         >
-                          Resend
+                          {t("dataSources.resend")}
                         </button>
                       </div>
                     </div>
@@ -641,7 +641,7 @@ export function DataSources() {
                 {bankAccounts.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">
-                      Bank Accounts
+                      {t("dataSources.bankAccounts")}
                     </h3>
                     {bankAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
                   </>
@@ -649,7 +649,7 @@ export function DataSources() {
                 {creditCardAccounts.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
-                      Credit Cards
+                      {t("dataSources.creditCards")}
                     </h3>
                     {creditCardAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
                   </>
@@ -657,7 +657,7 @@ export function DataSources() {
                 {insuranceAccounts.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
-                      Insurance
+                      {t("dataSources.insurance")}
                     </h3>
                     {insuranceAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
                   </>
@@ -682,10 +682,10 @@ export function DataSources() {
             <div className="mb-8">
               <h2 className="text-2xl font-black mb-2">
                 {isViewOnly
-                  ? "Account Details"
+                  ? t("dataSources.accountDetails")
                   : editingAccount
-                    ? "Edit Connection"
-                    : "Connect New Account"}
+                    ? t("dataSources.editConnection")
+                    : t("dataSources.connectNewAccount")}
               </h2>
               <div className="flex gap-2">
                 <div
@@ -703,7 +703,7 @@ export function DataSources() {
             {step === 1 && (
               <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
                 <p className="text-[var(--text-muted)] font-medium mb-6">
-                  Choose the type of service you want to connect:
+                  {t("dataSources.chooseServiceType")}
                 </p>
                 <button
                   onClick={() => {
@@ -718,10 +718,10 @@ export function DataSources() {
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-lg text-white">
-                        Bank Account
+                        {t("dataSources.bankAccount")}
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        Checkings, Investments, or Business accounts
+                        {t("dataSources.bankAccountDesc")}
                       </p>
                     </div>
                   </div>
@@ -740,10 +740,10 @@ export function DataSources() {
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-lg text-white">
-                        Credit Card
+                        {t("dataSources.creditCard")}
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        Personal or Corporate credit cards
+                        {t("dataSources.creditCardDesc")}
                       </p>
                     </div>
                   </div>
@@ -762,10 +762,10 @@ export function DataSources() {
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-lg text-white">
-                        Insurance
+                        {t("dataSources.insurance")}
                       </p>
                       <p className="text-xs text-[var(--text-muted)]">
-                        Pension, Keren Hishtalmut, Gemel
+                        {t("dataSources.insuranceDesc")}
                       </p>
                     </div>
                   </div>
@@ -777,7 +777,7 @@ export function DataSources() {
             {step === 2 && (
               <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
                 <p className="text-[var(--text-muted)] font-medium mb-6">
-                  Select your provider:
+                  {t("dataSources.selectProvider")}
                 </p>
                 <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2">
                   {providers &&
@@ -798,7 +798,7 @@ export function DataSources() {
                   onClick={() => setStep(1)}
                   className="w-full py-4 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
                 >
-                  Back
+                  {t("common.back")}
                 </button>
               </div>
             )}
@@ -806,7 +806,7 @@ export function DataSources() {
             {step === 3 && (
               <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <p className="text-[var(--text-muted)] font-medium">
-                  {isViewOnly ? "Current" : "Enter"} details for{" "}
+                  {isViewOnly ? t("dataSources.currentDetailsFor") : t("dataSources.enterDetailsFor")}{" "}
                   <span className="text-white font-black">
                     {humanizeProvider(selectedProvider)}
                   </span>
@@ -816,7 +816,7 @@ export function DataSources() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      Display Name
+                      {t("dataSources.displayName")}
                     </label>
                     <input
                       type="text"
@@ -875,9 +875,7 @@ export function DataSources() {
                   <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 flex gap-3">
                     <AlertCircle className="text-blue-400 shrink-0" size={20} />
                     <p className="text-xs text-blue-400/80 leading-relaxed font-medium">
-                      Your credentials are encrypted and stored securely using
-                      your system keyring. We never store raw passwords in our
-                      database.
+                      {t("dataSources.credentialsSecurityNote")}
                     </p>
                   </div>
                 )}
@@ -888,7 +886,7 @@ export function DataSources() {
                       onClick={() => setStep(2)}
                       className="flex-1 py-4 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
                     >
-                      Back
+                      {t("common.back")}
                     </button>
                   )}
                   <button
@@ -901,12 +899,12 @@ export function DataSources() {
                     className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isViewOnly
-                      ? "Close"
+                      ? t("common.close")
                       : createMutation.isPending
-                        ? "Saving..."
+                        ? t("dataSources.saving")
                         : editingAccount
-                          ? "Save Changes"
-                          : "Finish Setup"}
+                          ? t("dataSources.saveChanges")
+                          : t("dataSources.finishSetup")}
                   </button>
                 </div>
               </div>

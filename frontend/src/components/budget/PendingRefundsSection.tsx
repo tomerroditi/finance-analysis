@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Link2, X } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
@@ -14,6 +15,7 @@ interface PendingRefundsSectionProps {
 export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   pendingRefunds,
 }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { items, total_expected } = pendingRefunds;
 
@@ -22,12 +24,12 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   }
 
   const handleCancel = async (id: number) => {
-    if (!window.confirm("Remove this pending refund expectation?")) return;
+    if (!window.confirm(t("budget.confirmCancelRefund"))) return;
     try {
       await pendingRefundsApi.cancel(id);
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
     } catch (err) {
-      alert("Failed to cancel pending refund");
+      alert(t("budget.failedCancelRefund"));
     }
   };
 
@@ -46,14 +48,14 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
             <RefreshCw className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <h3 className="font-semibold text-white">Pending Refunds</h3>
+            <h3 className="font-semibold text-white">{t("budget.pendingRefunds")}</h3>
             <p className="text-sm text-amber-400">
-              {formatCurrency(total_expected)} expected back
+              {t("budget.expectedBack", { amount: formatCurrency(total_expected) })}
             </p>
           </div>
         </div>
         <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-sm font-medium">
-          {items.length} pending
+          {t("budget.pendingCount", { count: items.length })}
         </span>
       </div>
 
@@ -71,7 +73,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                   {item.date || "NO DATE"}
                 </span>
                 <span className="font-medium text-[var(--text-primary)]">
-                  {item.description || "Unknown Transaction"}
+                  {item.description || t("budget.unknownTransaction")}
                 </span>
               </div>
 
@@ -108,14 +110,14 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
               </span>
               <button
                 className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                title="Link Refund"
-                onClick={() => alert("Link Refund modal - Coming soon!")}
+                title={t("budget.linkRefund")}
+                onClick={() => alert(t("budget.linkRefundComingSoon"))}
               >
                 <Link2 size={16} />
               </button>
               <button
                 className="p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
-                title="Cancel"
+                title={t("common.cancel")}
                 onClick={() => handleCancel(item.id)}
               >
                 <X size={16} />
@@ -127,8 +129,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
 
       {/* Footer note */}
       <div className="px-5 py-3 bg-amber-500/5 border-t border-amber-500/20 text-xs text-[var(--text-muted)]">
-        These expenses are excluded from your budget totals until refunds are
-        linked.
+        {t("budget.pendingRefundsFooter")}
       </div>
     </div>
   );

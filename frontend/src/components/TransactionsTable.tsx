@@ -35,6 +35,7 @@ import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { SelectDropdown } from "./common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
+import { useTranslation } from "react-i18next";
 
 export interface Transaction {
   id?: any;
@@ -120,6 +121,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onlyUntagged: onlyUntaggedProp,
   compact = false,
 }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { createCategory, createTag } = useCategoryTagCreate();
   // State
@@ -558,7 +560,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               }`}
             >
               <Filter size={14} />
-              Filters
+              {t("transactions.filters.title")}
               {activeFilterCount > 0 && (
                 <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--primary)] text-white leading-none">
                   {activeFilterCount}
@@ -575,7 +577,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 type="text"
                 value={filters.filterText}
                 onChange={(e) => updateFilters({ filterText: e.target.value })}
-                placeholder="Search transactions..."
+                placeholder={t("transactions.filters.search")}
                 className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
               />
               {filters.filterText && (
@@ -603,11 +605,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               {columnDropdownOpen && (
                 <div className="absolute top-full right-0 mt-1 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl z-30 py-1 min-w-[160px]">
                   {[
-                    { key: "date", label: "Date" },
-                    { key: "description", label: "Description" },
-                    { key: "category", label: "Category" },
-                    { key: "account", label: "Account" },
-                    { key: "amount", label: "Amount" },
+                    { key: "date", label: t("transactions.table.date") },
+                    { key: "description", label: t("transactions.table.description") },
+                    { key: "category", label: t("transactions.table.category") },
+                    { key: "account", label: t("transactions.table.account") },
+                    { key: "amount", label: t("transactions.table.amount") },
                   ].map(({ key, label }) => (
                     <label
                       key={key}
@@ -630,7 +632,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
                 htmlFor="table-untagged-only"
               >
-                Only Untagged
+                {t("transactions.filters.onlyUntagged")}
               </label>
               <input
                 id="table-untagged-only"
@@ -646,7 +648,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
                   htmlFor="table-split-parents"
                 >
-                  Show Split Parents
+                  {t("transactions.filters.showSplitParents")}
                 </label>
                 <input
                   id="table-split-parents"
@@ -663,13 +665,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="flex items-center gap-2 px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-hover)] transition-colors text-xs font-medium shrink-0"
               >
                 <Plus size={14} />
-                <span>Add Transaction</span>
+                <span>{t("transactions.addTransaction")}</span>
               </button>
             )}
             {(filters.filterText || activeFilterCount > 0) && (
               <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
-                {filteredTransactions.length} of {transactions.length}{" "}
-                transactions
+                {filteredTransactions.length} {t("transactions.pagination.of")} {transactions.length}{" "}
+                {t("transactions.title").toLowerCase()}
               </span>
             )}
           </div>
@@ -705,24 +707,24 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 </th>
               )}
               {visibleColumns.has("date") && (
-                <SortableHeader label="Date" sortKey="date" width="120px" />
+                <SortableHeader label={t("transactions.table.date")} sortKey="date" width="120px" />
               )}
               {visibleColumns.has("account") && (
-                <SortableHeader label="Account" sortKey="account" width="180px" />
+                <SortableHeader label={t("transactions.table.account")} sortKey="account" width="180px" />
               )}
               {visibleColumns.has("description") && (
-                <SortableHeader label="Description" sortKey="desc" />
+                <SortableHeader label={t("transactions.table.description")} sortKey="desc" />
               )}
               {visibleColumns.has("category") && (
                 <SortableHeader
-                  label="Category"
+                  label={t("transactions.table.category")}
                   sortKey="category"
                   width="180px"
                 />
               )}
               {visibleColumns.has("amount") && (
                 <SortableHeader
-                  label="Amount"
+                  label={t("transactions.table.amount")}
                   sortKey="amount"
                   align="right"
                   width="120px"
@@ -733,7 +735,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-sm font-medium text-[var(--text-muted)]`}
                   style={{ width: "100px" }}
                 >
-                  Actions
+                  {t("common.actions")}
                 </th>
               )}
             </tr>
@@ -990,8 +992,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   className={`px-4 ${compact ? "py-4" : "py-8"} text-center text-[var(--text-muted)]`}
                 >
                   {filters.filterText || activeFilterCount > 0
-                    ? "No matching transactions."
-                    : "No transactions found."}
+                    ? t("transactions.noMatchingTransactions")
+                    : t("transactions.noTransactionsFound")}
                 </td>
               </tr>
             )}
@@ -1008,21 +1010,21 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">
               {sortedTransactions.length > 0 ? (
                 <>
-                  Showing{" "}
-                  <span className="text-white font-medium">{startRow}</span> to{" "}
-                  <span className="text-white font-medium">{endRow}</span> of{" "}
+                  {t("transactions.pagination.showing")}{" "}
+                  <span className="text-white font-medium">{startRow}</span> {t("transactions.pagination.to")}{" "}
+                  <span className="text-white font-medium">{endRow}</span> {t("transactions.pagination.of")}{" "}
                   <span className="text-white font-medium">
                     {sortedTransactions.length}
                   </span>
                 </>
               ) : (
-                "No results"
+                t("transactions.noResults")
               )}
             </span>
             {rowsPerPageOptions && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">
-                  Rows:
+                  {t("transactions.pagination.rows")}:
                 </span>
                 <select
                   value={rowsPerPage}
@@ -1057,8 +1059,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <ChevronLeft size={compact ? 16 : 20} />
             </button>
             <span className={`px-4 text-sm whitespace-nowrap`}>
-              Page <span className="text-white font-medium">{currentPage}</span>{" "}
-              of{" "}
+              {t("transactions.pagination.page")} <span className="text-white font-medium">{currentPage}</span>{" "}
+              {t("transactions.pagination.of")}{" "}
               <span className="text-white font-medium">{totalPages || 1}</span>
             </span>
             <button
@@ -1088,14 +1090,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">
               {selectedIds.size}
             </div>
-            <span className="text-sm font-medium">Selected</span>
+            <span className="text-sm font-medium">{t("transactions.bulk.selected")}</span>
           </div>
           <div className="w-px h-8 bg-[var(--surface-light)]" />
           <div className="flex items-center gap-3 flex-wrap">
             {/* Details group - only for manual transactions */}
             {allSelectedAreManual && (
               <>
-                <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Details</span>
+                <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{t("transactions.bulk.details")}</span>
                 <input
                   type="date"
                   value={bulkEditData.date}
@@ -1116,14 +1118,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     onClick={() => setAmountType("expense")}
                     className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "expense" ? "bg-red-500/20 text-red-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
                   >
-                    Expense
+                    {t("transactions.bulk.expense")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setAmountType("income")}
                     className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "income" ? "bg-emerald-500/20 text-emerald-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
                   >
-                    Income
+                    {t("transactions.bulk.income")}
                   </button>
                 </div>
                 <input
@@ -1151,7 +1153,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               </>
             )}
             {/* Tags group - always visible */}
-            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">Tags</span>
+            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{t("transactions.bulk.tags")}</span>
             <div className="w-40">
               <SelectDropdown
                 options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
@@ -1243,13 +1245,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           />
           <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl p-6 shadow-2xl max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-white mb-2">
-              Delete Transaction
+              {t("transactions.deleteTransaction")}
             </h3>
             <p className="text-[var(--text-muted)] mb-6">
-              Are you sure you want to delete this manual transaction?
+              {t("transactions.deleteConfirmation")}
               <br />
               <span className="text-[var(--text-default)] font-medium">
-                {getDescription(deletingTransaction) || "No description"}
+                {getDescription(deletingTransaction) || t("transactions.noDescription")}
               </span>
             </p>
             <div className="flex gap-3 justify-end">
@@ -1257,13 +1259,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 onClick={() => setDeletingTransaction(null)}
                 className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-[var(--text-default)] text-sm font-medium transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={confirmDelete}
                 className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           </div>

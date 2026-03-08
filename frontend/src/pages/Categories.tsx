@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
@@ -582,6 +583,7 @@ const EMOJI_DATA: [string, string][] = [
 ];
 
 export function Categories() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isAddTagOpen, setIsAddTagOpen] = useState<{ category: string } | null>(
@@ -675,16 +677,16 @@ export function Categories() {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Categories & Tags</h1>
+          <h1 className="text-3xl font-bold">{t("categories.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
-            Manage your expense classification and tagging logic
+            {t("categories.subtitle")}
           </p>
         </div>
         <button
           onClick={() => setIsAddCategoryOpen(true)}
           className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all"
         >
-          <Plus size={18} /> New Category
+          <Plus size={18} /> {t("categories.newCategory")}
         </button>
       </div>
 
@@ -708,7 +710,7 @@ export function Categories() {
                         setEmojiSearch("");
                       }}
                       className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all text-xl w-11 h-11 flex items-center justify-center border border-blue-500/20"
-                      title="Change Icon"
+                      title={t("categories.changeIcon")}
                     >
                       {icons?.[category] || <Wallet size={20} />}
                     </button>
@@ -718,7 +720,7 @@ export function Categories() {
                     onClick={() => {
                       if (
                         window.confirm(
-                          `Delete category "${category}"? All associated tags will be nullified in existing transactions.`,
+                          t("categories.confirmDeleteCategory", { name: category }),
                         )
                       ) {
                         deleteCategoryMutation.mutate(category);
@@ -744,7 +746,7 @@ export function Categories() {
                           <button
                             onClick={() => setIsRelocateOpen({ category, tag })}
                             className="p-1 hover:bg-blue-500/10 text-blue-400 rounded transition-colors"
-                            title="Relocate Tag"
+                            title={t("categories.relocateTag")}
                           >
                             <MoveRight size={12} />
                           </button>
@@ -752,14 +754,14 @@ export function Categories() {
                             onClick={() => {
                               if (
                                 window.confirm(
-                                  `Delete tag "${tag}" from "${category}"? It will be removed from all existing transactions.`,
+                                  t("categories.confirmDeleteTag", { tag, category }),
                                 )
                               ) {
                                 deleteTagMutation.mutate({ category, tag });
                               }
                             }}
                             className="p-1 hover:bg-red-500/10 text-red-400 rounded transition-colors"
-                            title="Delete Tag"
+                            title={t("categories.deleteTag")}
                           >
                             <Trash2 size={12} />
                           </button>
@@ -769,7 +771,7 @@ export function Categories() {
                   </div>
                   {tags.length === 0 && (
                     <div className="text-xs text-[var(--text-muted)] italic py-2">
-                      No tags defined
+                      {t("categories.noTags")}
                     </div>
                   )}
                 </div>
@@ -778,7 +780,7 @@ export function Categories() {
                   onClick={() => setIsAddTagOpen({ category })}
                   className="mt-6 flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-[var(--surface-light)] text-xs font-bold text-[var(--text-muted)] hover:border-[var(--primary)]/50 hover:text-[var(--primary)] transition-all"
                 >
-                  <Plus size={14} /> Add Tag
+                  <Plus size={14} /> {t("categories.addTag")}
                 </button>
               </div>
             ),
@@ -789,11 +791,11 @@ export function Categories() {
       {isAddCategoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">Create New Category</h3>
+            <h3 className="text-lg font-bold mb-4">{t("categories.createNewCategory")}</h3>
             <input
               autoFocus
               type="text"
-              placeholder="Category Name"
+              placeholder={t("categories.categoryName")}
               className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] mb-6 transition-all"
               onKeyDown={(e) => {
                 if (e.key === "Enter")
@@ -808,7 +810,7 @@ export function Categories() {
                 onClick={() => setIsAddCategoryOpen(false)}
                 className="flex-1 py-2 text-sm font-bold hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={(e) => {
@@ -820,7 +822,7 @@ export function Categories() {
                 }}
                 className="flex-1 py-2 bg-[var(--primary)] rounded-xl text-white font-bold hover:bg-[var(--primary-dark)] transition-all"
               >
-                Create
+                {t("categories.create")}
               </button>
             </div>
           </div>
@@ -831,7 +833,7 @@ export function Categories() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
-              Add Tag to{" "}
+              {t("categories.addTagTo")}{" "}
               <span className="text-[var(--primary)]">
                 {isAddTagOpen.category}
               </span>
@@ -839,7 +841,7 @@ export function Categories() {
             <input
               autoFocus
               type="text"
-              placeholder="Tag Name"
+              placeholder={t("categories.tagName")}
               className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] mb-6 transition-all"
               onKeyDown={(e) => {
                 if (e.key === "Enter")
@@ -855,7 +857,7 @@ export function Categories() {
                 onClick={() => setIsAddTagOpen(null)}
                 className="flex-1 py-2 text-sm font-bold hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={(e) => {
@@ -871,7 +873,7 @@ export function Categories() {
                 }}
                 className="flex-1 py-2 bg-[var(--primary)] rounded-xl text-white font-bold hover:bg-[var(--primary-dark)] transition-all"
               >
-                Add Tag
+                {t("categories.addTag")}
               </button>
             </div>
           </div>
@@ -881,13 +883,9 @@ export function Categories() {
       {isRelocateOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-2">Relocate Tag</h3>
+            <h3 className="text-lg font-bold mb-2">{t("categories.relocateTag")}</h3>
             <p className="text-sm text-[var(--text-muted)] mb-6">
-              Move{" "}
-              <span className="font-bold text-white">
-                "{isRelocateOpen.tag}"
-              </span>{" "}
-              to a different category
+              {t("categories.moveTagDescription", { tag: isRelocateOpen.tag })}
             </p>
 
             <div className="space-y-2 max-h-[200px] overflow-y-auto mb-6 pr-2">
@@ -921,7 +919,7 @@ export function Categories() {
               onClick={() => setIsRelocateOpen(null)}
               className="w-full py-2 text-sm font-bold hover:text-white transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -931,7 +929,7 @@ export function Categories() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
-              Change Icon for{" "}
+              {t("categories.changeIconFor")}{" "}
               <span className="text-[var(--primary)]">
                 {editingIcon.category}
               </span>
@@ -943,7 +941,7 @@ export function Categories() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   type="text"
-                  placeholder="Search emojis... (e.g. food, car, health)"
+                  placeholder={t("categories.searchEmojis")}
                   value={emojiSearch}
                   onChange={(e) => setEmojiSearch(e.target.value)}
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl pl-9 pr-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
@@ -975,7 +973,7 @@ export function Categories() {
                     </div>
                   ) : (
                     <p className="text-sm text-[var(--text-muted)] text-center py-6">
-                      No emojis match &ldquo;{emojiSearch}&rdquo;
+                      {t("categories.noEmojisMatch", { search: emojiSearch })}
                     </p>
                   );
                 })()}
@@ -984,7 +982,7 @@ export function Categories() {
               {/* Custom Input */}
               <div>
                 <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-3">
-                  Custom Emoji or Text
+                  {t("categories.customEmojiOrText")}
                 </p>
                 <input
                   type="text"
@@ -1009,7 +1007,7 @@ export function Categories() {
                 onClick={() => setEditingIcon(null)}
                 className="flex-1 py-2 text-sm font-bold hover:text-white transition-colors"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => {
@@ -1021,7 +1019,7 @@ export function Categories() {
                 }}
                 className="flex-1 py-2 bg-[var(--primary)] rounded-xl text-white font-bold hover:bg-[var(--primary-dark)] transition-all"
               >
-                Save
+                {t("common.save")}
               </button>
             </div>
           </div>
