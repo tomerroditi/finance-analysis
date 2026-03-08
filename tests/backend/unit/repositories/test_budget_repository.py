@@ -211,3 +211,23 @@ class TestBudgetRepository:
         stored_tags = result.iloc[0]["tags"]
         assert stored_tags == tags
         assert len(stored_tags.split(";")) == 3
+
+
+class TestBudgetRepositoryEmptyUpdate:
+    """Tests for update with empty fields."""
+
+    def test_update_empty_fields_returns_early(self, db_session: Session):
+        """Verify update returns immediately when no fields are provided."""
+        repo = BudgetRepository(db_session)
+        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
+
+        all_rules = repo.read_all()
+        rule_id = int(all_rules.iloc[0]["id"])
+
+        # Should return without raising or executing a query
+        repo.update(rule_id)
+
+        # Verify no changes were made
+        result = repo.read_by_id(rule_id)
+        assert result.iloc[0]["amount"] == 2000.0
+        assert result.iloc[0]["name"] == "Food"

@@ -217,3 +217,34 @@ class TestInvestmentsRepositoryPriorWealth:
 
         db_session.refresh(inv)
         assert inv.prior_wealth_amount == 0.0
+
+    def test_update_prior_wealth_not_found(self, db_session):
+        """Verify EntityNotFoundException for updating prior wealth of non-existent investment."""
+        repo = InvestmentsRepository(db_session)
+        with pytest.raises(EntityNotFoundException):
+            repo.update_prior_wealth(999, 5000.0)
+
+
+class TestInvestmentsRepositoryEmptyUpdate:
+    """Tests for update_investment with empty fields."""
+
+    def test_update_investment_empty_fields_returns_early(self, db_session):
+        """Verify update_investment returns immediately when no fields are provided."""
+        inv = Investment(
+            category="Investments",
+            tag="Test Fund",
+            type="etf",
+            name="Original Name",
+            created_date="2024-01-01",
+        )
+        db_session.add(inv)
+        db_session.commit()
+        db_session.refresh(inv)
+
+        repo = InvestmentsRepository(db_session)
+        # Should return without raising or executing a query
+        repo.update_investment(inv.id)
+
+        # Verify no changes were made
+        db_session.refresh(inv)
+        assert inv.name == "Original Name"

@@ -257,3 +257,155 @@ class TestCashBalanceService:
         wallet = service.get_by_account_name("Wallet")
         assert wallet["balance"] == 800.0
         assert wallet["prior_wealth_amount"] == 1000.0
+
+
+class TestMigrateFromTransactions:
+    """Tests for migrate_from_transactions() migration logic."""
+
+    def test_migrate_empty_transactions(self, db_session: Session):
+        """Verify migration returns empty list when no cash transactions exist."""
+        service = CashBalanceService(db_session)
+        result = service.migrate_from_transactions()
+        assert result == []
+
+    def test_migrate_creates_balance_records(self, db_session: Session):
+        """Verify migration creates balance records from existing transactions."""
+        # Add transactions for two accounts
+        txns = [
+            CashTransaction(
+                id="m1", date="2024-01-01", account_name="Wallet",
+                description="Expense", amount=-300.0, category="Food",
+                tag="Groceries", source="cash_transactions",
+                type="expense", status="completed",
+            ),
+            CashTransaction(
+                id="m2", date="2024-01-02", account_name="Wallet",
+                description="Income", amount=100.0, category="Salary",
+                tag="", source="cash_transactions",
+                type="income", status="completed",
+            ),
+            CashTransaction(
+                id="m3", date="2024-01-01", account_name="Savings",
+                description="Expense", amount=-500.0, category="Food",
+                tag="Groceries", source="cash_transactions",
+                type="expense", status="completed",
+            ),
+        ]
+        db_session.add_all(txns)
+        db_session.commit()
+
+        service = CashBalanceService(db_session)
+        result = service.migrate_from_transactions()
+
+        assert len(result) == 2
+        names = {r["account_name"] for r in result}
+        assert names == {"Wallet", "Savings"}
+
+        # Wallet: txn_sum=-200, prior_wealth=max(0, 200)=200, balance=200+(-200)=0
+        wallet = next(r for r in result if r["account_name"] == "Wallet")
+        assert wallet["prior_wealth_amount"] == 200.0
+        assert wallet["balance"] == 0.0
+
+        # Savings: txn_sum=-500, prior_wealth=max(0, 500)=500, balance=500+(-500)=0
+        savings = next(r for r in result if r["account_name"] == "Savings")
+        assert savings["prior_wealth_amount"] == 500.0
+        assert savings["balance"] == 0.0
+
+    def test_migrate_net_positive_transactions(self, db_session: Session):
+        """Verify migration sets prior_wealth=0 when transaction sum is positive."""
+        txn = CashTransaction(
+            id="m_pos", date="2024-01-01", account_name="Wallet",
+            description="Income", amount=500.0, category="Salary",
+            tag="", source="cash_transactions",
+            type="income", status="completed",
+        )
+        db_session.add(txn)
+        db_session.commit()
+
+        service = CashBalanceService(db_session)
+        result = service.migrate_from_transactions()
+
+        assert len(result) == 1
+        assert result[0]["prior_wealth_amount"] == 0.0
+        assert result[0]["balance"] == 500.0
+
+    def test_migrate_skips_already_migrated_accounts(self, db_session: Session):
+        """Verify migration skips accounts that already have balance records."""
+        # Pre-create a balance record
+        db_session.add(CashBalance(
+            account_name="Wallet", balance=1000.0, prior_wealth_amount=1000.0,
+        ))
+        txn = CashTransaction(
+            id="m_skip", date="2024-01-01", account_name="Wallet",
+            description="Expense", amount=-100.0, category="Food",
+            tag="Groceries", source="cash_transactions",
+            type="expense", status="completed",
+        )
+        db_session.add(txn)
+        db_session.commit()
+
+        service = CashBalanceService(db_session)
+        result = service.migrate_from_transactions()
+
+        assert result == []
+
+    def test_migrate_excludes_prior_wealth_account(self, db_session: Session):
+        """Verify migration excludes transactions with account_name='Prior Wealth'."""
+        txns = [
+            CashTransaction(
+                id="m_pw", date="2024-01-01", account_name="Prior Wealth",
+                description="Prior Wealth", amount=1000.0, category="",
+                tag="Prior Wealth", source="cash_transactions",
+                type="income", status="completed",
+            ),
+            CashTransaction(
+                id="m_real", date="2024-01-01", account_name="Wallet",
+                description="Expense", amount=-50.0, category="Food",
+                tag="Groceries", source="cash_transactions",
+                type="expense", status="completed",
+            ),
+        ]
+        db_session.add_all(txns)
+        db_session.commit()
+
+        service = CashBalanceService(db_session)
+        result = service.migrate_from_transactions()
+
+        # Only Wallet should be migrated, not "Prior Wealth"
+        assert len(result) == 1
+        assert result[0]["account_name"] == "Wallet"
+
+
+class TestDeletePriorWealthTransaction:
+    """Tests for _delete_prior_wealth_transaction() cleanup."""
+
+    def test_deletes_matching_prior_wealth_row(self, db_session: Session):
+        """Verify only Prior Wealth rows with matching tag and account_name are deleted."""
+        txns = [
+            CashTransaction(
+                id="pw_del", date="2024-01-01", account_name="Prior Wealth",
+                description="Prior Wealth", amount=1000.0, category="",
+                tag="Prior Wealth", source="cash_transactions",
+                type="income", status="completed",
+            ),
+            CashTransaction(
+                id="normal", date="2024-01-01", account_name="Wallet",
+                description="Groceries", amount=-50.0, category="Food",
+                tag="Groceries", source="cash_transactions",
+                type="expense", status="completed",
+            ),
+        ]
+        db_session.add_all(txns)
+        db_session.commit()
+
+        service = CashBalanceService(db_session)
+        service._delete_prior_wealth_transaction()
+
+        remaining = db_session.query(CashTransaction).all()
+        assert len(remaining) == 1
+        assert remaining[0].id == "normal"
+
+    def test_noop_when_no_prior_wealth_exists(self, db_session: Session):
+        """Verify no error when there's nothing to delete."""
+        service = CashBalanceService(db_session)
+        service._delete_prior_wealth_transaction()  # Should not raise

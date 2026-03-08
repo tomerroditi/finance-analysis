@@ -4,6 +4,8 @@ import pytest
 import yaml
 from unittest.mock import patch
 
+import keyring.errors as _real_keyring_errors
+
 from backend.errors import EntityNotFoundException
 from backend.models.credential import Credential
 from backend.repositories.credentials_repository import CredentialsRepository
@@ -21,6 +23,8 @@ def mock_keyring():
         mk.get_password.return_value = "secret123"
         mk.set_password.return_value = None
         mk.delete_password.return_value = None
+        # Preserve real errors module so `except keyring.errors.X` works
+        mk.errors = _real_keyring_errors
         yield mk
 
 
@@ -185,3 +189,79 @@ class TestCredentialsRepositoryMigration:
 
         accounts = seeded_repo.list_accounts()
         assert not any(a["provider"] == "leumi" for a in accounts)
+
+
+# ---------------------------------------------------------------------------
+# Class 4: Migration edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialsRepositoryMigrationEdgeCases:
+    """Tests for YAML migration edge cases."""
+
+    def test_migrate_skips_when_file_not_found(self, empty_repo):
+        """Verify migration returns silently when YAML file does not exist."""
+        empty_repo.migrate_from_yaml("/nonexistent/path/credentials.yaml")
+
+        accounts = empty_repo.list_accounts()
+        assert len(accounts) == 0
+
+    def test_migrate_skips_non_dict_entries(self, empty_repo, tmp_path, mock_keyring):
+        """Verify migration skips entries where services, providers, or accounts are not dicts."""
+        creds = {
+            "banks": {
+                "hapoalim": {
+                    "Main Account": {"userCode": "abc"},
+                    "Bad Account": "not_a_dict",
+                },
+                "bad_provider": "not_a_dict",
+            },
+            "bad_service": "not_a_dict",
+        }
+        creds_path = str(tmp_path / "credentials.yaml")
+        with open(creds_path, "w") as f:
+            yaml.dump(creds, f)
+
+        empty_repo.migrate_from_yaml(creds_path)
+
+        accounts = empty_repo.list_accounts()
+        assert len(accounts) == 1
+        assert accounts[0]["account_name"] == "Main Account"
+
+
+# ---------------------------------------------------------------------------
+# Class 5: Keyring edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialsRepositoryKeyringEdgeCases:
+    """Tests for keyring error handling and demo mode."""
+
+    def test_delete_credentials_handles_keyring_error(self, seeded_repo, mock_keyring):
+        """Verify keyring.PasswordDeleteError is silently caught during delete."""
+        mock_keyring.delete_password.side_effect = _real_keyring_errors.PasswordDeleteError(
+            "No password found"
+        )
+
+        seeded_repo.delete_credentials("banks", "hapoalim", "Main Account")
+
+        accounts = seeded_repo.list_accounts()
+        assert len(accounts) == 1
+
+    def test_keyring_service_demo_mode(self, db_session, mock_keyring):
+        """Verify keyring service name has '-demo' suffix in demo mode."""
+        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
+            mock_config = MockConfig.return_value
+            mock_config.is_demo_mode = True
+
+            repo = CredentialsRepository(db_session)
+            assert repo.keyring_service == "finance-analysis-app-demo"
+
+    def test_keyring_service_normal_mode(self, db_session, mock_keyring):
+        """Verify keyring service name has no suffix in normal mode."""
+        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
+            mock_config = MockConfig.return_value
+            mock_config.is_demo_mode = False
+
+            repo = CredentialsRepository(db_session)
+            assert repo.keyring_service == "finance-analysis-app"

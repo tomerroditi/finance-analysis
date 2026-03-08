@@ -137,3 +137,125 @@ class TestPendingRefundsService:
         assert result["expected_amount"] == 100.0
         assert result["total_refunded"] == 50.0
         assert len(result["links"]) == 1
+
+
+class TestGetAllPendingEnrichment:
+    """Tests for get_all_pending enrichment with real transaction data."""
+
+    def test_enriches_transaction_source_details(self, db_session, seed_base_transactions):
+        """Verify get_all_pending enriches transaction-sourced pending refunds with details."""
+        from backend.models.transaction import BankTransaction
+
+        # Find a real bank transaction to reference
+        bank_txn = db_session.query(BankTransaction).first()
+        assert bank_txn is not None
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", bank_txn.unique_id, "banks", 50.0,
+        )
+
+        result = service.get_all_pending()
+        item = next(p for p in result if p["id"] == pending["id"])
+
+        # Should be enriched with transaction details
+        assert "date" in item
+        assert "description" in item
+
+    def test_enriches_link_details(self, db_session, seed_base_transactions):
+        """Verify get_all_pending enriches linked refund transactions with details."""
+        from backend.models.transaction import BankTransaction
+
+        bank_txns = db_session.query(BankTransaction).limit(2).all()
+        assert len(bank_txns) >= 2
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", bank_txns[0].unique_id, "banks", 100.0,
+        )
+        service.link_refund(
+            pending["id"], bank_txns[1].unique_id, "banks", 50.0,
+        )
+
+        result = service.get_all_pending()
+        item = next(p for p in result if p["id"] == pending["id"])
+
+        # Links should be enriched with transaction details
+        assert len(item["links"]) == 1
+        link = item["links"][0]
+        assert "date" in link
+        assert "description" in link
+
+    def test_enriches_split_source_details(self, db_session, seed_base_transactions, seed_split_transactions):
+        """Verify get_all_pending enriches split-sourced pending refunds with parent details."""
+        from backend.models.transaction import SplitTransaction
+
+        split = db_session.query(SplitTransaction).first()
+        if split is None:
+            pytest.skip("No split transactions in seed data")
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "split", split.id, split.source, 25.0,
+        )
+
+        result = service.get_all_pending()
+        item = next(p for p in result if p["id"] == pending["id"])
+
+        # Should be enriched from parent transaction
+        assert "description" in item
+
+    def test_graceful_on_missing_source_transaction(self, db_session):
+        """Verify enrichment gracefully handles nonexistent source transaction IDs."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", 99999, "banks", 100.0,
+        )
+
+        # Should not raise even though transaction ID doesn't exist
+        result = service.get_all_pending()
+        assert len(result) == 1
+
+    def test_graceful_on_missing_link_transaction(self, db_session):
+        """Verify link enrichment gracefully handles nonexistent refund transaction IDs."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", 1, "banks", 100.0,
+        )
+        service.link_refund(pending["id"], 99999, "banks", 50.0)
+
+        # Should not raise even though link transaction ID doesn't exist
+        result = service.get_all_pending()
+        item = next(p for p in result if p["id"] == pending["id"])
+        assert len(item["links"]) == 1
+
+
+class TestGetBudgetAdjustment:
+    """Tests for get_budget_adjustment calculation."""
+
+    def test_budget_adjustment_with_pending_refunds(self, db_session):
+        """Verify budget adjustment sums all pending refund expected amounts."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.mark_as_pending_refund("transaction", 2, "credit_cards", 50.0)
+
+        result = service.get_budget_adjustment(2024, 1)
+        assert result == 150.0
+
+    def test_budget_adjustment_empty(self, db_session):
+        """Verify budget adjustment returns 0 when no pending refunds exist."""
+        service = PendingRefundsService(db_session)
+        result = service.get_budget_adjustment(2024, 1)
+        assert result == 0.0
+
+    def test_budget_adjustment_excludes_resolved(self, db_session):
+        """Verify budget adjustment excludes resolved refunds."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.mark_as_pending_refund("transaction", 2, "banks", 50.0)
+
+        # Resolve the first one
+        service.link_refund(pending["id"], 99, "banks", 100.0)
+
+        result = service.get_budget_adjustment(2024, 1)
+        assert result == 50.0

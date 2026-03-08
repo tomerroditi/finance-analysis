@@ -299,3 +299,137 @@ class TestScrapingServiceAbort:
 
         mock_history_repo.record_scrape_end.assert_called_once_with(999, "failed")
         assert len(ss._tfa_scrapers_waiting) == 0
+
+
+class TestScrapingServiceCustomPeriod:
+    """Tests for custom scraping period date calculation."""
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_start_scraping_single_with_custom_period(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """Verify scraping_period_days overrides automatic start date calculation."""
+        from datetime import date, timedelta
+
+        mock_is_2fa.return_value = False
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        mock_history_repo.record_scrape_start.return_value = 42
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            service.start_scraping_single("banks", "hapoalim", "Main", scraping_period_days=30)
+
+        call_args = mock_history_repo.record_scrape_start.call_args
+        expected_start = date.today() - timedelta(days=30)
+        assert call_args[0][3] == expected_start
+
+        # _get_scraper_start_date was NOT called (custom period takes precedence)
+        service.scraping_history_repo.get_last_successful_scrape_date.assert_not_called()
+
+
+class TestScrapingServiceStartDate:
+    """Tests for _get_scraper_start_date logic."""
+
+    def test_get_scraper_start_date_with_iso_date(self, service):
+        """Verify ISO format date string is parsed and 7-day buffer applied."""
+        from datetime import datetime, timedelta
+
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = (
+            "2026-02-20T10:30:00"
+        )
+
+        result = service._get_scraper_start_date("banks", "hapoalim", "Main")
+
+        expected = datetime.fromisoformat("2026-02-20T10:30:00").date() - timedelta(days=7)
+        assert result == expected
+
+    def test_get_scraper_start_date_invalid_date_falls_back(self, service):
+        """Verify invalid date string falls back to 365 days ago."""
+        from datetime import date, timedelta
+
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = (
+            "not-a-date"
+        )
+
+        result = service._get_scraper_start_date("banks", "hapoalim", "Main")
+
+        expected = date.today() - timedelta(days=365)
+        assert result == expected
+
+    def test_get_scraper_start_date_no_prior_scrape(self, service):
+        """Verify None last scrape falls back to 365 days ago."""
+        from datetime import date, timedelta
+
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        result = service._get_scraper_start_date("banks", "hapoalim", "Main")
+
+        expected = date.today() - timedelta(days=365)
+        assert result == expected
+
+
+class TestScrapingServiceCollectAdapters:
+    """Tests for _collect_adapters method."""
+
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_collect_adapters_separates_normal_and_2fa(
+        self, mock_is_2fa, mock_create_adapter, service
+    ):
+        """Verify adapters are separated into normal and 2FA dicts."""
+        mock_is_2fa.side_effect = lambda svc, prov: prov == "onezero"
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        mock_adapter = MagicMock()
+        mock_create_adapter.return_value = mock_adapter
+
+        credentials = {
+            "banks": {
+                "hapoalim": {"Main": {"userCode": "test"}},
+                "onezero": {"Account1": {"email": "test@test.com"}},
+            }
+        }
+
+        normal, tfa = service._collect_adapters(credentials)
+
+        assert "banks - hapoalim - Main" in normal
+        assert "banks - onezero - Account1" in tfa
+        assert len(normal) == 1
+        assert len(tfa) == 1
+
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_collect_adapters_multiple_services(
+        self, mock_is_2fa, mock_create_adapter, service
+    ):
+        """Verify adapters are created for accounts across multiple services."""
+        mock_is_2fa.return_value = False
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        mock_adapter = MagicMock()
+        mock_create_adapter.return_value = mock_adapter
+
+        credentials = {
+            "banks": {"hapoalim": {"Checking": {"userCode": "abc"}}},
+            "credit_cards": {"isracard": {"Card1": {"id": "123"}}},
+        }
+
+        normal, tfa = service._collect_adapters(credentials)
+
+        assert len(normal) == 2
+        assert len(tfa) == 0
+        assert mock_create_adapter.call_count == 2

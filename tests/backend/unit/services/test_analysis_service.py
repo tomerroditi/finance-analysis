@@ -656,3 +656,387 @@ class TestAnalysisServiceIncomeBySource:
         # the method filters them out by checking totals match expected
         total_income = sum(r["total"] for r in result)
         assert total_income == 8000.0 + 12000.0 + 8200.0  # 28200
+
+
+class TestIncomeMaskPositiveLiabilities:
+    """Tests for _get_income_mask handling of positive liabilities (loan receipts)."""
+
+    def test_positive_liabilities_classified_as_income(self, db_session):
+        """Verify positive Liabilities amount is classified as income by the mask."""
+        loan = BankTransaction(
+            id="bank_loan_mask_1",
+            date="2024-06-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Loan Disbursement",
+            amount=25000.0,
+            category="Liabilities",
+            tag="Mortgage",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(loan)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_income_mask(df)
+
+        income_rows = df[mask]
+        assert len(income_rows) == 1
+        assert income_rows.iloc[0]["category"] == "Liabilities"
+        assert income_rows.iloc[0]["amount"] == 25000.0
+
+    def test_negative_liabilities_not_classified_as_income(self, db_session):
+        """Verify negative Liabilities (debt payments) are NOT classified as income."""
+        debt_payment = BankTransaction(
+            id="bank_debt_1",
+            date="2024-06-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Mortgage Payment",
+            amount=-2000.0,
+            category="Liabilities",
+            tag="Mortgage",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(debt_payment)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_income_mask(df)
+
+        income_rows = df[mask]
+        assert income_rows.empty
+
+    def test_mixed_liabilities_only_positive_is_income(self, db_session):
+        """Verify only positive Liabilities rows are income when mixed with negative."""
+        records = [
+            BankTransaction(
+                id="bank_loan_mix_1",
+                date="2024-06-01",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Loan Received",
+                amount=50000.0,
+                category="Liabilities",
+                tag="Personal Loan",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+            BankTransaction(
+                id="bank_debt_mix_1",
+                date="2024-06-15",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Loan Repayment",
+                amount=-3000.0,
+                category="Liabilities",
+                tag="Personal Loan",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_income_mask(df)
+
+        income_rows = df[mask]
+        assert len(income_rows) == 1
+        assert income_rows.iloc[0]["amount"] == 50000.0
+
+
+class TestInvestmentMask:
+    """Tests for _get_investment_mask identifying investment transactions."""
+
+    def test_investment_category_classified_as_investment(self, db_session):
+        """Verify Investments category transactions are identified by the mask."""
+        inv_txn = BankTransaction(
+            id="bank_inv_mask_1",
+            date="2024-06-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Investment Deposit",
+            amount=-5000.0,
+            category="Investments",
+            tag="Stock Fund",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(inv_txn)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_investment_mask(df)
+
+        investment_rows = df[mask]
+        assert len(investment_rows) == 1
+        assert investment_rows.iloc[0]["category"] == "Investments"
+
+    def test_non_investment_category_not_classified(self, db_session):
+        """Verify non-investment categories are excluded by the investment mask."""
+        records = [
+            BankTransaction(
+                id="bank_salary_mask",
+                date="2024-06-01",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Salary",
+                amount=8000.0,
+                category="Salary",
+                tag=None,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+            BankTransaction(
+                id="bank_food_mask",
+                date="2024-06-02",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Grocery",
+                amount=-200.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_investment_mask(df)
+
+        investment_rows = df[mask]
+        assert investment_rows.empty
+
+    def test_investment_mask_with_mixed_categories(self, db_session):
+        """Verify investment mask correctly picks only Investments from mixed data."""
+        records = [
+            BankTransaction(
+                id="bank_inv_mixed_1",
+                date="2024-06-01",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Fund Deposit",
+                amount=-10000.0,
+                category="Investments",
+                tag="Stock Fund",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+            BankTransaction(
+                id="bank_sal_mixed_1",
+                date="2024-06-01",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Salary",
+                amount=8000.0,
+                category="Salary",
+                tag=None,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+            BankTransaction(
+                id="bank_liab_mixed_1",
+                date="2024-06-01",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Loan",
+                amount=20000.0,
+                category="Liabilities",
+                tag="Mortgage",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        df = service.repo.get_table()
+        mask = service._get_investment_mask(df)
+
+        investment_rows = df[mask]
+        assert len(investment_rows) == 1
+        assert investment_rows.iloc[0]["amount"] == -10000.0
+
+
+class TestIncomeBySourceEarlyExits:
+    """Tests for get_income_by_source_over_time early exit paths."""
+
+    def test_returns_empty_when_only_cashflow_excluded_sources(self, db_session):
+        """Verify early exit when all transactions are from excluded sources (CC/insurance)."""
+        cc_income = CreditCardTransaction(
+            id="cc_income_only",
+            date="2024-06-01",
+            provider="isracard",
+            account_name="Main Card",
+            description="Refund",
+            amount=500.0,
+            category="Other Income",
+            tag=None,
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(cc_income)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert result == []
+
+    def test_returns_empty_when_only_prior_wealth_income(self, db_session):
+        """Verify early exit when all income after filtering is tagged Prior Wealth."""
+        pw_txn = BankTransaction(
+            id="bank_pw_only",
+            date="2024-06-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Prior Wealth Entry",
+            amount=10000.0,
+            category="Other Income",
+            tag="Prior Wealth",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(pw_txn)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert result == []
+
+    def test_returns_empty_when_only_expense_transactions(self, db_session):
+        """Verify early exit when data exists but no income transactions after filtering."""
+        expense = BankTransaction(
+            id="bank_expense_only",
+            date="2024-06-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Rent",
+            amount=-3000.0,
+            category="Home",
+            tag="Rent",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(expense)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_by_source_over_time()
+
+        assert result == []
+
+
+class TestNetWorthEmptyEarlyExit:
+    """Tests for get_net_worth_over_time empty data early exit."""
+
+    def test_returns_empty_when_only_cc_transactions(self, db_session):
+        """Verify early exit when all transactions are excluded (CC only)."""
+        cc_txn = CreditCardTransaction(
+            id="cc_nw_only",
+            date="2024-06-01",
+            provider="isracard",
+            account_name="Main Card",
+            description="Purchase",
+            amount=-100.0,
+            category="Food",
+            tag="Groceries",
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(cc_txn)
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        assert result == []
+
+
+class TestMonthlyExpenses:
+    """Tests for get_monthly_expenses aggregation and rolling averages."""
+
+    def test_get_monthly_expenses_returns_months_and_averages(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify monthly expenses returns correct structure with months list and averages."""
+        service = AnalysisService(db_session)
+        result = service.get_monthly_expenses()
+
+        assert "months" in result
+        assert "avg_3_months" in result
+        assert "avg_6_months" in result
+        assert "avg_12_months" in result
+        assert len(result["months"]) > 0
+
+        for entry in result["months"]:
+            assert "month" in entry
+            assert "expenses" in entry
+            assert entry["expenses"] >= 0
+
+    def test_get_monthly_expenses_empty_db(self, db_session):
+        """Verify empty database returns zero averages."""
+        service = AnalysisService(db_session)
+        result = service.get_monthly_expenses()
+
+        assert result["months"] == []
+        assert result["avg_3_months"] == 0.0
+        assert result["avg_6_months"] == 0.0
+        assert result["avg_12_months"] == 0.0
+
+    def test_get_monthly_expenses_months_ordered_chronologically(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify monthly expense entries are sorted by month ascending."""
+        service = AnalysisService(db_session)
+        result = service.get_monthly_expenses()
+
+        months = [entry["month"] for entry in result["months"]]
+        assert months == sorted(months)
+
+    def test_get_monthly_expenses_amounts_are_positive(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify expense amounts are positive (negated from raw negative convention)."""
+        service = AnalysisService(db_session)
+        result = service.get_monthly_expenses()
+
+        for entry in result["months"]:
+            assert entry["expenses"] >= 0
+
+    def test_get_monthly_expenses_averages_are_floats(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify rolling averages are numeric float values."""
+        service = AnalysisService(db_session)
+        result = service.get_monthly_expenses()
+
+        assert isinstance(result["avg_3_months"], float)
+        assert isinstance(result["avg_6_months"], float)
+        assert isinstance(result["avg_12_months"], float)
