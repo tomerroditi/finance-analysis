@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpDown,
@@ -214,12 +214,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     enabled: showBulkActions,
   });
 
+  const invalidateAnalytics = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
+    queryClient.invalidateQueries({ queryKey: ["analytics-category"] });
+    queryClient.invalidateQueries({ queryKey: ["sankey"] });
+    queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
+    queryClient.invalidateQueries({ queryKey: ["income-by-source"] });
+    queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
+    queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
+  }, [queryClient]);
+
   // Bulk tag mutation
   const bulkTagMutation = useMutation({
     mutationFn: (data: any) => transactionsApi.bulkTag(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+      invalidateAnalytics();
       setSelectedIds(new Set());
       setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
       onTransactionUpdated?.();
@@ -237,8 +248,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      invalidateAnalytics();
       onTransactionUpdated?.();
     },
   });
@@ -247,8 +258,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      invalidateAnalytics();
       onTransactionUpdated?.();
     },
   });
@@ -257,8 +268,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      invalidateAnalytics();
       onTransactionUpdated?.();
     },
   });

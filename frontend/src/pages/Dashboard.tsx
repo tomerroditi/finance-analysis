@@ -701,6 +701,16 @@ function RecentTransactionsFeed({
     queryFn: () => taggingApi.getRules().then((res) => res.data),
   });
 
+  const invalidateAnalytics = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
+    queryClient.invalidateQueries({ queryKey: ["analytics-category"] });
+    queryClient.invalidateQueries({ queryKey: ["sankey"] });
+    queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
+    queryClient.invalidateQueries({ queryKey: ["income-by-source"] });
+    queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
+    queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
+  }, [queryClient]);
+
   // Tag update mutation
   const tagMutation = useMutation({
     mutationFn: ({ tx, category, tag }: { tx: Transaction; category: string; tag: string }) =>
@@ -713,7 +723,7 @@ function RecentTransactionsFeed({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      invalidateAnalytics();
       setEditingTxKey(null);
     },
   });
@@ -729,8 +739,8 @@ function RecentTransactionsFeed({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      invalidateAnalytics();
     },
   });
 
@@ -993,7 +1003,7 @@ function RecentTransactionsFeed({
           onSuccess={() => {
             setSplittingTransaction(null);
             queryClient.invalidateQueries({ queryKey: ["transactions"] });
-            queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+            invalidateAnalytics();
           }}
         />
       )}
