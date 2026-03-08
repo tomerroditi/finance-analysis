@@ -8,7 +8,7 @@ from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.scraper import ScraperAdapter, is_2fa_required
+from backend.scraper import InsuranceScraperAdapter, ScraperAdapter, is_2fa_required
 
 _tfa_scrapers_waiting: Dict[str, ScraperAdapter] = {}
 
@@ -139,7 +139,8 @@ class ScrapingService:
                 service, provider, account, start_date, status
             )
 
-        adapter = ScraperAdapter(
+        adapter_cls = InsuranceScraperAdapter if service == "insurances" else ScraperAdapter
+        adapter = adapter_cls(
             service, provider, account, creds, start_date, process_id
         )
         asyncio.create_task(adapter.run())
@@ -179,8 +180,14 @@ class ScrapingService:
         if name not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
 
-        adapter = _tfa_scrapers_waiting[name]
+        adapter = _tfa_scrapers_waiting.pop(name)
         adapter.set_otp_code(code)
+
+        # Transition status from waiting_for_2fa to in_progress
+        if code != ScraperAdapter.CANCEL:
+            self.scraping_history_repo.update_status(
+                adapter.process_id, self.scraping_history_repo.IN_PROGRESS
+            )
 
     def abort_scraping_process(self, process_id: int) -> None:
         """
@@ -281,7 +288,8 @@ class ScrapingService:
                 for account, acc_creds in accounts.items():
                     name = f"{service} - {provider} - {account}"
                     start = self._get_scraper_start_date(service, provider, account)
-                    adapter = ScraperAdapter(
+                    cls = InsuranceScraperAdapter if service == "insurances" else ScraperAdapter
+                    adapter = cls(
                         service, provider, account, acc_creds, start, 0
                     )
                     if is_2fa_required(service, provider):

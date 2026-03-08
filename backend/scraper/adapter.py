@@ -136,8 +136,7 @@ class ScraperAdapter:
                     self._save_scraped_transactions()
                     self._apply_auto_tagging()
                     self._recalculate_bank_balances()
-                    if self.service_name == "insurances":
-                        self._save_insurance_metadata(result)
+                    self._post_save_hook(result)
             else:
                 self._error = result.error_message or result.error_type or "Unknown error"
                 logger.error(
@@ -263,7 +262,7 @@ class ScraperAdapter:
                     f"{account.account_number}_{txn_date}_{txn.charged_amount}"
                 )
 
-                rows.append({
+                row = {
                     TransactionsTableFields.ID.value: row_id,
                     TransactionsTableFields.DATE.value: txn_date,
                     TransactionsTableFields.AMOUNT.value: txn.charged_amount,
@@ -278,7 +277,8 @@ class ScraperAdapter:
                     TransactionsTableFields.SOURCE.value: source,
                     TransactionsTableFields.UNIQUE_ID.value: unique_id,
                     TransactionsTableFields.SPLIT_ID.value: None,
-                })
+                }
+                rows.append(row)
 
         if not rows:
             return pd.DataFrame()
@@ -335,36 +335,8 @@ class ScraperAdapter:
                 self.provider_name, self.account_name, exc,
             )
 
-    def _save_insurance_metadata(self, result) -> None:
-        """Persist insurance account metadata from AccountResult.metadata fields."""
-        from backend.models.insurance_account import InsuranceAccount
-
-        accounts_to_upsert = []
-        for account in result.accounts:
-            if account.metadata:
-                accounts_to_upsert.append(account.metadata)
-
-        if not accounts_to_upsert:
-            return
-
-        with get_db_context() as db:
-            for meta in accounts_to_upsert:
-                existing = db.query(InsuranceAccount).filter_by(
-                    policy_id=meta["policy_id"]
-                ).first()
-
-                if existing:
-                    for key, value in meta.items():
-                        if key != "policy_id":
-                            setattr(existing, key, value)
-                else:
-                    db.add(InsuranceAccount(**meta))
-
-            db.commit()
-            logger.info(
-                "%s: %s: Saved metadata for %d insurance accounts",
-                self.provider_name, self.account_name, len(accounts_to_upsert),
-            )
+    def _post_save_hook(self, result) -> None:
+        """Hook for subclasses to run additional logic after transactions are saved."""
 
     def _record_scraping_attempt(self, id_: int) -> None:
         """Update the scraping history record with the final status.
@@ -387,3 +359,57 @@ class ScraperAdapter:
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
             history_repo.record_scrape_end(id_, status, error_message)
+
+
+class InsuranceScraperAdapter(ScraperAdapter):
+    """Adapter for insurance scrapers with memo and metadata support."""
+
+    def _result_to_dataframe(self, result, service_name: str) -> pd.DataFrame:
+        """Extend base conversion to include the ``memo`` column."""
+        df = super()._result_to_dataframe(result, service_name)
+        if df.empty:
+            return df
+
+        memo_map: dict[str, str] = {}
+        for account in result.accounts:
+            for txn in account.transactions:
+                if txn.memo:
+                    txn_date = txn.date.split("T")[0] if "T" in txn.date else txn.date
+                    row_id = txn.identifier or (
+                        f"{account.account_number}_{txn_date}_{txn.charged_amount}"
+                    )
+                    memo_map[row_id] = txn.memo
+
+        if memo_map:
+            df["memo"] = df["id"].map(memo_map)
+
+        return df
+
+    def _post_save_hook(self, result) -> None:
+        """Persist insurance account metadata from AccountResult.metadata."""
+        from backend.models.insurance_account import InsuranceAccount
+
+        accounts_to_upsert = [
+            account.metadata
+            for account in result.accounts
+            if account.metadata
+        ]
+        if not accounts_to_upsert:
+            return
+
+        with get_db_context() as db:
+            for meta in accounts_to_upsert:
+                existing = db.query(InsuranceAccount).filter_by(
+                    policy_id=meta["policy_id"]
+                ).first()
+                if existing:
+                    for key, value in meta.items():
+                        if key != "policy_id":
+                            setattr(existing, key, value)
+                else:
+                    db.add(InsuranceAccount(**meta))
+            db.commit()
+            logger.info(
+                "%s: %s: Saved metadata for %d insurance accounts",
+                self.provider_name, self.account_name, len(accounts_to_upsert),
+            )

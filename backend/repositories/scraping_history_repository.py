@@ -102,6 +102,24 @@ class ScrapingHistoryRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def update_status(self, scrape_id: int, status: str) -> None:
+        """Update the status of a scraping operation.
+
+        Parameters
+        ----------
+        scrape_id : int
+            ID of the scraping record to update.
+        status : str
+            New status value.
+        """
+        stmt = (
+            update(ScrapingHistory)
+            .where(ScrapingHistory.id == scrape_id)
+            .values(status=status)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def get_scraping_status(self, scrape_id: int) -> str | None:
         """Get the current status of a scraping operation.
 
