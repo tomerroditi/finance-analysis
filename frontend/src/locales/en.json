@@ -30,7 +30,15 @@
     "noMatchesFound": "No matches found",
     "noOptionsAvailable": "No options available",
     "enterName": "Enter name...",
-    "createNew": "Create new"
+    "createNew": "Create new",
+    "of": "of",
+    "used": "used",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "daysAgo": "d ago",
+    "weeksAgo": "w ago",
+    "hide": "Hide",
+    "show": "Show"
   },
   "sidebar": {
     "logo": "Finance",
@@ -437,6 +445,7 @@
     "bankAccountDesc": "Connect your bank account",
     "creditCard": "Credit Card",
     "creditCardDesc": "Connect your credit card",
+    "insurance": "Insurance",
     "insuranceDesc": "Connect your insurance",
     "selectProvider": "Select Provider",
     "currentDetailsFor": "Current details for",
@@ -593,6 +602,28 @@
     "last12Months": "Last 12 Months",
     "selectDateRange": "Select Date Range",
     "customRange": "Custom Range"
+  },
+  "tooltips": {
+    "editCategoryTag": "Edit category / tag",
+    "splitTransaction": "Split transaction",
+    "pendingRefund": "Pending refund",
+    "markPendingRefund": "Mark as pending refund",
+    "linkAsRefund": "Link as refund to pending",
+    "toggleColumns": "Toggle columns",
+    "delete": "Delete",
+    "applyChanges": "Apply changes",
+    "deleteSelected": "Delete selected",
+    "cancelSelection": "Cancel selection",
+    "cancelPendingRefund": "Cancel Pending Refund Request",
+    "refundResolved": "Refund Resolved (Click to remove/unlink)",
+    "linkedToPending": "Linked to Pending Refund. Click to Unlink.",
+    "markAsRefund": "Mark as Pending Refund",
+    "addCashEnvelope": "Add cash envelope",
+    "editBalance": "Edit balance",
+    "deleteEnvelope": "Delete envelope",
+    "addNewProject": "Add new project",
+    "editCloseDate": "Edit close date",
+    "matchedRule": "Matched rule"
   },
   "services": {
     "creditCard": "Credit Card",

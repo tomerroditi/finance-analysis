@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
+import { formatDate } from "../utils/dateFormatting";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -61,7 +62,7 @@ function fmtPct(val: number | null | undefined): string {
 
 function fmtDate(d: string | null): string {
   if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDate(new Date(d));
 }
 
 /** Extract numeric value from a possibly-wrapped {value, currency} dict. */
@@ -314,8 +315,8 @@ function AccountCardFull({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
-                  <th className="text-left px-6 py-2 font-bold">{t("common.date")}</th>
-                  <th className="text-left px-6 py-2 font-bold">{t("common.description")}</th>
+                  <th className="text-start px-6 py-2 font-bold">{t("common.date")}</th>
+                  <th className="text-start px-6 py-2 font-bold">{t("common.description")}</th>
                   <th className="text-right px-6 py-2 font-bold">{t("insurance.employee")}</th>
                   <th className="text-right px-6 py-2 font-bold">{t("insurance.employer")}</th>
                   <th className="text-right px-6 py-2 font-bold">{t("insurance.compensation")}</th>

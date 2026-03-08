@@ -51,7 +51,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       <button
         onClick={() => setIsOpen(!isOpen)}
         type="button"
-        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg hover:border-[var(--primary)]/50 transition-colors text-left"
+        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg hover:border-[var(--primary)]/50 transition-colors text-start"
       >
         <span
           className={`truncate ${selected.length === 0 ? "text-[var(--text-muted)]" : "text-[var(--text-default)]"}`}
@@ -60,7 +60,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             ? placeholder
             : `${selected.length} selected`}
         </span>
-        <div className="flex items-center gap-1 ml-1 shrink-0">
+        <div className="flex items-center gap-1 ms-1 shrink-0">
           {selected.length > 0 && (
             <button
               type="button"
@@ -131,7 +131,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                 key={opt}
                 type="button"
                 onClick={() => toggle(opt)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[var(--surface-light)] transition-colors text-left"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[var(--surface-light)] transition-colors text-start"
               >
                 <div
                   className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${

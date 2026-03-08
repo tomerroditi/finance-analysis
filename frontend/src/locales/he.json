@@ -30,7 +30,15 @@
     "noMatchesFound": "לא נמצאו התאמות",
     "noOptionsAvailable": "אין אפשרויות זמינות",
     "enterName": "הזן שם...",
-    "createNew": "צור חדש"
+    "createNew": "צור חדש",
+    "of": "מתוך",
+    "used": "בשימוש",
+    "today": "היום",
+    "yesterday": "אתמול",
+    "daysAgo": "ימים",
+    "weeksAgo": "שבועות",
+    "hide": "הסתר",
+    "show": "הצג"
   },
   "sidebar": {
     "logo": "פיננסים",
@@ -437,6 +445,7 @@
     "bankAccountDesc": "חבר את חשבון הבנק שלך",
     "creditCard": "כרטיס אשראי",
     "creditCardDesc": "חבר את כרטיס האשראי שלך",
+    "insurance": "ביטוח",
     "insuranceDesc": "חבר את הביטוח שלך",
     "selectProvider": "בחר ספק",
     "currentDetailsFor": "פרטים נוכחיים עבור",
@@ -593,6 +602,28 @@
     "last12Months": "12 חודשים אחרונים",
     "selectDateRange": "בחר טווח תאריכים",
     "customRange": "טווח מותאם"
+  },
+  "tooltips": {
+    "editCategoryTag": "ערוך קטגוריה / תגית",
+    "splitTransaction": "פצל תנועה",
+    "pendingRefund": "ממתין להחזר",
+    "markPendingRefund": "סמן כממתין להחזר",
+    "linkAsRefund": "קשר כהחזר לממתין",
+    "toggleColumns": "הצג/הסתר עמודות",
+    "delete": "מחק",
+    "applyChanges": "החל שינויים",
+    "deleteSelected": "מחק נבחרים",
+    "cancelSelection": "בטל בחירה",
+    "cancelPendingRefund": "בטל בקשת החזר ממתינה",
+    "refundResolved": "החזר טופל (לחץ להסרה/ניתוק)",
+    "linkedToPending": "מקושר להחזר ממתין. לחץ לניתוק.",
+    "markAsRefund": "סמן כממתין להחזר",
+    "addCashEnvelope": "הוסף מעטפת מזומן",
+    "editBalance": "ערוך יתרה",
+    "deleteEnvelope": "מחק מעטפה",
+    "addNewProject": "הוסף פרויקט חדש",
+    "editCloseDate": "ערוך תאריך סגירה",
+    "matchedRule": "כלל תואם"
   },
   "services": {
     "creditCard": "כרטיס אשראי",

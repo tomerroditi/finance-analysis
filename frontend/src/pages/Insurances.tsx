@@ -147,8 +147,8 @@ export function Insurances() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
-                        <th className="text-left px-6 py-3 font-bold">Date</th>
-                        <th className="text-left px-6 py-3 font-bold">Description</th>
+                        <th className="text-start px-6 py-3 font-bold">Date</th>
+                        <th className="text-start px-6 py-3 font-bold">Description</th>
                         <th className="text-right px-6 py-3 font-bold">Amount</th>
                       </tr>
                     </thead>

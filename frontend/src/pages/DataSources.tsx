@@ -36,17 +36,19 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { useScraping } from "../hooks/useScraping";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
+import { formatShortDate } from "../utils/dateFormatting";
+import i18n from "../i18n";
 
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (diffDays === 0) return i18n.t("common.today");
+  if (diffDays === 1) return i18n.t("common.yesterday");
+  if (diffDays < 7) return `${diffDays} ${i18n.t("common.daysAgo")}`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${i18n.t("common.weeksAgo")}`;
+  return formatShortDate(date);
 }
 
 const SCRAPING_PERIODS = [
@@ -577,7 +579,7 @@ export function DataSources() {
                       <span className="text-xs text-amber-100/70">
                         {t("dataSources.enter2faCode")} <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
                       </span>
-                      <div className="flex items-center gap-2 ml-auto">
+                      <div className="flex items-center gap-2 ms-auto">
                         <input
                           type="text"
                           inputMode="numeric"
@@ -716,7 +718,7 @@ export function DataSources() {
                     <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
                       <Landmark size={24} />
                     </div>
-                    <div className="text-left">
+                    <div className="text-start">
                       <p className="font-bold text-lg text-white">
                         {t("dataSources.bankAccount")}
                       </p>
@@ -738,7 +740,7 @@ export function DataSources() {
                     <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 group-hover:scale-110 transition-transform">
                       <CreditCard size={24} />
                     </div>
-                    <div className="text-left">
+                    <div className="text-start">
                       <p className="font-bold text-lg text-white">
                         {t("dataSources.creditCard")}
                       </p>
@@ -760,7 +762,7 @@ export function DataSources() {
                     <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
                       <Shield size={24} />
                     </div>
-                    <div className="text-left">
+                    <div className="text-start">
                       <p className="font-bold text-lg text-white">
                         {t("dataSources.insurance")}
                       </p>
@@ -856,7 +858,7 @@ export function DataSources() {
                               type="button"
                               onClick={() => togglePasswordVisibility(field)}
                               className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-white transition-colors"
-                              title={showPasswords[field] ? "Hide" : "Show"}
+                              title={showPasswords[field] ? i18n.t("common.hide") : i18n.t("common.show")}
                             >
                               {showPasswords[field] ? (
                                 <EyeOff size={16} />

@@ -189,7 +189,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
           }
         }}
         type="button"
-        className={`w-full flex items-center justify-between bg-[var(--surface-base)] border border-[var(--surface-light)] outline-none transition-all text-left ${sizeClasses} ${
+        className={`w-full flex items-center justify-between bg-[var(--surface-base)] border border-[var(--surface-light)] outline-none transition-all text-start ${sizeClasses} ${
           disabled
             ? "opacity-50 cursor-not-allowed"
             : "hover:border-[var(--primary)] focus:border-[var(--primary)] cursor-pointer"
@@ -268,7 +268,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     onChange(opt.value);
                     setIsOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors text-left ${
+                  className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors text-start ${
                     idx === highlightIndex
                       ? "bg-[var(--surface-light)]"
                       : "hover:bg-[var(--surface-light)]"

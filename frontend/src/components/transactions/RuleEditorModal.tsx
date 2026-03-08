@@ -203,7 +203,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                             <span className="line-clamp-2">{error}</span>
                         </div>
                     )}
-                    <div className="flex items-center gap-3 ml-auto">
+                    <div className="flex items-center gap-3 ms-auto">
                         <button
                             onClick={onClose}
                             className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
@@ -269,7 +269,7 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
                 ) : (
                     <table className="w-full text-sm">
                         <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--surface-light)]">
-                            <tr className="text-left text-[var(--text-muted)]">
+                            <tr className="text-start text-[var(--text-muted)]">
                                 <th className="px-4 py-2 font-medium">{t("common.date")}</th>
                                 <th className="px-4 py-2 font-medium">{t("common.description")}</th>
                                 <th className="px-4 py-2 font-medium text-right">{t("common.amount")}</th>

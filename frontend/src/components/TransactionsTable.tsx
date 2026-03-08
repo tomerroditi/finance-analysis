@@ -526,7 +526,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         ? "text-right"
         : align === "center"
           ? "text-center"
-          : "text-left"
+          : "text-start"
         }`}
     >
       <div
@@ -598,7 +598,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     ? "bg-[var(--primary)]/10 border-[var(--primary)]/30 text-[var(--primary)]"
                     : "bg-[var(--surface-base)] border-[var(--surface-light)] text-[var(--text-muted)] hover:border-[var(--primary)]/50"
                 }`}
-                title="Toggle columns"
+                title={t("tooltips.toggleColumns")}
               >
                 <Settings2 size={14} />
               </button>
@@ -690,7 +690,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
-        <table className="w-full text-sm text-left">
+        <table className="w-full text-sm text-start">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
               {showSelection && (
@@ -834,7 +834,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       <div className="flex items-center justify-center gap-1">
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
-                          title="Split"
+                          title={t("tooltips.splitTransaction")}
                           onClick={() => setSplittingTransaction(tx)}
                         >
                           <Split size={14} />
@@ -851,7 +851,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
-                                    title="Refund Resolved (Click to remove/unlink)"
+                                    title={t("tooltips.refundResolved")}
                                     onClick={() => {
                                       if (
                                         window.confirm(
@@ -902,7 +902,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                               return (
                                 <button
                                   className="p-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
-                                  title="Cancel Pending Refund Request"
+                                  title={t("tooltips.cancelPendingRefund")}
                                   onClick={() => {
                                     if (
                                       window.confirm(
@@ -924,7 +924,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                             return (
                               <button
                                 className="p-1.5 rounded-md hover:bg-amber-500/10 text-amber-400/70 hover:text-amber-400 transition-colors"
-                                title="Mark as Pending Refund"
+                                title={t("tooltips.markAsRefund")}
                                 onClick={() => markPendingMutation.mutate(tx)}
                                 disabled={markPendingMutation.isPending}
                               >
@@ -943,7 +943,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                               return (
                                 <button
                                   className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
-                                  title="Linked to Pending Refund. Click to Unlink."
+                                  title={t("tooltips.linkedToPending")}
                                   onClick={() => {
                                     if (
                                       window.confirm(
@@ -963,7 +963,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                             return (
                               <button
                                 className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                                title="Link as Refund"
+                                title={t("tooltips.linkAsRefund")}
                                 onClick={() => setLinkingTransaction(tx)}
                               >
                                 <Link2 size={14} />
@@ -973,7 +973,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         {showDelete && isManual && (
                           <button
                             className="p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
-                            title="Delete"
+                            title={t("tooltips.delete")}
                             onClick={() => handleDelete(tx)}
                           >
                             <Trash2 size={14} />
@@ -1190,7 +1190,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
               onClick={handleBulkApply}
               disabled={bulkTagMutation.isPending}
-              title="Apply changes"
+              title={t("tooltips.applyChanges")}
             >
               <CheckCircle2 size={20} />
             </button>
@@ -1198,7 +1198,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <button
                 className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all"
                 onClick={handleBulkDelete}
-                title="Delete selected"
+                title={t("tooltips.deleteSelected")}
               >
                 <Trash2 size={18} />
               </button>
@@ -1206,7 +1206,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <button
               className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
               onClick={() => setSelectedIds(new Set())}
-              title="Cancel selection"
+              title={t("tooltips.cancelSelection")}
             >
               <X size={20} />
             </button>

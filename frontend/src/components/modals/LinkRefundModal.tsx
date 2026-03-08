@@ -151,7 +151,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                       ),
                     );
                   }}
-                  className={`w-full p-4 rounded-xl border text-left transition-all ${
+                  className={`w-full p-4 rounded-xl border text-start transition-all ${
                     selectedPendingId === pending.id
                       ? "border-emerald-500 bg-emerald-500/10"
                       : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"

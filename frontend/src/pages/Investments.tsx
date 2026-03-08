@@ -202,7 +202,7 @@ function InvestmentCard({
               <button
                 onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
                 className="hover:text-white transition-all"
-                title="Edit close date"
+                title={t("tooltips.editCloseDate")}
               >
                 <Pencil size={10} />
               </button>
@@ -950,7 +950,7 @@ export function Investments() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                              <th className="text-left py-2 font-bold">{t("common.date")}</th>
+                              <th className="text-start py-2 font-bold">{t("common.date")}</th>
                               <th className="text-right py-2 font-bold">{t("investments.balance")}</th>
                               <th className="text-center py-2 font-bold">{t("investments.source")}</th>
                               <th className="text-right py-2 font-bold"></th>

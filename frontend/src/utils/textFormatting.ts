@@ -56,13 +56,33 @@ const PROVIDER_LABELS: Record<string, string> = {
   hafenix: "HaPhoenix",
 };
 
+const PROVIDER_LABELS_HE: Record<string, string> = {
+  hapoalim: "הפועלים",
+  leumi: "לאומי",
+  discount: "דיסקונט",
+  mizrahi: "מזרחי טפחות",
+  onezero: "One Zero",
+  isracard: "ישראכרט",
+  max: "מקס",
+  cal: "כאל",
+  amex: "אמריקן אקספרס",
+  beyahad: "ביחד בשבילך",
+  behatsdaa: "בהצדעה",
+  beinleumi: "הבינלאומי",
+  massad: "מסד",
+  yahav: "יהב",
+  fibi: "הבינלאומי הראשון",
+  hafenix: "הפניקס",
+};
+
 export function humanizeService(service: string): string {
   const key = SERVICE_KEY_MAP[service];
   return key ? i18n.t(`services.${key}`) : toTitleCase(service.replace(/_/g, " "));
 }
 
 export function humanizeProvider(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? toTitleCase(provider);
+  const labels = i18n.language === "he" ? PROVIDER_LABELS_HE : PROVIDER_LABELS;
+  return labels[provider] ?? toTitleCase(provider);
 }
 
 export function humanizeAccountType(service: string): string {

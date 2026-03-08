@@ -100,7 +100,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
         <button
           onClick={() => setShowAddForm(!showAddForm)}
           className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
-          title="Add cash envelope"
+          title={t("tooltips.addCashEnvelope")}
         >
           <Plus size={20} />
         </button>
@@ -159,7 +159,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                         handleEdit(balance.account_name, balance.balance)
                       }
                       className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors"
-                      title="Edit balance"
+                      title={t("tooltips.editBalance")}
                     >
                       <DollarSign size={16} className="text-amber-500" />
                     </button>
@@ -174,7 +174,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                         }
                       }}
                       className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors"
-                      title="Delete envelope"
+                      title={t("tooltips.deleteEnvelope")}
                     >
                       <Trash2 size={16} className="text-red-500" />
                     </button>
@@ -364,7 +364,7 @@ export function Transactions() {
                 return uncategorizedCount > 0 && (
                   <button
                     onClick={() => setFilterOnlyUntagged(true)}
-                    className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-500/20 transition-colors text-left mb-4"
+                    className="w-full bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-500/20 transition-colors text-start mb-4"
                   >
                     <strong>{t("transactions.uncategorizedCount", { count: uncategorizedCount })}</strong> — {t("transactions.clickToFilter")}
                   </button>

@@ -162,8 +162,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               {editingRuleId !== null ? t("modals.ruleManager.editRule") : t("modals.ruleManager.createNewRule")}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+              <div className="space-y-1.5 text-start">
+                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ms-1">
                   {t("modals.ruleManager.ruleName")}
                 </label>
                 <input
@@ -176,8 +176,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   }
                 />
               </div>
-              <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+              <div className="space-y-1.5 text-start">
+                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ms-1">
                   {t("modals.ruleManager.contains")}
                 </label>
                 <input
@@ -195,8 +195,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+              <div className="space-y-1.5 text-start">
+                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ms-1">
                   {t("common.category")}
                 </label>
                 <SelectDropdown
@@ -213,8 +213,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   size="sm"
                 />
               </div>
-              <div className="space-y-1.5 text-left">
-                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ml-1">
+              <div className="space-y-1.5 text-start">
+                <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest ms-1">
                   {t("common.tag")}
                 </label>
                 <SelectDropdown

@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface SemiGaugeProps {
     spent: number;
     budget: number;
@@ -24,6 +26,7 @@ export function SemiGauge({
     size = 220,
     className,
 }: SemiGaugeProps) {
+    const { t } = useTranslation();
     const percentage = budget > 0 ? (spent / budget) * 100 : 0;
     const color = getGaugeColor(percentage);
 
@@ -100,7 +103,7 @@ export function SemiGauge({
                     fill="var(--text-muted)"
                     fontSize={14}
                 >
-                    of {formatCurrency(budget)}
+                    {t("common.of")} {formatCurrency(budget)}
                 </text>
             </svg>
 
@@ -109,7 +112,7 @@ export function SemiGauge({
                 className="text-center text-sm font-medium -mt-1"
                 style={{ color }}
             >
-                {Math.round(percentage)}% used
+                {Math.round(percentage)}% {t("common.used")}
             </p>
         </div>
     );

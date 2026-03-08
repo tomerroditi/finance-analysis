@@ -36,8 +36,10 @@ import { SankeyChart } from "../components/SankeyChart";
 import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
-import { isToday, isYesterday, format } from "date-fns";
+import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
+import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
+import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 
@@ -297,7 +299,7 @@ function BudgetSpendingGauge({
 
   const isCurrentMonth = year === currentYear && month === currentMonth;
   const monthDate = new Date(year, month - 1);
-  const monthName = format(monthDate, "MMMM yyyy");
+  const monthName = formatMonthYear(monthDate);
   const daysInMonth = new Date(year, month, 0).getDate();
   const daysRemaining = daysInMonth - now.getDate();
 
@@ -532,7 +534,7 @@ function BudgetSpendingGauge({
                   <button
                     onClick={() => setIsProjectModalOpen(true)}
                     className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--primary)] transition-colors shrink-0"
-                    title="Add new project"
+                    title={t("tooltips.addNewProject")}
                   >
                     <Plus size={16} />
                   </button>
@@ -606,9 +608,9 @@ interface Transaction {
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
-  if (isToday(d)) return "Today";
-  if (isYesterday(d)) return "Yesterday";
-  return format(d, "d MMM");
+  if (isToday(d)) return i18n.t("common.today");
+  if (isYesterday(d)) return i18n.t("common.yesterday");
+  return formatShortDate(d);
 }
 
 const TRANSACTIONS_PAGE_SIZE = 20;
@@ -879,7 +881,7 @@ function RecentTransactionsFeed({
                         {matchedRule && (
                           <span
                             className="inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-px rounded-full bg-violet-500/15 text-violet-400 text-[10px]"
-                            title={`Matched rule: ${matchedRule.name}`}
+                            title={`${t("tooltips.matchedRule")}: ${matchedRule.name}`}
                           >
                             <Wand2 size={9} />
                             {matchedRule.name}
@@ -890,27 +892,27 @@ function RecentTransactionsFeed({
                       <div className="grid grid-cols-3 flex-shrink-0 w-[75px]">
                         <button
                           className={`w-[25px] h-[25px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
-                          title="Edit category / tag"
+                          title={t("tooltips.editCategoryTag")}
                           onClick={() => setEditingTxKey(isEditing ? null : txKey)}
                         >
                           <Tag size={13} />
                         </button>
                         <button
                           className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
-                          title="Split transaction"
+                          title={t("tooltips.splitTransaction")}
                           onClick={() => setSplittingTransaction(tx)}
                         >
                           <Split size={13} />
                         </button>
                         {tx.amount < 0 ? (
                           tx.pending_refund_id ? (
-                            <span className="w-[25px] h-[25px] flex items-center justify-center text-amber-400" title="Pending refund">
+                            <span className="w-[25px] h-[25px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
                               <RefreshCw size={13} className="animate-pulse" />
                             </span>
                           ) : (
                             <button
                               className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
-                              title="Mark as pending refund"
+                              title={t("tooltips.markPendingRefund")}
                               onClick={() => markPendingMutation.mutate(tx)}
                               disabled={markPendingMutation.isPending}
                             >
@@ -920,7 +922,7 @@ function RecentTransactionsFeed({
                         ) : (
                           <button
                             className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                            title="Link as refund to pending"
+                            title={t("tooltips.linkAsRefund")}
                             onClick={() => setLinkingTransaction(tx)}
                           >
                             <Link2 size={13} />

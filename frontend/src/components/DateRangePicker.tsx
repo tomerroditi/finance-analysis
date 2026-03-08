@@ -8,6 +8,8 @@ import {
   subMonths,
   format,
 } from "date-fns";
+import { he } from "date-fns/locale/he";
+import i18n from "../i18n";
 import { Calendar as CalendarIcon, ChevronDown } from "lucide-react";
 
 export type DateRange = {
@@ -64,7 +66,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
     },
   ];
 
-  const formatDate = (d: Date | null) => (d ? format(d, "dd/MM/yyyy") : "...");
+  const formatDate = (d: Date | null) => (d ? format(d, "dd/MM/yyyy", i18n.language === "he" ? { locale: he } : undefined) : "...");
 
   return (
     <div className="relative">
@@ -101,7 +103,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
                     onChange(preset.getValue());
                     setIsOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-[var(--surface-light)] transition-colors"
+                  className="w-full text-start px-3 py-2 text-sm rounded-lg hover:bg-[var(--surface-light)] transition-colors"
                 >
                   {preset.label}
                 </button>

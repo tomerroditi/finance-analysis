@@ -902,7 +902,7 @@ export function Categories() {
                           newCategory: cat,
                         })
                       }
-                      className="w-full text-left px-4 py-3 rounded-xl bg-[var(--surface-base)] hover:bg-[var(--primary)]/10 border border-transparent hover:border-[var(--primary)]/30 transition-all font-bold group"
+                      className="w-full text-start px-4 py-3 rounded-xl bg-[var(--surface-base)] hover:bg-[var(--primary)]/10 border border-transparent hover:border-[var(--primary)]/30 transition-all font-bold group"
                     >
                       <div className="flex items-center justify-between">
                         <span>{cat}</span>
