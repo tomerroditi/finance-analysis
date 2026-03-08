@@ -425,9 +425,12 @@ class TransactionsRepository:
             return
 
         # Prepare list of model instances
+        model_columns = {c.name for c in repo.model.__table__.columns}
+        extra_columns = model_columns - TransactionBase.BASE_COLUMN_NAMES
+
         instances = []
         for _, row in new_rows.iterrows():
-            instance = repo.model(
+            kwargs = dict(
                 id=row["id"],
                 date=row["date"],
                 provider=row["provider"],
@@ -441,6 +444,10 @@ class TransactionsRepository:
                 type=row.get("type", "normal"),
                 status=row.get("status", "completed"),
             )
+            for col in extra_columns:
+                if col in row:
+                    kwargs[col] = row.get(col)
+            instance = repo.model(**kwargs)
             instances.append(instance)
 
         self.db.add_all(instances)

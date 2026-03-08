@@ -55,6 +55,13 @@ class TransactionBase(TimestampMixin):
     type = Column(String, default="normal")  # 'normal', 'split_parent'
     status = Column(String, default="completed")
 
+    # Column names defined by this base mixin (excluding TimestampMixin).
+    # Used by TransactionsRepository to detect model-specific extra columns.
+    BASE_COLUMN_NAMES = {
+        "unique_id", "id", "date", "provider", "account_name", "account_number",
+        "description", "amount", "category", "tag", "source", "type", "status",
+    }
+
 
 class BankTransaction(Base, TransactionBase):
     """ORM model for bank account transactions (``bank_transactions`` table)."""
@@ -81,9 +88,15 @@ class ManualInvestmentTransaction(Base, TransactionBase):
 
 
 class InsuranceTransaction(Base, TransactionBase):
-    """ORM model for insurance transactions (``insurance_transactions`` table)."""
+    """ORM model for insurance transactions (``insurance_transactions`` table).
+
+    Extends TransactionBase with a ``memo`` column for deposit breakdowns
+    (employee / employer / compensation).
+    """
 
     __tablename__ = Tables.INSURANCE.value
+
+    memo = Column(String, nullable=True)
 
 
 class SplitTransaction(Base, TimestampMixin):
