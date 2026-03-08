@@ -1002,7 +1002,7 @@ class ProjectBudgetService(BudgetService):
             New overall spending limit for the project.
         """
         rules = self.get_rules_for_project(category)
-        total_rule = rules.loc[rules[TAGS] == [ALL_TAGS]]
+        total_rule = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
         rule_id = int(total_rule.iloc[0][ID])
         self.update_rule(rule_id, amount=total_budget)
 
