@@ -4,7 +4,7 @@
     {
       "label": "Backend",
       "type": "shell",
-      "command": "poetry run uvicorn backend.main:app --reload --port 8000",
+      "command": "source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
