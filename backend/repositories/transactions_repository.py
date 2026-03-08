@@ -340,6 +340,14 @@ class TransactionsRepository:
 
     unique_columns = ["id", "provider", "date", "amount"]
 
+    # Services excluded from aggregate cashflow calculations (CC double-counts
+    # bank debits; insurance deposits are not regular expenses).
+    _CASHFLOW_EXCLUDED = [Tables.CREDIT_CARD.value, Tables.INSURANCE.value]
+
+    # Services excluded from itemized category breakdowns (insurance deposits
+    # are not regular expenses, but CC items are kept for per-category detail).
+    _ITEMIZED_EXCLUDED = [Tables.INSURANCE.value]
+
     def __init__(self, db: Session):
         """Initialize the repository with sub-repositories for each transaction type.
 
@@ -485,6 +493,42 @@ class TransactionsRepository:
             raise ValueError(
                 f"service must be 'cash' or 'manual_investments'. Got '{service}'"
             )
+
+    def get_cashflow_transactions(self, **kwargs) -> pd.DataFrame:
+        """Get transactions for aggregate totals (income, expenses, balances).
+
+        Excludes credit card items (already captured as bank CC bill payments)
+        and insurance deposits (not regular expenses).
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded to ``get_table`` (e.g. ``include_split_parents``).
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered transactions suitable for cashflow aggregations.
+        """
+        return self.get_table(exclude_services=self._CASHFLOW_EXCLUDED, **kwargs)
+
+    def get_itemized_transactions(self, **kwargs) -> pd.DataFrame:
+        """Get transactions for category breakdowns with itemized CC detail.
+
+        Keeps credit card items for per-category analysis but excludes
+        insurance deposits.
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded to ``get_table`` (e.g. ``include_split_parents``).
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered transactions suitable for category-level analysis.
+        """
+        return self.get_table(exclude_services=self._ITEMIZED_EXCLUDED, **kwargs)
 
     def get_table(
         self,
