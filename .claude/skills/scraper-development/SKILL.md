@@ -104,6 +104,61 @@ If you're not 100% certain an action is safe, **you MUST ask the user before cli
 
 ---
 
+## Exploration Techniques for SPAs
+
+### sessionStorage / localStorage Mining
+
+Many Israeli financial sites are Angular/React SPAs that cache all API responses in browser storage. This is often **easier and more reliable** than parsing DOM or intercepting network requests.
+
+**How to check:**
+```javascript
+// During exploration, run via browser_evaluate:
+Object.keys(JSON.parse(sessionStorage.getItem('appState') || '{}'))
+// Or check all keys:
+Object.keys(sessionStorage)
+Object.keys(localStorage)
+```
+
+**Why this is valuable:**
+- Data is pre-structured JSON — no DOM parsing needed
+- All API responses are cached, even from pages you haven't visited yet
+- Data persists as you navigate between pages within the SPA
+- **Caveat:** Detail pages for individual accounts may **overwrite** the same sessionStorage key when you navigate between accounts — extract data before navigating to the next account
+
+### Navigation Timing for SPAs
+
+- Use `wait_until="domcontentloaded"` instead of `networkidle` for Angular/React SPAs — persistent WebSocket/polling connections prevent `networkidle` from ever firing
+- After navigation, use `page.wait_for_function()` to wait for specific sessionStorage keys to populate rather than waiting for DOM elements
+- The default `load` event is often too slow for SPAs as well
+
+---
+
+## Anti-Bot Detection
+
+### Human-Like Behavior (Required for Most Sites)
+
+Many Israeli financial sites detect bot behavior and block login. The `BrowserScraper` base class provides shared methods — **always use them during login flows:**
+
+- `self._human_delay(min_sec, max_sec)` — random sleep between interactions
+- `self._type_like_human(selector, text)` — character-by-character typing with random delays (50-150ms per char)
+- `self._human_mouse_move()` — random mouse movement to simulate human presence
+- `self._human_scroll()` — random scroll to simulate reading
+
+**Login flow pattern:**
+1. Navigate with `domcontentloaded`
+2. Mouse move + scroll before interacting (looks like a human scanning the page)
+3. Click field, delay, type like human
+4. Delay between fields
+5. Wait for submit button to become enabled, then submit
+
+### Common Login Pitfalls
+
+- **Timeout budget exhaustion:** If you use `networkidle` for navigation, it may consume 15+ seconds of a 30-second timeout, leaving insufficient time for subsequent element waits. Always use `domcontentloaded` + explicit element waits.
+- **Button enabling:** Many sites disable the submit button until all fields are valid. Wait for `aria-disabled` to change or check for `:not([disabled])` state.
+- **OTP redirects:** 2FA flows often redirect to a different subdomain (e.g., `login.fnx.co.il`). Wait for URL changes and new selectors.
+
+---
+
 ## Phase 2: Code Generation
 
 ### Preparation
@@ -113,23 +168,34 @@ Before writing code, read these reference files:
 - `scraper/base/base_scraper.py` (lifecycle and models)
 - `scraper/models/credentials.py` (ProviderConfig pattern)
 - `scraper/models/transaction.py` (Transaction dataclass)
-- 2 existing providers similar to the target (e.g., `hapoalim.py` for BrowserScraper, `onezero.py` for ApiScraper)
+- `scraper/models/account.py` (AccountResult dataclass — supports optional `metadata` dict)
+- 2 existing providers similar to the target (e.g., `hapoalim.py` for BrowserScraper, `onezero.py` for ApiScraper, `hafenix.py` for insurance/SPA scraping)
 - `scraper/__init__.py` (factory registration)
 
 ### Code to Generate
 
-1. **Provider class** in `scraper/providers/banks/<name>.py` or `scraper/providers/credit_cards/<name>.py`:
+1. **Provider class** in `scraper/providers/banks/<name>.py`, `scraper/providers/credit_cards/<name>.py`, or `scraper/providers/insurances/<name>.py`:
    - Subclass `BrowserScraper` or `ApiScraper`
    - Implement `login()` (or `get_login_options()` for BrowserScraper) and `fetch_data()`
    - Return `list[AccountResult]` with properly constructed `Transaction` objects
+   - For insurance scrapers: populate `AccountResult.metadata` dict with per-account metadata (investment tracks, commissions, etc.) — the backend adapter persists this to the `insurance_accounts` table
    - Follow the exact patterns from reference providers
 
 2. **Register the provider:**
    - Add `ProviderConfig` entry to `PROVIDER_CONFIGS` in `scraper/models/credentials.py`
    - Add factory entry in `scraper/__init__.py`
-   - Add export in `scraper/providers/banks/__init__.py` or `credit_cards/__init__.py`
+   - Add export in `scraper/providers/banks/__init__.py`, `credit_cards/__init__.py`, or `insurances/__init__.py`
 
 3. **Test stub** in `tests/backend/unit/test_scraper/` following existing test patterns
+
+### Multi-Account Providers
+
+For providers with multiple internal accounts (e.g., pension + keren hishtalmut under one login):
+
+1. **Discover accounts** from a summary/overview page first
+2. **Navigate account-by-account** to each detail page sequentially
+3. **Extract before moving on** — SPA storage keys often get overwritten when navigating to the next account
+4. Return one `AccountResult` per internal account, each with its own transactions and metadata
 
 ### Code Quality
 
@@ -139,3 +205,4 @@ Before writing code, read these reference files:
 - Handle pagination if the site paginates results
 - Handle date range filtering (scraper receives start/end dates via `ScraperOptions`)
 - Proper error handling using `ScrapingResult` error types
+- Use human-like behavior methods from `BrowserScraper` base class during login flows
