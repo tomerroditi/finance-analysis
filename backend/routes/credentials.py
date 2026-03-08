@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.constants.providers import LoginFields
+from backend.constants.providers import LoginFields, Services
 from backend.dependencies import get_database
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
@@ -122,7 +122,7 @@ async def delete_credential(
     creds_service = CredentialsService(db)
     try:
         creds_service.delete_credential(service, provider, account_name)
-        if service == "banks":
+        if service == Services.BANK.value:
             balance_service = BankBalanceService(db)
             balance_service.delete_for_account(provider, account_name)
         return {"status": "success"}

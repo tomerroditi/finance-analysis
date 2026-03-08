@@ -130,7 +130,7 @@ class BankBalanceService:
     def _validate_scrape_is_today(self, provider: str, account_name: str) -> None:
         """Validate that last successful scrape for this account is today."""
         last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
-            service_name="banks",
+            service_name=Services.BANK.value,
             provider_name=provider,
             account_name=account_name,
         )

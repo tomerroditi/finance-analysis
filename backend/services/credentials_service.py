@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
-from backend.constants.providers import Fields, bank_providers, cc_providers, insurance_providers
+from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 
 # In-memory cache for credentials
@@ -249,7 +249,11 @@ class CredentialsService:
         banks = [p for p in bank_providers if "test_" not in p]
         ccs = [p for p in cc_providers if "test_" not in p]
         insurances = [p for p in insurance_providers if "test_" not in p]
-        return {"banks": banks, "credit_cards": ccs, "insurances": insurances}
+        return {
+            Services.BANK.value: banks,
+            Services.CREDIT_CARD.value: ccs,
+            Services.INSURANCE.value: insurances,
+        }
 
     def delete_credential(self, service: str, provider: str, account_name: str) -> None:
         """
@@ -288,15 +292,15 @@ class CredentialsService:
                 self._invalidate_cache()
 
         ensure_dummy_cred(
-            "banks", "hapoalim", "Main Account",
+            Services.BANK.value, "hapoalim", "Main Account",
             {Fields.USER_CODE.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            "credit_cards", "max", "Family Card",
+            Services.CREDIT_CARD.value, "max", "Family Card",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            "credit_cards", "visa cal", "Online Shopping",
+            Services.CREDIT_CARD.value, "visa cal", "Online Shopping",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
 

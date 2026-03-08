@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.constants.providers import Services
 from backend.dependencies import get_database
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.transactions_service import TransactionsService
@@ -77,7 +78,9 @@ async def get_transactions(
     repo = TransactionsRepository(db)
     try:
         df = repo.get_table(
-            service=service, include_split_parents=include_split_parents
+            service=service,
+            include_split_parents=include_split_parents,
+            exclude_services=[Services.INSURANCE.value],
         )
         return df.to_dict(orient="records")
     except Exception as e:

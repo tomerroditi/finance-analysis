@@ -19,6 +19,7 @@ from datetime import date
 import pandas as pd
 
 from backend.config import AppConfig
+from backend.constants.providers import Services
 from backend.constants.tables import Tables, TransactionsTableFields
 from backend.database import get_db_context
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
@@ -43,9 +44,9 @@ def _import_scraper_module(name: str):
 
 # Maps frontend service names to DB table / source column values.
 _SERVICE_TO_TABLE = {
-    "credit_cards": Tables.CREDIT_CARD.value,
-    "banks": Tables.BANK.value,
-    "insurances": Tables.INSURANCE.value,
+    Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
+    Services.BANK.value: Tables.BANK.value,
+    Services.INSURANCE.value: Tables.INSURANCE.value,
 }
 
 
@@ -71,7 +72,7 @@ def create_adapter(
     ScraperAdapter
         An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
     """
-    cls = InsuranceScraperAdapter if service_name == "insurances" else ScraperAdapter
+    cls = InsuranceScraperAdapter if service_name == Services.INSURANCE.value else ScraperAdapter
     return cls(service_name, provider_name, account_name, credentials, start_date, process_id)
 
 
@@ -224,7 +225,7 @@ class ScraperAdapter:
             DummyCreditCardScraper = _dummy_mod.DummyCreditCardScraper
             DummyRegularScraper = _dummy_mod.DummyRegularScraper
 
-            if self.service_name == "credit_cards":
+            if self.service_name == Services.CREDIT_CARD.value:
                 return DummyCreditCardScraper(self.provider_name, self.credentials, options)
             return DummyRegularScraper(self.provider_name, self.credentials, options)
 
@@ -347,7 +348,7 @@ class ScraperAdapter:
 
     def _recalculate_bank_balances(self) -> None:
         """Recalculate bank balance after a successful bank scrape."""
-        if self.service_name != "banks":
+        if self.service_name != Services.BANK.value:
             return
         try:
             with get_db_context() as db:

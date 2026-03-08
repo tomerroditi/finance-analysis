@@ -8,7 +8,7 @@ from backend.constants.categories import (
     LIABILITIES_CATEGORY,
     IncomeCategories,
 )
-from backend.constants.tables import TransactionsTableFields
+from backend.constants.tables import Tables, TransactionsTableFields
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -325,7 +325,7 @@ class AnalysisService:
 
         # Calculate CC gap before filtering out Credit Cards category
         bank_cc_payments = abs(df[df["category"] == CREDIT_CARDS]["amount"].sum())
-        itemized_cc_total = abs(df[df["source"] == "credit_card_transactions"]["amount"].sum())
+        itemized_cc_total = abs(df[df["source"] == Tables.CREDIT_CARD.value]["amount"].sum())
         cc_gap = bank_cc_payments - itemized_cc_total
 
         df = df[df['category'] != CREDIT_CARDS]
@@ -532,7 +532,7 @@ class AnalysisService:
         months = sorted(df["month"].unique())
 
         # --- Cash transactions: separate from main df for cash balance line ---
-        cash_mask = df["source"] == "cash_transactions"
+        cash_mask = df["source"] == Tables.CASH.value
         cash_df = df[cash_mask]
 
         # --- Investment transactions: fetch once, filter per month in-memory ---

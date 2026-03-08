@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.constants.providers import Services
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -386,7 +387,7 @@ class InvestmentsService:
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
-        all_inv_txns = self.transactions_repo.get_table("manual_investments")
+        all_inv_txns = self.transactions_repo.get_table(Services.MANUAL_INVESTMENTS.value)
         if all_inv_txns.empty:
             prior_wealth = 0.0
         else:

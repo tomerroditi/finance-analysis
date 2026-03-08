@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
         from backend.repositories.investments_repository import InvestmentsRepository
         from backend.repositories.transactions_repository import TransactionsRepository
         from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
+        from backend.constants.providers import Services
         from backend.constants.tables import TransactionsTableFields
 
         engine = get_engine()
@@ -104,7 +105,7 @@ async def lifespan(app: FastAPI):
         # 2. Seed prior_wealth_amount for every investment from its transactions
         investments_df = investments_repo.get_all_investments(include_closed=True)
         if not investments_df.empty:
-            txns_df = txns_repo.get_table("manual_investments")
+            txns_df = txns_repo.get_table(Services.MANUAL_INVESTMENTS.value)
             for _, inv in investments_df.iterrows():
                 if not txns_df.empty:
                     mask = (txns_df["category"] == inv["category"]) & (

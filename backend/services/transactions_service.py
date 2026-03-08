@@ -77,9 +77,9 @@ class TransactionsService:
         bool
             True if the transaction was added successfully, False otherwise.
         """
-        if service == "cash":
+        if service == Services.CASH.value:
             tx = CashTransaction(**transaction)
-        elif service == "manual_investments":
+        elif service == Services.MANUAL_INVESTMENTS.value:
             tx = ManualInvestmentTransaction(**transaction)
         else:
             raise ValueError(
@@ -245,11 +245,11 @@ class TransactionsService:
             Merged DataFrame with all transaction sources and prior-wealth rows.
             Returns an empty DataFrame if no data exists.
         """
-        cc_data = self.get_table_for_analysis("credit_cards", include_split_parents)
-        bank_data = self.get_table_for_analysis("banks", include_split_parents)
-        cash_data = self.get_table_for_analysis("cash", include_split_parents)
+        cc_data = self.get_table_for_analysis(Services.CREDIT_CARD.value, include_split_parents)
+        bank_data = self.get_table_for_analysis(Services.BANK.value, include_split_parents)
+        cash_data = self.get_table_for_analysis(Services.CASH.value, include_split_parents)
         manual_investments_data = self.get_table_for_analysis(
-            "manual_investments", include_split_parents
+            Services.MANUAL_INVESTMENTS.value, include_split_parents
         )
         dfs = [cc_data, bank_data, cash_data, manual_investments_data]
 
@@ -313,7 +313,7 @@ class TransactionsService:
             rows.append({
                 TransactionsTableFields.ID.value: f"inv_pw_{inv['id']}",
                 TransactionsTableFields.DATE.value: inv.get("created_date", ""),
-                TransactionsTableFields.PROVIDER.value: "manual_investments",
+                TransactionsTableFields.PROVIDER.value: Services.MANUAL_INVESTMENTS.value,
                 TransactionsTableFields.ACCOUNT_NAME.value: inv["name"],
                 TransactionsTableFields.ACCOUNT_NUMBER.value: None,
                 TransactionsTableFields.DESCRIPTION.value: f"Prior Wealth ({inv['name']})",
@@ -451,9 +451,10 @@ class TransactionsService:
         ValueError
             If ``service`` is not one of the supported values.
         """
-        if service not in ["credit_cards", "banks", "cash"]:
+        valid = [Services.CREDIT_CARD.value, Services.BANK.value, Services.CASH.value]
+        if service not in valid:
             raise ValueError(
-                f"service must be one of 'credit_cards', 'banks', 'cash'. Got '{service}'"
+                f"service must be one of {valid}. Got '{service}'"
             )
         return self.transactions_repository.get_table(service)
 
@@ -481,11 +482,11 @@ class TransactionsService:
         RuntimeError
             If the transaction could not be created.
         """
-        if service not in ["cash", "manual_investments"]:
+        if service not in [Services.CASH.value, Services.MANUAL_INVESTMENTS.value]:
             raise ValueError("Can only create cash or manual_investments transactions")
 
         # For cash transactions, always set provider to "CASH"
-        provider = "CASH" if service == "cash" else data.get("provider")
+        provider = "CASH" if service == Services.CASH.value else data.get("provider")
 
         tx = ManualTransactionDTO(
             date=datetime.combine(data["date"], datetime.min.time()),
@@ -501,11 +502,11 @@ class TransactionsService:
         if not success:
             raise RuntimeError("Failed to create transaction")
 
-        if service == "cash":
+        if service == Services.CASH.value:
             # Recalculate cash balance if this is a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
             CashBalanceService(self.db).recalculate_current_balance(data["account_name"])
-        elif service == "manual_investments":
+        elif service == Services.MANUAL_INVESTMENTS.value:
             category = data.get("category")
             tag = data.get("tag")
             if category and tag:
@@ -545,12 +546,12 @@ class TransactionsService:
         from sqlalchemy import select
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-        is_manual = source in ["cash_transactions", "manual_investment_transactions"]
+        is_manual = source in [Tables.CASH.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value]
 
         # Capture old account_name before updating — needed to recalculate the
         # old account's balance when account_name changes on a cash transaction.
         old_account_name: str | None = None
-        if source == "cash_transactions" and updates.get("account_name") is not None:
+        if source == Tables.CASH.value and updates.get("account_name") is not None:
             tx_before = self.transactions_repository.db.execute(
                 select(target_repo.model).where(
                     target_repo.model.unique_id == unique_id
@@ -570,7 +571,7 @@ class TransactionsService:
             if updates.get("amount") is not None:
                 filtered_updates["amount"] = updates["amount"]
             # For cash transactions, always set provider to "CASH"
-            if source == "cash_transactions":
+            if source == Tables.CASH.value:
                 filtered_updates["provider"] = "CASH"
             elif updates.get("provider") is not None:
                 filtered_updates["provider"] = updates["provider"]
@@ -588,7 +589,7 @@ class TransactionsService:
         result = target_repo.update_transaction_by_unique_id(unique_id, filtered_updates)
 
         # Recalculate cash balance(s) when a cash transaction is updated.
-        if result and source == "cash_transactions":
+        if result and source == Tables.CASH.value:
             from backend.services.cash_balance_service import CashBalanceService
             cash_balance_svc = CashBalanceService(self.db)
 
@@ -637,7 +638,7 @@ class TransactionsService:
         ValueError
             If the transaction is not found or deletion fails.
         """
-        if source not in ["cash_transactions", "manual_investment_transactions"]:
+        if source not in [Tables.CASH.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value]:
             raise PermissionError(
                 f"Deletion of {source} transactions is prohibited"
             )
@@ -664,7 +665,7 @@ class TransactionsService:
 
         inv_category = None
         inv_tag = None
-        if source == "manual_investment_transactions":
+        if source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
             inv_category = getattr(tx_record, "category", None)
             inv_tag = getattr(tx_record, "tag", None)
 
@@ -672,11 +673,11 @@ class TransactionsService:
         if not success:
             raise ValueError("Transaction not found or deletion failed")
 
-        if source == "cash_transactions":
+        if source == Tables.CASH.value:
             # Recalculate cash balance if this was a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
             CashBalanceService(self.db).recalculate_current_balance(account_name)
-        elif source == "manual_investment_transactions" and inv_category and inv_tag:
+        elif source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value and inv_category and inv_tag:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
 
@@ -759,7 +760,7 @@ class TransactionsService:
         category_col = TransactionsTableFields.CATEGORY.value
         untagged = transactions[transactions[category_col].isna()]
 
-        if account_number and service == "banks":
+        if account_number and service == Services.BANK.value:
             account_col = TransactionsTableFields.ACCOUNT_NUMBER.value
             untagged = untagged[untagged[account_col] == account_number]
 
@@ -821,7 +822,7 @@ class TransactionsService:
         self,
         service: Literal[
             "credit_cards", "banks", "cash", "manual_investments"
-        ] = "credit_cards",
+        ] = Services.CREDIT_CARD.value,
         include_split_parents: bool = False,
     ) -> pd.DataFrame:
         """
@@ -874,11 +875,11 @@ class TransactionsService:
 
         split_df = split_df[
             split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
-                df[TransactionsTableFields.ID.value]
+                df[TransactionsTableFields.UNIQUE_ID.value]
             )
         ]
         split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
-        mask = df[TransactionsTableFields.ID.value].isin(split_ids)
+        mask = df[TransactionsTableFields.UNIQUE_ID.value].isin(split_ids)
 
         if include_split_parents:
             # Include parent transactions alongside split children
@@ -895,7 +896,7 @@ class TransactionsService:
         for id_, split_group in split_df.groupby(
             SplitTransactionsTableFields.TRANSACTION_ID.value
         ):
-            orig_row = df[df[TransactionsTableFields.ID.value] == id_]
+            orig_row = df[df[TransactionsTableFields.UNIQUE_ID.value] == id_]
             if orig_row.empty:
                 continue
             for _, split in split_group.iterrows():
