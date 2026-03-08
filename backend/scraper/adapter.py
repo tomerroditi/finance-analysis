@@ -49,6 +49,32 @@ _SERVICE_TO_TABLE = {
 }
 
 
+def create_adapter(
+    service_name: str,
+    provider_name: str,
+    account_name: str,
+    credentials: dict,
+    start_date: date,
+    process_id: int,
+) -> "ScraperAdapter":
+    """Create the appropriate adapter for the given service type.
+
+    Parameters
+    ----------
+    service_name : str
+        Service type (``"banks"``, ``"credit_cards"``, ``"insurances"``).
+    provider_name, account_name, credentials, start_date, process_id
+        Forwarded to the adapter constructor.
+
+    Returns
+    -------
+    ScraperAdapter
+        An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
+    """
+    cls = InsuranceScraperAdapter if service_name == "insurances" else ScraperAdapter
+    return cls(service_name, provider_name, account_name, credentials, start_date, process_id)
+
+
 class ScraperAdapter:
     """Bridges the scraper framework to the backend services pipeline.
 

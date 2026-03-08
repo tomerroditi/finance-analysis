@@ -8,7 +8,7 @@ from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.scraper import InsuranceScraperAdapter, ScraperAdapter, is_2fa_required
+from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
 
 _tfa_scrapers_waiting: Dict[str, ScraperAdapter] = {}
 
@@ -139,8 +139,7 @@ class ScrapingService:
                 service, provider, account, start_date, status
             )
 
-        adapter_cls = InsuranceScraperAdapter if service == "insurances" else ScraperAdapter
-        adapter = adapter_cls(
+        adapter = create_adapter(
             service, provider, account, creds, start_date, process_id
         )
         asyncio.create_task(adapter.run())
@@ -288,8 +287,7 @@ class ScrapingService:
                 for account, acc_creds in accounts.items():
                     name = f"{service} - {provider} - {account}"
                     start = self._get_scraper_start_date(service, provider, account)
-                    cls = InsuranceScraperAdapter if service == "insurances" else ScraperAdapter
-                    adapter = cls(
+                    adapter = create_adapter(
                         service, provider, account, acc_creds, start, 0
                     )
                     if is_2fa_required(service, provider):
