@@ -104,11 +104,11 @@ class TestScrapingServiceStart:
     """Tests for starting scraping processes."""
 
     @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.ScraperAdapter")
+    @patch("backend.services.scraping_service.create_adapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_single(
-        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
     ):
         """Verify start_scraping_single returns a process_id and launches an async task."""
         mock_is_2fa.return_value = False
@@ -132,15 +132,15 @@ class TestScrapingServiceStart:
             process_id = service.start_scraping_single("banks", "hapoalim", "Main")
 
         assert process_id == 7
-        mock_adapter_cls.assert_called_once()
+        mock_create_adapter.assert_called_once()
         mock_asyncio.create_task.assert_called_once()
 
     @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.ScraperAdapter")
+    @patch("backend.services.scraping_service.create_adapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_creates_history(
-        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
     ):
         """Verify that a history record is created via get_db_context."""
         mock_is_2fa.return_value = False
@@ -170,11 +170,11 @@ class TestScrapingServiceStart:
         assert call_args[0][2] == "Acc1"
 
     @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.ScraperAdapter")
+    @patch("backend.services.scraping_service.create_adapter")
     @patch("backend.services.scraping_service.get_db_context")
     @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_2fa_adds_to_waiting(
-        self, mock_is_2fa, mock_get_db_ctx, mock_adapter_cls, mock_asyncio, service
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
     ):
         """Verify adapter is added to _tfa_scrapers_waiting when 2FA is required."""
         mock_is_2fa.return_value = True
@@ -185,7 +185,7 @@ class TestScrapingServiceStart:
         mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
         mock_history_repo.record_scrape_start.return_value = 15
 
-        mock_adapter = mock_adapter_cls.return_value
+        mock_adapter = mock_create_adapter.return_value
 
         @contextmanager
         def fake_db_context():
