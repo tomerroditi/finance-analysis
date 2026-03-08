@@ -7,6 +7,7 @@ from scraper.base import ApiScraper
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
+from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
 
 logger = logging.getLogger(__name__)
@@ -936,8 +937,8 @@ class OneZeroScraper(ApiScraper):
                     ),
                     status=TransactionStatus.COMPLETED,
                     identifier=movement["movementId"],
-                    date=movement["valueDate"],
-                    processed_date=movement["movementTimestamp"],
+                    date=utc_to_israel_date_str(movement["valueDate"]),
+                    processed_date=utc_to_israel_date_str(movement["movementTimestamp"]),
                     original_amount=amount,
                     original_currency=movement["movementCurrency"],
                     charged_amount=amount,

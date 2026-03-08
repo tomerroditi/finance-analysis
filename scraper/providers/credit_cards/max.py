@@ -1,6 +1,8 @@
 import logging
 import re
 from datetime import date, datetime
+
+from scraper.utils.dates import utc_to_israel_date_str
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -248,18 +250,16 @@ def _map_transaction(raw: dict) -> Transaction:
     purchase_date_str = raw.get("purchaseDate", "")
     payment_date_str = raw.get("paymentDate") if not is_pending else purchase_date_str
 
-    # Parse dates - Max returns ISO date strings
+    # Parse dates - Max returns ISO date strings in UTC
     try:
-        txn_date = datetime.fromisoformat(purchase_date_str.replace("Z", "+00:00"))
+        txn_date_str = utc_to_israel_date_str(purchase_date_str)
     except (ValueError, AttributeError):
-        txn_date = datetime.now()
+        txn_date_str = datetime.now().strftime("%Y-%m-%d")
 
     try:
-        processed_date = datetime.fromisoformat(
-            payment_date_str.replace("Z", "+00:00")
-        )
+        processed_date_str = utc_to_israel_date_str(payment_date_str)
     except (ValueError, AttributeError):
-        processed_date = txn_date
+        processed_date_str = txn_date_str
 
     status = TransactionStatus.PENDING if is_pending else TransactionStatus.COMPLETED
 
@@ -280,8 +280,8 @@ def _map_transaction(raw: dict) -> Transaction:
             raw.get("planName", ""),
             raw.get("planTypeId", 0),
         ),
-        date=txn_date.isoformat(),
-        processed_date=processed_date.isoformat(),
+        date=txn_date_str,
+        processed_date=processed_date_str,
         original_amount=-raw.get("originalAmount", 0),
         original_currency=raw.get("originalCurrency", SHEKEL_CURRENCY),
         charged_amount=-float(raw.get("actualPaymentAmount", 0)),

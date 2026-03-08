@@ -6,6 +6,8 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 
+from scraper.utils.dates import utc_to_israel_date_str
+
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
@@ -73,13 +75,7 @@ def _extract_transactions_from_page(
     for raw in transactions:
         date_utc = raw.get("DateUTC", "")
         try:
-            txn_date = (
-                datetime.fromisoformat(date_utc.replace("Z", "+00:00"))
-                if date_utc
-                else datetime.now()
-            )
-            txn_date = txn_date.replace(microsecond=0)
-            date_iso = txn_date.isoformat()
+            date_iso = utc_to_israel_date_str(date_utc) if date_utc else datetime.now().strftime("%Y-%m-%d")
         except (ValueError, AttributeError):
             date_iso = str(date_utc)
 

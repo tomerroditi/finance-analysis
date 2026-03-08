@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+
+from scraper.utils.dates import utc_to_israel_date_str
 from enum import Enum
 from typing import Optional
 
@@ -138,16 +140,15 @@ def _convert_parsed_data_to_transactions(
 
         purchase_date_str = txn.get("trnPurchaseDate", "")
         try:
-            purchase_date = datetime.fromisoformat(
-                purchase_date_str.replace("Z", "+00:00")
-            )
+            purchase_date_local = utc_to_israel_date_str(purchase_date_str)
         except (ValueError, AttributeError):
-            purchase_date = datetime.now()
+            purchase_date_local = datetime.now().strftime("%Y-%m-%d")
 
         if installments:
-            purchase_date = purchase_date + relativedelta(
+            base = datetime.strptime(purchase_date_local, "%Y-%m-%d")
+            purchase_date_local = (base + relativedelta(
                 months=installments.number - 1
-            )
+            )).strftime("%Y-%m-%d")
 
         charged_amount = (
             txn.get("trnAmt", 0)
@@ -159,15 +160,13 @@ def _convert_parsed_data_to_transactions(
         original_amount = txn.get("trnAmt", 0) * (1 if is_credit else -1)
 
         if is_pending_txn:
-            processed_date = purchase_date
+            processed_date_local = purchase_date_local
         else:
             deb_crd_date = txn.get("debCrdDate", "")
             try:
-                processed_date = datetime.fromisoformat(
-                    deb_crd_date.replace("Z", "+00:00")
-                )
+                processed_date_local = utc_to_israel_date_str(deb_crd_date)
             except (ValueError, AttributeError):
-                processed_date = purchase_date
+                processed_date_local = purchase_date_local
 
         txn_type = (
             TransactionType.NORMAL
@@ -182,8 +181,8 @@ def _convert_parsed_data_to_transactions(
                 if is_pending_txn
                 else TransactionStatus.COMPLETED
             ),
-            date=purchase_date.isoformat(),
-            processed_date=processed_date.isoformat(),
+            date=purchase_date_local,
+            processed_date=processed_date_local,
             original_amount=original_amount,
             original_currency=txn.get("trnCurrencySymbol", "ILS"),
             charged_amount=charged_amount,
