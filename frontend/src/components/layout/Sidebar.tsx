@@ -1,3 +1,4 @@
+import { useState, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -8,27 +9,32 @@ import {
   Database,
   ChevronLeft,
   ChevronRight,
-  Presentation,
   Shield,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { SettingsPopup } from "./SettingsPopup";
 
 const navItems = [
-  { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { path: "/transactions", icon: Receipt, label: "Transactions" },
-  { path: "/budget", icon: Wallet, label: "Budget" },
-  { path: "/categories", icon: Tags, label: "Categories" },
-  { path: "/investments", icon: TrendingUp, label: "Investments" },
-  { path: "/insurances", icon: Shield, label: "Insurance" },
-  { path: "/data-sources", icon: Database, label: "Data Sources" },
+  { path: "/", icon: LayoutDashboard, key: "dashboard" },
+  { path: "/transactions", icon: Receipt, key: "transactions" },
+  { path: "/budget", icon: Wallet, key: "budget" },
+  { path: "/categories", icon: Tags, key: "categories" },
+  { path: "/investments", icon: TrendingUp, key: "investments" },
+  { path: "/insurances", icon: Shield, key: "insurance" },
+  { path: "/data-sources", icon: Database, key: "dataSources" },
 ];
 
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
-  const { isDemoMode, toggleDemoMode, isLoading: demoLoading } = useDemoMode();
+  const { t, i18n } = useTranslation();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLButtonElement>(null);
+
+  const isRtl = i18n.language === "he";
 
   // Count uncategorized transactions
   const { data: allTransactions } = useQuery({
@@ -68,7 +74,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-[var(--surface)] border-r border-[var(--surface-light)] transition-all duration-300 z-50 ${
+      className={`fixed inset-inline-start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 ${
         sidebarOpen ? "w-64" : "w-20"
       }`}
     >
@@ -76,14 +82,16 @@ export function Sidebar() {
       <div className="h-16 flex items-center justify-between px-4 border-b border-[var(--surface-light)]">
         {sidebarOpen && (
           <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-            Finance
+            {t("sidebar.logo")}
           </span>
         )}
         <button
           onClick={toggleSidebar}
           className="p-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
         >
-          {sidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+          {sidebarOpen
+            ? (isRtl ? <ChevronRight size={20} /> : <ChevronLeft size={20} />)
+            : (isRtl ? <ChevronLeft size={20} /> : <ChevronRight size={20} />)}
         </button>
       </div>
 
@@ -102,11 +110,11 @@ export function Sidebar() {
             }
           >
             <item.icon size={20} />
-            {sidebarOpen && <span>{item.label}</span>}
+            {sidebarOpen && <span>{t(`sidebar.${item.key}`)}</span>}
             {(() => {
               const badge = getBadge(item.path);
               return badge != null ? (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+                <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
                   {badge > 99 ? "99+" : badge}
                 </span>
               ) : null;
@@ -115,40 +123,27 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Demo Mode Toggle */}
-      {!demoLoading && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[var(--surface-light)]">
-          <div
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all cursor-pointer ${
-              isDemoMode
-                ? "bg-amber-500/10 hover:bg-amber-500/20"
-                : "hover:bg-[var(--surface-light)]"
-            }`}
-            onClick={() => toggleDemoMode(!isDemoMode)}
-          >
-            <Presentation
-              size={20}
-              className={`transition-colors shrink-0 ${isDemoMode ? "text-amber-500" : "text-[var(--text-muted)]"}`}
-            />
-            {sidebarOpen && (
-              <>
-                <span
-                  className={`text-sm font-bold ${isDemoMode ? "text-amber-500" : "text-[var(--text-muted)]"}`}
-                >
-                  Demo
-                </span>
-                <div
-                  className={`ml-auto w-8 h-4 rounded-full relative transition-colors ${isDemoMode ? "bg-amber-500" : "bg-[var(--surface-light)]"}`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isDemoMode ? "left-4.5" : "left-0.5"}`}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Settings */}
+      <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)]">
+        <button
+          ref={settingsRef}
+          onClick={() => setSettingsOpen(!settingsOpen)}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
+            settingsOpen
+              ? "bg-blue-500/10 text-[var(--primary)]"
+              : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+          }`}
+        >
+          <SettingsIcon size={20} />
+          {sidebarOpen && <span className="text-sm font-medium">{t("settings.title")}</span>}
+        </button>
+      </div>
+      <SettingsPopup
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        anchorRef={settingsRef}
+        sidebarOpen={sidebarOpen}
+      />
     </aside>
   );
 }

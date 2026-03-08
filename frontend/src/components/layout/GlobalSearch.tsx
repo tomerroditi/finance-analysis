@@ -9,6 +9,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { transactionsApi, taggingApi } from "../../services/api";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const { data: transactions } = useQuery({
     queryKey: ["transactions", "search"],
@@ -139,7 +141,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search transactions, categories, or tags..."
+            placeholder={t("globalSearch.placeholder")}
             className="w-full bg-transparent pl-14 pr-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
             value={query}
             onChange={(e) => {
@@ -163,13 +165,13 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
         <div className="max-h-[60vh] overflow-y-auto p-2">
           {query.length > 0 && query.length < 2 && (
             <div className="p-8 text-center text-[var(--text-muted)] text-sm">
-              Type at least 2 characters to search...
+              {t("globalSearch.minChars")}
             </div>
           )}
 
           {query.length >= 2 && searchResults.length === 0 && (
             <div className="p-8 text-center text-[var(--text-muted)] text-sm">
-              No results found for "{query}"
+              {t("globalSearch.noResults")} "{query}"
             </div>
           )}
 
@@ -230,10 +232,9 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                 <SearchIcon size={32} />
               </div>
             </div>
-            <h3 className="text-white font-bold">Quick Search</h3>
+            <h3 className="text-white font-bold">{t("globalSearch.shortcut")}</h3>
             <p className="text-sm text-[var(--text-muted)] mt-1 max-w-xs mx-auto">
-              Search for anything across your financial dashboard. Categories,
-              tags, or specific transactions.
+              {t("globalSearch.placeholder")}
             </p>
           </div>
         )}
