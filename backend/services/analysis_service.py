@@ -124,7 +124,7 @@ class AnalysisService:
             A ``(income, expenses)`` pair where both values are non-negative.
             ``expenses`` is the absolute value of the sum of negative amounts.
         """
-        df = df[df["source"] != "credit_card_transactions"]
+        df = df[~df["source"].isin(["credit_card_transactions", "insurance_transactions"])]
 
         income_mask, investment_mask, expensses_mask = self.get_transactions_masks(df).values()
 
@@ -219,11 +219,11 @@ class AnalysisService:
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
         cash_prior_wealth = self.cash_balance_service.get_total_prior_wealth()
 
-        df = self.repo.get_table(exclude_services=["credit_card_transactions"])
+        df = self.repo.get_table(exclude_services=["credit_card_transactions", "insurance_transactions"])
 
         if df.empty:
             return []
-        
+
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
         cumulative = bank_prior_wealth + investment_prior_wealth + cash_prior_wealth
 
@@ -272,7 +272,7 @@ class AnalysisService:
             - ``refunds`` – list of ``{"category": str, "amount": float}`` dicts
               for categories with net positive amounts (refunds exceed spend).
         """
-        df = self.repo.get_table()
+        df = self.repo.get_table(exclude_services=["insurance_transactions"])
 
         if df.empty:
             return []
@@ -318,7 +318,7 @@ class AnalysisService:
             - ``links`` – list of dicts with ``source`` (int), ``target`` (int),
               ``value`` (float), and ``label`` (str).
         """
-        df = self.repo.get_table(include_split_parents=False)
+        df = self.repo.get_table(include_split_parents=False, exclude_services=["insurance_transactions"])
 
         if df.empty:
             return {"nodes": [], "links": []}
@@ -436,8 +436,8 @@ class AnalysisService:
         if df.empty:
             return []
 
-        # Exclude credit card transactions (same as other income methods)
-        df = df[df["source"] != "credit_card_transactions"]
+        # Exclude credit card and insurance transactions (same as other income methods)
+        df = df[~df["source"].isin(["credit_card_transactions", "insurance_transactions"])]
 
         if df.empty:
             return []
@@ -521,8 +521,8 @@ class AnalysisService:
         cash_prior_wealth = self.cash_balance_service.get_total_prior_wealth()
         prior_wealth_total = bank_prior_wealth + investment_prior_wealth
 
-        # --- Bank transactions (all sources except credit card) ---
-        df = self.repo.get_table(exclude_services=["credit_card_transactions"])
+        # --- Bank transactions (all sources except credit card and insurance) ---
+        df = self.repo.get_table(exclude_services=["credit_card_transactions", "insurance_transactions"])
 
         if df.empty:
             return []
