@@ -9,6 +9,7 @@ import {
   Trash2,
   Copy,
 } from "lucide-react";
+import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { BudgetProgressBar } from "../BudgetProgressBar";
@@ -222,15 +223,15 @@ export const MonthlyBudgetView: React.FC = () => {
     <div className="space-y-8">
       {/* Month Navigation */}
       <div className="flex items-center justify-between bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center gap-4">
           <button
             onClick={handlePreviousMonth}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
-            <ChevronLeft size={24} />
+            {i18n.language === "he" ? <ChevronRight size={24} /> : <ChevronLeft size={24} />}
           </button>
           <h2 className="text-2xl font-bold w-48 text-center bg-gradient-to-r from-[var(--primary)] to-blue-600 bg-clip-text text-transparent">
-            {new Date(year, month - 1).toLocaleString("default", {
+            {new Date(year, month - 1).toLocaleString(i18n.language === "he" ? "he-IL" : "en-US", {
               month: "long",
               year: "numeric",
             })}
@@ -239,7 +240,7 @@ export const MonthlyBudgetView: React.FC = () => {
             onClick={handleNextMonth}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
-            <ChevronRight size={24} />
+            {i18n.language === "he" ? <ChevronLeft size={24} /> : <ChevronRight size={24} />}
           </button>
         </div>
         <div className="flex gap-3">

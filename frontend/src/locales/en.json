@@ -275,7 +275,8 @@
     "linkRefundComingSoon": "Link Refund (Coming Soon)",
     "confirmCancelRefund": "Cancel this refund expectation?",
     "failedCancelRefund": "Failed to cancel refund",
-    "pendingRefundsFooter": "These are expenses you marked as expecting a refund"
+    "pendingRefundsFooter": "These are expenses you marked as expecting a refund",
+    "addRule": "Add Rule"
   },
   "categories": {
     "title": "Categories",
@@ -454,7 +455,16 @@
     "credentialsSecurityNote": "Credentials are stored securely in your system keychain",
     "saving": "Saving...",
     "saveChanges": "Save Changes",
-    "finishSetup": "Finish Setup"
+    "finishSetup": "Finish Setup",
+    "scrapePeriod": {
+      "auto": "Auto",
+      "weeks2": "2 Weeks",
+      "month1": "1 Month",
+      "months2": "2 Months",
+      "months3": "3 Months",
+      "months6": "6 Months",
+      "months12": "12 Months"
+    }
   },
   "insurance": {
     "title": "Insurance",
@@ -631,5 +641,30 @@
     "cash": "Cash",
     "investment": "Investment",
     "insurance": "Insurance"
+  },
+  "ruleBuilder": {
+    "description": "Description",
+    "amount": "Amount",
+    "provider": "Provider",
+    "accountName": "Account Name",
+    "service": "Service",
+    "contains": "Contains",
+    "equals": "Equals",
+    "startsWith": "Starts with",
+    "endsWith": "Ends with",
+    "greaterThan": "Greater than",
+    "lessThan": "Less than",
+    "greaterOrEqual": "Greater or equal",
+    "lessOrEqual": "Less or equal",
+    "between": "Between",
+    "andAllMatch": "AND (All match)",
+    "orAnyMatch": "OR (Any match)",
+    "condition": "Condition",
+    "group": "Group",
+    "emptyGroup": "Empty group - add conditions to start",
+    "deleteGroup": "Delete Group",
+    "value": "Value",
+    "min": "Min",
+    "max": "Max"
   }
 }

@@ -94,7 +94,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           <div className="flex gap-2">
             <input
               type="number"
-              placeholder="Min"
+              placeholder={t("ruleBuilder.min")}
               value={filters.amountMin ?? ""}
               onChange={(e) =>
                 onFilterChange({
@@ -105,7 +105,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             />
             <input
               type="number"
-              placeholder="Max"
+              placeholder={t("ruleBuilder.max")}
               value={filters.amountMax ?? ""}
               onChange={(e) =>
                 onFilterChange({

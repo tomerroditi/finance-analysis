@@ -5,6 +5,7 @@ import {
     Layers,
     FileText
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ConditionNode, ConditionType, Operator } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 
@@ -16,31 +17,32 @@ interface RuleBuilderProps {
 }
 
 const FIELDS = [
-    { value: "description", label: "Description", type: "text" },
-    { value: "amount", label: "Amount", type: "number" },
-    { value: "provider", label: "Provider", type: "text" },
-    { value: "account_name", label: "Account Name", type: "text" },
-    { value: "service", label: "Service", type: "text" },
+    { value: "description", labelKey: "description", type: "text" },
+    { value: "amount", labelKey: "amount", type: "number" },
+    { value: "provider", labelKey: "provider", type: "text" },
+    { value: "account_name", labelKey: "accountName", type: "text" },
+    { value: "service", labelKey: "service", type: "text" },
 ];
 
-const OPERATORS: Record<string, { value: string; label: string }[]> = {
+const OPERATORS: Record<string, { value: string; labelKey: string }[]> = {
     text: [
-        { value: "contains", label: "Contains" },
-        { value: "equals", label: "Equals" },
-        { value: "starts_with", label: "Starts with" },
-        { value: "ends_with", label: "Ends with" },
+        { value: "contains", labelKey: "contains" },
+        { value: "equals", labelKey: "equals" },
+        { value: "starts_with", labelKey: "startsWith" },
+        { value: "ends_with", labelKey: "endsWith" },
     ],
     number: [
-        { value: "equals", label: "Equals" },
-        { value: "gt", label: "Greater than" },
-        { value: "lt", label: "Less than" },
-        { value: "gte", label: "Greater or equal" },
-        { value: "lte", label: "Less or equal" },
-        { value: "between", label: "Between" },
+        { value: "equals", labelKey: "equals" },
+        { value: "gt", labelKey: "greaterThan" },
+        { value: "lt", labelKey: "lessThan" },
+        { value: "gte", labelKey: "greaterOrEqual" },
+        { value: "lte", labelKey: "lessOrEqual" },
+        { value: "between", labelKey: "between" },
     ],
 };
 
 export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilderProps) {
+    const { t } = useTranslation();
     const isGroup = value.type === "AND" || value.type === "OR";
 
     const handleFieldChange = (field: string) => {
@@ -86,8 +88,8 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                         <div className="w-40">
                         <SelectDropdown
                             options={[
-                                { label: "AND (All match)", value: "AND" },
-                                { label: "OR (Any match)", value: "OR" },
+                                { label: t("ruleBuilder.andAllMatch"), value: "AND" },
+                                { label: t("ruleBuilder.orAnyMatch"), value: "OR" },
                             ]}
                             value={value.type}
                             onChange={(val) => onChange({ ...value, type: val as "AND" | "OR" })}
@@ -103,19 +105,19 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                             onClick={() => addSubCondition("CONDITION")}
                             className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
-                            <Plus size={10} /> Condition
+                            <Plus size={10} /> {t("ruleBuilder.condition")}
                         </button>
                         <button
                             onClick={() => addSubCondition("AND")}
                             className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
-                            <Plus size={10} /> Group
+                            <Plus size={10} /> {t("ruleBuilder.group")}
                         </button>
                         {depth > 0 && onRemove && (
                             <button
                                 onClick={onRemove}
                                 className="p-1 rounded hover:bg-red-500/10 text-red-400"
-                                title="Delete Group"
+                                title={t("ruleBuilder.deleteGroup")}
                             >
                                 <Trash2 size={12} />
                             </button>
@@ -124,10 +126,10 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                 </div>
 
                 {/* Group Content */}
-                <div className="p-3 pl-2 space-y-2">
+                <div className="p-3 ps-2 space-y-2">
                     {(!value.subconditions || value.subconditions.length === 0) && (
                         <div className="text-center py-4 text-xs text-[var(--text-muted)] italic border border-dashed border-[var(--surface-light)] rounded-lg">
-                            Empty group - add conditions to start
+                            {t("ruleBuilder.emptyGroup")}
                         </div>
                     )}
                     {value.subconditions?.map((sub, idx) => (
@@ -166,7 +168,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
 
             <div className="w-32">
             <SelectDropdown
-                options={FIELDS.map(f => ({ label: f.label, value: f.value }))}
+                options={FIELDS.map(f => ({ label: t(`ruleBuilder.${f.labelKey}`), value: f.value }))}
                 value={value.field || "description"}
                 onChange={(val) => handleFieldChange(val)}
                 size="sm"
@@ -175,7 +177,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
 
             <div className="w-32">
             <SelectDropdown
-                options={operators.map(op => ({ label: op.label, value: op.value }))}
+                options={operators.map(op => ({ label: t(`ruleBuilder.${op.labelKey}`), value: op.value }))}
                 value={value.operator || "contains"}
                 onChange={(val) => onChange({ ...value, operator: val as Operator })}
                 size="sm"
@@ -186,7 +188,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                 <div className="flex items-center gap-1">
                     <input
                         type="number"
-                        placeholder="Min"
+                        placeholder={t("ruleBuilder.min")}
                         value={Array.isArray(value.value) ? value.value[0] : ""}
                         onChange={(e) => onChange({
                             ...value,
@@ -197,7 +199,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                     <span className="text-xs text-[var(--text-muted)]">-</span>
                     <input
                         type="number"
-                        placeholder="Max"
+                        placeholder={t("ruleBuilder.max")}
                         value={Array.isArray(value.value) ? value.value[1] : ""}
                         onChange={(e) => onChange({
                             ...value,
@@ -209,7 +211,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
             ) : (
                 <input
                     type={inputType}
-                    placeholder="Value"
+                    placeholder={t("ruleBuilder.value")}
                     value={value.value}
                     onChange={(e) => onChange({ ...value, value: inputType === 'number' ? Number(e.target.value) : e.target.value })}
                     className="flex-1 min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"

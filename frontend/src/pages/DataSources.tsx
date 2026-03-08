@@ -52,13 +52,13 @@ function formatRelativeDate(dateString: string): string {
 }
 
 const SCRAPING_PERIODS = [
-  { label: "Auto", days: null },
-  { label: "2 Weeks", days: 14 },
-  { label: "1 Month", days: 30 },
-  { label: "2 Months", days: 60 },
-  { label: "3 Months", days: 90 },
-  { label: "6 Months", days: 180 },
-  { label: "12 Months", days: 365 },
+  { key: "auto", days: null },
+  { key: "weeks2", days: 14 },
+  { key: "month1", days: 30 },
+  { key: "months2", days: 60 },
+  { key: "months3", days: 90 },
+  { key: "months6", days: 180 },
+  { key: "months12", days: 365 },
 ] as const;
 
 export function DataSources() {
@@ -279,7 +279,7 @@ export function DataSources() {
               className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pr-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
-                <option key={p.label} value={p.days ?? "auto"}>{p.label}</option>
+                <option key={p.key} value={p.days ?? "auto"}>{t(`dataSources.scrapePeriod.${p.key}`)}</option>
               ))}
             </select>
             <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />

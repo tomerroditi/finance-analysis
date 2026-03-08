@@ -275,7 +275,8 @@
     "linkRefundComingSoon": "קישור החזר (בקרוב)",
     "confirmCancelRefund": "לבטל ציפייה להחזר זה?",
     "failedCancelRefund": "ביטול החזר נכשל",
-    "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר"
+    "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר",
+    "addRule": "הוסף כלל"
   },
   "categories": {
     "title": "קטגוריות",
@@ -454,7 +455,16 @@
     "credentialsSecurityNote": "פרטי ההתחברות מאוחסנים בצורה מאובטחת במחזיק המפתחות של המערכת",
     "saving": "שומר...",
     "saveChanges": "שמור שינויים",
-    "finishSetup": "סיים הגדרה"
+    "finishSetup": "סיים הגדרה",
+    "scrapePeriod": {
+      "auto": "אוטומטי",
+      "weeks2": "שבועיים",
+      "month1": "חודש",
+      "months2": "חודשיים",
+      "months3": "3 חודשים",
+      "months6": "6 חודשים",
+      "months12": "12 חודשים"
+    }
   },
   "insurance": {
     "title": "ביטוח",
@@ -631,5 +641,30 @@
     "cash": "מזומן",
     "investment": "השקעה",
     "insurance": "ביטוח"
+  },
+  "ruleBuilder": {
+    "description": "תיאור",
+    "amount": "סכום",
+    "provider": "ספק",
+    "accountName": "שם חשבון",
+    "service": "שירות",
+    "contains": "מכיל",
+    "equals": "שווה",
+    "startsWith": "מתחיל ב",
+    "endsWith": "מסתיים ב",
+    "greaterThan": "גדול מ",
+    "lessThan": "קטן מ",
+    "greaterOrEqual": "גדול או שווה",
+    "lessOrEqual": "קטן או שווה",
+    "between": "בין",
+    "andAllMatch": "AND (כל התנאים)",
+    "orAnyMatch": "OR (תנאי כלשהו)",
+    "condition": "תנאי",
+    "group": "קבוצה",
+    "emptyGroup": "קבוצה ריקה - הוסף תנאים להתחלה",
+    "deleteGroup": "מחק קבוצה",
+    "value": "ערך",
+    "min": "מינימום",
+    "max": "מקסימום"
   }
 }
