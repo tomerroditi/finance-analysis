@@ -37,6 +37,8 @@ class InsuranceAccount(Base, TimestampMixin):
         Commission rate on savings/profits (percentage).
     insurance_covers : str, optional
         JSON string: ``[{title, desc, sum}]`` (pension only).
+    insurance_costs : str, optional
+        JSON string: ``[{title, amount}]`` — annual internal deductions (pension only).
     liquidity_date : str, optional
         Earliest withdrawal date (hishtalmut only, YYYY-MM-DD).
     """
@@ -55,4 +57,5 @@ class InsuranceAccount(Base, TimestampMixin):
     commission_deposits_pct = Column(Float, nullable=True)
     commission_savings_pct = Column(Float, nullable=True)
     insurance_covers = Column(Text, nullable=True)
+    insurance_costs = Column(Text, nullable=True)
     liquidity_date = Column(String, nullable=True)
