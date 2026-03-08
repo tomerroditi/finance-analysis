@@ -69,3 +69,4 @@ $RECYCLE.BIN/
 # Ignore history folder (if not needed)
 .history/
 
+.worktrees

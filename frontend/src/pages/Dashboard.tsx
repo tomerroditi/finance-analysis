@@ -11,6 +11,7 @@ import {
   Tag,
   Wand2,
   Link2,
+  Plus,
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import {
@@ -28,6 +29,7 @@ import {
 } from "../services/api";
 import { SplitTransactionModal } from "../components/modals/SplitTransactionModal";
 import { LinkRefundModal } from "../components/modals/LinkRefundModal";
+import { ProjectModal } from "../components/modals/ProjectModal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { SankeyChart } from "../components/SankeyChart";
@@ -286,6 +288,7 @@ function BudgetSpendingGauge({
   const [month, setMonth] = useState(currentMonth);
   const [viewMode, setViewMode] = useState<BudgetViewMode>("monthly");
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const { isDemoMode } = useDemoMode();
 
   const isCurrentMonth = year === currentYear && month === currentMonth;
@@ -366,6 +369,16 @@ function BudgetSpendingGauge({
       return res.data as string[];
     },
     enabled: viewMode === "projects",
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: budgetApi.createProject,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["budget-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["availableProjects"] });
+      setSelectedProject(variables.category);
+      setIsProjectModalOpen(false);
+    },
   });
 
   // Auto-select first project when projects load
@@ -502,14 +515,23 @@ function BudgetSpendingGauge({
               </div>
             ) : (
               !hasNoProjects && (
-                <div className="w-full">
-                  <SelectDropdown
-                    options={(projects ?? []).map((p) => ({ label: p, value: p }))}
-                    value={selectedProject ?? ""}
-                    onChange={setSelectedProject}
-                    placeholder="Select project..."
-                    size="sm"
-                  />
+                <div className="w-full flex items-center gap-2">
+                  <div className="flex-1">
+                    <SelectDropdown
+                      options={(projects ?? []).map((p) => ({ label: p, value: p }))}
+                      value={selectedProject ?? ""}
+                      onChange={setSelectedProject}
+                      placeholder="Select project..."
+                      size="sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setIsProjectModalOpen(true)}
+                    className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--primary)] transition-colors shrink-0"
+                    title="Add new project"
+                  >
+                    <Plus size={16} />
+                  </button>
                 </div>
               )
             )}
@@ -519,12 +541,13 @@ function BudgetSpendingGauge({
           {hasNoProjects ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <p className="text-sm text-[var(--text-muted)] mb-3">No project budgets yet</p>
-              <Link
-                to="/budget"
-                className="text-sm font-medium text-[var(--primary)] hover:underline"
+              <button
+                onClick={() => setIsProjectModalOpen(true)}
+                className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
               >
-                Create a project budget &rarr;
-              </Link>
+                <Plus size={16} />
+                Add new project
+              </button>
             </div>
           ) : (
             <>
@@ -549,6 +572,12 @@ function BudgetSpendingGauge({
           )}
         </>
       )}
+
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        onSubmit={(data) => createProjectMutation.mutate(data)}
+      />
     </div>
   );
 }
@@ -672,6 +701,16 @@ function RecentTransactionsFeed({
     queryFn: () => taggingApi.getRules().then((res) => res.data),
   });
 
+  const invalidateAnalytics = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
+    queryClient.invalidateQueries({ queryKey: ["analytics-category"] });
+    queryClient.invalidateQueries({ queryKey: ["sankey"] });
+    queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
+    queryClient.invalidateQueries({ queryKey: ["income-by-source"] });
+    queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
+    queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
+  }, [queryClient]);
+
   // Tag update mutation
   const tagMutation = useMutation({
     mutationFn: ({ tx, category, tag }: { tx: Transaction; category: string; tag: string }) =>
@@ -684,7 +723,7 @@ function RecentTransactionsFeed({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      invalidateAnalytics();
       setEditingTxKey(null);
     },
   });
@@ -700,8 +739,8 @@ function RecentTransactionsFeed({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      invalidateAnalytics();
     },
   });
 
@@ -964,7 +1003,7 @@ function RecentTransactionsFeed({
           onSuccess={() => {
             setSplittingTransaction(null);
             queryClient.invalidateQueries({ queryKey: ["transactions"] });
-            queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+            invalidateAnalytics();
           }}
         />
       )}
