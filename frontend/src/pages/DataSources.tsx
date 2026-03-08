@@ -469,8 +469,10 @@ export function DataSources() {
                   <div className="flex items-center gap-2 min-w-[100px] justify-end">
                     {scraper?.status === "in_progress" && (
                       <div className="flex items-center gap-1.5">
-                        <RefreshCw size={14} className="animate-spin text-blue-400" />
-                        <span className="text-xs font-semibold text-blue-400">Scraping...</span>
+                        <RefreshCw size={14} className="animate-spin text-blue-400 shrink-0" />
+                        <span className="text-xs font-semibold text-blue-400">
+                          Scraping...
+                        </span>
                       </div>
                     )}
                     {scraper?.status === "waiting_for_2fa" && (

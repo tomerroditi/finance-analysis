@@ -8,9 +8,9 @@ import {
   Budget,
   Categories,
   Investments,
-  Insurances,
   DataSources,
 } from "./pages";
+import { InsurancesPrototype } from "./pages/InsurancesPrototype";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,7 +33,7 @@ function App() {
               <Route path="budget" element={<Budget />} />
               <Route path="categories" element={<Categories />} />
               <Route path="investments" element={<Investments />} />
-              <Route path="insurances" element={<Insurances />} />
+              <Route path="insurances" element={<InsurancesPrototype />} />
               <Route path="data-sources" element={<DataSources />} />
             </Route>
           </Routes>
