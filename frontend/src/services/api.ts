@@ -210,6 +210,28 @@ export const scrapingApi = {
     >("/scraping/last-scrapes"),
 };
 
+// Insurance Accounts API
+export interface InsuranceAccount {
+  id: number;
+  provider: string;
+  policy_id: string;
+  policy_type: string;
+  pension_type: string | null;
+  account_name: string;
+  balance: number | null;
+  balance_date: string | null;
+  investment_tracks: string | null;
+  commission_deposits_pct: number | null;
+  commission_savings_pct: number | null;
+  insurance_covers: string | null;
+  insurance_costs: string | null;
+  liquidity_date: string | null;
+}
+
+export const insuranceAccountsApi = {
+  getAll: () => api.get<InsuranceAccount[]>("/insurance-accounts/"),
+};
+
 // Investments API
 export const investmentsApi = {
   getAll: (includeClosed = false) =>

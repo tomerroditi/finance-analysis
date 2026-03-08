@@ -28,6 +28,7 @@ from backend.routes import (
     budget,
     cash_balances,
     credentials,
+    insurance_accounts,
     investments,
     pending_refunds,
     scraping,
@@ -183,6 +184,11 @@ app.include_router(
 )
 app.include_router(
     cash_balances.router, prefix="/api/cash-balances", tags=["Cash Balances"]
+)
+app.include_router(
+    insurance_accounts.router,
+    prefix="/api/insurance-accounts",
+    tags=["Insurance Accounts"],
 )
 
 
