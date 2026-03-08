@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from urllib.parse import quote
 
 from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
@@ -42,7 +43,7 @@ _EXTRACT_ACCOUNT_LIST_JS = """
         policyId: s.policyId || '',
         policyType: s.policyType || '',
         pensionType: s.pensionType || '',
-        balance: s.sum?.value || 0,
+        balance: (typeof s.sum === 'object' && s.sum !== null) ? (s.sum.value || 0) : (s.sum || 0),
         productDescription: s.productDescription || '',
         balanceDate: s.tarNehunut || '',
     }));
@@ -81,6 +82,24 @@ _EXTRACT_HISHTALMUT_DETAIL_JS = """
     };
 }
 """
+
+
+def _safe_float(val) -> float:
+    """Extract a float from a value that may be a dict with a 'value' key.
+
+    Handles plain numbers, dicts like ``{value: 123, currency: "₪"}``,
+    and string values with embedded ``%`` signs (e.g. ``"-1.77%"``).
+    """
+    if isinstance(val, dict):
+        raw = val.get("value", 0)
+    else:
+        raw = val
+    if isinstance(raw, str):
+        raw = raw.replace("%", "").strip()
+    try:
+        return float(raw or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _parse_date(date_str: str) -> str:
@@ -251,7 +270,11 @@ class HaPhoenixScraper(BrowserScraper):
             logger.warning("No accounts found in savingList")
             return []
 
-        logger.info("Discovered %d accounts", len(account_list))
+        logger.info(
+            "Discovered %d accounts: %s",
+            len(account_list),
+            [(a.get("policyId"), a.get("policyType"), a.get("productDescription")) for a in account_list],
+        )
 
         # Step 2: Scrape each account's detail page
         results: list[AccountResult] = []
@@ -262,8 +285,11 @@ class HaPhoenixScraper(BrowserScraper):
                     results.append(result)
             except Exception as e:
                 logger.error(
-                    "Failed to scrape account %s: %s",
-                    account_info.get("policyId", "unknown"), e,
+                    "Failed to scrape account %s (type=%s, desc=%s): %s",
+                    account_info.get("policyId", "unknown"),
+                    account_info.get("policyType", ""),
+                    account_info.get("productDescription", ""),
+                    e,
                 )
 
         return results
@@ -285,15 +311,21 @@ class HaPhoenixScraper(BrowserScraper):
         """
         policy_id = account_info["policyId"]
         policy_type = account_info.get("policyType", "").lower()
+        product_desc = account_info.get("productDescription", "").lower()
 
-        if "pension" in policy_type or "פנסי" in policy_type:
+        logger.info(
+            "Account %s: policyType='%s', productDescription='%s'",
+            policy_id, policy_type, product_desc,
+        )
+
+        if "pension" in policy_type or "פנסי" in policy_type or "פנסי" in product_desc:
             return await self._scrape_pension(account_info)
-        elif "hishtalmut" in policy_type or "השתלמות" in policy_type:
+        elif "hishtalmut" in policy_type or "השתלמות" in policy_type or "השתלמות" in product_desc:
             return await self._scrape_hishtalmut(account_info)
         else:
             logger.warning(
-                "Unknown policy type '%s' for %s, skipping",
-                policy_type, policy_id,
+                "Unsupported policy type '%s' for %s (%s), skipping",
+                policy_type, policy_id, product_desc,
             )
             return None
 
@@ -312,7 +344,7 @@ class HaPhoenixScraper(BrowserScraper):
         """
         policy_id = account_info["policyId"]
         pension_type = account_info.get("pensionType", "makifa").lower()
-        balance = float(account_info.get("balance", 0))
+        balance = _safe_float(account_info.get("balance", 0))
         balance_date = _parse_date(account_info.get("balanceDate", ""))
 
         self._emit_progress(f"scraping pension {policy_id}")
@@ -348,7 +380,7 @@ class HaPhoenixScraper(BrowserScraper):
         for route in routes:
             tracks.append({
                 "name": route.get("investmentRouteTitle", ""),
-                "yield_pct": route.get("yieldPercentage", 0),
+                "yield_pct": _safe_float(route.get("yieldPercentage", 0)),
                 # Single track = 100%. Multi-track: TODO improve when we have a reference
                 "allocation_pct": 100.0 if len(routes) == 1 else None,
                 "sum": None,
@@ -368,11 +400,16 @@ class HaPhoenixScraper(BrowserScraper):
                 "sum": cover.get("coverSum", 0),
             })
 
-        # Build deposit transactions
+        # Build deposit transactions (only deposits/withdrawals, not internal costs)
         transactions = self._build_pension_deposits(policy_id, detail)
 
-        # Build insurance cost transactions
-        transactions.extend(self._build_insurance_costs(policy_id, detail))
+        # Extract insurance costs as metadata (not transactions — they're internal deductions)
+        insurance_costs = []
+        for item in detail.get("accountTransactions", []):
+            item_title = item.get("title", "")
+            amount_value = _safe_float(item.get("sum", 0))
+            if amount_value != 0:
+                insurance_costs.append({"title": item_title, "amount": amount_value})
 
         account_name = detail.get("general", {}).get("policyName", f"Pension {policy_id}")
 
@@ -398,6 +435,7 @@ class HaPhoenixScraper(BrowserScraper):
                 "commission_deposits_pct": commission_deposits,
                 "commission_savings_pct": commission_savings,
                 "insurance_covers": json.dumps(covers, ensure_ascii=False),
+                "insurance_costs": json.dumps(insurance_costs, ensure_ascii=False) if insurance_costs else None,
                 "liquidity_date": None,
             },
         )
@@ -416,27 +454,50 @@ class HaPhoenixScraper(BrowserScraper):
             Hishtalmut account data with deposit transactions and metadata.
         """
         policy_id = account_info["policyId"]
-        balance = float(account_info.get("balance", 0))
+        balance = _safe_float(account_info.get("balance", 0))
         balance_date = _parse_date(account_info.get("balanceDate", ""))
 
         self._emit_progress(f"scraping hishtalmut {policy_id}")
 
         # Navigate to hishtalmut detail page
-        encoded_id = policy_id.replace(" ", "%20")
+        # Policy IDs like "007-916-407357 (8296857)" need full URL encoding
+        # (spaces AND parentheses) or Angular routing fails
+        encoded_id = quote(policy_id, safe="-")
         url = f"https://my.fnx.co.il/policies/hishtalmut/{encoded_id}/info"
         await self.navigate_to(url, wait_until="domcontentloaded")
         await self._human_delay(1.0, 2.0)
 
         # Wait for hishtalmut data to populate in sessionStorage
-        await self.page.wait_for_function(
-            """
-            () => {
-                const state = JSON.parse(sessionStorage.getItem('appState') || '{}');
-                return !!state.gemelPolicies?.hishtalmut?.general;
-            }
-            """,
-            timeout=30000,
-        )
+        try:
+            await self.page.wait_for_function(
+                """
+                () => {
+                    const state = JSON.parse(sessionStorage.getItem('appState') || '{}');
+                    return !!state.gemelPolicies?.hishtalmut?.general;
+                }
+                """,
+                timeout=30000,
+            )
+        except Exception:
+            # Dump gemelPolicies keys to help debug
+            keys = await self.page.evaluate(
+                """
+                () => {
+                    const state = JSON.parse(sessionStorage.getItem('appState') || '{}');
+                    const gp = state.gemelPolicies || {};
+                    return {
+                        gemelPoliciesKeys: Object.keys(gp),
+                        hishtalmutKeys: gp.hishtalmut ? Object.keys(gp.hishtalmut) : null,
+                    };
+                }
+                """
+            )
+            logger.warning(
+                "Hishtalmut %s: sessionStorage structure: %s — returning balance-only result",
+                policy_id, keys,
+            )
+            return AccountResult(account_number=policy_id, balance=balance)
+
         await self._human_delay(1.0, 2.0)
 
         # Try to load all deposit years
@@ -452,9 +513,9 @@ class HaPhoenixScraper(BrowserScraper):
         for route in detail.get("investmentRoutes", []):
             tracks.append({
                 "name": route.get("investmentRouteTitle", ""),
-                "yield_pct": route.get("yieldPercentage", 0),
-                "allocation_pct": route.get("investmentPercent", {}).get("value"),
-                "sum": route.get("investmentSum", {}).get("value"),
+                "yield_pct": _safe_float(route.get("yieldPercentage", 0)),
+                "allocation_pct": _safe_float(route.get("investmentPercent", 0)),
+                "sum": _safe_float(route.get("investmentSum", 0)),
             })
 
         # Extract commissions
@@ -553,11 +614,11 @@ class HaPhoenixScraper(BrowserScraper):
             for deposit in year_data.get("list", []):
                 date_raw = deposit.get("depositDate", "")
                 date_str = _parse_date(date_raw)
-                total = float(deposit.get("totalDeposit", 0))
+                total = _safe_float(deposit.get("totalDeposit", 0))
                 employer_name = deposit.get("employerName", "")
-                employee = float(deposit.get("employeeDeposit", 0))
-                employer = float(deposit.get("employerDeposit", 0))
-                compensation = float(deposit.get("compensationDeposit", 0))
+                employee = _safe_float(deposit.get("employeeDeposit", 0))
+                employer = _safe_float(deposit.get("employerDeposit", 0))
+                compensation = _safe_float(deposit.get("compensationDeposit", 0))
 
                 description = f"הפקדה - {employer_name}" if employer_name else "הפקדה"
                 memo_parts = []
@@ -587,60 +648,6 @@ class HaPhoenixScraper(BrowserScraper):
 
         return transactions
 
-    def _build_insurance_costs(
-        self, policy_id: str, detail: dict
-    ) -> list[Transaction]:
-        """Build Transaction objects from pension insurance cost records.
-
-        Parameters
-        ----------
-        policy_id : str
-            The policy ID.
-        detail : dict
-            Pension detail data from sessionStorage.
-
-        Returns
-        -------
-        list[Transaction]
-            Insurance cost transactions (negative amounts).
-        """
-        transactions: list[Transaction] = []
-        cost_keywords = ["עלות הביטוח לסיכוני נכות", "עלות הביטוח למקרה מוות"]
-
-        for item in detail.get("accountTransactions", []):
-            item_type = item.get("type", "")
-            if not any(kw in item_type for kw in cost_keywords):
-                continue
-
-            amount_data = item.get("amount", {})
-            amount_value = float(amount_data.get("value", 0))
-            # Insurance costs are expenses — ensure negative
-            if amount_value > 0:
-                amount_value = -amount_value
-
-            date_raw = item.get("date", "")
-            date_str = _parse_date(date_raw)
-
-            short_type = "נכות" if "נכות" in item_type else "מוות"
-            description = f"עלות ביטוח - {short_type}"
-
-            transactions.append(
-                Transaction(
-                    type=TransactionType.NORMAL,
-                    status=TransactionStatus.COMPLETED,
-                    date=date_str,
-                    processed_date=date_str,
-                    original_amount=amount_value,
-                    original_currency="ILS",
-                    charged_amount=amount_value,
-                    charged_currency="ILS",
-                    description=description,
-                    identifier=f"{policy_id}_{date_str}_insurance_{short_type}",
-                    memo=None,
-                )
-            )
-
-        return transactions
 
     def _build_hishtalmut_deposits(
         self, policy_id: str, detail: dict
@@ -666,7 +673,7 @@ class HaPhoenixScraper(BrowserScraper):
             for deposit in year_data.get("list", []):
                 date_raw = deposit.get("depositDate", "")
                 date_str = _parse_date(date_raw)
-                total = float(deposit.get("totalDeposit", 0))
+                total = _safe_float(deposit.get("totalDeposit", 0))
 
                 transactions.append(
                     Transaction(

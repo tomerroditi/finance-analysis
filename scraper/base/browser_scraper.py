@@ -1,4 +1,5 @@
 import logging
+import random
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Union
@@ -47,14 +48,39 @@ class BrowserScraper(BaseScraper):
     page: Page
     browser: Browser
 
+    # Real Chrome user agent to use in headless mode
+    _DEFAULT_USER_AGENT = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    )
+
+    # JS to patch common headless detection vectors
+    _STEALTH_INIT_SCRIPT = """
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    Object.defineProperty(navigator, 'languages', { get: () => ['he-IL', 'he', 'en-US', 'en'] });
+    window.chrome = { runtime: {} };
+    """
+
     async def initialize(self) -> None:
-        """Launch Playwright browser and create a page."""
+        """Launch Playwright browser and create a page with stealth measures."""
         self._playwright = await async_playwright().start()
         self.browser = await self._playwright.chromium.launch(
-            headless=not self.options.show_browser
+            headless=not self.options.show_browser,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ],
         )
-        self.page = await self.browser.new_page()
-        await self.page.set_viewport_size({"width": 1024, "height": 768})
+        context = await self.browser.new_context(
+            user_agent=self._DEFAULT_USER_AGENT,
+            viewport={"width": 1024, "height": 768},
+            locale="he-IL",
+        )
+        await context.add_init_script(self._STEALTH_INIT_SCRIPT)
+        self.page = await context.new_page()
         self.page.set_default_timeout(self.options.default_timeout)
 
     async def login(self) -> LoginResult:
@@ -198,6 +224,32 @@ class BrowserScraper(BaseScraper):
             logger.warning(
                 "Navigation to %s returned status %s", url, response.status
             )
+
+    async def _human_delay(self, min_sec: float = 0.3, max_sec: float = 1.0) -> None:
+        """Sleep for a random duration to mimic human timing."""
+        from scraper.utils import sleep
+
+        await sleep(random.uniform(min_sec, max_sec))
+
+    async def _type_like_human(self, selector: str, text: str) -> None:
+        """Type text character by character with random delays between keystrokes."""
+        await self.page.evaluate(
+            "(selector) => { const el = document.querySelector(selector); if (el) el.value = ''; }",
+            selector,
+        )
+        for char in text:
+            await self.page.type(selector, char, delay=random.randint(50, 150))
+            await self._human_delay(0.02, 0.08)
+
+    async def _human_mouse_move(self) -> None:
+        """Move the mouse to a random position on the page."""
+        await self.page.mouse.move(
+            random.randint(300, 700), random.randint(200, 400)
+        )
+
+    async def _human_scroll(self) -> None:
+        """Scroll the page a small random amount."""
+        await self.page.mouse.wheel(0, random.randint(50, 150))
 
     async def _detect_login_result(
         self,
