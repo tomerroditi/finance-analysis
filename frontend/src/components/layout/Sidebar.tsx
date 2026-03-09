@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -32,7 +32,6 @@ export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const { t, i18n } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsRef = useRef<HTMLButtonElement>(null);
 
   const isRtl = i18n.language === "he";
 
@@ -126,7 +125,6 @@ export function Sidebar() {
       {/* Settings */}
       <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)]">
         <button
-          ref={settingsRef}
           onClick={() => setSettingsOpen(!settingsOpen)}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
             settingsOpen
@@ -141,8 +139,6 @@ export function Sidebar() {
       <SettingsPopup
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        anchorRef={settingsRef}
-        sidebarOpen={sidebarOpen}
       />
     </aside>
   );

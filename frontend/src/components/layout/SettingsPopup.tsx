@@ -1,63 +1,32 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
 
 interface SettingsPopupProps {
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: RefObject<HTMLButtonElement | null>;
-  sidebarOpen: boolean;
 }
 
 export function SettingsPopup({
   isOpen,
   onClose,
-  anchorRef,
-  sidebarOpen,
 }: SettingsPopupProps) {
   const { t, i18n } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const { isDemoMode, toggleDemoMode } = useDemoMode();
 
-  const isRtl = i18n.language === "he";
-
-  // Close on outside click
   useEffect(() => {
     if (!isOpen) return;
-
-    const handleClick = (e: MouseEvent) => {
-      if (
-        popupRef.current &&
-        !popupRef.current.contains(e.target as Node) &&
-        anchorRef.current &&
-        !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
 
-    document.addEventListener("mousedown", handleClick);
     document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen, onClose, anchorRef]);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  const anchorRect = anchorRef.current?.getBoundingClientRect();
-  const bottom = anchorRect
-    ? window.innerHeight - anchorRect.top + 8
-    : 80;
-
-  const positionStyle: React.CSSProperties = isRtl
-    ? { bottom, right: sidebarOpen ? 260 : 76, position: "fixed" }
-    : { bottom, left: sidebarOpen ? 260 : 76, position: "fixed" };
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
@@ -65,60 +34,69 @@ export function SettingsPopup({
 
   return (
     <div
-      ref={popupRef}
-      style={positionStyle}
-      className="z-[60] w-72 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-2xl p-4 space-y-4 animate-in fade-in zoom-in-95 duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      {/* Language Toggle */}
-      <div>
-        <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2 block">
-          {t("settings.language")}
-        </label>
-        <div className="flex bg-[var(--surface-light)] rounded-lg p-1">
-          <button
-            onClick={() => changeLanguage("en")}
-            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
-              i18n.language === "en"
-                ? "bg-[var(--primary)] text-white shadow-sm"
-                : "text-[var(--text-muted)] hover:text-white"
-            }`}
-          >
-            {t("settings.english")}
-          </button>
-          <button
-            onClick={() => changeLanguage("he")}
-            className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
-              i18n.language === "he"
-                ? "bg-[var(--primary)] text-white shadow-sm"
-                : "text-[var(--text-muted)] hover:text-white"
-            }`}
-          >
-            {t("settings.hebrew")}
-          </button>
-        </div>
-      </div>
-
-      {/* Demo Mode Toggle */}
-      <div>
-        <div
-          className="flex items-center justify-between cursor-pointer"
-          onClick={() => toggleDemoMode(!isDemoMode)}
-        >
-          <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider cursor-pointer">
-            {t("settings.demoMode")}
+      <div
+        ref={popupRef}
+        className="w-80 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
+      >
+        {/* Language Toggle */}
+        <div>
+          <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2 block">
+            {t("settings.language")}
           </label>
           <div
-            className={`w-9 h-5 rounded-full relative transition-colors ${
-              isDemoMode ? "bg-amber-500" : "bg-[var(--surface-light)]"
-            }`}
+            className="relative flex bg-[var(--surface-light)] rounded-lg p-1 cursor-pointer select-none"
+            dir="ltr"
+            onClick={() => changeLanguage(i18n.language === "en" ? "he" : "en")}
           >
+            {/* Sliding highlight - always uses left/right to avoid RTL flip */}
             <div
-              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
-                isDemoMode
-                  ? "inset-inline-start-[calc(100%-18px)]"
-                  : "inset-inline-start-0.5"
-              }`}
+              className="absolute top-1 bottom-1 w-[calc(50%-2px)] bg-[var(--primary)] rounded-md shadow-sm transition-all duration-200"
+              style={{ left: i18n.language === "en" ? "4px" : "calc(50% + 2px)" }}
             />
+            <span
+              className={`relative z-10 flex-1 py-1.5 text-sm font-medium text-center rounded-md transition-colors ${
+                i18n.language === "en" ? "text-white" : "text-[var(--text-muted)]"
+              }`}
+            >
+              English
+            </span>
+            <span
+              className={`relative z-10 flex-1 py-1.5 text-sm font-medium text-center rounded-md transition-colors ${
+                i18n.language === "he" ? "text-white" : "text-[var(--text-muted)]"
+              }`}
+            >
+              עברית
+            </span>
+          </div>
+        </div>
+
+        {/* Demo Mode Toggle */}
+        <div>
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => toggleDemoMode(!isDemoMode)}
+          >
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider cursor-pointer">
+              {t("settings.demoMode")}
+            </label>
+            <div
+              className={`w-9 h-5 rounded-full relative transition-colors ${
+                isDemoMode ? "bg-amber-500" : "bg-[var(--surface-light)]"
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
+                  isDemoMode
+                    ? "inset-inline-start-[calc(100%-18px)]"
+                    : "inset-inline-start-0.5"
+                }`}
+              />
+            </div>
           </div>
         </div>
       </div>
