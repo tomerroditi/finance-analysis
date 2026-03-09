@@ -50,6 +50,17 @@ function StatCard({
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
 
+const TYPE_KEY_MAP: Record<string, string> = {
+  stocks: "stocks",
+  crypto: "crypto",
+  bonds: "bonds",
+  real_estate: "realEstate",
+  pension: "pension",
+  brokerage_account: "brokerageAccount",
+  p2p_lending: "p2pLending",
+  other: "other",
+};
+
 function InvestmentCard({
   inv,
   onViewAnalysis,
@@ -91,7 +102,7 @@ function InvestmentCard({
             <h3 className="font-bold text-lg text-white">{inv.name}</h3>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
-                {(inv.type || "").replace("_", " ")}
+                {t(`investments.types.${TYPE_KEY_MAP[inv.type] || "other"}`)}
               </span>
               <span className="text-[var(--text-muted)]">•</span>
               <span className="text-xs text-[var(--text-muted)] font-medium">
