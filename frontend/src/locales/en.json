@@ -309,7 +309,11 @@
     "changeIconFor": "Change Icon for",
     "searchEmojis": "Search emojis...",
     "customEmojiOrText": "Custom Emoji or Text",
-    "noEmojisMatch": "No emojis match your search"
+    "noEmojisMatch": "No emojis match your search",
+    "renameCategory": "Click to rename",
+    "renameTag": "Click to rename",
+    "renameError": "Cannot rename. The name may already exist or is protected.",
+    "protectedCannotRename": "Protected items cannot be renamed"
   },
   "investments": {
     "title": "Investments",

@@ -8,10 +8,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.constants.categories import PROTECTED_CATEGORIES
+from backend.constants.categories import PROTECTED_CATEGORIES, PROTECTED_TAGS
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import (
@@ -50,6 +51,7 @@ class CategoriesTagsService:
         self.split_transactions_repo = SplitTransactionsRepository(db)
         self.tagging_rules_repo = TaggingRulesRepository(db)
         self.credit_card_repo = CreditCardRepository(db)
+        self.budget_repo = BudgetRepository(db)
         self.categories_and_tags = self.get_categories_and_tags()
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
@@ -175,6 +177,80 @@ class CategoriesTagsService:
         if category not in self.categories_and_tags:
             return False
         self.tagging_repo.delete_category(category)
+        self._invalidate_cache()
+        return True
+
+    def rename_category(self, old_name: str, new_name: str) -> bool:
+        """Rename a category and cascade across all tables.
+
+        Parameters
+        ----------
+        old_name : str
+            Current category name.
+        new_name : str
+            New category name (will be title-cased).
+
+        Returns
+        -------
+        bool
+            True if renamed, False if protected or not found.
+        """
+        if old_name in PROTECTED_CATEGORIES:
+            return False
+        if old_name not in self.categories_and_tags:
+            return False
+
+        new_name = to_title_case(new_name.strip()) if new_name else new_name
+        if not new_name:
+            return False
+        if new_name.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
+            if new_name.lower() != old_name.lower():
+                return False
+
+        self.transactions_repo.rename_category(old_name, new_name)
+        self.split_transactions_repo.rename_category(old_name, new_name)
+        self.tagging_rules_repo.rename_category(old_name, new_name)
+        self.budget_repo.rename_category(old_name, new_name)
+        self.tagging_repo.rename_category(old_name, new_name)
+        self._invalidate_cache()
+        return True
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> bool:
+        """Rename a tag and cascade across all tables.
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belongs to.
+        old_tag : str
+            Current tag name.
+        new_tag : str
+            New tag name (will be title-cased).
+
+        Returns
+        -------
+        bool
+            True if renamed, False if protected, not found, or collision.
+        """
+        if old_tag in PROTECTED_TAGS:
+            return False
+        if category not in self.categories_and_tags:
+            return False
+        if old_tag not in self.categories_and_tags[category]:
+            return False
+
+        new_tag = to_title_case(new_tag.strip()) if new_tag else new_tag
+        if not new_tag:
+            return False
+        if new_tag in self.categories_and_tags[category]:
+            if new_tag != old_tag:
+                return False
+
+        self.transactions_repo.rename_tag(category, old_tag, new_tag)
+        self.split_transactions_repo.rename_tag(category, old_tag, new_tag)
+        self.tagging_rules_repo.rename_tag(category, old_tag, new_tag)
+        self.budget_repo.rename_tag(old_tag, new_tag)
+        self.tagging_repo.rename_tag(category, old_tag, new_tag)
         self._invalidate_cache()
         return True
 

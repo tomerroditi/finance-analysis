@@ -230,6 +230,27 @@ class ServiceRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename category across all transactions in this table."""
+        stmt = (
+            update(self.model)
+            .where(self.model.category == old_name)
+            .values(category=new_name)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename tag for transactions with given category."""
+        stmt = (
+            update(self.model)
+            .where(self.model.category == category)
+            .where(self.model.tag == old_tag)
+            .values(tag=new_tag)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def add_transaction(self, transaction: ManualTransactionDTO) -> bool:
         """Insert a manually created transaction into this service's table.
 
@@ -1027,6 +1048,22 @@ class TransactionsRepository:
         self.cash_repo.nullify_category(category)
         self.manual_investments_repo.nullify_category(category)
         self.insurance_repo.nullify_category(category)
+
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename category across all transaction tables."""
+        self.cc_repo.rename_category(old_name, new_name)
+        self.bank_repo.rename_category(old_name, new_name)
+        self.cash_repo.rename_category(old_name, new_name)
+        self.manual_investments_repo.rename_category(old_name, new_name)
+        self.insurance_repo.rename_category(old_name, new_name)
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename tag across all transaction tables."""
+        self.cc_repo.rename_tag(category, old_tag, new_tag)
+        self.bank_repo.rename_tag(category, old_tag, new_tag)
+        self.cash_repo.rename_tag(category, old_tag, new_tag)
+        self.manual_investments_repo.rename_tag(category, old_tag, new_tag)
+        self.insurance_repo.rename_tag(category, old_tag, new_tag)
 
     def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
         """Retrieve a single transaction row by its unique_id.

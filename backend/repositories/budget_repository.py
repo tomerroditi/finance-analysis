@@ -234,6 +234,32 @@ class BudgetRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename category across all budget rules."""
+        stmt = (
+            update(BudgetRule)
+            .where(BudgetRule.category == old_name)
+            .values(category=new_name)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
+    def rename_tag(self, old_tag: str, new_tag: str) -> None:
+        """Rename tag across all budget rules.
+
+        Budget tags are semicolon-separated strings. This finds all rules
+        containing old_tag and replaces it with new_tag.
+        """
+        rules = self.db.query(BudgetRule).filter(
+            BudgetRule.tags.isnot(None)
+        ).all()
+        for rule in rules:
+            tags = rule.tags.split(";") if rule.tags else []
+            if old_tag in tags:
+                tags = [new_tag if t == old_tag else t for t in tags]
+                rule.tags = ";".join(tags)
+        self.db.commit()
+
     def _assure_table_exists(self) -> None:
         # Kept for interface compatibility but does nothing as models handle schema
         # Though ideally we rely on Base.metadata.create_all(bind=engine) called at app startup

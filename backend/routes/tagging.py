@@ -41,6 +41,14 @@ class TagRelocate(BaseModel):
     tag: str
 
 
+class CategoryRename(BaseModel):
+    new_name: str
+
+
+class TagRename(BaseModel):
+    new_name: str
+
+
 @router.get("/categories")
 async def get_categories(db: Session = Depends(get_database)):
     """Get all categories and their tags."""
@@ -93,6 +101,30 @@ async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
     CategoriesTagsService(db).reallocate_tag(
         data.old_category, data.new_category, data.tag
     )
+    return {"status": "success"}
+
+
+@router.put("/categories/{name}")
+async def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_database)):
+    """Rename a category and cascade the change across all tables."""
+    success = CategoriesTagsService(db).rename_category(name, data.new_name)
+    if not success:
+        from backend.errors import ValidationException
+        raise ValidationException(
+            f"Cannot rename category '{name}'. It may be protected, not found, or '{data.new_name}' already exists."
+        )
+    return {"status": "success"}
+
+
+@router.put("/tags/{category}/{name}")
+async def rename_tag(category: str, name: str, data: TagRename, db: Session = Depends(get_database)):
+    """Rename a tag and cascade the change across all tables."""
+    success = CategoriesTagsService(db).rename_tag(category, name, data.new_name)
+    if not success:
+        from backend.errors import ValidationException
+        raise ValidationException(
+            f"Cannot rename tag '{name}'. It may be protected, not found, or '{data.new_name}' already exists in '{category}'."
+        )
     return {"status": "success"}
 
 

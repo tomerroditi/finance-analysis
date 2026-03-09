@@ -216,6 +216,24 @@ class TaggingRulesRepository:
         self.db.commit()
         return True
 
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename category across all tagging rules."""
+        rules = self.db.query(TaggingRule).filter_by(category=old_name).all()
+        for rule in rules:
+            rule.category = new_name
+        self.db.commit()
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename tag in tagging rules for given category."""
+        rules = (
+            self.db.query(TaggingRule)
+            .filter_by(category=category, tag=old_tag)
+            .all()
+        )
+        for rule in rules:
+            rule.tag = new_tag
+        self.db.commit()
+
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
     ) -> bool:

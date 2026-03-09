@@ -120,6 +120,65 @@ class TaggingRepository:
         self.db.delete(cat)
         self.db.commit()
 
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename a category.
+
+        Parameters
+        ----------
+        old_name : str
+            Current category name.
+        new_name : str
+            New category name.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no category with old_name exists.
+        EntityAlreadyExistsException
+            If a category with new_name already exists.
+        """
+        existing = self.db.execute(
+            select(Category).where(Category.name == new_name)
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise EntityAlreadyExistsException(
+                f"Category '{new_name}' already exists"
+            )
+        cat = self._get_category(old_name)
+        cat.name = new_name
+        self.db.commit()
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename a tag within a category.
+
+        Parameters
+        ----------
+        category : str
+            Category containing the tag.
+        old_tag : str
+            Current tag name.
+        new_tag : str
+            New tag name.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the category or tag doesn't exist.
+        EntityAlreadyExistsException
+            If new_tag already exists in the category.
+        """
+        cat = self._get_category(category)
+        if old_tag not in cat.tags:
+            raise EntityNotFoundException(
+                f"Tag '{old_tag}' not found in category '{category}'"
+            )
+        if new_tag in cat.tags:
+            raise EntityAlreadyExistsException(
+                f"Tag '{new_tag}' already exists in category '{category}'"
+            )
+        cat.tags = [new_tag if t == old_tag else t for t in cat.tags]
+        self.db.commit()
+
     def add_tag(self, category: str, tag: str) -> None:
         """Add a tag to a category's tags list.
 

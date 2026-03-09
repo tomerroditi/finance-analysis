@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
+import { Plus, Trash2, MoveRight, Wallet, Search, Pencil } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 
@@ -585,6 +585,8 @@ const EMOJI_DATA: [string, string][] = [
 export function Categories() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const PROTECTED_CATEGORIES = ["Credit Cards", "Salary", "Other Income", "Investments", "Ignore", "Liabilities"];
+  const PROTECTED_TAGS = ["Prior Wealth"];
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [isAddTagOpen, setIsAddTagOpen] = useState<{ category: string } | null>(
     null,
@@ -599,6 +601,9 @@ export function Categories() {
   } | null>(null);
   const [tempIcon, setTempIcon] = useState("");
   const [emojiSearch, setEmojiSearch] = useState("");
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editingTag, setEditingTag] = useState<{ category: string; tag: string } | null>(null);
+  const [editName, setEditName] = useState("");
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ["categories"],
@@ -658,6 +663,31 @@ export function Categories() {
     },
   });
 
+  const renameCategoryMutation = useMutation({
+    mutationFn: ({ oldName, newName }: { oldName: string; newName: string }) =>
+      taggingApi.renameCategory(oldName, newName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: ["category-icons"] });
+      setEditingCategory(null);
+    },
+    onError: () => {
+      alert(t("categories.renameError"));
+    },
+  });
+
+  const renameTagMutation = useMutation({
+    mutationFn: ({ category, oldTag, newTag }: { category: string; oldTag: string; newTag: string }) =>
+      taggingApi.renameTag(category, oldTag, newTag),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setEditingTag(null);
+    },
+    onError: () => {
+      alert(t("categories.renameError"));
+    },
+  });
+
   if (isLoading)
     return (
       <div className="space-y-8 p-8">
@@ -714,7 +744,35 @@ export function Categories() {
                     >
                       {icons?.[category] || <Wallet size={20} />}
                     </button>
-                    <h3 className="font-bold text-lg text-white">{category}</h3>
+                    {editingCategory === category ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && editName.trim()) {
+                            renameCategoryMutation.mutate({ oldName: category, newName: editName });
+                          }
+                          if (e.key === "Escape") setEditingCategory(null);
+                        }}
+                        onBlur={() => setEditingCategory(null)}
+                        className="font-bold text-lg bg-transparent border-b border-[var(--primary)] outline-none w-full"
+                      />
+                    ) : (
+                      <h3
+                        className={`font-bold text-lg ${PROTECTED_CATEGORIES.includes(category) ? "text-white" : "text-white cursor-pointer hover:text-[var(--primary)] transition-colors"}`}
+                        onClick={() => {
+                          if (!PROTECTED_CATEGORIES.includes(category)) {
+                            setEditingCategory(category);
+                            setEditName(category);
+                          }
+                        }}
+                        title={PROTECTED_CATEGORIES.includes(category) ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
+                      >
+                        {category}
+                      </h3>
+                    )}
                   </div>
                   <button
                     onClick={() => {
@@ -739,9 +797,35 @@ export function Categories() {
                         key={tag}
                         className="group/tag flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 transition-all"
                       >
-                        <span className="text-sm font-medium text-[var(--text-muted)]">
-                          {tag}
-                        </span>
+                        {editingTag?.category === category && editingTag?.tag === tag ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && editName.trim()) {
+                                renameTagMutation.mutate({ category, oldTag: tag, newTag: editName });
+                              }
+                              if (e.key === "Escape") setEditingTag(null);
+                            }}
+                            onBlur={() => setEditingTag(null)}
+                            className="text-sm font-medium bg-transparent border-b border-[var(--primary)] outline-none w-20"
+                          />
+                        ) : (
+                          <span
+                            className={`text-sm font-medium ${PROTECTED_TAGS.includes(tag) ? "text-[var(--text-muted)]" : "text-[var(--text-muted)] cursor-pointer hover:text-[var(--primary)] transition-colors"}`}
+                            onClick={() => {
+                              if (!PROTECTED_TAGS.includes(tag)) {
+                                setEditingTag({ category, tag });
+                                setEditName(tag);
+                              }
+                            }}
+                            title={PROTECTED_TAGS.includes(tag) ? t("categories.protectedCannotRename") : t("categories.renameTag")}
+                          >
+                            {tag}
+                          </span>
+                        )}
                         <div className="flex items-center gap-0.5 opacity-0 group-hover/tag:opacity-100 transition-all ml-1">
                           <button
                             onClick={() => setIsRelocateOpen({ category, tag })}

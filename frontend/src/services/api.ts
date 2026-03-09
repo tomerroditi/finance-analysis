@@ -121,6 +121,10 @@ export const taggingApi = {
     api.post("/tagging/tags", { category, name }),
   deleteTag: (category: string, name: string) =>
     api.delete(`/tagging/tags/${category}/${name}`),
+  renameCategory: (name: string, newName: string) =>
+    api.put(`/tagging/categories/${encodeURIComponent(name)}`, { new_name: newName }),
+  renameTag: (category: string, name: string, newName: string) =>
+    api.put(`/tagging/tags/${encodeURIComponent(category)}/${encodeURIComponent(name)}`, { new_name: newName }),
   relocateTag: (oldCategory: string, newCategory: string, tag: string) =>
     api.post("/tagging/tags/relocate", {
       old_category: oldCategory,

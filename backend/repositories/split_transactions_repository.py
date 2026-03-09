@@ -193,6 +193,27 @@ class SplitTransactionsRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Rename category across all split transactions."""
+        stmt = (
+            update(SplitTransaction)
+            .where(SplitTransaction.category == old_name)
+            .values(category=new_name)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename tag for split transactions with given category."""
+        stmt = (
+            update(SplitTransaction)
+            .where(SplitTransaction.category == category)
+            .where(SplitTransaction.tag == old_tag)
+            .values(tag=new_tag)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for splits with specified category.
 

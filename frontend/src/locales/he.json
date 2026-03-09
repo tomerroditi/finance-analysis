@@ -309,7 +309,11 @@
     "changeIconFor": "שנה אייקון עבור",
     "searchEmojis": "חפש אמוג'י...",
     "customEmojiOrText": "אמוג'י או טקסט מותאם",
-    "noEmojisMatch": "אין אמוג'ים שתואמים לחיפוש שלך"
+    "noEmojisMatch": "אין אמוג'ים שתואמים לחיפוש שלך",
+    "renameCategory": "לחץ לשינוי שם",
+    "renameTag": "לחץ לשינוי שם",
+    "renameError": "לא ניתן לשנות שם. השם עשוי להיות קיים כבר או מוגן.",
+    "protectedCannotRename": "לא ניתן לשנות שם של פריטים מוגנים"
   },
   "investments": {
     "title": "השקעות",
