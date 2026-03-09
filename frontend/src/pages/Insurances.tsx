@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Shield, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { transactionsApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
@@ -24,6 +25,7 @@ function formatCurrency(amount: number): string {
 }
 
 export function Insurances() {
+  const { t } = useTranslation();
   const { data: transactions, isLoading } = useQuery({
     queryKey: ["transactions", "insurances"],
     queryFn: () =>
@@ -138,7 +140,7 @@ export function Insurances() {
                       {humanizeProvider(account.provider)} — {account.accountName}
                     </h3>
                     <p className="text-xs text-[var(--text-muted)]">
-                      Policy {account.accountNumber} · {sorted.length} transactions
+                      {t("insurance.policy")} {account.accountNumber} · {sorted.length} {t("insurance.transactions")}
                     </p>
                   </div>
                 </div>

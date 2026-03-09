@@ -393,6 +393,7 @@
       "realEstate": "Real Estate",
       "pension": "Pension",
       "brokerageAccount": "Brokerage Account",
+      "p2pLending": "P2P Lending",
       "other": "Other"
     }
   },
@@ -503,7 +504,9 @@
     "pension": "Pension",
     "makifa": "Makifa",
     "mashlima": "Mashlima",
-    "kerenHistahlmut": "Keren Hishtalmut"
+    "kerenHistahlmut": "Keren Hishtalmut",
+    "policy": "Policy",
+    "updated": "Updated"
   },
   "modals": {
     "confirm": {

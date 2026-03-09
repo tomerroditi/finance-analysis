@@ -393,6 +393,7 @@
       "realEstate": "נדל\"ן",
       "pension": "פנסיה",
       "brokerageAccount": "חשבון ברוקר",
+      "p2pLending": "הלוואות P2P",
       "other": "אחר"
     }
   },
@@ -503,7 +504,9 @@
     "pension": "פנסיה",
     "makifa": "מקיפה",
     "mashlima": "משלימה",
-    "kerenHistahlmut": "קרן השתלמות"
+    "kerenHistahlmut": "קרן השתלמות",
+    "policy": "פוליסה",
+    "updated": "עודכן"
   },
   "modals": {
     "confirm": {

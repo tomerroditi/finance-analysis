@@ -191,7 +191,7 @@ function AccountCardFull({
               {policyTypeBadge(account.policy_type, account.pension_type, t)}
             </div>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Policy {account.policy_id} · Updated {fmtDate(account.balance_date)}
+              {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
             </p>
           </div>
         </div>
