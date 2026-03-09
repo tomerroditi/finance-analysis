@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import Plot from "react-plotly.js";
+import { plotlyConfig } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
@@ -514,7 +515,7 @@ export function InsurancesPrototype() {
               legend: { font: { color: "#94a3b8", size: 10 }, x: 0, y: 1.15, orientation: "h" },
               showlegend: true,
             }}
-            config={{ displayModeBar: false }}
+            config={plotlyConfig()}
             useResizeHandler
             style={{ width: "100%" }}
           />
@@ -555,7 +556,7 @@ export function InsurancesPrototype() {
                   },
                 ],
               }}
-              config={{ displayModeBar: false }}
+              config={plotlyConfig()}
               useResizeHandler
               style={{ width: "100%" }}
             />

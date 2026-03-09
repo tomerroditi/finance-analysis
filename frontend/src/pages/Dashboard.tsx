@@ -39,6 +39,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
+import { plotlyConfig } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
@@ -1366,7 +1367,7 @@ export function Dashboard() {
                         },
                       }}
                       style={{ width: "100%", height: "100%" }}
-                      config={{ displayModeBar: false, responsive: true }}
+                      config={plotlyConfig()}
                     />
                   </div>
                 </>
@@ -1426,7 +1427,7 @@ export function Dashboard() {
                         },
                       }}
                       style={{ width: "100%", height: "100%" }}
-                      config={{ displayModeBar: false, responsive: true }}
+                      config={plotlyConfig()}
                     />
                   </div>
                 </>
@@ -1503,7 +1504,7 @@ export function Dashboard() {
                       },
                     }}
                     style={{ width: "100%", height: "100%" }}
-                    config={{ displayModeBar: false, responsive: true }}
+                    config={plotlyConfig()}
                   />
                 </div>
               ) : (
@@ -1548,7 +1549,7 @@ export function Dashboard() {
                           },
                         }}
                         style={{ width: "100%", height: "100%" }}
-                        config={{ displayModeBar: false, responsive: true }}
+                        config={plotlyConfig()}
                       />
                     );
                   })() : (

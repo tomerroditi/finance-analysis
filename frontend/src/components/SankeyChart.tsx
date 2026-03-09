@@ -1,4 +1,5 @@
 import Plot from "react-plotly.js";
+import { plotlyConfig } from "../utils/plotlyLocale";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -89,7 +90,7 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
       layout={layout as any}
       useResizeHandler={true}
       style={{ width: "100%", height: "100%" }}
-      config={{ displayModeBar: false, responsive: true }}
+      config={plotlyConfig()}
     />
   );
 }

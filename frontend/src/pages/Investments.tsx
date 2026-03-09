@@ -21,6 +21,7 @@ import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
 import Plot from "react-plotly.js";
+import { plotlyConfig } from "../utils/plotlyLocale";
 
 function StatCard({
   title,
@@ -654,7 +655,7 @@ export function Investments() {
                         legend: { orientation: "h", y: -0.12, font: { size: 10 } },
                       }}
                       style={{ width: "100%", height: "100%" }}
-                      config={{ displayModeBar: false }}
+                      config={plotlyConfig()}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center text-[var(--text-muted)] text-sm">
@@ -700,7 +701,7 @@ export function Investments() {
                         legend: { orientation: "h" },
                       }}
                       style={{ width: "100%", height: "100%" }}
-                      config={{ displayModeBar: false }}
+                      config={plotlyConfig()}
                     />
                   </div>
                 </div>
@@ -894,7 +895,7 @@ export function Investments() {
                           yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
                         }}
                         style={{ width: "100%", height: "100%" }}
-                        config={{ displayModeBar: false }}
+                        config={plotlyConfig()}
                       />
                     </div>
                   </div>
