@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -184,6 +184,15 @@ export function DataSources() {
       style: "currency",
       currency: "ILS",
     }).format(val);
+
+  useEffect(() => {
+    if (!isAddOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") resetForm();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isAddOpen]);
 
   const resetForm = () => {
     setIsAddOpen(false);
@@ -676,7 +685,7 @@ export function DataSources() {
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
             <button
               onClick={resetForm}
-              className="absolute top-6 right-6 p-2 rounded-xl hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
+              className="absolute top-6 end-6 p-2 rounded-xl hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
             >
               <X size={20} />
             </button>
