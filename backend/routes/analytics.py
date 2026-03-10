@@ -110,6 +110,7 @@ async def get_income_by_source_over_time(
 @router.get("/monthly-expenses")
 async def get_monthly_expenses(
     exclude_pending_refunds: bool = Query(True),
+    include_projects: bool = Query(False),
     db: Session = Depends(get_database),
 ):
     """Return monthly expense totals and rolling averages.
@@ -123,6 +124,9 @@ async def get_monthly_expenses(
     exclude_pending_refunds : bool
         When True, excludes transactions marked as pending refunds.
         Default is True.
+    include_projects : bool
+        When True, includes project expenses as a separate series.
+        Default is False.
 
     Returns
     -------
@@ -131,7 +135,7 @@ async def get_monthly_expenses(
         ``avg_6_months``, ``avg_12_months`` averages.
     """
     service = AnalysisService(db)
-    return service.get_monthly_expenses(exclude_pending_refunds)
+    return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
 
 
 @router.get("/net-worth-over-time")

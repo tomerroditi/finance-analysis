@@ -577,7 +577,11 @@ class AnalysisService:
 
         return result
 
-    def get_monthly_expenses(self, exclude_pending_refunds: bool = True) -> dict:
+    def get_monthly_expenses(
+        self,
+        exclude_pending_refunds: bool = True,
+        include_projects: bool = False,
+    ) -> dict:
         """
         Get monthly expense totals and rolling averages, calculated like the monthly budget.
 
@@ -591,18 +595,24 @@ class AnalysisService:
         exclude_pending_refunds : bool, optional
             When ``True``, excludes transactions marked as pending refunds.
             Default is ``True``.
+        include_projects : bool, optional
+            When ``True``, includes project expenses as a separate
+            ``project_expenses`` field per month. Default is ``False``.
 
         Returns
         -------
         dict
             Dictionary with keys:
 
-            - ``months`` -- list of ``{month, expenses}`` dicts ordered chronologically.
+            - ``months`` -- list of ``{month, expenses, project_expenses?}`` dicts.
             - ``avg_3_months`` -- average monthly expenses over the last 3 months.
             - ``avg_6_months`` -- average monthly expenses over the last 6 months.
             - ``avg_12_months`` -- average monthly expenses over the last 12 months.
         """
-        from backend.services.budget_service import MonthlyBudgetService
+        from backend.services.budget_service import (
+            MonthlyBudgetService,
+            ProjectBudgetService,
+        )
 
         empty_result = {
             "months": [],
@@ -632,10 +642,43 @@ class AnalysisService:
             .sort_index()
         )
 
-        months_list = [
-            {"month": month, "expenses": round(float(amt), 2)}
-            for month, amt in monthly.items()
-        ]
+        # Optionally compute project expenses per month
+        monthly_project: pd.Series | None = None
+        if include_projects:
+            project_service = ProjectBudgetService(self.db)
+            project_names = project_service.get_all_projects_names()
+            if project_names:
+                all_data = budget_service.transactions_service.get_data_for_analysis()
+                project_txns = all_data.loc[
+                    (~all_data[TransactionsTableFields.TYPE.value].isin(["split_parent"]))
+                    & all_data[TransactionsTableFields.CATEGORY.value].isin(project_names)
+                ].copy()
+                if not project_txns.empty:
+                    project_txns[TransactionsTableFields.DATE.value] = pd.to_datetime(
+                        project_txns[TransactionsTableFields.DATE.value]
+                    )
+                    project_txns["month"] = project_txns[
+                        TransactionsTableFields.DATE.value
+                    ].dt.strftime("%Y-%m")
+                    monthly_project = (
+                        project_txns.groupby("month")[TransactionsTableFields.AMOUNT.value]
+                        .sum()
+                        .mul(-1)
+                    )
+
+        # Build months list
+        all_months = sorted(set(monthly.index) | (set(monthly_project.index) if monthly_project is not None else set()))
+        months_list = []
+        for month in all_months:
+            entry: dict = {
+                "month": month,
+                "expenses": round(float(monthly.get(month, 0.0)), 2),
+            }
+            if include_projects:
+                entry["project_expenses"] = round(
+                    float(monthly_project.get(month, 0.0)) if monthly_project is not None else 0.0, 2
+                )
+            months_list.append(entry)
 
         # Calculate averages relative to current month
         today = pd.Timestamp.today()
@@ -645,6 +688,8 @@ class AnalysisService:
                 (today - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(n)
             ]
             total = sum(monthly.get(m, 0.0) for m in month_keys)
+            if include_projects and monthly_project is not None:
+                total += sum(monthly_project.get(m, 0.0) for m in month_keys)
             return round(float(total / n), 2)
 
         return {

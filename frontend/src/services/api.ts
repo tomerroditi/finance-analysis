@@ -302,14 +302,14 @@ export const analyticsApi = {
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time"
     ),
-  getMonthlyExpenses: (excludePendingRefunds = true) =>
+  getMonthlyExpenses: (excludePendingRefunds = true, includeProjects = false) =>
     api.get<{
-      months: { month: string; expenses: number }[];
+      months: { month: string; expenses: number; project_expenses?: number }[];
       avg_3_months: number;
       avg_6_months: number;
       avg_12_months: number;
     }>("/analytics/monthly-expenses", {
-      params: { exclude_pending_refunds: excludePendingRefunds },
+      params: { exclude_pending_refunds: excludePendingRefunds, include_projects: includeProjects },
     }),
 };
 

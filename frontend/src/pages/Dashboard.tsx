@@ -1047,6 +1047,7 @@ export function Dashboard() {
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
   const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
+  const [includeProjects, setIncludeProjects] = useState(false);
   const [insightTab, setInsightTab] = useState<
     "monthly_expenses" | "net_worth" | "cash_flow" | "income_expenses" | "category"
   >("monthly_expenses");
@@ -1110,9 +1111,9 @@ export function Dashboard() {
 
 
   const { data: monthlyExpenses } = useQuery({
-    queryKey: ["monthly-expenses", excludePendingRefunds, isDemoMode],
+    queryKey: ["monthly-expenses", excludePendingRefunds, includeProjects, isDemoMode],
     queryFn: async () => {
-      const res = await analyticsApi.getMonthlyExpenses(excludePendingRefunds);
+      const res = await analyticsApi.getMonthlyExpenses(excludePendingRefunds, includeProjects);
       return res.data;
     },
   });
@@ -1297,7 +1298,7 @@ export function Dashboard() {
             <div className="flex flex-col flex-1 min-h-0">
               {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
                     <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
                         <Calculator size={18} />
@@ -1343,6 +1344,18 @@ export function Dashboard() {
                         ? t("dashboard.pendingRefundsExcluded")
                         : t("dashboard.pendingRefundsIncluded")}
                     </button>
+                    <button
+                      onClick={() => setIncludeProjects(!includeProjects)}
+                      className={`rounded-xl px-4 py-3 text-xs font-medium border transition-colors flex items-center justify-center ${
+                        includeProjects
+                          ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {includeProjects
+                        ? t("dashboard.projectExpensesIncluded")
+                        : t("dashboard.projectExpensesExcluded")}
+                    </button>
                   </div>
                   <div className="flex-1 min-h-0">
                     <Plot
@@ -1354,10 +1367,32 @@ export function Dashboard() {
                           marker: { color: "#f43f5e" },
                           name: t("dashboard.expenses"),
                         },
+                        ...(includeProjects
+                          ? [
+                              {
+                                x: monthlyExpenses.months.map((d) => d.month),
+                                y: monthlyExpenses.months.map((d) => d.project_expenses ?? 0),
+                                type: "bar" as const,
+                                marker: { color: "#818cf8" },
+                                name: t("dashboard.projectExpenses"),
+                              },
+                            ]
+                          : []),
                       ]}
                       layout={{
                         ...chartTheme,
                         autosize: true,
+                        barmode: includeProjects ? "stack" : undefined,
+                        legend: includeProjects
+                          ? {
+                              orientation: "h" as const,
+                              yanchor: "top" as const,
+                              y: -0.15,
+                              xanchor: "center" as const,
+                              x: 0.5,
+                              font: { color: "#94a3b8" },
+                            }
+                          : undefined,
                         yaxis: {
                           title: {
                             text: t("dashboard.amountILS"),
