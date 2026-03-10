@@ -88,6 +88,14 @@ The `scraper/` package at the project root is a pure-Python scraper framework us
 - **Adding a new provider:** Create a class in `scraper/providers/banks/` or `credit_cards/`, register in `scraper/models/credentials.py` PROVIDER_CONFIGS, and export in the `__init__.py`
 - **Import caveat:** `backend/scraper/` and root `scraper/` share a name. Backend code uses `_import_scraper_module()` helper (in `adapter.py`) to resolve root package. Test dirs use `test_scraper/` prefix to avoid pytest collision.
 
+## Internationalization (Hebrew/English)
+
+- **Bilingual UI:** Full Hebrew + English support via `i18next` / `react-i18next`
+- **RTL:** Automatic direction switching. Use Tailwind CSS 4 logical properties (`ps-*`, `pe-*`, `ms-*`, `me-*`, `text-start`, etc.) instead of physical `left`/`right`
+- **All user-visible strings** must use `t("section.key")` — no hardcoded text. Add keys to both `en.json` and `he.json`
+- **Numbers in RTL:** Wrap with `dir="ltr"` inside translated text
+- **Detailed rules:** `.claude/rules/frontend_i18n.md`
+
 ## Gotchas
 
 - Passwords stored in OS Keyring, never in YAML or code
