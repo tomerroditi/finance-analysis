@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "backend": "source .venv/bin/activate && uvicorn backend.main:app --reload"
+  }
+}

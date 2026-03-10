@@ -10,8 +10,8 @@
     },
     {
       "name": "backend",
-      "runtimeExecutable": "poetry",
-      "runtimeArgs": ["run", "uvicorn", "backend.main:app", "--reload"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "backend"],
       "port": 8000
     }
   ]
