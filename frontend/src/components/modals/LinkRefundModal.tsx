@@ -10,7 +10,7 @@ interface LinkRefundModalProps {
   onClose: () => void;
   // Linking a refund transaction TO a pending refund
   refundTransaction?: {
-    id: number;
+    id: string | number;
     source: string;
     amount: number;
     description: string;

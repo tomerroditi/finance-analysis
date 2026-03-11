@@ -30,19 +30,26 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     enabled: isOpen && !isEdit,
   });
 
+   
   useEffect(() => {
     if (isOpen && initialData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCategory(initialData.category);
+       
       setTotalBudget(initialData.total_budget);
     } else if (isOpen) {
+       
       setCategory("");
+       
       setTotalBudget(0);
     }
   }, [isOpen, initialData]);
 
   // Auto-select first available category when list loads and not in edit mode
+   
   useEffect(() => {
     if (!isEdit && !category && availableCategories.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCategory(availableCategories[0]);
     }
   }, [availableCategories, category, isEdit]);

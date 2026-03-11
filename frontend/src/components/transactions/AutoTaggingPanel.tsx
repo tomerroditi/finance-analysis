@@ -46,8 +46,9 @@ export function AutoTaggingPanel() {
             setSuccess(`Applied rules! ${res.data.tagged_count} tagged.`);
             setTimeout(() => setSuccess(null), 3000);
         },
-        onError: (err: any) => {
-            setError(err.response?.data?.detail || "Failed to apply rules");
+        onError: (err: unknown) => {
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            setError(axiosErr.response?.data?.detail || "Failed to apply rules");
         }
     });
 
@@ -58,8 +59,9 @@ export function AutoTaggingPanel() {
             setSuccess(`Applied rule! ${res.data.tagged_count} tagged.`);
             setTimeout(() => setSuccess(null), 3000);
         },
-        onError: (err: any) => {
-            setError(err.response?.data?.detail || "Failed to apply rule");
+        onError: (err: unknown) => {
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            setError(axiosErr.response?.data?.detail || "Failed to apply rule");
         }
     });
 

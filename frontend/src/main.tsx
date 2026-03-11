@@ -6,7 +6,7 @@ import App from "./App.tsx";
 
 // Polyfill for Plotly
 if (typeof window !== "undefined") {
-  (window as any).global = window;
+  (window as unknown as Record<string, unknown>).global = window;
 }
 
 createRoot(document.getElementById("root")!).render(

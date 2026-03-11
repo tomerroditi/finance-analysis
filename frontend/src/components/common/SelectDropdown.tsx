@@ -58,8 +58,10 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     });
   }, []);
 
+   
   useEffect(() => {
     if (!isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearch("");
       setHighlightIndex(-1);
       setIsCreating(false);
@@ -99,7 +101,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   }, [isOpen]);
 
   // Reset highlight when filtered options change
+   
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHighlightIndex(-1);
   }, [search]);
 

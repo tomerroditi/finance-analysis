@@ -59,6 +59,35 @@ const chartTheme = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Helper sub-components (extracted to avoid creating during render)  */
+/* ------------------------------------------------------------------ */
+
+function MomBadge({ mom }: { mom: { delta: number; percent: number | null } | null }) {
+  if (!mom) return null;
+  const { delta, percent } = mom;
+  const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
+  const sign = delta >= 0 ? "+" : "";
+  return (
+    <span dir="ltr" className={`text-[10px] font-semibold ${color} whitespace-nowrap`}>
+      {sign}{formatCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
+    </span>
+  );
+}
+
+function BreakdownList({ items }: { items: { name: string; amount: number }[] }) {
+  return (
+    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+      {items.map((item) => (
+        <div key={item.name} className="flex justify-between text-xs">
+          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
+          <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Section 1 — Financial Health Header                               */
 /* ------------------------------------------------------------------ */
 
@@ -108,29 +137,6 @@ function FinancialHealthHeader({
       </div>
     );
   }
-
-  const MomBadge = ({ mom }: { mom: { delta: number; percent: number | null } | null }) => {
-    if (!mom) return null;
-    const { delta, percent } = mom;
-    const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
-    const sign = delta >= 0 ? "+" : "";
-    return (
-      <span dir="ltr" className={`text-[10px] font-semibold ${color} whitespace-nowrap`}>
-        {sign}{formatCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
-      </span>
-    );
-  };
-
-  const BreakdownList = ({ items }: { items: { name: string; amount: number }[] }) => (
-    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
-      {items.map((item) => (
-        <div key={item.name} className="flex justify-between text-xs">
-          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
-          <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
-        </div>
-      ))}
-    </div>
-  );
 
   return (
     <div
@@ -352,7 +358,7 @@ function BudgetSpendingGauge({
 
   const budgetAnalysis = useMemo(() => {
     if (!rawBudgetAnalysis?.rules) return undefined;
-    const rules: BudgetRule[] = rawBudgetAnalysis.rules.map((item: any) => ({
+    const rules: BudgetRule[] = rawBudgetAnalysis.rules.map((item: { rule: { id: number; name: string; category: string; tags: string | null; amount: number }; current_amount: number }) => ({
       id: item.rule.id,
       name: item.rule.name,
       category: item.rule.category,
@@ -389,8 +395,10 @@ function BudgetSpendingGauge({
   });
 
   // Auto-select first project when projects load
+   
   useEffect(() => {
     if (projects && projects.length > 0 && !selectedProject) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedProject(projects[0]);
     }
   }, [projects, selectedProject]);
@@ -406,7 +414,7 @@ function BudgetSpendingGauge({
 
   const projectAnalysis = useMemo(() => {
     if (!rawProjectDetails?.rules) return undefined;
-    const rules: BudgetRule[] = rawProjectDetails.rules.map((item: any) => ({
+    const rules: BudgetRule[] = rawProjectDetails.rules.map((item: { rule: { id: number; name: string; category: string; tags: string | null; amount: number }; current_amount: number }) => ({
       id: item.rule.id,
       name: item.rule.name,
       category: item.rule.category,
@@ -594,8 +602,8 @@ function BudgetSpendingGauge({
 /* ------------------------------------------------------------------ */
 
 interface Transaction {
-  id?: any;
-  unique_id?: any;
+  id?: number;
+  unique_id?: string;
   date: string;
   description: string;
   amount: number;
@@ -628,7 +636,7 @@ function evalCondition(node: ConditionNode, tx: Transaction): boolean {
     return (tx.source || "").toLowerCase().includes(svc);
   }
 
-  const fieldMap: Record<string, any> = {
+  const fieldMap: Record<string, string | number> = {
     description: tx.description ?? "",
     amount: tx.amount,
     provider: tx.provider ?? "",
@@ -741,7 +749,7 @@ function RecentTransactionsFeed({
     mutationFn: (tx: Transaction) =>
       pendingRefundsApi.create({
         source_type: "transaction",
-        source_id: tx.unique_id,
+        source_id: tx.unique_id || "",
         source_table: tx.source,
         expected_amount: Math.abs(tx.amount),
       }),
@@ -785,7 +793,9 @@ function RecentTransactionsFeed({
   }, [handleObserver]);
 
   // Reset visible count when transactions change (e.g. demo mode toggle)
+   
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisibleCount(TRANSACTIONS_PAGE_SIZE);
   }, [transactions]);
 
@@ -1022,7 +1032,7 @@ function RecentTransactionsFeed({
           isOpen={!!linkingTransaction}
           onClose={() => setLinkingTransaction(null)}
           refundTransaction={{
-            id: linkingTransaction.unique_id,
+            id: linkingTransaction.unique_id || linkingTransaction.id || 0,
             source: linkingTransaction.source || "unknown",
             amount: linkingTransaction.amount,
             description: linkingTransaction.description,
@@ -1513,15 +1523,15 @@ export function Dashboard() {
                   <Plot
                     data={[
                       {
-                        x: incomeOutcome?.map((d: any) => d.month) || [],
-                        y: incomeOutcome?.map((d: any) => d.income) || [],
+                        x: incomeOutcome?.map((d: { month: string }) => d.month) || [],
+                        y: incomeOutcome?.map((d: { income: number }) => d.income) || [],
                         name: t("dashboard.income"),
                         type: "bar",
                         marker: { color: "#059669" },
                       },
                       {
-                        x: incomeOutcome?.map((d: any) => d.month) || [],
-                        y: incomeOutcome?.map((d: any) => d.expenses) || [],
+                        x: incomeOutcome?.map((d: { month: string }) => d.month) || [],
+                        y: incomeOutcome?.map((d: { expenses: number }) => d.expenses) || [],
                         name: t("dashboard.expenses"),
                         type: "bar",
                         marker: { color: "#f43f5e" },
@@ -1599,12 +1609,12 @@ export function Dashboard() {
           {insightTab === "category" && (() => {
             const expenses = categoryData?.expenses
               ?.slice()
-              .sort((a: any, b: any) => b.amount - a.amount) || [];
+              .sort((a: { amount: number }, b: { amount: number }) => b.amount - a.amount) || [];
             const refunds = categoryData?.refunds
               ?.slice()
-              .sort((a: any, b: any) => b.amount - a.amount) || [];
-            const totalExpenses = expenses.reduce((s: number, d: any) => s + d.amount, 0);
-            const totalRefunds = refunds.reduce((s: number, d: any) => s + d.amount, 0);
+              .sort((a: { amount: number }, b: { amount: number }) => b.amount - a.amount) || [];
+            const totalExpenses = expenses.reduce((s: number, d: { amount: number }) => s + d.amount, 0);
+            const totalRefunds = refunds.reduce((s: number, d: { amount: number }) => s + d.amount, 0);
             const topCategory = expenses[0];
             const maxExpense = topCategory?.amount || 1;
             const maxRefund = refunds[0]?.amount || 1;
@@ -1646,7 +1656,7 @@ export function Dashboard() {
                 <div>
                   <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">{t("dashboard.expenses")}</p>
                   <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
-                    {expenses.map((d: any, i: number) => {
+                    {expenses.map((d: { category: string; amount: number }, i: number) => {
                       const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
                       const barWidth = (d.amount / maxExpense) * 100;
                       const icon = categoryIcons?.[d.category] ?? "";
@@ -1676,7 +1686,7 @@ export function Dashboard() {
                   <div>
                     <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">{t("dashboard.refunds")}</p>
                     <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
-                      {refunds.map((d: any, i: number) => {
+                      {refunds.map((d: { category: string; amount: number }, i: number) => {
                         const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;
                         const barWidth = (d.amount / maxRefund) * 100;
                         const icon = categoryIcons?.[d.category] ?? "";

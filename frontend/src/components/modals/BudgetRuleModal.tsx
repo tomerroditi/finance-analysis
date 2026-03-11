@@ -9,8 +9,8 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 interface BudgetRuleModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (rule: any) => void;
-  initialData?: any;
+  onSave: (rule: object) => void;
+  initialData?: { id: number; name: string; amount: number; category: string; tags?: string | string[] } | null;
   selectedYear: number;
   selectedMonth: number;
 }
@@ -39,8 +39,8 @@ export function BudgetRuleModal({
 
   const categories = categoriesMap ? Object.keys(categoriesMap) : [];
   const availableTags =
-    category && categoriesMap && (categoriesMap as any)[category]
-      ? (categoriesMap as any)[category]
+    category && categoriesMap && (categoriesMap as Record<string, string[]>)[category]
+      ? (categoriesMap as Record<string, string[]>)[category]
       : [];
 
   useEffect(() => {
@@ -160,8 +160,8 @@ export function BudgetRuleModal({
               value={category}
               onChange={(val) => {
                 setCategory(val);
-                if (categoriesMap && (categoriesMap as any)[val]) {
-                  setSelectedTags((categoriesMap as any)[val]);
+                if (categoriesMap && (categoriesMap as Record<string, string[]>)[val]) {
+                  setSelectedTags((categoriesMap as Record<string, string[]>)[val]);
                 } else {
                   setSelectedTags([]);
                 }

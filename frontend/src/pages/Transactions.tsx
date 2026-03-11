@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { transactionsApi, cashBalancesApi } from "../services/api";
+import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
 import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
@@ -36,6 +36,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
 
   useEffect(() => {
     migrationMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Set balance mutation
@@ -271,10 +272,10 @@ export function Transactions() {
 
   // Create a map of pending refunds by source ID for quick lookup
   const pendingRefundsMap = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, PendingRefund>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach((pr) => {
+    pendingRefunds.forEach((pr: PendingRefund) => {
       const key = `${pr.source_table}_${pr.source_id}`;
       map.set(key, pr);
     });
@@ -285,9 +286,9 @@ export function Transactions() {
     const map = new Map<string, number>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach((pr: any) => {
+    pendingRefunds.forEach((pr: PendingRefund) => {
       if (pr.links) {
-        pr.links.forEach((link: any) => {
+        pr.links.forEach((link: RefundLink) => {
           const key = `${link.refund_source}_${link.refund_transaction_id}`;
           map.set(key, link.id);
         });
@@ -332,7 +333,7 @@ export function Transactions() {
                     <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
                   )}
                   <button
-                    onClick={() => setSelectedService(value as any)}
+                    onClick={() => setSelectedService(value as "all" | "credit_cards" | "banks" | "cash" | "manual_investments" | "refunds")}
                     className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
                       ? "bg-[var(--primary)] text-white"
                       : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"

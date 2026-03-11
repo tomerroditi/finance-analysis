@@ -61,6 +61,12 @@ const SCRAPING_PERIODS = [
   { key: "months12", days: 365 },
 ] as const;
 
+interface CredentialAccount {
+  service: string;
+  provider: string;
+  account_name: string;
+}
+
 export function DataSources() {
   const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
@@ -77,7 +83,7 @@ export function DataSources() {
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>(
     {},
   );
-  const [editingAccount, setEditingAccount] = useState<any>(null);
+  const [editingAccount, setEditingAccount] = useState<CredentialAccount | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
 
   const {
@@ -106,6 +112,19 @@ export function DataSources() {
     },
   });
 
+  const resetForm = () => {
+    setIsAddOpen(false);
+    setStep(1);
+    setSelectedService("");
+    setSelectedProvider("");
+    setAccountName("");
+    setFields({});
+    setFormFields([]);
+    setEditingAccount(null);
+    setIsViewOnly(false);
+    setShowPasswords({});
+  };
+
   const createMutation = useMutation({
     mutationFn: () =>
       credentialsApi.create({
@@ -121,7 +140,7 @@ export function DataSources() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (acc: any) =>
+    mutationFn: (acc: CredentialAccount) =>
       credentialsApi.delete(acc.service, acc.provider, acc.account_name),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["credentials-accounts"] }),
@@ -145,8 +164,9 @@ export function DataSources() {
       setEditingBalance(null);
       setBalanceInput("");
     },
-    onError: (error: any) => {
-      alert(error.response?.data?.detail || "Failed to set balance.");
+    onError: (error: unknown) => {
+      const axiosErr = error as { response?: { data?: { detail?: string } } };
+      alert(axiosErr.response?.data?.detail || "Failed to set balance.");
     },
   });
 
@@ -194,23 +214,10 @@ export function DataSources() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isAddOpen]);
 
-  const resetForm = () => {
-    setIsAddOpen(false);
-    setStep(1);
-    setSelectedService("");
-    setSelectedProvider("");
-    setAccountName("");
-    setFields({});
-    setFormFields([]);
-    setEditingAccount(null);
-    setIsViewOnly(false);
-    setShowPasswords({});
-  };
-
-  const handleView = async (acc: any) => {
+  const handleView = async (acc: CredentialAccount) => {
     setIsViewOnly(true);
     setEditingAccount(acc);
-    setSelectedService(acc.service);
+    setSelectedService(acc.service as "banks" | "credit_cards" | "insurances");
     setSelectedProvider(acc.provider);
     setAccountName(acc.account_name);
 
@@ -231,9 +238,9 @@ export function DataSources() {
     }
   };
 
-  const handleEdit = async (acc: any) => {
+  const handleEdit = async (acc: CredentialAccount) => {
     setEditingAccount(acc);
-    setSelectedService(acc.service);
+    setSelectedService(acc.service as "banks" | "credit_cards" | "insurances");
     setSelectedProvider(acc.provider);
     setAccountName(acc.account_name);
 
@@ -329,15 +336,15 @@ export function DataSources() {
           </div>
         ) : (
           (() => {
-            const bankAccounts = accounts?.filter((a: any) => a.service === "banks") ?? [];
-            const creditCardAccounts = accounts?.filter((a: any) => a.service === "credit_cards") ?? [];
-            const insuranceAccounts = accounts?.filter((a: any) => a.service === "insurances") ?? [];
+            const bankAccounts = accounts?.filter((a: CredentialAccount) => a.service === "banks") ?? [];
+            const creditCardAccounts = accounts?.filter((a: CredentialAccount) => a.service === "credit_cards") ?? [];
+            const insuranceAccounts = accounts?.filter((a: CredentialAccount) => a.service === "insurances") ?? [];
 
-            const renderAccountCard = (acc: any, idx: number) => {
+            const renderAccountCard = (acc: CredentialAccount, idx: number) => {
               const scraper = getScraperForAccount(acc);
               const isActive = scraper && (scraper.status === "in_progress" || scraper.status === "waiting_for_2fa");
               const lastScrape = lastScrapes?.find(
-                (s: any) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
+                (s: { service: string; provider: string; account_name: string }) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
               );
               const tfaKey = `${acc.service}_${acc.provider}_${acc.account_name}`;
 
@@ -654,7 +661,7 @@ export function DataSources() {
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">
                       {t("dataSources.bankAccounts")}
                     </h3>
-                    {bankAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                    {bankAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
                   </>
                 )}
                 {creditCardAccounts.length > 0 && (
@@ -662,7 +669,7 @@ export function DataSources() {
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
                       {t("dataSources.creditCards")}
                     </h3>
-                    {creditCardAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                    {creditCardAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
                   </>
                 )}
                 {insuranceAccounts.length > 0 && (
@@ -670,7 +677,7 @@ export function DataSources() {
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
                       {t("dataSources.insurance")}
                     </h3>
-                    {insuranceAccounts.map((acc: any, idx: number) => renderAccountCard(acc, idx))}
+                    {insuranceAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
                   </>
                 )}
               </div>

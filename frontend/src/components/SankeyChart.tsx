@@ -86,7 +86,9 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
 
   return (
     <Plot
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data={plotData as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       layout={layout as any}
       useResizeHandler={true}
       style={{ width: "100%", height: "100%" }}

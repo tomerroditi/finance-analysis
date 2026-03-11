@@ -28,8 +28,10 @@ export function ConfirmationModal({
     const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
     const [isVisible, setIsVisible] = useState(false);
 
+     
     useEffect(() => {
         if (isOpen) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setIsVisible(true);
         } else {
             const timer = setTimeout(() => setIsVisible(false), 200);

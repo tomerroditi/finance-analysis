@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { taggingApi } from "../../services/api";
+import { taggingApi, type TaggingRule } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 
 interface RuleManagerProps {
@@ -33,7 +33,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (rule: any) => {
+    mutationFn: (rule: { name?: string; description_contains: string; category: string; tag: string }) => {
       const payload = {
         name: rule.name || rule.description_contains,
         conditions: {
@@ -59,7 +59,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, rule }: { id: number; rule: any }) => {
+    mutationFn: ({ id, rule }: { id: number; rule: { name?: string; description_contains: string; category: string; tag: string } }) => {
       const payload = {
         name: rule.name || rule.description_contains,
         conditions: {
@@ -269,7 +269,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
               {t("modals.ruleManager.noRules")}
             </div>
           ) : (
-            rules?.map((rule: any) => (
+            rules?.map((rule: TaggingRule) => (
               <div
                 key={rule.id}
                 className="group flex items-center justify-between p-4 rounded-xl bg-[var(--surface-base)]/50 border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all"
@@ -284,7 +284,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                         {t("modals.ruleManager.ifIncludes")}:
                       </span>
                       <code className="text-xs bg-[var(--surface)] px-2 py-0.5 rounded border border-[var(--surface-light)] text-amber-400">
-                        {rule.description_contains}
+                        {rule.conditions?.subconditions?.find(c => c.field === "description")?.value ?? rule.name}
                       </code>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
@@ -310,13 +310,13 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
-                      const descriptionCondition = rule.conditions?.find(
-                        (c: any) => c.field === "description",
+                      const descriptionCondition = rule.conditions?.subconditions?.find(
+                        (c) => c.field === "description",
                       );
                       setNewRule({
                         name: rule.name,
                         description_contains:
-                          descriptionCondition?.value || "",
+                          String(descriptionCondition?.value ?? ""),
                         category: rule.category,
                         tag: rule.tag,
                       });

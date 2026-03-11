@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Search as SearchIcon,
   X,
@@ -38,16 +38,17 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
   const searchResults = React.useMemo(() => {
     if (!query || query.length < 2) return [];
 
-    const results: any[] = [];
+    const results: { type: string; title: string; subtitle?: string; id: string; data?: unknown }[] = [];
     const q = query.toLowerCase();
 
     // 1. Search Categories & Tags
     if (categories) {
-      Object.entries(categories).forEach(([cat, tags]: [string, any]) => {
+      Object.entries(categories).forEach(([cat, tags]: [string, unknown]) => {
+        const tagList = tags as string[];
         if (cat.toLowerCase().includes(q)) {
           results.push({ type: "category", title: cat, id: `cat-${cat}` });
         }
-        tags.forEach((tag: string) => {
+        tagList.forEach((tag: string) => {
           if (tag.toLowerCase().includes(q)) {
             results.push({
               type: "tag",
@@ -64,16 +65,16 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
     if (transactions) {
       transactions
         .filter(
-          (tx: any) =>
-            tx.description?.toLowerCase().includes(q) ||
-            tx.category?.toLowerCase().includes(q) ||
-            tx.tag?.toLowerCase().includes(q),
+          (tx: Record<string, unknown>) =>
+            (tx.description as string)?.toLowerCase().includes(q) ||
+            (tx.category as string)?.toLowerCase().includes(q) ||
+            (tx.tag as string)?.toLowerCase().includes(q),
         )
         .slice(0, 5)
-        .forEach((tx: any) => {
+        .forEach((tx: Record<string, unknown>) => {
           results.push({
             type: "transaction",
-            title: tx.description,
+            title: String(tx.description ?? ""),
             subtitle: `${tx.date} • ₪${tx.amount}`,
             id: `tx-${tx.source}-${tx.unique_id}`,
             data: tx,
@@ -84,9 +85,21 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
     return results.slice(0, 10);
   }, [query, transactions, categories]);
 
+  const handleSelect = useCallback((result: { type: string; id: string }) => {
+    if (result.type === "transaction") {
+      navigate("/transactions", { state: { highlightId: result.id } });
+    } else if (result.type === "category" || result.type === "tag") {
+      navigate("/categories");
+    }
+    onClose();
+  }, [navigate, onClose]);
+
+   
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery("");
+       
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 100);
     }
@@ -111,16 +124,8 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, searchResults, selectedIndex]);
-
-  const handleSelect = (result: any) => {
-    if (result.type === "transaction") {
-      navigate("/transactions", { state: { highlightId: result.id } });
-    } else if (result.type === "category" || result.type === "tag") {
-      navigate("/categories");
-    }
-    onClose();
-  };
+     
+  }, [isOpen, searchResults, selectedIndex, onClose, handleSelect]);
 
   if (!isOpen) return null;
 

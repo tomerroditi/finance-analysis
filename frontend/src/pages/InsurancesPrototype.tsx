@@ -143,7 +143,7 @@ function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: any;
+  icon: React.ComponentType<{ size: number }>;
   color: string;
 }) {
   return (

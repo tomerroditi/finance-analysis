@@ -23,8 +23,8 @@ export const transactionsApi = {
       params: { service, include_split_parents: includeSplitParents },
     }),
   getById: (id: number) => api.get(`/transactions/${id}`),
-  create: (data: any) => api.post("/transactions/", data),
-  update: (uniqueId: string, data: any) =>
+  create: (data: Record<string, unknown>) => api.post("/transactions/", data),
+  update: (uniqueId: string, data: Record<string, unknown>) =>
     api.put(`/transactions/${uniqueId}`, data),
   delete: (uniqueId: string, source: string) =>
     api.delete(`/transactions/${uniqueId}`, { params: { source } }),
@@ -33,7 +33,7 @@ export const transactionsApi = {
       params: { category, tag, service },
     }),
   bulkTag: (data: {
-    transaction_ids: number[];
+    transaction_ids: (string | number)[];
     source: string;
     category?: string;
     tag?: string;
@@ -100,7 +100,7 @@ export interface ConditionNode {
   subconditions?: ConditionNode[];
   field?: string;
   operator?: Operator;
-  value?: any;
+  value?: string | number | boolean | null | (string | number)[];
 }
 
 export interface TaggingRule {
@@ -149,7 +149,7 @@ export const taggingApi = {
     api.post(`/tagging-rules/rules/${id}/apply`, null, {
       params: { overwrite },
     }),
-  testRule: (conditions: any[]) =>
+  testRule: (conditions: ConditionNode[]) =>
     api.post("/tagging-rules/rules/test", conditions),
   checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>
     api.post("/tagging-rules/rules/validate", {
@@ -159,7 +159,7 @@ export const taggingApi = {
       rule_id: ruleId
     }),
   previewRule: (conditions: ConditionNode, limit = 100) =>
-    api.post<{ matches: any[]; count: number }>("/tagging-rules/rules/preview", {
+    api.post<{ matches: Record<string, unknown>[]; count: number }>("/tagging-rules/rules/preview", {
       conditions,
       limit
     }),
@@ -355,7 +355,7 @@ export const cashBalancesApi = {
 export interface PendingRefund {
   id: number;
   source_type: "transaction" | "split";
-  source_id: number;
+  source_id: string | number;
   source_table: string;
   expected_amount: number;
   status: "pending" | "resolved" | "partial";
@@ -386,7 +386,7 @@ export interface RefundLink {
 export const pendingRefundsApi = {
   create: (data: {
     source_type: "transaction" | "split";
-    source_id: number;
+    source_id: string | number;
     source_table: string;
     expected_amount: number;
     notes?: string;
@@ -398,7 +398,7 @@ export const pendingRefundsApi = {
   linkRefund: (
     pendingId: number,
     data: {
-      refund_transaction_id: number;
+      refund_transaction_id: string | number;
       refund_source: string;
       amount: number;
     },

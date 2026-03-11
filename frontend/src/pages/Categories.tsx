@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, MoveRight, Wallet, Search, Pencil } from "lucide-react";
+import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 
@@ -646,7 +646,7 @@ export function Categories() {
   });
 
   const relocateTagMutation = useMutation({
-    mutationFn: ({ tag, newCategory, oldCategory }: any) =>
+    mutationFn: ({ tag, newCategory, oldCategory }: { tag: string; newCategory: string; oldCategory: string }) =>
       taggingApi.relocateTag(oldCategory, newCategory, tag),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["categories"] });

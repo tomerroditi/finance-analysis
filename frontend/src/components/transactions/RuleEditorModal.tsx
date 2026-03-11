@@ -68,16 +68,24 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     const name = tag ? `Auto: ${category} - ${tag}` : "";
 
     // Initialize form when editing
+     
     useEffect(() => {
         if (editingRule) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCategory(editingRule.category);
+             
             setTag(editingRule.tag);
+             
             setConditions(editingRule.conditions);
         } else {
+             
             setCategory("");
+             
             setTag("");
+             
             setConditions(EMPTY_CONDITIONS);
         }
+         
         setError(null);
     }, [editingRule, isOpen]);
 
@@ -105,7 +113,10 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
             onSaved?.();
             onClose();
         },
-        onError: (err: any) => setError(err.response?.data?.detail || "Failed to create rule")
+        onError: (err: unknown) => {
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            setError(axiosErr.response?.data?.detail || "Failed to create rule");
+        }
     });
 
     const updateMutation = useMutation({
@@ -117,7 +128,10 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
             onSaved?.();
             onClose();
         },
-        onError: (err: any) => setError(err.response?.data?.detail || "Failed to update rule")
+        onError: (err: unknown) => {
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            setError(axiosErr.response?.data?.detail || "Failed to update rule");
+        }
     });
 
     const handleSave = () => {
@@ -167,7 +181,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                         defaultLeftWidth={55}
                         minLeftWidth={30}
                         minRightWidth={25}
-                        left={<TransactionPreview matches={preview?.matches || []} loading={previewLoading} count={preview?.count || 0} />}
+                        left={<TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={preview?.count || 0} />}
                         right={
                             <div className="h-full overflow-y-auto p-6">
                                 <RuleForm
@@ -239,7 +253,17 @@ function hasValidCondition(node: ConditionNode): boolean {
 }
 
 // Transaction Preview Component
-function TransactionPreview({ matches, loading, count }: { matches: any[]; loading: boolean; count: number }) {
+interface PreviewTransaction {
+    unique_id?: string;
+    date?: string;
+    description?: string;
+    amount?: number;
+    category?: string;
+    tag?: string;
+    [key: string]: unknown;
+}
+
+function TransactionPreview({ matches, loading, count }: { matches: PreviewTransaction[]; loading: boolean; count: number }) {
     const { t } = useTranslation();
     const formatAmount = (amount: number) => {
         const formatted = Math.abs(amount).toLocaleString("he-IL", { style: "currency", currency: "ILS" });
@@ -285,8 +309,8 @@ function TransactionPreview({ matches, loading, count }: { matches: any[]; loadi
                                     <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
                                         {tx.description}
                                     </td>
-                                    <td className={`px-4 py-2 text-right whitespace-nowrap font-mono ${tx.amount < 0 ? "text-red-400" : "text-green-400"}`}>
-                                        {formatAmount(tx.amount)}
+                                    <td className={`px-4 py-2 text-right whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
+                                        {formatAmount(tx.amount ?? 0)}
                                     </td>
                                     <td className="px-4 py-2">
                                         {tx.category ? (

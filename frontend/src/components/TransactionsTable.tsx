@@ -28,6 +28,7 @@ import {
   taggingApi,
   pendingRefundsApi,
   cashBalancesApi,
+  type PendingRefund,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { humanizeProvider } from "../utils/textFormatting";
@@ -38,8 +39,8 @@ import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useTranslation } from "react-i18next";
 
 export interface Transaction {
-  id?: any;
-  unique_id?: any;
+  id?: number;
+  unique_id?: string;
   source?: string;
   desc?: string;
   description?: string;
@@ -76,7 +77,7 @@ export interface TransactionsTableProps {
   onTransactionUpdated?: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
   onAddTransaction?: () => void;
-  pendingRefundsMap?: Map<string, any>;
+  pendingRefundsMap?: Map<string, PendingRefund>;
   refundLinksMap?: Map<string, number>;
 
   // External filter control
@@ -228,7 +229,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Bulk tag mutation
   const bulkTagMutation = useMutation({
-    mutationFn: (data: any) => transactionsApi.bulkTag(data),
+    mutationFn: (data: Parameters<typeof transactionsApi.bulkTag>[0]) => transactionsApi.bulkTag(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
@@ -244,7 +245,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     mutationFn: (tx: Transaction) =>
       pendingRefundsApi.create({
         source_type: "transaction",
-        source_id: tx.unique_id,
+        source_id: tx.unique_id || "",
         source_table: tx.source || "unknown",
         expected_amount: Math.abs(tx.amount),
       }),
@@ -333,8 +334,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           bVal = Math.abs(b.amount);
           break;
         default:
-          aVal = (a as any)[sortConfig.key] ?? "";
-          bVal = (b as any)[sortConfig.key] ?? "";
+          aVal = ((a as unknown as Record<string, unknown>)[sortConfig.key] ?? "") as string | number;
+          bVal = ((b as unknown as Record<string, unknown>)[sortConfig.key] ?? "") as string | number;
       }
 
       if (aVal === bVal) return 0;
@@ -413,9 +414,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const confirmDelete = async () => {
     if (!deletingTransaction) return;
     try {
-      await transactionsApi.delete(deletingTransaction.unique_id, deletingTransaction.source || "");
+      await transactionsApi.delete(deletingTransaction.unique_id || "", deletingTransaction.source || "");
       onTransactionUpdated?.();
-    } catch (err) {
+    } catch {
       alert("Failed to delete transaction.");
     } finally {
       setDeletingTransaction(null);
@@ -433,10 +434,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       selectedIds.has(getTransactionId(tx)),
     );
     const bySource = selectedTxs.reduce(
-      (acc: Record<string, number[]>, tx) => {
+      (acc: Record<string, (string | number)[]>, tx) => {
         const source = tx.source || "unknown";
         if (!acc[source]) acc[source] = [];
-        acc[source].push(tx.unique_id || tx.id);
+        acc[source].push(tx.unique_id || tx.id || 0);
         return acc;
       },
       {},
@@ -445,7 +446,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     Object.entries(bySource).forEach(([source, ids]) => {
       const isManualSource =
         source.includes("cash") || source.includes("manual_investment");
-      const payload: any = {
+      const payload: Parameters<typeof transactionsApi.bulkTag>[0] = {
         transaction_ids: ids,
         source,
       };
@@ -481,11 +482,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
     try {
       for (const tx of manualTxs) {
-        await transactionsApi.delete(tx.unique_id, tx.source || "");
+        await transactionsApi.delete(tx.unique_id || "", tx.source || "");
       }
       setSelectedIds(new Set());
       onTransactionUpdated?.();
-    } catch (err) {
+    } catch {
       alert("Partial failure during bulk deletion.");
     }
   };
@@ -1140,7 +1141,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   <SelectDropdown
                     options={
                       allSelectedAreCash
-                        ? cashBalances.map((b: any) => ({ label: b.account_name, value: b.account_name }))
+                        ? cashBalances.map((b: { account_name: string }) => ({ label: b.account_name, value: b.account_name }))
                         : []
                     }
                     value={bulkEditData.account_name}
@@ -1227,7 +1228,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           isOpen={!!linkingTransaction}
           onClose={() => setLinkingTransaction(null)}
           refundTransaction={{
-            id: linkingTransaction.unique_id,
+            id: linkingTransaction.unique_id || linkingTransaction.id || 0,
             source: linkingTransaction.source || "unknown",
             amount: linkingTransaction.amount,
             description:

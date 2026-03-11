@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -44,7 +44,7 @@ export function Sidebar() {
 
   const uncategorizedCount =
     allTransactions?.filter(
-      (t: any) => !t.category || t.category === "Uncategorized",
+      (tx: { category?: string }) => !tx.category || tx.category === "Uncategorized",
     ).length ?? 0;
 
   // Check for stale data sources (>7 days since last scrape)
@@ -54,14 +54,16 @@ export function Sidebar() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const staleSourceCount =
-    lastScrapes?.filter((s: any) => {
+  const staleSourceCount = useMemo(() =>
+    lastScrapes?.filter((s: { last_scrape_date: string | null }) => {
       if (!s.last_scrape_date) return true;
       const daysSince =
+        // eslint-disable-next-line react-hooks/purity
         (Date.now() - new Date(s.last_scrape_date).getTime()) /
         (1000 * 60 * 60 * 24);
       return daysSince > 7;
-    }).length ?? 0;
+    }).length ?? 0
+  , [lastScrapes]);
 
   const getBadge = (path: string): number | null => {
     if (path === "/transactions" && uncategorizedCount > 0)

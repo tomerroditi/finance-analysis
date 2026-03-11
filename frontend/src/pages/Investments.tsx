@@ -23,6 +23,55 @@ import { Sparkline } from "../components/common/Sparkline";
 import Plot from "react-plotly.js";
 import { plotlyConfig } from "../utils/plotlyLocale";
 
+interface Investment {
+  id: number;
+  name: string;
+  category: string;
+  tag: string;
+  type: string;
+  is_closed: boolean;
+  closed_date?: string;
+  interest_rate?: number;
+  interest_rate_type?: string;
+  notes?: string;
+  latest_snapshot_date?: string;
+  latest_snapshot_balance?: number;
+  current_balance?: number;
+  sparkline?: number[];
+  first_transaction_date?: string;
+  created_date?: string;
+}
+
+interface AllocationItem {
+  id: number;
+  name: string;
+  balance: number;
+  percentage: number;
+  profit_loss?: number;
+  roi?: number;
+  history?: BalancePoint[];
+  total_deposits?: number;
+  total_withdrawals?: number;
+  cagr?: number;
+}
+
+interface BalancePoint {
+  date: string;
+  balance: number;
+}
+
+interface BalanceSeries {
+  name: string;
+  data: BalancePoint[];
+}
+
+interface Snapshot {
+  id: number;
+  date: string;
+  balance: number;
+  source: string;
+}
+
 function StatCard({
   title,
   value,
@@ -31,7 +80,7 @@ function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: any;
+  icon: React.ComponentType<{ size: number }>;
   color: string;
 }) {
   return (
@@ -72,7 +121,17 @@ function InvestmentCard({
   onEditCloseDate,
   onEdit,
   analysisData,
-}: any) {
+}: {
+  inv: Investment;
+  onViewAnalysis: (id: number) => void;
+  onClose: (id: number) => void;
+  onReopen: (id: number) => void;
+  onDelete: (id: number) => void;
+  onUpdateBalance: (id: number) => void;
+  onEditCloseDate: (id: number, closedDate?: string) => void;
+  onEdit: (inv: Investment) => void;
+  analysisData?: AllocationItem;
+}) {
   const { t } = useTranslation();
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
@@ -126,10 +185,10 @@ function InvestmentCard({
             inv.is_closed ? (
               <>
                 <p
-                  className={`text-2xl font-black ${analysisData.profit_loss >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                  className={`text-2xl font-black ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                 >
-                  {analysisData.profit_loss >= 0 ? "+" : ""}
-                  {formatCardCurrency(analysisData.profit_loss)}
+                  {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
+                  {formatCardCurrency(analysisData.profit_loss ?? 0)}
                 </p>
                 <p className="text-sm font-semibold mt-1 text-[var(--text-muted)]">
                   {analysisData.roi != null &&
@@ -142,10 +201,10 @@ function InvestmentCard({
                   {formatCardCurrency(analysisData.balance)}
                 </p>
                 <p
-                  className={`text-sm font-semibold mt-1 ${analysisData.profit_loss >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                  className={`text-sm font-semibold mt-1 ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                 >
-                  {analysisData.profit_loss >= 0 ? "+" : ""}
-                  {formatCardCurrency(analysisData.profit_loss)}
+                  {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
+                  {formatCardCurrency(analysisData.profit_loss ?? 0)}
                   {analysisData.roi != null &&
                     ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
                 </p>
@@ -159,12 +218,12 @@ function InvestmentCard({
           )}
         </div>
         <div className="flex-shrink-0 ml-4">
-          {analysisData?.history?.length >= 2 ? (
+          {(analysisData?.history?.length ?? 0) >= 2 ? (
             <Sparkline
-              data={analysisData.history}
+              data={analysisData!.history!.map(p => p.balance)}
               width={100}
               height={40}
-              color={analysisData.profit_loss >= 0 ? "#10b981" : "#f43f5e"}
+              color={(analysisData!.profit_loss ?? 0) >= 0 ? "#10b981" : "#f43f5e"}
             />
           ) : !analysisData ? (
             <Skeleton variant="card" className="w-[100px] h-[40px]" />
@@ -177,19 +236,19 @@ function InvestmentCard({
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCardCurrency(analysisData.total_deposits) : "—"}
+            {analysisData ? formatCardCurrency(analysisData.total_deposits ?? 0) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.withdrawals")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCardCurrency(analysisData.total_withdrawals) : "—"}
+            {analysisData ? formatCardCurrency(analysisData.total_withdrawals ?? 0) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.cagr")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData?.cagr != null ? `${analysisData.cagr >= 0 ? "+" : ""}${analysisData.cagr.toFixed(1)}%` : "—"}
+            {analysisData?.cagr != null ? `${(analysisData.cagr ?? 0) >= 0 ? "+" : ""}${(analysisData.cagr ?? 0).toFixed(1)}%` : "—"}
           </p>
         </div>
       </div>
@@ -394,7 +453,7 @@ export function Investments() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => investmentsApi.create(data),
+    mutationFn: (data: Record<string, unknown>) => investmentsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
@@ -488,7 +547,7 @@ export function Investments() {
 
   // Filtering logic for New Investment dropdowns
   const usedTagsSet = new Set(
-    investments?.map((inv: any) => `${inv.category}:${inv.tag}`),
+    investments?.map((inv: Investment) => `${inv.category}:${inv.tag}`),
   );
 
   const filteredCategories = categories
@@ -502,7 +561,7 @@ export function Investments() {
             obj[key] = availableTags;
           }
           return obj;
-        }, {} as any)
+        }, {} as Record<string, string[]>)
     : {};
 
   const formatCurrency = (val: number) =>
@@ -521,12 +580,12 @@ export function Investments() {
   };
 
   const activeInvestments =
-    investments?.filter((inv: any) => !inv.is_closed) || [];
+    investments?.filter((inv: Investment) => !inv.is_closed) || [];
   const closedInvestments =
-    investments?.filter((inv: any) => inv.is_closed) || [];
+    investments?.filter((inv: Investment) => inv.is_closed) || [];
 
   const getAllocationData = (invId: number) =>
-    portfolioAnalysis?.allocation?.find((a: any) => a.id === invId);
+    portfolioAnalysis?.allocation?.find((a: AllocationItem) => a.id === invId);
 
   if (isLoading)
     return (
@@ -626,9 +685,9 @@ export function Investments() {
                   {balanceHistory?.series?.length > 0 ? (
                     <Plot
                       data={[
-                        ...balanceHistory.series.map((s: any, i: number) => ({
-                          x: s.data.map((d: any) => d.date),
-                          y: s.data.map((d: any) => d.balance),
+                        ...balanceHistory.series.map((s: BalanceSeries, i: number) => ({
+                          x: s.data.map((d: BalancePoint) => d.date),
+                          y: s.data.map((d: BalancePoint) => d.balance),
                           name: s.name,
                           type: "scatter" as const,
                           mode: "lines" as const,
@@ -639,8 +698,8 @@ export function Investments() {
                           },
                         })),
                         {
-                          x: balanceHistory.total.map((d: any) => d.date),
-                          y: balanceHistory.total.map((d: any) => d.balance),
+                          x: balanceHistory.total.map((d: BalancePoint) => d.date),
+                          y: balanceHistory.total.map((d: BalancePoint) => d.balance),
                           name: "Total",
                           type: "scatter" as const,
                           mode: "lines" as const,
@@ -666,7 +725,7 @@ export function Investments() {
               </div>
 
               {/* Allocation Pie Chart */}
-              {portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).length > 0 && (
+              {portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).length > 0 && (
                 <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
                   <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
                     {t("investments.portfolioAllocation")}
@@ -675,11 +734,11 @@ export function Investments() {
                     <Plot
                       data={[
                         {
-                          values: portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).map(
-                            (d: any) => d.balance,
+                          values: portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).map(
+                            (d: BalancePoint) => d.balance,
                           ),
-                          labels: portfolioAnalysis.allocation.filter((d: any) => d.balance > 0).map(
-                            (d: any) => d.name,
+                          labels: portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).map(
+                            (d: AllocationItem) => d.name,
                           ),
                           type: "pie",
                           hole: 0.5,
@@ -721,7 +780,7 @@ export function Investments() {
               </span>
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {activeInvestments.map((inv: any) => (
+              {activeInvestments.map((inv: Investment) => (
                 <InvestmentCard
                   key={inv.id}
                   inv={inv}
@@ -739,7 +798,7 @@ export function Investments() {
                     })
                   }
                   onEditCloseDate={() => {}}
-                  onEdit={(inv: any) => setEditForm({
+                  onEdit={(inv: Investment) => setEditForm({
                     investmentId: inv.id,
                     name: inv.name,
                     type: inv.type || "",
@@ -775,7 +834,7 @@ export function Investments() {
             </span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 opacity-75 grayscale-[0.5]">
-            {closedInvestments.map((inv: any) => (
+            {closedInvestments.map((inv: Investment) => (
               <InvestmentCard
                 key={inv.id}
                 inv={inv}
@@ -792,10 +851,10 @@ export function Investments() {
                     balance: "",
                   })
                 }
-                onEditCloseDate={(id: number, closedDate: string) =>
-                  setCloseForm({ investmentId: id, date: closedDate, mode: "edit" })
+                onEditCloseDate={(id: number, closedDate?: string) =>
+                  setCloseForm({ investmentId: id, date: closedDate || "", mode: "edit" })
                 }
-                onEdit={(inv: any) => setEditForm({
+                onEdit={(inv: Investment) => setEditForm({
                   investmentId: inv.id,
                   name: inv.name,
                   type: inv.type || "",
@@ -878,9 +937,9 @@ export function Investments() {
                       <Plot
                         data={[
                           {
-                            x: selectedAnalysis.history.map((d: any) => d.date),
+                            x: selectedAnalysis.history.map((d: BalancePoint) => d.date),
                             y: selectedAnalysis.history.map(
-                              (d: any) => d.balance,
+                              (d: BalancePoint) => d.balance,
                             ),
                             type: "scatter",
                             mode: "lines",
@@ -932,9 +991,9 @@ export function Investments() {
                   </div>
 
                   {/* Fixed-Rate Calculation */}
-                  {investments?.find((i: any) => i.id === selectedAnalysisId)
+                  {investments?.find((i: Investment) => i.id === selectedAnalysisId)
                     ?.interest_rate_type === "fixed" &&
-                    !!investments?.find((i: any) => i.id === selectedAnalysisId)
+                    !!investments?.find((i: Investment) => i.id === selectedAnalysisId)
                       ?.interest_rate && (
                     <div className="flex justify-end">
                       <button
@@ -969,7 +1028,7 @@ export function Investments() {
                             </tr>
                           </thead>
                           <tbody>
-                            {selectedSnapshots.map((snap: any) => (
+                            {selectedSnapshots.map((snap: Snapshot) => (
                               <tr
                                 key={snap.id}
                                 className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
@@ -1242,7 +1301,7 @@ export function Investments() {
 
             {createMutation.isError && (
               <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
-                {(createMutation.error as any)?.response?.data?.detail ||
+                {(createMutation.error as unknown as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
                   t("investments.failedToCreate")}
               </div>
             )}

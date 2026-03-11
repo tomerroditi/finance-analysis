@@ -7,7 +7,7 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 interface TransactionEditorModalProps {
-  transaction: any;
+  transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string };
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -57,7 +57,7 @@ export function TransactionEditorModal({
       });
       onSuccess();
       onClose();
-    } catch (err) {
+    } catch {
       alert("Failed to update transaction.");
     }
   };
@@ -105,7 +105,7 @@ export function TransactionEditorModal({
                 </label>
                 {isCash ? (
                   <SelectDropdown
-                    options={cashBalances.map((b: any) => ({
+                    options={cashBalances.map((b: { account_name: string }) => ({
                       label: b.account_name,
                       value: b.account_name,
                     }))}

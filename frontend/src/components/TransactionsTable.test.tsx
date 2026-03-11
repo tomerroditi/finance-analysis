@@ -11,7 +11,7 @@ afterAll(() => server.close());
 
 const makeTx = (overrides: Partial<Transaction> = {}): Transaction => ({
   id: 1,
-  unique_id: 1,
+  unique_id: "1",
   amount: -100,
   date: "2026-01-15",
   description: "Test transaction",
@@ -24,11 +24,11 @@ const makeTx = (overrides: Partial<Transaction> = {}): Transaction => ({
 });
 
 const sampleTransactions: Transaction[] = [
-  makeTx({ id: 1, unique_id: 1, description: "Supermarket", amount: -200, date: "2026-01-10" }),
-  makeTx({ id: 2, unique_id: 2, description: "Bus fare", category: "Transport", tag: "Public Transport", amount: -15, date: "2026-01-12" }),
-  makeTx({ id: 3, unique_id: 3, description: "Salary deposit", category: "Salary", tag: "-", amount: 8000, date: "2026-01-01" }),
-  makeTx({ id: 4, unique_id: 4, description: "Restaurant dinner", category: "Food", tag: "Restaurants", amount: -150, date: "2026-01-20" }),
-  makeTx({ id: 5, unique_id: 5, description: "Fuel", category: "Transport", tag: "Fuel", amount: -300, date: "2026-02-01" }),
+  makeTx({ id: 1, unique_id: "1", description: "Supermarket", amount: -200, date: "2026-01-10" }),
+  makeTx({ id: 2, unique_id: "2", description: "Bus fare", category: "Transport", tag: "Public Transport", amount: -15, date: "2026-01-12" }),
+  makeTx({ id: 3, unique_id: "3", description: "Salary deposit", category: "Salary", tag: "-", amount: 8000, date: "2026-01-01" }),
+  makeTx({ id: 4, unique_id: "4", description: "Restaurant dinner", category: "Food", tag: "Restaurants", amount: -150, date: "2026-01-20" }),
+  makeTx({ id: 5, unique_id: "5", description: "Fuel", category: "Transport", tag: "Fuel", amount: -300, date: "2026-02-01" }),
 ];
 
 function renderTable(overrides: Partial<Parameters<typeof TransactionsTable>[0]> = {}) {

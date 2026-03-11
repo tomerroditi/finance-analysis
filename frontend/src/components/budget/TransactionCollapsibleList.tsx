@@ -1,12 +1,13 @@
 import React from "react";
 import { TransactionsTable, type Transaction } from "../TransactionsTable";
+import { type PendingRefund } from "../../services/api";
 
 interface TransactionCollapsibleListProps {
   transactions: Transaction[];
   isOpen: boolean;
   showActions?: boolean;
   onTransactionUpdated?: () => void;
-  pendingRefundsMap?: Map<string, any>;
+  pendingRefundsMap?: Map<string, PendingRefund>;
   refundLinksMap?: Map<string, number>;
   // Split parents filter props
   showSplitParentsFilter?: boolean;

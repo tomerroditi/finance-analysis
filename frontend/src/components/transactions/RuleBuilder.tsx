@@ -212,7 +212,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                 <input
                     type={inputType}
                     placeholder={t("ruleBuilder.value")}
-                    value={value.value}
+                    value={value.value != null && typeof value.value !== "boolean" && !Array.isArray(value.value) ? value.value : ""}
                     onChange={(e) => onChange({ ...value, value: inputType === 'number' ? Number(e.target.value) : e.target.value })}
                     className="flex-1 min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"
                 />

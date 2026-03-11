@@ -7,7 +7,7 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 interface SplitTransactionModalProps {
-  transaction: any;
+  transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -24,7 +24,7 @@ export function SplitTransactionModal({
   onSuccess,
 }: SplitTransactionModalProps) {
   const { t } = useTranslation();
-  const originalAmount = parseFloat(transaction.amount);
+  const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
       amount: originalAmount / 2,
@@ -59,7 +59,7 @@ export function SplitTransactionModal({
     setSplits(splits.filter((_, i) => i !== index));
   };
 
-  const updateSplit = (index: number, field: keyof SplitItem, value: any) => {
+  const updateSplit = (index: number, field: keyof SplitItem, value: string | number) => {
     const newSplits = [...splits];
     newSplits[index] = { ...newSplits[index], [field]: value };
     if (field === "category") newSplits[index].tag = ""; // Reset tag on category change
@@ -71,8 +71,8 @@ export function SplitTransactionModal({
     if (!isValid) return;
 
     try {
-      await transactionsApi.split(transaction.unique_id, {
-        source: transaction.source,
+      await transactionsApi.split(transaction.id ?? 0, {
+        source: transaction.source || "",
         splits: splits.map((s) => ({
           amount: s.amount,
           category: s.category,
@@ -81,7 +81,7 @@ export function SplitTransactionModal({
       });
       onSuccess();
       onClose();
-    } catch (err) {
+    } catch {
       alert("Failed to split transaction.");
     }
   };

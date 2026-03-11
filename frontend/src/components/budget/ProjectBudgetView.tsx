@@ -2,12 +2,45 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, PenSquare } from "lucide-react";
-import { budgetApi, pendingRefundsApi } from "../../services/api";
+import { budgetApi, pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+
+interface ProjectBudgetRule {
+  id: number;
+  name: string;
+  category: string;
+  amount: number;
+  tags?: string | string[];
+}
+
+interface ProjectRuleItem {
+  rule: ProjectBudgetRule;
+  current_amount: number;
+  data: ProjectTransaction[];
+  allow_edit: boolean;
+  allow_delete: boolean;
+}
+
+interface ProjectTransaction {
+  id?: number;
+  unique_id?: string;
+  amount: number;
+  date: string;
+  source?: string;
+  desc?: string;
+  description?: string;
+  category?: string;
+  tag?: string;
+  provider?: string;
+  account_name?: string;
+  account_number?: string;
+  pending_refund_id?: number;
+  [key: string]: unknown;
+}
 
 export const ProjectBudgetView: React.FC = () => {
   const { t } = useTranslation();
@@ -15,7 +48,7 @@ export const ProjectBudgetView: React.FC = () => {
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editingRule, setEditingRule] = useState<any>(null);
+  const [editingRule, setEditingRule] = useState<ProjectBudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
 
@@ -35,10 +68,10 @@ export const ProjectBudgetView: React.FC = () => {
 
   // Create a map of pending refunds
   const pendingRefundsMap = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, PendingRefund>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach((pr: any) => {
+    pendingRefunds.forEach((pr: PendingRefund) => {
       const key = `${pr.source_table}_${pr.source_id}`;
       map.set(key, pr);
     });
@@ -46,8 +79,10 @@ export const ProjectBudgetView: React.FC = () => {
   }, [pendingRefunds]);
 
   // Auto-select first project if available and none selected
+   
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedProject(projects[0]);
     }
   }, [projects, selectedProject]);
@@ -100,7 +135,7 @@ export const ProjectBudgetView: React.FC = () => {
   });
 
   const updateRuleMutation = useMutation({
-    mutationFn: ({ id, rule }: { id: number; rule: any }) =>
+    mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -135,7 +170,7 @@ export const ProjectBudgetView: React.FC = () => {
     }
   };
 
-  const handleSaveRule = async (rule: any) => {
+  const handleSaveRule = async (rule: object) => {
     if (editingRule) {
       await updateRuleMutation.mutateAsync({ id: editingRule.id, rule });
     } else {
@@ -168,7 +203,7 @@ export const ProjectBudgetView: React.FC = () => {
   // We can find it in projectDetails.rules where rule.tags == ALL_TAGS?
   // Actually the backend response structure for rules: 'rule' is the rule object.
   const projectTotalRule = projectDetails?.rules?.find(
-    (r: any) =>
+    (r: ProjectRuleItem) =>
       r.rule.tags?.includes("ALL_TAGS") ||
       r.rule.tags === "ALL_TAGS" ||
       (Array.isArray(r.rule.tags) && r.rule.tags[0] === "ALL_TAGS"),
@@ -197,17 +232,17 @@ export const ProjectBudgetView: React.FC = () => {
 
     const allTransactions = projectTotalRule?.data || [];
     const specificRules = projectDetails.rules.filter(
-      (r: any) => r !== projectTotalRule,
+      (r: ProjectRuleItem) => r !== projectTotalRule,
     );
 
     // Collect IDs of transactions in specific rules
-    const coveredIds = new Set();
-    specificRules.forEach((rule: any) => {
-      rule.data.forEach((tx: any) => coveredIds.add(tx.unique_id || tx.id)); // Adjust key if needed based on backend
+    const coveredIds = new Set<string | number | undefined>();
+    specificRules.forEach((rule: ProjectRuleItem) => {
+      rule.data.forEach((tx: ProjectTransaction) => coveredIds.add(tx.unique_id || tx.id));
     });
 
     return allTransactions.filter(
-      (tx: any) => !coveredIds.has(tx.unique_id || tx.id),
+      (tx: ProjectTransaction) => !coveredIds.has(tx.unique_id || tx.id),
     );
   }, [projectDetails, projectTotalRule]);
 
@@ -256,7 +291,7 @@ export const ProjectBudgetView: React.FC = () => {
         <div className="space-y-4">
           {/* Move Total Rule to top if needed, or stick to list order from backend (usually Total is first or separate) */}
           {/* The backend returns list. Total rule is one of them. */}
-          {projectDetails.rules.map((item: any) => {
+          {projectDetails.rules.map((item: ProjectRuleItem) => {
             const isTotalRule =
               item.rule.tags?.includes("ALL_TAGS") ||
               item.rule.tags === "ALL_TAGS" ||
@@ -328,7 +363,7 @@ export const ProjectBudgetView: React.FC = () => {
                 label={t("budget.uncategorizedSpending")}
                 subLabel={t("budget.uncategorizedSubLabel")}
                 current={otherTransactions.reduce(
-                  (acc: number, tx: any) => acc + Math.abs(tx.amount || 0),
+                  (acc: number, tx: ProjectTransaction) => acc + Math.abs(tx.amount || 0),
                   0,
                 )}
                 total={0} // No specific budget for "uncategorized"

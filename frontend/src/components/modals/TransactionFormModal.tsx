@@ -7,8 +7,8 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 
 export interface Transaction {
-    id?: any;
-    unique_id?: any;
+    id?: number;
+    unique_id?: string;
     source?: string;
     desc?: string;
     description?: string;
@@ -57,8 +57,10 @@ export function TransactionFormModal({
     const [transactionType, setTransactionType] = useState<"expense" | "income">("expense");
 
     // Load initial data when opening
+     
     useEffect(() => {
         if (isOpen && transaction) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setFormData({
                 date: transaction.date,
                 description: transaction.description || transaction.desc || "",
@@ -112,7 +114,7 @@ export function TransactionFormModal({
 
         try {
             if (isEditMode && transaction) {
-                await transactionsApi.update(transaction.unique_id, {
+                await transactionsApi.update(transaction.unique_id || "", {
                     ...formData,
                     amount: isManual ? finalAmount : transaction.amount, // Only update amount if manual, else keep original
                     source: transaction.source, // Backend needs source for routing updates
@@ -187,7 +189,7 @@ export function TransactionFormModal({
                                 </label>
                                 {isCashTransaction ? (
                                     <SelectDropdown
-                                        options={cashBalances.map((b: any) => ({
+                                        options={cashBalances.map((b: { account_name: string }) => ({
                                             label: b.account_name,
                                             value: b.account_name,
                                         }))}

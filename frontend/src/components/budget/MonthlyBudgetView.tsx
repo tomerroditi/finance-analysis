@@ -10,13 +10,35 @@ import {
   Copy,
 } from "lucide-react";
 import i18n from "../../i18n";
-import { budgetApi, pendingRefundsApi } from "../../services/api";
+import { budgetApi, pendingRefundsApi, type PendingRefund, type RefundLink } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import type { Transaction } from "../TransactionsTable";
 import { PendingRefundsSection } from "./PendingRefundsSection";
 import { useMemo } from "react";
+
+interface BudgetRule {
+  id: number;
+  name: string;
+  category: string;
+  amount: number;
+}
+
+interface BudgetAnalysisItem {
+  rule: BudgetRule;
+  current_amount: number;
+  data: Transaction[];
+  allow_edit: boolean;
+  allow_delete: boolean;
+}
+
+interface ProjectSpendingItem {
+  category: string;
+  spent: number;
+  transactions: Transaction[];
+}
 
 export const MonthlyBudgetView: React.FC = () => {
   const { t } = useTranslation();
@@ -24,7 +46,7 @@ export const MonthlyBudgetView: React.FC = () => {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
-  const [editingRule, setEditingRule] = useState<any>(null);
+  const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [copiedFromMsg, setCopiedFromMsg] = useState<string | null>(null);
@@ -53,8 +75,10 @@ export const MonthlyBudgetView: React.FC = () => {
     }
   }, [year, month, includeSplitParents, queryClient]);
 
+   
   useEffect(() => {
     if (analysis?.copied_from) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCopiedFromMsg(analysis.copied_from);
       const timer = setTimeout(() => setCopiedFromMsg(null), 5000);
       return () => clearTimeout(timer);
@@ -69,10 +93,10 @@ export const MonthlyBudgetView: React.FC = () => {
 
   // Create a map of pending refunds by source ID for quick lookup
   const pendingRefundsMap = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, PendingRefund>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach((pr: any) => {
+    pendingRefunds.forEach((pr: PendingRefund) => {
       const key = `${pr.source_table}_${pr.source_id}`;
       map.set(key, pr);
     });
@@ -84,9 +108,9 @@ export const MonthlyBudgetView: React.FC = () => {
     const map = new Map<string, number>();
     if (!pendingRefunds) return map;
 
-    pendingRefunds.forEach((pr: any) => {
+    pendingRefunds.forEach((pr: PendingRefund) => {
       if (pr.links) {
-        pr.links.forEach((link: any) => {
+        pr.links.forEach((link: RefundLink) => {
           const key = `${link.refund_source}_${link.refund_transaction_id}`;
           map.set(key, link.id);
         });
@@ -102,7 +126,7 @@ export const MonthlyBudgetView: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, rule }: { id: number; rule: any }) =>
+    mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
@@ -141,7 +165,7 @@ export const MonthlyBudgetView: React.FC = () => {
     setYear(today.getFullYear());
   };
 
-  const handleSaveRule = async (ruleData: any) => {
+  const handleSaveRule = async (ruleData: object) => {
     if (editingRule) {
       await updateMutation.mutateAsync({ id: editingRule.id, rule: ruleData });
     } else {
@@ -180,29 +204,29 @@ export const MonthlyBudgetView: React.FC = () => {
 
   // Summary calculations (skip Total Budget which is always first if present)
   const budgetRules = rules.filter(
-    (item: any) => item.rule.name !== "Total Budget",
+    (item: BudgetAnalysisItem) => item.rule.name !== "Total Budget",
   );
   const totalSpent = budgetRules.reduce(
-    (sum: number, item: any) => sum + Math.abs(item.current_amount || 0),
+    (sum: number, item: BudgetAnalysisItem) => sum + Math.abs(item.current_amount || 0),
     0,
   );
   const totalBudget = budgetRules.reduce(
-    (sum: number, item: any) => sum + (item.rule.amount || 0),
+    (sum: number, item: BudgetAnalysisItem) => sum + (item.rule.amount || 0),
     0,
   );
   const onTrackCount = budgetRules.filter(
-    (item: any) =>
+    (item: BudgetAnalysisItem) =>
       Math.abs(item.current_amount || 0) <= (item.rule.amount || 0),
   ).length;
   const overCount = budgetRules.length - onTrackCount;
   const biggestOverspend = budgetRules
     .filter(
-      (item: any) =>
+      (item: BudgetAnalysisItem) =>
         item.rule.amount > 0 &&
         Math.abs(item.current_amount || 0) > item.rule.amount,
     )
     .sort(
-      (a: any, b: any) =>
+      (a: BudgetAnalysisItem, b: BudgetAnalysisItem) =>
         Math.abs(b.current_amount) / b.rule.amount -
         Math.abs(a.current_amount) / a.rule.amount,
     )[0];
@@ -362,7 +386,7 @@ export const MonthlyBudgetView: React.FC = () => {
 
       {/* Budget Rules */}
       <div className="space-y-4">
-        {rules.map((item: any) => {
+        {rules.map((item: BudgetAnalysisItem) => {
           const isTotalBudget = item.rule.name === "Total Budget";
           const isOtherExpenses = item.rule.name === "Other Expenses";
 
@@ -454,7 +478,7 @@ export const MonthlyBudgetView: React.FC = () => {
               {t("budget.projectSpending")}
             </h3>
             <div className="space-y-4">
-              {project_spending.projects.map((project: any) => (
+              {project_spending.projects.map((project: ProjectSpendingItem) => (
                 <BudgetProgressBar
                   key={project.category}
                   label={project.category}
