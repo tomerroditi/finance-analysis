@@ -24,9 +24,12 @@ def upgrade() -> None:
     inspector = sa.inspect(conn)
     columns = [c['name'] for c in inspector.get_columns('investments')]
     if 'insurance_policy_id' not in columns:
-        op.add_column('investments', sa.Column('insurance_policy_id', sa.String(), nullable=True, unique=True))
+        with op.batch_alter_table('investments') as batch_op:
+            batch_op.add_column(sa.Column('insurance_policy_id', sa.String(), nullable=True))
+            batch_op.create_unique_constraint('uq_investments_insurance_policy_id', ['insurance_policy_id'])
 
 
 def downgrade() -> None:
     """Remove insurance_policy_id column from investments table."""
-    op.drop_column('investments', 'insurance_policy_id')
+    with op.batch_alter_table('investments') as batch_op:
+        batch_op.drop_column('insurance_policy_id')
