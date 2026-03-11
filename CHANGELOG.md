@@ -1,0 +1,649 @@
+## v1.1.0 (2026-03-11)
+
+### Feat
+
+- **i18n**: add comprehensive guidelines for Hebrew/English bilingual UI implementation
+- **dashboard**: add project expenses stacked bar toggle to monthly expenses chart (#18)
+- add category and tag renaming with cascade updates
+- **i18n**: translate Plotly chart axis dates to Hebrew
+- add Hebrew i18n support with settings popup and RTL layout
+- add settings popup, RTL layout support, and translate sidebar/search
+- add i18n configuration with English and Hebrew translation files
+- **frontend**: add InsurancesPrototype page with deposit breakdown columns
+- **insurance**: add insurance accounts API route and frontend client
+- **models**: add insurance_costs column to InsuranceAccount
+- **scraper**: add stealth measures to BrowserScraper and enhance HaPhoenix scraper
+- **skills**: add /sync-upstream-scraper command
+- **hafenix**: add deposit year iteration (best-effort, needs live testing)
+- **hafenix**: add hishtalmut detail scraping with deposits and liquidity date
+- **hafenix**: rewrite fetch_data with account discovery and pension scraping
+- **adapter**: save insurance account metadata and revert show_browser
+- **models**: add InsuranceAccount ORM model for insurance metadata
+- **scraper**: add optional metadata field to AccountResult
+- **insurance**: add HaPhoenix scraper with full-stack integration
+- **dashboard**: enhance KPI cards with MoM changes, expandable breakdowns
+- **skills**: add scraper-development skill for guided provider creation
+- **scraper**: add backend adapter bridging scraper framework to services
+- **scraper**: update provider package exports
+- **scraper**: port Visa Cal, Beyahad Bishvilha, and Behatsdaa scrapers
+- **scraper**: port Leumi, Mizrahi, Yahav, and Union Bank scrapers
+- **scraper**: port Beinleumi group (base + 4 wrappers) and Discount/Mercantile scrapers
+- **scraper**: port Max, Isracard, and Amex credit card scrapers
+- **scraper**: port Hapoalim and OneZero bank scrapers
+- **scraper**: add dummy test scrapers and CLI entry point
+- **scraping**: enable mobile OTP autofill on 2FA input
+- **scraper**: add core framework classes and provider config registry
+- **scraper**: add utility modules for browser automation and data processing
+- **scraper**: scaffold Python scraper package with data models and exceptions
+- **investments**: add portfolio balance history chart, edit modal, and card improvements
+- **investments**: redesign investment cards with sparkline and improved metrics
+- **ui**: add monthly/projects budget toggle with fixed-height layout
+- **ui**: show account column by default in transactions table
+- **ui**: replace collapsible insight cards with tabbed navigation
+- **ui**: show toast when budget rules are auto-copied
+- trigger auto-fill in monthly analysis for current month
+- **ui**: add month navigation to dashboard budget card
+- **budget**: add auto_fill_empty_months to MonthlyBudgetService
+- **demo**: use real provider names and add salary tags
+- **ui**: enhance transactions card with inline actions, tagging, and rule matching
+- **ui**: enhance dashboard and categories UX
+- **ui**: replace loading text with skeleton placeholders
+- **ui**: apply label humanization across all components
+- **ui**: add notification badges to sidebar nav items
+- **ui**: sort categories alphabetically
+- **ui**: show balance and gain/loss on investment cards
+- **ui**: humanize data sources labels, group by type, add button tooltips
+- **ui**: add budget summary header and compact progress bars
+- **ui**: simplify transactions default view with column toggle and category pills
+- **ui**: add SemiGauge component for budget visualization
+- **ui**: add Sparkline SVG component for trend indicators
+- **ui**: add Skeleton loading placeholder component
+- **ui**: add service and provider name humanization utilities
+- add macOS support with setup/run scripts and DMG CI artifact
+- add demo data seed script and pre-built demo database
+- add demo data loading with date shifting on demo mode activation
+- serve React static build from FastAPI in production
+- add monthly expenses chart with budget-style calculation and averages
+- compact dashboard KPI cards with inline account breakdowns
+- add close date picker, fix snapshot bugs, update docs
+- add flexible view toggle to Net Worth Over Time chart and remove Net Balance Over Time
+- add expense/income toggle to bulk edit bar and document test mode
+- unified inline bulk edit bar replacing per-row edit button
+- add amount field to bulk-tag endpoint
+- add staleness indicator showing last balance update date
+- add balance snapshot UI - update balance modal, snapshots table, fixed-rate calculation
+- show category and tag in pending refunds section
+- add balance snapshot methods to frontend API client
+- add balance snapshot API endpoints
+- add snapshot service methods and snapshot-aware KPI calculations
+- remove ScrapingWidget from dashboard
+- integrate scraping controls into data sources page
+- add InvestmentSnapshotsRepository with full test coverage
+- extract useScraping hook from ScrapingWidget
+- add InvestmentBalanceSnapshot ORM model
+- add investment_balance_snapshots table constant
+- add scraping period selector with auto/manual date range options
+- show last 4 digits of credit card number in account column
+- wire up inline category/tag creation across all consumer modals
+- add inline creation support to SelectDropdown with toTitleCase utility and useCategoryTagCreate hook
+- add keyboard navigation to SelectDropdown
+- add search filtering to SelectDropdown
+- replace native select with custom styled dropdown for envelope picker
+- make account selection a dropdown for editing cash transactions
+- strict cash envelope selection with dropdown and wallet protection
+- convert bulk account input to dropdown with known envelopes
+- enable full editing of cash transactions with date, account_name, and bulk operations
+- add CashBalancesCard component to Transactions page
+- add migration method to seed cash_balances from transaction history
+- add CashBalance API client methods
+- add migrate and delete endpoints for cash balances
+- include cash prior wealth in overview KPIs
+- integrate cash balance recalculation in TransactionsService
+- add cash balances API routes
+- add CashBalanceService with unit tests
+- create CashBalanceRepository
+- create CashBalance ORM model
+- add CASH_BALANCES table constant
+- integrate BankBalanceService for prior wealth calculations in AnalysisService
+- add income by source stacked bar chart to Dashboard
+- add getIncomeBySourceOverTime to frontend analyticsApi
+- add /analytics/income-by-source-over-time endpoint
+- add get_income_by_source_over_time to AnalysisService
+- add net worth over time chart to dashboard
+- add startup migration to seed Investment.prior_wealth_amount
+- add _get_investment_prior_wealth_total to AnalysisService
+- wire investment prior wealth recalculation into TransactionsService
+- add recalculate_prior_wealth and get_total_prior_wealth to InvestmentsService
+- add update_prior_wealth to InvestmentsRepository
+- add prior_wealth_amount column to Investment model
+- add startup seeding for categories and credentials migration
+- add Credential model
+- add Category model and table constant
+- add error handling for balance setting in DataSources
+- integrate bank balance repository and enhance data analysis with prior wealth rows
+- initialize database schema on application startup
+- enhance rule application and update queries in TaggingRulesService
+- add bank balances KPI section to Dashboard
+- add inline balance input to Data Sources bank rows
+- add bankBalancesApi to frontend API service
+- inject bank prior wealth into Sankey diagram
+- clean up bank balance on credential disconnect
+- recalculate bank balance after successful scrape
+- add bank balance API routes (GET and POST)
+- add BankBalanceService with prior wealth calculation
+- add BankBalanceRepository with CRUD operations
+- add BankBalance ORM model and table enum
+- Implement transaction filtering and multi-select functionality
+- add initial documentation for Finance Analysis Dashboard including commands, environment setup, architecture, and conventions
+- Enable bulk tagging without requiring a category selection and refactor backend transaction repository to manage repository instances directly.
+- Standardize transaction identification to `unique_id` (int), convert empty category/tag strings to `None`, and enhance credit card auto-tagging logic.
+- Implement auto-tagging for credit card bills and refine transaction tagging updates across services and repositories.
+- add methods to delete tagging rules by category or category and tag, and to update a rule's category for a specific tag.
+- Add unique credit card accounts as tags and refactor tagging operations into a dedicated service.
+- Generate default credentials programmatically and remove the static default YAML file.
+- Introduce new analytics endpoints for net balance and income/expenses over time, and enrich the overview API with total income and expenses.
+- Replace monthly income/outcome trend with net and cumulative balance trend, including backend refactoring and new frontend visualization.
+- **backend**: set prior wealth date to earliest transaction date
+- **dashboard**: show Prior Wealth as separate income source in Sankey diagram
+- **transactions**: improve delete UX with custom modal and fix backend
+- implement dynamic prior wealth offset tracking
+- **frontend**: add Investments filter to transactions page
+- implement auto-tagging on scrape and single rule application
+- migrate tagging rules and remove deprecated features
+- **budget**: auto-create rules for unmatched tags in project budget
+- add option to apply rules to tagged data
+- **budget**: add split parents support to budget API and views
+- **budget**: add 'Only Untagged' filter to TransactionsTable
+- **backend**: standardize categories and tags to title case
+- **frontend**: consolidate Savings category into Investments in UI
+- **backend**: exclude pending refund transactions from budget calculations
+- **frontend**: add select all tags support in budget rule modal
+- **refunds**: implement unlink refund functionality and improve UX
+- improve refund UX with status icons and sync to budget views
+- **frontend**: add refunds tracking tab to transactions page
+- **fullstack**: enrich pending refunds with transaction details
+- **frontend**: add LinkRefundModal for linking refund transactions
+- **frontend**: add PendingRefundsSection to budget view
+- **frontend**: add pending refund action buttons to transaction table
+- **frontend**: add pendingRefundsApi with TypeScript types
+- **budget**: add pending refunds summary to monthly analysis
+- **routes**: add pending refunds API endpoints
+- **service**: add PendingRefundsService with tests
+- **repo**: add PendingRefundsRepository with tests
+- **models**: add PendingRefund and RefundLink tables for refund linking
+- Enhance scraping widget with detailed status, last scrape dates, and error messages, and add a date formatting utility.
+- **testing**: Add dummy scraper toggle for dev/test (#15)
+- **frontend**: create reusable TransactionsTable component
+- Enable editing and splitting transactions directly within monthly and project budget views.
+- add workflow for closing git worktrees and cleaning up local references
+- **budget**: add sortable and filterable transactions table (#14)
+- add multi-session-dev skill
+- add dynamic environment config and setup workflows
+- added an long term token to keyring, added update credentials method
+- added a new sankey chart to visualize cash flow.
+- display salary and other income separately in the dashboard trend chart.
+- Enhance transaction displays with account and provider details, refine manual source checks, and strengthen analytics date parsing.
+- Format backend transaction dates to YYYY-MM-DD and reduce frontend date column width.
+- Implement filtering to display only untagged transactions in the transactions table.
+- Add API endpoint and UI for updating category icons.
+- Add rule editing functionality, rule name field, and success messages to the rule manager.
+- **backend**: new error type for already existing entities
+- Implement global exception handling with custom exceptions, simplifying route error management and documenting the new workflow.
+- **savings_investments**: implement savings and investments page
+- **investments_component**: add investment management UI component
+- **service**: implement investment management service
+- **naming_conventions**: add investment and interest rate enums
+- **categories**: add category icons for better visualization
+- **transactions_service**: support manual investment transactions
+- **transactions_service**: add support for filtering transactions by tag
+- **investments_repository**: implement investment tracking repository
+- **naming_conventions**: add investments tracking table definitions
+- **transactions_service**: support manual investment transactions
+- **transactions_repository**: add manual investment transaction support
+- **naming_conventions**: add manual investment transactions table name
+- **overview_components**: enhance net worth visualization with new service
+- **overview_components**: add overview components for financial metrics
+- **tagging_components**: add delete transaction functionality
+- **transactions_repository**: add delete transaction by ID functionality
+- **transactions_service**: support cash transactions in service
+- **tagging_components**: add cash option to transaction types
+- **scraping**: add start_date field for scraping history
+- scraping dates are now set automatically to 1 year if it is first time scraping and one week prior to last successful scrape otherwise.
+- **ui**: enhance data tagging and editing interface
+- **tagging_components**: add category icon selection feature
+- **tagging_service**: add methods for category icon management
+- **tagging_repository**: add category icon management methods
+- **data_scraping**: enhance data scraping UI and logic
+- **budget_overview**: add delay for user feedback messages
+- **tagging_components**: add new transaction creation dialog
+- **streamlit**: add session state clearing function
+- **transactions_service**: add method for cash transaction addition
+- **transactions_repository**: enhance cash transaction handling
+- **scrapers**: integrate TransactionsRepository for data saving
+- **transactions_repository**: add support for cash transactions
+- **naming_conventions**: add cash transaction enums
+- **transactions_repository**: add update_with_query method
+- **transactions_service**: add provider retrieval methods
+- **data_scraping_components**: enhance daily scraping summary display
+- **scraping_history**: implement repository for scraping history
+- **tagging**: add transactions tagging component
+- **transactions_tagging**: add transaction tagging component
+- **budget_overview**: add project transactions section
+- **rule_based_tagging_components**: integrate rule-based tagging for transactions
+- **rule_based_tagging_components**: improve transaction filtering interface
+- **rule_based_tagging_components**: enhance operator selection logic
+- **rule_based_tagging_components**: enhance rule editing interface
+- **tagging_service**: enhance bulk tagging interface
+- **tagging_service**: add bulk tag removal functionality
+- **tagging_service**: enhance transaction tagging interface
+- **tagging_service**: implement rule-based tagging system
+- **transactions_service**: add account number filter for transactions
+- **tagging_components**: add transaction display by description
+- **transactions_service**: add method to get transactions by description
+- **transactions_repository**: add method to filter transactions by description
+- **income_outcome_analysis**: enhance financial metrics visualization
+- **transactions_service**: add KPI calculation method
+- **income_outcome_analysis**: add IncomeOutcomeAnalysisComponent for financial data visualization
+- **naming_conventions**: introduce new enums for savings, investments, income, and liabilities categories
+- **tagging_components**: enhance auto tagger functionality with ID-based updates and deletions
+- **budget_service**: implement unique rule name validation for budget rules
+- **budget_overview**: enhance expandable raw data with editable row selection
+- **naming_conventions**: add credit card and bank provider lists
+- **tagging_components**: add protected category-tag pairs and enhance delete logic
+- **tagging_service**: implement nullify_category method across repositories
+- **tagging_service**: add update_category_for_tag method across repositories
+- **tagging_service**: add nullify_category_and_tag methods for transactions and splits
+- **data_scraping**: enhance 2FA handling and session state management
+- **service**: add method for retrieving table data for analysis
+- **service**: integrate TransactionsService into scraping and tagging logic
+- enhance manually tagging component with split transaction cancellation and update functionality
+- implement split transactions functionality with repository and service layers
+- update time period labels in income_outcome_analysis due to old format deprecation in pandas
+- standardize error handling across scrapers with new error types and improved logging
+- refactor credential handling in renewLongTermToken for improved clarity
+- add dummy transaction generation scripts for testing and scraping functionality
+- enhance error handling in scrapers with specific exceptions and improved logging
+- add new scrapers for various banks and credit card providers
+- add credentials management components for Streamlit interface, and improved password storage security by using keyring
+- refactor overview.py to integrate DataScrapingComponent for improved data scraping flow
+- implement data scraping components and services for financial data retrieval
+- add DummyTFAScraper for handling 2FA data scraping with dummy credentials. used for tests.
+- add get_latest_data_date method to retrieve the most recent transaction date across all tables
+- add update_raw_data_by_rules method to apply automatic tagging to untagged transactions
+- add dummy_tfa.js for generating fake transaction data and handling OTP retrieval
+- add CredentialsRepository and CredentialsService for managing and accessing credentials
+- add TransactionsService for managing transaction data retrieval and updates
+- add TransactionsRepository and ServiceRepository for managing transaction data and tagging
+- integrate AutomaticTaggerComponent and ManuallyTaggingComponent into tagging interface
+- add AutomaticTaggerComponent for managing auto tagging rules and enhancing manual tagging functionality
+- implement AutomaticTaggerService for managing auto tagging rules and retrieving transactions without rules
+- implement categories and tags management system
+
+### Fix
+
+- **frontend**: remove max-width constraint from insurance pages
+- **frontend**: resolve all ESLint and TypeScript build errors
+- **ci**: track package-lock.json for reproducible CI builds
+- **data-sources**: RTL-safe close button and Escape key support
+- **i18n**: translate insurance card labels and add p2pLending type
+- **i18n**: translate investment type badges on cards
+- translate scraping periods, rule builder, budget month nav
+- complete i18n coverage — RTL alignment, dates, providers, tooltips
+- resolve pandas list comparison bug in update_project and split expansion type mismatch
+- **analysis**: exclude insurance transactions from KPI calculations
+- **tests**: update scraping service patches for create_adapter factory
+- **scrapers**: convert UTC timestamps to Israel timezone for correct dates
+- add one-time script to fix onezero/isracard date bug and remove duplicates
+- **tagging**: add missing TransactionsTableFields import
+- **scraper**: improve OneZero API error messages for resultData failures
+- **scraper**: cast API amount values to float before negation
+- **transactions**: handle None account_number in get_unique_accounts_tags
+- **scraper**: resolve import collision between root scraper and backend.scraper
+- **scraper**: align ProviderConfig field names with design spec
+- **investments**: end balance history chart at last transaction date for closed investments
+- **ui**: fix RTL formatting of net worth MoM delta badge
+- **ui**: display actual cash balances in dashboard header
+- **ui**: rewrite SemiGauge using stroke-dasharray for reliable rendering
+- **ui**: fix dashboard budget gauge NaN and transactions API error
+- replace SPA catch-all route with 404 exception handler
+- insert new tagging rule conditions at the top instead of bottom
+- use unique_id instead of id in tagging rule conflict detection
+- arrow keys moving 2 steps in SelectDropdown
+- allow multiple conditions on rule create and filter taken tags
+- use envelope dropdown in TransactionEditorModal for cash transactions
+- invalidate cash-balances query when transactions are added/updated
+- correct source table name checks in update_transaction
+- correct repository method names in TransactionsService
+- correct typo in INVESTMENTS_CATEGORY constant name
+- improve tagging rules UX and fix KPI calculations
+- use correct paths frontmatter syntax in rule files
+- resolve NameError in get_net_worth_over_time breaking dashboard chart
+- update keyring key format to use underscores instead of colons
+- wire investment prior wealth into Sankey and net-worth-over-time in AnalysisService
+- remove spurious KeyError handler in recalculate_prior_wealth
+- add rowcount check to update_prior_wealth, fix test imports
+- update all tests for DB-backed tagging and credentials repos
+- **tests**: fix 13 failing model and tagging rules service tests
+- Adjust credit card transaction date offset by one day and use fuzzy amount matching to improve reconciliation.
+- Update income and expense calculations to properly account for liabilities and exclude credit card transactions.
+- **budget**: ensure all transactions are visible in project budget view
+- **budget**: fix zero totals in project budget
+- **budget**: include type column and exclude split_parent from all calculations
+- **budget**: exclude split_parent transactions from amount calculations
+- **frontend**: improve Link Refund modal with enriched transaction data and better search
+- **backend**: apply enriched details to pending refunds list
+- **backend**: include unique_id and source in budget analysis transactions
+- **frontend**: handle undefined unique_id in pending refund mutation
+- **frontend**: remove unused imports in ScrapingWidget
+- **frontend**: fix TypeScript type-only imports in refund linking components
+- Add trailing slashes to `/transactions` GET and POST API paths.
+- Correctly filter child transactions by service by matching repository names instead of direct source string comparison.
+- Use `SplitTransactionsTableFields` enum for accessing split transaction fields and add 'source' field to the enum.
+- fixed env setup workflow to include venv creation and activation
+- Import `loadEnv` from Vite in configuration.
+- fixed bug in tagging rules service
+- fixed service names in naming conventions
+- **backend.repositories**: fixed credentials repo issues with loading password from keyring
+- all plots in dashboard are now complient with the selected dates
+- minor changes to prevent modifying a copy of pandas df which emits many warning in the console
+- convert transactions time column to datetime in repo level function
+- **transactions_repository**: return result of add_transaction call
+- **transactions_repository**: add manual investments to fetched data in `get_table` with `service=None`
+- **transactions_repository**: ensure max_id is an integer
+- **scrapers**: correct status assignment logic in data retrieval
+- **tagging_rules_service**: handle null values in category and tag
+- **transactions_repository**: fixed ID duplication handling
+- **transactions_repository**: validate update query format
+- **tagging_rules_service**: improve update query conditions
+- **transactions_repository**: fixed rowcount retrieval
+- **tagging_rules_service**: fixed parameter handling in update query
+- **budget_overview**: fixed incorrect function calls.
+- **scraping_history_repository**: fixed incorrect pandas dataframe function use.
+- **widgets**: handle non-string date values in date parsing
+- **scraping_history**: remove composite primary key definition
+- **scrapers**: move history recording to finally block
+- **data_scraping_components**: update default start date for scraping
+- **split_transactions_service**: allow tolerance for floating point errors
+- **transactions_repository**: change ID type to string
+- **rule_based_tagging_components**: wrong condition parsing
+- **tagging_components**: handle empty transaction names
+- **naming_conventions**: correct formatting of provider names in lists
+- **tagging_components**: clear filter cache on save and enhance button logic
+
+### Refactor
+
+- **settings**: convert popup to centered modal with sliding language toggle
+- replace hardcoded service/table name strings with enum constants
+- **transactions**: add semantic query methods for cashflow and itemized views
+- **transactions**: move base column names to model and generalize extra field mapping
+- **adapter**: add create_adapter factory function
+- **adapter**: extract InsuranceScraperAdapter subclass from generic adapter
+- **scraper**: source LoginFields from scraper framework PROVIDER_CONFIGS
+- **scraper**: update ScrapingService to use asyncio adapter
+- **investments**: unify card data source for open and closed investments
+- **ui**: move demo mode toggle from header into sidebar
+- **ui**: condense net worth header into single row of KPI cards
+- rename test mode to demo mode in frontend
+- rename test mode to demo mode in backend routes and services
+- rename AppConfig test mode to demo mode
+- replace all native selects with SelectDropdown component
+- standardize cash transaction provider field to always be 'CASH'
+- simplify bulk account editing to account only
+- remove description field from bulk account editing
+- separate bulk account editing into dedicated button
+- use CashBalanceService for cash prior wealth in Sankey
+- remove deprecated sync_prior_wealth_offset from cash transaction flows
+- enhance net balance overview calculation and update tests for accuracy
+- update constants usage and fix service method names
+- auto-generate rule names from category and tag
+- fix KPI gaps with transaction-based investments and liability expenses
+- remove unused service functions and fix credentials routes to use service
+- consolidate prior wealth calculations in get_net_worth_over_time method
+- update calculations to include absolute values and all investments in prior wealth totals
+- simplify analytics API by removing date range parameters from methods
+- remove date filtering from analytics API and service methods for simplified overview
+- add exclude_services to get_table and use it in AnalysisService
+- fix circular import risk and direct-query recalculate_prior_wealth in InvestmentsService
+- update all consumers to pass db session to CredentialsService/Repository
+- update CredentialsService to use DB-backed CredentialsRepository
+- update CategoriesTagsService to use DB-backed TaggingRepository
+- rewrite CredentialsRepository from YAML/singleton to DB storage
+- rewrite TaggingRepository from YAML to DB storage
+- replace raw SQL with SQLAlchemy ORM throughout backend
+- **tests**: update testing standards and fixture architecture in documentation
+- **tests**: move test_text_utils.py into utils/ directory
+- **tests**: split test_models.py into per-model files in models/ dir
+- replace hardcoded "Credit Cards" with CREDIT_CARDS constant in categories and budget service
+- remove overwrite option from RuleManager and update applyRules mutation
+- refactor constants and naming conventions
+- refactored API routes and services for budget, credentials, investments, and transactions
+- centralize protected category definitions and refactor `delete_category` to use the new `PROTECTED_CATEGORIES` constant.
+- Centralize category saving logic, automatically create "Credit Cards" category if missing, and improve account tag formatting.
+- simplify transactions repository and analysis service
+- **transactions**: minor service and UI improvements
+- rename desc column to description throughout codebase
+- **services**: update analysis and transactions services for Savings consolidation
+- **naming**: consolidate Savings into Investments in naming conventions and resources
+- remove unused imports across backend files
+- Remove unused `Optional`, `Mapped`, `mapped_column`, and `Text` imports from the transaction model.
+- simplify `get_db_session` generator by directly yielding `get_db()`.
+- **frontend**: unify transaction tables in budget and transactions pages
+- **backend**: migrate to sqlalchemy orm and fix frontend service names
+- **scrapers**: integrated the scrapers in the new backend architecture. enabling async scraping, parallel scraping, better status checks of scrapers and more.
+- changed imports from fad (legacy code) to backend
+- **backend**: credentials repo now raises `EntityNotFoundException` when requesting unexisting account
+- copied the scraper directory from fad to backend
+- Consolidate category and tag management logic into TaggingRepository and introduce new resource files.
+- imports fixups
+- better exceptions handling
+- budget page is now working properly
+- first iteration of the fullstack refactor
+- complete refactor for proper backend and frontend app (migrating from streamlit)
+- **overview**: enhance chart display and remove unused method
+- **investments_repository**: streamline investment management methods
+- **service**: rename method for clarity and combine data sources
+- **scraper**: deleted utils module, and moved functionalities into the base Scraper class
+- **scraper**: deleted two_fa.py module since it is no longer in use
+- **__init__**: remove TwoFAHandler from exports
+- **transactions_repository**: remove unused transaction type column
+- **budget_service**: simplify data retrieval for analysis
+- **data_scraping**: update button label and remove title
+- **tagging_components**: rename TransactionsTaggingComponent to TransactionsTaggingAndEditingComponent
+- **widgets**: add return type annotation to filter_df method
+- **tagging_components**: remove redundant session state clearing
+- **data_scraping_components**: enhance data selection process
+- **widgets**: improve DataFrame handling in session state
+- **scrapers**: enhance logging and increase timeout duration
+- **tagging_rules_repository**: improve JSON handling for conditions
+- **tagging_rules_service**: enhance rule retrieval and application
+- **tagging_components**: streamline tagging rules service usage
+- **data_scraping_service**: simplify data pulling methods
+- **transactions_repository**: enhance unique ID handling
+- **utils**: improve date formatting in DataFrame conversion
+- **settings**: simplify settings UI layout
+- **tagging_components**: rename tagging.py to cat_and_tags.py
+- **tagging_components**: improve transaction tagging UI labels
+- added new pages and updated app layout
+- **transactions_service**: clean up and optimize methods
+- **tagging_components**: improve transaction editing interface
+- **tagging_components**: enhance filter display logic
+- **tagging_rules_service**: remove unused RuleEngine class
+- **data_scraping_components**: update multiselect to pills
+- **tagging_components**: improve button layout for rule actions
+- **tagging_rules_service**: simplify rule application logic
+- **transactions_repository**: enhance get_table method
+- **tagging_components**: simplify rule rendering and management
+- **tagging_rules_service**: simplify rule application method
+- **tagging_rules_service**: simplify rule methods and parameters
+- **tagging_rules_repository**: simplify rule handling
+- **naming_conventions**: remove unused AutoTaggerTableFields enum
+- **scraping_history_repository**: rename LAST_SCRAPED to DATE
+- **transactions_repository**: enhance service parameter handling
+- **transactions_service**: move untagged transactions logic
+- **tagging_repository**: remove auto tagger repository class
+- **tagging**: simplify tagging UI and remove unused components
+- **budget_overview**: integrated changes from tagging_components and pandas filters widgets.
+- **tagging_components**: completely refactored the tagging UI
+- **transactions_service**: simplify tagging methods and add service retrieval
+- **tagging_rules_service**: improve method signatures and logic
+- **naming_conventions**: add service constant to Enum
+- **widgets**: update widget key generation logic
+- **split_transactions_repository**: remove service parameter from transaction methods
+- **split_transactions_repository**: remove service parameter from get_data
+- **transactions_repository**: allow optional service parameter
+- **split_transactions_repository**: remove unused service parameter
+- **budget_overview**: replace rule-based tagger with transactions tagger
+- **tagging_components**: update import path for tagging component
+- **tagging_rules_repository**: simplify rule data access
+- **tagging_rules_service**: simplify rule management methods
+- **tagging_rules_repository**: streamline rule application logic
+- **budget_service**: simplify monthly rules retrieval
+- **tagging_rules_repository**: improve database query handling
+- **tagging_service**: replace automatic tagging service with rules-based system
+- **tagging_service**: improve filtering of transactions
+- **plotting**: update terminology in pie chart titles
+- **income_outcome_analysis**: streamline data analysis with IncomeOutcomeAnalysisComponent
+- **todos**: clean up TODO comments across multiple files
+- **tagging_components**: update tagging methods for improved clarity
+- **credentials_repository**: simplify credentials management
+- **budget_service**: streamline budget rule management
+- **income_outcome_analysis**: improve plot rendering with keys
+- **service**: replace transactions repository with service
+- **service**: enhance transaction analysis with splits
+- **transactions_repository**: simplify transaction data access
+- **settings**: updated to the new credentials ui methods.
+- **credentials**: streamline credential management logic
+- **tagging**: simplify access to categories and tags
+- **service**: replace tagging repository with categories tags service
+- **tagging**: reorganize tagging logic and file management
+- **service**: replace TransactionsService with TransactionsRepository
+- **components**: reorganize imports for clarity
+- update BudgetRepository initialization to accept external database connection and remove redundant delete_project method
+- streamline service initialization by removing direct database connection dependencies in components, and reorganized layers interactions to implement: data <-> logic <-> ui interactions only.
+- update import statements and change return type of get_bank_account_details method to tuple
+- deprecated "get_table" method from "data_access" module, instead we use the repositories to get the needed tables.
+- update an import statement for get_db_connection to use data_access module
+- remove unnecessary spaces in import statements for consistency
+- reorganize import statements across multiple files for improved clarity and consistency
+- clean up data.py by removing unused imports and functions for improved maintainability
+- update references from TagsTableFields to AutoTaggerTableFields in data.py
+- rename TagsTableFields to AutoTaggerTableFields and update related methods for auto tagging functionality
+- rename TagsTableFields to AutoTaggerTableFields and update related constants
+- refactoring the budget management related code, separating concerns and making the code more modular and easier for testing.
+- refactoring the budget management related code, separating concerns and making the code more modular and easier for testing.
+
+## v1.0.0 (2025-04-19)
+
+### Feat
+
+- implement app deployment process
+- test update .nsi file
+- test update .nsi file
+- test update .nsi file
+- testing version release
+- **budget_management**: added an option to see raw data of each rule's associated expenses
+- **budget_management, utils.budget_management**: added project budget feature. the user can now set a budget for a project which might spread over long period of time and should not be included in the monthly budget management.
+- **budget_management, utils.budget_management**: a new page for budget management which allows the user to add, edit and delete budget rules of different months.
+- **data, naming_conventions**: added a new table for budget management feature
+- **app.overview**: made the wide page mode the default of the app layout
+- **app.utils.widgets**: added an option for last month/year in the PandasFilterWidgets class and made the object itself persist in memory to improve the selections state persistent over different app usages
+- **onezero**: onezero scraper now support fetching a new long term token when the current one is not valid. improved the scraping flow.
+- **exceptions**: added a new model for custom exceptions
+- **naming_conventions**: added a new enum class for service names (credit_card, bank, etc.)
+- **app.overview**: added a spinner to visualize progress in data fetching
+- **app.income_outcome_analysis, app.utils**: added expenses analysis by categories. the user can now view their expenses analysis by categories in total and over periods of time (months and years) to gain some insights over their expenses.
+
+### Fix
+
+- testing commitizen pipelines
+- tfixed pipeline
+- updated changelog file
+- solved redundant pipelines executions
+- solved redundant pipelines executions
+- solved redundant pipelines executions
+- solved redundant pipelines executions
+- test bump
+- test bump
+- test no bump
+- test no bump
+- test no bump
+- test no bump
+- version fix
+- version fix
+- version fix
+- **app.utils.tagging**: fixed bug in adding new category due to missmatch between widget output and saved values
+- **app.utils.plotting**: fixed empty data handling to plot empty figures
+- **app.pages.income_outcome_analysis**: added keys to streamlit components that where missing keys
+- **app.utils.data**: fixed incorrect col name of budget rules, `tag` to `tags`. changed hardcoded strings to to enum values
+- **app.utils.budget_management**: fixed hard coded strings in sql queries
+- **data**: added missing columns to the database transactions tables
+- **data**: fixed latest date fetching when there is no data at all
+- **data**: fixed data.db file creation in case it doesn't exist.
+- fixed wrong paths handling
+- **app.utils.data**: fixed file not found when credentials file hasn't created yet. now it creates a file if it doesn't exists
+- **app.utils.credentials**: fixed file not found when credentials file hasn't created yet. now it creates a file if it doesn't exists
+- **app.utils.data, app.overview**: fixed the all data pull feature to work properly with 2fa scrapers classes as well.
+- **scrapers**: fixed 2fa handling by making sure that the process is not hanged due to stdin and stdout. enabled the 'cancel' feature to interrupt the data fetching process.
+- **scrapers**: fixed error handling of the js scripts
+- **overview, main**: fixed the new paging layout
+- **app.utils.tagging**: fixed a bug in fetching new bank account data for auto tagger rules
+- **scraper**: fixed the 2fa issue where the tread where hanged due to unclosed stdin stream.
+- **scrapers, app.utils, scraper.utils**: fixed 2fa scraping
+- **scraper**: fixed a bug of removing duplicated rows
+- **scraper.utils**: fixed a bug regarding one zero transaction date format.
+- **app.tagging**: fixed an sql query bug
+- **app.tagging**: fixed a sql text bracket misplace.
+- **app.pages.tags**: fix an initialization table bug. perf(app.pages.tags): added a new function to pull new transactions descriptions for tagging.
+
+### Refactor
+
+- **scraper.scrapers**: added a print for failed scraping to ease the debugging process.
+- **tests.test_app**: updated function name after refactoring.
+- **app.budget_management**: minor changes to improve the UX
+- **budget_management**: improvements to the code structure and readability
+- **tagging**: changed the reformat of tags and categories. ';' is not a valid character in them from now.
+- **budget_management**: added docstrings and made the database calls less repetitive by reading it once per rerun.
+- **budget_management**: added more verifications on user input, refactor the module to use naming conventions. project expenses are now not included in the monthly budget management
+- **utils.budget_management**: minor changes
+- **app.utils.tagging**: changed the buttons view of the new category and reallocate tags
+- **app.overview**: reordered the pages in the sidebar for future app UI design
+- **app.utils.widgets**: changed the buttons type in the date selection widgets
+- **analysis**: deprecated unused files
+- **app.utils**: break the utils module into a dir of utils containing modules for each utility type
+- **app.utils**: improved error handling and UX
+- **scraper.scrapers**: enhanced error handling to be more informative
+- fixed the run.sh file
+- removed some printing for solved debugging
+- **app.utils**: deleted redundant prints
+- **scraper**: refactored the 2fa scraping method of one zero
+- **scraper**: added functions and classes to __all__ in the init file
+- **categories**: added new categories and tags
+- **utils, overview**: improved data scraping code to enable retrieving a new OTP when the current one is invalid
+- **utils**: improved tagging UI and stability
+- **naming_conventions**: moved the naming_conventions.py module into the app dir
+- **app.tagging**: removed some redundant code that was used for debugging
+- **tagging, utils**: minor changes to improve stability of the app.
+- **tagging**: moved the tagging related code to the utils module. improved the UX of the tagging system to be more restricted and more resilient to user errors.
+- **tagging**: functions renaming, added type hints, fixed sql bugs and improved the overall UX of the tagging interface.
+- **categories**: all categories and tags are now formated to title format.
+- **naming_conventions**: added more categories to non expenses categories
+- **app.income_outcome_analysis**: visualization utils functions renaming
+- **categories**: added some new categories and tags
+- **utils**: added a new visualization function and minor improvements to existing code
+- **app.tagging**: minor changes to improve code readability and performance
+- **income_outcome_analysis, utils**: minor UX improvements.
+- **app.naming_conventions**: as part of the tagging UX improvement added new columns names for the tags table
+- **app.income_outcome_analysis**: removed a done TODO and changed the order of the figures.
+- **tagging**: gathered all tagging related pages into a single page with tabs to handle tags editing, auto tagger and raw tagged data editing. made some improvements in the UX to make it more user-friendly (ordered categories and tags for example), and added TODOs for future work.
+- **scraper**: combined all the scrapers classes into a single module to easily maintain the code.
+- **app.utils**: minor changes to improve readability
+- **tags**: moved the categories.yaml file into the app package
+- **scraper**: refactored the scraper package to clean the code and remove code duplications. fix(scraper): fixed bugs in the scraper package.
+
+### Perf
+
+- **utils, income_outcome_analysis, naming_conventions**: seperated the expenses from income when displaying the data analysis.
+- **utils**: update_db_table now return immediately if no data is edited, and expenses plots now doesn't consider "Other: No tag" tagging, and rounds the visualized numbers in the figures to 2 decimal points.
+- **app.expensses_raw_data, app.utils**: improved the data table filtering mechanism. you can now filter the data by date and amount range, and the filters widgets are presented as a column aside the data table instead in the sidebar.
+- **app.tags**: transactions database is now updated with the tag and categories selected for them. perf(app.expenses_raw_data): added a new filter method to help maintain the database edditing.
+- **naming_conventions**: moved the module to the fad package from fad.app. added enums classes for the tables names and their columns names. perf(app.utils): added new utils top get the app sql connection and the categories and tags dictionary (from the yaml file)
