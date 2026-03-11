@@ -190,30 +190,39 @@ class InvestmentsService:
 
         policy_id = insurance_meta["policy_id"]
         provider = insurance_meta.get("provider", "unknown")
-        tag = f"Keren Hishtalmut - {provider}"
+        account_name = insurance_meta["account_name"]
 
         existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
 
         if existing.empty:
-            # Check if an investment already exists by category+tag but isn't linked yet
-            by_tag = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
-            if not by_tag.empty:
-                # Link the existing investment to this policy
+            # Check if an unlinked investment exists with the base tag
+            base_tag = f"Keren Hishtalmut - {provider}"
+            by_tag = self.investments_repo.get_by_category_tag(
+                INVESTMENTS_CATEGORY, base_tag
+            )
+            if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
+                # Link the existing unlinked investment to this policy
                 inv_id = int(by_tag.iloc[0]["id"])
                 self.investments_repo.update_investment(
                     inv_id,
                     insurance_policy_id=policy_id,
-                    name=insurance_meta["account_name"],
+                    name=account_name,
                     commission_deposit=insurance_meta.get("commission_deposits_pct"),
                     commission_management=insurance_meta.get("commission_savings_pct"),
                     liquidity_date=insurance_meta.get("liquidity_date"),
                 )
             else:
+                # Use policy_id suffix for uniqueness when base tag is taken
+                tag = base_tag
+                if not by_tag.empty:
+                    # Extract short suffix from policy_id (last parenthesized number or last segment)
+                    suffix = policy_id.split("(")[-1].rstrip(")") if "(" in policy_id else policy_id[-6:]
+                    tag = f"{base_tag} ({suffix})"
                 self.investments_repo.create_investment(
                     category=INVESTMENTS_CATEGORY,
                     tag=tag,
                     type_="hishtalmut",
-                    name=insurance_meta["account_name"],
+                    name=account_name,
                     interest_rate_type="variable",
                     commission_deposit=insurance_meta.get("commission_deposits_pct"),
                     commission_management=insurance_meta.get("commission_savings_pct"),
@@ -756,7 +765,9 @@ class InvestmentsService:
             inv["category"], inv["tag"]
         )
 
-        if transactions_df.empty:
+        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+
+        if transactions_df.empty and snapshots_df.empty:
             return []
 
         # For closed investments, stop at the last transaction date
@@ -765,8 +776,6 @@ class InvestmentsService:
             last_txn_date = pd.to_datetime(transactions_df["date"]).max().date()
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
             actual_end_date = min(last_txn_date, requested_end_date).strftime("%Y-%m-%d")
-
-        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
 
         if snapshots_df.empty:
             # No snapshots — use transaction-based approach
@@ -849,6 +858,24 @@ class InvestmentsService:
         )
 
         if transactions_df.empty:
+            # No transactions — check if there's a snapshot (e.g. insurance-synced)
+            if not inv["is_closed"]:
+                latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
+                    investment_id, date.today().strftime("%Y-%m-%d")
+                )
+                if latest is not None:
+                    balance = float(latest["balance"])
+                    return {
+                        "total_deposits": 0.0,
+                        "total_withdrawals": 0.0,
+                        "net_invested": 0.0,
+                        "current_balance": balance,
+                        "absolute_profit_loss": balance,
+                        "roi_percentage": 0.0,
+                        "total_years": 0.0,
+                        "cagr_percentage": 0.0,
+                        "first_transaction_date": None,
+                    }
             return {
                 "total_deposits": 0.0,
                 "total_withdrawals": 0.0,
