@@ -248,3 +248,34 @@ class TestInvestmentsRepositoryEmptyUpdate:
         # Verify no changes were made
         db_session.refresh(inv)
         assert inv.name == "Original Name"
+
+
+class TestGetByInsurancePolicyId:
+    """Tests for looking up investments by insurance_policy_id."""
+
+    def test_returns_matching_investment(self, db_session):
+        """Verify lookup by insurance_policy_id returns the linked investment."""
+        inv = Investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix",
+            type="hishtalmut",
+            name="Test Hishtalmut",
+            interest_rate_type="variable",
+            created_date="2025-01-01",
+            is_closed=0,
+            prior_wealth_amount=0.0,
+            insurance_policy_id="POL-123",
+        )
+        db_session.add(inv)
+        db_session.flush()
+
+        repo = InvestmentsRepository(db_session)
+        result = repo.get_by_insurance_policy_id("POL-123")
+        assert not result.empty
+        assert result.iloc[0]["name"] == "Test Hishtalmut"
+
+    def test_returns_empty_when_not_found(self, db_session):
+        """Verify lookup returns empty DataFrame when no match exists."""
+        repo = InvestmentsRepository(db_session)
+        result = repo.get_by_insurance_policy_id("NONEXISTENT")
+        assert result.empty
