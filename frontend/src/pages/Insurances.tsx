@@ -69,7 +69,7 @@ export function Insurances() {
     .reduce((s, t) => s + Math.abs(t.amount), 0) ?? 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-6xl">
+    <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
           <Shield size={24} />
