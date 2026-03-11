@@ -76,7 +76,7 @@ class InvestmentsService:
             record["latest_snapshot_date"] = latest["date"] if latest else None
 
             txns = self._get_all_transactions_for_investment(
-                record["category"], record["tag"]
+                record["category"], record["tag"], investment_id=record["id"]
             )
             if not txns.empty:
                 record["first_transaction_date"] = pd.to_datetime(txns["date"]).min().strftime("%Y-%m-%d")
@@ -278,7 +278,7 @@ class InvestmentsService:
         self.investments_repo.close_investment(investment_id, closed_date)
 
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
-        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=investment_id)
         if not txns.empty:
             txns["date_parsed"] = pd.to_datetime(txns["date"])
             last_txn_date = txns["date_parsed"].max().strftime("%Y-%m-%d")
@@ -403,7 +403,7 @@ class InvestmentsService:
         daily_rate = (1 + annual_rate) ** (1 / 365) - 1
 
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
         if transactions_df.empty:
             return
@@ -731,7 +731,7 @@ class InvestmentsService:
 
         # Fall back to transaction-based
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
         return self._calculate_balance_from_transactions(transactions_df)
 
@@ -764,7 +764,7 @@ class InvestmentsService:
 
         inv = investment.iloc[0]
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
 
         snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
@@ -856,7 +856,7 @@ class InvestmentsService:
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
 
         if transactions_df.empty:
@@ -977,7 +977,7 @@ class InvestmentsService:
 
         frames = []
         for _, inv in investments.iterrows():
-            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=int(inv["id"]))
             if not txns.empty:
                 frames.append(txns)
 
@@ -990,10 +990,14 @@ class InvestmentsService:
         return combined
 
     def _get_all_transactions_for_investment(
-        self, category: str, tag: str
+        self, category: str, tag: str, investment_id: Optional[int] = None
     ) -> pd.DataFrame:
         """
         Fetch all transactions for a given investment identified by category and tag.
+
+        For insurance-linked investments, also includes insurance deposit
+        transactions (with amounts negated to match the investment convention:
+        negative = deposit).
 
         Parameters
         ----------
@@ -1001,13 +1005,49 @@ class InvestmentsService:
             Investment category (e.g. ``"Investments"``).
         tag : str
             Investment tag identifying the specific instrument.
+        investment_id : int, optional
+            Investment ID used to look up insurance linkage.
 
         Returns
         -------
         pd.DataFrame
             Matching transactions from the merged analysis table.
         """
-        return self.transactions_service.get_transactions_by_tag(category, tag)
+        manual_txns = self.transactions_service.get_transactions_by_tag(category, tag)
+
+        if investment_id is None:
+            return manual_txns
+
+        inv_df = self.investments_repo.get_by_id(investment_id)
+        if inv_df.empty:
+            return manual_txns
+
+        policy_id = inv_df.iloc[0].get("insurance_policy_id")
+        if not policy_id or pd.isna(policy_id):
+            return manual_txns
+
+        from backend.models.transaction import InsuranceTransaction
+        from sqlalchemy import select
+
+        stmt = select(InsuranceTransaction).where(
+            InsuranceTransaction.account_number == policy_id
+        )
+        ins_txns = pd.read_sql(stmt, self.db.bind)
+
+        if ins_txns.empty:
+            return manual_txns
+
+        # Negate amounts: insurance txns are positive (deposits received),
+        # but investment convention is negative = deposit (money out)
+        ins_txns["amount"] = -ins_txns["amount"]
+
+        if manual_txns.empty:
+            return ins_txns
+
+        common_cols = list(set(manual_txns.columns) & set(ins_txns.columns))
+        return pd.concat(
+            [manual_txns[common_cols], ins_txns[common_cols]], ignore_index=True
+        )
 
     def _calculate_balance_from_transactions(
         self, transactions_df: pd.DataFrame, as_of_date: Optional[str] = None
