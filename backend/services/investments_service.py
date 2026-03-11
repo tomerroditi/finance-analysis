@@ -195,22 +195,36 @@ class InvestmentsService:
         existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
 
         if existing.empty:
-            self.investments_repo.create_investment(
-                category=INVESTMENTS_CATEGORY,
-                tag=tag,
-                type_="hishtalmut",
-                name=insurance_meta["account_name"],
-                interest_rate_type="variable",
-                commission_deposit=insurance_meta.get("commission_deposits_pct"),
-                commission_management=insurance_meta.get("commission_savings_pct"),
-                liquidity_date=insurance_meta.get("liquidity_date"),
-            )
-            created = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
-            if not created.empty:
-                inv_id = int(created.iloc[0]["id"])
+            # Check if an investment already exists by category+tag but isn't linked yet
+            by_tag = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
+            if not by_tag.empty:
+                # Link the existing investment to this policy
+                inv_id = int(by_tag.iloc[0]["id"])
                 self.investments_repo.update_investment(
-                    inv_id, insurance_policy_id=policy_id
+                    inv_id,
+                    insurance_policy_id=policy_id,
+                    name=insurance_meta["account_name"],
+                    commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                    commission_management=insurance_meta.get("commission_savings_pct"),
+                    liquidity_date=insurance_meta.get("liquidity_date"),
                 )
+            else:
+                self.investments_repo.create_investment(
+                    category=INVESTMENTS_CATEGORY,
+                    tag=tag,
+                    type_="hishtalmut",
+                    name=insurance_meta["account_name"],
+                    interest_rate_type="variable",
+                    commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                    commission_management=insurance_meta.get("commission_savings_pct"),
+                    liquidity_date=insurance_meta.get("liquidity_date"),
+                )
+                created = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
+                if not created.empty:
+                    inv_id = int(created.iloc[0]["id"])
+                    self.investments_repo.update_investment(
+                        inv_id, insurance_policy_id=policy_id
+                    )
         else:
             inv_id = int(existing.iloc[0]["id"])
             self.investments_repo.update_investment(
