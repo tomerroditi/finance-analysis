@@ -167,6 +167,74 @@ class InvestmentsService:
         """
         self.investments_repo.update_investment(investment_id, **updates)
 
+    def sync_from_insurance(self, insurance_meta: dict) -> None:
+        """Create or update an Investment from scraped insurance account metadata.
+
+        Only processes hishtalmut policies. Creates the Investment if not found
+        by ``insurance_policy_id``, otherwise updates metadata fields. Upserts
+        a ``"scraped"`` balance snapshot if balance data is present, without
+        overwriting existing ``"manual"`` snapshots.
+
+        Parameters
+        ----------
+        insurance_meta : dict
+            Insurance account metadata with keys: ``policy_id``, ``policy_type``,
+            ``provider``, ``account_name``, ``balance``, ``balance_date``,
+            ``commission_deposits_pct``, ``commission_savings_pct``,
+            ``liquidity_date``.
+        """
+        if insurance_meta.get("policy_type") != "hishtalmut":
+            return
+
+        from backend.constants.categories import INVESTMENTS_CATEGORY
+
+        policy_id = insurance_meta["policy_id"]
+        provider = insurance_meta.get("provider", "unknown")
+        tag = f"Keren Hishtalmut - {provider}"
+
+        existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
+
+        if existing.empty:
+            self.investments_repo.create_investment(
+                category=INVESTMENTS_CATEGORY,
+                tag=tag,
+                type_="hishtalmut",
+                name=insurance_meta["account_name"],
+                interest_rate_type="variable",
+                commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                commission_management=insurance_meta.get("commission_savings_pct"),
+                liquidity_date=insurance_meta.get("liquidity_date"),
+            )
+            created = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
+            if not created.empty:
+                inv_id = int(created.iloc[0]["id"])
+                self.investments_repo.update_investment(
+                    inv_id, insurance_policy_id=policy_id
+                )
+        else:
+            inv_id = int(existing.iloc[0]["id"])
+            self.investments_repo.update_investment(
+                inv_id,
+                name=insurance_meta["account_name"],
+                commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                commission_management=insurance_meta.get("commission_savings_pct"),
+                liquidity_date=insurance_meta.get("liquidity_date"),
+            )
+
+        balance = insurance_meta.get("balance")
+        balance_date = insurance_meta.get("balance_date")
+        if balance is not None and balance_date is not None:
+            inv_df = self.investments_repo.get_by_insurance_policy_id(policy_id)
+            inv_id = int(inv_df.iloc[0]["id"])
+
+            existing_snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
+            if not existing_snapshots.empty:
+                date_match = existing_snapshots[existing_snapshots["date"] == balance_date]
+                if not date_match.empty and date_match.iloc[0]["source"] == "manual":
+                    return
+
+            self.snapshots_repo.upsert_snapshot(inv_id, balance_date, balance, source="scraped")
+
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """
         Mark an investment as closed.
