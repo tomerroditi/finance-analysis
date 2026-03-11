@@ -191,33 +191,34 @@ class InvestmentsService:
         policy_id = insurance_meta["policy_id"]
         provider = insurance_meta.get("provider", "unknown")
         account_name = insurance_meta["account_name"]
+        tag = f"Keren Hishtalmut - {provider} ({policy_id})"
 
         existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
 
         if existing.empty:
-            # Check if an unlinked investment exists with the base tag
-            base_tag = f"Keren Hishtalmut - {provider}"
-            by_tag = self.investments_repo.get_by_category_tag(
-                INVESTMENTS_CATEGORY, base_tag
-            )
-            if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
-                # Link the existing unlinked investment to this policy
-                inv_id = int(by_tag.iloc[0]["id"])
-                self.investments_repo.update_investment(
-                    inv_id,
-                    insurance_policy_id=policy_id,
-                    name=account_name,
-                    commission_deposit=insurance_meta.get("commission_deposits_pct"),
-                    commission_management=insurance_meta.get("commission_savings_pct"),
-                    liquidity_date=insurance_meta.get("liquidity_date"),
+            # Check if an unlinked investment exists with any legacy tag for this provider
+            legacy_tags = [
+                f"Keren Hishtalmut - {provider}",
+            ]
+            linked = False
+            for legacy_tag in legacy_tags:
+                by_tag = self.investments_repo.get_by_category_tag(
+                    INVESTMENTS_CATEGORY, legacy_tag
                 )
-            else:
-                # Use policy_id suffix for uniqueness when base tag is taken
-                tag = base_tag
-                if not by_tag.empty:
-                    # Extract short suffix from policy_id (last parenthesized number or last segment)
-                    suffix = policy_id.split("(")[-1].rstrip(")") if "(" in policy_id else policy_id[-6:]
-                    tag = f"{base_tag} ({suffix})"
+                if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
+                    inv_id = int(by_tag.iloc[0]["id"])
+                    self.investments_repo.update_investment(
+                        inv_id,
+                        insurance_policy_id=policy_id,
+                        tag=tag,
+                        name=account_name,
+                        commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                        commission_management=insurance_meta.get("commission_savings_pct"),
+                        liquidity_date=insurance_meta.get("liquidity_date"),
+                    )
+                    linked = True
+                    break
+            if not linked:
                 self.investments_repo.create_investment(
                     category=INVESTMENTS_CATEGORY,
                     tag=tag,
@@ -238,7 +239,8 @@ class InvestmentsService:
             inv_id = int(existing.iloc[0]["id"])
             self.investments_repo.update_investment(
                 inv_id,
-                name=insurance_meta["account_name"],
+                tag=tag,
+                name=account_name,
                 commission_deposit=insurance_meta.get("commission_deposits_pct"),
                 commission_management=insurance_meta.get("commission_savings_pct"),
                 liquidity_date=insurance_meta.get("liquidity_date"),

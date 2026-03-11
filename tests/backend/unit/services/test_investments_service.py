@@ -595,7 +595,7 @@ class TestSyncFromInsurance:
         assert inv["insurance_policy_id"] == "POL-HST-001"
         assert inv["type"] == "hishtalmut"
         assert inv["category"] == "Investments"
-        assert inv["tag"] == "Keren Hishtalmut - hafenix"
+        assert inv["tag"] == "Keren Hishtalmut - hafenix (POL-HST-001)"
         assert inv["name"] == "קרן השתלמות כלשהי"
         assert inv["commission_deposit"] == 1.0
         assert inv["commission_management"] == 0.5
