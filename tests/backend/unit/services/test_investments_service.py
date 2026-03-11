@@ -561,3 +561,137 @@ class TestInvestmentsServiceEdgeCases:
         mid_balance = balance_by_date.get("2023-07-16")
         if mid_balance is not None:
             assert 10500.0 < mid_balance < 11000.0
+
+
+class TestSyncFromInsurance:
+    """Tests for syncing investments from scraped insurance data."""
+
+    def _make_hishtalmut_meta(self, **overrides):
+        """Build a minimal hishtalmut insurance metadata dict."""
+        meta = {
+            "policy_id": "POL-HST-001",
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "קרן השתלמות כלשהי",
+            "balance": 150000.0,
+            "balance_date": "2025-06-15",
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2029-05-31",
+        }
+        meta.update(overrides)
+        return meta
+
+    def test_creates_investment_on_first_sync(self, db_session):
+        """Verify first sync creates a new Investment record with correct fields."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        inv = investments[0]
+        assert inv["insurance_policy_id"] == "POL-HST-001"
+        assert inv["type"] == "hishtalmut"
+        assert inv["category"] == "Investments"
+        assert inv["tag"] == "Keren Hishtalmut - hafenix (POL-HST-001)"
+        assert inv["name"] == "קרן השתלמות כלשהי"
+        assert inv["commission_deposit"] == 1.0
+        assert inv["commission_management"] == 0.5
+        assert inv["liquidity_date"] == "2029-05-31"
+        assert inv["interest_rate_type"] == "variable"
+
+    def test_creates_balance_snapshot_on_first_sync(self, db_session):
+        """Verify first sync creates a scraped balance snapshot."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        snapshots = service.get_balance_snapshots(investments[0]["id"])
+        assert len(snapshots) == 1
+        assert snapshots[0]["balance"] == 150000.0
+        assert snapshots[0]["date"] == "2025-06-15"
+        assert snapshots[0]["source"] == "scraped"
+
+    def test_updates_existing_investment_on_resync(self, db_session):
+        """Verify subsequent sync updates metadata without creating duplicates."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        updated_meta = self._make_hishtalmut_meta(
+            account_name="קרן השתלמות מעודכנת",
+            commission_deposits_pct=0.8,
+            commission_savings_pct=0.4,
+            liquidity_date="2030-01-01",
+            balance=160000.0,
+            balance_date="2025-07-15",
+        )
+        service.sync_from_insurance(updated_meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        inv = investments[0]
+        assert inv["name"] == "קרן השתלמות מעודכנת"
+        assert inv["commission_deposit"] == 0.8
+        assert inv["commission_management"] == 0.4
+        assert inv["liquidity_date"] == "2030-01-01"
+
+    def test_skips_pension_policies(self, db_session):
+        """Verify pension policies are ignored by sync."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta(policy_type="pension")
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 0
+
+    def test_does_not_overwrite_manual_snapshot(self, db_session):
+        """Verify scraped snapshot skips dates with existing manual snapshots."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        inv_id = service.get_all_investments()[0]["id"]
+        # Overwrite the scraped snapshot with a manual one on the same date
+        service.create_balance_snapshot(inv_id, "2025-06-15", 999999.0, source="manual")
+
+        # Re-sync with different balance on same date
+        meta["balance"] = 160000.0
+        service.sync_from_insurance(meta)
+
+        snapshots = service.get_balance_snapshots(inv_id)
+        snapshot_on_date = [s for s in snapshots if s["date"] == "2025-06-15"]
+        assert len(snapshot_on_date) == 1
+        assert snapshot_on_date[0]["balance"] == 999999.0
+        assert snapshot_on_date[0]["source"] == "manual"
+
+    def test_updates_existing_scraped_snapshot_on_same_date(self, db_session):
+        """Verify re-scraping the same date updates the scraped snapshot balance."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        meta["balance"] = 155000.0
+        service.sync_from_insurance(meta)
+
+        inv_id = service.get_all_investments()[0]["id"]
+        snapshots = service.get_balance_snapshots(inv_id)
+        assert len(snapshots) == 1
+        assert snapshots[0]["balance"] == 155000.0
+
+    def test_skips_snapshot_when_no_balance(self, db_session):
+        """Verify no snapshot is created when balance data is missing."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta(balance=None, balance_date=None)
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        snapshots = service.get_balance_snapshots(investments[0]["id"])
+        assert len(snapshots) == 0
