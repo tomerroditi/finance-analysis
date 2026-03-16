@@ -2,10 +2,8 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  TrendingDown,
   ChevronLeft,
   ChevronRight,
-  Calculator,
   Split,
   RefreshCw,
   Tag,
@@ -13,7 +11,6 @@ import {
   Link2,
   Plus,
 } from "lucide-react";
-import Plot from "react-plotly.js";
 import {
   analyticsApi,
   cashBalancesApi,
@@ -32,17 +29,14 @@ import { LinkRefundModal } from "../components/modals/LinkRefundModal";
 import { ProjectModal } from "../components/modals/ProjectModal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
-import { SankeyChart } from "../components/SankeyChart";
 import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
+import { DashboardInsightsPanel } from "../components/dashboard/DashboardInsightsPanel";
 import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
-import { plotlyConfig } from "../utils/plotlyLocale";
 import i18n from "../i18n";
-
-type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat("he-IL", {
@@ -50,13 +44,6 @@ const formatCurrency = (val: number) =>
     currency: "ILS",
     maximumFractionDigits: 0,
   }).format(val || 0);
-
-const chartTheme = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#94a3b8", family: "Inter, sans-serif" },
-  margin: { t: 40, b: 40, l: 40, r: 20 },
-};
 
 /* ------------------------------------------------------------------ */
 /*  Helper sub-components (extracted to avoid creating during render)  */
@@ -1054,13 +1041,8 @@ function RecentTransactionsFeed({
 export function Dashboard() {
   const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
-  const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
-  const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
-  const [insightTab, setInsightTab] = useState<
-    "monthly_expenses" | "net_worth" | "cash_flow" | "income_expenses" | "category"
-  >("monthly_expenses");
 
   // ---- Existing queries (kept) ----
 
@@ -1143,104 +1125,6 @@ export function Dashboard() {
       return res.data;
     },
   });
-
-  // ---- Computed values for charts (kept) ----
-
-  const netWorthDeltas = useMemo(() => {
-    if (!netWorthData || netWorthData.length < 2) return null;
-    return netWorthData.slice(1).map((d, i) => ({
-      month: d.month,
-      bank_balance: d.bank_balance,
-      investment_value: d.investment_value,
-      net_worth: d.net_worth,
-      bank_balance_delta: d.bank_balance - netWorthData[i].bank_balance,
-      investment_value_delta: d.investment_value - netWorthData[i].investment_value,
-      net_worth_delta: d.net_worth - netWorthData[i].net_worth,
-    }));
-  }, [netWorthData]);
-
-  const seriesConfig = {
-    bank_balance: {
-      label: t("dashboard.bankBalance"),
-      color: "#f59e0b",
-      dataKey: "bank_balance" as const,
-      deltaKey: "bank_balance_delta" as const,
-    },
-    investments: {
-      label: t("dashboard.investmentValue"),
-      color: "#6366f1",
-      dataKey: "investment_value" as const,
-      deltaKey: "investment_value_delta" as const,
-    },
-    net_worth: {
-      label: t("dashboard.netWorth"),
-      color: "#10b981",
-      dataKey: "net_worth" as const,
-      deltaKey: "net_worth_delta" as const,
-    },
-  };
-
-  const getNetWorthTraces = (): Plotly.Data[] => {
-    if (!netWorthData || netWorthData.length === 0) return [];
-
-    if (netWorthView === "all") {
-      return [
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.bank_balance),
-          name: t("dashboard.bankBalance"),
-          type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#f59e0b", width: 2 },
-          marker: { size: 4, color: "#f59e0b" },
-        },
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.investment_value),
-          name: t("dashboard.investmentValue"),
-          type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#6366f1", width: 2 },
-          marker: { size: 4, color: "#6366f1" },
-        },
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.net_worth),
-          name: t("dashboard.netWorth"),
-          type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#10b981", width: 3 },
-          marker: { size: 5, color: "#10b981" },
-        },
-      ];
-    }
-
-    if (!netWorthDeltas) return [];
-    const config = seriesConfig[netWorthView];
-
-    return [
-      {
-        x: netWorthDeltas.map((d) => d.month),
-        y: netWorthDeltas.map((d) => d[config.deltaKey]),
-        name: t("dashboard.monthlyChange"),
-        type: "bar",
-        marker: {
-          color: netWorthDeltas.map((d) =>
-            d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444",
-          ),
-        },
-      },
-      {
-        x: netWorthDeltas.map((d) => d.month),
-        y: netWorthDeltas.map((d) => d[config.dataKey]),
-        name: config.label,
-        type: "scatter",
-        mode: "lines+markers",
-        line: { color: config.color, width: 3 },
-        marker: { size: 8, color: config.color },
-      },
-    ];
-  };
 
   // ================================================================
   //  Render
