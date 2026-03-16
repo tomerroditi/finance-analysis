@@ -38,7 +38,9 @@
     "daysAgo": "d ago",
     "weeksAgo": "w ago",
     "hide": "Hide",
-    "show": "Show"
+    "show": "Show",
+    "clearSelection": "Clear selection",
+    "remove": "Remove"
   },
   "sidebar": {
     "logo": "Finance",

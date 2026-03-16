@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, X, Check, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface MultiSelectProps {
   options: string[];
@@ -14,6 +15,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   onChange,
   placeholder = "Select...",
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             <button
               type="button"
               onClick={clearAll}
-              aria-label="Clear selection"
+              aria-label={t("common.clearSelection")}
               className="p-0.5 hover:bg-[var(--surface-light)] rounded transition-colors"
             >
               <X size={10} className="text-[var(--text-muted)]" />
@@ -94,7 +96,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                   e.stopPropagation();
                   toggle(s);
                 }}
-                aria-label={`Remove ${s}`}
+                aria-label={t("common.remove")}
                 className="shrink-0 hover:text-red-400 transition-colors"
               >
                 <X size={10} />
