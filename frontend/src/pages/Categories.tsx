@@ -826,7 +826,7 @@ export function Categories() {
                             {tag}
                           </span>
                         )}
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover/tag:opacity-100 transition-all ml-1">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover/tag:opacity-100 transition-all ms-1">
                           <button
                             onClick={() => setIsRelocateOpen({ category, tag })}
                             className="p-1 hover:bg-blue-500/10 text-blue-400 rounded transition-colors"
@@ -972,7 +972,7 @@ export function Categories() {
               {t("categories.moveTagDescription", { tag: isRelocateOpen.tag })}
             </p>
 
-            <div className="space-y-2 max-h-[200px] overflow-y-auto mb-6 pr-2">
+            <div className="space-y-2 max-h-[200px] overflow-y-auto mb-6 pe-2">
               {categories &&
                 Object.keys(categories)
                   .filter((c) => c !== isRelocateOpen.category)
@@ -1022,13 +1022,13 @@ export function Categories() {
             <div className="space-y-6">
               {/* Search */}
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   type="text"
                   placeholder={t("categories.searchEmojis")}
                   value={emojiSearch}
                   onChange={(e) => setEmojiSearch(e.target.value)}
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl pl-9 pr-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
+                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl ps-9 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
                 />
               </div>
 
