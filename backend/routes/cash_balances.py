@@ -25,10 +25,7 @@ async def get_cash_balances(
 ) -> list[dict]:
     """Get all cash balance records."""
     service = CashBalanceService(db)
-    try:
-        return service.get_all_balances()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_all_balances()
 
 
 @router.post("/")
@@ -45,8 +42,6 @@ async def set_cash_balance(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/migrate")
@@ -59,10 +54,7 @@ async def migrate_cash_balances(
     Deletes the old synthetic 'Prior Wealth' transaction.
     """
     service = CashBalanceService(db)
-    try:
-        return service.migrate_from_transactions()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.migrate_from_transactions()
 
 
 @router.delete("/{account_name}")

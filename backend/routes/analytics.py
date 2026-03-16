@@ -4,7 +4,7 @@ Analytics API routes.
 Provides endpoints for financial analysis and reporting.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -26,12 +26,7 @@ async def get_overview(
         Summary metrics including total income, total expenses, and net balance.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_overview()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_overview()
 
 
 @router.get("/net-balance-over-time")
@@ -46,12 +41,7 @@ async def get_net_balance_over_time(
         List of ``{date, net_balance}`` data points ordered chronologically.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_net_balance_over_time()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_net_balance_over_time()
 
 
 @router.get("/income-expenses-over-time")
@@ -66,12 +56,7 @@ async def get_income_expenses_over_time(
         List of ``{month, income, expenses}`` records ordered chronologically.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_income_expenses_over_time()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_income_expenses_over_time()
 
 
 @router.get("/by-category")
@@ -87,12 +72,7 @@ async def get_expenses_by_category(
         Excludes non-expense categories (Ignore, Salary, Other Income, etc.).
     """
     service = AnalysisService(db)
-    try:
-        return service.get_expenses_by_category()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_expenses_by_category()
 
 
 @router.get("/sankey")
@@ -108,12 +88,7 @@ async def get_sankey_data(
         suitable for rendering a Sankey diagram (income sources -> categories -> tags).
     """
     service = AnalysisService(db)
-    try:
-        return service.get_sankey_data()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_sankey_data()
 
 
 @router.get("/income-by-source-over-time")
@@ -129,12 +104,7 @@ async def get_income_by_source_over_time(
         ordered chronologically. Prior Wealth is excluded.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_income_by_source_over_time()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_income_by_source_over_time()
 
 
 @router.get("/monthly-expenses")
@@ -165,12 +135,7 @@ async def get_monthly_expenses(
         ``avg_6_months``, ``avg_12_months`` averages.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
 
 
 @router.get("/net-worth-over-time")
@@ -186,9 +151,4 @@ async def get_net_worth_over_time(
         incorporating bank balances, investments, and cumulative transactions.
     """
     service = AnalysisService(db)
-    try:
-        return service.get_net_worth_over_time()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_net_worth_over_time()

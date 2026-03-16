@@ -26,10 +26,7 @@ async def get_bank_balances(
 ) -> list[dict]:
     """Get all bank balance records."""
     service = BankBalanceService(db)
-    try:
-        return service.get_all_balances()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return service.get_all_balances()
 
 
 @router.post("/")
@@ -47,5 +44,3 @@ async def set_bank_balance(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
