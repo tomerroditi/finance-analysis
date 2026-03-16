@@ -513,7 +513,9 @@
     "mashlima": "משלימה",
     "kerenHistahlmut": "קרן השתלמות",
     "policy": "פוליסה",
-    "updated": "עודכן"
+    "updated": "עודכן",
+    "chartMonthly": "חודשי",
+    "chartCumulative": "מצטבר"
   },
   "modals": {
     "confirm": {
