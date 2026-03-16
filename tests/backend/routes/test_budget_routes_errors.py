@@ -200,13 +200,13 @@ class TestProjectBudgetErrors:
         assert response.status_code == 200
 
     def test_update_nonexistent_project(self, test_client):
-        """PUT /api/budget/projects/NonExistent returns 500 for missing project.
+        """PUT /api/budget/projects/NonExistent raises ValueError.
 
         The service raises a ValueError when updating a non-existent project.
-        Since the route has no try/except, FastAPI returns a 500 error.
+        Since the route has no try/except, the error propagates through.
         """
-        response = test_client.put(
-            "/api/budget/projects/NonExistentProject",
-            json={"total_budget": 60000.0},
-        )
-        assert response.status_code == 500
+        with pytest.raises(ValueError, match="not found"):
+            test_client.put(
+                "/api/budget/projects/NonExistentProject",
+                json={"total_budget": 60000.0},
+            )
