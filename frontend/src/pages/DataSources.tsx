@@ -298,7 +298,7 @@ export function DataSources() {
                 <option key={p.key} value={p.days ?? "auto"}>{t(`dataSources.scrapePeriod.${p.key}`)}</option>
               ))}
             </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+            <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
             onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
@@ -511,7 +511,7 @@ export function DataSources() {
                         {scraper.error_message && (
                           <div className="relative group/err">
                             <Info size={12} className="text-red-400 cursor-help" />
-                            <div className="absolute bottom-full right-0 mb-1 hidden group-hover/err:block z-50">
+                            <div className="absolute bottom-full end-0 mb-1 hidden group-hover/err:block z-50">
                               <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
                                 {scraper.error_message}
                               </div>

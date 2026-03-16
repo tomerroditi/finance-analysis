@@ -140,21 +140,21 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
       >
         <div className="relative border-b border-[var(--surface-light)] bg-[var(--surface-light)]/20">
           <SearchIcon
-            className="absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+            className="absolute start-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
             size={20}
           />
           <input
             ref={inputRef}
             type="text"
             placeholder={t("globalSearch.placeholder")}
-            className="w-full bg-transparent pl-14 pr-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
+            className="w-full bg-transparent ps-14 pe-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
           />
-          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          <div className="absolute end-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
             <span className="px-1.5 py-0.5 rounded border border-[var(--surface-light)] bg-[var(--surface)] text-[10px] text-[var(--text-muted)] font-mono">
               ESC
             </span>
