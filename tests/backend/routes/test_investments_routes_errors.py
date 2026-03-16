@@ -5,7 +5,6 @@ errors, and exception propagation from the service layer.
 """
 
 import pytest
-from backend.errors import EntityNotFoundException
 
 
 class TestInvestmentNotFoundErrors:

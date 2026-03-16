@@ -112,7 +112,7 @@ class TestBudgetRuleNotFoundErrors:
     """Tests for not-found scenarios on budget rule endpoints."""
 
     def test_update_nonexistent_budget_rule(self, test_client):
-        """PUT /api/budget/rules/99999 for a non-existent rule raises ValueError.
+        """Verify that ValueError propagates when updating a non-existent budget rule.
 
         The budget repository raises a ValueError when no rule is found
         with the given ID. Since the route has no try/except, the error
@@ -180,7 +180,7 @@ class TestProjectBudgetErrors:
         assert response.status_code == 422
 
     def test_get_project_details_nonexistent(self, test_client):
-        """GET /api/budget/projects/NonExistent raises ValueError.
+        """Verify that ValueError propagates when fetching a non-existent project.
 
         The project service raises a ValueError when the project does not
         exist. Since the route has no try/except and the test client has
@@ -200,7 +200,7 @@ class TestProjectBudgetErrors:
         assert response.status_code == 200
 
     def test_update_nonexistent_project(self, test_client):
-        """PUT /api/budget/projects/NonExistent raises ValueError.
+        """Verify that ValueError propagates when updating a non-existent project.
 
         The service raises a ValueError when updating a non-existent project.
         Since the route has no try/except, the error propagates through.

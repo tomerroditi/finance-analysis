@@ -9,7 +9,7 @@ class TestAnalyticsRoutesErrors:
     """Tests for analytics endpoints with invalid inputs and error conditions."""
 
     def test_get_overview_internal_error(self, test_client):
-        """Verify 500 when AnalysisService.get_overview raises an exception.
+        """Verify that RuntimeError propagates when AnalysisService.get_overview fails.
 
         Patches the AnalysisService to simulate an unexpected internal error
         during the overview aggregation.
@@ -22,7 +22,7 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/overview")
 
     def test_get_net_balance_over_time_internal_error(self, test_client):
-        """Verify exception propagation when net balance computation fails.
+        """Verify that RuntimeError propagates when net balance computation fails.
 
         The analytics routes do not wrap service calls in try/except, so
         internal errors propagate through the test client.
@@ -37,7 +37,7 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/net-balance-over-time")
 
     def test_get_income_expenses_over_time_internal_error(self, test_client):
-        """Verify exception propagation when income/expenses computation fails."""
+        """Verify that RuntimeError propagates when income/expenses computation fails."""
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
@@ -48,7 +48,7 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/income-expenses-over-time")
 
     def test_get_expenses_by_category_internal_error(self, test_client):
-        """Verify exception propagation when category breakdown fails."""
+        """Verify that RuntimeError propagates when category breakdown fails."""
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
@@ -59,7 +59,7 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/by-category")
 
     def test_get_net_worth_over_time_internal_error(self, test_client):
-        """Verify exception propagation when net worth computation fails."""
+        """Verify that RuntimeError propagates when net worth computation fails."""
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
@@ -70,7 +70,7 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/net-worth-over-time")
 
     def test_get_monthly_expenses_internal_error(self, test_client):
-        """Verify exception propagation when monthly expenses computation fails."""
+        """Verify that RuntimeError propagates when monthly expenses computation fails."""
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
