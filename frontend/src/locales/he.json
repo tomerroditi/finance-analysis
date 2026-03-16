@@ -50,7 +50,8 @@
     "categories": "קטגוריות",
     "investments": "השקעות",
     "insurance": "ביטוח",
-    "dataSources": "מקורות מידע"
+    "dataSources": "מקורות מידע",
+    "earlyRetirement": "פרישה מוקדמת"
   },
   "settings": {
     "title": "הגדרות",
@@ -701,5 +702,69 @@
     "title": "משהו השתבש",
     "message": "אירעה שגיאה בלתי צפויה. נסו לטעון מחדש את הדף.",
     "tryAgain": "נסו שוב"
+  },
+  "earlyRetirement": {
+    "title": "מחשבון פרישה מוקדמת",
+    "subtitle": "תכנן את הדרך לעצמאות כלכלית עם מכשירי חיסכון ישראליים",
+    "sections": {
+      "currentStatus": "מצב פיננסי נוכחי",
+      "goals": "יעדי פרישה",
+      "projections": "תחזיות ותובנות"
+    },
+    "form": {
+      "currentAge": "גיל נוכחי",
+      "targetRetirementAge": "גיל פרישה יעד",
+      "monthlyExpenses": "הוצאות חודשיות בפרישה",
+      "lifeExpectancy": "תוחלת חיים",
+      "expectedReturn": "תשואה שנתית צפויה",
+      "withdrawalRate": "שיעור משיכה בטוח",
+      "inflationRate": "שיעור אינפלציה",
+      "israeliVehicles": "מכשירי חיסכון ישראליים",
+      "pensionPayout": "פנסיה חודשית (גיל 67)",
+      "kerenHishtalmutBalance": "יתרת קרן השתלמות",
+      "kerenHishtalmutMonthly": "הפקדה חודשית לקרן השתלמות",
+      "bituachLeumiEligible": "זכאי לביטוח לאומי",
+      "bituachLeumiEstimate": "קצבת ביטוח לאומי חודשית",
+      "otherPassiveIncome": "הכנסה פסיבית אחרת",
+      "calculate": "חשב"
+    },
+    "status": {
+      "netWorth": "שווי נקי",
+      "avgMonthlyIncome": "הכנסה חודשית ממוצעת",
+      "avgMonthlyExpenses": "הוצאות חודשיות ממוצעות",
+      "monthlySavings": "חיסכון חודשי",
+      "savingsRate": "שיעור חיסכון",
+      "totalInvestments": "סה\"כ השקעות"
+    },
+    "projections": {
+      "fireNumber": "מספר FIRE",
+      "fireAge": "גיל FIRE",
+      "yearsToFire": "שנים ל-FIRE",
+      "monthlySavingsNeeded": "חיסכון חודשי נדרש",
+      "readiness": "מוכנות",
+      "readiness_on_track": "במסלול",
+      "readiness_close": "כמעט שם",
+      "readiness_off_track": "לא במסלול",
+      "notReachable": "לא ניתן להשגה",
+      "onTrackNoExtra": "במסלול!"
+    },
+    "charts": {
+      "netWorthProjection": "תחזית שווי נקי",
+      "retirementIncome": "הכנסה בפרישה לפי מקור",
+      "age": "גיל",
+      "baseline": "בסיס",
+      "optimistic": "אופטימי",
+      "conservative": "שמרני",
+      "fireTarget": "יעד FIRE",
+      "retirementAge": "פרישה",
+      "pensionAge": "גיל פנסיה"
+    },
+    "income": {
+      "portfolioWithdrawal": "משיכה מתיק",
+      "pension": "פנסיה",
+      "bituachLeumi": "ביטוח לאומי",
+      "passiveIncome": "הכנסה פסיבית",
+      "expenses": "הוצאות"
+    }
   }
 }

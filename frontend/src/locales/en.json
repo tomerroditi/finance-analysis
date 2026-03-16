@@ -50,7 +50,8 @@
     "categories": "Categories",
     "investments": "Investments",
     "insurance": "Insurance",
-    "dataSources": "Data Sources"
+    "dataSources": "Data Sources",
+    "earlyRetirement": "Early Retirement"
   },
   "settings": {
     "title": "Settings",
@@ -701,5 +702,69 @@
     "title": "Something went wrong",
     "message": "An unexpected error occurred. Please try reloading the page.",
     "tryAgain": "Try Again"
+  },
+  "earlyRetirement": {
+    "title": "Early Retirement Calculator",
+    "subtitle": "Plan your path to financial independence with Israeli savings vehicles",
+    "sections": {
+      "currentStatus": "Current Financial Status",
+      "goals": "Retirement Goals",
+      "projections": "Projections & Insights"
+    },
+    "form": {
+      "currentAge": "Current Age",
+      "targetRetirementAge": "Target Retirement Age",
+      "monthlyExpenses": "Monthly Expenses in Retirement",
+      "lifeExpectancy": "Life Expectancy",
+      "expectedReturn": "Expected Annual Return",
+      "withdrawalRate": "Safe Withdrawal Rate",
+      "inflationRate": "Inflation Rate",
+      "israeliVehicles": "Israeli Savings Vehicles",
+      "pensionPayout": "Monthly Pension (age 67)",
+      "kerenHishtalmutBalance": "Keren Hishtalmut Balance",
+      "kerenHishtalmutMonthly": "Keren Hishtalmut Monthly",
+      "bituachLeumiEligible": "Bituach Leumi Eligible",
+      "bituachLeumiEstimate": "Bituach Leumi Monthly",
+      "otherPassiveIncome": "Other Passive Income",
+      "calculate": "Calculate"
+    },
+    "status": {
+      "netWorth": "Net Worth",
+      "avgMonthlyIncome": "Avg. Monthly Income",
+      "avgMonthlyExpenses": "Avg. Monthly Expenses",
+      "monthlySavings": "Monthly Savings",
+      "savingsRate": "Savings Rate",
+      "totalInvestments": "Total Investments"
+    },
+    "projections": {
+      "fireNumber": "FIRE Number",
+      "fireAge": "FIRE Age",
+      "yearsToFire": "Years to FIRE",
+      "monthlySavingsNeeded": "Monthly Savings Needed",
+      "readiness": "Readiness",
+      "readiness_on_track": "On Track",
+      "readiness_close": "Almost There",
+      "readiness_off_track": "Off Track",
+      "notReachable": "Not reachable",
+      "onTrackNoExtra": "On track!"
+    },
+    "charts": {
+      "netWorthProjection": "Net Worth Projection",
+      "retirementIncome": "Retirement Income by Source",
+      "age": "Age",
+      "baseline": "Baseline",
+      "optimistic": "Optimistic",
+      "conservative": "Conservative",
+      "fireTarget": "FIRE Target",
+      "retirementAge": "Retirement",
+      "pensionAge": "Pension Age"
+    },
+    "income": {
+      "portfolioWithdrawal": "Portfolio Withdrawal",
+      "pension": "Pension",
+      "bituachLeumi": "Bituach Leumi",
+      "passiveIncome": "Passive Income",
+      "expenses": "Expenses"
+    }
   }
 }
