@@ -45,11 +45,16 @@ interface IncomeBySourceDataPoint {
   sources: Record<string, number>;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-interface SankeyDataType {
-  [key: string]: any;
+interface SankeyData {
+  nodes: number[];
+  node_labels: string[];
+  links: {
+    source: number;
+    target: number;
+    value: number;
+    label: string;
+  }[];
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat("he-IL", {
@@ -70,7 +75,7 @@ interface DashboardInsightsPanelProps {
   incomeOutcome: IncomeOutcomeDataPoint[] | undefined;
   monthlyExpenses: MonthlyExpensesData | undefined;
   categoryData: CategoryData | undefined;
-  sankeyData: SankeyDataType | undefined;
+  sankeyData: SankeyData | undefined;
   sankeyLoading: boolean;
   incomeBySourceData: IncomeBySourceDataPoint[] | undefined;
   categoryIcons: Record<string, string> | undefined;
@@ -410,7 +415,7 @@ export function DashboardInsightsPanel({
               <Skeleton variant="chart" className="flex-1" />
             ) : (
               <div className="flex-1 min-h-0">
-                <SankeyChart data={sankeyData} height={560} />
+                {sankeyData && <SankeyChart data={sankeyData} height={560} />}
               </div>
             )}
           </div>
