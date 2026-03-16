@@ -579,11 +579,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 value={filters.filterText}
                 onChange={(e) => updateFilters({ filterText: e.target.value })}
                 placeholder={t("transactions.filters.search")}
+                aria-label={t("transactions.filters.search")}
                 className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
               />
               {filters.filterText && (
                 <button
                   onClick={() => updateFilters({ filterText: "" })}
+                  aria-label={t("common.close")}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
                 >
                   <X size={14} />

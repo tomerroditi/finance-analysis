@@ -147,6 +147,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
             ref={inputRef}
             type="text"
             placeholder={t("globalSearch.placeholder")}
+            aria-label={t("globalSearch.placeholder")}
             className="w-full bg-transparent pl-14 pr-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
             value={query}
             onChange={(e) => {
@@ -160,6 +161,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
             </span>
             <button
               onClick={onClose}
+              aria-label={t("common.close")}
               className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
             >
               <X size={18} />
