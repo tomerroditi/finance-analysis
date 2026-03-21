@@ -146,7 +146,7 @@ async def update_investment(
 ) -> dict[str, str]:
     """Update an investment."""
     service = InvestmentsService(db)
-    updates = {k: v for k, v in investment.dict().items() if v is not None}
+    updates = {k: v for k, v in investment.model_dump().items() if v is not None}
     service.update_investment(investment_id, **updates)
     return {"status": "success"}
 
@@ -234,7 +234,7 @@ async def update_balance_snapshot(
 ) -> dict[str, str]:
     """Update an existing balance snapshot."""
     service = InvestmentsService(db)
-    updates = {k: v for k, v in snapshot.dict().items() if v is not None}
+    updates = {k: v for k, v in snapshot.model_dump().items() if v is not None}
     service.update_balance_snapshot(snapshot_id, **updates)
     return {"status": "success"}
 
