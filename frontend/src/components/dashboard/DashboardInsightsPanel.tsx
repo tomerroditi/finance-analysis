@@ -4,7 +4,7 @@ import Plot from "react-plotly.js";
 import { TrendingDown, Calculator, Tag } from "lucide-react";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
-import { plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
 type InsightTab = "monthly_expenses" | "net_worth" | "cash_flow" | "income_expenses" | "category";
@@ -63,12 +63,6 @@ const formatCurrency = (val: number) =>
     maximumFractionDigits: 0,
   }).format(val || 0);
 
-const chartTheme = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#94a3b8", family: "Inter, sans-serif" },
-  margin: { t: 40, b: 40, l: 40, r: 20 },
-};
 
 interface DashboardInsightsPanelProps {
   netWorthData: NetWorthDataPoint[] | undefined;
@@ -196,6 +190,7 @@ export function DashboardInsightsPanel({
         mode: "lines+markers",
         line: { color: config.color, width: 3 },
         marker: { size: 8, color: config.color },
+        yaxis: "y2",
       },
     ];
   };
@@ -385,11 +380,25 @@ export function DashboardInsightsPanel({
                       autosize: true,
                       yaxis: {
                         title: {
-                          text: t("dashboard.amountILS"),
+                          text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
                           font: { color: "#94a3b8" },
                         },
                         tickfont: { color: "#94a3b8" },
+                        automargin: true,
                       },
+                      ...(netWorthView !== "all" && {
+                        yaxis2: {
+                          title: {
+                            text: seriesConfig[netWorthView].label,
+                            font: { color: seriesConfig[netWorthView].color },
+                          },
+                          tickfont: { color: seriesConfig[netWorthView].color },
+                          overlaying: "y" as const,
+                          side: "right" as const,
+                          showgrid: false,
+                          automargin: true,
+                        },
+                      }),
                       legend: {
                         orientation: "h",
                         y: -0.15,

@@ -1,5 +1,5 @@
 import Plot from "react-plotly.js";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -64,13 +64,7 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
   }, [data]);
 
   const layout = {
-    font: {
-      size: 12,
-      color: "#94a3b8",
-      family: "Inter, sans-serif",
-    },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
+    ...chartTheme,
     margin: { t: 20, b: 20, l: 20, r: 20 },
     height: height,
     autosize: true,

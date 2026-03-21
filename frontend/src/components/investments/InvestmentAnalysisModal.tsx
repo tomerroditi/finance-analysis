@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import { investmentsApi } from "../../services/api";
-import { plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
 
 interface Investment {
   id: number;
@@ -67,12 +67,6 @@ const formatCurrency = (val: number) =>
 const formatPercent = (val: number) =>
   `${val > 0 ? "+" : ""}${val.toFixed(2)}%`;
 
-const chartTheme = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#94a3b8", family: "Inter, sans-serif" },
-  margin: { t: 30, b: 30, l: 40, r: 20 },
-};
 
 interface InvestmentAnalysisModalProps {
   investmentId: number;
