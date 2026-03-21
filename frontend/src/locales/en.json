@@ -513,7 +513,9 @@
     "mashlima": "Mashlima",
     "kerenHistahlmut": "Keren Hishtalmut",
     "policy": "Policy",
-    "updated": "Updated"
+    "updated": "Updated",
+    "chartMonthly": "Monthly",
+    "chartCumulative": "Cumulative"
   },
   "modals": {
     "confirm": {
