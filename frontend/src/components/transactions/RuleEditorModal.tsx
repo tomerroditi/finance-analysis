@@ -282,7 +282,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
             <div className="flex-1 overflow-auto">
                 {loading ? (
                     <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-                        <Loader2 size={24} className="animate-spin mr-2" />
+                        <Loader2 size={24} className="animate-spin me-2" />
                         {t("transactions.autoTagging.loadingPreview")}
                     </div>
                 ) : matches.length === 0 ? (
@@ -296,7 +296,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
                             <tr className="text-start text-[var(--text-muted)]">
                                 <th className="px-4 py-2 font-medium">{t("common.date")}</th>
                                 <th className="px-4 py-2 font-medium">{t("common.description")}</th>
-                                <th className="px-4 py-2 font-medium text-right">{t("common.amount")}</th>
+                                <th className="px-4 py-2 font-medium text-end">{t("common.amount")}</th>
                                 <th className="px-4 py-2 font-medium">{t("transactions.autoTagging.currentTag")}</th>
                             </tr>
                         </thead>
@@ -309,7 +309,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
                                     <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
                                         {tx.description}
                                     </td>
-                                    <td className={`px-4 py-2 text-right whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
+                                    <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
                                         {formatAmount(tx.amount ?? 0)}
                                     </td>
                                     <td className="px-4 py-2">

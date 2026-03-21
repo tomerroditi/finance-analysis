@@ -122,15 +122,15 @@ const RefundsView: React.FC = () => {
         </div>
 
         {!item.links || item.links.length === 0 ? (
-          <div className="text-sm text-[var(--text-muted)] italic pl-6">
+          <div className="text-sm text-[var(--text-muted)] italic ps-6">
             {t("transactions.refunds.noRefundsLinked")}
           </div>
         ) : (
-          <div className="space-y-2 pl-2 border-l-2 border-[var(--surface-light)] ml-1">
+          <div className="space-y-2 ps-2 border-s-2 border-[var(--surface-light)] ms-1">
             {item.links.map((link) => (
               <div
                 key={link.id}
-                className="pl-4 py-1 flex justify-between items-center group"
+                className="ps-4 py-1 flex justify-between items-center group"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-emerald-400 font-mono font-medium">

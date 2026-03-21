@@ -134,7 +134,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
               {actions}
             </div>
           )}
-          <div className="text-right">
+          <div className="text-end">
             <div className="font-bold font-mono">
               {spent.toFixed(2)}{" "}
               <span className="text-[var(--text-muted)] text-sm font-normal">

@@ -276,9 +276,9 @@ export function InvestmentAnalysisModal({
                       <thead>
                         <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
                           <th className="text-start py-2 font-bold">{t("common.date")}</th>
-                          <th className="text-right py-2 font-bold">{t("investments.balance")}</th>
+                          <th className="text-end py-2 font-bold">{t("investments.balance")}</th>
                           <th className="text-center py-2 font-bold">{t("investments.source")}</th>
-                          <th className="text-right py-2 font-bold"></th>
+                          <th className="text-end py-2 font-bold"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -306,7 +306,7 @@ export function InvestmentAnalysisModal({
                                 {snap.source}
                               </span>
                             </td>
-                            <td className="py-2 text-right">
+                            <td className="py-2 text-end">
                               <button
                                 onClick={() =>
                                   deleteSnapshotMutation.mutate({

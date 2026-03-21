@@ -86,7 +86,7 @@ async def update_budget_rule(
 ) -> dict[str, str]:
     """Update a budget rule."""
     service = BudgetService(db)
-    updates = {k: v for k, v in rule.dict().items() if v is not None}
+    updates = {k: v for k, v in rule.model_dump().items() if v is not None}
     service.update_rule(rule_id, **updates)
     return {"status": "success"}
 

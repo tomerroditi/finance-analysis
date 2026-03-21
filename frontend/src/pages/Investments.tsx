@@ -177,7 +177,7 @@ function InvestmentCard({
             </div>
           )}
         </div>
-        <div className="flex-shrink-0 ml-4">
+        <div className="flex-shrink-0 ms-4">
           {(analysisData?.history?.length ?? 0) >= 2 ? (
             <Sparkline
               data={analysisData!.history!.map(p => p.balance)}
@@ -275,7 +275,7 @@ function InvestmentCard({
               <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
                 <Info size={16} />
               </div>
-              <div className="absolute bottom-full left-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
+              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
                 {inv.notes}
               </div>
             </div>
@@ -643,6 +643,7 @@ export function Investments() {
           investment={investments?.find((i: Investment) => i.id === selectedAnalysisId)}
           onClose={() => setSelectedAnalysisId(null)}
         />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       )}
 
       {/* Update Balance Modal */}

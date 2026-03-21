@@ -581,7 +581,7 @@ export function DashboardInsightsPanel({
               {/* Expenses bars */}
               <div>
                 <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">{t("dashboard.expenses")}</p>
-                <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-[350px] overflow-y-auto pe-1">
                   {expenses.map((d, i) => {
                     const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
                     const barWidth = (d.amount / maxExpense) * 100;
@@ -596,8 +596,8 @@ export function DashboardInsightsPanel({
                             style={{ width: `${barWidth}%` }}
                           />
                         </div>
-                        <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                        <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                        <span className="text-sm font-bold tabular-nums w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                        <span className="text-xs text-[var(--text-muted)] w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                       </div>
                     );
                   })}
@@ -611,7 +611,7 @@ export function DashboardInsightsPanel({
               {refunds.length > 0 && (
                 <div>
                   <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">{t("dashboard.refunds")}</p>
-                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pe-1">
                     {refunds.map((d, i) => {
                       const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;
                       const barWidth = (d.amount / maxRefund) * 100;
@@ -626,8 +626,8 @@ export function DashboardInsightsPanel({
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                          <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          <span className="text-sm font-bold tabular-nums w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-xs text-[var(--text-muted)] w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                         </div>
                       );
                     })}

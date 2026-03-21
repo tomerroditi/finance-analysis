@@ -306,7 +306,7 @@ export const MonthlyBudgetView: React.FC = () => {
           <span>{t("budget.rulesCopiedFrom", { month: copiedFromMsg })}</span>
           <button
             onClick={() => setCopiedFromMsg(null)}
-            className="ml-4 text-blue-400/60 hover:text-blue-400 transition-colors"
+            className="ms-4 text-blue-400/60 hover:text-blue-400 transition-colors"
           >
             ✕
           </button>
