@@ -1,3 +1,12 @@
+## v1.1.1 (2026-03-21)
+
+### Fix
+
+- **frontend**: convert remaining physical properties in ResizableSplitPane for RTL
+- **frontend**: replace remaining physical CSS properties with logical equivalents for RTL support
+- **frontend**: replace physical CSS properties with RTL logical equivalents
+- **ci**: use default GITHUB_TOKEN for get-version job
+
 ## v1.1.0 (2026-03-11)
 
 ### Feat
