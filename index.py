@@ -28,6 +28,11 @@ from backend.main import app  # noqa: E402
 config = AppConfig()
 config.set_demo_mode(True)
 
+# Create any missing tables in the demo DB (e.g. insurance_transactions
+# added after the demo DB was built). Safe — only creates missing tables.
+from backend.database import get_engine  # noqa: E402
+from backend.models import Base  # noqa: E402
+Base.metadata.create_all(bind=get_engine())
+
 # Vercel auto-detects this `app` variable as the FastAPI application.
-# lifespan is skipped by Vercel's runtime (the lifespan handler imports
-# keyring which is not available in serverless).
+# lifespan is skipped (VERCEL env var guard) because it imports keyring.
