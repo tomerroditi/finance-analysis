@@ -172,10 +172,16 @@ No changes needed. `FAD_USER_DIR` env var override already supported.
 
 #### Conditional Route Registration in `backend/main.py`
 
-The scraper and credentials import chains pull in packages unavailable in serverless (Playwright, keyring). These routes must be conditionally registered:
+Three routes import `keyring` through their dependency chains (`CredentialsRepository` → `import keyring`): `credentials`, `scraping`, and `testing`. These must be conditionally registered:
 
 ```python
 # In backend/main.py — replace unconditional imports with:
+try:
+    from backend.routes import credentials
+    app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
+except ImportError:
+    pass
+
 try:
     from backend.routes import scraping
     app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
@@ -183,15 +189,15 @@ except ImportError:
     pass
 
 try:
-    from backend.routes import credentials
-    app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
+    from backend.routes import testing
+    app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 except ImportError:
     pass
 ```
 
-This ensures the app starts cleanly when Playwright/keyring are absent. All other routes (transactions, analytics, budget, etc.) use only standard library + pandas/SQLAlchemy and will work fine.
+This ensures the app starts cleanly when `keyring` is absent. All other routes (transactions, analytics, budget, etc.) use only standard library + pandas/SQLAlchemy and will work fine.
 
-**Scope of change:** Only the `scraping` and `credentials` routers are gated. The remaining 10 routers are imported and registered unconditionally as before.
+**Scope of change:** Only the `scraping`, `credentials`, and `testing` routers are gated. The remaining 9 routers are imported and registered unconditionally as before.
 
 ## Testing Strategy
 
