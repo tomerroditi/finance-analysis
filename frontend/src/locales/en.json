@@ -676,5 +676,10 @@
     "value": "Value",
     "min": "Min",
     "max": "Max"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "message": "An unexpected error occurred. Please try reloading the page.",
+    "tryAgain": "Try Again"
   }
 }
