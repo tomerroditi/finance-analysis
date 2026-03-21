@@ -132,7 +132,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       type="number"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      className="w-32 px-2 py-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded text-[var(--text)] text-right"
+                      className="w-32 px-2 py-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded text-[var(--text)] text-end"
                       placeholder="0"
                       min="0"
                       autoFocus
@@ -152,7 +152,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                   </div>
                 ) : (
                   <>
-                    <span className="text-[var(--text-muted)] text-sm min-w-24 text-right">
+                    <span className="text-[var(--text-muted)] text-sm min-w-24 text-end">
                       {formatCurrency(balance.balance)}
                     </span>
                     <button

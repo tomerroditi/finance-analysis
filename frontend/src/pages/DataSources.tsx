@@ -292,13 +292,13 @@ export function DataSources() {
                 setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
               }
               disabled={isAnyScraping}
-              className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pr-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
+              className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
                 <option key={p.key} value={p.days ?? "auto"}>{t(`dataSources.scrapePeriod.${p.key}`)}</option>
               ))}
             </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+            <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
             onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
@@ -511,7 +511,7 @@ export function DataSources() {
                         {scraper.error_message && (
                           <div className="relative group/err">
                             <Info size={12} className="text-red-400 cursor-help" />
-                            <div className="absolute bottom-full right-0 mb-1 hidden group-hover/err:block z-50">
+                            <div className="absolute bottom-full end-0 mb-1 hidden group-hover/err:block z-50">
                               <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
                                 {scraper.error_message}
                               </div>
@@ -797,7 +797,7 @@ export function DataSources() {
                 <p className="text-[var(--text-muted)] font-medium mb-6">
                   {t("dataSources.selectProvider")}
                 </p>
-                <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2">
+                <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pe-2">
                   {providers &&
                     providers[selectedService]?.map((p: string) => (
                       <button
@@ -863,7 +863,7 @@ export function DataSources() {
                                 : "text"
                             }
                             disabled={isViewOnly}
-                            className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50 pr-12"
+                            className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50 pe-12"
                             value={fields[field] || ""}
                             onChange={(e) =>
                               setFields({ ...fields, [field]: e.target.value })
@@ -873,7 +873,7 @@ export function DataSources() {
                             <button
                               type="button"
                               onClick={() => togglePasswordVisibility(field)}
-                              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-white transition-colors"
+                              className="absolute end-4 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-white transition-colors"
                               title={showPasswords[field] ? i18n.t("common.hide") : i18n.t("common.show")}
                             >
                               {showPasswords[field] ? (

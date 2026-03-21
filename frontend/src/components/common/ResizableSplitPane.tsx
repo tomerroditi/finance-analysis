@@ -74,7 +74,7 @@ export function ResizableSplitPane({
                 onMouseDown={handleMouseDown}
                 className={`w-1 bg-[var(--surface-light)] hover:bg-[var(--primary)] cursor-col-resize transition-colors flex-shrink-0 relative group ${isDragging ? "bg-[var(--primary)]" : ""}`}
             >
-                <div className="absolute inset-y-0 -left-1 -right-1" />
+                <div className="absolute inset-y-0 -start-1 -end-1" />
                 <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-[var(--text-muted)] opacity-0 group-hover:opacity-50 transition-opacity ${isDragging ? "opacity-50" : ""}`} />
             </div>
 

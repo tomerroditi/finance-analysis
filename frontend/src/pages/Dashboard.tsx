@@ -79,7 +79,7 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
     <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
       {items.map((item) => (
         <div key={item.name} className="flex justify-between text-xs">
-          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
+          <span className="text-[var(--text-muted)] truncate me-2">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
         </div>
       ))}
@@ -575,7 +575,7 @@ function BudgetSpendingGauge({
               <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
 
               {/* Link to budget page */}
-              <div className="text-right">
+              <div className="text-end">
                 <Link
                   to="/budget"
                   className="text-sm font-medium text-[var(--primary)] hover:underline"
@@ -941,7 +941,7 @@ function RecentTransactionsFeed({
                         )}
                       </div>
                       <span
-                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-right w-[80px] ${
+                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
                           isPositive ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
@@ -952,7 +952,7 @@ function RecentTransactionsFeed({
 
                     {/* Inline tag editing panel */}
                     {isEditing && categories && (
-                      <div className="mx-2 mb-2 ml-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                      <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2">
                           <div className="flex-1 min-w-0">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
@@ -1655,7 +1655,7 @@ export function Dashboard() {
                 {/* Expenses bars */}
                 <div>
                   <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">{t("dashboard.expenses")}</p>
-                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
+                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto pe-1">
                     {expenses.map((d: { category: string; amount: number }, i: number) => {
                       const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
                       const barWidth = (d.amount / maxExpense) * 100;
@@ -1670,8 +1670,8 @@ export function Dashboard() {
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                          <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          <span className="text-sm font-bold tabular-nums w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-xs text-[var(--text-muted)] w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                         </div>
                       );
                     })}
@@ -1685,7 +1685,7 @@ export function Dashboard() {
                 {refunds.length > 0 && (
                   <div>
                     <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">{t("dashboard.refunds")}</p>
-                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pe-1">
                       {refunds.map((d: { category: string; amount: number }, i: number) => {
                         const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;
                         const barWidth = (d.amount / maxRefund) * 100;
@@ -1700,8 +1700,8 @@ export function Dashboard() {
                                 style={{ width: `${barWidth}%` }}
                               />
                             </div>
-                            <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                            <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                            <span className="text-sm font-bold tabular-nums w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                            <span className="text-xs text-[var(--text-muted)] w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                           </div>
                         );
                       })}
