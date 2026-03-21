@@ -117,14 +117,14 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             <div className="relative">
               <Search
                 size={12}
-                className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                className="absolute start-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search..."
-                className="w-full pl-6 pr-2 py-1 text-xs bg-[var(--surface-base)] border border-[var(--surface-light)] rounded outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                className="w-full ps-6 pe-2 py-1 text-xs bg-[var(--surface-base)] border border-[var(--surface-light)] rounded outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                 autoFocus
               />
             </div>

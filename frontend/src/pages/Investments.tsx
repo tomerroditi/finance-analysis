@@ -217,7 +217,7 @@ function InvestmentCard({
             </div>
           )}
         </div>
-        <div className="flex-shrink-0 ml-4">
+        <div className="flex-shrink-0 ms-4">
           {(analysisData?.history?.length ?? 0) >= 2 ? (
             <Sparkline
               data={analysisData!.history!.map(p => p.balance)}
@@ -315,7 +315,7 @@ function InvestmentCard({
               <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
                 <Info size={16} />
               </div>
-              <div className="absolute bottom-full left-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
+              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
                 {inv.notes}
               </div>
             </div>
@@ -1022,9 +1022,9 @@ export function Investments() {
                           <thead>
                             <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
                               <th className="text-start py-2 font-bold">{t("common.date")}</th>
-                              <th className="text-right py-2 font-bold">{t("investments.balance")}</th>
+                              <th className="text-end py-2 font-bold">{t("investments.balance")}</th>
                               <th className="text-center py-2 font-bold">{t("investments.source")}</th>
-                              <th className="text-right py-2 font-bold"></th>
+                              <th className="text-end py-2 font-bold"></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1036,7 +1036,7 @@ export function Investments() {
                                 <td className="py-2 text-white font-medium">
                                   {snap.date}
                                 </td>
-                                <td className="py-2 text-right text-white font-bold">
+                                <td className="py-2 text-end text-white font-bold">
                                   {formatCurrency(snap.balance)}
                                 </td>
                                 <td className="py-2 text-center">
@@ -1052,7 +1052,7 @@ export function Investments() {
                                     {snap.source}
                                   </span>
                                 </td>
-                                <td className="py-2 text-right">
+                                <td className="py-2 text-end">
                                   <button
                                     onClick={() =>
                                       deleteSnapshotMutation.mutate({

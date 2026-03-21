@@ -497,14 +497,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       return (
         <ArrowUpDown
           size={14}
-          className="ml-1 opacity-20 group-hover:opacity-50"
+          className="ms-1 opacity-20 group-hover:opacity-50"
         />
       );
     }
     return sortConfig.direction === "asc" ? (
-      <ArrowUp size={14} className="ml-1 text-[var(--primary)]" />
+      <ArrowUp size={14} className="ms-1 text-[var(--primary)]" />
     ) : (
-      <ArrowDown size={14} className="ml-1 text-[var(--primary)]" />
+      <ArrowDown size={14} className="ms-1 text-[var(--primary)]" />
     );
   };
 
@@ -524,7 +524,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       onClick={() => handleSort(sortKey)}
       style={{ width }}
       className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
-        ? "text-right"
+        ? "text-end"
         : align === "center"
           ? "text-center"
           : "text-start"
@@ -563,7 +563,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               <Filter size={14} />
               {t("transactions.filters.title")}
               {activeFilterCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--primary)] text-white leading-none">
+                <span className="ms-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-[var(--primary)] text-white leading-none">
                   {activeFilterCount}
                 </span>
               )}
@@ -572,7 +572,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <div className="relative flex-1 min-w-0">
               <Search
                 size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               />
               <input
                 type="text"
@@ -580,13 +580,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 onChange={(e) => updateFilters({ filterText: e.target.value })}
                 placeholder={t("transactions.filters.search")}
                 aria-label={t("transactions.filters.search")}
-                className="w-full pl-8 pr-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                className="w-full ps-8 pe-8 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
               />
               {filters.filterText && (
                 <button
                   onClick={() => updateFilters({ filterText: "" })}
                   aria-label={t("common.close")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
+                  className="absolute end-2 top-1/2 -translate-y-1/2 p-0.5 text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
                 >
                   <X size={14} />
                 </button>
@@ -606,7 +606,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <Settings2 size={14} />
               </button>
               {columnDropdownOpen && (
-                <div className="absolute top-full right-0 mt-1 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl z-30 py-1 min-w-[160px]">
+                <div className="absolute top-full end-0 mt-1 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl z-30 py-1 min-w-[160px]">
                   {[
                     { key: "date", label: t("transactions.table.date") },
                     { key: "description", label: t("transactions.table.description") },
@@ -795,7 +795,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         <span className="truncate font-medium text-[var(--text-default)]">
                           {tx.account_name}
                           {tx.source === "credit_card_transactions" && tx.account_number && (
-                            <span className="text-[var(--text-muted)] ml-1">
+                            <span className="text-[var(--text-muted)] ms-1">
                               ({tx.account_number.slice(-4)})
                             </span>
                           )}
@@ -824,7 +824,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("amount") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-right font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-end font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
                     >
                       {new Intl.NumberFormat("he-IL", {
                         style: "currency",

@@ -117,11 +117,11 @@ export function SplitTransactionModal({
                 className="flex gap-4 items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
               >
                 <div className="flex-1 space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.amount")}
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
                       ₪
                     </span>
                     <input
@@ -135,13 +135,13 @@ export function SplitTransactionModal({
                           parseFloat(e.target.value) || 0,
                         )
                       }
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg ps-8 pe-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
                     />
                   </div>
                 </div>
 
                 <div className="flex-[1.5] space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.category")}
                   </label>
                   <SelectDropdown
@@ -158,7 +158,7 @@ export function SplitTransactionModal({
                 </div>
 
                 <div className="flex-[1.5] space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.tag")}
                   </label>
                   <SelectDropdown
