@@ -176,6 +176,24 @@ class InvestmentsRepository:
         )
         return pd.read_sql(stmt, self.db.bind)
 
+    def get_by_insurance_policy_id(self, policy_id: str) -> pd.DataFrame:
+        """Find an investment linked to an insurance policy.
+
+        Parameters
+        ----------
+        policy_id : str
+            The insurance policy ID to look up.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching investment row, or empty DataFrame if not found.
+        """
+        stmt = select(Investment).where(
+            Investment.insurance_policy_id == policy_id
+        )
+        return pd.read_sql(stmt, self.db.bind)
+
     def update_investment(self, investment_id: int, **fields) -> None:
         """Update an investment by ID.
 

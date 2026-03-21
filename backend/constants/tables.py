@@ -151,6 +151,7 @@ class InvestmentsTableFields(Enum):
     CREATED_DATE = "created_date"
     CLOSED_DATE = "closed_date"
     NOTES = "notes"
+    INSURANCE_POLICY_ID = "insurance_policy_id"
 
 
 class InvestmentBalanceSnapshotsTableFields(Enum):
