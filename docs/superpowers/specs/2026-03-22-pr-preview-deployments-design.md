@@ -193,6 +193,19 @@ This ensures the app starts cleanly when Playwright/keyring are absent. All othe
 
 **Scope of change:** Only the `scraping` and `credentials` routers are gated. The remaining 10 routers are imported and registered unconditionally as before.
 
+## Testing Strategy
+
+Iterate locally before touching CI:
+
+1. **`vercel link`** — connect repo to a Vercel project (one-time)
+2. **`vercel dev`** — run the serverless function locally, verify API + demo DB + frontend
+3. **`vercel deploy`** — deploy a one-off preview from your machine, get a real `*.vercel.app` URL to verify end-to-end
+4. **Fix any issues** (import errors, size limits, routing) and repeat steps 2-3
+5. **Add the GitHub Actions workflow** only after manual deploy works
+6. **Open one test PR** to confirm the automation posts a comment with a working link
+
+This avoids merge-to-main iteration entirely. Steps 1-4 are the implementation phase; steps 5-6 are the final validation.
+
 ## Setup (One-Time)
 
 1. Create a Vercel project linked to the GitHub repo
