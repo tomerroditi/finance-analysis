@@ -21,7 +21,7 @@ import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
 import Plot from "react-plotly.js";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 
 interface Investment {
   id: number;
@@ -572,15 +572,6 @@ export function Investments() {
   const formatPercent = (val: number) =>
     `${val > 0 ? "+" : ""}${val.toFixed(2)}%`;
 
-  const chartTheme = {
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: "#94a3b8", family: "Inter, sans-serif" },
-    margin: { t: 30, b: 30, l: 40, r: 20 },
-    hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" }, namelength: -1 },
-    hovermode: "x unified" as const,
-    xaxis: { showspikes: false },
-  };
 
   const activeInvestments =
     investments?.filter((inv: Investment) => !inv.is_closed) || [];

@@ -13,7 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import Plot from "react-plotly.js";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
@@ -493,10 +493,9 @@ export function InsurancesPrototype() {
               },
             ]}
             layout={{
+              ...chartTheme,
               height: 280,
               margin: { t: 20, b: 40, l: 50, r: 50 },
-              paper_bgcolor: "transparent",
-              plot_bgcolor: "transparent",
               xaxis: { color: "#94a3b8", gridcolor: "#334155", tickfont: { size: 10 } },
               yaxis: {
                 color: "#94a3b8",
@@ -541,10 +540,9 @@ export function InsurancesPrototype() {
                 },
               ]}
               layout={{
+                ...chartTheme,
                 height: 280,
                 margin: { t: 20, b: 20, l: 20, r: 20 },
-                paper_bgcolor: "transparent",
-                plot_bgcolor: "transparent",
                 showlegend: false,
                 annotations: [
                   {

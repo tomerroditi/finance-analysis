@@ -39,7 +39,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
@@ -51,15 +51,6 @@ const formatCurrency = (val: number) =>
     maximumFractionDigits: 0,
   }).format(val || 0);
 
-const chartTheme = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#94a3b8", family: "Inter, sans-serif" },
-  margin: { t: 40, b: 40, l: 40, r: 20 },
-  hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" }, namelength: -1 },
-  hovermode: "x unified" as const,
-  xaxis: { showspikes: false },
-};
 
 /* ------------------------------------------------------------------ */
 /*  Helper sub-components (extracted to avoid creating during render)  */
