@@ -69,3 +69,5 @@ $RECYCLE.BIN/
 .history/
 
 .worktrees
+.vercel
+.env*.local

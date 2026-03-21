@@ -41,6 +41,11 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
+    # Skip startup migrations in serverless (demo DB is pre-built)
+    if os.environ.get("VERCEL"):
+        yield
+        return
+
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
         TaggingRepository,

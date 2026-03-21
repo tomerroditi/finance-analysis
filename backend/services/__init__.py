@@ -11,13 +11,16 @@ from backend.services.budget_service import (
     ProjectBudgetService,
 )
 from backend.services.tagging_service import CategoriesTagsService
-from backend.services.credentials_service import CredentialsService
-
 __all__ = [
     "TransactionsService",
     "BudgetService",
     "MonthlyBudgetService",
     "ProjectBudgetService",
     "CategoriesTagsService",
-    "CredentialsService",
 ]
+
+try:
+    from backend.services.credentials_service import CredentialsService  # noqa: F401
+    __all__.append("CredentialsService")
+except ImportError:
+    pass
