@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, X, Check, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface MultiSelectProps {
   options: string[];
@@ -14,6 +15,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   onChange,
   placeholder = "Select...",
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -65,6 +67,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             <button
               type="button"
               onClick={clearAll}
+              aria-label={t("common.clearSelection")}
               className="p-0.5 hover:bg-[var(--surface-light)] rounded transition-colors"
             >
               <X size={10} className="text-[var(--text-muted)]" />
@@ -93,6 +96,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                   e.stopPropagation();
                   toggle(s);
                 }}
+                aria-label={t("common.remove")}
                 className="shrink-0 hover:text-red-400 transition-colors"
               >
                 <X size={10} />
@@ -125,11 +129,13 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
               />
             </div>
           </div>
-          <div className="overflow-y-auto flex-1">
+          <div role="listbox" aria-multiselectable="true" className="overflow-y-auto flex-1">
             {filteredOptions.map((opt) => (
               <button
                 key={opt}
                 type="button"
+                role="option"
+                aria-selected={selected.includes(opt)}
                 onClick={() => toggle(opt)}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[var(--surface-light)] transition-colors text-start"
               >

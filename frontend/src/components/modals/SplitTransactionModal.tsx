@@ -88,10 +88,10 @@ export function SplitTransactionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+      <div role="dialog" aria-modal="true" aria-labelledby="split-transaction-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
           <div>
-            <h2 className="text-xl font-bold text-white">{t("modals.split.title")}</h2>
+            <h2 id="split-transaction-title" className="text-xl font-bold text-white">{t("modals.split.title")}</h2>
             <p className="text-sm text-[var(--text-muted)]">
               {transaction.description} •{" "}
               {new Intl.NumberFormat("he-IL", {
@@ -102,6 +102,7 @@ export function SplitTransactionModal({
           </div>
           <button
             onClick={onClose}
+            aria-label={t("common.close")}
             className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
           >
             <X size={20} />
@@ -177,6 +178,7 @@ export function SplitTransactionModal({
                 <button
                   onClick={() => removeSplit(index)}
                   disabled={splits.length <= 2}
+                  aria-label={t("common.delete")}
                   className="p-2 mb-0.5 rounded-lg hover:bg-rose-500/10 text-rose-400 disabled:opacity-20 transition-all"
                 >
                   <Trash2 size={18} />

@@ -38,7 +38,9 @@
     "daysAgo": "ימים",
     "weeksAgo": "שבועות",
     "hide": "הסתר",
-    "show": "הצג"
+    "show": "הצג",
+    "clearSelection": "נקה בחירה",
+    "remove": "הסר"
   },
   "sidebar": {
     "logo": "פיננסים",

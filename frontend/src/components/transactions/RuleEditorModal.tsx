@@ -160,14 +160,15 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
             {/* Modal */}
-            <div className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
+            <div role="dialog" aria-modal="true" aria-labelledby="rule-editor-title" className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
-                    <h2 className="text-xl font-bold">
+                    <h2 id="rule-editor-title" className="text-xl font-bold">
                         {editingRule ? t("transactions.autoTagging.editRule") : t("transactions.autoTagging.createRule")}
                     </h2>
                     <button
                         onClick={onClose}
+                        aria-label={t("common.close")}
                         className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
                     >
                         <X size={20} />

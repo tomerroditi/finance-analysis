@@ -262,11 +262,13 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                 </div>
               </div>
             )}
-            <div ref={listRef} className="overflow-y-auto flex-1">
+            <div ref={listRef} role="listbox" className="overflow-y-auto flex-1">
               {filteredOptions.map((opt, idx) => (
                 <button
                   key={opt.value}
                   type="button"
+                  role="option"
+                  aria-selected={value === opt.value}
                   onMouseEnter={() => setHighlightIndex(idx)}
                   onClick={() => {
                     onChange(opt.value);
@@ -323,6 +325,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                         <button
                           type="button"
                           onClick={handleConfirmCreate}
+                          aria-label={t("common.save")}
                           className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
                         >
                           <Check size={14} />
@@ -330,6 +333,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                         <button
                           type="button"
                           onClick={handleCancelCreate}
+                          aria-label={t("common.cancel")}
                           className="p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-light)] rounded-lg transition-colors"
                         >
                           <X size={14} />

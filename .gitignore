@@ -69,3 +69,4 @@ $RECYCLE.BIN/
 .history/
 
 .worktrees
+.claude/worktrees/

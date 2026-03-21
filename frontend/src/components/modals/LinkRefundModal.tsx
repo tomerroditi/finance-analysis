@@ -87,7 +87,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="link-refund-title" className="relative z-10 w-full max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               <Link2 className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
+              <h2 id="link-refund-title" className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
               {refundTransaction && (
                 <p className="text-sm text-[var(--text-muted)]">
                   {formatCurrency(refundTransaction.amount)} refund
@@ -105,6 +105,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label={t("common.close")}
             className="p-2 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
           >
             <X size={20} />
@@ -122,6 +123,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
             <input
               type="text"
               placeholder={t("modals.linkRefund.searchPending")}
+              aria-label={t("modals.linkRefund.searchPending")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full ps-10 pe-4 py-2.5 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
