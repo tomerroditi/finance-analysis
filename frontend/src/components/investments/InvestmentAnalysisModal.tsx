@@ -72,6 +72,9 @@ const chartTheme = {
   plot_bgcolor: "rgba(0,0,0,0)",
   font: { color: "#94a3b8", family: "Inter, sans-serif" },
   margin: { t: 30, b: 30, l: 40, r: 20 },
+  hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" }, namelength: -1 },
+  hovermode: "x unified" as const,
+  xaxis: { showspikes: false },
 };
 
 interface InvestmentAnalysisModalProps {

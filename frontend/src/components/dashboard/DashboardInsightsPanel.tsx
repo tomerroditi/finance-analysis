@@ -68,6 +68,9 @@ const chartTheme = {
   plot_bgcolor: "rgba(0,0,0,0)",
   font: { color: "#94a3b8", family: "Inter, sans-serif" },
   margin: { t: 40, b: 40, l: 40, r: 20 },
+  hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" }, namelength: -1 },
+  hovermode: "x unified" as const,
+  xaxis: { showspikes: false },
 };
 
 interface DashboardInsightsPanelProps {
@@ -196,6 +199,7 @@ export function DashboardInsightsPanel({
         mode: "lines+markers",
         line: { color: config.color, width: 3 },
         marker: { size: 8, color: config.color },
+        yaxis: "y2",
       },
     ];
   };
@@ -385,11 +389,25 @@ export function DashboardInsightsPanel({
                       autosize: true,
                       yaxis: {
                         title: {
-                          text: t("dashboard.amountILS"),
+                          text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
                           font: { color: "#94a3b8" },
                         },
                         tickfont: { color: "#94a3b8" },
+                        automargin: true,
                       },
+                      ...(netWorthView !== "all" && {
+                        yaxis2: {
+                          title: {
+                            text: seriesConfig[netWorthView].label,
+                            font: { color: seriesConfig[netWorthView].color },
+                          },
+                          tickfont: { color: seriesConfig[netWorthView].color },
+                          overlaying: "y" as const,
+                          side: "right" as const,
+                          showgrid: false,
+                          automargin: true,
+                        },
+                      }),
                       legend: {
                         orientation: "h",
                         y: -0.15,
