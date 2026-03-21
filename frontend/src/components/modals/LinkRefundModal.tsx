@@ -87,7 +87,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="link-refund-title" className="relative z-10 w-full max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               <Link2 className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
+              <h2 id="link-refund-title" className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
               {refundTransaction && (
                 <p className="text-sm text-[var(--text-muted)]">
                   {formatCurrency(refundTransaction.amount)} refund
@@ -105,6 +105,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label={t("common.close")}
             className="p-2 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
           >
             <X size={20} />
@@ -117,14 +118,15 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           <div className="relative mb-4">
             <Search
               size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
             />
             <input
               type="text"
               placeholder={t("modals.linkRefund.searchPending")}
+              aria-label={t("modals.linkRefund.searchPending")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+              className="w-full ps-10 pe-4 py-2.5 bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
             />
           </div>
 
@@ -176,7 +178,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         )}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="text-end shrink-0">
                       <div className="font-bold text-amber-400">
                         {formatCurrency(pending.expected_amount)}
                       </div>
@@ -194,7 +196,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                     </p>
                   )}
                   {selectedPendingId === pending.id && (
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                    <div className="absolute end-4 top-1/2 -translate-y-1/2">
                       <Check className="w-5 h-5 text-emerald-400" />
                     </div>
                   )}
@@ -216,7 +218,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                 min={0}
                 max={refundTransaction?.amount}
                 step={0.01}
-                className="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-sm text-right font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                className="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-sm text-end font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               />
             </div>
           )}

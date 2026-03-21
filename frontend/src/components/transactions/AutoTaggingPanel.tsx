@@ -92,7 +92,7 @@ export function AutoTaggingPanel() {
 
     return (
         <>
-            <div className={`shrink-0 z-40 h-[calc(100vh-2rem)] sticky top-4 ml-4 flex flex-col transition-all duration-300 overflow-hidden ${
+            <div className={`shrink-0 z-40 h-[calc(100vh-2rem)] sticky top-4 ms-4 flex flex-col transition-all duration-300 overflow-hidden ${
                 autoTaggingPanelOpen ? "w-[400px]" : "w-12"
             }`}>
                 {autoTaggingPanelOpen ? (
@@ -134,12 +134,12 @@ export function AutoTaggingPanel() {
 
                                 {/* Search */}
                                 <div className="relative">
-                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                                    <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                                     <input
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         placeholder={t("transactions.autoTagging.searchRules")}
-                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 pl-9 pr-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
+                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 ps-9 pe-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
                                     />
                                 </div>
                             </div>

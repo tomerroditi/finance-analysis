@@ -143,13 +143,14 @@ export function TransactionFormModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-                    <h2 className="text-xl font-bold text-white">
+                    <h2 id="transaction-form-title" className="text-xl font-bold text-white">
                         {isEditMode ? t("modals.transactionForm.editTitle") : t("modals.transactionForm.addTitle")}
                     </h2>
                     <button
                         onClick={onClose}
+                        aria-label={t("common.close")}
                         className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
                     >
                         <X size={20} />
@@ -166,7 +167,7 @@ export function TransactionFormModal({
                     <div className="space-y-4">
                         {/* Date */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.date")}
                             </label>
                             <input
@@ -184,7 +185,7 @@ export function TransactionFormModal({
                         {/* Account Name - Shown only on Create or if Manual Edit */}
                         {(isManual) && (
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("modals.transactionForm.accountName")}
                                 </label>
                                 {isCashTransaction ? (
@@ -217,7 +218,7 @@ export function TransactionFormModal({
 
                         {/* Description */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.description")}
                             </label>
                             <input
@@ -234,7 +235,7 @@ export function TransactionFormModal({
 
                         {/* Amount and Type */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.amount")}
                             </label>
                             <div className="flex gap-2">
@@ -257,7 +258,7 @@ export function TransactionFormModal({
                                     </div>
                                 )}
                                 <div className="relative flex-1">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">
+                                    <span className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">
                                         ₪
                                     </span>
                                     <input
@@ -272,7 +273,7 @@ export function TransactionFormModal({
                                                 amount: parseFloat(e.target.value),
                                             })
                                         }
-                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"
+                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl ps-10 pe-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"
                                         required
                                     />
                                 </div>
@@ -281,7 +282,7 @@ export function TransactionFormModal({
 
                         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("common.category")}
                                 </label>
                                 <SelectDropdown
@@ -303,7 +304,7 @@ export function TransactionFormModal({
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("common.tag")}
                                 </label>
                                 <SelectDropdown

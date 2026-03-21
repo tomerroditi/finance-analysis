@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, X, Check, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface MultiSelectProps {
   options: string[];
@@ -14,6 +15,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   onChange,
   placeholder = "Select...",
 }) => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -65,6 +67,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             <button
               type="button"
               onClick={clearAll}
+              aria-label={t("common.clearSelection")}
               className="p-0.5 hover:bg-[var(--surface-light)] rounded transition-colors"
             >
               <X size={10} className="text-[var(--text-muted)]" />
@@ -93,6 +96,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                   e.stopPropagation();
                   toggle(s);
                 }}
+                aria-label={t("common.remove")}
                 className="shrink-0 hover:text-red-400 transition-colors"
               >
                 <X size={10} />
@@ -113,23 +117,25 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             <div className="relative">
               <Search
                 size={12}
-                className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                className="absolute start-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search..."
-                className="w-full pl-6 pr-2 py-1 text-xs bg-[var(--surface-base)] border border-[var(--surface-light)] rounded outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                className="w-full ps-6 pe-2 py-1 text-xs bg-[var(--surface-base)] border border-[var(--surface-light)] rounded outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                 autoFocus
               />
             </div>
           </div>
-          <div className="overflow-y-auto flex-1">
+          <div role="listbox" aria-multiselectable="true" className="overflow-y-auto flex-1">
             {filteredOptions.map((opt) => (
               <button
                 key={opt}
                 type="button"
+                role="option"
+                aria-selected={selected.includes(opt)}
                 onClick={() => toggle(opt)}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[var(--surface-light)] transition-colors text-start"
               >

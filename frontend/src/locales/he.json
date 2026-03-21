@@ -38,7 +38,9 @@
     "daysAgo": "ימים",
     "weeksAgo": "שבועות",
     "hide": "הסתר",
-    "show": "הצג"
+    "show": "הצג",
+    "clearSelection": "נקה בחירה",
+    "remove": "הסר"
   },
   "sidebar": {
     "logo": "פיננסים",
@@ -513,7 +515,9 @@
     "mashlima": "משלימה",
     "kerenHistahlmut": "קרן השתלמות",
     "policy": "פוליסה",
-    "updated": "עודכן"
+    "updated": "עודכן",
+    "chartMonthly": "חודשי",
+    "chartCumulative": "מצטבר"
   },
   "modals": {
     "confirm": {
@@ -676,5 +680,10 @@
     "value": "ערך",
     "min": "מינימום",
     "max": "מקסימום"
+  },
+  "errorBoundary": {
+    "title": "משהו השתבש",
+    "message": "אירעה שגיאה בלתי צפויה. נסו לטעון מחדש את הדף.",
+    "tryAgain": "נסו שוב"
   }
 }
