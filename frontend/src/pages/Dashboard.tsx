@@ -39,7 +39,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -59,12 +59,6 @@ const formatCompactCurrency = (val: number) => {
   return formatCurrency(val);
 };
 
-const chartTheme = {
-  paper_bgcolor: "rgba(0,0,0,0)",
-  plot_bgcolor: "rgba(0,0,0,0)",
-  font: { color: "#94a3b8", family: "Inter, sans-serif" },
-  margin: { t: 40, b: 40, l: 40, r: 20 },
-};
 
 /* ------------------------------------------------------------------ */
 /*  Helper sub-components (extracted to avoid creating during render)  */
@@ -1265,6 +1259,7 @@ export function Dashboard() {
         mode: "lines+markers",
         line: { color: config.color, width: 3 },
         marker: { size: 8, color: config.color },
+        yaxis: "y2",
       },
     ];
   };
@@ -1445,11 +1440,25 @@ export function Dashboard() {
                           autosize: true,
                           yaxis: {
                             title: {
-                              text: t("dashboard.amountILS"),
+                              text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
                               font: { color: "#94a3b8" },
                             },
                             tickfont: { color: "#94a3b8" },
+                            automargin: true,
                           },
+                          ...(netWorthView !== "all" && {
+                            yaxis2: {
+                              title: {
+                                text: seriesConfig[netWorthView].label,
+                                font: { color: seriesConfig[netWorthView].color },
+                              },
+                              tickfont: { color: seriesConfig[netWorthView].color },
+                              overlaying: "y" as const,
+                              side: "right" as const,
+                              showgrid: false,
+                              automargin: true,
+                            },
+                          }),
                           legend: {
                             orientation: "h",
                             y: -0.15,
@@ -1679,7 +1688,6 @@ export function Dashboard() {
                           autosize: true,
                           height: Math.max(400, incomeBySourceData.length * 25),
                           hovermode: "y unified",
-                          hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                           xaxis: {
                             range: [0, maxStack * 1.05],
                             fixedrange: true,
@@ -1739,7 +1747,6 @@ export function Dashboard() {
                           autosize: true,
                           height: Math.max(400, expensesByCategoryOverTime.length * 25),
                           hovermode: "y unified",
-                          hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                           xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
                           yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
