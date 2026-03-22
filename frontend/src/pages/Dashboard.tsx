@@ -1194,7 +1194,7 @@ export function Dashboard() {
     },
     net_worth: {
       label: t("dashboard.netWorth"),
-      color: "#10b981",
+      color: "#ef4444",
       dataKey: "net_worth" as const,
       deltaKey: "net_worth_delta" as const,
     },
@@ -1230,8 +1230,8 @@ export function Dashboard() {
           name: t("dashboard.netWorth"),
           type: "scatter",
           mode: "lines+markers",
-          line: { color: "#10b981", width: 3 },
-          marker: { size: 5, color: "#10b981" },
+          line: { color: "#ef4444", width: 3 },
+          marker: { size: 5, color: "#ef4444" },
         },
       ];
     }
@@ -1418,6 +1418,7 @@ export function Dashboard() {
                             layout={{
                               ...chartTheme,
                               autosize: true,
+                              xaxis: { ...chartTheme.xaxis, type: "category" },
                               legend: {
                                 orientation: "h",
                                 y: -0.15,
@@ -1438,7 +1439,7 @@ export function Dashboard() {
                         layout={{
                           ...chartTheme,
                           autosize: true,
-                          xaxis: { ...chartTheme.xaxis, type: "category" },
+                          xaxis: { ...chartTheme.xaxis, type: "date" },
                           yaxis: {
                             title: {
                               text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
