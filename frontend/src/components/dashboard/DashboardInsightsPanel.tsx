@@ -6,8 +6,8 @@ import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
 import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
 
-type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth";
-type InsightTab = "monthly_expenses" | "net_worth" | "cash_flow" | "income_expenses" | "category";
+type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
+type InsightTab = "income_expenses" | "net_worth" | "cash_flow" | "category";
 
 interface NetWorthDataPoint {
   month: string;
@@ -45,6 +45,17 @@ interface IncomeBySourceDataPoint {
   sources: Record<string, number>;
 }
 
+interface DebtPaymentsDataPoint {
+  month: string;
+  amount: number;
+  tags: Record<string, number>;
+}
+
+interface ExpensesByCategoryDataPoint {
+  month: string;
+  categories: Record<string, number>;
+}
+
 interface SankeyData {
   nodes: number[];
   node_labels: string[];
@@ -63,6 +74,14 @@ const formatCurrency = (val: number) =>
     maximumFractionDigits: 0,
   }).format(val || 0);
 
+const formatCompactCurrency = (val: number) => {
+  const abs = Math.abs(val || 0);
+  if (abs >= 1_000_000) return `₪${(val / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `₪${(val / 1_000).toFixed(0)}K`;
+  if (abs >= 1_000) return `₪${(val / 1_000).toFixed(1)}K`;
+  return formatCurrency(val);
+};
+
 
 interface DashboardInsightsPanelProps {
   netWorthData: NetWorthDataPoint[] | undefined;
@@ -77,6 +96,10 @@ interface DashboardInsightsPanelProps {
   setExcludePendingRefunds: (val: boolean) => void;
   includeProjects: boolean;
   setIncludeProjects: (val: boolean) => void;
+  debtPaymentsData: DebtPaymentsDataPoint[] | undefined;
+  expensesByCategoryOverTime: ExpensesByCategoryDataPoint[] | undefined;
+  excludeRefunds: boolean;
+  setExcludeRefunds: (val: boolean) => void;
 }
 
 export function DashboardInsightsPanel({
@@ -92,11 +115,15 @@ export function DashboardInsightsPanel({
   setExcludePendingRefunds,
   includeProjects,
   setIncludeProjects,
+  debtPaymentsData,
+  expensesByCategoryOverTime,
+  excludeRefunds,
+  setExcludeRefunds,
 }: DashboardInsightsPanelProps) {
   const { t } = useTranslation();
-  const [insightTab, setInsightTab] = useState<InsightTab>("monthly_expenses");
+  const [insightTab, setInsightTab] = useState<InsightTab>("income_expenses");
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
-  const [incomeView, setIncomeView] = useState<"overview" | "by_source">("overview");
+  const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
 
   const netWorthDeltas = useMemo(() => {
     if (!netWorthData || netWorthData.length < 2) return null;
@@ -134,6 +161,7 @@ export function DashboardInsightsPanel({
 
   const getNetWorthTraces = (): Plotly.Data[] => {
     if (!netWorthData || netWorthData.length === 0) return [];
+    if (netWorthView === "debt_payments") return [];
 
     if (netWorthView === "all") {
       return [
@@ -190,7 +218,6 @@ export function DashboardInsightsPanel({
         mode: "lines+markers",
         line: { color: config.color, width: 3 },
         marker: { size: 8, color: config.color },
-        yaxis: "y2",
       },
     ];
   };
@@ -201,10 +228,9 @@ export function DashboardInsightsPanel({
       <div className="px-6 pt-5 pb-0">
         <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1">
           {([
-            { key: "monthly_expenses" as const, label: `💸 ${t("dashboard.monthlyExpenses")}` },
+            { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
             { key: "net_worth" as const, label: `📈 ${t("dashboard.netWorth")}` },
             { key: "cash_flow" as const, label: `🌊 ${t("dashboard.cashFlow")}` },
-            { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
             { key: "category" as const, label: `🍕 ${t("dashboard.categories")}` },
           ]).map(({ key, label }) => (
             <button
@@ -224,138 +250,56 @@ export function DashboardInsightsPanel({
 
       {/* Tab content */}
       <div className="px-6 pb-6 pt-4 h-[600px] overflow-y-auto flex flex-col">
-        {/* Monthly Expenses */}
-        {insightTab === "monthly_expenses" && (
-          <div className="flex flex-col flex-1 min-h-0">
-            {monthlyExpenses && monthlyExpenses.months.length > 0 ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
-                      <Calculator size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg3Months")}</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_3_months)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-orange-500/20 text-orange-400">
-                      <Calculator size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg6Months")}</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_6_months)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
-                      <Calculator size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-xs">{t("dashboard.avg12Months")}</p>
-                      <p className="text-lg font-bold">
-                        {formatCurrency(monthlyExpenses.avg_12_months)}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                    className={`rounded-xl px-4 py-3 text-xs font-medium border transition-colors flex items-center justify-center ${
-                      excludePendingRefunds
-                        ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                        : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {excludePendingRefunds
-                      ? t("dashboard.pendingRefundsExcluded")
-                      : t("dashboard.pendingRefundsIncluded")}
-                  </button>
-                  <button
-                    onClick={() => setIncludeProjects(!includeProjects)}
-                    className={`rounded-xl px-4 py-3 text-xs font-medium border transition-colors flex items-center justify-center ${
-                      includeProjects
-                        ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
-                        : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {includeProjects
-                      ? t("dashboard.projectExpensesIncluded")
-                      : t("dashboard.projectExpensesExcluded")}
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <Plot
-                    data={[
-                      {
-                        x: monthlyExpenses.months.map((d) => d.month),
-                        y: monthlyExpenses.months.map((d) => d.expenses),
-                        type: "bar",
-                        marker: { color: "#f43f5e" },
-                        name: t("dashboard.expenses"),
-                      },
-                      ...(includeProjects
-                        ? [
-                            {
-                              x: monthlyExpenses.months.map((d) => d.month),
-                              y: monthlyExpenses.months.map((d) => d.project_expenses ?? 0),
-                              type: "bar" as const,
-                              marker: { color: "#818cf8" },
-                              name: t("dashboard.projectExpenses"),
-                            },
-                          ]
-                        : []),
-                    ]}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      barmode: includeProjects ? "stack" : undefined,
-                      legend: includeProjects
-                        ? {
-                            orientation: "h" as const,
-                            yanchor: "top" as const,
-                            y: -0.15,
-                            xanchor: "center" as const,
-                            x: 0.5,
-                            font: { color: "#94a3b8" },
-                          }
-                        : undefined,
-                      yaxis: {
-                        title: {
-                          text: t("dashboard.amountILS"),
-                          font: { color: "#94a3b8" },
-                        },
-                        tickfont: { color: "#94a3b8" },
-                      },
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={plotlyConfig()}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noExpenseData")}</p>
-            )}
-          </div>
-        )}
-
         {/* Net Worth Over Time */}
         {insightTab === "net_worth" && (
           <div className="flex flex-col flex-1 min-h-0">
             {netWorthData && netWorthData.length > 0 ? (
               <>
-                <div className="flex justify-end mb-4">
-                  <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                {/* Net Worth Change KPIs + View Buttons */}
+                <div className="flex items-center gap-3 mb-3">
+                  {(() => {
+                    const latest = netWorthData[netWorthData.length - 1];
+                    const findMonthsAgo = (n: number) => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() - n);
+                      const target = d.toISOString().slice(0, 7);
+                      return [...netWorthData].reverse().find((d) => d.month <= target) ?? netWorthData[0];
+                    };
+                    const periods = [
+                      { label: t("dashboard.change5Y"), months: 60 },
+                      { label: t("dashboard.change3Y"), months: 36 },
+                      { label: t("dashboard.change1Y"), months: 12 },
+                      { label: t("dashboard.change6M"), months: 6 },
+                      { label: t("dashboard.change1M"), months: 1 },
+                    ];
+                    return periods.map(({ label, months }) => {
+                      const past = findMonthsAgo(months);
+                      const delta = latest.net_worth - past.net_worth;
+                      const pct = past.net_worth !== 0 ? (delta / Math.abs(past.net_worth)) * 100 : null;
+                      const isPositive = delta >= 0;
+                      return (
+                        <div key={label} className="bg-[var(--surface-light)] rounded-lg px-2.5 py-1.5 text-center shrink-0 whitespace-nowrap" title={`${isPositive ? "+" : ""}${formatCurrency(delta)}`}>
+                          <p className="text-[var(--text-muted)] text-[9px] leading-tight">{label}</p>
+                          <p dir="ltr" className={`text-xs font-bold leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                            {isPositive ? "+" : ""}{formatCompactCurrency(delta)}
+                          </p>
+                          {pct !== null && (
+                            <p className={`text-[9px] leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                              {isPositive ? "+" : ""}{pct.toFixed(1)}%
+                            </p>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                  <div className="ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl">
                     {(
                       [
                         { key: "all", label: t("dashboard.all") },
                         { key: "bank_balance", label: t("dashboard.bankBalance") },
                         { key: "investments", label: t("dashboard.investmentValue") },
                         { key: "net_worth", label: t("dashboard.netWorth") },
+                        { key: "debt_payments", label: t("dashboard.debtPayments") },
                       ] as const
                     ).map(({ key, label }) => (
                       <button
@@ -373,42 +317,71 @@ export function DashboardInsightsPanel({
                   </div>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <Plot
-                    data={getNetWorthTraces()}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      yaxis: {
-                        title: {
-                          text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
-                          font: { color: "#94a3b8" },
-                        },
-                        tickfont: { color: "#94a3b8" },
-                        automargin: true,
-                      },
-                      ...(netWorthView !== "all" && {
-                        yaxis2: {
+                  {netWorthView === "debt_payments" ? (
+                    debtPaymentsData && debtPaymentsData.length > 0 ? (() => {
+                      const allTags = Array.from(
+                        new Set(debtPaymentsData.flatMap((d) => Object.keys(d.tags))),
+                      ).sort();
+                      const colors = [
+                        "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6",
+                        "#06b6d4", "#ec4899", "#10b981", "#f97316",
+                      ];
+                      return (
+                        <Plot
+                          data={allTags.map((tag, i) => ({
+                            x: debtPaymentsData.map((d) => d.month),
+                            y: debtPaymentsData.reduce((acc: number[], d) => {
+                              acc.push((acc.length > 0 ? acc[acc.length - 1] : 0) + (d.tags[tag] || 0));
+                              return acc;
+                            }, []),
+                            type: "scatter" as const,
+                            mode: "lines+markers" as const,
+                            line: { color: colors[i % colors.length], width: 2 },
+                            marker: { size: 5, color: colors[i % colors.length] },
+                            name: tag,
+                            stackgroup: "debt",
+                          }))}
+                          layout={{
+                            ...chartTheme,
+                            autosize: true,
+                            legend: {
+                              orientation: "h",
+                              y: -0.15,
+                              x: 0.5,
+                              xanchor: "center",
+                            },
+                          }}
+                          style={{ width: "100%", height: "100%" }}
+                          config={plotlyConfig()}
+                        />
+                      );
+                    })() : (
+                      <p className="text-[var(--text-muted)]">{t("dashboard.noData")}</p>
+                    )
+                  ) : (
+                    <Plot
+                      data={getNetWorthTraces()}
+                      layout={{
+                        ...chartTheme,
+                        autosize: true,
+                        yaxis: {
                           title: {
-                            text: seriesConfig[netWorthView].label,
-                            font: { color: seriesConfig[netWorthView].color },
+                            text: t("dashboard.amountILS"),
+                            font: { color: "#94a3b8" },
                           },
-                          tickfont: { color: seriesConfig[netWorthView].color },
-                          overlaying: "y" as const,
-                          side: "right" as const,
-                          showgrid: false,
-                          automargin: true,
+                          tickfont: { color: "#94a3b8" },
                         },
-                      }),
-                      legend: {
-                        orientation: "h",
-                        y: -0.15,
-                        x: 0.5,
-                        xanchor: "center",
-                      },
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={plotlyConfig()}
-                  />
+                        legend: {
+                          orientation: "h",
+                          y: -0.15,
+                          x: 0.5,
+                          xanchor: "center",
+                        },
+                      }}
+                      style={{ width: "100%", height: "100%" }}
+                      config={plotlyConfig()}
+                    />
+                  )}
                 </div>
               </>
             ) : (
@@ -433,11 +406,109 @@ export function DashboardInsightsPanel({
         {/* Income & Expenses */}
         {insightTab === "income_expenses" && (
           <div className="flex flex-col flex-1 min-h-0">
-            <div className="flex justify-end mb-4">
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-3">
+              {(() => {
+                const recent3 = incomeOutcome?.slice(-3) || [];
+                const recent6 = incomeOutcome?.slice(-6) || [];
+                const recent12 = incomeOutcome?.slice(-12) || [];
+                const avgIncome3 = recent3.length ? recent3.reduce((s, d) => s + d.income, 0) / recent3.length : 0;
+                const avgIncome6 = recent6.length ? recent6.reduce((s, d) => s + d.income, 0) / recent6.length : 0;
+                const avgIncome12 = recent12.length ? recent12.reduce((s, d) => s + d.income, 0) / recent12.length : 0;
+                return (
+                  <>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome3Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(avgIncome3)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome6Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(avgIncome6)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome12Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(avgIncome12)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses3Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_3_months ?? 0)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses6Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_6_months ?? 0)}</p>
+                      </div>
+                    </div>
+                    <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
+                      <div>
+                        <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses12Months")}</p>
+                        <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_12_months ?? 0)}</p>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Sub-tabs + Filter Toggles */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+                    excludePendingRefunds
+                      ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+                      : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                  }`}
+                >
+                  {excludePendingRefunds
+                    ? t("dashboard.pendingRefundsExcluded")
+                    : t("dashboard.pendingRefundsIncluded")}
+                </button>
+                <button
+                  onClick={() => setExcludeRefunds(!excludeRefunds)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+                    excludeRefunds
+                      ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+                      : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                  }`}
+                >
+                  {excludeRefunds
+                    ? t("dashboard.refundsExcluded")
+                    : t("dashboard.refundsIncluded")}
+                </button>
+                <button
+                  onClick={() => setIncludeProjects(!includeProjects)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+                    includeProjects
+                      ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                      : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                  }`}
+                >
+                  {includeProjects
+                    ? t("dashboard.projectExpensesIncluded")
+                    : t("dashboard.projectExpensesExcluded")}
+                </button>
+              </div>
               <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
                 {([
-                  { key: "overview" as const, label: `📊 ${t("dashboard.overview")}` },
-                  { key: "by_source" as const, label: `💼 ${t("dashboard.bySource")}` },
+                  { key: "overview" as const, label: `📊 ${t("dashboard.totals")}` },
+                  { key: "by_source" as const, label: `💼 ${t("dashboard.incomeBreakdown")}` },
+                  { key: "by_category" as const, label: `🍕 ${t("dashboard.expensesBreakdown")}` },
                 ]).map(({ key, label }) => (
                   <button
                     key={key}
@@ -453,42 +524,52 @@ export function DashboardInsightsPanel({
                 ))}
               </div>
             </div>
-            {incomeView === "overview" ? (
-              <div className="flex-1 min-h-0">
+            {incomeView === "overview" && (
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 <Plot
                   data={[
                     {
-                      x: incomeOutcome?.map((d) => d.month) || [],
-                      y: incomeOutcome?.map((d) => d.income) || [],
+                      y: incomeOutcome?.map((d) => d.month) || [],
+                      x: incomeOutcome?.map((d) => d.income) || [],
                       name: t("dashboard.income"),
                       type: "bar",
+                      orientation: "h",
                       marker: { color: "#059669" },
                     },
                     {
-                      x: incomeOutcome?.map((d) => d.month) || [],
-                      y: incomeOutcome?.map((d) => d.expenses) || [],
+                      y: incomeOutcome?.map((d) => d.month) || [],
+                      x: incomeOutcome?.map((d) => Math.abs(d.expenses)) || [],
                       name: t("dashboard.expenses"),
                       type: "bar",
-                      marker: { color: "#f43f5e" },
+                      orientation: "h",
+                      marker: {
+                        color: incomeOutcome?.map((d) =>
+                          d.expenses >= 0 ? "#f43f5e" : "#fda4af"
+                        ) || "#f43f5e",
+                      },
                     },
                   ]}
                   layout={{
                     ...chartTheme,
                     barmode: "group",
                     autosize: true,
+                    height: Math.max(400, (incomeOutcome?.length ?? 0) * 25),
                     legend: {
-                      orientation: "h",
-                      y: -0.15,
-                      x: 0.5,
-                      xanchor: "center",
+                      orientation: "v",
+                      y: 1,
+                      x: 1.02,
+                      xanchor: "left",
                     },
+                    yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
+                    margin: { ...chartTheme.margin, l: 100, r: 200 },
                   }}
                   style={{ width: "100%", height: "100%" }}
                   config={plotlyConfig()}
                 />
               </div>
-            ) : (
-              <div className="flex-1 min-h-0">
+            )}
+            {incomeView === "by_source" && (
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 {incomeBySourceData && incomeBySourceData.length > 0 ? (() => {
                   const allSources = Array.from(
                     new Set(
@@ -496,37 +577,43 @@ export function DashboardInsightsPanel({
                     ),
                   );
                   const colors = [
-                    "#059669", "#10b981", "#34d399", "#6ee7b7",
-                    "#a7f3d0", "#047857", "#065f46", "#064e3b",
+                    "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6",
+                    "#06b6d4", "#ec4899", "#14b8a6", "#f97316",
                   ];
+                  const maxStack = Math.max(...incomeBySourceData.map((d) => Object.values(d.sources).reduce((s, v) => s + v, 0)));
                   return (
                     <Plot
                       data={allSources.map((source, i) => ({
-                        x: incomeBySourceData.map((d) => d.month),
-                        y: incomeBySourceData.map(
+                        y: incomeBySourceData.map((d) => d.month),
+                        x: incomeBySourceData.map(
                           (d) => d.sources[source] || 0,
                         ),
                         name: source,
                         type: "bar" as const,
-                        marker: { color: colors[i % colors.length] },
+                        orientation: "h" as const,
+                        marker: { color: colors[i % colors.length], line: { width: 0 } },
+                        hovertemplate: "%{data.name}: %{x:,.0f}<extra></extra>",
                       }))}
                       layout={{
                         ...chartTheme,
                         barmode: "stack",
                         autosize: true,
-                        yaxis: {
-                          title: {
-                            text: t("dashboard.amountILS"),
-                            font: { color: "#94a3b8" },
-                          },
-                          tickfont: { color: "#94a3b8" },
+                        height: Math.max(400, incomeBySourceData.length * 25),
+                        hovermode: "y unified",
+                        hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
+                        xaxis: {
+                          range: [0, maxStack * 1.05],
+                          fixedrange: true,
+                          showspikes: false,
                         },
+                        yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                         legend: {
-                          orientation: "h",
-                          y: -0.15,
-                          x: 0.5,
-                          xanchor: "center",
+                          orientation: "v",
+                          y: 1,
+                          x: 1.02,
+                          xanchor: "left",
                         },
+                        margin: { ...chartTheme.margin, l: 100, r: 200 },
                       }}
                       style={{ width: "100%", height: "100%" }}
                       config={plotlyConfig()}
@@ -534,6 +621,62 @@ export function DashboardInsightsPanel({
                   );
                 })() : (
                   <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noIncomeSourceData")}</p>
+                )}
+              </div>
+            )}
+            {incomeView === "by_category" && (
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {expensesByCategoryOverTime && expensesByCategoryOverTime.length > 0 ? (() => {
+                  const allCategories = Array.from(
+                    new Set(
+                      expensesByCategoryOverTime.flatMap((d) => Object.keys(d.categories)),
+                    ),
+                  ).sort();
+                  const colors = [
+                    "#f43f5e", "#ef4444", "#f97316", "#f59e0b",
+                    "#eab308", "#84cc16", "#22c55e", "#14b8a6",
+                    "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6",
+                    "#a855f7", "#d946ef", "#ec4899", "#fb7185",
+                  ];
+                  const maxStackTotal = Math.max(
+                    ...expensesByCategoryOverTime.map((d) =>
+                      Object.values(d.categories).reduce((s, v) => s + v, 0),
+                    ),
+                  );
+                  return (
+                    <Plot
+                      data={allCategories.map((cat, i) => ({
+                        y: expensesByCategoryOverTime.map((d) => d.month),
+                        x: expensesByCategoryOverTime.map((d) => d.categories[cat] || 0),
+                        name: cat,
+                        type: "bar" as const,
+                        orientation: "h" as const,
+                        marker: { color: colors[i % colors.length], line: { width: 0 } },
+                        hovertemplate: "%{data.name}: %{x:,.0f}<extra></extra>",
+                      }))}
+                      layout={{
+                        ...chartTheme,
+                        barmode: "stack",
+                        autosize: true,
+                        height: Math.max(400, expensesByCategoryOverTime.length * 25),
+                        hovermode: "y unified",
+                        hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
+                        xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
+                        yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                        legend: {
+                          orientation: "v",
+                          y: 1,
+                          x: 1.02,
+                          xanchor: "left",
+                        },
+                        margin: { ...chartTheme.margin, l: 100, r: 200 },
+                      }}
+                      style={{ width: "100%", height: "100%" }}
+                      config={plotlyConfig()}
+                    />
+                  );
+                })() : (
+                  <p className="text-[var(--text-muted)]">{t("dashboard.noData")}</p>
                 )}
               </div>
             )}

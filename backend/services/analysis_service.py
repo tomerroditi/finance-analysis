@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
+    IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories,
@@ -73,12 +74,18 @@ class AnalysisService:
             "net_balance_change": income - expenses,
         }
 
-    def get_income_expenses_over_time(self):
+    def get_income_expenses_over_time(self, exclude_projects: bool = False, exclude_liabilities: bool = False, exclude_refunds: bool = False):
         """
         Aggregate income and expenses by month over time.
 
         Credit card transactions are excluded to avoid double-counting
         (bank debits already capture the net payment).
+
+        Parameters
+        ----------
+        exclude_projects : bool, optional
+            If True, exclude transactions whose category matches a project
+            budget name. Defaults to False.
 
         Returns
         -------
@@ -90,12 +97,25 @@ class AnalysisService:
             - ``expenses`` – total expenses for the month (absolute value).
         """
         df = self.repo.get_table()
+
+        if exclude_projects:
+            from backend.services.budget_service import ProjectBudgetService
+
+            project_names = ProjectBudgetService(self.db).get_all_projects_names()
+            if project_names:
+                df = df[~df[TransactionsTableFields.CATEGORY.value].isin(project_names)]
+
+        if exclude_liabilities:
+            df = df[df[TransactionsTableFields.CATEGORY.value] != LIABILITIES_CATEGORY]
+
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
 
         monthly_data = []
         for month in sorted(df["month"].unique()):
             month_df = df[df["month"] == month]
-            income, investments, expenses = self.get_income_investments_and_expenses(month_df)
+            income, investments, expenses = self.get_income_investments_and_expenses(
+                month_df, exclude_refunds=exclude_refunds
+            )
             monthly_data.append(
                 {
                     "month": month,
@@ -107,9 +127,48 @@ class AnalysisService:
 
         return monthly_data
 
+    def get_debt_payments_over_time(self):
+        """
+        Aggregate debt (liability) payments by month over time.
+
+        Only negative-amount Liabilities transactions are included
+        (actual debt repayments, not loan receipts).
+
+        Returns
+        -------
+        list[dict]
+            Chronologically sorted list of monthly dicts with keys:
+
+            - ``month`` – period in ``YYYY-MM`` format.
+            - ``amount`` – total debt payments for the month (positive value).
+        """
+        df = self.repo.get_table()
+        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
+        liabilities = df[
+            (df[TransactionsTableFields.CATEGORY.value] == LIABILITIES_CATEGORY)
+            & (df[TransactionsTableFields.AMOUNT.value] < 0)
+        ].copy()
+
+        if liabilities.empty:
+            return []
+
+        liabilities["month"] = pd.to_datetime(liabilities["date"]).dt.strftime("%Y-%m")
+        liabilities["tag"] = liabilities[TransactionsTableFields.TAG.value].fillna("Uncategorized")
+
+        pivot = liabilities.groupby(["month", "tag"])[TransactionsTableFields.AMOUNT.value].sum().mul(-1).unstack(fill_value=0)
+
+        return [
+            {
+                "month": month,
+                "amount": round(float(row.sum()), 2),
+                "tags": {tag: round(float(val), 2) for tag, val in row.items() if val > 0},
+            }
+            for month, row in pivot.iterrows()
+        ]
+
     def get_income_investments_and_expenses(
-        self, df: pd.DataFrame
-    ) -> tuple[float, float]:
+        self, df: pd.DataFrame, exclude_refunds: bool = False
+    ) -> tuple[float, float, float]:
         """
         Calculate total income, investments, and expenses from a transactions DataFrame.
 
@@ -117,20 +176,30 @@ class AnalysisService:
         ----------
         df : pd.DataFrame
             Transactions DataFrame (typically the full merged table).
+        exclude_refunds : bool, optional
+            If True, only count positive amounts as income and negative amounts
+            as expenses (exclude refunds/reversals). Defaults to False.
 
         Returns
         -------
-        tuple[float, float]
-            A ``(income, expenses)`` pair where both values are non-negative.
-            ``expenses`` is the absolute value of the sum of negative amounts.
+        tuple[float, float, float]
+            A ``(income, investments, expenses)`` triple where income and expenses
+            are non-negative. ``expenses`` is the absolute value of negative amounts.
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
         income_mask, investment_mask, expensses_mask = self.get_transactions_masks(df).values()
 
-        income = float(df[income_mask]["amount"].sum())
+        income_df = df[income_mask]
+        expense_df = df[expensses_mask]
+
+        if exclude_refunds:
+            income_df = income_df[income_df["amount"] > 0]
+            expense_df = expense_df[expense_df["amount"] < 0]
+
+        income = float(income_df["amount"].sum())
         investments = float(df[investment_mask]["amount"].sum()) * -1
-        expenses = float(df[expensses_mask]["amount"].sum()) * -1
+        expenses = float(expense_df["amount"].sum()) * -1
         return income, investments, expenses
     
     def get_transactions_masks(self, df: pd.DataFrame) -> dict[str, pd.Series]:
@@ -253,6 +322,45 @@ class AnalysisService:
 
         return trend
 
+    def get_expenses_by_category_over_time(self):
+        """
+        Get monthly expenses broken down by category over time.
+
+        Returns
+        -------
+        list[dict]
+            Chronologically sorted list of monthly dicts with keys:
+
+            - ``month`` – period in ``YYYY-MM`` format.
+            - ``categories`` – dict mapping category name to expense amount (positive).
+        """
+        df = self.repo.get_itemized_transactions()
+
+        if df.empty:
+            return []
+
+        exclude_categories = [
+            INVESTMENTS_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY,
+            *IncomeCategories._value2member_map_.keys(),
+        ]
+        # Regular expenses + negative liabilities (debt payments)
+        regular_expense_mask = ~df["category"].isin(exclude_categories + [LIABILITIES_CATEGORY]) & (df["amount"] < 0)
+        debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
+        expense_mask = regular_expense_mask | debt_payment_mask
+        expenses = df[expense_mask].copy()
+        # Use tag as label for liabilities to show loan names
+        liabilities_mask = expenses["category"] == LIABILITIES_CATEGORY
+        expenses.loc[liabilities_mask, "category"] = expenses.loc[liabilities_mask, TransactionsTableFields.TAG.value].fillna(LIABILITIES_CATEGORY)
+        expenses["category"] = expenses["category"].fillna("Uncategorized")
+        expenses["month"] = pd.to_datetime(expenses["date"]).dt.strftime("%Y-%m")
+
+        pivot = expenses.groupby(["month", "category"])["amount"].sum().mul(-1).unstack(fill_value=0)
+
+        return [
+            {"month": month, "categories": {cat: round(float(val), 2) for cat, val in row.items() if val > 0}}
+            for month, row in pivot.iterrows()
+        ]
+
     def get_expenses_by_category(self):
         """
         Get expenses and refunds grouped by category.
@@ -277,7 +385,7 @@ class AnalysisService:
         if df.empty:
             return []
 
-        exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+        exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY, *IncomeCategories._value2member_map_.keys()]
         expense_mask = ~df["category"].isin(exclude_categories)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
@@ -487,6 +595,9 @@ class AnalysisService:
 
         # Positive liabilities = loans
         if category == LIABILITIES_CATEGORY and row["amount"] > 0:
+            tag = row.get("tag")
+            if pd.notna(tag) and tag:
+                return f"Loans / {tag}"
             return "Loans"
 
         tag = row.get("tag")

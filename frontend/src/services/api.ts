@@ -288,11 +288,20 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: () =>
+  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludeRefunds = false) =>
     api.get<{ month: string; income: number; expenses: number }[]>(
-      "/analytics/income-expenses-over-time"
+      "/analytics/income-expenses-over-time",
+      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities, exclude_refunds: excludeRefunds } }
+    ),
+  getDebtPaymentsOverTime: () =>
+    api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
+      "/analytics/debt-payments-over-time"
     ),
   getByCategory: () => api.get("/analytics/by-category"),
+  getExpensesByCategoryOverTime: () =>
+    api.get<{ month: string; categories: Record<string, number> }[]>(
+      "/analytics/expenses-by-category-over-time"
+    ),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(

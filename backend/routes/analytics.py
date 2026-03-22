@@ -47,8 +47,20 @@ async def get_net_balance_over_time(
 @router.get("/income-expenses-over-time")
 async def get_income_expenses_over_time(
     db: Session = Depends(get_database),
+    exclude_projects: bool = False,
+    exclude_liabilities: bool = False,
+    exclude_refunds: bool = False,
 ):
     """Return monthly income and expense totals over time.
+
+    Parameters
+    ----------
+    exclude_projects : bool
+        If True, exclude project budget transactions.
+    exclude_liabilities : bool
+        If True, exclude liability/loan transactions.
+    exclude_refunds : bool
+        If True, only count positive income and negative expenses.
 
     Returns
     -------
@@ -56,7 +68,29 @@ async def get_income_expenses_over_time(
         List of ``{month, income, expenses}`` records ordered chronologically.
     """
     service = AnalysisService(db)
-    return service.get_income_expenses_over_time()
+    return service.get_income_expenses_over_time(
+        exclude_projects=exclude_projects,
+        exclude_liabilities=exclude_liabilities,
+        exclude_refunds=exclude_refunds,
+    )
+
+
+@router.get("/debt-payments-over-time")
+async def get_debt_payments_over_time(
+    db: Session = Depends(get_database),
+):
+    """Return monthly debt payment totals over time."""
+    service = AnalysisService(db)
+    return service.get_debt_payments_over_time()
+
+
+@router.get("/expenses-by-category-over-time")
+async def get_expenses_by_category_over_time(
+    db: Session = Depends(get_database),
+):
+    """Return monthly expenses broken down by category."""
+    service = AnalysisService(db)
+    return service.get_expenses_by_category_over_time()
 
 
 @router.get("/by-category")
