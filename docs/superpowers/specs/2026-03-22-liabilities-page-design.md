@@ -10,6 +10,8 @@ Add a Liabilities page to track loans and debts. A `Liability` record is a metad
 
 ### `liabilities` table
 
+Add `LIABILITIES = "liabilities"` to the `Tables` enum in `backend/constants/tables.py`. The table is auto-created via `Base.metadata.create_all()` (same as all other tables).
+
 | Field | Type | Constraints |
 |-------|------|-------------|
 | `id` | Integer | PK, auto-increment |
@@ -18,7 +20,7 @@ Add a Liabilities page to track loans and debts. A `Liability` record is a metad
 | `category` | String | Not null, always "Liabilities" |
 | `tag` | String | Not null |
 | `principal_amount` | Float | Not null |
-| `interest_rate` | Float | Not null (annual %, e.g., 4.5) |
+| `interest_rate` | Float | Not null (annual %, stored as percentage, e.g., 4.5 for 4.5% — same convention as investments, divided by 100 in service layer) |
 | `term_months` | Integer | Not null |
 | `start_date` | Date | Not null |
 | `is_paid_off` | Boolean | Default false (stored as 0/1 in SQLite) |
@@ -26,7 +28,9 @@ Add a Liabilities page to track loans and debts. A `Liability` record is a metad
 | `notes` | Text | Nullable |
 | `created_date` | Date | Auto-set to today |
 
-**Unique constraint:** `(category, tag)` — mirrors the investment pattern.
+**Unique constraint:** `(category, tag)` — mirrors the investment pattern. Since `category` is always `"Liabilities"`, this effectively means unique tags. The `category` column is kept for pattern consistency with the investment model.
+
+**Immutable fields after creation:** `principal_amount`, `term_months`, `start_date`, `tag`. These define the loan structure. If entered incorrectly, delete and recreate. This matches the investment pattern where core fields are immutable.
 
 ### Transaction Matching
 
@@ -40,11 +44,11 @@ Amount convention:
 
 ### Calculated Fields (service layer, not stored)
 
-- **Monthly payment:** Standard fixed-rate amortization formula: `P * r(1+r)^n / ((1+r)^n - 1)` where P = principal, r = monthly rate, n = term months
-- **Remaining balance:** `principal + total_accrued_interest - abs(sum of negative transactions)`
+- **Monthly payment:** Standard fixed-rate amortization formula: `P * r(1+r)^n / ((1+r)^n - 1)` where P = principal, r = monthly rate (`annual_rate / 100 / 12`), n = term months
+- **Remaining balance:** Derived from the amortization schedule — the theoretical remaining balance at the current month's position in the schedule. This is the source of truth; actual payment deviations are shown separately as a comparison.
 - **Total interest cost:** `monthly_payment * term_months - principal`
 - **Amortization schedule:** List of monthly entries with payment number, date, principal portion, interest portion, remaining balance
-- **Actual vs expected:** Match actual transactions to schedule months, show deviations
+- **Actual vs expected:** Match actual transactions to schedule months by date, show deviations. A payment in a given month maps to that month's scheduled entry.
 
 ## Backend Architecture
 
@@ -63,7 +67,7 @@ Amount convention:
 
 - `get_all_liabilities(include_paid_off=False)` → list with calculated metrics (remaining balance, monthly payment, % paid off)
 - `get_liability(id)` → single liability with full calculated details
-- `create_liability(...)` → creates record, auto-creates tag under Liabilities category if it doesn't exist
+- `create_liability(...)` → creates record, auto-creates tag under Liabilities category if it doesn't exist (via categories repository `add_tag`)
 - `update_liability(id, ...)` → delegates to repo
 - `mark_paid_off(id, paid_off_date)` → marks as paid off
 - `reopen(id)` → reactivates
@@ -153,6 +157,16 @@ Add `liabilities.*` section to both `en.json` and `he.json`:
 ### API Service
 
 Add `liabilitiesApi` to `frontend/src/services/api.ts` following existing patterns (investments, insurance).
+
+**TanStack Query keys:** `["liabilities"]`, `["liabilities", id]`, `["liabilities", id, "analysis"]`, `["liabilities", id, "transactions"]`. Mutations (create, update, delete, pay-off, reopen) invalidate `["liabilities"]`.
+
+### Route Registration
+
+Register in `backend/main.py` with `prefix="/api/liabilities"`, `tags=["liabilities"]`.
+
+### Demo Mode
+
+Add sample liability data to the demo database (2-3 sample liabilities with varied states: active, partially paid, paid off).
 
 ## KPI Impact
 
