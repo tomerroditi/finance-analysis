@@ -27,14 +27,11 @@ from backend.routes import (
     bank_balances,
     budget,
     cash_balances,
-    credentials,
     insurance_accounts,
     investments,
     pending_refunds,
-    scraping,
     tagging,
     tagging_rules,
-    testing,
     transactions,
 )
 
@@ -44,6 +41,11 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
+    # Skip startup migrations in serverless (demo DB is pre-built)
+    if os.environ.get("VERCEL"):
+        yield
+        return
+
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
         TaggingRepository,
@@ -169,11 +171,8 @@ app.include_router(
 )
 app.include_router(budget.router, prefix="/api/budget", tags=["Budget"])
 app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
-app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
-app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
-app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 app.include_router(
     pending_refunds.router, prefix="/api/pending-refunds", tags=["Pending Refunds"]
 )
@@ -191,6 +190,25 @@ app.include_router(
     prefix="/api/insurance-accounts",
     tags=["Insurance Accounts"],
 )
+
+# Optional routes — gated for serverless where keyring is absent
+try:
+    from backend.routes import credentials
+    app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
+except ImportError:
+    pass
+
+try:
+    from backend.routes import scraping
+    app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
+except ImportError:
+    pass
+
+try:
+    from backend.routes import testing
+    app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
+except ImportError:
+    pass
 
 
 @app.exception_handler(EntityNotFoundException)
