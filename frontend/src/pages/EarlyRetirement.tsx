@@ -19,7 +19,11 @@ export function EarlyRetirement() {
     queryFn: () => retirementApi.getStatus().then((r) => r.data),
   });
 
-  const { data: projections, isLoading: projectionsLoading } = useQuery({
+  const {
+    data: projections,
+    isLoading: projectionsLoading,
+    isFetching: projectionsFetching,
+  } = useQuery({
     queryKey: ["retirement", "projections"],
     queryFn: () => retirementApi.getProjections().then((r) => r.data),
     enabled: !!goal,
@@ -66,7 +70,7 @@ export function EarlyRetirement() {
           icon={<BarChart3 size={18} className="text-purple-400" />}
           title={t("earlyRetirement.sections.projections")}
         >
-          {projectionsLoading ? (
+          {projectionsLoading || projectionsFetching ? (
             <ProjectionsSkeleton />
           ) : projections ? (
             <RetirementProjections projections={projections} />

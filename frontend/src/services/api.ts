@@ -420,6 +420,7 @@ export const pendingRefundsApi = {
 export interface RetirementGoal {
   id: number;
   current_age: number;
+  gender: string;
   target_retirement_age: number;
   life_expectancy: number;
   monthly_expenses_in_retirement: number;
@@ -447,6 +448,7 @@ export interface RetirementProjections {
   fire_number: number;
   years_to_fire: number;
   fire_age: number;
+  earliest_possible_retirement_age: number;
   monthly_savings_needed: number;
   progress_pct: number;
   readiness: "on_track" | "close" | "off_track";
@@ -459,6 +461,7 @@ export interface RetirementProjections {
   }[];
   income_projection: {
     age: number;
+    salary_savings: number;
     portfolio_withdrawal: number;
     pension: number;
     bituach_leumi: number;
@@ -475,6 +478,8 @@ export const retirementApi = {
   getStatus: () => api.get<RetirementStatus>("/retirement/status"),
   getProjections: () =>
     api.get<RetirementProjections>("/retirement/projections"),
+  getKerenHishtalmutBalance: () =>
+    api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
 };
 
 export const testingApi = {

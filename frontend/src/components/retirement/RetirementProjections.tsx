@@ -4,9 +4,11 @@ import {
   Calendar,
   TrendingUp,
   Banknote,
+  Clock,
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Info,
 } from "lucide-react";
 import type { RetirementProjections as ProjectionsType } from "../../services/api";
 import { NetWorthProjectionChart } from "./NetWorthProjectionChart";
@@ -44,6 +46,17 @@ const readinessConfig = {
   },
 };
 
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative">
+      <Info size={12} className="text-[var(--text-muted)] cursor-help inline" />
+      <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-5">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 export function RetirementProjections({ projections }: Props) {
   const { t } = useTranslation();
   const readiness = readinessConfig[projections.readiness];
@@ -55,6 +68,7 @@ export function RetirementProjections({ projections }: Props) {
       icon: Target,
       value: formatCurrency(projections.fire_number),
       color: "text-blue-400",
+      tooltip: t("earlyRetirement.tooltips.fireNumber"),
     },
     {
       key: "fireAge",
@@ -68,6 +82,22 @@ export function RetirementProjections({ projections }: Props) {
         projections.fire_age <= projections.target_retirement_age
           ? "text-emerald-400"
           : "text-amber-400",
+      tooltip: t("earlyRetirement.tooltips.fireAge"),
+    },
+    {
+      key: "earliestRetirement",
+      icon: Clock,
+      value:
+        projections.earliest_possible_retirement_age === -1
+          ? t("earlyRetirement.projections.notReachable")
+          : `${projections.earliest_possible_retirement_age}`,
+      color:
+        projections.earliest_possible_retirement_age !== -1 &&
+        projections.earliest_possible_retirement_age <=
+          projections.target_retirement_age
+          ? "text-emerald-400"
+          : "text-amber-400",
+      tooltip: t("earlyRetirement.tooltips.earliestRetirement"),
     },
     {
       key: "yearsToFire",
@@ -89,13 +119,14 @@ export function RetirementProjections({ projections }: Props) {
         projections.monthly_savings_needed === 0
           ? "text-emerald-400"
           : "text-amber-400",
+      tooltip: t("earlyRetirement.tooltips.monthlySavings"),
     },
   ];
 
   return (
     <div className="space-y-6">
       {/* KPI Cards + Readiness */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         {kpis.map((kpi) => (
           <div
             key={kpi.key}
@@ -106,6 +137,7 @@ export function RetirementProjections({ projections }: Props) {
               <span className="text-xs text-[var(--text-muted)]">
                 {t(`earlyRetirement.projections.${kpi.key}`)}
               </span>
+              {kpi.tooltip && <InfoTooltip text={kpi.tooltip} />}
             </div>
             <div className={`text-lg font-bold ${kpi.color}`} dir="ltr">
               {kpi.value}
@@ -149,9 +181,14 @@ export function RetirementProjections({ projections }: Props) {
       {/* Charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
-          <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4">
-            {t("earlyRetirement.charts.netWorthProjection")}
-          </h3>
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-sm font-medium text-[var(--text-secondary)]">
+              {t("earlyRetirement.charts.netWorthProjection")}
+            </h3>
+            <InfoTooltip
+              text={t("earlyRetirement.tooltips.netWorthChart")}
+            />
+          </div>
           <NetWorthProjectionChart
             data={projections.net_worth_projection}
             fireNumber={projections.fire_number}
@@ -159,9 +196,14 @@ export function RetirementProjections({ projections }: Props) {
           />
         </div>
         <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
-          <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4">
-            {t("earlyRetirement.charts.retirementIncome")}
-          </h3>
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-sm font-medium text-[var(--text-secondary)]">
+              {t("earlyRetirement.charts.retirementIncome")}
+            </h3>
+            <InfoTooltip
+              text={t("earlyRetirement.tooltips.incomeChart")}
+            />
+          </div>
           <RetirementIncomeChart data={projections.income_projection} />
         </div>
       </div>

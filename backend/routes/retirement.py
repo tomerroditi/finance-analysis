@@ -21,6 +21,7 @@ class RetirementGoalUpsert(BaseModel):
     """Request body for creating or updating the retirement goal."""
 
     current_age: int = Field(..., ge=18, le=100)
+    gender: str = Field("male", pattern="^(male|female)$")
     target_retirement_age: int = Field(..., ge=30, le=100)
     life_expectancy: int = Field(90, ge=60, le=120)
     monthly_expenses_in_retirement: float = Field(..., gt=0)
@@ -40,6 +41,7 @@ class RetirementGoalResponse(BaseModel):
 
     id: int
     current_age: int
+    gender: str
     target_retirement_age: int
     life_expectancy: int
     monthly_expenses_in_retirement: float
@@ -85,3 +87,11 @@ async def get_projections(db: Session = Depends(get_database)):
     """Get FIRE projections and retirement income analysis."""
     service = RetirementService(db)
     return service.get_projections()
+
+
+@router.get("/keren-hishtalmut-balance")
+async def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
+    """Get auto-detected Keren Hishtalmut balance from scraped insurance data."""
+    service = RetirementService(db)
+    balance = service.get_keren_hishtalmut_scraped_balance()
+    return {"balance": balance}

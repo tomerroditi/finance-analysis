@@ -713,6 +713,10 @@
     },
     "form": {
       "currentAge": "Current Age",
+      "gender": "Gender",
+      "male": "Male",
+      "female": "Female",
+      "genderPensionNote": "Full pension age: {{age}}",
       "targetRetirementAge": "Target Retirement Age",
       "monthlyExpenses": "Monthly Expenses in Retirement",
       "lifeExpectancy": "Life Expectancy",
@@ -720,13 +724,14 @@
       "withdrawalRate": "Safe Withdrawal Rate",
       "inflationRate": "Inflation Rate",
       "israeliVehicles": "Israeli Savings Vehicles",
-      "pensionPayout": "Monthly Pension (age 67)",
+      "pensionPayout": "Monthly Pension (at full pension age)",
       "kerenHishtalmutBalance": "Keren Hishtalmut Balance",
       "kerenHishtalmutMonthly": "Keren Hishtalmut Monthly",
       "bituachLeumiEligible": "Bituach Leumi Eligible",
       "bituachLeumiEstimate": "Bituach Leumi Monthly",
       "otherPassiveIncome": "Other Passive Income",
-      "calculate": "Calculate"
+      "calculate": "Calculate",
+      "useScrapedKh": "Use scraped balance: {{amount}}"
     },
     "status": {
       "netWorth": "Net Worth",
@@ -739,6 +744,7 @@
     "projections": {
       "fireNumber": "FIRE Number",
       "fireAge": "FIRE Age",
+      "earliestRetirement": "Earliest Retirement",
       "yearsToFire": "Years to FIRE",
       "monthlySavingsNeeded": "Monthly Savings Needed",
       "readiness": "Readiness",
@@ -760,11 +766,23 @@
       "pensionAge": "Pension Age"
     },
     "income": {
+      "salarySavings": "Salary & Savings",
       "portfolioWithdrawal": "Portfolio Withdrawal",
       "pension": "Pension",
       "bituachLeumi": "Bituach Leumi",
       "passiveIncome": "Passive Income",
       "expenses": "Expenses"
+    },
+    "tooltips": {
+      "fireNumber": "FIRE Number = Annual Expenses ÷ Withdrawal Rate. This is the portfolio size needed to sustain your lifestyle indefinitely, based on the assumption that you can safely withdraw a fixed percentage each year.",
+      "fireAge": "The age at which your projected net worth (baseline scenario) first reaches your FIRE number.",
+      "earliestRetirement": "The earliest age you could retire based on current savings rate and projected growth. This equals the FIRE age in the baseline scenario.",
+      "monthlySavings": "Additional monthly savings needed to reach your FIRE number by your target retirement age. Calculated using the future value of annuity formula.",
+      "withdrawalRate": "The percentage of your portfolio you withdraw annually in retirement. 3.5% is conservative for Israel (vs. the US 4% rule) due to higher inflation.",
+      "pension": "Expected monthly pension payout at full pension age. Early withdrawal from age 60 receives ~70% of the full amount.",
+      "bituachLeumi": "National Insurance old-age pension. Starts at full pension age (67 for men, 65 for women).",
+      "netWorthChart": "Three scenarios with ±1% annual return spread. Includes Keren Hishtalmut as a separate tax-free component. Dashed red line = FIRE target.",
+      "incomeChart": "Income sources by age. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension (70% from age 60, 100% from full pension age) + Bituach Leumi + passive income."
     }
   }
 }

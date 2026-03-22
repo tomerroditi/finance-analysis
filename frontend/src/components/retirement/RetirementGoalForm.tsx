@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, ChevronDown, ChevronUp } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Save, ChevronDown, ChevronUp, Info, RefreshCw } from "lucide-react";
 import { retirementApi, type RetirementGoal } from "../../services/api";
 
 interface Props {
@@ -12,6 +12,7 @@ function goalToForm(goal: RetirementGoal | null) {
   if (!goal) {
     return {
       current_age: 30,
+      gender: "male" as string,
       target_retirement_age: 50,
       life_expectancy: 90,
       monthly_expenses_in_retirement: 15000,
@@ -28,6 +29,7 @@ function goalToForm(goal: RetirementGoal | null) {
   }
   return {
     current_age: goal.current_age,
+    gender: goal.gender,
     target_retirement_age: goal.target_retirement_age,
     life_expectancy: goal.life_expectancy,
     monthly_expenses_in_retirement: goal.monthly_expenses_in_retirement,
@@ -59,6 +61,13 @@ export function RetirementGoalForm({ goal }: Props) {
     setForm(goalToForm(goal));
   }
 
+  // Auto-detect Keren Hishtalmut balance from scraped data
+  const { data: khScraped } = useQuery({
+    queryKey: ["retirement", "keren-hishtalmut-balance"],
+    queryFn: () =>
+      retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
+  });
+
   const mutation = useMutation({
     mutationFn: () =>
       retirementApi.upsertGoal({
@@ -72,13 +81,19 @@ export function RetirementGoalForm({ goal }: Props) {
     },
   });
 
-  const handleChange = (field: string, value: number | boolean) => {
+  const handleChange = (field: string, value: number | boolean | string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     mutation.mutate();
+  };
+
+  const applyScrapedKh = () => {
+    if (khScraped?.balance != null) {
+      handleChange("keren_hishtalmut_balance", khScraped.balance);
+    }
   };
 
   return (
@@ -93,6 +108,24 @@ export function RetirementGoalForm({ goal }: Props) {
           max={100}
           step={1}
         />
+        <div>
+          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
+            {t("earlyRetirement.form.gender")}
+          </label>
+          <select
+            value={form.gender}
+            onChange={(e) => handleChange("gender", e.target.value)}
+            className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          >
+            <option value="male">{t("earlyRetirement.form.male")}</option>
+            <option value="female">{t("earlyRetirement.form.female")}</option>
+          </select>
+          <span className="text-xs text-[var(--text-muted)] mt-0.5 block">
+            {t("earlyRetirement.form.genderPensionNote", {
+              age: form.gender === "female" ? 65 : 67,
+            })}
+          </span>
+        </div>
         <NumberField
           label={t("earlyRetirement.form.targetRetirementAge")}
           value={form.target_retirement_age}
@@ -136,6 +169,7 @@ export function RetirementGoalForm({ goal }: Props) {
           max={10}
           step={0.5}
           suffix="%"
+          tooltip={t("earlyRetirement.tooltips.withdrawalRate")}
         />
       </div>
 
@@ -160,15 +194,34 @@ export function RetirementGoalForm({ goal }: Props) {
             min={0}
             step={500}
             suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.pension")}
           />
-          <NumberField
-            label={t("earlyRetirement.form.kerenHishtalmutBalance")}
-            value={form.keren_hishtalmut_balance}
-            onChange={(v) => handleChange("keren_hishtalmut_balance", v)}
-            min={0}
-            step={1000}
-            suffix="₪"
-          />
+          <div>
+            <NumberField
+              label={t("earlyRetirement.form.kerenHishtalmutBalance")}
+              value={form.keren_hishtalmut_balance}
+              onChange={(v) => handleChange("keren_hishtalmut_balance", v)}
+              min={0}
+              step={1000}
+              suffix="₪"
+            />
+            {khScraped?.balance != null && (
+              <button
+                type="button"
+                onClick={applyScrapedKh}
+                className="flex items-center gap-1 mt-1 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+              >
+                <RefreshCw size={12} />
+                {t("earlyRetirement.form.useScrapedKh", {
+                  amount: new Intl.NumberFormat("he-IL", {
+                    style: "currency",
+                    currency: "ILS",
+                    maximumFractionDigits: 0,
+                  }).format(khScraped.balance),
+                })}
+              </button>
+            )}
+          </div>
           <NumberField
             label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
             value={form.keren_hishtalmut_monthly_contribution}
@@ -204,6 +257,7 @@ export function RetirementGoalForm({ goal }: Props) {
               min={0}
               step={100}
               suffix="₪"
+              tooltip={t("earlyRetirement.tooltips.bituachLeumi")}
             />
           )}
           <NumberField
@@ -250,6 +304,7 @@ function NumberField({
   max,
   step,
   suffix,
+  tooltip,
 }: {
   label: string;
   value: number;
@@ -258,11 +313,22 @@ function NumberField({
   max?: number;
   step?: number;
   suffix?: string;
+  tooltip?: string;
 }) {
   return (
     <div>
       <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
-        {label}
+        <span className="flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <span className="group relative">
+              <Info size={13} className="text-[var(--text-muted)] cursor-help" />
+              <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
+                {tooltip}
+              </span>
+            </span>
+          )}
+        </span>
       </label>
       <div className="relative">
         <input

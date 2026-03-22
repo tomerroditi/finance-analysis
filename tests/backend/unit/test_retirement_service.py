@@ -8,7 +8,13 @@ phase analysis, and required savings calculations.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from backend.services.retirement_service import RetirementService, FULL_PENSION_AGE, EARLY_PENSION_AGE
+from backend.services.retirement_service import (
+    RetirementService,
+    FULL_PENSION_AGE_MALE,
+    FULL_PENSION_AGE_FEMALE,
+    EARLY_PENSION_AGE,
+    _get_full_pension_age,
+)
 
 
 @pytest.fixture
@@ -23,6 +29,7 @@ def sample_goal():
     return {
         "id": 1,
         "current_age": 35,
+        "gender": "male",
         "target_retirement_age": 50,
         "life_expectancy": 90,
         "monthly_expenses_in_retirement": 15000.0,
@@ -49,6 +56,22 @@ def sample_status():
         "total_investments": 800000.0,
         "monthly_savings": 13000.0,
     }
+
+
+class TestGenderPensionAge:
+    """Tests for gender-based pension age."""
+
+    def test_male_pension_age(self):
+        """Male full pension age should be 67."""
+        assert _get_full_pension_age("male") == 67
+
+    def test_female_pension_age(self):
+        """Female full pension age should be 65."""
+        assert _get_full_pension_age("female") == 65
+
+    def test_default_pension_age(self):
+        """Unknown gender defaults to male pension age."""
+        assert _get_full_pension_age("other") == FULL_PENSION_AGE_MALE
 
 
 class TestFireNumber:
@@ -119,26 +142,63 @@ class TestNetWorthProjection:
         # Year 1 should be higher than year 0 (baseline)
         assert result[1]["net_worth_baseline"] > result[0]["net_worth_baseline"]
 
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_female_pension_age_affects_projection(self, sample_goal, sample_status):
+        """Female gender should use pension age 65 in net worth projection."""
+        service = RetirementService.__new__(RetirementService)
+        sample_goal["gender"] = "female"
+        result_female = service._project_net_worth(sample_goal, sample_status)
+        sample_goal["gender"] = "male"
+        result_male = service._project_net_worth(sample_goal, sample_status)
+        # At age 66, female should have pension income (age >= 65) but male shouldn't (age < 67)
+        # This affects drawdown, so net worth at age 66 should differ
+        age_66_idx = 66 - sample_goal["current_age"]
+        assert result_female[age_66_idx]["net_worth_baseline"] != result_male[age_66_idx]["net_worth_baseline"]
+
 
 class TestRetirementIncome:
     """Tests for retirement income phase projection."""
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_income_projection_length(self, sample_goal):
-        """Income projection spans from target retirement to life expectancy."""
+        """Income projection spans from current age to life expectancy."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        expected = sample_goal["life_expectancy"] - sample_goal["target_retirement_age"] + 1
+        expected = sample_goal["life_expectancy"] - sample_goal["current_age"] + 1
         assert len(result) == expected
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_income_starts_at_current_age(self, sample_goal):
+        """Income projection starts at current age."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_retirement_income(sample_goal)
+        assert result[0]["age"] == sample_goal["current_age"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_salary_during_accumulation(self, sample_goal):
+        """During accumulation phase, salary_savings covers expenses."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_retirement_income(sample_goal)
+        # At current age (35), before retirement (50), salary_savings should cover expenses
+        assert result[0]["salary_savings"] > 0
+        assert result[0]["portfolio_withdrawal"] == 0
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_no_salary_after_retirement(self, sample_goal):
+        """After retirement, salary_savings should be 0."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_retirement_income(sample_goal)
+        target_idx = sample_goal["target_retirement_age"] - sample_goal["current_age"]
+        assert result[target_idx]["salary_savings"] == 0
+        assert result[target_idx]["portfolio_withdrawal"] > 0
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_no_pension_before_60(self, sample_goal):
         """No pension income before early pension age (60)."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        # At age 50 (target), pension should be 0
+        # At current age (35), pension should be 0
         assert result[0]["pension"] == 0
-        assert result[0]["age"] == 50
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_partial_pension_at_60(self, sample_goal):
@@ -150,20 +210,30 @@ class TestRetirementIncome:
         assert age_60_entry["pension"] == expected_pension
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_full_pension_at_67(self, sample_goal):
-        """Full pension starts at age 67."""
+    def test_full_pension_at_67_male(self, sample_goal):
+        """Full pension starts at age 67 for males."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE)
+        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE_MALE)
         expected_pension = round(sample_goal["pension_monthly_payout_estimate"] * 12, 0)
         assert age_67_entry["pension"] == expected_pension
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_bituach_leumi_at_67(self, sample_goal):
-        """Bituach Leumi income starts at age 67 when eligible."""
+    def test_full_pension_at_65_female(self, sample_goal):
+        """Full pension starts at age 65 for females."""
+        sample_goal["gender"] = "female"
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE)
+        age_65_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE_FEMALE)
+        expected_pension = round(sample_goal["pension_monthly_payout_estimate"] * 12, 0)
+        assert age_65_entry["pension"] == expected_pension
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_bituach_leumi_at_67(self, sample_goal):
+        """Bituach Leumi income starts at age 67 when eligible (male)."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_retirement_income(sample_goal)
+        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE_MALE)
         expected_bl = round(sample_goal["bituach_leumi_monthly_estimate"] * 12, 0)
         assert age_67_entry["bituach_leumi"] == expected_bl
 
@@ -173,16 +243,17 @@ class TestRetirementIncome:
         sample_goal["bituach_leumi_eligible"] = False
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE)
+        age_67_entry = next(r for r in result if r["age"] == FULL_PENSION_AGE_MALE)
         assert age_67_entry["bituach_leumi"] == 0
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_passive_income_always_present(self, sample_goal):
-        """Passive income should be present at every age."""
+        """Passive income should be present at every age after retirement."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
         expected_passive = round(sample_goal["other_passive_income"] * 12, 0)
-        for entry in result:
+        target_idx = sample_goal["target_retirement_age"] - sample_goal["current_age"]
+        for entry in result[target_idx:]:
             assert entry["passive_income"] == expected_passive
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)

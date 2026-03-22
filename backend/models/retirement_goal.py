@@ -5,7 +5,7 @@ Stores the user's early retirement planning parameters, including
 Israeli-specific savings vehicles (pension, Keren Hishtalmut, Bituach Leumi).
 """
 
-from sqlalchemy import Column, Integer, Float, Boolean
+from sqlalchemy import Column, Integer, Float, Boolean, String
 
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
@@ -18,6 +18,8 @@ class RetirementGoal(Base, TimestampMixin):
     ----------
     current_age : int
         User's current age.
+    gender : str
+        ``male`` or ``female`` — affects pension age (67 vs 65).
     target_retirement_age : int
         Desired early retirement age.
     life_expectancy : int
@@ -31,7 +33,7 @@ class RetirementGoal(Base, TimestampMixin):
     withdrawal_rate : float
         Safe withdrawal rate as decimal (e.g. 0.035 for 3.5%).
     pension_monthly_payout_estimate : float
-        Expected monthly pension at age 67 (NIS).
+        Expected monthly pension at full pension age (NIS).
     keren_hishtalmut_balance : float
         Current Keren Hishtalmut balance (NIS).
     keren_hishtalmut_monthly_contribution : float
@@ -50,6 +52,7 @@ class RetirementGoal(Base, TimestampMixin):
 
     # Core parameters
     current_age = Column(Integer, nullable=False)
+    gender = Column(String, nullable=False, default="male")
     target_retirement_age = Column(Integer, nullable=False, default=50)
     life_expectancy = Column(Integer, nullable=False, default=90)
     monthly_expenses_in_retirement = Column(Float, nullable=False)

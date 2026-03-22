@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
+from backend.models.insurance_account import InsuranceAccount
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
@@ -19,7 +20,13 @@ from backend.errors import EntityNotFoundException
 
 # Israeli pension milestones
 EARLY_PENSION_AGE = 60
-FULL_PENSION_AGE = 67
+FULL_PENSION_AGE_MALE = 67
+FULL_PENSION_AGE_FEMALE = 65
+
+
+def _get_full_pension_age(gender: str) -> int:
+    """Return full pension age based on gender (67 for male, 65 for female)."""
+    return FULL_PENSION_AGE_FEMALE if gender == "female" else FULL_PENSION_AGE_MALE
 
 
 class RetirementService:
@@ -45,6 +52,7 @@ class RetirementService:
         return {
             "id": goal.id,
             "current_age": goal.current_age,
+            "gender": goal.gender,
             "target_retirement_age": goal.target_retirement_age,
             "life_expectancy": goal.life_expectancy,
             "monthly_expenses_in_retirement": goal.monthly_expenses_in_retirement,
@@ -63,6 +71,24 @@ class RetirementService:
         """Create or update the retirement goal and return it as dict."""
         goal = self.repo.upsert(**fields)
         return self.get_goal()
+
+    def get_keren_hishtalmut_scraped_balance(self) -> float | None:
+        """Get total Keren Hishtalmut balance from scraped insurance data.
+
+        Returns
+        -------
+        float or None
+            Sum of all hishtalmut account balances, or None if no data.
+        """
+        accounts = (
+            self.db.query(InsuranceAccount)
+            .filter(InsuranceAccount.policy_type == "hishtalmut")
+            .all()
+        )
+        if not accounts:
+            return None
+        total = sum(a.balance for a in accounts if a.balance is not None)
+        return total if total > 0 else None
 
     def get_current_status(self) -> dict:
         """Aggregate current financial status from real dashboard data.
@@ -118,7 +144,8 @@ class RetirementService:
         Returns
         -------
         dict
-            Keys: fire_number, years_to_fire, fire_age, monthly_savings_needed,
+            Keys: fire_number, years_to_fire, fire_age,
+            earliest_possible_retirement_age, monthly_savings_needed,
             progress_pct, readiness, net_worth_projection, income_projection.
         """
         goal_data = self.get_goal()
@@ -153,13 +180,15 @@ class RetirementService:
             years_to_fire = -1
             fire_age = -1
 
+        # Earliest possible retirement age = FIRE age (baseline scenario)
+        earliest_possible_retirement_age = fire_age
+
         # Monthly savings needed to hit target retirement age
         monthly_savings_needed = self._calc_required_monthly_savings(
             goal_data, status, fire_number
         )
 
         # Readiness traffic light
-        target_years = goal_data["target_retirement_age"] - goal_data["current_age"]
         if fire_age != -1 and fire_age <= goal_data["target_retirement_age"]:
             readiness = "on_track"
         elif fire_age != -1 and fire_age <= goal_data["target_retirement_age"] + 5:
@@ -167,13 +196,14 @@ class RetirementService:
         else:
             readiness = "off_track"
 
-        # Retirement income projection (phase-based)
+        # Retirement income projection (phase-based, from current age)
         income_projection = self._project_retirement_income(goal_data)
 
         return {
             "fire_number": round(fire_number, 0),
             "years_to_fire": years_to_fire,
             "fire_age": fire_age,
+            "earliest_possible_retirement_age": earliest_possible_retirement_age,
             "monthly_savings_needed": round(monthly_savings_needed, 0),
             "progress_pct": round(progress_pct, 1),
             "readiness": readiness,
@@ -205,6 +235,7 @@ class RetirementService:
         inflation = goal["inflation_rate"]
         monthly_savings = status["monthly_savings"]
         annual_savings = monthly_savings * 12
+        full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
         # Keren Hishtalmut grows separately (tax-free)
         kh_balance = goal["keren_hishtalmut_balance"]
@@ -239,7 +270,7 @@ class RetirementService:
                 else:
                     # Drawdown phase: grow - withdraw + income sources
                     annual_income = goal["other_passive_income"] * 12
-                    if age >= FULL_PENSION_AGE:
+                    if age >= full_pension_age:
                         annual_income += goal["pension_monthly_payout_estimate"] * 12
                         if goal["bituach_leumi_eligible"]:
                             annual_income += (
@@ -284,7 +315,10 @@ class RetirementService:
         return projections
 
     def _project_retirement_income(self, goal: dict) -> list[dict]:
-        """Project retirement income sources by age (from retirement to life expectancy).
+        """Project income sources by age (from current age to life expectancy).
+
+        During accumulation (before target retirement age), shows salary/savings.
+        During retirement, shows portfolio withdrawals + pension + BL + passive.
 
         Parameters
         ----------
@@ -294,44 +328,58 @@ class RetirementService:
         Returns
         -------
         list[dict]
-            Per-year income sources: portfolio_withdrawal, pension,
-            bituach_leumi, passive_income, total_income, expenses.
+            Per-year income sources: salary_savings, portfolio_withdrawal,
+            pension, bituach_leumi, passive_income, total_income, expenses.
         """
+        current_age = goal["current_age"]
         target_age = goal["target_retirement_age"]
         life_exp = goal["life_expectancy"]
         inflation = goal["inflation_rate"]
         annual_expenses_base = goal["monthly_expenses_in_retirement"] * 12
+        full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
         result = []
-        for age in range(target_age, life_exp + 1):
-            years_into_retirement = age - target_age
-            years_from_now = age - goal["current_age"]
+        for age in range(current_age, life_exp + 1):
+            years_from_now = age - current_age
             inflation_adjusted = annual_expenses_base * (
                 (1 + inflation) ** years_from_now
             )
 
             pension = 0.0
-            if age >= FULL_PENSION_AGE:
+            if age >= full_pension_age:
                 pension = goal["pension_monthly_payout_estimate"] * 12
             elif age >= EARLY_PENSION_AGE:
                 pension = goal["pension_monthly_payout_estimate"] * 0.7 * 12
 
             bl = 0.0
-            if age >= FULL_PENSION_AGE and goal["bituach_leumi_eligible"]:
+            if age >= full_pension_age and goal["bituach_leumi_eligible"]:
                 bl = goal["bituach_leumi_monthly_estimate"] * 12
 
             passive = goal["other_passive_income"] * 12
-            non_portfolio = pension + bl + passive
-            portfolio_withdrawal = max(0, inflation_adjusted - non_portfolio)
+
+            # Before retirement: income comes from salary/savings
+            # After retirement: income comes from portfolio + pension + BL + passive
+            salary_savings = 0.0
+            portfolio_withdrawal = 0.0
+            if age < target_age:
+                # Accumulation phase — no portfolio withdrawal needed
+                salary_savings = inflation_adjusted
+            else:
+                non_portfolio = pension + bl + passive
+                portfolio_withdrawal = max(0, inflation_adjusted - non_portfolio)
+
+            non_portfolio = pension + bl + passive + salary_savings
+            total_income = non_portfolio + portfolio_withdrawal
 
             result.append(
                 {
                     "age": age,
+                    "salary_savings": round(salary_savings, 0),
                     "portfolio_withdrawal": round(portfolio_withdrawal, 0),
                     "pension": round(pension, 0),
                     "bituach_leumi": round(bl, 0),
                     "passive_income": round(passive, 0),
-                    "total_income": round(non_portfolio + portfolio_withdrawal, 0),
+                    "total_income": round(total_income, 0),
                     "expenses": round(inflation_adjusted, 0),
                 }
             )

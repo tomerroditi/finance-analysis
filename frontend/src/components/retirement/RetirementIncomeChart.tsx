@@ -4,6 +4,7 @@ import { plotlyConfig, chartTheme } from "../../utils/plotlyLocale";
 
 interface DataPoint {
   age: number;
+  salary_savings: number;
   portfolio_withdrawal: number;
   pension: number;
   bituach_leumi: number;
@@ -22,6 +23,13 @@ export function RetirementIncomeChart({ data }: Props) {
   const ages = data.map((d) => d.age);
 
   const traces: Plotly.Data[] = [
+    {
+      x: ages,
+      y: data.map((d) => d.salary_savings),
+      name: t("earlyRetirement.income.salarySavings"),
+      type: "bar" as const,
+      marker: { color: "#06b6d4" },
+    },
     {
       x: ages,
       y: data.map((d) => d.portfolio_withdrawal),
