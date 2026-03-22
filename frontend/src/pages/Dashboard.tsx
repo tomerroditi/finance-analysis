@@ -1438,6 +1438,7 @@ export function Dashboard() {
                         layout={{
                           ...chartTheme,
                           autosize: true,
+                          xaxis: { ...chartTheme.xaxis, type: "category" },
                           yaxis: {
                             title: {
                               text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
