@@ -60,6 +60,7 @@ class Tables(Enum):
     CREDENTIALS = "credentials"
     INSURANCE = "insurance_transactions"
     INSURANCE_ACCOUNTS = "insurance_accounts"
+    LIABILITIES = "liabilities"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -161,3 +162,21 @@ class InvestmentBalanceSnapshotsTableFields(Enum):
     DATE = "date"
     BALANCE = "balance"
     SOURCE = "source"
+
+
+class LiabilitiesTableFields(Enum):
+    """Field names for the liabilities table."""
+
+    ID = "id"
+    NAME = "name"
+    LENDER = "lender"
+    CATEGORY = "category"
+    TAG = "tag"
+    PRINCIPAL_AMOUNT = "principal_amount"
+    INTEREST_RATE = "interest_rate"
+    TERM_MONTHS = "term_months"
+    START_DATE = "start_date"
+    IS_PAID_OFF = "is_paid_off"
+    PAID_OFF_DATE = "paid_off_date"
+    NOTES = "notes"
+    CREATED_DATE = "created_date"
