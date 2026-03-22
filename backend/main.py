@@ -30,6 +30,7 @@ from backend.routes import (
     credentials,
     insurance_accounts,
     investments,
+    liabilities,
     pending_refunds,
     scraping,
     tagging,
@@ -172,6 +173,7 @@ app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
 app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
 app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
+app.include_router(liabilities.router, prefix="/api/liabilities", tags=["Liabilities"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 app.include_router(
