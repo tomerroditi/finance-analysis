@@ -11,7 +11,8 @@ import {
   Pencil,
   Info,
 } from "lucide-react";
-import { liabilitiesApi } from "../services/api";
+import { liabilitiesApi, taggingApi } from "../services/api";
+import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 
 interface Liability {
@@ -262,6 +263,11 @@ export function Liabilities() {
     queryFn: () => liabilitiesApi.getAll(showPaidOff).then((r) => r.data),
   });
 
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => taggingApi.getCategories().then((res) => res.data),
+  });
+
   const { data: analysisData } = useQuery<AnalysisData>({
     queryKey: ["liabilities", analysisModalId, "analysis"],
     queryFn: () =>
@@ -344,6 +350,15 @@ export function Liabilities() {
     0,
   );
 
+  // Available tags: Liabilities tags not already used by existing liabilities
+  const usedTags = new Set(
+    liabilities?.map((l: Liability) => l.tag) || [],
+  );
+  const availableTags: string[] = categories?.["Liabilities"]
+    ? categories["Liabilities"].filter((tag: string) => !usedTags.has(tag))
+    : [];
+  const canAdd = availableTags.length > 0;
+
   // Analysis modal tab
   const [analysisTab, setAnalysisTab] = useState<"schedule" | "actual">(
     "schedule",
@@ -377,7 +392,8 @@ export function Liabilities() {
         </div>
         <button
           onClick={() => setIsAddOpen(true)}
-          className="flex items-center gap-2 px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
+          disabled={!canAdd}
+          className={`flex items-center gap-2 px-6 py-2 rounded-xl font-bold transition-all ${canAdd ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20" : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed"}`}
         >
           <Plus size={18} /> {t("liabilities.addLiability")}
         </button>
@@ -499,13 +515,13 @@ export function Liabilities() {
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.tag")} *
                 </label>
-                <input
-                  type="text"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                <SelectDropdown
+                  options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
                   value={newLiability.tag}
-                  onChange={(e) =>
-                    setNewLiability({ ...newLiability, tag: e.target.value })
+                  onChange={(val) =>
+                    setNewLiability({ ...newLiability, tag: val })
                   }
+                  placeholder={t("liabilities.selectTag")}
                 />
               </div>
               <div>

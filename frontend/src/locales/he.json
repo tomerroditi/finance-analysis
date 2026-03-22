@@ -533,7 +533,8 @@
     "confirmDelete": "האם אתה בטוח שברצונך למחוק התחייבות זו?",
     "paidOffDate": "תאריך סילוק",
     "editLiability": "ערוך התחייבות",
-    "transactions": "תנועות"
+    "transactions": "תנועות",
+    "selectTag": "בחר תגית"
   },
   "insurance": {
     "title": "ביטוח",

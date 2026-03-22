@@ -533,7 +533,8 @@
     "confirmDelete": "Are you sure you want to delete this liability?",
     "paidOffDate": "Paid Off Date",
     "editLiability": "Edit Liability",
-    "transactions": "Transactions"
+    "transactions": "Transactions",
+    "selectTag": "Select tag"
   },
   "insurance": {
     "title": "Insurance",
