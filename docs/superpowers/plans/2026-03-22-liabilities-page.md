@@ -93,13 +93,13 @@ Create `backend/models/liability.py`:
 Liability tracking model.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy import Column, Integer, String, Float, Text, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
+from backend.models.base import Base
 from backend.constants.tables import Tables
 
 
-class Liability(Base, TimestampMixin):
+class Liability(Base):
     """ORM model for a tracked liability (loan/debt).
 
     Each liability is identified by its ``category`` + ``tag`` pair, which
@@ -135,6 +135,9 @@ class Liability(Base, TimestampMixin):
     """
 
     __tablename__ = Tables.LIABILITIES.value
+    __table_args__ = (
+        UniqueConstraint("category", "tag", name="uq_liability_category_tag"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
@@ -769,8 +772,12 @@ class LiabilitiesService:
         df = df.replace({np.nan: None})
         records = df.to_dict(orient="records")
 
+        # Fetch all liability transactions once to avoid N+1 queries
+        all_txns = self.transactions_repo.get_table()
+        liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY]
+
         for record in records:
-            self._enrich_with_calculations(record)
+            self._enrich_with_calculations(record, liab_txns)
 
         return records
 
@@ -790,7 +797,10 @@ class LiabilitiesService:
         df = self.liabilities_repo.get_by_id(liability_id)
         df = df.replace({np.nan: None})
         record = df.to_dict(orient="records")[0]
-        self._enrich_with_calculations(record)
+
+        all_txns = self.transactions_repo.get_table()
+        liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY]
+        self._enrich_with_calculations(record, liab_txns)
         return record
 
     def create_liability(
@@ -826,7 +836,7 @@ class LiabilitiesService:
             Free-text notes.
         """
         # Auto-create tag if it doesn't exist
-        from backend.services.categories_tags_service import CategoriesTagsService
+        from backend.services.tagging_service import CategoriesTagsService
         cat_service = CategoriesTagsService(self.db)
         cat_service.add_tag(LIABILITIES_CATEGORY, tag)
 
@@ -1023,13 +1033,17 @@ class LiabilitiesService:
 
         return schedule
 
-    def _enrich_with_calculations(self, record: Dict[str, Any]) -> None:
+    def _enrich_with_calculations(
+        self, record: Dict[str, Any], liab_txns: pd.DataFrame
+    ) -> None:
         """Add calculated fields to a liability record in-place.
 
         Parameters
         ----------
         record : dict
             Liability record to enrich.
+        liab_txns : pd.DataFrame
+            Pre-fetched transactions with category="Liabilities".
         """
         principal = record["principal_amount"]
         annual_rate = record["interest_rate"]
@@ -1048,13 +1062,9 @@ class LiabilitiesService:
 
         total_interest = monthly_payment * term_months - principal
 
-        # Get actual payments from transactions
+        # Filter pre-fetched transactions for this liability's tag
         tag = record["tag"]
-        all_txns = self.transactions_repo.get_table()
-        matched = all_txns[
-            (all_txns["category"] == LIABILITIES_CATEGORY) &
-            (all_txns["tag"] == tag)
-        ]
+        matched = liab_txns[liab_txns["tag"] == tag]
         total_paid = abs(matched[matched["amount"] < 0]["amount"].sum())
 
         # Remaining balance from amortization schedule position
