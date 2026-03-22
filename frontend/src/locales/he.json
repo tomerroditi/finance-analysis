@@ -50,7 +50,8 @@
     "categories": "קטגוריות",
     "investments": "השקעות",
     "insurance": "ביטוח",
-    "dataSources": "מקורות מידע"
+    "dataSources": "מקורות מידע",
+    "earlyRetirement": "פרישה מוקדמת"
   },
   "settings": {
     "title": "הגדרות",
@@ -701,5 +702,87 @@
     "title": "משהו השתבש",
     "message": "אירעה שגיאה בלתי צפויה. נסו לטעון מחדש את הדף.",
     "tryAgain": "נסו שוב"
+  },
+  "earlyRetirement": {
+    "title": "מחשבון פרישה מוקדמת",
+    "subtitle": "תכנן את הדרך לעצמאות כלכלית עם מכשירי חיסכון ישראליים",
+    "sections": {
+      "currentStatus": "מצב פיננסי נוכחי",
+      "goals": "יעדי פרישה",
+      "projections": "תחזיות ותובנות"
+    },
+    "form": {
+      "currentAge": "גיל נוכחי",
+      "gender": "מין",
+      "male": "זכר",
+      "female": "נקבה",
+      "genderPensionNote": "גיל פנסיה מלאה: {{age}}",
+      "targetRetirementAge": "גיל פרישה יעד",
+      "monthlyExpenses": "הוצאות חודשיות בפרישה",
+      "lifeExpectancy": "תוחלת חיים",
+      "expectedReturn": "תשואה שנתית צפויה",
+      "withdrawalRate": "שיעור משיכה בטוח",
+      "inflationRate": "שיעור אינפלציה",
+      "israeliVehicles": "מכשירי חיסכון ישראליים",
+      "pensionPayout": "פנסיה חודשית (בגיל פנסיה מלאה)",
+      "kerenHishtalmutBalance": "יתרת קרן השתלמות",
+      "kerenHishtalmutMonthly": "הפקדה חודשית לקרן השתלמות",
+      "bituachLeumiEligible": "זכאי לביטוח לאומי",
+      "bituachLeumiEstimate": "קצבת ביטוח לאומי חודשית",
+      "otherPassiveIncome": "הכנסה פסיבית אחרת",
+      "calculate": "חשב",
+      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}"
+    },
+    "status": {
+      "netWorth": "שווי נקי",
+      "avgMonthlyIncome": "הכנסה חודשית ממוצעת",
+      "avgMonthlyExpenses": "הוצאות חודשיות ממוצעות",
+      "monthlySavings": "חיסכון חודשי",
+      "savingsRate": "שיעור חיסכון",
+      "totalInvestments": "סה\"כ השקעות"
+    },
+    "projections": {
+      "fireNumber": "מספר FIRE",
+      "fireAge": "גיל FIRE",
+      "earliestRetirement": "פרישה מוקדמת ביותר",
+      "yearsToFire": "שנים ל-FIRE",
+      "monthlySavingsNeeded": "חיסכון חודשי נדרש",
+      "readiness": "מוכנות",
+      "readiness_on_track": "במסלול",
+      "readiness_close": "כמעט שם",
+      "readiness_off_track": "לא במסלול",
+      "notReachable": "לא ניתן להשגה",
+      "onTrackNoExtra": "במסלול!"
+    },
+    "charts": {
+      "netWorthProjection": "תחזית שווי נקי",
+      "retirementIncome": "הכנסה בפרישה לפי מקור",
+      "age": "גיל",
+      "baseline": "בסיס",
+      "optimistic": "אופטימי",
+      "conservative": "שמרני",
+      "fireTarget": "יעד FIRE",
+      "retirementAge": "פרישה",
+      "pensionAge": "גיל פנסיה"
+    },
+    "income": {
+      "salarySavings": "משכורת וחיסכון",
+      "portfolioWithdrawal": "משיכה מתיק",
+      "pension": "פנסיה",
+      "bituachLeumi": "ביטוח לאומי",
+      "passiveIncome": "הכנסה פסיבית",
+      "expenses": "הוצאות"
+    },
+    "tooltips": {
+      "fireNumber": "מספר FIRE = הוצאות שנתיות ÷ שיעור משיכה. זהו גודל התיק הנדרש לקיום בלתי מוגבל, מבוסס על ההנחה שניתן למשוך אחוז קבוע מדי שנה.",
+      "fireAge": "הגיל שבו השווי הנקי החזוי (תרחיש בסיס) מגיע לראשונה למספר ה-FIRE שלך.",
+      "earliestRetirement": "הגיל המוקדם ביותר שבו תוכל לפרוש על סמך שיעור החיסכון הנוכחי והצמיחה החזויה. שווה לגיל FIRE בתרחיש הבסיס.",
+      "monthlySavings": "חיסכון חודשי נוסף הנדרש להגעה למספר ה-FIRE בגיל הפרישה היעד. מחושב באמצעות נוסחת ערך עתידי של אנונה.",
+      "withdrawalRate": "אחוז התיק שנמשך מדי שנה בפרישה. 3.5% שמרני לישראל (לעומת כלל 4% בארה\"ב) בשל אינפלציה גבוהה יותר.",
+      "pension": "קצבת פנסיה חודשית צפויה בגיל פנסיה מלאה. משיכה מוקדמת מגיל 60 מזכה בכ-70% מהסכום המלא.",
+      "bituachLeumi": "קצבת זקנה של ביטוח לאומי. מתחילה בגיל פנסיה מלאה (67 לגברים, 65 לנשים).",
+      "netWorthChart": "שלושה תרחישים עם פער תשואה של ±1%. כולל קרן השתלמות כרכיב פטור ממס נפרד. קו אדום מקווקו = יעד FIRE.",
+      "incomeChart": "מקורות הכנסה לפי גיל. לפני פרישה: משכורת מכסה הוצאות. אחרי פרישה: משיכות מתיק + פנסיה (70% מגיל 60, 100% מגיל פנסיה מלאה) + ביטוח לאומי + הכנסה פסיבית."
+    }
   }
 }

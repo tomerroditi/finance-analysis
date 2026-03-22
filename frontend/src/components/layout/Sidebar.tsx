@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  Sunset,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -25,6 +26,7 @@ const navItems = [
   { path: "/categories", icon: Tags, key: "categories" },
   { path: "/investments", icon: TrendingUp, key: "investments" },
   { path: "/insurances", icon: Shield, key: "insurance" },
+  { path: "/early-retirement", icon: Sunset, key: "earlyRetirement" },
   { path: "/data-sources", icon: Database, key: "dataSources" },
 ];
 
