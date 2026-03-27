@@ -16,9 +16,16 @@ import {
 } from "lucide-react";
 import { retirementApi, type RetirementGoal } from "../../services/api";
 
+interface PendingAdjust {
+  field: string;
+  value: number;
+}
+
 interface Props {
   goal: RetirementGoal | null;
   isCalculating?: boolean;
+  pendingAdjust?: PendingAdjust | null;
+  onAdjustApplied?: () => void;
 }
 
 const ILS_FORMAT = new Intl.NumberFormat("he-IL", {
@@ -74,7 +81,12 @@ function goalToForm(goal: RetirementGoal | null) {
   };
 }
 
-export function RetirementGoalForm({ goal, isCalculating }: Props) {
+export function RetirementGoalForm({
+  goal,
+  isCalculating,
+  pendingAdjust,
+  onAdjustApplied,
+}: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -96,8 +108,8 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
 
   // Calculate: preview projections without saving
   const calculateMutation = useMutation({
-    mutationFn: () => {
-      const payload = formToPayload(form);
+    mutationFn: (overrideForm?: ReturnType<typeof goalToForm>) => {
+      const payload = formToPayload(overrideForm ?? form);
       return Promise.all([
         retirementApi.previewProjections(payload),
         retirementApi.previewSuggestions(payload),
@@ -119,6 +131,25 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
     },
   });
 
+  // Handle pending adjustment from projections "Adjust Plan" buttons
+  const [lastAppliedAdjust, setLastAppliedAdjust] =
+    useState<typeof pendingAdjust>(null);
+  if (pendingAdjust && pendingAdjust !== lastAppliedAdjust) {
+    setLastAppliedAdjust(pendingAdjust);
+    const { field, value } = pendingAdjust;
+    // expected_return_rate comes as decimal from solver, form uses percentage
+    const formValue =
+      field === "expected_return_rate" ? value * 100 : value;
+    const updated = { ...form, [field]: formValue };
+    setForm(updated);
+    setHasUnsavedChanges(true);
+    // Schedule preview after render completes
+    setTimeout(() => {
+      calculateMutation.mutate(updated);
+      onAdjustApplied?.();
+    }, 0);
+  }
+
   // Save Plan: persist to DB
   const saveMutation = useMutation({
     mutationFn: () => retirementApi.upsertGoal(formToPayload(form)),
@@ -135,7 +166,7 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
 
   const handleCalculate = (e: React.FormEvent) => {
     e.preventDefault();
-    calculateMutation.mutate();
+    calculateMutation.mutate(undefined);
   };
 
   const handleSave = () => {

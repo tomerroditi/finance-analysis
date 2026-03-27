@@ -24,7 +24,6 @@ interface Props {
   projections: ProjectionsType;
   suggestions?: RetirementSuggestions | null;
   onAdjust?: (field: SuggestionField, value: number) => void;
-  isAdjusting?: boolean;
 }
 
 const formatCurrency = (value: number) =>
@@ -77,7 +76,6 @@ export function RetirementProjections({
   projections,
   suggestions,
   onAdjust,
-  isAdjusting,
 }: Props) {
   const { t } = useTranslation();
   const readiness = readinessConfig[projections.readiness];
@@ -257,7 +255,6 @@ export function RetirementProjections({
               key={item.field}
               type="button"
               onClick={() => onAdjust(item.field, item.value)}
-              disabled={isAdjusting}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50 transition-colors disabled:opacity-50"
             >
               <span className="text-[var(--text-muted)]">{item.label}:</span>

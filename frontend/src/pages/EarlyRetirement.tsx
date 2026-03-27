@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Target, BarChart3, Activity } from "lucide-react";
 import {
   retirementApi,
-  type RetirementGoal,
   type RetirementSuggestions,
 } from "../services/api";
 import { RetirementGoalForm } from "../components/retirement/RetirementGoalForm";
@@ -14,7 +14,10 @@ type SuggestionField = keyof RetirementSuggestions;
 
 export function EarlyRetirement() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
+  const [pendingAdjust, setPendingAdjust] = useState<{
+    field: string;
+    value: number;
+  } | null>(null);
 
   const { data: goal, isLoading: goalLoading } = useQuery({
     queryKey: ["retirement", "goal"],
@@ -47,42 +50,11 @@ export function EarlyRetirement() {
       projections.readiness !== "on_track",
   });
 
-  // Adjust: preview with one field changed (no save)
-  const adjustMutation = useMutation({
-    mutationFn: ({
-      field,
-      value,
-    }: {
-      field: SuggestionField;
-      value: number;
-    }) => {
-      const currentGoal = goal as RetirementGoal;
-      const adjusted = { ...currentGoal, [field]: value };
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id, ...payload } = adjusted;
-      return Promise.all([
-        retirementApi.previewProjections(payload),
-        retirementApi.previewSuggestions(payload),
-      ]);
-    },
-    onSuccess: ([projectionsRes, suggestionsRes]) => {
-      queryClient.setQueryData(
-        ["retirement", "projections"],
-        projectionsRes.data,
-      );
-      queryClient.setQueryData(
-        ["retirement", "suggestions"],
-        suggestionsRes.data,
-      );
-    },
-  });
-
   const handleAdjust = (field: SuggestionField, value: number) => {
-    if (!goal) return;
-    adjustMutation.mutate({ field, value });
+    setPendingAdjust({ field, value });
   };
 
-  const isBusy = projectionsFetching || adjustMutation.isPending;
+  const isBusy = projectionsFetching;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -118,6 +90,8 @@ export function EarlyRetirement() {
           <RetirementGoalForm
             goal={goal ?? null}
             isCalculating={isBusy}
+            pendingAdjust={pendingAdjust}
+            onAdjustApplied={() => setPendingAdjust(null)}
           />
         )}
       </Section>
@@ -135,7 +109,6 @@ export function EarlyRetirement() {
               projections={projections}
               suggestions={suggestions}
               onAdjust={handleAdjust}
-              isAdjusting={adjustMutation.isPending}
             />
           ) : null}
         </Section>
