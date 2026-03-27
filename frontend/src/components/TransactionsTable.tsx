@@ -1088,7 +1088,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Bulk Action Floating Bar */}
       {showBulkActions && selectedIds.size > 0 && (
-        <div className="fixed bottom-4 md:bottom-8 inset-x-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 bg-[var(--surface)] border border-[var(--primary)]/50 rounded-2xl shadow-2xl px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto">
+        <div className="fixed bottom-4 md:bottom-8 inset-x-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 bg-[var(--surface)] backdrop-blur-xl border-2 border-[var(--primary)] rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.5)] px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">
               {selectedIds.size}
