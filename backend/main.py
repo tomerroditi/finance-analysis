@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import AppConfig
+from backend import database
 from backend.database import get_db_context, get_engine
 from backend.errors import (
     EntityAlreadyExistsException,
@@ -54,7 +55,31 @@ async def lifespan(app: FastAPI):
 
     # Startup
     print("Starting Finance Analysis API...")
-    Base.metadata.create_all(bind=get_engine())
+
+    # Auto-enable demo mode on Vercel deployments
+    if os.environ.get("VERCEL"):
+        from backend.routes.testing import _prepare_demo_database, _sync_missing_columns
+        from backend.services.credentials_service import CredentialsService
+        from backend.services.categories_tags_service import CategoriesTagsService
+
+        config = AppConfig()
+        config.set_demo_mode(True)
+        database.reset_engine()
+        CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
+
+        engine = get_engine()
+        Base.metadata.create_all(bind=engine)
+        _sync_missing_columns(engine)
+        _prepare_demo_database()
+
+        with get_db_context() as demo_db:
+            creds_service = CredentialsService(demo_db)
+            creds_service.seed_demo_credentials()
+
+        print("Vercel deployment detected — demo mode enabled automatically.")
+    else:
+        Base.metadata.create_all(bind=get_engine())
 
     # Seed categories and migrate credentials
     with get_db_context() as db:
