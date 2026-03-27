@@ -70,8 +70,8 @@ function MomBadge({ mom }: { mom: { delta: number; percent: number | null } | nu
   const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
   const sign = delta >= 0 ? "+" : "";
   return (
-    <span dir="ltr" className={`text-[10px] font-semibold ${color} whitespace-nowrap`}>
-      {sign}{formatCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
+    <span dir="ltr" className={`text-[10px] font-semibold ${color}`}>
+      {sign}{formatCompactCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
     </span>
   );
 }
@@ -142,29 +142,25 @@ function FinancialHealthHeader({
 
   return (
     <div
-      className="grid grid-cols-2 sm:grid-cols-4 gap-3 cursor-pointer"
+      className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Net Worth */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💰 {t("dashboard.netWorth")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
-          </p>
-          <MomBadge mom={netWorthMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💰 {t("dashboard.netWorth")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
+        </p>
+        <MomBadge mom={netWorthMom} />
       </div>
 
       {/* Bank Balance */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">🏦 {t("dashboard.bankBalance")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
-          </p>
-          <MomBadge mom={bankMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">🏦 {t("dashboard.bankBalance")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+        </p>
+        <MomBadge mom={bankMom} />
         {expanded && bankBalances && bankBalances.length > 0 && (
           <BreakdownList
             items={bankBalances.map((b) => ({ name: b.account_name, amount: b.balance }))}
@@ -173,14 +169,12 @@ function FinancialHealthHeader({
       </div>
 
       {/* Investments */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">📈 {t("dashboard.investmentValue")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
-          </p>
-          <MomBadge mom={investmentMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">📈 {t("dashboard.investmentValue")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+        </p>
+        <MomBadge mom={investmentMom} />
         {expanded && openInvestments && openInvestments.length > 0 && (
           <BreakdownList
             items={openInvestments.map((i) => ({ name: i.name, amount: i.balance }))}
@@ -189,12 +183,10 @@ function FinancialHealthHeader({
       </div>
 
       {/* Cash */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💵 {t("dashboard.cashBalance")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">{formatCurrency(totalCash)}</p>
-          <MomBadge mom={cashMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💵 {t("dashboard.cashBalance")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
+        <MomBadge mom={cashMom} />
         {expanded && cashBalances && cashBalances.length > 0 && (
           <BreakdownList
             items={cashBalances.map((c) => ({ name: c.account_name, amount: c.balance }))}
