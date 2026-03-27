@@ -1302,7 +1302,7 @@ export function Dashboard() {
               <button
                 key={key}
                 onClick={() => setInsightTab(key)}
-                className={`flex-1 text-center px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
+                className={`sm:flex-1 text-center px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
                   insightTab === key
                     ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                     : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1315,7 +1315,7 @@ export function Dashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
+        <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
           {/* Net Worth Over Time */}
           {insightTab === "net_worth" && (
             <div className="flex flex-col flex-1 min-h-0">
