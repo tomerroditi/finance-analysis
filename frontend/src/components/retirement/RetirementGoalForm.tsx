@@ -357,34 +357,35 @@ export function RetirementGoalForm({
             suffix="₪"
           />
           <div>
-            <NumberField
-              label={t("earlyRetirement.form.bituachLeumiEstimate")}
+            <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1">
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={form.bituach_leumi_eligible}
+                  onChange={(e) =>
+                    handleChange(
+                      "bituach_leumi_eligible",
+                      e.target.checked,
+                    )
+                  }
+                  className="w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
+                />
+                {t("earlyRetirement.form.bituachLeumiEstimate")}
+              </label>
+              <span className="text-[var(--text-muted)]">(₪)</span>
+            </div>
+            <input
+              type="number"
               value={form.bituach_leumi_monthly_estimate}
-              onChange={(v) =>
-                handleChange("bituach_leumi_monthly_estimate", v)
+              onChange={(e) =>
+                handleChange("bituach_leumi_monthly_estimate", Number(e.target.value))
               }
               min={0}
               step={100}
-              suffix="₪"
-              tooltip={t("earlyRetirement.tooltips.bituachLeumi")}
               disabled={!form.bituach_leumi_eligible}
+              className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              dir="ltr"
             />
-            <label className="flex items-center gap-1.5 mt-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.bituach_leumi_eligible}
-                onChange={(e) =>
-                  handleChange(
-                    "bituach_leumi_eligible",
-                    e.target.checked,
-                  )
-                }
-                className="w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)]"
-              />
-              <span className="text-xs text-[var(--text-muted)]">
-                {t("earlyRetirement.form.bituachLeumiEligible")}
-              </span>
-            </label>
           </div>
           <NumberField
             label={t("earlyRetirement.form.otherPassiveIncome")}
