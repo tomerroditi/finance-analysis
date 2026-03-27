@@ -594,24 +594,6 @@ export function Liabilities() {
                   </div>
                 )}
               </div>
-              {!tagDetection?.has_receipt && (
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.principalAmount")} *
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.principal_amount}
-                  onChange={(e) =>
-                    setNewLiability({
-                      ...newLiability,
-                      principal_amount: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.interestRate")} (%) *
@@ -645,24 +627,6 @@ export function Liabilities() {
                   }
                 />
               </div>
-              {!tagDetection?.has_receipt && (
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.startDate")} *
-                </label>
-                <input
-                  type="date"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.start_date}
-                  onChange={(e) =>
-                    setNewLiability({
-                      ...newLiability,
-                      start_date: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.notes")}
@@ -688,10 +652,8 @@ export function Liabilities() {
                 disabled={
                   !newLiability.name ||
                   !newLiability.tag ||
-                  !newLiability.principal_amount ||
                   !newLiability.interest_rate ||
                   !newLiability.term_months ||
-                  !newLiability.start_date ||
                   createMutation.isPending
                 }
                 onClick={() =>
