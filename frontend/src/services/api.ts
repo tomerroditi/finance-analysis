@@ -290,6 +290,10 @@ export const liabilitiesApi = {
   delete: (id: number) => api.delete(`/liabilities/${id}`),
   getAnalysis: (id: number) => api.get(`/liabilities/${id}/analysis`),
   getTransactions: (id: number) => api.get(`/liabilities/${id}/transactions`),
+  detectTransactions: (tag: string) =>
+    api.get("/liabilities/detect-transactions", { params: { tag } }),
+  generateTransactions: (id: number) =>
+    api.post(`/liabilities/${id}/generate-transactions`),
 };
 
 // Analytics API

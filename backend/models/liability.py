@@ -2,9 +2,9 @@
 Liability tracking model.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Text, UniqueConstraint, ForeignKey
 
-from backend.models.base import Base
+from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
 
 
@@ -63,3 +63,33 @@ class Liability(Base):
     paid_off_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     created_date = Column(String, nullable=False)
+
+
+class LiabilityTransaction(Base, TimestampMixin):
+    """Auto-generated transaction for a liability payment.
+
+    These transactions are separate from bank/CC transactions so they don't
+    pollute scraped data. They are only used within the liabilities page.
+
+    Attributes
+    ----------
+    liability_id : int
+        FK to the owning liability record.
+    date : str
+        Payment date (YYYY-MM-DD).
+    amount : float
+        Payment amount (negative = payment out).
+    payment_number : int
+        1-based payment number from the amortization schedule.
+    description : str
+        Human-readable description.
+    """
+
+    __tablename__ = Tables.LIABILITY_TRANSACTIONS.value
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    liability_id = Column(Integer, ForeignKey("liabilities.id", ondelete="CASCADE"), nullable=False)
+    date = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    payment_number = Column(Integer, nullable=False)
+    description = Column(String, nullable=True)

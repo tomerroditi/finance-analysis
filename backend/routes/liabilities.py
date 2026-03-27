@@ -51,6 +51,19 @@ async def get_liabilities(
     return service.get_all_liabilities(include_paid_off=include_paid_off)
 
 
+@router.get("/detect-transactions")
+async def detect_tag_transactions(
+    tag: str, db: Session = Depends(get_database)
+) -> dict[str, Any]:
+    """Detect existing transactions for a liability tag.
+
+    Returns receipt info (date, amount) and payment list to help
+    auto-populate the create form.
+    """
+    service = LiabilitiesService(db)
+    return service.detect_tag_transactions(tag)
+
+
 @router.get("/{liability_id}/analysis")
 async def get_liability_analysis(
     liability_id: int, db: Session = Depends(get_database)
@@ -136,6 +149,16 @@ async def reopen_liability(
     service = LiabilitiesService(db)
     service.reopen(liability_id)
     return {"status": "success"}
+
+
+@router.post("/{liability_id}/generate-transactions")
+async def generate_missing_transactions(
+    liability_id: int, db: Session = Depends(get_database)
+) -> dict[str, Any]:
+    """Auto-generate missing payment transactions from amortization schedule."""
+    service = LiabilitiesService(db)
+    created = service.generate_missing_transactions(liability_id)
+    return {"status": "success", "transactions_created": created}
 
 
 @router.delete("/{liability_id}")

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,6 +10,8 @@ import {
   BarChart2,
   Pencil,
   Info,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 import { liabilitiesApi, taggingApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
@@ -261,6 +263,35 @@ export function Liabilities() {
     notes: "",
   });
 
+  // Detection result for tag transactions
+  const [tagDetection, setTagDetection] = useState<{
+    has_receipt: boolean;
+    receipt: { date: string; amount: number } | null;
+    payments: Array<{ date: string; amount: number }>;
+  } | null>(null);
+
+  const handleTagChange = useCallback(async (tag: string) => {
+    setNewLiability((prev) => ({ ...prev, tag }));
+    setTagDetection(null);
+    if (!tag) return;
+
+    try {
+      const res = await liabilitiesApi.detectTransactions(tag);
+      const data = res.data;
+      setTagDetection(data);
+      if (data.has_receipt && data.receipt) {
+        setNewLiability((prev) => ({
+          ...prev,
+          tag,
+          principal_amount: String(data.receipt.amount),
+          start_date: data.receipt.date,
+        }));
+      }
+    } catch {
+      // Detection is best-effort
+    }
+  }, []);
+
   // Edit form
   const [editForm, setEditForm] = useState<{
     id: number | null;
@@ -345,6 +376,14 @@ export function Liabilities() {
   const reopenMutation = useMutation({
     mutationFn: (id: number) => liabilitiesApi.reopen(id),
     onSuccess: invalidate,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: (id: number) => liabilitiesApi.generateTransactions(id),
+    onSuccess: () => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ["liability-analysis", analysisModalId] });
+    },
   });
 
   // Summary calculations
@@ -531,11 +570,29 @@ export function Liabilities() {
                 <SelectDropdown
                   options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
                   value={newLiability.tag}
-                  onChange={(val) =>
-                    setNewLiability({ ...newLiability, tag: val })
-                  }
+                  onChange={handleTagChange}
                   placeholder={t("liabilities.selectTag")}
                 />
+                {tagDetection && !tagDetection.has_receipt && (
+                  <div className="flex items-start gap-2 mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm">
+                    <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                    <span className="text-amber-300">
+                      {t("liabilities.noReceiptWarning")}
+                    </span>
+                  </div>
+                )}
+                {tagDetection?.has_receipt && (
+                  <div className="flex items-start gap-2 mt-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-sm">
+                    <CheckCircle size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <span className="text-emerald-300">
+                      {t("liabilities.receiptDetected", {
+                        amount: tagDetection.receipt?.amount.toLocaleString(),
+                        date: tagDetection.receipt?.date,
+                        payments: tagDetection.payments.length,
+                      })}
+                    </span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -886,20 +943,31 @@ export function Liabilities() {
                   </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex gap-2 mb-4">
-                  <button
-                    onClick={() => setAnalysisTab("schedule")}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "schedule" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-                  >
-                    {t("liabilities.amortizationSchedule")}
-                  </button>
-                  <button
-                    onClick={() => setAnalysisTab("actual")}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "actual" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-                  >
-                    {t("liabilities.actualVsExpected")}
-                  </button>
+                {/* Tabs + Generate Button */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAnalysisTab("schedule")}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "schedule" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
+                    >
+                      {t("liabilities.amortizationSchedule")}
+                    </button>
+                    <button
+                      onClick={() => setAnalysisTab("actual")}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "actual" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
+                    >
+                      {t("liabilities.actualVsExpected")}
+                    </button>
+                  </div>
+                  {analysisModalId && (
+                    <button
+                      onClick={() => generateMutation.mutate(analysisModalId)}
+                      disabled={generateMutation.isPending}
+                      className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
+                    >
+                      {generateMutation.isPending ? "..." : t("liabilities.generateMissing")}
+                    </button>
+                  )}
                 </div>
 
                 {/* Amortization Schedule Table */}

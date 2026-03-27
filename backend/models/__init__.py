@@ -12,7 +12,7 @@ from backend.models.credential import Credential
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
-from backend.models.liability import Liability
+from backend.models.liability import Liability, LiabilityTransaction
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.models.scraping import ScrapingHistory

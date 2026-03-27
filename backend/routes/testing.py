@@ -110,6 +110,11 @@ def _prepare_demo_database() -> None:
                 f"UPDATE liabilities SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
             ), {"offset": offset_str})
 
+        # Shift liability transaction dates
+        conn.execute(text(
+            "UPDATE liability_transactions SET date = date(date, :offset) WHERE date IS NOT NULL"
+        ), {"offset": offset_str})
+
         # Shift budget rules year/month
         rows = conn.execute(text(
             "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"

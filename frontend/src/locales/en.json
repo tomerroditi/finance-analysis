@@ -538,7 +538,10 @@
     "transactions": "Transactions",
     "selectTag": "Select tag",
     "fixedRate": "Fixed Rate",
-    "interest": "interest"
+    "interest": "interest",
+    "noReceiptWarning": "No loan receipt transaction found for this tag. The principal amount and start date must be entered manually.",
+    "receiptDetected": "Detected loan receipt: {{amount}} on {{date}} with {{payments}} payment(s) found.",
+    "generateMissing": "Generate Missing Payments"
   },
   "insurance": {
     "title": "Insurance",

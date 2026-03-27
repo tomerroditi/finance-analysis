@@ -268,12 +268,69 @@ class LiabilitiesService:
             "summary": summary,
         }
 
+    def detect_tag_transactions(self, tag: str) -> Dict[str, Any]:
+        """
+        Detect existing transactions for a liability tag.
+
+        Looks for transactions with ``category == LIABILITIES_CATEGORY``
+        and the given tag. Returns the receipt (first positive transaction)
+        info and a list of all payment transactions.
+
+        Parameters
+        ----------
+        tag : str
+            The liability tag to search for.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``receipt`` – dict with ``date`` and ``amount`` of the first
+              positive transaction, or ``None`` if not found.
+            - ``payments`` – list of payment dicts (negative transactions)
+              with ``date`` and ``amount``.
+            - ``has_receipt`` – bool indicating if a receipt was found.
+        """
+        all_txns = self.transactions_repo.get_table()
+        if all_txns.empty:
+            return {"receipt": None, "payments": [], "has_receipt": False}
+
+        mask = (all_txns["category"] == LIABILITIES_CATEGORY) & (all_txns["tag"] == tag)
+        matched = all_txns[mask].copy()
+
+        if matched.empty:
+            return {"receipt": None, "payments": [], "has_receipt": False}
+
+        matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
+        matched = matched.sort_values("date")
+
+        positive = matched[matched["amount"] > 0]
+        negative = matched[matched["amount"] < 0]
+
+        receipt = None
+        if not positive.empty:
+            first = positive.iloc[0]
+            receipt = {"date": str(first["date"]), "amount": float(first["amount"])}
+
+        payments = [
+            {"date": str(row["date"]), "amount": float(row["amount"])}
+            for _, row in negative.iterrows()
+        ]
+
+        return {
+            "receipt": receipt,
+            "payments": payments,
+            "has_receipt": receipt is not None,
+        }
+
     def get_liability_transactions(self, liability_id: int) -> List[Dict[str, Any]]:
         """
         Get all transactions associated with a liability.
 
         Fetches the liability's tag, then filters all transactions by
-        ``category == LIABILITIES_CATEGORY`` and matching tag, sorted by date.
+        ``category == LIABILITIES_CATEGORY`` and matching tag, and also
+        includes auto-generated liability transactions. Sorted by date.
 
         Parameters
         ----------
@@ -285,25 +342,42 @@ class LiabilitiesService:
         list[dict]
             Matching transactions sorted by date ascending.
         """
+        from sqlalchemy import select
+
+        from backend.models.liability import LiabilityTransaction
+
         record_df = self.liabilities_repo.get_by_id(liability_id)
         tag = record_df.iloc[0]["tag"]
 
+        # Real transactions from bank/CC/cash tables
         all_txns = self.transactions_repo.get_table()
-        if all_txns.empty:
+        frames = []
+        if not all_txns.empty:
+            mask = (all_txns["category"] == LIABILITIES_CATEGORY) & (all_txns["tag"] == tag)
+            matched = all_txns[mask].copy()
+            if not matched.empty:
+                matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
+                frames.append(matched)
+
+        # Auto-generated liability transactions
+        gen_txns = self.db.execute(
+            select(LiabilityTransaction).where(LiabilityTransaction.liability_id == liability_id)
+        ).scalars().all()
+        if gen_txns:
+            gen_df = pd.DataFrame([
+                {"date": t.date, "amount": t.amount, "description": t.description,
+                 "source": "liability_transactions", "category": LIABILITIES_CATEGORY,
+                 "tag": tag, "payment_number": t.payment_number}
+                for t in gen_txns
+            ])
+            frames.append(gen_df)
+
+        if not frames:
             return []
 
-        mask = (all_txns["category"] == LIABILITIES_CATEGORY) & (all_txns["tag"] == tag)
-        matched = all_txns[mask].copy()
-
-        if matched.empty:
-            return []
-
-        matched = matched.sort_values("date")
-        matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
-
-        # Replace NaN with None for JSON safety
-        matched = matched.where(pd.notnull(matched), None)
-        return matched.to_dict(orient="records")
+        combined = pd.concat(frames, ignore_index=True).sort_values("date")
+        combined = combined.where(pd.notnull(combined), None)
+        return combined.to_dict(orient="records")
 
     @staticmethod
     def calculate_amortization_schedule(
@@ -431,6 +505,66 @@ class LiabilitiesService:
         record["remaining_balance"] = round(remaining_balance, 2)
         record["total_paid"] = round(total_paid, 2)
         record["percent_paid"] = round(percent_paid, 2)
+
+    def generate_missing_transactions(self, liability_id: int) -> int:
+        """Auto-generate missing payment transactions from the amortization schedule.
+
+        Creates liability-specific transactions (not bank transactions) for
+        months where no payment exists, up to and including the current month.
+
+        Parameters
+        ----------
+        liability_id : int
+            ID of the liability to generate transactions for.
+
+        Returns
+        -------
+        int
+            Number of transactions created.
+        """
+        from backend.models.liability import LiabilityTransaction
+
+        record = self.get_liability(liability_id)
+        start_date_obj = date.fromisoformat(record["start_date"])
+
+        schedule = self.calculate_amortization_schedule(
+            principal=record["principal_amount"],
+            annual_rate=record["interest_rate"],
+            term_months=record["term_months"],
+            start_date=start_date_obj,
+        )
+
+        # Get existing payment months from all sources (real + generated)
+        transactions = self.get_liability_transactions(liability_id)
+        existing_months = set()
+        for txn in transactions:
+            if txn.get("amount") is not None and txn["amount"] < 0:
+                existing_months.add(str(txn["date"])[:7])
+
+        current_month = date.today().strftime("%Y-%m")
+        created = 0
+
+        for entry in schedule:
+            month_key = entry["date"][:7]
+            if month_key > current_month:
+                break
+            if month_key in existing_months:
+                continue
+
+            txn = LiabilityTransaction(
+                liability_id=liability_id,
+                date=entry["date"],
+                amount=-entry["payment"],
+                payment_number=entry["payment_number"],
+                description=f"{record['name']} - Payment #{entry['payment_number']}",
+            )
+            self.db.add(txn)
+            created += 1
+
+        if created > 0:
+            self.db.commit()
+
+        return created
 
     @staticmethod
     def _compare_actual_vs_expected(
