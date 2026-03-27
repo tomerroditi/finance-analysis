@@ -828,6 +828,14 @@ export function Liabilities() {
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
                     <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
+                      {t("liabilities.totalInterestCost")}
+                    </p>
+                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
+                      {formatCurrency(analysisData.summary.total_interest_cost)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
                       {t("liabilities.interestPaid")}
                     </p>
                     <p className="text-lg font-bold text-white mt-1" dir="ltr">

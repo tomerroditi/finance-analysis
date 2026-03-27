@@ -528,6 +528,7 @@
     "difference": "Difference",
     "totalReceipts": "Total Received",
     "totalPaymentsMade": "Total Payments Made",
+    "totalInterestCost": "Total Interest Cost",
     "interestPaid": "Interest Paid",
     "interestRemaining": "Interest Remaining",
     "noLiabilities": "No liabilities tracked yet",

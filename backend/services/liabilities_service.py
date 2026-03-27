@@ -463,9 +463,13 @@ class LiabilitiesService:
                 month_key = str(txn["date"])[:7]  # YYYY-MM
                 actual_by_month[month_key] = actual_by_month.get(month_key, 0.0) + abs(amount)
 
+        current_month = date.today().strftime("%Y-%m")
+
         result = []
         for entry in schedule:
             month_key = entry["date"][:7]
+            if month_key > current_month:
+                break
             expected = entry["payment"]
             actual = actual_by_month.get(month_key, 0.0)
             result.append({
