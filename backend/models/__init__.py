@@ -47,6 +47,7 @@ __all__ = [
     "Investment",
     "InvestmentBalanceSnapshot",
     "Liability",
+    "LiabilityTransaction",
     "TaggingRule",
     "ScrapingHistory",
     # Refund linking
