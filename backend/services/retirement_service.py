@@ -478,10 +478,19 @@ class RetirementService:
 
         raise ValueError(f"Cannot auto-adjust field: {field}")
 
-    def _solve_target_retirement_age(self, goal: dict, status: dict) -> int:
-        """Find earliest age where net worth reaches FIRE number.
+    def _survives_drawdown(self, goal: dict, status: dict) -> bool:
+        """Check if portfolio survives through life expectancy.
 
-        Simulates accumulation year by year until net worth >= FIRE number.
+        Runs the full projection and checks that baseline never hits zero.
+        """
+        projection = self._project_net_worth(goal, status)
+        return self._find_depletion_age(projection, goal["life_expectancy"]) is None
+
+    def _solve_target_retirement_age(self, goal: dict, status: dict) -> int:
+        """Find earliest retirement age where portfolio survives to life expectancy.
+
+        For each candidate age (starting from earliest FIRE-eligible), runs
+        the full drawdown simulation to verify longevity.
         """
         annual_expenses = goal["monthly_expenses_in_retirement"] * 12
         fire_number = annual_expenses / goal["withdrawal_rate"]
@@ -494,22 +503,35 @@ class RetirementService:
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
         base_nw = status["net_worth"] - kh_balance
 
+        # First find earliest age where FIRE number is reached
         nw = base_nw
         kh = kh_balance
+        fire_eligible_age = None
         for year_offset in range(goal["life_expectancy"] - current_age + 1):
             total = nw + kh
             if total >= fire_number:
-                return current_age + year_offset
+                fire_eligible_age = current_age + year_offset
+                break
             nw = nw * (1 + rate) + annual_savings
             kh = kh * (1 + rate) + kh_monthly * 12
+
+        if fire_eligible_age is None:
+            return -1
+
+        # Now check each candidate age from fire_eligible_age onward
+        # to find the earliest that also survives through life expectancy
+        for candidate_age in range(fire_eligible_age, goal["life_expectancy"] + 1):
+            test_goal = {**goal, "target_retirement_age": candidate_age}
+            if self._survives_drawdown(test_goal, status):
+                return candidate_age
 
         return -1  # Not reachable
 
     def _solve_monthly_expenses(self, goal: dict, status: dict) -> float:
-        """Find max monthly expenses affordable at target retirement age.
+        """Find max monthly expenses where portfolio survives to life expectancy.
 
-        Projects net worth at target age, then derives affordable expenses
-        from FIRE formula: expenses = net_worth_at_target * withdrawal_rate / 12.
+        Uses binary search: upper bound from FIRE formula, then verifies
+        drawdown longevity.
         """
         current_age = goal["current_age"]
         target_age = goal["target_retirement_age"]
@@ -531,46 +553,49 @@ class RetirementService:
             kh = kh * (1 + rate) + kh_monthly * 12
 
         projected_nw = nw + kh
-        annual_expenses = projected_nw * goal["withdrawal_rate"]
-        return annual_expenses / 12
+        # Upper bound: FIRE formula max (may not survive drawdown)
+        max_monthly = (projected_nw * goal["withdrawal_rate"]) / 12
+        if max_monthly <= 0:
+            return 0.0
+
+        # Binary search for max expenses that survive drawdown
+        lo, hi = 0.0, max_monthly
+        for _ in range(50):
+            mid = (lo + hi) / 2
+            test_goal = {**goal, "monthly_expenses_in_retirement": mid}
+            if self._survives_drawdown(test_goal, status):
+                lo = mid
+            else:
+                hi = mid
+            if hi - lo < 100:  # converge to within 100 ILS
+                break
+
+        return lo
 
     def _solve_return_rate(self, goal: dict, status: dict) -> float:
-        """Find minimum return rate needed to reach FIRE by target age.
+        """Find minimum return rate where portfolio survives to life expectancy.
 
-        Uses binary search over return rates.
+        Uses binary search over return rates, checking both FIRE number
+        and drawdown longevity.
         """
-        annual_expenses = goal["monthly_expenses_in_retirement"] * 12
-        fire_number = annual_expenses / goal["withdrawal_rate"]
-
         current_age = goal["current_age"]
         target_age = goal["target_retirement_age"]
         years = target_age - current_age
         if years <= 0:
             return 0.0
 
-        monthly_savings = status["monthly_savings"]
-        annual_savings = monthly_savings * 12
-        kh_balance = goal["keren_hishtalmut_balance"]
-        kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
-        base_nw = status["net_worth"] - kh_balance
-
-        def projected_nw_at_rate(rate: float) -> float:
-            nw = base_nw
-            kh = kh_balance
-            for _ in range(years):
-                nw = nw * (1 + rate) + annual_savings
-                kh = kh * (1 + rate) + kh_monthly * 12
-            return nw + kh
-
         # Binary search between -10% and 30%
         lo, hi = -0.10, 0.30
+
         # Check if achievable at max rate
-        if projected_nw_at_rate(hi) < fire_number:
+        test_goal = {**goal, "expected_return_rate": hi}
+        if not self._survives_drawdown(test_goal, status):
             return -1  # Not achievable even at 30%
 
-        for _ in range(100):  # sufficient iterations for convergence
+        for _ in range(100):
             mid = (lo + hi) / 2
-            if projected_nw_at_rate(mid) >= fire_number:
+            test_goal = {**goal, "expected_return_rate": mid}
+            if self._survives_drawdown(test_goal, status):
                 hi = mid
             else:
                 lo = mid
