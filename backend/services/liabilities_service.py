@@ -231,18 +231,32 @@ class LiabilitiesService:
 
         actual_vs_expected = self._compare_actual_vs_expected(schedule, transactions)
 
+        receipts = [t for t in transactions if t["amount"] > 0]
         payments = [t for t in transactions if t["amount"] < 0]
-        total_paid = sum(abs(t["amount"]) for t in payments)
-        total_interest_paid = sum(
-            e["interest_portion"]
-            for e in schedule[: len(payments)]
-        )
+        total_receipts = sum(t["amount"] for t in receipts)
+        total_payments = sum(abs(t["amount"]) for t in payments)
+
         remaining_balance = schedule[len(payments)]["remaining_balance"] if len(payments) < len(schedule) else 0.0
 
+        # Total expected interest cost from amortization schedule
+        total_interest_cost = sum(e["interest_portion"] for e in schedule)
+
+        # Monthly payment from schedule (constant for fixed-rate)
+        monthly_payment = schedule[0]["payment"] if schedule else 0.0
+
+        # Total expected loan cost = sum of all scheduled payments
+        total_loan_cost = sum(e["payment"] for e in schedule)
+
+        percent_paid = (total_payments / record["principal_amount"] * 100) if record["principal_amount"] > 0 else 0.0
+
         summary = {
-            "total_paid": total_paid,
-            "total_interest_paid": total_interest_paid,
+            "total_receipts": total_receipts,
+            "total_payments": total_payments,
+            "total_interest_cost": total_interest_cost,
+            "total_loan_cost": total_loan_cost,
+            "monthly_payment": monthly_payment,
             "remaining_balance": remaining_balance,
+            "percent_paid": round(percent_paid, 1),
             "payments_made": len(payments),
         }
 
