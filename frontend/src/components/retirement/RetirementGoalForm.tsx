@@ -109,13 +109,24 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      retirementApi.upsertGoal({
-        ...form,
-        inflation_rate: form.inflation_rate / 100,
-        expected_return_rate: form.expected_return_rate / 100,
-        withdrawal_rate: form.withdrawal_rate / 100,
-      }),
+    mutationFn: () => {
+      // When auto-adjust is active with a solved value, apply it to the payload
+      const submitted = { ...form };
+      if (autoAdjustField && solvedData && solvedData.value !== -1) {
+        if (autoAdjustField === "expected_return_rate") {
+          submitted.expected_return_rate = solvedData.value * 100;
+        } else {
+          submitted[autoAdjustField] = solvedData.value;
+        }
+        setForm(submitted);
+      }
+      return retirementApi.upsertGoal({
+        ...submitted,
+        inflation_rate: submitted.inflation_rate / 100,
+        expected_return_rate: submitted.expected_return_rate / 100,
+        withdrawal_rate: submitted.withdrawal_rate / 100,
+      });
+    },
     onSuccess: (response) => {
       // Update goal cache so projections section appears immediately
       queryClient.setQueryData(["retirement", "goal"], response.data);
