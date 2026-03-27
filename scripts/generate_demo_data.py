@@ -37,6 +37,7 @@ from backend.models import (
     CreditCardTransaction,
     Investment,
     InvestmentBalanceSnapshot,
+    Liability,
     ManualInvestmentTransaction,
     PendingRefund,
     RefundLink,
@@ -106,7 +107,7 @@ CATEGORIES_DATA = {
     "Salary": (["Tech Company", "School District"], "💵"),
     "Other Income": (["Prior Wealth", "Freelance"], "💵"),
     "Investments": (["Stock Market Fund", "Savings Plan", "Corporate Bond"], "💲"),
-    "Liabilities": (["Mortgage"], "💳"),
+    "Liabilities": (["Mortgage", "Car Loan"], "💳"),
     "Credit Cards": ([], None),
     "Ignore": (["Credit Card Bill", "Internal Transactions"], "🚫"),
     "Home Renovation": (["Materials", "Labor", "Furniture"], "🏠"),
@@ -1066,8 +1067,88 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
     session.add(txn)
     all_bank_txns.append(txn)
 
+    # Car loan receipt — 8 months into the period
+    car_loan_start = START_DATE + timedelta(days=240)
+    bank_counter += 1
+    txn = BankTransaction(
+        id=f"demo-bank-{bank_counter:04d}",
+        date=car_loan_start.isoformat(),
+        provider="hapoalim",
+        account_name="Main Account",
+        description="CAR LOAN RECEIPT - MIZRAHI",
+        amount=120000.0,
+        category="Liabilities",
+        tag="Car Loan",
+        source="bank_transactions",
+        type="normal",
+        status="completed",
+    )
+    session.add(txn)
+    all_bank_txns.append(txn)
+
+    # Car loan monthly payments — from the month after receipt
+    car_start_y, car_start_m = car_loan_start.year, car_loan_start.month
+    car_ny, car_nm = next_month(car_start_y, car_start_m)
+    car_months = list(month_range(date(car_ny, car_nm, 1), REFERENCE_DATE))
+    for year, month in car_months:
+        bank_counter += 1
+        # Varying payment: base ~2100 with ±200 random variance
+        payment = round(-2100 + random.uniform(-200, 200), 2)
+        txn = BankTransaction(
+            id=f"demo-bank-{bank_counter:04d}",
+            date=date(year, month, 10).isoformat(),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="CAR LOAN PAYMENT - MIZRAHI",
+            amount=payment,
+            category="Liabilities",
+            tag="Car Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(txn)
+        all_bank_txns.append(txn)
+
     session.flush()
     return all_bank_txns
+
+
+def create_liabilities(session):
+    """Create liability records for Mortgage and Car Loan."""
+    car_loan_start = START_DATE + timedelta(days=240)
+
+    mortgage = Liability(
+        name="Home Mortgage",
+        lender="Bank Leumi",
+        category="Liabilities",
+        tag="Mortgage",
+        principal_amount=450000.0,
+        interest_rate=3.5,
+        term_months=240,
+        start_date=START_DATE.isoformat(),
+        is_paid_off=0,
+        notes="20-year fixed rate mortgage for apartment in Tel Aviv",
+        created_date=START_DATE.isoformat(),
+    )
+    session.add(mortgage)
+
+    car_loan = Liability(
+        name="Car Loan",
+        lender="Bank Mizrahi",
+        category="Liabilities",
+        tag="Car Loan",
+        principal_amount=120000.0,
+        interest_rate=5.2,
+        term_months=60,
+        start_date=car_loan_start.isoformat(),
+        is_paid_off=0,
+        notes="5-year car loan for family car",
+        created_date=car_loan_start.isoformat(),
+    )
+    session.add(car_loan)
+
+    session.flush()
 
 
 def generate_cash_transactions(session):
@@ -1708,7 +1789,11 @@ def main():
         print("  Creating pending refunds...")
         create_pending_refunds(session, cc_txns, bank_txns)
 
-        # 15. Scraping history
+        # 15. Liabilities
+        print("  Creating liabilities...")
+        create_liabilities(session)
+
+        # 16. Scraping history
         print("  Creating scraping history...")
         create_scraping_history(session)
 
@@ -1733,6 +1818,7 @@ def main():
             "bank_balances",
             "cash_balances",
             "split_transactions",
+            "liabilities",
         ]
         from sqlalchemy import text
         for table in tables:

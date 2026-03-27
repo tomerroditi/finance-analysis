@@ -104,6 +104,12 @@ def _prepare_demo_database() -> None:
             "UPDATE scraping_history SET date = date(date, :offset)"
         ), {"offset": offset_str})
 
+        # Shift liability date fields
+        for col in ["start_date", "paid_off_date", "created_date"]:
+            conn.execute(text(
+                f"UPDATE liabilities SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
+            ), {"offset": offset_str})
+
         # Shift budget rules year/month
         rows = conn.execute(text(
             "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"
