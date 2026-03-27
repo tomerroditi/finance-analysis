@@ -484,10 +484,14 @@ export const retirementApi = {
   getStatus: () => api.get<RetirementStatus>("/retirement/status"),
   getProjections: () =>
     api.get<RetirementProjections>("/retirement/projections"),
+  previewProjections: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementProjections>("/retirement/projections", data),
   getKerenHishtalmutBalance: () =>
     api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
+  previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementSuggestions>("/retirement/suggestions", data),
   solveForField: (field: string) =>
     api.get<{ field: string; value: number; unit: string }>(
       `/retirement/solve/${field}`,

@@ -138,8 +138,14 @@ class RetirementService:
             "monthly_savings": monthly_savings,
         }
 
-    def get_projections(self) -> dict:
+    def get_projections(self, goal_override: dict | None = None) -> dict:
         """Compute FIRE projections based on goal + real data.
+
+        Parameters
+        ----------
+        goal_override : dict or None
+            If provided, use these goal params instead of reading from DB.
+            Allows preview calculations without saving.
 
         Returns
         -------
@@ -148,7 +154,7 @@ class RetirementService:
             earliest_possible_retirement_age, monthly_savings_needed,
             progress_pct, readiness, net_worth_projection, income_projection.
         """
-        goal_data = self.get_goal()
+        goal_data = goal_override or self.get_goal()
         if not goal_data:
             raise EntityNotFoundException("Retirement goal not configured")
 
@@ -386,8 +392,13 @@ class RetirementService:
 
         return result
 
-    def solve_all_fields(self) -> dict:
+    def solve_all_fields(self, goal_override: dict | None = None) -> dict:
         """Solve for all adjustable fields to find values that reach FIRE.
+
+        Parameters
+        ----------
+        goal_override : dict or None
+            If provided, use these goal params instead of reading from DB.
 
         Returns
         -------
@@ -396,7 +407,7 @@ class RetirementService:
             expected_return_rate. Each value is the solved result or -1 if
             not achievable.
         """
-        goal_data = self.get_goal()
+        goal_data = goal_override or self.get_goal()
         if not goal_data:
             raise EntityNotFoundException("Retirement goal not configured")
 

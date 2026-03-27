@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Target, BarChart3, Activity } from "lucide-react";
@@ -16,7 +15,6 @@ type SuggestionField = keyof RetirementSuggestions;
 export function EarlyRetirement() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [formKey, setFormKey] = useState(0);
 
   const { data: goal, isLoading: goalLoading } = useQuery({
     queryKey: ["retirement", "goal"],
@@ -28,6 +26,7 @@ export function EarlyRetirement() {
     queryFn: () => retirementApi.getStatus().then((r) => r.data),
   });
 
+  // Projections from saved goal (initial load only — previews overwrite this cache)
   const {
     data: projections,
     isLoading: projectionsLoading,
@@ -35,16 +34,20 @@ export function EarlyRetirement() {
   } = useQuery({
     queryKey: ["retirement", "projections"],
     queryFn: () => retirementApi.getProjections().then((r) => r.data),
-    enabled: !!goal,
+    enabled: !!goal && goal.id !== -1,
   });
 
   const { data: suggestions } = useQuery({
     queryKey: ["retirement", "suggestions"],
     queryFn: () => retirementApi.getSuggestions().then((r) => r.data),
-    enabled: !!goal && !!projections && projections.readiness !== "on_track",
+    enabled:
+      !!goal &&
+      goal.id !== -1 &&
+      !!projections &&
+      projections.readiness !== "on_track",
   });
 
-  // Adjust mutation: saves the current goal with one field overridden
+  // Adjust: preview with one field changed (no save)
   const adjustMutation = useMutation({
     mutationFn: ({
       field,
@@ -54,24 +57,23 @@ export function EarlyRetirement() {
       value: number;
     }) => {
       const currentGoal = goal as RetirementGoal;
-      return retirementApi.upsertGoal({
-        ...currentGoal,
-        [field]: value,
-      });
+      const adjusted = { ...currentGoal, [field]: value };
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, ...payload } = adjusted;
+      return Promise.all([
+        retirementApi.previewProjections(payload),
+        retirementApi.previewSuggestions(payload),
+      ]);
     },
-    onSuccess: (response) => {
-      queryClient.setQueryData(["retirement", "goal"], response.data);
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "projections"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "status"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "suggestions"],
-      });
-      // Bump form key to force re-mount so form picks up new goal values
-      setFormKey((k) => k + 1);
+    onSuccess: ([projectionsRes, suggestionsRes]) => {
+      queryClient.setQueryData(
+        ["retirement", "projections"],
+        projectionsRes.data,
+      );
+      queryClient.setQueryData(
+        ["retirement", "suggestions"],
+        suggestionsRes.data,
+      );
     },
   });
 
@@ -79,6 +81,8 @@ export function EarlyRetirement() {
     if (!goal) return;
     adjustMutation.mutate({ field, value });
   };
+
+  const isBusy = projectionsFetching || adjustMutation.isPending;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -112,20 +116,19 @@ export function EarlyRetirement() {
           <FormSkeleton />
         ) : (
           <RetirementGoalForm
-            key={formKey}
             goal={goal ?? null}
-            isCalculating={projectionsFetching || adjustMutation.isPending}
+            isCalculating={isBusy}
           />
         )}
       </Section>
 
       {/* Section 3: Projections */}
-      {!!goal && (
+      {(!!goal || !!projections) && (
         <Section
           icon={<BarChart3 size={18} className="text-purple-400" />}
           title={t("earlyRetirement.sections.projections")}
         >
-          {projectionsLoading || projectionsFetching || adjustMutation.isPending ? (
+          {projectionsLoading || isBusy ? (
             <ProjectionsSkeleton />
           ) : projections ? (
             <RetirementProjections

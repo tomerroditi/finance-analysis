@@ -731,6 +731,8 @@
       "bituachLeumiEstimate": "קצבת ביטוח לאומי חודשית",
       "otherPassiveIncome": "הכנסה פסיבית אחרת",
       "calculate": "חשב",
+      "savePlan": "שמור תוכנית",
+      "resetPlan": "איפוס",
       "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}"
     },
     "status": {

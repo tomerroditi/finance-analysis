@@ -731,6 +731,8 @@
       "bituachLeumiEstimate": "Bituach Leumi Monthly",
       "otherPassiveIncome": "Other Passive Income",
       "calculate": "Calculate",
+      "savePlan": "Save Plan",
+      "resetPlan": "Reset",
       "useScrapedKh": "Use scraped balance: {{amount}}"
     },
     "status": {

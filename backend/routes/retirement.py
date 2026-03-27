@@ -84,16 +84,34 @@ async def get_status(db: Session = Depends(get_database)):
 
 @router.get("/projections")
 async def get_projections(db: Session = Depends(get_database)):
-    """Get FIRE projections and retirement income analysis."""
+    """Get FIRE projections from the saved goal."""
     service = RetirementService(db)
     return service.get_projections()
 
 
+@router.post("/projections")
+async def preview_projections(
+    data: RetirementGoalUpsert, db: Session = Depends(get_database)
+):
+    """Compute FIRE projections from provided goal params without saving."""
+    service = RetirementService(db)
+    return service.get_projections(goal_override=data.model_dump())
+
+
 @router.get("/suggestions")
 async def get_suggestions(db: Session = Depends(get_database)):
-    """Solve all adjustable fields to suggest values that would reach FIRE."""
+    """Solve all adjustable fields from the saved goal."""
     service = RetirementService(db)
     return service.solve_all_fields()
+
+
+@router.post("/suggestions")
+async def preview_suggestions(
+    data: RetirementGoalUpsert, db: Session = Depends(get_database)
+):
+    """Solve all adjustable fields from provided goal params without saving."""
+    service = RetirementService(db)
+    return service.solve_all_fields(goal_override=data.model_dump())
 
 
 @router.get("/solve/{field}")

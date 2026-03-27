@@ -5,7 +5,15 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Save, ChevronDown, ChevronUp, Info, RefreshCw } from "lucide-react";
+import {
+  Calculator,
+  Save,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  RefreshCw,
+} from "lucide-react";
 import { retirementApi, type RetirementGoal } from "../../services/api";
 
 interface Props {
@@ -18,6 +26,15 @@ const ILS_FORMAT = new Intl.NumberFormat("he-IL", {
   currency: "ILS",
   maximumFractionDigits: 0,
 });
+
+function formToPayload(form: ReturnType<typeof goalToForm>) {
+  return {
+    ...form,
+    inflation_rate: form.inflation_rate / 100,
+    expected_return_rate: form.expected_return_rate / 100,
+    withdrawal_rate: form.withdrawal_rate / 100,
+  };
+}
 
 function goalToForm(goal: RetirementGoal | null) {
   if (!goal) {
@@ -61,54 +78,89 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [form, setForm] = useState(() => goalToForm(goal));
 
-  // Only populate form from server goal on initial load (when goal
-  // transitions from null/undefined to an actual object for the first time).
-  // After that, the form is the source of truth — saves should NOT reset it.
   const [goalLoaded, setGoalLoaded] = useState(!!goal);
   if (!goalLoaded && goal) {
     setGoalLoaded(true);
     setForm(goalToForm(goal));
   }
 
-  // Auto-detect Keren Hishtalmut balance from scraped data
   const { data: khScraped } = useQuery({
     queryKey: ["retirement", "keren-hishtalmut-balance"],
     queryFn: () =>
       retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
   });
 
-  const mutation = useMutation({
-    mutationFn: () =>
-      retirementApi.upsertGoal({
-        ...form,
-        inflation_rate: form.inflation_rate / 100,
-        expected_return_rate: form.expected_return_rate / 100,
-        withdrawal_rate: form.withdrawal_rate / 100,
-      }),
+  // Calculate: preview projections without saving
+  const calculateMutation = useMutation({
+    mutationFn: () => {
+      const payload = formToPayload(form);
+      return Promise.all([
+        retirementApi.previewProjections(payload),
+        retirementApi.previewSuggestions(payload),
+      ]);
+    },
+    onSuccess: ([projectionsRes, suggestionsRes]) => {
+      queryClient.setQueryData(
+        ["retirement", "projections"],
+        projectionsRes.data,
+      );
+      queryClient.setQueryData(
+        ["retirement", "suggestions"],
+        suggestionsRes.data,
+      );
+      // Ensure projections section is visible (set a stub goal if none saved)
+      if (!goal) {
+        queryClient.setQueryData(["retirement", "goal"], { id: -1 });
+      }
+    },
+  });
+
+  // Save Plan: persist to DB
+  const saveMutation = useMutation({
+    mutationFn: () => retirementApi.upsertGoal(formToPayload(form)),
     onSuccess: (response) => {
       queryClient.setQueryData(["retirement", "goal"], response.data);
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "projections"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "status"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["retirement", "suggestions"],
-      });
+      setHasUnsavedChanges(false);
     },
   });
 
   const handleChange = (field: string, value: number | boolean | string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+    setHasUnsavedChanges(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleCalculate = (e: React.FormEvent) => {
     e.preventDefault();
-    mutation.mutate();
+    calculateMutation.mutate();
+  };
+
+  const handleSave = () => {
+    saveMutation.mutate();
+  };
+
+  const handleReset = () => {
+    if (!goal) return;
+    setForm(goalToForm(goal));
+    setHasUnsavedChanges(false);
+    // Re-preview with saved values
+    const payload = formToPayload(goalToForm(goal));
+    Promise.all([
+      retirementApi.previewProjections(payload),
+      retirementApi.previewSuggestions(payload),
+    ]).then(([projectionsRes, suggestionsRes]) => {
+      queryClient.setQueryData(
+        ["retirement", "projections"],
+        projectionsRes.data,
+      );
+      queryClient.setQueryData(
+        ["retirement", "suggestions"],
+        suggestionsRes.data,
+      );
+    });
   };
 
   const applyScrapedKh = () => {
@@ -117,10 +169,13 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
     }
   };
 
-  const isBusy = mutation.isPending || !!isCalculating;
+  const isBusy =
+    calculateMutation.isPending ||
+    saveMutation.isPending ||
+    !!isCalculating;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleCalculate} className="space-y-6">
       {/* Core Parameters */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <NumberField
@@ -307,14 +362,37 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
         </div>
       )}
 
-      <div className="flex justify-end">
+      {/* Action Buttons */}
+      <div className="flex items-center justify-end gap-3">
+        {goal && hasUnsavedChanges && (
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={isBusy}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--surface-light)] rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RotateCcw size={15} />
+            {t("earlyRetirement.form.resetPlan")}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isBusy || !hasUnsavedChanges}
+          className="flex items-center gap-2 px-4 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+        >
+          <Save size={15} />
+          {saveMutation.isPending
+            ? t("common.loading")
+            : t("earlyRetirement.form.savePlan")}
+        </button>
         <button
           type="submit"
           disabled={isBusy}
           className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
-          <Save size={16} />
-          {isBusy
+          <Calculator size={16} />
+          {calculateMutation.isPending || isCalculating
             ? t("common.loading")
             : t("earlyRetirement.form.calculate")}
         </button>
