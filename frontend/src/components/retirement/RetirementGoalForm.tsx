@@ -94,9 +94,9 @@ export function RetirementGoalForm({
 
   const [form, setForm] = useState(() => goalToForm(goal));
 
-  // Sync form from saved goal on first real load (ignore stub { id: -1 })
+  // Sync form from saved goal on first load
   const [goalLoaded, setGoalLoaded] = useState(!!goal);
-  if (!goalLoaded && goal && goal.id !== -1) {
+  if (!goalLoaded && goal) {
     setGoalLoaded(true);
     setForm(goalToForm(goal));
   }
@@ -125,10 +125,6 @@ export function RetirementGoalForm({
         ["retirement", "suggestions"],
         suggestionsRes.data,
       );
-      // Ensure projections section is visible (set a stub goal if none saved)
-      if (!goal) {
-        queryClient.setQueryData(["retirement", "goal"], { id: -1 });
-      }
     },
   });
 
