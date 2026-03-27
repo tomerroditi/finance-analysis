@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   useMutation,
@@ -64,7 +64,6 @@ function goalToForm(goal: RetirementGoal | null) {
   };
 }
 
-// Maps backend solve field names to the API field param
 const SOLVE_FIELD_MAP: Record<
   Exclude<AutoAdjustField, null>,
   string
@@ -81,13 +80,14 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
   const [autoAdjustField, setAutoAdjustField] =
     useState<AutoAdjustField>(null);
 
-  const initialForm = useMemo(() => goalToForm(goal), [goal]);
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(() => goalToForm(goal));
 
-  // Reset form when goal changes (e.g. after save)
-  const [prevGoal, setPrevGoal] = useState(goal);
-  if (goal !== prevGoal) {
-    setPrevGoal(goal);
+  // Only populate form from server goal on initial load (when goal
+  // transitions from null/undefined to an actual object for the first time).
+  // After that, the form is the source of truth — saves should NOT reset it.
+  const [goalLoaded, setGoalLoaded] = useState(!!goal);
+  if (!goalLoaded && goal) {
+    setGoalLoaded(true);
     setForm(goalToForm(goal));
   }
 
@@ -117,9 +117,18 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
         withdrawal_rate: form.withdrawal_rate / 100,
       }),
     onSuccess: (response) => {
-      // Set goal cache immediately so projections section appears right away
+      // Update goal cache so projections section appears immediately
       queryClient.setQueryData(["retirement", "goal"], response.data);
-      queryClient.invalidateQueries({ queryKey: ["retirement"] });
+      // Refetch projections, status, and solve queries
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "projections"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "status"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "solve"],
+      });
     },
   });
 
@@ -142,7 +151,6 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
     setAutoAdjustField((prev) => (prev === field ? null : field));
   };
 
-  // Format the solved value for display
   const getSolvedDisplayValue = (): string | null => {
     if (!solvedData || !autoAdjustField) return null;
     if (solvedData.value === -1)
@@ -163,6 +171,8 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
     }
     return null;
   };
+
+  const isBusy = mutation.isPending || !!isCalculating;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -396,11 +406,11 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={mutation.isPending || !!isCalculating}
+          disabled={isBusy}
           className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           <Save size={16} />
-          {mutation.isPending || isCalculating
+          {isBusy
             ? t("common.loading")
             : t("earlyRetirement.form.calculate")}
         </button>
