@@ -594,6 +594,7 @@ export function Liabilities() {
                   </div>
                 )}
               </div>
+              {!tagDetection?.has_receipt && (
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.principalAmount")} *
@@ -610,6 +611,7 @@ export function Liabilities() {
                   }
                 />
               </div>
+              )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.interestRate")} (%) *
@@ -643,6 +645,7 @@ export function Liabilities() {
                   }
                 />
               </div>
+              {!tagDetection?.has_receipt && (
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.startDate")} *
@@ -659,6 +662,7 @@ export function Liabilities() {
                   }
                 />
               </div>
+              )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.notes")}
