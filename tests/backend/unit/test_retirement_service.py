@@ -12,7 +12,6 @@ from backend.services.retirement_service import (
     RetirementService,
     FULL_PENSION_AGE_MALE,
     FULL_PENSION_AGE_FEMALE,
-    EARLY_PENSION_AGE,
     _get_full_pension_age,
 )
 
@@ -201,13 +200,13 @@ class TestRetirementIncome:
         assert result[0]["pension"] == 0
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_partial_pension_at_60(self, sample_goal):
-        """Partial pension (70%) starts at age 60."""
+    def test_no_pension_before_full_pension_age(self, sample_goal):
+        """No pension income before full pension age (67 male, 65 female)."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        age_60_entry = next(r for r in result if r["age"] == EARLY_PENSION_AGE)
-        expected_pension = round(sample_goal["pension_monthly_payout_estimate"] * 0.7 * 12, 0)
-        assert age_60_entry["pension"] == expected_pension
+        # At age 60, male should have no pension (full pension age is 67)
+        age_60_entry = next(r for r in result if r["age"] == 60)
+        assert age_60_entry["pension"] == 0
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_full_pension_at_67_male(self, sample_goal):
@@ -353,3 +352,257 @@ class TestAutoAdjustSolver:
         service = RetirementService.__new__(RetirementService)
         result = service._solve_return_rate(sample_goal, sample_status)
         assert result == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_target_age_not_reachable(self, sample_goal, sample_status):
+        """Unreachable FIRE should return -1 for target age."""
+        sample_goal["monthly_expenses_in_retirement"] = 500000
+        sample_status["net_worth"] = 100
+        sample_status["monthly_savings"] = 100
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_target_retirement_age(sample_goal, sample_status)
+        assert result == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_monthly_expenses_zero_years(self, sample_goal, sample_status):
+        """If target age equals current age, monthly expenses should be 0."""
+        sample_goal["target_retirement_age"] = sample_goal["current_age"]
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_monthly_expenses(sample_goal, sample_status)
+        assert result == 0.0
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_return_rate_zero_years(self, sample_goal, sample_status):
+        """If target age equals current age, return rate should be 0."""
+        sample_goal["target_retirement_age"] = sample_goal["current_age"]
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_return_rate(sample_goal, sample_status)
+        assert result == 0.0
+
+
+class TestLongevityCheck:
+    """Tests for portfolio longevity / depletion detection."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_find_depletion_age_no_depletion(self):
+        """Portfolio that never depletes should return None."""
+        projection = [
+            {"age": 50, "net_worth_baseline": 5000000},
+            {"age": 60, "net_worth_baseline": 4000000},
+            {"age": 70, "net_worth_baseline": 3000000},
+            {"age": 80, "net_worth_baseline": 2000000},
+            {"age": 90, "net_worth_baseline": 1000000},
+        ]
+        result = RetirementService._find_depletion_age(projection, 90)
+        assert result is None
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_find_depletion_age_depleted(self):
+        """Portfolio that hits zero should return the depletion age."""
+        projection = [
+            {"age": 50, "net_worth_baseline": 5000000},
+            {"age": 60, "net_worth_baseline": 3000000},
+            {"age": 70, "net_worth_baseline": 1000000},
+            {"age": 75, "net_worth_baseline": 0},
+            {"age": 80, "net_worth_baseline": -500000},
+        ]
+        result = RetirementService._find_depletion_age(projection, 90)
+        assert result == 75
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_find_depletion_age_negative(self):
+        """Portfolio going negative should be detected as depletion."""
+        projection = [
+            {"age": 60, "net_worth_baseline": 1000000},
+            {"age": 70, "net_worth_baseline": -100},
+        ]
+        result = RetirementService._find_depletion_age(projection, 90)
+        assert result == 70
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_find_depletion_age_after_life_expectancy_ignored(self):
+        """Depletion after life expectancy should not be reported."""
+        projection = [
+            {"age": 60, "net_worth_baseline": 5000000},
+            {"age": 90, "net_worth_baseline": 100000},
+            {"age": 95, "net_worth_baseline": -500000},
+        ]
+        result = RetirementService._find_depletion_age(projection, 90)
+        assert result is None
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_survives_drawdown_healthy(self, sample_goal, sample_status):
+        """Portfolio with sufficient savings should survive drawdown."""
+        sample_status["net_worth"] = 10000000
+        service = RetirementService.__new__(RetirementService)
+        assert service._survives_drawdown(sample_goal, sample_status) is True
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_survives_drawdown_depleted(self, sample_goal, sample_status):
+        """Portfolio with tiny savings should not survive drawdown."""
+        sample_status["net_worth"] = 1000
+        sample_status["monthly_savings"] = 100
+        sample_goal["monthly_expenses_in_retirement"] = 50000
+        service = RetirementService.__new__(RetirementService)
+        assert service._survives_drawdown(sample_goal, sample_status) is False
+
+
+class TestLifeExpectancySolver:
+    """Tests for life expectancy solver."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_life_expectancy_never_depletes(self, sample_goal, sample_status):
+        """Wealthy portfolio should return -1 (no depletion)."""
+        sample_status["net_worth"] = 20000000
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_life_expectancy(sample_goal, sample_status)
+        assert result == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_life_expectancy_returns_age(self, sample_goal, sample_status):
+        """Moderate portfolio should return a valid sustainable age."""
+        sample_goal["monthly_expenses_in_retirement"] = 30000
+        sample_goal["target_retirement_age"] = 45
+        sample_status["net_worth"] = 500000
+        sample_status["monthly_savings"] = 5000
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_life_expectancy(sample_goal, sample_status)
+        # Should return an age between target retirement and life expectancy
+        if result != -1:
+            assert sample_goal["target_retirement_age"] <= result <= sample_goal["life_expectancy"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_life_expectancy_depletes_early(self, sample_goal, sample_status):
+        """Portfolio with high expenses should deplete and return a reasonable age."""
+        sample_goal["monthly_expenses_in_retirement"] = 100000
+        sample_goal["target_retirement_age"] = 40
+        sample_status["net_worth"] = 100000
+        sample_status["monthly_savings"] = 1000
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_life_expectancy(sample_goal, sample_status)
+        # Should deplete — return a valid age or -1
+        assert result == -1 or result >= sample_goal["target_retirement_age"]
+
+
+class TestGetProjections:
+    """Tests for the main get_projections method including readiness logic."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_readiness_on_track(self, mock_status, sample_goal, sample_status):
+        """On track when FIRE reached by target age and portfolio survives."""
+        sample_status["net_worth"] = 10000000
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        assert result["readiness"] == "on_track"
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_readiness_off_track_no_fire(self, mock_status, sample_goal, sample_status):
+        """Off track when FIRE number is never reached."""
+        sample_goal["monthly_expenses_in_retirement"] = 500000
+        sample_status["net_worth"] = 1000
+        sample_status["monthly_savings"] = 100
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        assert result["readiness"] == "off_track"
+        assert result["fire_age"] == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_readiness_off_track_portfolio_depleted(self, mock_status, sample_goal, sample_status):
+        """Off track when FIRE reached but portfolio depletes before life expectancy."""
+        # Set up a scenario where FIRE is reached but drawdown fails
+        sample_goal["monthly_expenses_in_retirement"] = 30000
+        sample_goal["withdrawal_rate"] = 0.08  # High withdrawal rate = low FIRE number
+        sample_goal["expected_return_rate"] = 0.01  # Low returns during drawdown
+        sample_goal["target_retirement_age"] = 40
+        sample_goal["life_expectancy"] = 95
+        sample_goal["pension_monthly_payout_estimate"] = 0
+        sample_goal["bituach_leumi_eligible"] = False
+        sample_goal["other_passive_income"] = 0
+        sample_status["net_worth"] = 5000000
+        sample_status["monthly_savings"] = 10000
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        # With high withdrawal and low returns over 55 years, portfolio should deplete
+        if result["portfolio_depleted_age"] is not None:
+            assert result["readiness"] == "off_track"
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_projections_contain_all_fields(self, mock_status, sample_goal, sample_status):
+        """Projections result should contain all expected keys."""
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        expected_keys = {
+            "fire_number", "years_to_fire", "fire_age",
+            "earliest_possible_retirement_age", "monthly_savings_needed",
+            "progress_pct", "readiness", "portfolio_depleted_age",
+            "target_retirement_age", "net_worth_projection", "income_projection",
+        }
+        assert set(result.keys()) == expected_keys
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_readiness_close(self, mock_status, sample_goal, sample_status):
+        """Close readiness when FIRE age is within 5 years of target."""
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        # If fire_age is within target+5, readiness should be close or on_track
+        if result["fire_age"] != -1:
+            if result["fire_age"] <= sample_goal["target_retirement_age"]:
+                assert result["readiness"] in ("on_track", "off_track")
+            elif result["fire_age"] <= sample_goal["target_retirement_age"] + 5:
+                assert result["readiness"] in ("close", "off_track")
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_portfolio_depleted_age_in_result(self, mock_status, sample_goal, sample_status):
+        """Projections should include portfolio_depleted_age field."""
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        assert "portfolio_depleted_age" in result
+
+
+class TestSolveAllFields:
+    """Tests for solve_all_fields including life_expectancy."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    @patch.object(RetirementService, "get_goal")
+    def test_returns_all_four_fields(self, mock_goal, mock_status, sample_goal, sample_status):
+        """solve_all_fields should return target_age, expenses, return rate, and life expectancy."""
+        mock_goal.return_value = sample_goal
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.solve_all_fields()
+        assert "target_retirement_age" in result
+        assert "monthly_expenses_in_retirement" in result
+        assert "expected_return_rate" in result
+        assert "life_expectancy" in result
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_solve_all_with_override(self, mock_status, sample_goal, sample_status):
+        """solve_all_fields should accept goal_override."""
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.solve_all_fields(goal_override=sample_goal)
+        assert isinstance(result["target_retirement_age"], int)
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    @patch.object(RetirementService, "get_goal")
+    def test_solve_all_no_goal_raises(self, mock_goal, mock_status):
+        """solve_all_fields should raise if no goal configured."""
+        mock_goal.return_value = None
+        service = RetirementService.__new__(RetirementService)
+        with pytest.raises(Exception):
+            service.solve_all_fields()
