@@ -13,6 +13,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import LIABILITIES_CATEGORY
+from backend.constants.tables import LiabilityTransactionsTableFields as LTF, Tables
 from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 
@@ -365,9 +366,11 @@ class LiabilitiesService:
         ).scalars().all()
         if gen_txns:
             gen_df = pd.DataFrame([
-                {"date": t.date, "amount": t.amount, "description": t.description,
-                 "source": "liability_transactions", "category": LIABILITIES_CATEGORY,
-                 "tag": tag, "payment_number": t.payment_number}
+                {LTF.DATE.value: t.date, LTF.AMOUNT.value: t.amount,
+                 LTF.DESCRIPTION.value: t.description,
+                 "source": Tables.LIABILITY_TRANSACTIONS.value,
+                 "category": LIABILITIES_CATEGORY, "tag": tag,
+                 LTF.PAYMENT_NUMBER.value: t.payment_number}
                 for t in gen_txns
             ])
             frames.append(gen_df)
