@@ -6,6 +6,7 @@ replacing the Streamlit-specific database connection used in the original app.
 """
 
 import os
+import shutil
 from contextlib import contextmanager
 from typing import Generator
 
@@ -57,10 +58,16 @@ def create_db_engine(db_path: str = None, echo: bool = False):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-    # Create the database file if it doesn't exist
+    # If no DB exists, fall back to bundled demo database (e.g. on Vercel)
     if not os.path.exists(db_path):
-        with open(db_path, "w"):
-            pass
+        demo_db = os.path.join(
+            os.path.dirname(__file__), "resources", "demo_data.db"
+        )
+        if os.path.exists(demo_db):
+            shutil.copy2(demo_db, db_path)
+        else:
+            with open(db_path, "w"):
+                pass
 
     return create_engine(
         get_database_url(db_path),
