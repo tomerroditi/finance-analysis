@@ -222,7 +222,7 @@ export function RetirementGoalForm({
   return (
     <form onSubmit={handleCalculate} className="space-y-6">
       {/* Core Parameters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -307,7 +307,7 @@ export function RetirementGoalForm({
       </button>
 
       {showAdvanced && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)]">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
           <NumberField
             label={t("earlyRetirement.form.pensionPayout")}
             value={form.pension_monthly_payout_estimate}
