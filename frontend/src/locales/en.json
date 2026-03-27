@@ -755,7 +755,8 @@
       "readiness_off_track": "Off Track",
       "notReachable": "Not reachable",
       "onTrackNoExtra": "On track!",
-      "adjustPlan": "Adjust plan to get on track:"
+      "adjustPlan": "Adjust plan to get on track:",
+      "portfolioDepleted": "Portfolio runs out at age {{age}}"
     },
     "charts": {
       "netWorthProjection": "Net Worth Projection",

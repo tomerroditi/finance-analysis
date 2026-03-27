@@ -755,7 +755,8 @@
       "readiness_off_track": "לא במסלול",
       "notReachable": "לא ניתן להשגה",
       "onTrackNoExtra": "במסלול!",
-      "adjustPlan": "התאם תוכנית כדי להגיע למסלול:"
+      "adjustPlan": "התאם תוכנית כדי להגיע למסלול:",
+      "portfolioDepleted": "התיק נגמר בגיל {{age}}"
     },
     "charts": {
       "netWorthProjection": "תחזית שווי נקי",

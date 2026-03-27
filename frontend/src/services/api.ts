@@ -448,6 +448,7 @@ export interface RetirementSuggestions {
   target_retirement_age: number;
   monthly_expenses_in_retirement: number;
   expected_return_rate: number;
+  life_expectancy: number;
 }
 
 export interface RetirementProjections {
@@ -458,6 +459,7 @@ export interface RetirementProjections {
   monthly_savings_needed: number;
   progress_pct: number;
   readiness: "on_track" | "close" | "off_track";
+  portfolio_depleted_age: number | null;
   target_retirement_age: number;
   net_worth_projection: {
     age: number;

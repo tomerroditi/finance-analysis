@@ -194,11 +194,22 @@ class RetirementService:
             goal_data, status, fire_number
         )
 
-        # Readiness traffic light
+        # Longevity check: does portfolio survive until life expectancy?
+        portfolio_depleted_age = self._find_depletion_age(
+            net_worth_projection, goal_data["life_expectancy"]
+        )
+
+        # Readiness traffic light (must both reach FIRE and survive drawdown)
         if fire_age != -1 and fire_age <= goal_data["target_retirement_age"]:
-            readiness = "on_track"
+            if portfolio_depleted_age is not None:
+                readiness = "off_track"
+            else:
+                readiness = "on_track"
         elif fire_age != -1 and fire_age <= goal_data["target_retirement_age"] + 5:
-            readiness = "close"
+            if portfolio_depleted_age is not None:
+                readiness = "off_track"
+            else:
+                readiness = "close"
         else:
             readiness = "off_track"
 
@@ -213,6 +224,7 @@ class RetirementService:
             "monthly_savings_needed": round(monthly_savings_needed, 0),
             "progress_pct": round(progress_pct, 1),
             "readiness": readiness,
+            "portfolio_depleted_age": portfolio_depleted_age,
             "target_retirement_age": goal_data["target_retirement_age"],
             "net_worth_projection": net_worth_projection,
             "income_projection": income_projection,
@@ -416,11 +428,13 @@ class RetirementService:
         age = self._solve_target_retirement_age(goal_data, status)
         expenses = self._solve_monthly_expenses(goal_data, status)
         rate = self._solve_return_rate(goal_data, status)
+        life_exp = self._solve_life_expectancy(goal_data, status)
 
         return {
             "target_retirement_age": age,
             "monthly_expenses_in_retirement": round(expenses, 0) if expenses != -1 else -1,
             "expected_return_rate": round(rate, 4) if rate != -1 else -1,
+            "life_expectancy": life_exp,
         }
 
     def solve_for_field(self, field: str) -> dict:
@@ -457,6 +471,10 @@ class RetirementService:
         if field == "expected_return_rate":
             value = self._solve_return_rate(goal_data, status)
             return {"field": field, "value": round(value, 4), "unit": "rate"}
+
+        if field == "life_expectancy":
+            value = self._solve_life_expectancy(goal_data, status)
+            return {"field": field, "value": value, "unit": "age"}
 
         raise ValueError(f"Cannot auto-adjust field: {field}")
 
@@ -560,6 +578,64 @@ class RetirementService:
                 break
 
         return hi
+
+    @staticmethod
+    def _find_depletion_age(
+        net_worth_projection: list[dict], life_expectancy: int
+    ) -> int | None:
+        """Find the age at which portfolio first drops to zero or below.
+
+        Only checks baseline scenario during the drawdown phase.
+
+        Returns
+        -------
+        int or None
+            Age when portfolio is depleted, or None if it survives.
+        """
+        for point in net_worth_projection:
+            if point["net_worth_baseline"] <= 0 and point["age"] <= life_expectancy:
+                return point["age"]
+        return None
+
+    def _solve_life_expectancy(self, goal: dict, status: dict) -> int:
+        """Find maximum life expectancy the portfolio can sustain.
+
+        Runs the drawdown simulation and returns the last age before
+        the baseline net worth goes to zero or below.
+
+        Returns
+        -------
+        int
+            Maximum sustainable life expectancy, or -1 if portfolio never
+            depletes (or depletes before retirement).
+        """
+        projection = self._project_net_worth(goal, status)
+        target_age = goal["target_retirement_age"]
+
+        # Find last age with positive baseline balance after retirement
+        last_sustainable_age = -1
+        for point in projection:
+            age = point["age"]
+            if age < target_age:
+                continue
+            if point["net_worth_baseline"] > 0:
+                last_sustainable_age = age
+            else:
+                break
+
+        if last_sustainable_age == -1:
+            return -1
+
+        # If portfolio never depletes within the projection, return -1
+        # (meaning "no limit needed")
+        depletes = any(
+            p["net_worth_baseline"] <= 0 and p["age"] > target_age
+            for p in projection
+        )
+        if not depletes:
+            return -1
+
+        return last_sustainable_age
 
     def _calc_required_monthly_savings(
         self, goal: dict, status: dict, fire_number: float

@@ -55,7 +55,8 @@ const readinessConfig = {
 };
 
 function formatSuggestionValue(field: SuggestionField, value: number): string {
-  if (field === "target_retirement_age") return `${value}`;
+  if (field === "target_retirement_age" || field === "life_expectancy")
+    return `${value}`;
   if (field === "monthly_expenses_in_retirement") return formatCurrency(value);
   if (field === "expected_return_rate") return `${(value * 100).toFixed(1)}%`;
   return `${value}`;
@@ -186,6 +187,17 @@ export function RetirementProjections({
         ),
       });
     }
+    if (suggestions.life_expectancy !== -1) {
+      suggestionItems.push({
+        field: "life_expectancy",
+        label: t("earlyRetirement.form.lifeExpectancy"),
+        value: suggestions.life_expectancy,
+        display: formatSuggestionValue(
+          "life_expectancy",
+          suggestions.life_expectancy,
+        ),
+      });
+    }
   }
 
   return (
@@ -223,6 +235,13 @@ export function RetirementProjections({
           <div className={`text-lg font-bold ${readiness.color}`}>
             {t(`earlyRetirement.projections.readiness_${projections.readiness}`)}
           </div>
+          {projections.portfolio_depleted_age != null && (
+            <div className="text-xs text-rose-400 mt-0.5">
+              {t("earlyRetirement.projections.portfolioDepleted", {
+                age: projections.portfolio_depleted_age,
+              })}
+            </div>
+          )}
           <div className="mt-2">
             <div className="h-2 bg-[var(--surface)] rounded-full overflow-hidden">
               <div
