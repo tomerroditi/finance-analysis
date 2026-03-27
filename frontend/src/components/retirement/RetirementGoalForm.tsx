@@ -234,6 +234,11 @@ export function RetirementGoalForm({
         <div>
           <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
             {t("earlyRetirement.form.gender")}
+            <span className="text-[var(--text-muted)] font-normal ms-1">
+              ({t("earlyRetirement.form.genderPensionNote", {
+                age: form.gender === "female" ? 65 : 67,
+              })})
+            </span>
           </label>
           <select
             value={form.gender}
@@ -245,11 +250,6 @@ export function RetirementGoalForm({
               {t("earlyRetirement.form.female")}
             </option>
           </select>
-          <span className="text-xs text-[var(--text-muted)] mt-0.5 block">
-            {t("earlyRetirement.form.genderPensionNote", {
-              age: form.gender === "female" ? 65 : 67,
-            })}
-          </span>
         </div>
         <NumberField
           label={t("earlyRetirement.form.targetRetirementAge")}
