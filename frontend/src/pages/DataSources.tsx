@@ -266,7 +266,7 @@ export function DataSources() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-8">
+      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
         <Skeleton variant="text" lines={2} className="w-64" />
         <div className="grid grid-cols-1 gap-4">
           <Skeleton variant="card" className="h-28" />
@@ -276,15 +276,15 @@ export function DataSources() {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-0">
         <div>
-          <h1 className="text-3xl font-bold">{t("dataSources.title")}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t("dataSources.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
             {t("dataSources.subtitle")}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="relative">
             <select
               value={scrapingPeriodDays ?? "auto"}
@@ -319,7 +319,7 @@ export function DataSources() {
 
       <div className="grid grid-cols-1 gap-4">
         {accounts?.length === 0 ? (
-          <div className="bg-[var(--surface)] rounded-2xl border border-dashed border-[var(--surface-light)] p-12 text-center">
+          <div className="bg-[var(--surface)] rounded-2xl border border-dashed border-[var(--surface-light)] p-6 md:p-12 text-center">
             <div className="mx-auto w-16 h-16 bg-[var(--surface-light)] rounded-2xl flex items-center justify-center text-[var(--text-muted)] mb-4">
               <Globe size={32} />
             </div>
@@ -351,10 +351,10 @@ export function DataSources() {
               return (
               <div
                 key={`${acc.service}-${acc.provider}-${acc.account_name}-${idx}`}
-                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
+                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-3 md:p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
               >
-                <div className="flex items-center justify-between">
-                <div className="flex items-center gap-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
+                <div className="flex items-center gap-3 md:gap-5">
                   <div
                     className={`p-3.5 rounded-2xl ${acc.service === "banks" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"}`}
                   >
@@ -378,8 +378,8 @@ export function DataSources() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-[160px] flex items-center justify-end">
+                <div className="flex flex-wrap items-center gap-3 md:gap-4">
+                  <div className="md:w-[160px] flex items-center md:justify-end">
                   {acc.service === "banks" &&
                     (() => {
                       const bal = getAccountBalance(
@@ -589,8 +589,8 @@ export function DataSources() {
 
                 {/* 2FA Inline Section */}
                 {scraper?.status === "waiting_for_2fa" && (
-                  <div className="mt-4 pt-4 border-t border-amber-500/20">
-                    <div className="flex items-center gap-3">
+                  <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-amber-500/20">
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
                       <Smartphone className="text-amber-400 shrink-0" size={18} />
                       <span className="text-xs text-amber-100/70">
                         {t("dataSources.enter2faCode")} <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
@@ -689,7 +689,7 @@ export function DataSources() {
       {/* Connection Modal */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-4 md:p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
             <button
               onClick={resetForm}
               className="absolute top-6 end-6 p-2 rounded-xl hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
@@ -697,8 +697,8 @@ export function DataSources() {
               <X size={20} />
             </button>
 
-            <div className="mb-8">
-              <h2 className="text-2xl font-black mb-2">
+            <div className="mb-4 md:mb-8">
+              <h2 className="text-xl md:text-2xl font-black mb-2">
                 {isViewOnly
                   ? t("dataSources.accountDetails")
                   : editingAccount
@@ -728,7 +728,7 @@ export function DataSources() {
                     setSelectedService("banks");
                     setStep(2);
                   }}
-                  className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
+                  className="w-full flex items-center justify-between p-4 md:p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
                 >
                   <div className="flex items-center gap-4">
                     <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400 group-hover:scale-110 transition-transform">
@@ -750,7 +750,7 @@ export function DataSources() {
                     setSelectedService("credit_cards");
                     setStep(2);
                   }}
-                  className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
+                  className="w-full flex items-center justify-between p-4 md:p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
                 >
                   <div className="flex items-center gap-4">
                     <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 group-hover:scale-110 transition-transform">
@@ -772,7 +772,7 @@ export function DataSources() {
                     setSelectedService("insurances");
                     setStep(2);
                   }}
-                  className="w-full flex items-center justify-between p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
+                  className="w-full flex items-center justify-between p-4 md:p-6 rounded-2xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all group"
                 >
                   <div className="flex items-center gap-4">
                     <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-110 transition-transform">
@@ -797,7 +797,7 @@ export function DataSources() {
                 <p className="text-[var(--text-muted)] font-medium mb-6">
                   {t("dataSources.selectProvider")}
                 </p>
-                <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pe-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pe-2">
                   {providers &&
                     providers[selectedService]?.map((p: string) => (
                       <button
@@ -822,7 +822,7 @@ export function DataSources() {
             )}
 
             {step === 3 && (
-              <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+              <div className="space-y-4 md:space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <p className="text-[var(--text-muted)] font-medium">
                   {isViewOnly ? t("dataSources.currentDetailsFor") : t("dataSources.enterDetailsFor")}{" "}
                   <span className="text-white font-black">

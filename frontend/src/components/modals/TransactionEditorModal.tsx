@@ -64,9 +64,9 @@ export function TransactionEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div role="dialog" aria-modal="true" aria-labelledby="transaction-editor-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-          <h2 id="transaction-editor-title" className="text-xl font-bold text-white">{t("modals.transactionForm.editTitle")}</h2>
+      <div role="dialog" aria-modal="true" aria-labelledby="transaction-editor-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
+          <h2 id="transaction-editor-title" className="text-lg md:text-xl font-bold text-white">{t("modals.transactionForm.editTitle")}</h2>
           <button
             onClick={onClose}
             aria-label={t("common.close")}
@@ -76,7 +76,7 @@ export function TransactionEditorModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
           {!isManual && (
             <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
               {t("modals.transactionForm.readOnlyNote")}
@@ -168,7 +168,7 @@ export function TransactionEditorModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
               <div>
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                   {t("common.category")}

@@ -69,7 +69,7 @@ export function Insurances() {
     .reduce((s, t) => s + Math.abs(t.amount), 0) ?? 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-3 md:gap-6 p-4 md:p-6">
       <header className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
           <Shield size={24} />
@@ -88,7 +88,7 @@ export function Insurances() {
           <Skeleton className="h-64 w-full" />
         </div>
       ) : !transactions || transactions.length === 0 ? (
-        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] p-12 text-center">
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] p-6 md:p-12 text-center">
           <Shield size={48} className="mx-auto text-[var(--text-muted)] mb-4" />
           <h2 className="text-lg font-bold text-white mb-2">No insurance data yet</h2>
           <p className="text-[var(--text-muted)] text-sm">
@@ -99,14 +99,14 @@ export function Insurances() {
       ) : (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+            <div className="bg-[var(--surface)] rounded-xl p-4 md:p-5 border border-[var(--surface-light)]">
               <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
                 Accounts
               </p>
               <p className="text-xl font-black mt-1 text-white">{accounts.length}</p>
             </div>
-            <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)]">
+            <div className="bg-[var(--surface)] rounded-xl p-4 md:p-5 border border-[var(--surface-light)]">
               <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
                 Total Deposits
               </p>
@@ -114,7 +114,7 @@ export function Insurances() {
                 {formatCurrency(totalDeposits)}
               </p>
             </div>
-            <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)]">
+            <div className="bg-[var(--surface)] rounded-xl p-4 md:p-5 border border-[var(--surface-light)]">
               <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
                 Total Charges
               </p>
@@ -134,7 +134,7 @@ export function Insurances() {
                 key={account.accountNumber}
                 className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden"
               >
-                <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
+                <div className="px-4 md:px-6 py-3 md:py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
                   <div>
                     <h3 className="text-white font-bold">
                       {humanizeProvider(account.provider)} — {account.accountName}
@@ -149,9 +149,9 @@ export function Insurances() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
-                        <th className="text-start px-6 py-3 font-bold">Date</th>
-                        <th className="text-start px-6 py-3 font-bold">Description</th>
-                        <th className="text-right px-6 py-3 font-bold">Amount</th>
+                        <th className="text-start px-3 md:px-6 py-3 font-bold">Date</th>
+                        <th className="text-start px-3 md:px-6 py-3 font-bold">Description</th>
+                        <th className="text-end px-3 md:px-6 py-3 font-bold">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -160,11 +160,11 @@ export function Insurances() {
                           key={tx.unique_id}
                           className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30 transition-colors"
                         >
-                          <td className="px-6 py-3 text-[var(--text-muted)] whitespace-nowrap">
+                          <td className="px-3 md:px-6 py-3 text-[var(--text-muted)] whitespace-nowrap">
                             {tx.date}
                           </td>
-                          <td className="px-6 py-3 text-white">{tx.description}</td>
-                          <td className="px-6 py-3 text-right whitespace-nowrap">
+                          <td className="px-3 md:px-6 py-3 text-white">{tx.description}</td>
+                          <td className="px-3 md:px-6 py-3 text-end whitespace-nowrap">
                             <span
                               className={`inline-flex items-center gap-1 font-mono font-bold ${
                                 tx.amount >= 0 ? "text-emerald-400" : "text-rose-400"

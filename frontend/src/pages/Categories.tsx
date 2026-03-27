@@ -690,9 +690,9 @@ export function Categories() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-8">
-        <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+        <Skeleton variant="text" lines={2} className="w-full md:w-64" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-6">
           <Skeleton variant="card" className="h-48" />
           <Skeleton variant="card" className="h-48" />
           <Skeleton variant="card" className="h-48" />
@@ -704,23 +704,23 @@ export function Categories() {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-0">
         <div>
-          <h1 className="text-3xl font-bold">{t("categories.title")}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t("categories.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
             {t("categories.subtitle")}
           </p>
         </div>
         <button
           onClick={() => setIsAddCategoryOpen(true)}
-          className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all"
+          className="flex items-center gap-2 px-4 md:px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all text-sm md:text-base"
         >
           <Plus size={18} /> {t("categories.newCategory")}
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-6">
         {categories &&
           Object.entries(categories as Record<string, string[]>)
             .sort(([a], [b]) => a.localeCompare(b))
@@ -728,10 +728,10 @@ export function Categories() {
             ([category, tags]) => (
               <div
                 key={category}
-                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-6 shadow-sm hover:shadow-xl transition-all flex flex-col"
+                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col"
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between mb-3 md:mb-4">
+                  <div className="flex items-center gap-2 md:gap-3 min-w-0">
                     <button
                       onClick={() => {
                         const currentIcon = icons?.[category] || "💰";
@@ -761,7 +761,7 @@ export function Categories() {
                       />
                     ) : (
                       <h3
-                        className={`font-bold text-lg ${PROTECTED_CATEGORIES.includes(category) ? "text-white" : "text-white cursor-pointer hover:text-[var(--primary)] transition-colors"}`}
+                        className={`font-bold text-base md:text-lg truncate ${PROTECTED_CATEGORIES.includes(category) ? "text-white" : "text-white cursor-pointer hover:text-[var(--primary)] transition-colors"}`}
                         onClick={() => {
                           if (!PROTECTED_CATEGORIES.includes(category)) {
                             setEditingCategory(category);
@@ -862,7 +862,7 @@ export function Categories() {
 
                 <button
                   onClick={() => setIsAddTagOpen({ category })}
-                  className="mt-6 flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-[var(--surface-light)] text-xs font-bold text-[var(--text-muted)] hover:border-[var(--primary)]/50 hover:text-[var(--primary)] transition-all"
+                  className="mt-4 md:mt-6 flex items-center justify-center gap-2 py-2 rounded-xl border border-dashed border-[var(--surface-light)] text-xs font-bold text-[var(--text-muted)] hover:border-[var(--primary)]/50 hover:text-[var(--primary)] transition-all"
                 >
                   <Plus size={14} /> {t("categories.addTag")}
                 </button>
@@ -1011,7 +1011,7 @@ export function Categories() {
 
       {editingIcon && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-sm md:max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("categories.changeIconFor")}{" "}
               <span className="text-[var(--primary)]">
@@ -1019,7 +1019,7 @@ export function Categories() {
               </span>
             </h3>
 
-            <div className="space-y-6">
+            <div className="space-y-4 md:space-y-6">
               {/* Search */}
               <div className="relative">
                 <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -1040,7 +1040,7 @@ export function Categories() {
                     ? EMOJI_DATA.filter(([, kw]) => kw.includes(query))
                     : EMOJI_DATA;
                   return filtered.length > 0 ? (
-                    <div className="grid grid-cols-8 gap-2 max-h-[280px] overflow-y-auto p-1">
+                    <div className="grid grid-cols-6 md:grid-cols-8 gap-1.5 md:gap-2 max-h-[220px] md:max-h-[280px] overflow-y-auto p-1">
                       {filtered.map(([emoji]) => (
                         <button
                           key={emoji}
@@ -1086,7 +1086,7 @@ export function Categories() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-8">
+            <div className="flex gap-3 mt-6 md:mt-8">
               <button
                 onClick={() => setEditingIcon(null)}
                 className="flex-1 py-2 text-sm font-bold hover:text-white transition-colors"

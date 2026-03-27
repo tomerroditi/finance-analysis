@@ -24,10 +24,10 @@ export function Layout() {
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <main
         className={`transition-all duration-300 ${
-          sidebarOpen ? "ms-64" : "ms-20"
-        }`}
+          sidebarOpen ? "md:ms-64" : "md:ms-20"
+        } ms-0 pt-14 md:pt-0`}
       >
-        <div className="p-8 pt-6">
+        <div className="p-4 pt-4 md:p-8 md:pt-6">
           <Outlet />
         </div>
       </main>

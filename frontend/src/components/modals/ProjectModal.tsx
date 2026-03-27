@@ -65,9 +65,9 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center p-6 border-b border-[var(--surface-light)]">
-          <h2 className="text-xl font-bold">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-4 md:p-6 border-b border-[var(--surface-light)]">
+          <h2 className="text-lg md:text-xl font-bold">
             {isEdit ? `${t("modals.project.editProject")}: ${category} - ${t("common.total")}` : t("modals.project.newProject")}
           </h2>
           <button
@@ -77,7 +77,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             <X size={20} />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
               {t("modals.project.projectName")} ({t("common.category")})

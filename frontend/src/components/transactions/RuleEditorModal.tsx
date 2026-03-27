@@ -162,8 +162,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
             {/* Modal */}
             <div role="dialog" aria-modal="true" aria-labelledby="rule-editor-title" className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
-                    <h2 id="rule-editor-title" className="text-xl font-bold">
+                <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
+                    <h2 id="rule-editor-title" className="text-lg md:text-xl font-bold">
                         {editingRule ? t("transactions.autoTagging.editRule") : t("transactions.autoTagging.createRule")}
                     </h2>
                     <button
@@ -184,7 +184,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                         minRightWidth={25}
                         left={<TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={preview?.count || 0} />}
                         right={
-                            <div className="h-full overflow-y-auto p-6">
+                            <div className="h-full overflow-y-auto p-4 md:p-6">
                                 <RuleForm
                                     name={name}
                                     category={category}
@@ -211,7 +211,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center gap-3 px-6 py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
+                <div className="flex items-center gap-3 px-4 md:px-6 py-3 md:py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
                     {error && (
                         <div className="flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in slide-in-from-left-2 duration-200">
                             <AlertTriangle size={16} className="shrink-0" />

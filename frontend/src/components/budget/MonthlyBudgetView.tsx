@@ -186,9 +186,9 @@ export const MonthlyBudgetView: React.FC = () => {
 
   if (isLoading)
     return (
-      <div className="space-y-6 p-8">
+      <div className="space-y-4 md:space-y-6 p-4 md:p-8">
         <Skeleton variant="card" className="h-16" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
@@ -244,17 +244,17 @@ export const MonthlyBudgetView: React.FC = () => {
     }).format(val);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 md:space-y-8">
       {/* Month Navigation */}
-      <div className="flex items-center justify-between bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0 bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
+        <div className="flex items-center gap-2 md:gap-4">
           <button
             onClick={handlePreviousMonth}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
             {i18n.language === "he" ? <ChevronRight size={24} /> : <ChevronLeft size={24} />}
           </button>
-          <h2 className="text-2xl font-bold w-48 text-center bg-gradient-to-r from-[var(--primary)] to-blue-600 bg-clip-text text-transparent">
+          <h2 className="text-lg md:text-2xl font-bold w-36 md:w-48 text-center bg-gradient-to-r from-[var(--primary)] to-blue-600 bg-clip-text text-transparent">
             {new Date(year, month - 1).toLocaleString(i18n.language === "he" ? "he-IL" : "en-US", {
               month: "long",
               year: "numeric",
@@ -267,10 +267,10 @@ export const MonthlyBudgetView: React.FC = () => {
             {i18n.language === "he" ? <ChevronLeft size={24} /> : <ChevronRight size={24} />}
           </button>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 md:gap-3 justify-center">
           <button
             onClick={handleCurrentMonth}
-            className="px-4 py-2 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
+            className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
           >
             {t("budget.currentMonth")}
           </button>
@@ -285,14 +285,14 @@ export const MonthlyBudgetView: React.FC = () => {
               }
             }}
             disabled={copyMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
           >
             <Copy size={20} />
             {t("budget.replicatePreviousMonth")}
           </button>
           <button
             onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
           >
             <Plus size={20} />
             {t("budget.addRule")}
@@ -315,7 +315,7 @@ export const MonthlyBudgetView: React.FC = () => {
 
       {/* Summary Header Strip */}
       {budgetRules.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
               {t("budget.totalSpent")}
@@ -473,7 +473,7 @@ export const MonthlyBudgetView: React.FC = () => {
       {project_spending &&
         project_spending.projects &&
         project_spending.projects.length > 0 && (
-          <div className="pt-8 border-t border-[var(--surface-light)]">
+          <div className="pt-4 md:pt-8 border-t border-[var(--surface-light)]">
             <h3 className="text-lg font-bold text-[var(--text-muted)] mb-4 uppercase tracking-wider text-xs">
               {t("budget.projectSpending")}
             </h3>

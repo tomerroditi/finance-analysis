@@ -550,7 +550,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       {showFilter && (
         <div className="mb-3 space-y-3">
           {/* Controls row — single line */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
             <button
               type="button"
               onClick={() => setFiltersOpen(!filtersOpen)}
@@ -569,7 +569,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               )}
               {filtersOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
-            <div className="relative flex-1 min-w-0">
+            <div className="relative flex-1 min-w-[120px]">
               <Search
                 size={14}
                 className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
@@ -1007,10 +1007,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       {/* Pagination */}
       {totalPages > 0 && (
         <div
-          className={`flex items-center justify-between ${compact ? "mt-3 px-2" : "mt-4 px-4 py-3 bg-[var(--surface-light)]/30 border-t border-[var(--surface-light)]"}`}
+          className={`flex flex-col sm:flex-row items-center justify-between gap-2 ${compact ? "mt-3 px-2" : "mt-4 px-2 md:px-4 py-3 bg-[var(--surface-light)]/30 border-t border-[var(--surface-light)]"}`}
         >
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+          <div className="flex items-center gap-2 md:gap-4">
+            <span className="text-xs md:text-sm text-[var(--text-muted)] whitespace-nowrap">
               {sortedTransactions.length > 0 ? (
                 <>
                   {t("transactions.pagination.showing")}{" "}
@@ -1088,7 +1088,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Bulk Action Floating Bar */}
       {showBulkActions && selectedIds.size > 0 && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[var(--surface)] border border-[var(--primary)]/50 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40">
+        <div className="fixed bottom-4 md:bottom-8 inset-x-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 bg-[var(--surface)] border border-[var(--primary)]/50 rounded-2xl shadow-2xl px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">
               {selectedIds.size}

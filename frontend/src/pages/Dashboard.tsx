@@ -484,7 +484,7 @@ function BudgetSpendingGauge({
 
   return (
     <div
-      className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]"
+      className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]"
     >
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
@@ -845,7 +845,7 @@ function RecentTransactionsFeed({
   if (sorted.length === 0) return null;
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+    <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           🧾 {t("dashboard.recentTransactions")}
@@ -902,8 +902,8 @@ function RecentTransactionsFeed({
                           </span>
                         )}
                       </div>
-                      {/* Action buttons — fixed grid, each cell is 25px */}
-                      <div className="grid grid-cols-3 flex-shrink-0 w-[75px]">
+                      {/* Action buttons — hidden on small mobile, visible on sm+ */}
+                      <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[75px]">
                         <button
                           className={`w-[25px] h-[25px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
                           title={t("tooltips.editCategoryTag")}
@@ -1269,10 +1269,10 @@ export function Dashboard() {
   // ================================================================
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold">📊 {t("dashboard.title")}</h1>
-        <p className="text-[var(--text-muted)] mt-1">✨ {t("dashboard.subtitle")}</p>
+        <h1 className="text-2xl md:text-3xl font-bold">📊 {t("dashboard.title")}</h1>
+        <p className="text-[var(--text-muted)] mt-1 text-sm md:text-base">✨ {t("dashboard.subtitle")}</p>
       </div>
 
       {/* Section 1: Financial Health Header */}
@@ -1285,7 +1285,7 @@ export function Dashboard() {
       />
 
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
         <BudgetSpendingGauge
           categoryIcons={categoryIcons}
         />
@@ -1299,8 +1299,8 @@ export function Dashboard() {
       {/* Section 4: Tabbed Insights */}
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
         {/* Tab bar */}
-        <div className="px-6 pt-5 pb-0">
-          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1">
+        <div className="px-3 md:px-6 pt-4 md:pt-5 pb-0">
+          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1 overflow-x-auto scrollbar-auto-hide">
             {([
               { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
               { key: "net_worth" as const, label: `📈 ${t("dashboard.netWorth")}` },
@@ -1310,7 +1310,7 @@ export function Dashboard() {
               <button
                 key={key}
                 onClick={() => setInsightTab(key)}
-                className={`flex-1 text-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                className={`flex-1 text-center px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
                   insightTab === key
                     ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                     : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1323,14 +1323,14 @@ export function Dashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="px-6 pb-6 pt-4 h-[600px] overflow-y-auto flex flex-col">
+        <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
           {/* Net Worth Over Time */}
           {insightTab === "net_worth" && (
             <div className="flex flex-col flex-1 min-h-0">
               {netWorthData && netWorthData.length > 0 ? (
                 <>
                   {/* Net Worth Change KPIs + View Buttons */}
-                  <div className="flex items-center gap-3 mb-3">
+                  <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
                     {(() => {
                       const latest = netWorthData[netWorthData.length - 1];
                       const findMonthsAgo = (n: number) => {
@@ -1366,7 +1366,7 @@ export function Dashboard() {
                         );
                       });
                     })()}
-                    <div className="ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl">
+                    <div className="w-full md:w-auto md:ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
                       {(
                         [
                           { key: "all", label: t("dashboard.all") },
@@ -1379,7 +1379,7 @@ export function Dashboard() {
                         <button
                           key={key}
                           onClick={() => setNetWorthView(key)}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          className={`px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
                             netWorthView === key
                               ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                               : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1497,7 +1497,7 @@ export function Dashboard() {
           {insightTab === "income_expenses" && (
             <div className="flex flex-col flex-1 min-h-0">
               {/* KPI Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-3">
                 {(() => {
                   const recent3 = incomeOutcome?.slice(-3) || [];
                   const recent6 = incomeOutcome?.slice(-6) || [];
@@ -1555,7 +1555,7 @@ export function Dashboard() {
               </div>
 
               {/* Sub-tabs + Filter Toggles */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
@@ -1594,7 +1594,7 @@ export function Dashboard() {
                       : t("dashboard.projectExpensesExcluded")}
                   </button>
                 </div>
-                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
                   {([
                     { key: "overview" as const, label: `📊 ${t("dashboard.totals")}` },
                     { key: "by_source" as const, label: `💼 ${t("dashboard.incomeBreakdown")}` },
@@ -1603,7 +1603,7 @@ export function Dashboard() {
                     <button
                       key={key}
                       onClick={() => setIncomeView(key)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                      className={`px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
                         incomeView === key
                           ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                           : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1645,13 +1645,13 @@ export function Dashboard() {
                       autosize: true,
                       height: Math.max(400, (incomeOutcome?.length ?? 0) * 25),
                       legend: {
-                        orientation: "v",
-                        y: 1,
-                        x: 1.02,
-                        xanchor: "left",
+                        orientation: "h",
+                        y: -0.15,
+                        x: 0.5,
+                        xanchor: "center",
                       },
                       yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
-                      margin: { ...chartTheme.margin, l: 100, r: 200 },
+                      margin: { ...chartTheme.margin, l: 80, r: 20 },
                     }}
                     style={{ width: "100%", height: "100%" }}
                     config={plotlyConfig()}
@@ -1702,7 +1702,7 @@ export function Dashboard() {
                             x: 1.02,
                             xanchor: "left",
                           },
-                          margin: { ...chartTheme.margin, l: 100, r: 200 },
+                          margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}
                         style={{ width: "100%", height: "100%" }}
                         config={plotlyConfig()}
@@ -1757,7 +1757,7 @@ export function Dashboard() {
                             x: 1.02,
                             xanchor: "left",
                           },
-                          margin: { ...chartTheme.margin, l: 100, r: 200 },
+                          margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}
                         style={{ width: "100%", height: "100%" }}
                         config={plotlyConfig()}
@@ -1788,8 +1788,8 @@ export function Dashboard() {
             return (
               <div className="flex flex-col flex-1 min-h-0 space-y-5">
                 {/* Summary strip */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
                       <TrendingDown size={18} />
                     </div>
@@ -1798,7 +1798,7 @@ export function Dashboard() {
                       <p className="text-lg font-bold text-rose-400">{formatCurrency(totalExpenses)}</p>
                     </div>
                   </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 text-lg">
                       {topCategory ? (categoryIcons?.[topCategory.category] || "📊") : "—"}
                     </div>
@@ -1807,7 +1807,7 @@ export function Dashboard() {
                       <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
                     </div>
                   </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
                       <Tag size={18} />
                     </div>
@@ -1829,15 +1829,15 @@ export function Dashboard() {
                       return (
                         <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                           <span className="text-base w-6 text-center shrink-0">{icon || (d.category === "Uncategorized" ? "❓" : `${i + 1}.`)}</span>
-                          <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                          <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
                           <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                          <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
                         </div>
                       );
                     })}
@@ -1859,15 +1859,15 @@ export function Dashboard() {
                         return (
                           <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                             <span className="text-base w-6 text-center shrink-0">{icon || `${i + 1}.`}</span>
-                            <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                            <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
                             <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
                                 style={{ width: `${barWidth}%` }}
                               />
                             </div>
-                            <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                            <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                            <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
+                            <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
                           </div>
                         );
                       })}
