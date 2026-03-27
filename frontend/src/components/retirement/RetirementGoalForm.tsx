@@ -68,9 +68,9 @@ function goalToForm(goal: RetirementGoal | null) {
     target_retirement_age: goal.target_retirement_age,
     life_expectancy: goal.life_expectancy,
     monthly_expenses_in_retirement: goal.monthly_expenses_in_retirement,
-    inflation_rate: goal.inflation_rate * 100,
-    expected_return_rate: goal.expected_return_rate * 100,
-    withdrawal_rate: goal.withdrawal_rate * 100,
+    inflation_rate: Math.round(goal.inflation_rate * 10000) / 100,
+    expected_return_rate: Math.round(goal.expected_return_rate * 10000) / 100,
+    withdrawal_rate: Math.round(goal.withdrawal_rate * 10000) / 100,
     pension_monthly_payout_estimate: goal.pension_monthly_payout_estimate,
     keren_hishtalmut_balance: goal.keren_hishtalmut_balance,
     keren_hishtalmut_monthly_contribution:
@@ -138,7 +138,9 @@ export function RetirementGoalForm({
     const { field, value } = pendingAdjust;
     // expected_return_rate comes as decimal from solver, form uses percentage
     const formValue =
-      field === "expected_return_rate" ? value * 100 : value;
+      field === "expected_return_rate"
+        ? Math.round(value * 10000) / 100
+        : value;
     const updated = { ...form, [field]: formValue };
     setForm(updated);
     setHasUnsavedChanges(true);
