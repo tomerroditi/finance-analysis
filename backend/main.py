@@ -15,7 +15,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import AppConfig
-from backend import database
 from backend.database import get_db_context, get_engine
 from backend.errors import (
     EntityAlreadyExistsException,
@@ -28,15 +27,12 @@ from backend.routes import (
     bank_balances,
     budget,
     cash_balances,
-    credentials,
     insurance_accounts,
     investments,
     liabilities,
     pending_refunds,
-    scraping,
     tagging,
     tagging_rules,
-    testing,
     transactions,
 )
 
@@ -46,6 +42,11 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
+    # Skip startup migrations in serverless (demo DB is pre-built)
+    if os.environ.get("VERCEL"):
+        yield
+        return
+
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
         TaggingRepository,
@@ -55,31 +56,7 @@ async def lifespan(app: FastAPI):
 
     # Startup
     print("Starting Finance Analysis API...")
-
-    # Auto-enable demo mode on Vercel deployments
-    if os.environ.get("VERCEL"):
-        from backend.routes.testing import _prepare_demo_database, _sync_missing_columns
-        from backend.services.credentials_service import CredentialsService
-        from backend.services.categories_tags_service import CategoriesTagsService
-
-        config = AppConfig()
-        config.set_demo_mode(True)
-        database.reset_engine()
-        CredentialsService.clear_cache()
-        CategoriesTagsService.clear_cache()
-
-        engine = get_engine()
-        Base.metadata.create_all(bind=engine)
-        _sync_missing_columns(engine)
-        _prepare_demo_database()
-
-        with get_db_context() as demo_db:
-            creds_service = CredentialsService(demo_db)
-            creds_service.seed_demo_credentials()
-
-        print("Vercel deployment detected — demo mode enabled automatically.")
-    else:
-        Base.metadata.create_all(bind=get_engine())
+    Base.metadata.create_all(bind=get_engine())
 
     # Seed categories and migrate credentials
     with get_db_context() as db:
@@ -195,12 +172,9 @@ app.include_router(
 )
 app.include_router(budget.router, prefix="/api/budget", tags=["Budget"])
 app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
-app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
-app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(liabilities.router, prefix="/api/liabilities", tags=["Liabilities"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
-app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 app.include_router(
     pending_refunds.router, prefix="/api/pending-refunds", tags=["Pending Refunds"]
 )
@@ -218,6 +192,25 @@ app.include_router(
     prefix="/api/insurance-accounts",
     tags=["Insurance Accounts"],
 )
+
+# Optional routes — gated for serverless where keyring is absent
+try:
+    from backend.routes import credentials
+    app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
+except ImportError:
+    pass
+
+try:
+    from backend.routes import scraping
+    app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
+except ImportError:
+    pass
+
+try:
+    from backend.routes import testing
+    app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
+except ImportError:
+    pass
 
 
 @app.exception_handler(EntityNotFoundException)

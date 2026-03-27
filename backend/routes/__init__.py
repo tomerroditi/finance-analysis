@@ -8,20 +8,21 @@ from backend.routes import (
     transactions,
     budget,
     tagging,
-    credentials,
-    scraping,
     investments,
     analytics,
-    testing,
 )
 
 __all__ = [
     "transactions",
     "budget",
     "tagging",
-    "credentials",
-    "scraping",
     "investments",
     "analytics",
-    "testing",
 ]
+
+# Optional routes — depend on keyring (not available in serverless)
+try:
+    from backend.routes import credentials, scraping, testing  # noqa: F401
+    __all__ += ["credentials", "scraping", "testing"]
+except ImportError:
+    pass
