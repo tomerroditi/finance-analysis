@@ -281,7 +281,7 @@ export function RetirementGoalForm({
           onChange={(v) => handleChange("expected_return_rate", v)}
           min={-10}
           max={30}
-          step={0.5}
+          step={0.01}
           suffix="%"
         />
         <NumberField
@@ -290,7 +290,7 @@ export function RetirementGoalForm({
           onChange={(v) => handleChange("withdrawal_rate", v)}
           min={0.5}
           max={10}
-          step={0.5}
+          step={0.01}
           suffix="%"
           tooltip={t("earlyRetirement.tooltips.withdrawalRate")}
         />
@@ -400,7 +400,7 @@ export function RetirementGoalForm({
             onChange={(v) => handleChange("inflation_rate", v)}
             min={0}
             max={20}
-            step={0.5}
+            step={0.01}
             suffix="%"
           />
         </div>
