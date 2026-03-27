@@ -119,7 +119,7 @@ function LiabilityCard({
       </div>
 
       {/* Metadata */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)] font-medium mb-4 px-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)] font-medium mb-4 px-1">
         <span dir="ltr">{liability.interest_rate}%</span>
         <span>·</span>
         <span>
@@ -132,12 +132,12 @@ function LiabilityCard({
       </div>
 
       {/* Progress bar */}
-      <div className="mb-4">
-        <div className="flex justify-between text-[10px] font-bold text-[var(--text-muted)] mb-1">
+      <div className="mb-5">
+        <div className="flex justify-between text-xs font-bold text-[var(--text-muted)] mb-1.5">
           <span>{t("liabilities.percentPaid")}</span>
           <span dir="ltr">{liability.percent_paid.toFixed(1)}%</span>
         </div>
-        <div className="w-full h-2 bg-[var(--surface-base)] rounded-full overflow-hidden border border-[var(--surface-light)]">
+        <div className="w-full h-2.5 bg-[var(--surface-base)] rounded-full overflow-hidden border border-[var(--surface-light)]">
           <div
             className={`h-full rounded-full transition-all ${isPaidOff ? "bg-emerald-500" : "bg-rose-500"}`}
             style={{ width: `${Math.min(liability.percent_paid, 100)}%` }}
@@ -146,21 +146,29 @@ function LiabilityCard({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
             {t("liabilities.remainingBalance")}
           </p>
-          <p className="text-sm font-bold text-white mt-0.5" dir="ltr">
+          <p className="text-base font-bold text-white mt-1" dir="ltr">
             {formatCurrency(liability.remaining_balance)}
           </p>
         </div>
-        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
+        <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
             {t("liabilities.monthlyPayment")}
           </p>
-          <p className="text-sm font-bold text-white mt-0.5" dir="ltr">
+          <p className="text-base font-bold text-white mt-1" dir="ltr">
             {formatCurrency(liability.monthly_payment)}
+          </p>
+        </div>
+        <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
+            {t("liabilities.totalInterestCost")}
+          </p>
+          <p className="text-base font-bold text-white mt-1" dir="ltr">
+            {formatCurrency(liability.total_interest)}
           </p>
         </div>
       </div>
