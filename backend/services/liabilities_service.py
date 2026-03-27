@@ -236,10 +236,13 @@ class LiabilitiesService:
         total_receipts = sum(t["amount"] for t in receipts)
         total_payments = sum(abs(t["amount"]) for t in payments)
 
-        remaining_balance = schedule[len(payments)]["remaining_balance"] if len(payments) < len(schedule) else 0.0
+        num_payments = len(payments)
+        remaining_balance = schedule[num_payments]["remaining_balance"] if num_payments < len(schedule) else 0.0
 
-        # Total expected interest cost from amortization schedule
-        total_interest_cost = sum(e["interest_portion"] for e in schedule)
+        # Interest split: already paid vs projected remaining
+        interest_paid = sum(e["interest_portion"] for e in schedule[:num_payments])
+        interest_remaining = sum(e["interest_portion"] for e in schedule[num_payments:])
+        total_interest_cost = interest_paid + interest_remaining
 
         # Monthly payment from schedule (constant for fixed-rate)
         monthly_payment = schedule[0]["payment"] if schedule else 0.0
@@ -250,10 +253,12 @@ class LiabilitiesService:
             "total_receipts": total_receipts,
             "total_payments": total_payments,
             "total_interest_cost": total_interest_cost,
+            "interest_paid": interest_paid,
+            "interest_remaining": interest_remaining,
             "monthly_payment": monthly_payment,
             "remaining_balance": remaining_balance,
             "percent_paid": round(percent_paid, 1),
-            "payments_made": len(payments),
+            "payments_made": num_payments,
         }
 
         return {

@@ -56,6 +56,8 @@ interface AnalysisData {
     total_receipts: number;
     total_payments: number;
     total_interest_cost: number;
+    interest_paid: number;
+    interest_remaining: number;
     monthly_payment: number;
     remaining_balance: number;
     percent_paid: number;
@@ -826,12 +828,18 @@ export function Liabilities() {
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
                     <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
+                      {t("liabilities.interestPaid")}
+                    </p>
+                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
+                      {formatCurrency(analysisData.summary.interest_paid)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
                       {t("liabilities.interestRemaining")}
                     </p>
                     <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(
-                        analysisData.summary.total_interest_cost,
-                      )}
+                      {formatCurrency(analysisData.summary.interest_remaining)}
                     </p>
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
