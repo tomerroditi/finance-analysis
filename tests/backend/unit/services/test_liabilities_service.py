@@ -78,9 +78,60 @@ class TestLiabilitiesService:
         assert len(analysis["transactions"]) == 4
 
         summary = analysis["summary"]
-        assert "total_paid" in summary
-        assert "remaining_balance" in summary
-        assert "payments_made" in summary
+        assert summary["payments_made"] == 3
+        assert abs(summary["total_payments"] - 3450.0) < 0.01
+        assert abs(summary["total_receipts"] - 50000.0) < 0.01
+        # Remaining balance is from schedule entry after 3 payments
+        expected_balance = analysis["schedule"][3]["remaining_balance"]
+        assert abs(summary["remaining_balance"] - expected_balance) < 0.01
+
+    def test_analysis_interest_split_matches_schedule(self, db_session, seed_liabilities):
+        """Verify interest_paid + interest_remaining equals total schedule interest."""
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+        analysis = service.get_liability_analysis(car_loan.id)
+        summary = analysis["summary"]
+
+        total_schedule_interest = sum(
+            e["interest_portion"] for e in analysis["schedule"]
+        )
+
+        # interest_paid + interest_remaining == total schedule interest
+        assert abs(
+            (summary["interest_paid"] + summary["interest_remaining"])
+            - total_schedule_interest
+        ) < 0.01
+
+    def test_analysis_interest_paid_from_actual_payments(self, db_session, seed_liabilities):
+        """Verify interest_paid is based on first N schedule entries matching payment count."""
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+        analysis = service.get_liability_analysis(car_loan.id)
+        summary = analysis["summary"]
+        schedule = analysis["schedule"]
+
+        # 3 payments made → interest_paid = sum of first 3 schedule interest portions
+        expected_interest_paid = sum(
+            e["interest_portion"] for e in schedule[:3]
+        )
+        # ≈ 187.50 + 183.93 + 180.34 = 551.77
+        assert abs(summary["interest_paid"] - expected_interest_paid) < 0.01
+        assert abs(summary["interest_paid"] - 551.77) < 1.0
+
+    def test_analysis_interest_remaining_from_future_schedule(self, db_session, seed_liabilities):
+        """Verify interest_remaining is sum of schedule entries after payments made."""
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+        analysis = service.get_liability_analysis(car_loan.id)
+        summary = analysis["summary"]
+        schedule = analysis["schedule"]
+
+        # Remaining = sum of entries 4..48
+        expected_remaining = sum(
+            e["interest_portion"] for e in schedule[3:]
+        )
+        assert abs(summary["interest_remaining"] - expected_remaining) < 0.01
+        assert abs(summary["interest_remaining"] - 4176.60) < 1.0
 
     def test_get_liability_transactions(self, db_session, seed_liabilities):
         """Verify get_liability_transactions returns 4 matched transactions with disbursement first."""
