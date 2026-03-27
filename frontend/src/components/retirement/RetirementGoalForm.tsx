@@ -222,7 +222,7 @@ export function RetirementGoalForm({
   return (
     <form onSubmit={handleCalculate} className="space-y-6">
       {/* Core Parameters */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -232,13 +232,13 @@ export function RetirementGoalForm({
           step={1}
         />
         <div>
-          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
+          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
             {t("earlyRetirement.form.gender")}
           </label>
           <select
             value={form.gender}
             onChange={(e) => handleChange("gender", e.target.value)}
-            className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           >
             <option value="male">{t("earlyRetirement.form.male")}</option>
             <option value="female">
@@ -260,20 +260,20 @@ export function RetirementGoalForm({
           step={1}
         />
         <NumberField
-          label={t("earlyRetirement.form.monthlyExpenses")}
-          value={form.monthly_expenses_in_retirement}
-          onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
-          min={0}
-          step={500}
-          suffix="₪"
-        />
-        <NumberField
           label={t("earlyRetirement.form.lifeExpectancy")}
           value={form.life_expectancy}
           onChange={(v) => handleChange("life_expectancy", v)}
           min={60}
           max={120}
           step={1}
+        />
+        <NumberField
+          label={t("earlyRetirement.form.monthlyExpenses")}
+          value={form.monthly_expenses_in_retirement}
+          onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
+          min={0}
+          step={500}
+          suffix="₪"
         />
         <NumberField
           label={t("earlyRetirement.form.expectedReturn")}
@@ -307,7 +307,7 @@ export function RetirementGoalForm({
       </button>
 
       {showAdvanced && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 rounded-lg bg-[var(--surface-light)]">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)]">
           <NumberField
             label={t("earlyRetirement.form.pensionPayout")}
             value={form.pension_monthly_payout_estimate}
@@ -334,9 +334,9 @@ export function RetirementGoalForm({
               <button
                 type="button"
                 onClick={applyScrapedKh}
-                className="flex items-center gap-1 mt-1 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
               >
-                <RefreshCw size={12} />
+                <RefreshCw size={10} />
                 {t("earlyRetirement.form.useScrapedKh", {
                   amount: ILS_FORMAT.format(khScraped.balance),
                 })}
@@ -356,25 +356,7 @@ export function RetirementGoalForm({
             step={100}
             suffix="₪"
           />
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.bituach_leumi_eligible}
-                onChange={(e) =>
-                  handleChange(
-                    "bituach_leumi_eligible",
-                    e.target.checked,
-                  )
-                }
-                className="w-4 h-4 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)]"
-              />
-              <span className="text-sm text-[var(--text-secondary)]">
-                {t("earlyRetirement.form.bituachLeumiEligible")}
-              </span>
-            </label>
-          </div>
-          {form.bituach_leumi_eligible && (
+          <div>
             <NumberField
               label={t("earlyRetirement.form.bituachLeumiEstimate")}
               value={form.bituach_leumi_monthly_estimate}
@@ -385,8 +367,25 @@ export function RetirementGoalForm({
               step={100}
               suffix="₪"
               tooltip={t("earlyRetirement.tooltips.bituachLeumi")}
+              disabled={!form.bituach_leumi_eligible}
             />
-          )}
+            <label className="flex items-center gap-1.5 mt-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.bituach_leumi_eligible}
+                onChange={(e) =>
+                  handleChange(
+                    "bituach_leumi_eligible",
+                    e.target.checked,
+                  )
+                }
+                className="w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)]"
+              />
+              <span className="text-xs text-[var(--text-muted)]">
+                {t("earlyRetirement.form.bituachLeumiEligible")}
+              </span>
+            </label>
+          </div>
           <NumberField
             label={t("earlyRetirement.form.otherPassiveIncome")}
             value={form.other_passive_income}
@@ -469,13 +468,13 @@ function NumberField({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
+      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
         <span className="flex items-center gap-1">
           {label}
           {tooltip && (
             <span className="group relative">
               <Info
-                size={13}
+                size={12}
                 className="text-[var(--text-muted)] cursor-help"
               />
               <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
@@ -494,11 +493,11 @@ function NumberField({
           max={max}
           step={step}
           disabled={disabled}
-          className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           dir="ltr"
         />
         {suffix && (
-          <span className="absolute inset-inline-end-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-muted)]">
+          <span className="absolute inset-inline-end-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)]">
             {suffix}
           </span>
         )}
