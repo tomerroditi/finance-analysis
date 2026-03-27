@@ -731,9 +731,7 @@
       "bituachLeumiEstimate": "Bituach Leumi Monthly",
       "otherPassiveIncome": "Other Passive Income",
       "calculate": "Calculate",
-      "useScrapedKh": "Use scraped balance: {{amount}}",
-      "suggestion": "On track",
-      "suggestionTooltip": "Apply this value to get on track for your retirement goal"
+      "useScrapedKh": "Use scraped balance: {{amount}}"
     },
     "status": {
       "netWorth": "Net Worth",
@@ -754,7 +752,8 @@
       "readiness_close": "Almost There",
       "readiness_off_track": "Off Track",
       "notReachable": "Not reachable",
-      "onTrackNoExtra": "On track!"
+      "onTrackNoExtra": "On track!",
+      "adjustPlan": "Adjust plan to get on track:"
     },
     "charts": {
       "netWorthProjection": "Net Worth Projection",

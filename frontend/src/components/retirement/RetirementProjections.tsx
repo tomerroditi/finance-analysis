@@ -9,13 +9,22 @@ import {
   AlertTriangle,
   XCircle,
   Info,
+  Wand2,
 } from "lucide-react";
-import type { RetirementProjections as ProjectionsType } from "../../services/api";
+import type {
+  RetirementProjections as ProjectionsType,
+  RetirementSuggestions,
+} from "../../services/api";
 import { NetWorthProjectionChart } from "./NetWorthProjectionChart";
 import { RetirementIncomeChart } from "./RetirementIncomeChart";
 
+type SuggestionField = keyof RetirementSuggestions;
+
 interface Props {
   projections: ProjectionsType;
+  suggestions?: RetirementSuggestions | null;
+  onAdjust?: (field: SuggestionField, value: number) => void;
+  isAdjusting?: boolean;
 }
 
 const formatCurrency = (value: number) =>
@@ -46,6 +55,13 @@ const readinessConfig = {
   },
 };
 
+function formatSuggestionValue(field: SuggestionField, value: number): string {
+  if (field === "target_retirement_age") return `${value}`;
+  if (field === "monthly_expenses_in_retirement") return formatCurrency(value);
+  if (field === "expected_return_rate") return `${(value * 100).toFixed(1)}%`;
+  return `${value}`;
+}
+
 function InfoTooltip({ text }: { text: string }) {
   return (
     <span className="group relative">
@@ -57,7 +73,12 @@ function InfoTooltip({ text }: { text: string }) {
   );
 }
 
-export function RetirementProjections({ projections }: Props) {
+export function RetirementProjections({
+  projections,
+  suggestions,
+  onAdjust,
+  isAdjusting,
+}: Props) {
   const { t } = useTranslation();
   const readiness = readinessConfig[projections.readiness];
   const ReadinessIcon = readiness.icon;
@@ -123,6 +144,52 @@ export function RetirementProjections({ projections }: Props) {
     },
   ];
 
+  const showSuggestions =
+    projections.readiness !== "on_track" && suggestions && onAdjust;
+
+  // Build suggestion items, filtering out -1 (not achievable)
+  const suggestionItems: {
+    field: SuggestionField;
+    label: string;
+    value: number;
+    display: string;
+  }[] = [];
+  if (showSuggestions) {
+    if (suggestions.target_retirement_age !== -1) {
+      suggestionItems.push({
+        field: "target_retirement_age",
+        label: t("earlyRetirement.form.targetRetirementAge"),
+        value: suggestions.target_retirement_age,
+        display: formatSuggestionValue(
+          "target_retirement_age",
+          suggestions.target_retirement_age,
+        ),
+      });
+    }
+    if (suggestions.monthly_expenses_in_retirement !== -1) {
+      suggestionItems.push({
+        field: "monthly_expenses_in_retirement",
+        label: t("earlyRetirement.form.monthlyExpenses"),
+        value: suggestions.monthly_expenses_in_retirement,
+        display: formatSuggestionValue(
+          "monthly_expenses_in_retirement",
+          suggestions.monthly_expenses_in_retirement,
+        ),
+      });
+    }
+    if (suggestions.expected_return_rate !== -1) {
+      suggestionItems.push({
+        field: "expected_return_rate",
+        label: t("earlyRetirement.form.expectedReturn"),
+        value: suggestions.expected_return_rate,
+        display: formatSuggestionValue(
+          "expected_return_rate",
+          suggestions.expected_return_rate,
+        ),
+      });
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* KPI Cards + Readiness */}
@@ -177,6 +244,30 @@ export function RetirementProjections({ projections }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Adjust Plan Suggestions */}
+      {suggestionItems.length > 0 && onAdjust && (
+        <div className="flex flex-wrap items-center gap-3 p-4 rounded-xl bg-amber-500/5 border border-amber-500/20">
+          <div className="flex items-center gap-2 text-sm text-amber-400 font-medium">
+            <Wand2 size={16} />
+            {t("earlyRetirement.projections.adjustPlan")}
+          </div>
+          {suggestionItems.map((item) => (
+            <button
+              key={item.field}
+              type="button"
+              onClick={() => onAdjust(item.field, item.value)}
+              disabled={isAdjusting}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50 transition-colors disabled:opacity-50"
+            >
+              <span className="text-[var(--text-muted)]">{item.label}:</span>
+              <span className="font-semibold" dir="ltr">
+                {item.display}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

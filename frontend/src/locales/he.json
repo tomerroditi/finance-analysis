@@ -731,9 +731,7 @@
       "bituachLeumiEstimate": "קצבת ביטוח לאומי חודשית",
       "otherPassiveIncome": "הכנסה פסיבית אחרת",
       "calculate": "חשב",
-      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}",
-      "suggestion": "במסלול",
-      "suggestionTooltip": "החל ערך זה כדי להגיע ליעד הפרישה שלך"
+      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}"
     },
     "status": {
       "netWorth": "שווי נקי",
@@ -754,7 +752,8 @@
       "readiness_close": "כמעט שם",
       "readiness_off_track": "לא במסלול",
       "notReachable": "לא ניתן להשגה",
-      "onTrackNoExtra": "במסלול!"
+      "onTrackNoExtra": "במסלול!",
+      "adjustPlan": "התאם תוכנית כדי להגיע למסלול:"
     },
     "charts": {
       "netWorthProjection": "תחזית שווי נקי",

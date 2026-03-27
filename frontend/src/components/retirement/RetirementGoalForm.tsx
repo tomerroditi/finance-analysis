@@ -5,27 +5,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import {
-  Save,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  RefreshCw,
-  Wand2,
-} from "lucide-react";
-import {
-  retirementApi,
-  type RetirementGoal,
-  type RetirementSuggestions,
-} from "../../services/api";
+import { Save, ChevronDown, ChevronUp, Info, RefreshCw } from "lucide-react";
+import { retirementApi, type RetirementGoal } from "../../services/api";
 
 interface Props {
   goal: RetirementGoal | null;
   isCalculating?: boolean;
-  readiness?: "on_track" | "close" | "off_track";
 }
-
-type SuggestionField = keyof RetirementSuggestions;
 
 const ILS_FORMAT = new Intl.NumberFormat("he-IL", {
   style: "currency",
@@ -71,23 +57,7 @@ function goalToForm(goal: RetirementGoal | null) {
   };
 }
 
-function formatSuggestion(
-  field: SuggestionField,
-  value: number,
-): string | null {
-  if (value === -1) return null;
-  if (field === "target_retirement_age") return `${value}`;
-  if (field === "monthly_expenses_in_retirement")
-    return ILS_FORMAT.format(value);
-  if (field === "expected_return_rate") return `${(value * 100).toFixed(1)}%`;
-  return null;
-}
-
-export function RetirementGoalForm({
-  goal,
-  isCalculating,
-  readiness,
-}: Props) {
+export function RetirementGoalForm({ goal, isCalculating }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -108,14 +78,6 @@ export function RetirementGoalForm({
     queryKey: ["retirement", "keren-hishtalmut-balance"],
     queryFn: () =>
       retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
-  });
-
-  // Fetch suggestions when not on track (after calculating)
-  const showSuggestions = !!goal && readiness && readiness !== "on_track";
-  const { data: suggestions } = useQuery({
-    queryKey: ["retirement", "suggestions"],
-    queryFn: () => retirementApi.getSuggestions().then((r) => r.data),
-    enabled: showSuggestions,
   });
 
   const mutation = useMutation({
@@ -149,20 +111,6 @@ export function RetirementGoalForm({
     mutation.mutate();
   };
 
-  const applySuggestion = (field: SuggestionField) => {
-    if (!suggestions) return;
-    const value = suggestions[field];
-    if (value === -1) return;
-
-    if (field === "expected_return_rate") {
-      setForm((prev) => ({ ...prev, expected_return_rate: value * 100 }));
-    } else {
-      setForm((prev) => ({ ...prev, [field]: value }));
-    }
-    // Auto-submit after applying
-    setTimeout(() => mutation.mutate(), 0);
-  };
-
   const applyScrapedKh = () => {
     if (khScraped?.balance != null) {
       handleChange("keren_hishtalmut_balance", khScraped.balance);
@@ -170,28 +118,6 @@ export function RetirementGoalForm({
   };
 
   const isBusy = mutation.isPending || !!isCalculating;
-
-  const getSuggestionForField = (
-    field: SuggestionField,
-  ): { display: string; isCurrentValue: boolean } | null => {
-    if (!showSuggestions || !suggestions) return null;
-    const value = suggestions[field];
-    const display = formatSuggestion(field, value);
-    if (!display) return null;
-
-    // Don't show if the suggestion matches the current form value
-    let isCurrentValue = false;
-    if (field === "target_retirement_age") {
-      isCurrentValue = form.target_retirement_age === value;
-    } else if (field === "monthly_expenses_in_retirement") {
-      isCurrentValue =
-        Math.abs(form.monthly_expenses_in_retirement - value) < 1;
-    } else if (field === "expected_return_rate") {
-      isCurrentValue =
-        Math.abs(form.expected_return_rate - value * 100) < 0.01;
-    }
-    return { display, isCurrentValue };
-  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -225,40 +151,22 @@ export function RetirementGoalForm({
             })}
           </span>
         </div>
-        <SuggestableField
-          field="target_retirement_age"
-          suggestion={getSuggestionForField("target_retirement_age")}
-          onApply={applySuggestion}
-          isBusy={isBusy}
-        >
-          <NumberField
-            label={t("earlyRetirement.form.targetRetirementAge")}
-            value={form.target_retirement_age}
-            onChange={(v) => handleChange("target_retirement_age", v)}
-            min={30}
-            max={100}
-            step={1}
-          />
-        </SuggestableField>
-        <SuggestableField
-          field="monthly_expenses_in_retirement"
-          suggestion={getSuggestionForField(
-            "monthly_expenses_in_retirement",
-          )}
-          onApply={applySuggestion}
-          isBusy={isBusy}
-        >
-          <NumberField
-            label={t("earlyRetirement.form.monthlyExpenses")}
-            value={form.monthly_expenses_in_retirement}
-            onChange={(v) =>
-              handleChange("monthly_expenses_in_retirement", v)
-            }
-            min={0}
-            step={500}
-            suffix="₪"
-          />
-        </SuggestableField>
+        <NumberField
+          label={t("earlyRetirement.form.targetRetirementAge")}
+          value={form.target_retirement_age}
+          onChange={(v) => handleChange("target_retirement_age", v)}
+          min={30}
+          max={100}
+          step={1}
+        />
+        <NumberField
+          label={t("earlyRetirement.form.monthlyExpenses")}
+          value={form.monthly_expenses_in_retirement}
+          onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
+          min={0}
+          step={500}
+          suffix="₪"
+        />
         <NumberField
           label={t("earlyRetirement.form.lifeExpectancy")}
           value={form.life_expectancy}
@@ -267,22 +175,15 @@ export function RetirementGoalForm({
           max={120}
           step={1}
         />
-        <SuggestableField
-          field="expected_return_rate"
-          suggestion={getSuggestionForField("expected_return_rate")}
-          onApply={applySuggestion}
-          isBusy={isBusy}
-        >
-          <NumberField
-            label={t("earlyRetirement.form.expectedReturn")}
-            value={form.expected_return_rate}
-            onChange={(v) => handleChange("expected_return_rate", v)}
-            min={-10}
-            max={30}
-            step={0.5}
-            suffix="%"
-          />
-        </SuggestableField>
+        <NumberField
+          label={t("earlyRetirement.form.expectedReturn")}
+          value={form.expected_return_rate}
+          onChange={(v) => handleChange("expected_return_rate", v)}
+          min={-10}
+          max={30}
+          step={0.5}
+          suffix="%"
+        />
         <NumberField
           label={t("earlyRetirement.form.withdrawalRate")}
           value={form.withdrawal_rate}
@@ -419,45 +320,6 @@ export function RetirementGoalForm({
         </button>
       </div>
     </form>
-  );
-}
-
-function SuggestableField({
-  field,
-  suggestion,
-  onApply,
-  isBusy,
-  children,
-}: {
-  field: SuggestionField;
-  suggestion: { display: string; isCurrentValue: boolean } | null;
-  onApply: (field: SuggestionField) => void;
-  isBusy: boolean;
-  children: React.ReactNode;
-}) {
-  const { t } = useTranslation();
-
-  if (!suggestion || suggestion.isCurrentValue) return <>{children}</>;
-
-  return (
-    <div>
-      {children}
-      <button
-        type="button"
-        onClick={() => onApply(field)}
-        disabled={isBusy}
-        className="flex items-center gap-1 mt-1 text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50"
-        title={t("earlyRetirement.form.suggestionTooltip")}
-      >
-        <Wand2 size={12} />
-        <span>
-          {t("earlyRetirement.form.suggestion")}:{" "}
-          <span dir="ltr" className="font-medium">
-            {suggestion.display}
-          </span>
-        </span>
-      </button>
-    </div>
   );
 }
 

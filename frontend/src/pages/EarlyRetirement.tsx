@@ -1,13 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Target, BarChart3, Activity } from "lucide-react";
-import { retirementApi } from "../services/api";
+import {
+  retirementApi,
+  type RetirementGoal,
+  type RetirementSuggestions,
+} from "../services/api";
 import { RetirementGoalForm } from "../components/retirement/RetirementGoalForm";
 import { RetirementStatus } from "../components/retirement/RetirementStatus";
 import { RetirementProjections } from "../components/retirement/RetirementProjections";
 
+type SuggestionField = keyof RetirementSuggestions;
+
 export function EarlyRetirement() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [formKey, setFormKey] = useState(0);
 
   const { data: goal, isLoading: goalLoading } = useQuery({
     queryKey: ["retirement", "goal"],
@@ -28,6 +37,48 @@ export function EarlyRetirement() {
     queryFn: () => retirementApi.getProjections().then((r) => r.data),
     enabled: !!goal,
   });
+
+  const { data: suggestions } = useQuery({
+    queryKey: ["retirement", "suggestions"],
+    queryFn: () => retirementApi.getSuggestions().then((r) => r.data),
+    enabled: !!goal && !!projections && projections.readiness !== "on_track",
+  });
+
+  // Adjust mutation: saves the current goal with one field overridden
+  const adjustMutation = useMutation({
+    mutationFn: ({
+      field,
+      value,
+    }: {
+      field: SuggestionField;
+      value: number;
+    }) => {
+      const currentGoal = goal as RetirementGoal;
+      return retirementApi.upsertGoal({
+        ...currentGoal,
+        [field]: value,
+      });
+    },
+    onSuccess: (response) => {
+      queryClient.setQueryData(["retirement", "goal"], response.data);
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "projections"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "status"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["retirement", "suggestions"],
+      });
+      // Bump form key to force re-mount so form picks up new goal values
+      setFormKey((k) => k + 1);
+    },
+  });
+
+  const handleAdjust = (field: SuggestionField, value: number) => {
+    if (!goal) return;
+    adjustMutation.mutate({ field, value });
+  };
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -61,9 +112,9 @@ export function EarlyRetirement() {
           <FormSkeleton />
         ) : (
           <RetirementGoalForm
+            key={formKey}
             goal={goal ?? null}
-            isCalculating={projectionsFetching}
-            readiness={projections?.readiness}
+            isCalculating={projectionsFetching || adjustMutation.isPending}
           />
         )}
       </Section>
@@ -74,10 +125,15 @@ export function EarlyRetirement() {
           icon={<BarChart3 size={18} className="text-purple-400" />}
           title={t("earlyRetirement.sections.projections")}
         >
-          {projectionsLoading || projectionsFetching ? (
+          {projectionsLoading || projectionsFetching || adjustMutation.isPending ? (
             <ProjectionsSkeleton />
           ) : projections ? (
-            <RetirementProjections projections={projections} />
+            <RetirementProjections
+              projections={projections}
+              suggestions={suggestions}
+              onAdjust={handleAdjust}
+              isAdjusting={adjustMutation.isPending}
+            />
           ) : null}
         </Section>
       )}
