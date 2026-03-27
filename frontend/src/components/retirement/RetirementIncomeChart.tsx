@@ -73,6 +73,7 @@ export function RetirementIncomeChart({ data }: Props) {
       data={traces}
       layout={{
         ...chartTheme,
+        margin: { ...chartTheme.margin, l: 80 },
         barmode: "stack" as const,
         xaxis: {
           title: { text: t("earlyRetirement.charts.age") },
@@ -82,6 +83,7 @@ export function RetirementIncomeChart({ data }: Props) {
         yaxis: {
           gridcolor: "rgba(148, 163, 184, 0.1)",
           tickformat: ",.0f",
+          automargin: true,
         },
         legend: {
           orientation: "h" as const,

@@ -17,6 +17,7 @@ import { retirementApi, type RetirementGoal } from "../../services/api";
 
 interface Props {
   goal: RetirementGoal | null;
+  isCalculating?: boolean;
 }
 
 type AutoAdjustField =
@@ -73,7 +74,7 @@ const SOLVE_FIELD_MAP: Record<
   expected_return_rate: "expected_return_rate",
 };
 
-export function RetirementGoalForm({ goal }: Props) {
+export function RetirementGoalForm({ goal, isCalculating }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -115,7 +116,9 @@ export function RetirementGoalForm({ goal }: Props) {
         expected_return_rate: form.expected_return_rate / 100,
         withdrawal_rate: form.withdrawal_rate / 100,
       }),
-    onSuccess: () => {
+    onSuccess: (response) => {
+      // Set goal cache immediately so projections section appears right away
+      queryClient.setQueryData(["retirement", "goal"], response.data);
       queryClient.invalidateQueries({ queryKey: ["retirement"] });
     },
   });
@@ -393,11 +396,11 @@ export function RetirementGoalForm({ goal }: Props) {
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || !!isCalculating}
           className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           <Save size={16} />
-          {mutation.isPending
+          {mutation.isPending || isCalculating
             ? t("common.loading")
             : t("earlyRetirement.form.calculate")}
         </button>

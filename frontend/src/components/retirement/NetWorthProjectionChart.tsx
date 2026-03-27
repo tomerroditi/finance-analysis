@@ -134,6 +134,7 @@ export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) 
       data={traces}
       layout={{
         ...chartTheme,
+        margin: { ...chartTheme.margin, l: 80 },
         xaxis: {
           title: { text: t("earlyRetirement.charts.age") },
           gridcolor: "rgba(148, 163, 184, 0.1)",
@@ -142,6 +143,7 @@ export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) 
         yaxis: {
           gridcolor: "rgba(148, 163, 184, 0.1)",
           tickformat: ",.0f",
+          automargin: true,
         },
         legend: {
           orientation: "h" as const,

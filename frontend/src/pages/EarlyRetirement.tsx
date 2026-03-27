@@ -60,7 +60,10 @@ export function EarlyRetirement() {
         {goalLoading ? (
           <FormSkeleton />
         ) : (
-          <RetirementGoalForm goal={goal ?? null} />
+          <RetirementGoalForm
+            goal={goal ?? null}
+            isCalculating={projectionsFetching}
+          />
         )}
       </Section>
 
