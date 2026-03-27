@@ -386,6 +386,32 @@ class RetirementService:
 
         return result
 
+    def solve_all_fields(self) -> dict:
+        """Solve for all adjustable fields to find values that reach FIRE.
+
+        Returns
+        -------
+        dict
+            Keys: target_retirement_age, monthly_expenses_in_retirement,
+            expected_return_rate. Each value is the solved result or -1 if
+            not achievable.
+        """
+        goal_data = self.get_goal()
+        if not goal_data:
+            raise EntityNotFoundException("Retirement goal not configured")
+
+        status = self.get_current_status()
+
+        age = self._solve_target_retirement_age(goal_data, status)
+        expenses = self._solve_monthly_expenses(goal_data, status)
+        rate = self._solve_return_rate(goal_data, status)
+
+        return {
+            "target_retirement_age": age,
+            "monthly_expenses_in_retirement": round(expenses, 0) if expenses != -1 else -1,
+            "expected_return_rate": round(rate, 4) if rate != -1 else -1,
+        }
+
     def solve_for_field(self, field: str) -> dict:
         """Solve for a single field value that would reach FIRE at target age.
 

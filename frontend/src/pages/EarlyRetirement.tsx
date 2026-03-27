@@ -63,6 +63,7 @@ export function EarlyRetirement() {
           <RetirementGoalForm
             goal={goal ?? null}
             isCalculating={projectionsFetching}
+            readiness={projections?.readiness}
           />
         )}
       </Section>

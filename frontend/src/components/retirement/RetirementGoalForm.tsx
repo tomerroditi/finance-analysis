@@ -13,18 +13,25 @@ import {
   RefreshCw,
   Wand2,
 } from "lucide-react";
-import { retirementApi, type RetirementGoal } from "../../services/api";
+import {
+  retirementApi,
+  type RetirementGoal,
+  type RetirementSuggestions,
+} from "../../services/api";
 
 interface Props {
   goal: RetirementGoal | null;
   isCalculating?: boolean;
+  readiness?: "on_track" | "close" | "off_track";
 }
 
-type AutoAdjustField =
-  | "target_retirement_age"
-  | "monthly_expenses_in_retirement"
-  | "expected_return_rate"
-  | null;
+type SuggestionField = keyof RetirementSuggestions;
+
+const ILS_FORMAT = new Intl.NumberFormat("he-IL", {
+  style: "currency",
+  currency: "ILS",
+  maximumFractionDigits: 0,
+});
 
 function goalToForm(goal: RetirementGoal | null) {
   if (!goal) {
@@ -64,21 +71,26 @@ function goalToForm(goal: RetirementGoal | null) {
   };
 }
 
-const SOLVE_FIELD_MAP: Record<
-  Exclude<AutoAdjustField, null>,
-  string
-> = {
-  target_retirement_age: "target_retirement_age",
-  monthly_expenses_in_retirement: "monthly_expenses_in_retirement",
-  expected_return_rate: "expected_return_rate",
-};
+function formatSuggestion(
+  field: SuggestionField,
+  value: number,
+): string | null {
+  if (value === -1) return null;
+  if (field === "target_retirement_age") return `${value}`;
+  if (field === "monthly_expenses_in_retirement")
+    return ILS_FORMAT.format(value);
+  if (field === "expected_return_rate") return `${(value * 100).toFixed(1)}%`;
+  return null;
+}
 
-export function RetirementGoalForm({ goal, isCalculating }: Props) {
+export function RetirementGoalForm({
+  goal,
+  isCalculating,
+  readiness,
+}: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [autoAdjustField, setAutoAdjustField] =
-    useState<AutoAdjustField>(null);
 
   const [form, setForm] = useState(() => goalToForm(goal));
 
@@ -98,39 +110,24 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
       retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
   });
 
-  // Solve for auto-adjusted field (only when goal exists and a field is selected)
-  const { data: solvedData, isFetching: isSolving } = useQuery({
-    queryKey: ["retirement", "solve", autoAdjustField],
-    queryFn: () =>
-      retirementApi
-        .solveForField(SOLVE_FIELD_MAP[autoAdjustField!])
-        .then((r) => r.data),
-    enabled: !!goal && !!autoAdjustField,
+  // Fetch suggestions when not on track (after calculating)
+  const showSuggestions = !!goal && readiness && readiness !== "on_track";
+  const { data: suggestions } = useQuery({
+    queryKey: ["retirement", "suggestions"],
+    queryFn: () => retirementApi.getSuggestions().then((r) => r.data),
+    enabled: showSuggestions,
   });
 
   const mutation = useMutation({
-    mutationFn: () => {
-      // When auto-adjust is active with a solved value, apply it to the payload
-      const submitted = { ...form };
-      if (autoAdjustField && solvedData && solvedData.value !== -1) {
-        if (autoAdjustField === "expected_return_rate") {
-          submitted.expected_return_rate = solvedData.value * 100;
-        } else {
-          submitted[autoAdjustField] = solvedData.value;
-        }
-        setForm(submitted);
-      }
-      return retirementApi.upsertGoal({
-        ...submitted,
-        inflation_rate: submitted.inflation_rate / 100,
-        expected_return_rate: submitted.expected_return_rate / 100,
-        withdrawal_rate: submitted.withdrawal_rate / 100,
-      });
-    },
+    mutationFn: () =>
+      retirementApi.upsertGoal({
+        ...form,
+        inflation_rate: form.inflation_rate / 100,
+        expected_return_rate: form.expected_return_rate / 100,
+        withdrawal_rate: form.withdrawal_rate / 100,
+      }),
     onSuccess: (response) => {
-      // Update goal cache so projections section appears immediately
       queryClient.setQueryData(["retirement", "goal"], response.data);
-      // Refetch projections, status, and solve queries
       queryClient.invalidateQueries({
         queryKey: ["retirement", "projections"],
       });
@@ -138,7 +135,7 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
         queryKey: ["retirement", "status"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["retirement", "solve"],
+        queryKey: ["retirement", "suggestions"],
       });
     },
   });
@@ -152,38 +149,49 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
     mutation.mutate();
   };
 
+  const applySuggestion = (field: SuggestionField) => {
+    if (!suggestions) return;
+    const value = suggestions[field];
+    if (value === -1) return;
+
+    if (field === "expected_return_rate") {
+      setForm((prev) => ({ ...prev, expected_return_rate: value * 100 }));
+    } else {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    }
+    // Auto-submit after applying
+    setTimeout(() => mutation.mutate(), 0);
+  };
+
   const applyScrapedKh = () => {
     if (khScraped?.balance != null) {
       handleChange("keren_hishtalmut_balance", khScraped.balance);
     }
   };
 
-  const toggleAutoAdjust = (field: Exclude<AutoAdjustField, null>) => {
-    setAutoAdjustField((prev) => (prev === field ? null : field));
-  };
-
-  const getSolvedDisplayValue = (): string | null => {
-    if (!solvedData || !autoAdjustField) return null;
-    if (solvedData.value === -1)
-      return t("earlyRetirement.projections.notReachable");
-
-    if (autoAdjustField === "target_retirement_age") {
-      return `${solvedData.value}`;
-    }
-    if (autoAdjustField === "monthly_expenses_in_retirement") {
-      return new Intl.NumberFormat("he-IL", {
-        style: "currency",
-        currency: "ILS",
-        maximumFractionDigits: 0,
-      }).format(solvedData.value);
-    }
-    if (autoAdjustField === "expected_return_rate") {
-      return `${(solvedData.value * 100).toFixed(1)}%`;
-    }
-    return null;
-  };
-
   const isBusy = mutation.isPending || !!isCalculating;
+
+  const getSuggestionForField = (
+    field: SuggestionField,
+  ): { display: string; isCurrentValue: boolean } | null => {
+    if (!showSuggestions || !suggestions) return null;
+    const value = suggestions[field];
+    const display = formatSuggestion(field, value);
+    if (!display) return null;
+
+    // Don't show if the suggestion matches the current form value
+    let isCurrentValue = false;
+    if (field === "target_retirement_age") {
+      isCurrentValue = form.target_retirement_age === value;
+    } else if (field === "monthly_expenses_in_retirement") {
+      isCurrentValue =
+        Math.abs(form.monthly_expenses_in_retirement - value) < 1;
+    } else if (field === "expected_return_rate") {
+      isCurrentValue =
+        Math.abs(form.expected_return_rate - value * 100) < 0.01;
+    }
+    return { display, isCurrentValue };
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -217,14 +225,11 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
             })}
           </span>
         </div>
-        <AutoAdjustableField
-          fieldKey="target_retirement_age"
-          autoAdjustField={autoAdjustField}
-          solvedDisplayValue={getSolvedDisplayValue()}
-          isSolving={isSolving}
-          onToggle={toggleAutoAdjust}
-          hasGoal={!!goal}
-          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        <SuggestableField
+          field="target_retirement_age"
+          suggestion={getSuggestionForField("target_retirement_age")}
+          onApply={applySuggestion}
+          isBusy={isBusy}
         >
           <NumberField
             label={t("earlyRetirement.form.targetRetirementAge")}
@@ -233,17 +238,15 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
             min={30}
             max={100}
             step={1}
-            disabled={autoAdjustField === "target_retirement_age"}
           />
-        </AutoAdjustableField>
-        <AutoAdjustableField
-          fieldKey="monthly_expenses_in_retirement"
-          autoAdjustField={autoAdjustField}
-          solvedDisplayValue={getSolvedDisplayValue()}
-          isSolving={isSolving}
-          onToggle={toggleAutoAdjust}
-          hasGoal={!!goal}
-          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        </SuggestableField>
+        <SuggestableField
+          field="monthly_expenses_in_retirement"
+          suggestion={getSuggestionForField(
+            "monthly_expenses_in_retirement",
+          )}
+          onApply={applySuggestion}
+          isBusy={isBusy}
         >
           <NumberField
             label={t("earlyRetirement.form.monthlyExpenses")}
@@ -254,11 +257,8 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
             min={0}
             step={500}
             suffix="₪"
-            disabled={
-              autoAdjustField === "monthly_expenses_in_retirement"
-            }
           />
-        </AutoAdjustableField>
+        </SuggestableField>
         <NumberField
           label={t("earlyRetirement.form.lifeExpectancy")}
           value={form.life_expectancy}
@@ -267,14 +267,11 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
           max={120}
           step={1}
         />
-        <AutoAdjustableField
-          fieldKey="expected_return_rate"
-          autoAdjustField={autoAdjustField}
-          solvedDisplayValue={getSolvedDisplayValue()}
-          isSolving={isSolving}
-          onToggle={toggleAutoAdjust}
-          hasGoal={!!goal}
-          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        <SuggestableField
+          field="expected_return_rate"
+          suggestion={getSuggestionForField("expected_return_rate")}
+          onApply={applySuggestion}
+          isBusy={isBusy}
         >
           <NumberField
             label={t("earlyRetirement.form.expectedReturn")}
@@ -284,9 +281,8 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
             max={30}
             step={0.5}
             suffix="%"
-            disabled={autoAdjustField === "expected_return_rate"}
           />
-        </AutoAdjustableField>
+        </SuggestableField>
         <NumberField
           label={t("earlyRetirement.form.withdrawalRate")}
           value={form.withdrawal_rate}
@@ -341,11 +337,7 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
               >
                 <RefreshCw size={12} />
                 {t("earlyRetirement.form.useScrapedKh", {
-                  amount: new Intl.NumberFormat("he-IL", {
-                    style: "currency",
-                    currency: "ILS",
-                    maximumFractionDigits: 0,
-                  }).format(khScraped.balance),
+                  amount: ILS_FORMAT.format(khScraped.balance),
                 })}
               </button>
             )}
@@ -430,60 +422,41 @@ export function RetirementGoalForm({ goal, isCalculating }: Props) {
   );
 }
 
-function AutoAdjustableField({
-  fieldKey,
-  autoAdjustField,
-  solvedDisplayValue,
-  isSolving,
-  onToggle,
-  hasGoal,
-  autoTooltip,
+function SuggestableField({
+  field,
+  suggestion,
+  onApply,
+  isBusy,
   children,
 }: {
-  fieldKey: Exclude<AutoAdjustField, null>;
-  autoAdjustField: AutoAdjustField;
-  solvedDisplayValue: string | null;
-  isSolving: boolean;
-  onToggle: (field: Exclude<AutoAdjustField, null>) => void;
-  hasGoal: boolean;
-  autoTooltip: string;
+  field: SuggestionField;
+  suggestion: { display: string; isCurrentValue: boolean } | null;
+  onApply: (field: SuggestionField) => void;
+  isBusy: boolean;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const isActive = autoAdjustField === fieldKey;
+
+  if (!suggestion || suggestion.isCurrentValue) return <>{children}</>;
 
   return (
-    <div className="relative">
+    <div>
       {children}
-      <div className="flex items-center gap-2 mt-1">
-        {hasGoal && (
-          <button
-            type="button"
-            onClick={() => onToggle(fieldKey)}
-            className={`flex items-center gap-1 text-xs transition-colors ${
-              isActive
-                ? "text-amber-400 font-medium"
-                : "text-[var(--text-muted)] hover:text-[var(--primary)]"
-            }`}
-            title={autoTooltip}
-          >
-            <Wand2 size={12} />
-            {t("earlyRetirement.form.autoAdjust")}
-          </button>
-        )}
-        {isActive && (
-          <span
-            className="text-xs font-medium text-amber-400"
-            dir="ltr"
-          >
-            {isSolving
-              ? "..."
-              : solvedDisplayValue
-                ? `→ ${solvedDisplayValue}`
-                : ""}
+      <button
+        type="button"
+        onClick={() => onApply(field)}
+        disabled={isBusy}
+        className="flex items-center gap-1 mt-1 text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50"
+        title={t("earlyRetirement.form.suggestionTooltip")}
+      >
+        <Wand2 size={12} />
+        <span>
+          {t("earlyRetirement.form.suggestion")}:{" "}
+          <span dir="ltr" className="font-medium">
+            {suggestion.display}
           </span>
-        )}
-      </div>
+        </span>
+      </button>
     </div>
   );
 }

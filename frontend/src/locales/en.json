@@ -732,8 +732,8 @@
       "otherPassiveIncome": "Other Passive Income",
       "calculate": "Calculate",
       "useScrapedKh": "Use scraped balance: {{amount}}",
-      "autoAdjust": "Auto",
-      "autoAdjustTooltip": "Auto-calculate this field based on other parameters and your current financial data"
+      "suggestion": "On track",
+      "suggestionTooltip": "Apply this value to get on track for your retirement goal"
     },
     "status": {
       "netWorth": "Net Worth",

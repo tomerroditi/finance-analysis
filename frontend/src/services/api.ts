@@ -444,6 +444,12 @@ export interface RetirementStatus {
   monthly_savings: number;
 }
 
+export interface RetirementSuggestions {
+  target_retirement_age: number;
+  monthly_expenses_in_retirement: number;
+  expected_return_rate: number;
+}
+
 export interface RetirementProjections {
   fire_number: number;
   years_to_fire: number;
@@ -480,6 +486,8 @@ export const retirementApi = {
     api.get<RetirementProjections>("/retirement/projections"),
   getKerenHishtalmutBalance: () =>
     api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
+  getSuggestions: () =>
+    api.get<RetirementSuggestions>("/retirement/suggestions"),
   solveForField: (field: string) =>
     api.get<{ field: string; value: number; unit: string }>(
       `/retirement/solve/${field}`,

@@ -89,6 +89,13 @@ async def get_projections(db: Session = Depends(get_database)):
     return service.get_projections()
 
 
+@router.get("/suggestions")
+async def get_suggestions(db: Session = Depends(get_database)):
+    """Solve all adjustable fields to suggest values that would reach FIRE."""
+    service = RetirementService(db)
+    return service.solve_all_fields()
+
+
 @router.get("/solve/{field}")
 async def solve_for_field(field: str, db: Session = Depends(get_database)):
     """Solve for a field value that reaches FIRE at target retirement age."""
