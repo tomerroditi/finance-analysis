@@ -83,9 +83,9 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
             </span>
           </span>
 
-          {/* Actions - hover only */}
+          {/* Actions - always visible on mobile, hover on desktop */}
           {actions && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            <div className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
               {actions}
             </div>
           )}
@@ -130,7 +130,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
         </div>
         <div className="flex items-center gap-4">
           {actions && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+            <div className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
               {actions}
             </div>
           )}
