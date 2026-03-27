@@ -244,16 +244,12 @@ class LiabilitiesService:
         # Monthly payment from schedule (constant for fixed-rate)
         monthly_payment = schedule[0]["payment"] if schedule else 0.0
 
-        # Total expected loan cost = sum of all scheduled payments
-        total_loan_cost = sum(e["payment"] for e in schedule)
-
         percent_paid = (total_payments / record["principal_amount"] * 100) if record["principal_amount"] > 0 else 0.0
 
         summary = {
             "total_receipts": total_receipts,
             "total_payments": total_payments,
             "total_interest_cost": total_interest_cost,
-            "total_loan_cost": total_loan_cost,
             "monthly_payment": monthly_payment,
             "remaining_balance": remaining_balance,
             "percent_paid": round(percent_paid, 1),

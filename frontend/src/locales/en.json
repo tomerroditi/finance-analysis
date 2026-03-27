@@ -529,7 +529,6 @@
     "totalReceipts": "Total Received",
     "totalPaymentsMade": "Total Payments Made",
     "interestRemaining": "Total Interest",
-    "totalLoanCost": "Total Loan Cost",
     "noLiabilities": "No liabilities tracked yet",
     "confirmDelete": "Are you sure you want to delete this liability?",
     "paidOffDate": "Paid Off Date",

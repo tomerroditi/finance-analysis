@@ -56,7 +56,6 @@ interface AnalysisData {
     total_receipts: number;
     total_payments: number;
     total_interest_cost: number;
-    total_loan_cost: number;
     monthly_payment: number;
     remaining_balance: number;
     percent_paid: number;
@@ -833,14 +832,6 @@ export function Liabilities() {
                       {formatCurrency(
                         analysisData.summary.total_interest_cost,
                       )}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.totalLoanCost")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.total_loan_cost)}
                     </p>
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
