@@ -94,8 +94,9 @@ export function RetirementGoalForm({
 
   const [form, setForm] = useState(() => goalToForm(goal));
 
+  // Sync form from saved goal on first real load (ignore stub { id: -1 })
   const [goalLoaded, setGoalLoaded] = useState(!!goal);
-  if (!goalLoaded && goal) {
+  if (!goalLoaded && goal && goal.id !== -1) {
     setGoalLoaded(true);
     setForm(goalToForm(goal));
   }
@@ -132,10 +133,12 @@ export function RetirementGoalForm({
   });
 
   // Handle pending adjustment from projections "Adjust Plan" buttons
-  const [lastAppliedAdjust, setLastAppliedAdjust] =
-    useState<typeof pendingAdjust>(null);
-  if (pendingAdjust && pendingAdjust !== lastAppliedAdjust) {
-    setLastAppliedAdjust(pendingAdjust);
+  const [lastAppliedKey, setLastAppliedKey] = useState("");
+  const adjustKey = pendingAdjust
+    ? `${pendingAdjust.field}:${pendingAdjust.value}`
+    : "";
+  if (pendingAdjust && adjustKey !== lastAppliedKey) {
+    setLastAppliedKey(adjustKey);
     const { field, value } = pendingAdjust;
     // expected_return_rate comes as decimal from solver, form uses percentage
     const formValue =
@@ -145,8 +148,21 @@ export function RetirementGoalForm({
     setHasUnsavedChanges(true);
     // Schedule preview after render completes
     setTimeout(() => {
-      calculateMutation.mutate(updated);
-      onAdjustApplied?.();
+      const payload = formToPayload(updated);
+      Promise.all([
+        retirementApi.previewProjections(payload),
+        retirementApi.previewSuggestions(payload),
+      ]).then(([projectionsRes, suggestionsRes]) => {
+        queryClient.setQueryData(
+          ["retirement", "projections"],
+          projectionsRes.data,
+        );
+        queryClient.setQueryData(
+          ["retirement", "suggestions"],
+          suggestionsRes.data,
+        );
+        onAdjustApplied?.();
+      });
     }, 0);
   }
 
