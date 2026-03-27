@@ -471,6 +471,9 @@ function NumberField({
       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
         <span className="flex items-center gap-1">
           {label}
+          {suffix && (
+            <span className="text-[var(--text-muted)]">({suffix})</span>
+          )}
           {tooltip && (
             <span className="group relative">
               <Info
@@ -484,24 +487,17 @@ function NumberField({
           )}
         </span>
       </label>
-      <div className="relative">
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-          className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          dir="ltr"
-        />
-        {suffix && (
-          <span className="absolute inset-inline-end-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)]">
-            {suffix}
-          </span>
-        )}
-      </div>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        dir="ltr"
+      />
     </div>
   );
 }
