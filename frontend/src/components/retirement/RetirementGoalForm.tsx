@@ -1,12 +1,29 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, ChevronDown, ChevronUp, Info, RefreshCw } from "lucide-react";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Save,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  RefreshCw,
+  Wand2,
+} from "lucide-react";
 import { retirementApi, type RetirementGoal } from "../../services/api";
 
 interface Props {
   goal: RetirementGoal | null;
 }
+
+type AutoAdjustField =
+  | "target_retirement_age"
+  | "monthly_expenses_in_retirement"
+  | "expected_return_rate"
+  | null;
 
 function goalToForm(goal: RetirementGoal | null) {
   if (!goal) {
@@ -46,10 +63,22 @@ function goalToForm(goal: RetirementGoal | null) {
   };
 }
 
+// Maps backend solve field names to the API field param
+const SOLVE_FIELD_MAP: Record<
+  Exclude<AutoAdjustField, null>,
+  string
+> = {
+  target_retirement_age: "target_retirement_age",
+  monthly_expenses_in_retirement: "monthly_expenses_in_retirement",
+  expected_return_rate: "expected_return_rate",
+};
+
 export function RetirementGoalForm({ goal }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [autoAdjustField, setAutoAdjustField] =
+    useState<AutoAdjustField>(null);
 
   const initialForm = useMemo(() => goalToForm(goal), [goal]);
   const [form, setForm] = useState(initialForm);
@@ -66,6 +95,16 @@ export function RetirementGoalForm({ goal }: Props) {
     queryKey: ["retirement", "keren-hishtalmut-balance"],
     queryFn: () =>
       retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
+  });
+
+  // Solve for auto-adjusted field (only when goal exists and a field is selected)
+  const { data: solvedData, isFetching: isSolving } = useQuery({
+    queryKey: ["retirement", "solve", autoAdjustField],
+    queryFn: () =>
+      retirementApi
+        .solveForField(SOLVE_FIELD_MAP[autoAdjustField!])
+        .then((r) => r.data),
+    enabled: !!goal && !!autoAdjustField,
   });
 
   const mutation = useMutation({
@@ -96,6 +135,32 @@ export function RetirementGoalForm({ goal }: Props) {
     }
   };
 
+  const toggleAutoAdjust = (field: Exclude<AutoAdjustField, null>) => {
+    setAutoAdjustField((prev) => (prev === field ? null : field));
+  };
+
+  // Format the solved value for display
+  const getSolvedDisplayValue = (): string | null => {
+    if (!solvedData || !autoAdjustField) return null;
+    if (solvedData.value === -1)
+      return t("earlyRetirement.projections.notReachable");
+
+    if (autoAdjustField === "target_retirement_age") {
+      return `${solvedData.value}`;
+    }
+    if (autoAdjustField === "monthly_expenses_in_retirement") {
+      return new Intl.NumberFormat("he-IL", {
+        style: "currency",
+        currency: "ILS",
+        maximumFractionDigits: 0,
+      }).format(solvedData.value);
+    }
+    if (autoAdjustField === "expected_return_rate") {
+      return `${(solvedData.value * 100).toFixed(1)}%`;
+    }
+    return null;
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Core Parameters */}
@@ -118,7 +183,9 @@ export function RetirementGoalForm({ goal }: Props) {
             className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
           >
             <option value="male">{t("earlyRetirement.form.male")}</option>
-            <option value="female">{t("earlyRetirement.form.female")}</option>
+            <option value="female">
+              {t("earlyRetirement.form.female")}
+            </option>
           </select>
           <span className="text-xs text-[var(--text-muted)] mt-0.5 block">
             {t("earlyRetirement.form.genderPensionNote", {
@@ -126,24 +193,48 @@ export function RetirementGoalForm({ goal }: Props) {
             })}
           </span>
         </div>
-        <NumberField
-          label={t("earlyRetirement.form.targetRetirementAge")}
-          value={form.target_retirement_age}
-          onChange={(v) => handleChange("target_retirement_age", v)}
-          min={30}
-          max={100}
-          step={1}
-        />
-        <NumberField
-          label={t("earlyRetirement.form.monthlyExpenses")}
-          value={form.monthly_expenses_in_retirement}
-          onChange={(v) =>
-            handleChange("monthly_expenses_in_retirement", v)
-          }
-          min={0}
-          step={500}
-          suffix="₪"
-        />
+        <AutoAdjustableField
+          fieldKey="target_retirement_age"
+          autoAdjustField={autoAdjustField}
+          solvedDisplayValue={getSolvedDisplayValue()}
+          isSolving={isSolving}
+          onToggle={toggleAutoAdjust}
+          hasGoal={!!goal}
+          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        >
+          <NumberField
+            label={t("earlyRetirement.form.targetRetirementAge")}
+            value={form.target_retirement_age}
+            onChange={(v) => handleChange("target_retirement_age", v)}
+            min={30}
+            max={100}
+            step={1}
+            disabled={autoAdjustField === "target_retirement_age"}
+          />
+        </AutoAdjustableField>
+        <AutoAdjustableField
+          fieldKey="monthly_expenses_in_retirement"
+          autoAdjustField={autoAdjustField}
+          solvedDisplayValue={getSolvedDisplayValue()}
+          isSolving={isSolving}
+          onToggle={toggleAutoAdjust}
+          hasGoal={!!goal}
+          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        >
+          <NumberField
+            label={t("earlyRetirement.form.monthlyExpenses")}
+            value={form.monthly_expenses_in_retirement}
+            onChange={(v) =>
+              handleChange("monthly_expenses_in_retirement", v)
+            }
+            min={0}
+            step={500}
+            suffix="₪"
+            disabled={
+              autoAdjustField === "monthly_expenses_in_retirement"
+            }
+          />
+        </AutoAdjustableField>
         <NumberField
           label={t("earlyRetirement.form.lifeExpectancy")}
           value={form.life_expectancy}
@@ -152,15 +243,26 @@ export function RetirementGoalForm({ goal }: Props) {
           max={120}
           step={1}
         />
-        <NumberField
-          label={t("earlyRetirement.form.expectedReturn")}
-          value={form.expected_return_rate}
-          onChange={(v) => handleChange("expected_return_rate", v)}
-          min={-10}
-          max={30}
-          step={0.5}
-          suffix="%"
-        />
+        <AutoAdjustableField
+          fieldKey="expected_return_rate"
+          autoAdjustField={autoAdjustField}
+          solvedDisplayValue={getSolvedDisplayValue()}
+          isSolving={isSolving}
+          onToggle={toggleAutoAdjust}
+          hasGoal={!!goal}
+          autoTooltip={t("earlyRetirement.form.autoAdjustTooltip")}
+        >
+          <NumberField
+            label={t("earlyRetirement.form.expectedReturn")}
+            value={form.expected_return_rate}
+            onChange={(v) => handleChange("expected_return_rate", v)}
+            min={-10}
+            max={30}
+            step={0.5}
+            suffix="%"
+            disabled={autoAdjustField === "expected_return_rate"}
+          />
+        </AutoAdjustableField>
         <NumberField
           label={t("earlyRetirement.form.withdrawalRate")}
           value={form.withdrawal_rate}
@@ -200,7 +302,9 @@ export function RetirementGoalForm({ goal }: Props) {
             <NumberField
               label={t("earlyRetirement.form.kerenHishtalmutBalance")}
               value={form.keren_hishtalmut_balance}
-              onChange={(v) => handleChange("keren_hishtalmut_balance", v)}
+              onChange={(v) =>
+                handleChange("keren_hishtalmut_balance", v)
+              }
               min={0}
               step={1000}
               suffix="₪"
@@ -226,7 +330,10 @@ export function RetirementGoalForm({ goal }: Props) {
             label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
             value={form.keren_hishtalmut_monthly_contribution}
             onChange={(v) =>
-              handleChange("keren_hishtalmut_monthly_contribution", v)
+              handleChange(
+                "keren_hishtalmut_monthly_contribution",
+                v,
+              )
             }
             min={0}
             step={100}
@@ -238,7 +345,10 @@ export function RetirementGoalForm({ goal }: Props) {
                 type="checkbox"
                 checked={form.bituach_leumi_eligible}
                 onChange={(e) =>
-                  handleChange("bituach_leumi_eligible", e.target.checked)
+                  handleChange(
+                    "bituach_leumi_eligible",
+                    e.target.checked,
+                  )
                 }
                 className="w-4 h-4 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)]"
               />
@@ -296,6 +406,64 @@ export function RetirementGoalForm({ goal }: Props) {
   );
 }
 
+function AutoAdjustableField({
+  fieldKey,
+  autoAdjustField,
+  solvedDisplayValue,
+  isSolving,
+  onToggle,
+  hasGoal,
+  autoTooltip,
+  children,
+}: {
+  fieldKey: Exclude<AutoAdjustField, null>;
+  autoAdjustField: AutoAdjustField;
+  solvedDisplayValue: string | null;
+  isSolving: boolean;
+  onToggle: (field: Exclude<AutoAdjustField, null>) => void;
+  hasGoal: boolean;
+  autoTooltip: string;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const isActive = autoAdjustField === fieldKey;
+
+  return (
+    <div className="relative">
+      {children}
+      <div className="flex items-center gap-2 mt-1">
+        {hasGoal && (
+          <button
+            type="button"
+            onClick={() => onToggle(fieldKey)}
+            className={`flex items-center gap-1 text-xs transition-colors ${
+              isActive
+                ? "text-amber-400 font-medium"
+                : "text-[var(--text-muted)] hover:text-[var(--primary)]"
+            }`}
+            title={autoTooltip}
+          >
+            <Wand2 size={12} />
+            {t("earlyRetirement.form.autoAdjust")}
+          </button>
+        )}
+        {isActive && (
+          <span
+            className="text-xs font-medium text-amber-400"
+            dir="ltr"
+          >
+            {isSolving
+              ? "..."
+              : solvedDisplayValue
+                ? `→ ${solvedDisplayValue}`
+                : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NumberField({
   label,
   value,
@@ -305,6 +473,7 @@ function NumberField({
   step,
   suffix,
   tooltip,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -314,6 +483,7 @@ function NumberField({
   step?: number;
   suffix?: string;
   tooltip?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -322,7 +492,10 @@ function NumberField({
           {label}
           {tooltip && (
             <span className="group relative">
-              <Info size={13} className="text-[var(--text-muted)] cursor-help" />
+              <Info
+                size={13}
+                className="text-[var(--text-muted)] cursor-help"
+              />
               <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
                 {tooltip}
               </span>
@@ -338,7 +511,8 @@ function NumberField({
           min={min}
           max={max}
           step={step}
-          className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          disabled={disabled}
+          className="w-full px-3 py-2 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           dir="ltr"
         />
         {suffix && (

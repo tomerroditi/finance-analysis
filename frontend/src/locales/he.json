@@ -731,7 +731,9 @@
       "bituachLeumiEstimate": "קצבת ביטוח לאומי חודשית",
       "otherPassiveIncome": "הכנסה פסיבית אחרת",
       "calculate": "חשב",
-      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}"
+      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}",
+      "autoAdjust": "אוטומטי",
+      "autoAdjustTooltip": "חשב שדה זה אוטומטית על סמך שאר הפרמטרים והנתונים הפיננסיים הנוכחיים"
     },
     "status": {
       "netWorth": "שווי נקי",

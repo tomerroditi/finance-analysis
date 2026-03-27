@@ -731,7 +731,9 @@
       "bituachLeumiEstimate": "Bituach Leumi Monthly",
       "otherPassiveIncome": "Other Passive Income",
       "calculate": "Calculate",
-      "useScrapedKh": "Use scraped balance: {{amount}}"
+      "useScrapedKh": "Use scraped balance: {{amount}}",
+      "autoAdjust": "Auto",
+      "autoAdjustTooltip": "Auto-calculate this field based on other parameters and your current financial data"
     },
     "status": {
       "netWorth": "Net Worth",

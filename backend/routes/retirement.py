@@ -89,6 +89,13 @@ async def get_projections(db: Session = Depends(get_database)):
     return service.get_projections()
 
 
+@router.get("/solve/{field}")
+async def solve_for_field(field: str, db: Session = Depends(get_database)):
+    """Solve for a field value that reaches FIRE at target retirement age."""
+    service = RetirementService(db)
+    return service.solve_for_field(field)
+
+
 @router.get("/keren-hishtalmut-balance")
 async def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
     """Get auto-detected Keren Hishtalmut balance from scraped insurance data."""

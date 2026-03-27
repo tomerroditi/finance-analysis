@@ -386,6 +386,144 @@ class RetirementService:
 
         return result
 
+    def solve_for_field(self, field: str) -> dict:
+        """Solve for a single field value that would reach FIRE at target age.
+
+        Given all other fields fixed, compute the value of `field` such that
+        projected net worth at target retirement age equals the FIRE number.
+
+        Parameters
+        ----------
+        field : str
+            One of: target_retirement_age, monthly_expenses_in_retirement,
+            expected_return_rate.
+
+        Returns
+        -------
+        dict
+            Keys: field, value, unit.
+        """
+        goal_data = self.get_goal()
+        if not goal_data:
+            raise EntityNotFoundException("Retirement goal not configured")
+
+        status = self.get_current_status()
+
+        if field == "target_retirement_age":
+            value = self._solve_target_retirement_age(goal_data, status)
+            return {"field": field, "value": value, "unit": "age"}
+
+        if field == "monthly_expenses_in_retirement":
+            value = self._solve_monthly_expenses(goal_data, status)
+            return {"field": field, "value": round(value, 0), "unit": "currency"}
+
+        if field == "expected_return_rate":
+            value = self._solve_return_rate(goal_data, status)
+            return {"field": field, "value": round(value, 4), "unit": "rate"}
+
+        raise ValueError(f"Cannot auto-adjust field: {field}")
+
+    def _solve_target_retirement_age(self, goal: dict, status: dict) -> int:
+        """Find earliest age where net worth reaches FIRE number.
+
+        Simulates accumulation year by year until net worth >= FIRE number.
+        """
+        annual_expenses = goal["monthly_expenses_in_retirement"] * 12
+        fire_number = annual_expenses / goal["withdrawal_rate"]
+
+        current_age = goal["current_age"]
+        rate = goal["expected_return_rate"]
+        monthly_savings = status["monthly_savings"]
+        annual_savings = monthly_savings * 12
+        kh_balance = goal["keren_hishtalmut_balance"]
+        kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
+        base_nw = status["net_worth"] - kh_balance
+
+        nw = base_nw
+        kh = kh_balance
+        for year_offset in range(goal["life_expectancy"] - current_age + 1):
+            total = nw + kh
+            if total >= fire_number:
+                return current_age + year_offset
+            nw = nw * (1 + rate) + annual_savings
+            kh = kh * (1 + rate) + kh_monthly * 12
+
+        return -1  # Not reachable
+
+    def _solve_monthly_expenses(self, goal: dict, status: dict) -> float:
+        """Find max monthly expenses affordable at target retirement age.
+
+        Projects net worth at target age, then derives affordable expenses
+        from FIRE formula: expenses = net_worth_at_target * withdrawal_rate / 12.
+        """
+        current_age = goal["current_age"]
+        target_age = goal["target_retirement_age"]
+        years = target_age - current_age
+        if years <= 0:
+            return 0.0
+
+        rate = goal["expected_return_rate"]
+        monthly_savings = status["monthly_savings"]
+        annual_savings = monthly_savings * 12
+        kh_balance = goal["keren_hishtalmut_balance"]
+        kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
+        base_nw = status["net_worth"] - kh_balance
+
+        nw = base_nw
+        kh = kh_balance
+        for _ in range(years):
+            nw = nw * (1 + rate) + annual_savings
+            kh = kh * (1 + rate) + kh_monthly * 12
+
+        projected_nw = nw + kh
+        annual_expenses = projected_nw * goal["withdrawal_rate"]
+        return annual_expenses / 12
+
+    def _solve_return_rate(self, goal: dict, status: dict) -> float:
+        """Find minimum return rate needed to reach FIRE by target age.
+
+        Uses binary search over return rates.
+        """
+        annual_expenses = goal["monthly_expenses_in_retirement"] * 12
+        fire_number = annual_expenses / goal["withdrawal_rate"]
+
+        current_age = goal["current_age"]
+        target_age = goal["target_retirement_age"]
+        years = target_age - current_age
+        if years <= 0:
+            return 0.0
+
+        monthly_savings = status["monthly_savings"]
+        annual_savings = monthly_savings * 12
+        kh_balance = goal["keren_hishtalmut_balance"]
+        kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
+        base_nw = status["net_worth"] - kh_balance
+
+        def projected_nw_at_rate(rate: float) -> float:
+            nw = base_nw
+            kh = kh_balance
+            for _ in range(years):
+                nw = nw * (1 + rate) + annual_savings
+                kh = kh * (1 + rate) + kh_monthly * 12
+            return nw + kh
+
+        # Binary search between -10% and 30%
+        lo, hi = -0.10, 0.30
+        # Check if achievable at max rate
+        if projected_nw_at_rate(hi) < fire_number:
+            return -1  # Not achievable even at 30%
+
+        for _ in range(100):  # sufficient iterations for convergence
+            mid = (lo + hi) / 2
+            if projected_nw_at_rate(mid) >= fire_number:
+                hi = mid
+            else:
+                lo = mid
+            if hi - lo < 0.00001:
+                break
+
+        return hi
+
     def _calc_required_monthly_savings(
         self, goal: dict, status: dict, fire_number: float
     ) -> float:

@@ -480,6 +480,10 @@ export const retirementApi = {
     api.get<RetirementProjections>("/retirement/projections"),
   getKerenHishtalmutBalance: () =>
     api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
+  solveForField: (field: string) =>
+    api.get<{ field: string; value: number; unit: string }>(
+      `/retirement/solve/${field}`,
+    ),
 };
 
 export const testingApi = {

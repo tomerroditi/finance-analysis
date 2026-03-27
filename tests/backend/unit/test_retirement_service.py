@@ -292,3 +292,64 @@ class TestRequiredSavings:
         service = RetirementService.__new__(RetirementService)
         result = service._calc_required_monthly_savings(sample_goal, sample_status, 5000000)
         assert result == 0.0
+
+
+class TestAutoAdjustSolver:
+    """Tests for auto-adjust field solver calculations."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_target_retirement_age_returns_integer(self, sample_goal, sample_status):
+        """Solving for target retirement age should return an integer age."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_target_retirement_age(sample_goal, sample_status)
+        assert isinstance(result, int)
+        assert result >= sample_goal["current_age"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_target_age_wealthy_returns_current_age(self, sample_goal, sample_status):
+        """Already at FIRE number should return current age."""
+        sample_status["net_worth"] = 10000000  # Way above FIRE number
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_target_retirement_age(sample_goal, sample_status)
+        assert result == sample_goal["current_age"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_monthly_expenses_positive(self, sample_goal, sample_status):
+        """Solved monthly expenses should be positive given reasonable inputs."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_monthly_expenses(sample_goal, sample_status)
+        assert result > 0
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_monthly_expenses_higher_with_more_savings(self, sample_goal, sample_status):
+        """Higher savings rate should allow higher monthly expenses."""
+        service = RetirementService.__new__(RetirementService)
+        result_normal = service._solve_monthly_expenses(sample_goal, sample_status)
+        sample_status["monthly_savings"] = 30000  # Much higher savings
+        result_high = service._solve_monthly_expenses(sample_goal, sample_status)
+        assert result_high > result_normal
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_return_rate_reasonable(self, sample_goal, sample_status):
+        """Solved return rate should be between -10% and 30%."""
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_return_rate(sample_goal, sample_status)
+        assert -0.10 <= result <= 0.30
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_return_rate_zero_when_wealthy(self, sample_goal, sample_status):
+        """If already at FIRE, required return rate should be very low."""
+        sample_status["net_worth"] = 10000000
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_return_rate(sample_goal, sample_status)
+        assert result < sample_goal["expected_return_rate"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_return_rate_not_achievable(self, sample_goal, sample_status):
+        """Extremely high FIRE number should return -1 (not achievable)."""
+        sample_goal["monthly_expenses_in_retirement"] = 500000  # Absurdly high
+        sample_status["net_worth"] = 100
+        sample_status["monthly_savings"] = 100
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_return_rate(sample_goal, sample_status)
+        assert result == -1
