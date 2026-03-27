@@ -137,7 +137,7 @@ function LiabilityCard({
           <span>{t("liabilities.percentPaid")}</span>
           <span dir="ltr">{liability.percent_paid.toFixed(1)}%</span>
         </div>
-        <div className="w-full h-2 bg-[var(--surface-base)] rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-[var(--surface-base)] rounded-full overflow-hidden border border-[var(--surface-light)]">
           <div
             className={`h-full rounded-full transition-all ${isPaidOff ? "bg-emerald-500" : "bg-rose-500"}`}
             style={{ width: `${Math.min(liability.percent_paid, 100)}%` }}
