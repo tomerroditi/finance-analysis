@@ -40,6 +40,8 @@ class Tables(Enum):
         Name of the table storing categories, tags, and icons.
     CREDENTIALS : str
         Name of the table storing provider account credentials.
+    LIABILITY_TRANSACTIONS : str
+        Name of the table storing auto-generated liability payment transactions.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -181,3 +183,14 @@ class LiabilitiesTableFields(Enum):
     PAID_OFF_DATE = "paid_off_date"
     NOTES = "notes"
     CREATED_DATE = "created_date"
+
+
+class LiabilityTransactionsTableFields(Enum):
+    """Field names for the liability_transactions table."""
+
+    ID = "id"
+    LIABILITY_ID = "liability_id"
+    DATE = "date"
+    AMOUNT = "amount"
+    PAYMENT_NUMBER = "payment_number"
+    DESCRIPTION = "description"
