@@ -120,7 +120,9 @@ function LiabilityCard({
 
       {/* Metadata */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)] font-medium mb-4 px-1">
-        <span dir="ltr">{liability.interest_rate}%</span>
+        <span>{t("liabilities.fixedRate")}</span>
+        <span>·</span>
+        <span dir="ltr">{liability.interest_rate}% {t("liabilities.interest")}</span>
         <span>·</span>
         <span>
           {liability.term_months} {t("liabilities.termMonths").toLowerCase()}

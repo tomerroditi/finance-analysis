@@ -536,7 +536,9 @@
     "paidOffDate": "Paid Off Date",
     "editLiability": "Edit Liability",
     "transactions": "Transactions",
-    "selectTag": "Select tag"
+    "selectTag": "Select tag",
+    "fixedRate": "Fixed Rate",
+    "interest": "interest"
   },
   "insurance": {
     "title": "Insurance",

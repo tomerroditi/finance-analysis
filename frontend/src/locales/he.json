@@ -536,7 +536,9 @@
     "paidOffDate": "תאריך סילוק",
     "editLiability": "ערוך התחייבות",
     "transactions": "תנועות",
-    "selectTag": "בחר תגית"
+    "selectTag": "בחר תגית",
+    "fixedRate": "ריבית קבועה",
+    "interest": "ריבית"
   },
   "insurance": {
     "title": "ביטוח",
