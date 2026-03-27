@@ -2,8 +2,20 @@
 
 import pytest
 from datetime import date
+from unittest.mock import PropertyMock, patch
 
+from backend.models.liability import LiabilityTransaction
 from backend.services.liabilities_service import LiabilitiesService
+
+
+class _FakeDate(date):
+    """Date subclass that overrides today() for testing."""
+
+    _today = date(2023, 12, 15)
+
+    @classmethod
+    def today(cls):
+        return cls._today
 
 
 class TestLiabilitiesService:
@@ -146,3 +158,105 @@ class TestLiabilitiesService:
         assert first["amount"] > 0
         assert first["tag"] == "Car Loan"
         assert first["category"] == "Liabilities"
+
+    def test_detect_tag_transactions_with_receipt(self, db_session, seed_liabilities):
+        """Verify detect_tag_transactions finds receipt and payments for an existing tag."""
+        service = LiabilitiesService(db_session)
+        result = service.detect_tag_transactions("Car Loan")
+
+        assert result["has_receipt"] is True
+        assert result["receipt"] is not None
+        assert result["receipt"]["amount"] == 50000.0
+        assert result["receipt"]["date"] == "2023-06-01"
+        assert len(result["payments"]) == 3
+
+    def test_detect_tag_transactions_no_match(self, db_session, seed_liabilities):
+        """Verify detect_tag_transactions returns empty when tag has no transactions."""
+        service = LiabilitiesService(db_session)
+        result = service.detect_tag_transactions("Nonexistent Tag")
+
+        assert result["has_receipt"] is False
+        assert result["receipt"] is None
+        assert len(result["payments"]) == 0
+
+    def test_detect_tag_transactions_payments_only(self, db_session, seed_liabilities):
+        """Verify detect_tag_transactions returns no receipt when only payments exist."""
+        from backend.models.transaction import BankTransaction
+
+        # Add payments-only tag (no positive disbursement)
+        txn = BankTransaction(
+            id="bank_orphan_payment",
+            date="2024-01-01",
+            provider="leumi",
+            account_name="Checking",
+            description="Orphan Payment",
+            amount=-500.0,
+            category="Liabilities",
+            tag="Orphan Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(txn)
+        db_session.commit()
+
+        service = LiabilitiesService(db_session)
+        result = service.detect_tag_transactions("Orphan Loan")
+
+        assert result["has_receipt"] is False
+        assert result["receipt"] is None
+        assert len(result["payments"]) == 1
+
+    @patch("backend.services.liabilities_service.date", _FakeDate)
+    def test_generate_missing_transactions(self, db_session, seed_liabilities):
+        """Verify generate_missing_transactions creates entries for months without payments."""
+        # Car Loan: start 2023-06-01, payments exist for Jul/Aug/Sep 2023
+        # _FakeDate.today() returns 2023-12-15 so months Oct/Nov/Dec should be generated
+        _FakeDate._today = date(2023, 12, 15)
+
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+
+        created = service.generate_missing_transactions(car_loan.id)
+        assert created == 3  # Oct, Nov, Dec
+
+        # Verify transactions were inserted
+        gen_txns = db_session.query(LiabilityTransaction).filter_by(
+            liability_id=car_loan.id
+        ).all()
+        assert len(gen_txns) == 3
+        assert all(t.amount < 0 for t in gen_txns)
+        assert {t.payment_number for t in gen_txns} == {4, 5, 6}
+
+    @patch("backend.services.liabilities_service.date", _FakeDate)
+    def test_generate_missing_transactions_idempotent(self, db_session, seed_liabilities):
+        """Verify calling generate twice does not create duplicate transactions."""
+        _FakeDate._today = date(2023, 12, 15)
+
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+
+        first_run = service.generate_missing_transactions(car_loan.id)
+        second_run = service.generate_missing_transactions(car_loan.id)
+
+        assert first_run == 3
+        assert second_run == 0
+
+    @patch("backend.services.liabilities_service.date", _FakeDate)
+    def test_get_liability_transactions_includes_generated(self, db_session, seed_liabilities):
+        """Verify get_liability_transactions merges real and generated transactions."""
+        _FakeDate._today = date(2023, 11, 15)
+
+        service = LiabilitiesService(db_session)
+        car_loan = seed_liabilities["liabilities"][0]
+
+        # Generate 2 missing months (Oct, Nov)
+        service.generate_missing_transactions(car_loan.id)
+
+        transactions = service.get_liability_transactions(car_loan.id)
+        # 4 real (1 disbursement + 3 payments) + 2 generated
+        assert len(transactions) == 6
+
+        # Verify generated ones have the liability_transactions source
+        generated = [t for t in transactions if t.get("source") == "liability_transactions"]
+        assert len(generated) == 2
