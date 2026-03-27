@@ -938,7 +938,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
         session.add(txn)
         all_bank_txns.append(txn)
 
-        # Mortgage payment -3,800 on the 15th
+        # Mortgage payment on the 15th (constant: matches amortization schedule)
         bank_counter += 1
         txn = BankTransaction(
             id=f"demo-bank-{bank_counter:04d}",
@@ -946,7 +946,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
             provider="hapoalim",
             account_name="Main Account",
             description="MORTGAGE PAYMENT - LEUMI",
-            amount=-3800.0,
+            amount=-2609.82,
             category="Liabilities",
             tag="Mortgage",
             source="bank_transactions",
@@ -1092,15 +1092,14 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
     car_months = list(month_range(date(car_ny, car_nm, 1), REFERENCE_DATE))
     for year, month in car_months:
         bank_counter += 1
-        # Varying payment: base ~2100 with ±200 random variance
-        payment = round(-2100 + random.uniform(-200, 200), 2)
+        # Constant payment matching amortization schedule
         txn = BankTransaction(
             id=f"demo-bank-{bank_counter:04d}",
             date=date(year, month, 10).isoformat(),
             provider="hapoalim",
             account_name="Main Account",
             description="CAR LOAN PAYMENT - MIZRAHI",
-            amount=payment,
+            amount=-2275.56,
             category="Liabilities",
             tag="Car Loan",
             source="bank_transactions",
