@@ -19,7 +19,6 @@ from backend.services.cash_balance_service import CashBalanceService
 from backend.errors import EntityNotFoundException
 
 # Israeli pension milestones
-EARLY_PENSION_AGE = 60
 FULL_PENSION_AGE_MALE = 67
 FULL_PENSION_AGE_FEMALE = 65
 
@@ -294,11 +293,6 @@ class RetirementService:
                             annual_income += (
                                 goal["bituach_leumi_monthly_estimate"] * 12
                             )
-                    elif age >= EARLY_PENSION_AGE:
-                        # Partial pension (70% estimate for early withdrawal)
-                        annual_income += (
-                            goal["pension_monthly_payout_estimate"] * 0.7 * 12
-                        )
 
                     withdrawal_needed = max(
                         0, inflation_adjusted_expenses - annual_income
@@ -366,8 +360,6 @@ class RetirementService:
             pension = 0.0
             if age >= full_pension_age:
                 pension = goal["pension_monthly_payout_estimate"] * 12
-            elif age >= EARLY_PENSION_AGE:
-                pension = goal["pension_monthly_payout_estimate"] * 0.7 * 12
 
             bl = 0.0
             if age >= full_pension_age and goal["bituach_leumi_eligible"]:
