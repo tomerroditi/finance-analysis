@@ -4,7 +4,7 @@ import Plot from "react-plotly.js";
 import { TrendingDown, Calculator, Tag } from "lucide-react";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, isTouchDevice } from "../../utils/plotlyLocale";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 type InsightTab = "income_expenses" | "net_worth" | "cash_flow" | "category";
@@ -555,13 +555,13 @@ export function DashboardInsightsPanel({
                     autosize: true,
                     height: Math.max(400, (incomeOutcome?.length ?? 0) * 25),
                     legend: {
-                      orientation: "v",
-                      y: 1,
-                      x: 1.02,
-                      xanchor: "left",
+                      orientation: "h",
+                      y: -0.15,
+                      x: 0.5,
+                      xanchor: "center",
                     },
                     yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
-                    margin: { ...chartTheme.margin, l: 100, r: 200 },
+                    margin: { ...chartTheme.margin, l: 80, r: 20 },
                   }}
                   style={{ width: "100%", height: "100%" }}
                   config={plotlyConfig()}
@@ -599,7 +599,7 @@ export function DashboardInsightsPanel({
                         barmode: "stack",
                         autosize: true,
                         height: Math.max(400, incomeBySourceData.length * 25),
-                        hovermode: "y unified",
+                        hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                         xaxis: {
                           range: [0, maxStack * 1.05],
@@ -608,12 +608,12 @@ export function DashboardInsightsPanel({
                         },
                         yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                         legend: {
-                          orientation: "v",
-                          y: 1,
-                          x: 1.02,
-                          xanchor: "left",
+                          orientation: "h",
+                          y: -0.15,
+                          x: 0.5,
+                          xanchor: "center",
                         },
-                        margin: { ...chartTheme.margin, l: 100, r: 200 },
+                        margin: { ...chartTheme.margin, l: 80, r: 20 },
                       }}
                       style={{ width: "100%", height: "100%" }}
                       config={plotlyConfig()}
@@ -659,17 +659,17 @@ export function DashboardInsightsPanel({
                         barmode: "stack",
                         autosize: true,
                         height: Math.max(400, expensesByCategoryOverTime.length * 25),
-                        hovermode: "y unified",
+                        hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                         xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
                         yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                         legend: {
-                          orientation: "v",
-                          y: 1,
-                          x: 1.02,
-                          xanchor: "left",
+                          orientation: "h",
+                          y: -0.15,
+                          x: 0.5,
+                          xanchor: "center",
                         },
-                        margin: { ...chartTheme.margin, l: 100, r: 200 },
+                        margin: { ...chartTheme.margin, l: 80, r: 20 },
                       }}
                       style={{ width: "100%", height: "100%" }}
                       config={plotlyConfig()}
@@ -700,7 +700,7 @@ export function DashboardInsightsPanel({
           return (
             <div className="flex flex-col flex-1 min-h-0 space-y-5">
               {/* Summary strip */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
                     <TrendingDown size={18} />

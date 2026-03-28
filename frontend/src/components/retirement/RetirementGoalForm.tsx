@@ -217,9 +217,9 @@ export function RetirementGoalForm({
     !!isCalculating;
 
   return (
-    <form onSubmit={handleCalculate} className="space-y-6">
+    <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
       {/* Core Parameters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -289,7 +289,7 @@ export function RetirementGoalForm({
       </div>
 
       {/* Israeli Savings Vehicles */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
           <NumberField
             label={t("earlyRetirement.form.pensionPayout")}
             value={form.pension_monthly_payout_estimate}
@@ -462,7 +462,7 @@ function NumberField({
                 size={12}
                 className="text-[var(--text-muted)] cursor-help"
               />
-              <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
+              <span className="absolute z-10 hidden group-hover:block w-48 sm:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
                 {tooltip}
               </span>
             </span>

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 export interface Transaction {
     id?: number;
@@ -36,6 +37,7 @@ export function TransactionFormModal({
     onSuccess,
 }: TransactionFormModalProps) {
     const { t } = useTranslation();
+    useScrollLock(isOpen);
     const isEditMode = !!transaction;
 
     // If editing, check if it's a manual transaction (cash/investments)
@@ -142,22 +144,22 @@ export function TransactionFormModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-                    <h2 id="transaction-form-title" className="text-xl font-bold text-white">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+                <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
+                    <h2 id="transaction-form-title" className="text-lg md:text-xl font-bold text-white">
                         {isEditMode ? t("modals.transactionForm.editTitle") : t("modals.transactionForm.addTitle")}
                     </h2>
                     <button
                         onClick={onClose}
                         aria-label={t("common.close")}
-                        className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                        className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
                     {isEditMode && !isManual && (
                         <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
                             {t("modals.transactionForm.readOnlyNote")}
@@ -280,7 +282,7 @@ export function TransactionFormModal({
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
                             <div>
                                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("common.category")}

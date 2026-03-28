@@ -1,6 +1,6 @@
 import Plot from "react-plotly.js";
 import { useTranslation } from "react-i18next";
-import { plotlyConfig, chartTheme } from "../../utils/plotlyLocale";
+import { plotlyConfig, chartTheme, isTouchDevice } from "../../utils/plotlyLocale";
 
 interface DataPoint {
   age: number;
@@ -91,11 +91,11 @@ export function RetirementIncomeChart({ data }: Props) {
           x: 0.5,
           xanchor: "center" as const,
         },
-        hovermode: "x unified" as const,
+        hovermode: isTouchDevice ? "closest" : ("x unified" as const),
       }}
       config={plotlyConfig()}
       useResizeHandler
-      style={{ width: "100%", height: "400px" }}
+      style={{ width: "100%", minHeight: "300px", height: "400px" }}
     />
   );
 }

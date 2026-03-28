@@ -94,7 +94,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute end-0 top-full mt-2 w-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl z-20 p-2">
+          <div className="absolute end-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-64 max-w-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl z-20 p-2">
             <div className="space-y-1">
               {presets.map((preset) => (
                 <button

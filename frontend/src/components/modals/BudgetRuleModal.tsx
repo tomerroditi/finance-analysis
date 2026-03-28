@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { taggingApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface BudgetRuleModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export function BudgetRuleModal({
 }: BudgetRuleModalProps) {
   const { t } = useTranslation();
   const { createCategory } = useCategoryTagCreate();
+  useScrollLock(isOpen);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
@@ -102,10 +104,10 @@ export function BudgetRuleModal({
   const isProjectRule = selectedYear === 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 h-fit max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-[var(--surface-light)] shrink-0">
-          <h2 className="text-xl font-bold">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md shadow-2xl animate-in zoom-in-95 duration-200 h-fit max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 md:p-6 border-b border-[var(--surface-light)] shrink-0">
+          <h2 className="text-lg md:text-xl font-bold">
             {initialData
               ? isProjectRule
                 ? `${t("modals.budgetRule.editRule")}: ${category} - ${Array.isArray(initialData.tags) ? initialData.tags.join(", ") : initialData.tags}`
@@ -120,7 +122,7 @@ export function BudgetRuleModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
               {t("modals.budgetRule.ruleName")}

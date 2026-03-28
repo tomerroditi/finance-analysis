@@ -39,7 +39,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
-import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, isTouchDevice } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -70,8 +70,8 @@ function MomBadge({ mom }: { mom: { delta: number; percent: number | null } | nu
   const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
   const sign = delta >= 0 ? "+" : "";
   return (
-    <span dir="ltr" className={`text-[10px] font-semibold ${color} whitespace-nowrap`}>
-      {sign}{formatCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
+    <span dir="ltr" className={`text-[10px] font-semibold ${color}`}>
+      {sign}{formatCompactCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
     </span>
   );
 }
@@ -81,7 +81,7 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
     <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
       {items.map((item) => (
         <div key={item.name} className="flex justify-between text-xs">
-          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
+          <span className="text-[var(--text-muted)] truncate me-2">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
         </div>
       ))}
@@ -142,29 +142,25 @@ function FinancialHealthHeader({
 
   return (
     <div
-      className="grid grid-cols-2 sm:grid-cols-4 gap-3 cursor-pointer"
+      className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Net Worth */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💰 {t("dashboard.netWorth")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
-          </p>
-          <MomBadge mom={netWorthMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💰 {t("dashboard.netWorth")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
+        </p>
+        <MomBadge mom={netWorthMom} />
       </div>
 
       {/* Bank Balance */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">🏦 {t("dashboard.bankBalance")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
-          </p>
-          <MomBadge mom={bankMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">🏦 {t("dashboard.bankBalance")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+        </p>
+        <MomBadge mom={bankMom} />
         {expanded && bankBalances && bankBalances.length > 0 && (
           <BreakdownList
             items={bankBalances.map((b) => ({ name: b.account_name, amount: b.balance }))}
@@ -173,14 +169,12 @@ function FinancialHealthHeader({
       </div>
 
       {/* Investments */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">📈 {t("dashboard.investmentValue")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">
-            {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
-          </p>
-          <MomBadge mom={investmentMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">📈 {t("dashboard.investmentValue")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+          {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+        </p>
+        <MomBadge mom={investmentMom} />
         {expanded && openInvestments && openInvestments.length > 0 && (
           <BreakdownList
             items={openInvestments.map((i) => ({ name: i.name, amount: i.balance }))}
@@ -189,12 +183,10 @@ function FinancialHealthHeader({
       </div>
 
       {/* Cash */}
-      <div className="bg-[var(--surface)] rounded-xl px-4 py-3 border border-[var(--surface-light)]">
-        <p className="text-xs text-[var(--text-muted)]">💵 {t("dashboard.cashBalance")}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <p className="text-lg font-bold">{formatCurrency(totalCash)}</p>
-          <MomBadge mom={cashMom} />
-        </div>
+      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💵 {t("dashboard.cashBalance")}</p>
+        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
+        <MomBadge mom={cashMom} />
         {expanded && cashBalances && cashBalances.length > 0 && (
           <BreakdownList
             items={cashBalances.map((c) => ({ name: c.account_name, amount: c.balance }))}
@@ -484,7 +476,7 @@ function BudgetSpendingGauge({
 
   return (
     <div
-      className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]"
+      className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]"
     >
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
@@ -578,7 +570,7 @@ function BudgetSpendingGauge({
               <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
 
               {/* Link to budget page */}
-              <div className="text-right">
+              <div className="text-end">
                 <Link
                   to="/budget"
                   className="text-sm font-medium text-[var(--primary)] hover:underline"
@@ -704,6 +696,7 @@ function RecentTransactionsFeed({
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
+  const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null);
   const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
 
@@ -845,7 +838,7 @@ function RecentTransactionsFeed({
   if (sorted.length === 0) return null;
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+    <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           🧾 {t("dashboard.recentTransactions")}
@@ -878,7 +871,13 @@ function RecentTransactionsFeed({
                 return (
                   <div key={txKey}>
                     <div
-                      className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors cursor-default"
+                      className={`flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${mobileActionsTxKey === txKey ? "bg-[var(--surface-light)]/30" : ""}`}
+                      onClick={() => {
+                        // On mobile (< sm), toggle action card
+                        if (window.innerWidth < 640) {
+                          setMobileActionsTxKey(mobileActionsTxKey === txKey ? null : txKey);
+                        }
+                      }}
                     >
                       <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
                       <div className="flex-1 min-w-0">
@@ -902,17 +901,17 @@ function RecentTransactionsFeed({
                           </span>
                         )}
                       </div>
-                      {/* Action buttons — fixed grid, each cell is 25px */}
-                      <div className="grid grid-cols-3 flex-shrink-0 w-[75px]">
+                      {/* Action buttons — hidden on small mobile, visible on sm+ */}
+                      <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[96px]">
                         <button
-                          className={`w-[25px] h-[25px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          className={`w-[32px] h-[32px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
                           title={t("tooltips.editCategoryTag")}
                           onClick={() => setEditingTxKey(isEditing ? null : txKey)}
                         >
                           <Tag size={13} />
                         </button>
                         <button
-                          className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                          className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
                           title={t("tooltips.splitTransaction")}
                           onClick={() => setSplittingTransaction(tx)}
                         >
@@ -920,12 +919,12 @@ function RecentTransactionsFeed({
                         </button>
                         {tx.amount < 0 ? (
                           tx.pending_refund_id ? (
-                            <span className="w-[25px] h-[25px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
+                            <span className="w-[32px] h-[32px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
                               <RefreshCw size={13} className="animate-pulse" />
                             </span>
                           ) : (
                             <button
-                              className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                              className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
                               title={t("tooltips.markPendingRefund")}
                               onClick={() => markPendingMutation.mutate(tx)}
                               disabled={markPendingMutation.isPending}
@@ -935,7 +934,7 @@ function RecentTransactionsFeed({
                           )
                         ) : (
                           <button
-                            className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                             title={t("tooltips.linkAsRefund")}
                             onClick={() => setLinkingTransaction(tx)}
                           >
@@ -944,7 +943,7 @@ function RecentTransactionsFeed({
                         )}
                       </div>
                       <span
-                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-right w-[80px] ${
+                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
                           isPositive ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
@@ -953,9 +952,54 @@ function RecentTransactionsFeed({
                       </span>
                     </div>
 
+                    {/* Mobile action buttons — shown on tap */}
+                    {mobileActionsTxKey === txKey && (
+                      <div className="sm:hidden flex items-center gap-1.5 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
+                        <button
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          onClick={(e) => { e.stopPropagation(); setEditingTxKey(isEditing ? null : txKey); }}
+                        >
+                          <Tag size={13} className="shrink-0" />
+                          {t("common.tag")}
+                        </button>
+                        <button
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                          onClick={(e) => { e.stopPropagation(); setSplittingTransaction(tx); }}
+                        >
+                          <Split size={13} className="shrink-0" />
+                          {t("common.split")}
+                        </button>
+                        {tx.amount < 0 ? (
+                          tx.pending_refund_id ? (
+                            <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-400">
+                              <RefreshCw size={13} className="shrink-0 animate-pulse" />
+                              {t("common.pending")}
+                            </span>
+                          ) : (
+                            <button
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); markPendingMutation.mutate(tx); }}
+                              disabled={markPendingMutation.isPending}
+                            >
+                              <RefreshCw size={13} className="shrink-0" />
+                              {t("common.refund")}
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
+                          >
+                            <Link2 size={13} className="shrink-0" />
+                            {t("common.link")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Inline tag editing panel */}
                     {isEditing && categories && (
-                      <div className="mx-2 mb-2 ml-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                      <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2">
                           <div className="flex-1 min-w-0">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
@@ -1269,10 +1313,10 @@ export function Dashboard() {
   // ================================================================
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold">📊 {t("dashboard.title")}</h1>
-        <p className="text-[var(--text-muted)] mt-1">✨ {t("dashboard.subtitle")}</p>
+        <h1 className="text-2xl md:text-3xl font-bold">📊 {t("dashboard.title")}</h1>
+        <p className="text-[var(--text-muted)] mt-1 text-sm md:text-base">✨ {t("dashboard.subtitle")}</p>
       </div>
 
       {/* Section 1: Financial Health Header */}
@@ -1285,7 +1329,7 @@ export function Dashboard() {
       />
 
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
         <BudgetSpendingGauge
           categoryIcons={categoryIcons}
         />
@@ -1299,8 +1343,8 @@ export function Dashboard() {
       {/* Section 4: Tabbed Insights */}
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
         {/* Tab bar */}
-        <div className="px-6 pt-5 pb-0">
-          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1">
+        <div className="px-3 md:px-6 pt-4 md:pt-5 pb-0">
+          <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1 overflow-x-auto scrollbar-auto-hide">
             {([
               { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
               { key: "net_worth" as const, label: `📈 ${t("dashboard.netWorth")}` },
@@ -1310,7 +1354,7 @@ export function Dashboard() {
               <button
                 key={key}
                 onClick={() => setInsightTab(key)}
-                className={`flex-1 text-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                className={`sm:flex-1 text-center px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
                   insightTab === key
                     ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                     : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1323,14 +1367,14 @@ export function Dashboard() {
         </div>
 
         {/* Tab content */}
-        <div className="px-6 pb-6 pt-4 h-[600px] overflow-y-auto flex flex-col">
+        <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
           {/* Net Worth Over Time */}
           {insightTab === "net_worth" && (
             <div className="flex flex-col flex-1 min-h-0">
               {netWorthData && netWorthData.length > 0 ? (
                 <>
                   {/* Net Worth Change KPIs + View Buttons */}
-                  <div className="flex items-center gap-3 mb-3">
+                  <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
                     {(() => {
                       const latest = netWorthData[netWorthData.length - 1];
                       const findMonthsAgo = (n: number) => {
@@ -1366,7 +1410,7 @@ export function Dashboard() {
                         );
                       });
                     })()}
-                    <div className="ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl">
+                    <div className="w-full md:w-auto md:ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
                       {(
                         [
                           { key: "all", label: t("dashboard.all") },
@@ -1379,7 +1423,7 @@ export function Dashboard() {
                         <button
                           key={key}
                           onClick={() => setNetWorthView(key)}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                          className={`px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
                             netWorthView === key
                               ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                               : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1497,7 +1541,7 @@ export function Dashboard() {
           {insightTab === "income_expenses" && (
             <div className="flex flex-col flex-1 min-h-0">
               {/* KPI Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-3">
                 {(() => {
                   const recent3 = incomeOutcome?.slice(-3) || [];
                   const recent6 = incomeOutcome?.slice(-6) || [];
@@ -1555,7 +1599,7 @@ export function Dashboard() {
               </div>
 
               {/* Sub-tabs + Filter Toggles */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
@@ -1594,7 +1638,7 @@ export function Dashboard() {
                       : t("dashboard.projectExpensesExcluded")}
                   </button>
                 </div>
-                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
+                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
                   {([
                     { key: "overview" as const, label: `📊 ${t("dashboard.totals")}` },
                     { key: "by_source" as const, label: `💼 ${t("dashboard.incomeBreakdown")}` },
@@ -1603,7 +1647,7 @@ export function Dashboard() {
                     <button
                       key={key}
                       onClick={() => setIncomeView(key)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                      className={`px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
                         incomeView === key
                           ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
                           : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -1645,13 +1689,13 @@ export function Dashboard() {
                       autosize: true,
                       height: Math.max(400, (incomeOutcome?.length ?? 0) * 25),
                       legend: {
-                        orientation: "v",
-                        y: 1,
-                        x: 1.02,
-                        xanchor: "left",
+                        orientation: "h",
+                        y: -0.15,
+                        x: 0.5,
+                        xanchor: "center",
                       },
                       yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
-                      margin: { ...chartTheme.margin, l: 100, r: 200 },
+                      margin: { ...chartTheme.margin, l: 80, r: 20 },
                     }}
                     style={{ width: "100%", height: "100%" }}
                     config={plotlyConfig()}
@@ -1689,7 +1733,7 @@ export function Dashboard() {
                           barmode: "stack",
                           autosize: true,
                           height: Math.max(400, incomeBySourceData.length * 25),
-                          hovermode: "y unified",
+                          hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: {
                             range: [0, maxStack * 1.05],
                             fixedrange: true,
@@ -1697,12 +1741,12 @@ export function Dashboard() {
                           },
                           yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
-                            orientation: "v",
-                            y: 1,
-                            x: 1.02,
-                            xanchor: "left",
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
                           },
-                          margin: { ...chartTheme.margin, l: 100, r: 200 },
+                          margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}
                         style={{ width: "100%", height: "100%" }}
                         config={plotlyConfig()}
@@ -1748,16 +1792,16 @@ export function Dashboard() {
                           barmode: "stack",
                           autosize: true,
                           height: Math.max(400, expensesByCategoryOverTime.length * 25),
-                          hovermode: "y unified",
+                          hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
                           yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
-                            orientation: "v",
-                            y: 1,
-                            x: 1.02,
-                            xanchor: "left",
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
                           },
-                          margin: { ...chartTheme.margin, l: 100, r: 200 },
+                          margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}
                         style={{ width: "100%", height: "100%" }}
                         config={plotlyConfig()}
@@ -1788,8 +1832,8 @@ export function Dashboard() {
             return (
               <div className="flex flex-col flex-1 min-h-0 space-y-5">
                 {/* Summary strip */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
                       <TrendingDown size={18} />
                     </div>
@@ -1798,7 +1842,7 @@ export function Dashboard() {
                       <p className="text-lg font-bold text-rose-400">{formatCurrency(totalExpenses)}</p>
                     </div>
                   </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 text-lg">
                       {topCategory ? (categoryIcons?.[topCategory.category] || "📊") : "—"}
                     </div>
@@ -1807,7 +1851,7 @@ export function Dashboard() {
                       <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
                     </div>
                   </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
                       <Tag size={18} />
                     </div>
@@ -1829,15 +1873,15 @@ export function Dashboard() {
                       return (
                         <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                           <span className="text-base w-6 text-center shrink-0">{icon || (d.category === "Uncategorized" ? "❓" : `${i + 1}.`)}</span>
-                          <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                          <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
                           <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                          <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                         </div>
                       );
                     })}
@@ -1859,15 +1903,15 @@ export function Dashboard() {
                         return (
                           <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                             <span className="text-base w-6 text-center shrink-0">{icon || `${i + 1}.`}</span>
-                            <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                            <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
                             <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
                                 style={{ width: `${barWidth}%` }}
                               />
                             </div>
-                            <span className="text-sm font-bold tabular-nums w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                            <span className="text-xs text-[var(--text-muted)] w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                            <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                            <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                           </div>
                         );
                       })}

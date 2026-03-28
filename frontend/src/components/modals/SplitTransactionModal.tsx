@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { taggingApi, transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface SplitTransactionModalProps {
   transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
@@ -24,6 +25,7 @@ export function SplitTransactionModal({
   onSuccess,
 }: SplitTransactionModalProps) {
   const { t } = useTranslation();
+  useScrollLock(true);
   const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
@@ -87,11 +89,11 @@ export function SplitTransactionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div role="dialog" aria-modal="true" aria-labelledby="split-transaction-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-        <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-          <div>
-            <h2 id="split-transaction-title" className="text-xl font-bold text-white">{t("modals.split.title")}</h2>
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div role="dialog" aria-modal="true" aria-labelledby="split-transaction-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
+          <div className="min-w-0 flex-1">
+            <h2 id="split-transaction-title" className="text-lg md:text-xl font-bold text-white">{t("modals.split.title")}</h2>
             <p className="text-sm text-[var(--text-muted)]">
               {transaction.description} •{" "}
               {new Intl.NumberFormat("he-IL", {
@@ -103,18 +105,18 @@ export function SplitTransactionModal({
           <button
             onClick={onClose}
             aria-label={t("common.close")}
-            className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
+        <div className="p-4 md:p-6 overflow-y-auto flex-1">
           <div className="space-y-4">
             {splits.map((split, index) => (
               <div
                 key={index}
-                className="flex gap-4 items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
+                className="flex flex-col sm:flex-row gap-4 sm:items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
               >
                 <div className="flex-1 space-y-2">
                   <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
@@ -195,7 +197,7 @@ export function SplitTransactionModal({
           </button>
         </div>
 
-        <div className="p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex items-center justify-between">
+        <div className="p-4 md:p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {Math.abs(remainingAmount) >= 0.01 ? (
               <div className="flex items-center gap-2 text-amber-400">
