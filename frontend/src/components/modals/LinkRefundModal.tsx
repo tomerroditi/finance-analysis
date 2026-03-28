@@ -65,7 +65,9 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
     queryFn: () => transactionsApi.getAll().then((res) => res.data),
     enabled: isOpen && isReverseMode,
     select: (data: Transaction[]) =>
-      data.filter((txn) => txn.amount > 0),
+      data
+        .filter((txn) => txn.amount > 0)
+        .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
   });
 
   const isLoading = isReverseMode ? isLoadingTransactions : isLoadingPending;
