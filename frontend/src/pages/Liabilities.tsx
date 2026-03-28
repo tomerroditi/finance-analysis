@@ -163,7 +163,15 @@ function LiabilityCard({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
+          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
+            {t("liabilities.loanAmount")}
+          </p>
+          <p className="text-base font-bold text-white mt-1" dir="ltr">
+            {formatCurrency(liability.principal_amount)}
+          </p>
+        </div>
         <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
             {t("liabilities.remainingBalance")}

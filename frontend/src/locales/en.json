@@ -505,6 +505,7 @@
     "lender": "Lender",
     "tag": "Tag",
     "principalAmount": "Principal Amount",
+    "loanAmount": "Loan Amount",
     "interestRate": "Interest Rate",
     "termMonths": "Term (Months)",
     "startDate": "Start Date",

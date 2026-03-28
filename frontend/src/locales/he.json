@@ -505,6 +505,7 @@
     "lender": "מלווה",
     "tag": "תגית",
     "principalAmount": "סכום קרן",
+    "loanAmount": "סכום הלוואה",
     "interestRate": "שיעור ריבית",
     "termMonths": "תקופה (חודשים)",
     "startDate": "תאריך התחלה",
