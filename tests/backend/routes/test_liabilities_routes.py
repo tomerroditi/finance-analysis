@@ -75,7 +75,7 @@ class TestLiabilitiesRoutes:
 
         pay_off_resp = test_client.post(
             f"/api/liabilities/{liability_id}/pay-off",
-            params={"paid_off_date": "2025-06-01"},
+            json={"paid_off_date": "2025-06-01"},
         )
         assert pay_off_resp.status_code == 200
         assert pay_off_resp.json()["status"] == "success"

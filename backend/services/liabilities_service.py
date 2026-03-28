@@ -13,7 +13,8 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import LIABILITIES_CATEGORY
-from backend.constants.tables import LiabilityTransactionsTableFields as LTF, Tables
+from backend.constants.tables import LiabilityTransactionsTableFields as LTF
+from backend.constants.tables import Tables
 from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 
@@ -36,6 +37,20 @@ class LiabilitiesService:
         self.db = db
         self.liabilities_repo = LiabilitiesRepository(db)
         self.transactions_repo = TransactionsRepository(db)
+
+    def _get_liability_category_transactions(self) -> pd.DataFrame:
+        """
+        Fetch all transactions in the Liabilities category.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered transactions, or an empty DataFrame if none exist.
+        """
+        all_txns = self.transactions_repo.get_table()
+        if all_txns.empty:
+            return pd.DataFrame()
+        return all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
 
     def get_all_liabilities(self, include_paid_off: bool = False) -> List[Dict[str, Any]]:
         """
@@ -60,10 +75,7 @@ class LiabilitiesService:
         if df.empty:
             return []
 
-        all_txns = self.transactions_repo.get_table()
-        liab_txns = pd.DataFrame()
-        if not all_txns.empty:
-            liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
+        liab_txns = self._get_liability_category_transactions()
 
         records = df.to_dict(orient="records")
         for record in records:
@@ -86,11 +98,7 @@ class LiabilitiesService:
             Liability record enriched with amortization-based calculations.
         """
         df = self.liabilities_repo.get_by_id(liability_id)
-
-        all_txns = self.transactions_repo.get_table()
-        liab_txns = pd.DataFrame()
-        if not all_txns.empty:
-            liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
+        liab_txns = self._get_liability_category_transactions()
 
         record = df.iloc[0].to_dict()
         self._enrich_with_calculations(record, liab_txns)
@@ -289,12 +297,11 @@ class LiabilitiesService:
               with ``date`` and ``amount``.
             - ``has_receipt`` – bool indicating if a receipt was found.
         """
-        all_txns = self.transactions_repo.get_table()
-        if all_txns.empty:
+        liab_txns = self._get_liability_category_transactions()
+        if liab_txns.empty:
             return {"receipt": None, "payments": [], "has_receipt": False}
 
-        mask = (all_txns["category"] == LIABILITIES_CATEGORY) & (all_txns["tag"] == tag)
-        matched = all_txns[mask].copy()
+        matched = liab_txns[liab_txns["tag"] == tag].copy()
 
         if matched.empty:
             return {"receipt": None, "payments": [], "has_receipt": False}
@@ -348,11 +355,10 @@ class LiabilitiesService:
             tag = record_df.iloc[0]["tag"]
 
         # Real transactions from bank/CC/cash tables
-        all_txns = self.transactions_repo.get_table()
+        liab_txns = self._get_liability_category_transactions()
         frames = []
-        if not all_txns.empty:
-            mask = (all_txns["category"] == LIABILITIES_CATEGORY) & (all_txns["tag"] == tag)
-            matched = all_txns[mask].copy()
+        if not liab_txns.empty:
+            matched = liab_txns[liab_txns["tag"] == tag].copy()
             if not matched.empty:
                 matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
                 frames.append(matched)
@@ -518,12 +524,9 @@ class LiabilitiesService:
         if df.empty:
             return {"series": [], "total": []}
 
-        all_txns = self.transactions_repo.get_table()
-        liab_txns = pd.DataFrame()
-        if not all_txns.empty:
-            liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
-            if not liab_txns.empty:
-                liab_txns["amount"] = pd.to_numeric(liab_txns["amount"], errors="coerce").fillna(0.0)
+        liab_txns = self._get_liability_category_transactions()
+        if not liab_txns.empty:
+            liab_txns["amount"] = pd.to_numeric(liab_txns["amount"], errors="coerce").fillna(0.0)
 
         series = []
         for _, row in df.iterrows():

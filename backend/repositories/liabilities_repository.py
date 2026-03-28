@@ -7,33 +7,16 @@ from datetime import datetime
 import pandas as pd
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
-from backend.errors import EntityNotFoundException
 
-from backend.models.liability import Liability, LiabilityTransaction
 from backend.constants.categories import LIABILITIES_CATEGORY
-from backend.constants.tables import LiabilitiesTableFields, Tables
+from backend.errors import EntityNotFoundException
+from backend.models.liability import Liability, LiabilityTransaction
 
 
 class LiabilitiesRepository:
     """
     Repository for managing liability tracking records using ORM.
     """
-
-    table = Tables.LIABILITIES.value
-
-    id_col = LiabilitiesTableFields.ID.value
-    name_col = LiabilitiesTableFields.NAME.value
-    lender_col = LiabilitiesTableFields.LENDER.value
-    category_col = LiabilitiesTableFields.CATEGORY.value
-    tag_col = LiabilitiesTableFields.TAG.value
-    principal_amount_col = LiabilitiesTableFields.PRINCIPAL_AMOUNT.value
-    interest_rate_col = LiabilitiesTableFields.INTEREST_RATE.value
-    term_months_col = LiabilitiesTableFields.TERM_MONTHS.value
-    start_date_col = LiabilitiesTableFields.START_DATE.value
-    is_paid_off_col = LiabilitiesTableFields.IS_PAID_OFF.value
-    paid_off_date_col = LiabilitiesTableFields.PAID_OFF_DATE.value
-    notes_col = LiabilitiesTableFields.NOTES.value
-    created_date_col = LiabilitiesTableFields.CREATED_DATE.value
 
     def __init__(self, db: Session):
         """

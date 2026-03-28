@@ -442,6 +442,24 @@ export function Liabilities() {
   const debtOverTimeData = debtOverTimeRaw?.series || [];
   const debtTotalLine = debtOverTimeRaw?.total || [];
 
+  // Shared card callbacks
+  const handleEdit = useCallback((l: Liability) => {
+    setEditForm({
+      id: l.id,
+      name: l.name,
+      lender: l.lender || "",
+      interest_rate: String(l.interest_rate),
+      notes: l.notes || "",
+    });
+  }, []);
+
+  const handlePayOff = useCallback((id: number) => {
+    setPayOffForm({
+      id,
+      date: new Date().toISOString().split("T")[0],
+    });
+  }, []);
+
   // Analysis modal tab
   const [analysisTab, setAnalysisTab] = useState<"schedule" | "actual">(
     "schedule",
@@ -628,21 +646,8 @@ export function Liabilities() {
                   key={l.id}
                   liability={l}
                   onAnalysis={setAnalysisModalId}
-                  onEdit={(l: Liability) =>
-                    setEditForm({
-                      id: l.id,
-                      name: l.name,
-                      lender: l.lender || "",
-                      interest_rate: String(l.interest_rate),
-                      notes: l.notes || "",
-                    })
-                  }
-                  onPayOff={(id: number) =>
-                    setPayOffForm({
-                      id,
-                      date: new Date().toISOString().split("T")[0],
-                    })
-                  }
+                  onEdit={handleEdit}
+                  onPayOff={handlePayOff}
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
                 />
@@ -1138,15 +1143,13 @@ export function Liabilities() {
                       {t("liabilities.actualVsExpected")}
                     </button>
                   </div>
-                  {analysisModalId && (
-                    <button
-                      onClick={() => generateMutation.mutate(analysisModalId)}
-                      disabled={generateMutation.isPending}
-                      className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
-                    >
-                      {generateMutation.isPending ? "..." : t("liabilities.generateMissing")}
-                    </button>
-                  )}
+                  <button
+                    onClick={() => generateMutation.mutate(analysisModalId)}
+                    disabled={generateMutation.isPending}
+                    className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
+                  >
+                    {generateMutation.isPending ? "..." : t("liabilities.generateMissing")}
+                  </button>
                 </div>
 
                 {/* Amortization Schedule Table */}
