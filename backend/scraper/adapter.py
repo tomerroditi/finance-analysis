@@ -414,7 +414,9 @@ class InsuranceScraperAdapter(ScraperAdapter):
 
     def _post_save_hook(self, result) -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
-        from backend.models.insurance_account import InsuranceAccount
+        from backend.repositories.insurance_account_repository import (
+            InsuranceAccountRepository,
+        )
 
         accounts_to_upsert = [
             account.metadata
@@ -425,17 +427,9 @@ class InsuranceScraperAdapter(ScraperAdapter):
             return
 
         with get_db_context() as db:
+            repo = InsuranceAccountRepository(db)
             for meta in accounts_to_upsert:
-                existing = db.query(InsuranceAccount).filter_by(
-                    policy_id=meta["policy_id"]
-                ).first()
-                if existing:
-                    for key, value in meta.items():
-                        if key != "policy_id":
-                            setattr(existing, key, value)
-                else:
-                    db.add(InsuranceAccount(**meta))
-            db.commit()
+                repo.upsert(**meta)
             logger.info(
                 "%s: %s: Saved metadata for %d insurance accounts",
                 self.provider_name, self.account_name, len(accounts_to_upsert),

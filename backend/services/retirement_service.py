@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
+from backend.services.insurance_account_service import InsuranceAccountService
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
@@ -37,6 +38,7 @@ class RetirementService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = RetirementGoalRepository(db)
+        self.insurance_account_service = InsuranceAccountService(db)
         self.analysis_service = AnalysisService(db)
         self.investments_service = InvestmentsService(db)
         self.bank_balance_service = BankBalanceService(db)
@@ -78,11 +80,7 @@ class RetirementService:
         float or None
             Sum of all hishtalmut account balances, or None if no data.
         """
-        accounts = self.repo.get_keren_hishtalmut_accounts()
-        if not accounts:
-            return None
-        total = sum(a.balance for a in accounts if a.balance is not None)
-        return total if total > 0 else None
+        return self.insurance_account_service.get_keren_hishtalmut_balance()
 
     def get_current_status(self) -> dict:
         """Aggregate current financial status from real dashboard data.
