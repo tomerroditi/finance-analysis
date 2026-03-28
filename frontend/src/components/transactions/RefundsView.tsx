@@ -221,8 +221,7 @@ const RefundsView: React.FC = () => {
                   </span>
                   {item.status !== "closed" && (
                     <button
-                      className="p-1 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-all"
-                      data-tooltip={t("transactions.refunds.confirmUnlink")}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-all"
                       onClick={() => {
                         if (window.confirm(t("transactions.refunds.confirmUnlink"))) {
                           unlinkMutation.mutate(link.id);
@@ -230,6 +229,7 @@ const RefundsView: React.FC = () => {
                       }}
                     >
                       <Unlink size={14} />
+                      {t("transactions.refunds.unlink")}
                     </button>
                   )}
                 </div>

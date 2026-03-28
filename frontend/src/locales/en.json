@@ -249,6 +249,7 @@
       "closed": "Closed",
       "closeRefund": "Close Refund",
       "confirmClose": "Close this refund? The unrefunded amount will count as an expense.",
+      "unlink": "Unlink",
       "confirmUnlink": "Unlink this refund transaction?",
       "confirmCancel": "Cancel this refund expectation? All linked refunds will be unlinked.",
       "refundedOf": "{{refunded}} of {{expected}} refunded",

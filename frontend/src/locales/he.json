@@ -249,6 +249,7 @@
       "closed": "סגור",
       "closeRefund": "סגור החזר",
       "confirmClose": "לסגור את ההחזר? הסכום שלא הוחזר ייחשב כהוצאה.",
+      "unlink": "נתק",
       "confirmUnlink": "לנתק את תנועת ההחזר?",
       "confirmCancel": "לבטל את בקשת ההחזר? כל ההחזרים המקושרים ינותקו.",
       "refundedOf": "{{refunded}} מתוך {{expected}} הוחזרו",
