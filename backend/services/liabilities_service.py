@@ -132,10 +132,14 @@ class LiabilitiesService:
         notes : str, optional
             Free-text notes about the liability.
         """
+        from backend.errors import EntityAlreadyExistsException
         from backend.services.tagging_service import CategoriesTagsService
 
         cat_service = CategoriesTagsService(self.db)
-        cat_service.add_tag(LIABILITIES_CATEGORY, tag)
+        try:
+            cat_service.add_tag(LIABILITIES_CATEGORY, tag)
+        except EntityAlreadyExistsException:
+            pass
 
         self.liabilities_repo.create_liability(
             name=name,
