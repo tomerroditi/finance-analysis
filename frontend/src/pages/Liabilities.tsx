@@ -107,7 +107,7 @@ function LiabilityCard({
 
   return (
     <div
-      className={`group bg-[var(--surface)] rounded-2xl border ${isPaidOff ? "border-emerald-500/10 opacity-60" : "border-[var(--surface-light)]"} p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
+      className={`group bg-[var(--surface)] rounded-2xl border ${isPaidOff ? "border-emerald-500/10 opacity-60" : "border-[var(--surface-light)]"} p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
@@ -163,7 +163,7 @@ function LiabilityCard({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
             {t("liabilities.loanAmount")}
@@ -233,7 +233,7 @@ function LiabilityCard({
               <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
                 <Info size={16} />
               </div>
-              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
+              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-100 md:opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
                 {liability.notes}
               </div>
             </div>
@@ -467,9 +467,9 @@ export function Liabilities() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-8">
+      <div className="space-y-8 p-4 md:p-8">
         <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
@@ -482,11 +482,11 @@ export function Liabilities() {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold">{t("liabilities.title")}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t("liabilities.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
             {t("liabilities.subtitle")}
           </p>
@@ -494,7 +494,7 @@ export function Liabilities() {
         <button
           onClick={() => setIsAddOpen(true)}
           disabled={!canAdd}
-          className={`flex items-center gap-2 px-6 py-2 rounded-xl font-bold transition-all ${canAdd ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20" : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed"}`}
+          className={`flex items-center gap-2 px-4 md:px-6 py-2 rounded-xl font-bold transition-all text-sm md:text-base ${canAdd ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)] shadow-lg shadow-[var(--primary)]/20" : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed"}`}
         >
           <Plus size={18} /> {t("liabilities.addLiability")}
         </button>
@@ -502,27 +502,27 @@ export function Liabilities() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6">
+        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6">
           <p className="text-[10px] uppercase font-black tracking-widest text-rose-400 mb-1">
             {t("liabilities.totalDebt")}
           </p>
-          <p className="text-2xl font-black text-white" dir="ltr">
+          <p className="text-xl md:text-2xl font-black text-white" dir="ltr">
             {formatCurrency(totalDebt)}
           </p>
         </div>
-        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6">
+        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6">
           <p className="text-[10px] uppercase font-black tracking-widest text-[var(--text-muted)] mb-1">
             {t("liabilities.monthlyPayments")}
           </p>
-          <p className="text-2xl font-black text-white" dir="ltr">
+          <p className="text-xl md:text-2xl font-black text-white" dir="ltr">
             {formatCurrency(totalMonthly)}
           </p>
         </div>
-        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6">
+        <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6">
           <p className="text-[10px] uppercase font-black tracking-widest text-amber-400 mb-1">
             {t("liabilities.totalInterest")}
           </p>
-          <p className="text-2xl font-black text-white" dir="ltr">
+          <p className="text-xl md:text-2xl font-black text-white" dir="ltr">
             {formatCurrency(totalInterest)}
           </p>
         </div>
@@ -530,9 +530,9 @@ export function Liabilities() {
 
       {/* Charts: Debt Over Time + Debt Allocation */}
       {activeLiabilities.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Debt Over Time */}
-          <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+          <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
             <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
               {t("liabilities.debtOverTime")}
             </h3>
@@ -591,7 +591,7 @@ export function Liabilities() {
           </div>
 
           {/* Debt Allocation Pie Chart */}
-          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+          <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
             <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
               {t("liabilities.debtAllocation")}
             </h3>
@@ -694,7 +694,7 @@ export function Liabilities() {
       {/* Create Modal */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.addLiability")}
             </h3>
@@ -883,7 +883,7 @@ export function Liabilities() {
       {/* Edit Modal */}
       {editForm.id && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.editLiability")}
             </h3>
@@ -984,7 +984,7 @@ export function Liabilities() {
       {/* Pay Off Modal */}
       {payOffForm.id && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.payOff")}
             </h3>
@@ -1033,7 +1033,7 @@ export function Liabilities() {
       {/* Analysis Modal */}
       {analysisModalId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-4xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-4xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">{t("liabilities.analysis")}</h3>
               <button
@@ -1244,7 +1244,7 @@ export function Liabilities() {
               </>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Skeleton variant="card" className="h-20" />
                   <Skeleton variant="card" className="h-20" />
                   <Skeleton variant="card" className="h-20" />

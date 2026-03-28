@@ -95,7 +95,7 @@ export function RetirementIncomeChart({ data }: Props) {
       }}
       config={plotlyConfig()}
       useResizeHandler
-      style={{ width: "100%", height: "400px" }}
+      style={{ width: "100%", minHeight: "300px", height: "400px" }}
     />
   );
 }

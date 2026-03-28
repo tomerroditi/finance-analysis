@@ -217,9 +217,9 @@ export function RetirementGoalForm({
     !!isCalculating;
 
   return (
-    <form onSubmit={handleCalculate} className="space-y-6">
+    <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
       {/* Core Parameters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -289,7 +289,7 @@ export function RetirementGoalForm({
       </div>
 
       {/* Israeli Savings Vehicles */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
           <NumberField
             label={t("earlyRetirement.form.pensionPayout")}
             value={form.pension_monthly_payout_estimate}
