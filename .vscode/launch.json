@@ -12,7 +12,7 @@
       "name": "Dev Remote (Tailscale)",
       "request": "launch",
       "type": "node-terminal",
-      "command": "echo \"Access at: http://$(tailscale ip -4):5173\"",
+      "command": "echo \"Access at: http://$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4):5173\"",
       "preLaunchTask": "Dev Remote (Backend + Frontend)"
     },
     {

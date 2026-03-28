@@ -5,7 +5,8 @@
 
 set -e
 
-TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || true)
+TAILSCALE_CLI="${TAILSCALE_CLI:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
+TAILSCALE_IP=$("$TAILSCALE_CLI" ip -4 2>/dev/null || tailscale ip -4 2>/dev/null || true)
 
 if [ -z "$TAILSCALE_IP" ]; then
   echo "Error: Could not detect Tailscale IP. Is Tailscale running?"
