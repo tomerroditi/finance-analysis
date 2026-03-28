@@ -559,7 +559,10 @@
       "unknownExpense": "הוצאה לא ידועה",
       "noDate": "ללא תאריך",
       "amountToLink": "סכום לקישור",
-      "linking": "מקשר..."
+      "linking": "מקשר...",
+      "searchTransactions": "חפש תנועות החזר...",
+      "noTransactions": "לא נמצאו תנועות החזר",
+      "expectedRefund": "החזר צפוי"
     },
     "project": {
       "title": "תקציב פרויקט",

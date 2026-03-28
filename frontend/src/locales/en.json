@@ -559,7 +559,10 @@
       "unknownExpense": "Unknown Expense",
       "noDate": "No date",
       "amountToLink": "Amount to link",
-      "linking": "Linking..."
+      "linking": "Linking...",
+      "searchTransactions": "Search refund transactions...",
+      "noTransactions": "No refund transactions found",
+      "expectedRefund": "expected refund"
     },
     "project": {
       "title": "Project Budget",

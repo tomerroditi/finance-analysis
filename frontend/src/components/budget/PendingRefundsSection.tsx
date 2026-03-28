@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Link2, X } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { LinkRefundModal } from "../modals/LinkRefundModal";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -18,6 +19,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { items, total_expected } = pendingRefunds;
+  const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
 
   if (!items || items.length === 0) {
     return null;
@@ -111,7 +113,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
               <button
                 className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
                 title={t("budget.linkRefund")}
-                onClick={() => alert(t("budget.linkRefundComingSoon"))}
+                onClick={() => setLinkingRefund(item)}
               >
                 <Link2 size={16} />
               </button>
@@ -131,6 +133,14 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
       <div className="px-5 py-3 bg-amber-500/5 border-t border-amber-500/20 text-xs text-[var(--text-muted)]">
         {t("budget.pendingRefundsFooter")}
       </div>
+
+      {linkingRefund && (
+        <LinkRefundModal
+          isOpen={!!linkingRefund}
+          onClose={() => setLinkingRefund(null)}
+          pendingRefund={linkingRefund}
+        />
+      )}
     </div>
   );
 };
