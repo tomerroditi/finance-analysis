@@ -18,9 +18,10 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--background);
   color: var(--text);
+  overscroll-behavior-y: contain;
   font-family:
     "Inter",
     "Heebo",
@@ -37,6 +38,33 @@ select option {
 
 * {
   box-sizing: border-box;
+  /* Subtle blue tap highlight instead of default gray flash */
+  -webkit-tap-highlight-color: rgba(59, 130, 246, 0.15);
+}
+
+/* Eliminate 300ms tap delay on touch devices */
+button, a, [role="button"], input, select, textarea, label {
+  touch-action: manipulation;
+}
+
+/* Prevent accidental text selection on interactive UI elements */
+button, [role="button"], nav, .select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Prevent long-press context menu on UI elements (not text content) */
+button, [role="button"], nav {
+  -webkit-touch-callout: none;
+}
+
+/* Active/pressed state for instant tap feedback on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  button:active, [role="button"]:active, a:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+    transition: transform 0.05s, opacity 0.05s;
+  }
 }
 
 /* Custom scrollbar */
@@ -80,6 +108,50 @@ select option {
 }
 .scrollbar-auto-hide:hover::-webkit-scrollbar-thumb {
   background: var(--surface-light);
+}
+
+/* Safe area support for notched devices (iPhone X+, Dynamic Island) */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Prevent iOS Safari auto-zoom on input focus (triggers when font-size < 16px) */
+@media screen and (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Modal scroll lock: applied to body via JS when a modal is open */
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  /* preserve scroll position via inline --scroll-y set by useScrollLock */
+  top: var(--scroll-y, 0);
+  width: 100%;
+}
+
+/* Prevent overscroll bounce on modal overlays */
+.modal-overlay {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Smooth scroll-snap for horizontal tab bars on mobile */
+@media (max-width: 767px) {
+  .scrollbar-auto-hide {
+    scroll-snap-type: x proximity;
+    scroll-behavior: smooth;
+  }
+  .scrollbar-auto-hide > * {
+    scroll-snap-align: start;
+  }
 }
 
 @keyframes shake {

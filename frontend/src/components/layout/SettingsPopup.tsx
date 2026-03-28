@@ -41,7 +41,7 @@ export function SettingsPopup({
     >
       <div
         ref={popupRef}
-        className="w-80 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200"
+        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-80 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 space-y-5 animate-in zoom-in-95 duration-200"
       >
         {/* Language Toggle */}
         <div>
