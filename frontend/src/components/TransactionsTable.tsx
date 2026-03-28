@@ -611,8 +611,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     { key: "date", label: t("transactions.table.date") },
                     { key: "description", label: t("transactions.table.description") },
                     { key: "category", label: t("transactions.table.category") },
-                    { key: "account", label: t("transactions.table.account") },
                     { key: "amount", label: t("transactions.table.amount") },
+                    { key: "account", label: t("transactions.table.account") },
                   ].map(({ key, label }) => (
                     <label
                       key={key}
@@ -698,7 +698,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             <tr>
               {showSelection && (
                 <th
-                  className={`px-4 ${compact ? "py-2" : "py-3"} text-center`}
+                  className={`px-4 ${compact ? "py-2" : "py-3"} text-center hidden md:table-cell`}
                   style={{ width: "50px" }}
                 >
                   <input
@@ -711,9 +711,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               )}
               {visibleColumns.has("date") && (
                 <SortableHeader label={t("transactions.table.date")} sortKey="date" width="120px" />
-              )}
-              {visibleColumns.has("account") && (
-                <SortableHeader label={t("transactions.table.account")} sortKey="account" width="180px" />
               )}
               {visibleColumns.has("description") && (
                 <SortableHeader label={t("transactions.table.description")} sortKey="desc" />
@@ -732,6 +729,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   align="right"
                   width="120px"
                 />
+              )}
+              {visibleColumns.has("account") && (
+                <SortableHeader label={t("transactions.table.account")} sortKey="account" width="180px" />
               )}
               {showActions && (
                 <th
@@ -764,7 +764,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 >
                   {showSelection && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-center`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-center hidden md:table-cell`}
                     >
                       <input
                         type="checkbox"
@@ -779,28 +779,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-[var(--text-muted)]`}
                     >
                       {formatDate(tx.date)}
-                    </td>
-                  )}
-                  {visibleColumns.has("account") && (
-                    <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
-                      title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
-                          {tx.provider
-                            ? humanizeProvider(tx.provider)
-                            : tx.source?.includes("cash") ? "Cash" : "Manual"}
-                        </span>
-                        <span className="truncate font-medium text-[var(--text-default)]">
-                          {tx.account_name}
-                          {tx.source === "credit_card_transactions" && tx.account_number && (
-                            <span className="text-[var(--text-muted)] ms-1">
-                              ({tx.account_number.slice(-4)})
-                            </span>
-                          )}
-                        </span>
-                      </div>
                     </td>
                   )}
                   {visibleColumns.has("description") && (
@@ -830,6 +808,28 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         style: "currency",
                         currency: "ILS",
                       }).format(tx.amount)}
+                    </td>
+                  )}
+                  {visibleColumns.has("account") && (
+                    <td
+                      className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
+                      title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
+                          {tx.provider
+                            ? humanizeProvider(tx.provider)
+                            : tx.source?.includes("cash") ? "Cash" : "Manual"}
+                        </span>
+                        <span className="truncate font-medium text-[var(--text-default)]">
+                          {tx.account_name}
+                          {tx.source === "credit_card_transactions" && tx.account_number && (
+                            <span className="text-[var(--text-muted)] ms-1">
+                              ({tx.account_number.slice(-4)})
+                            </span>
+                          )}
+                        </span>
+                      </div>
                     </td>
                   )}
                   {showActions && (
