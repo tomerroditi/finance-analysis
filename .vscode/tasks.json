@@ -2,6 +2,38 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Backend (Remote)",
+      "type": "shell",
+      "command": "source .venv/bin/activate && CORS_ORIGINS=\"http://localhost:5173,http://127.0.0.1:5173,http://$(tailscale ip -4):5173\" uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev-remote",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Frontend (Remote)",
+      "type": "shell",
+      "command": "npm run dev -- --host 0.0.0.0",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev-remote",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Dev Remote (Backend + Frontend)",
+      "dependsOn": ["Backend (Remote)", "Frontend (Remote)"],
+      "problemMatcher": []
+    },
+    {
       "label": "Backend",
       "type": "shell",
       "command": "source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000",

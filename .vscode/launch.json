@@ -9,6 +9,13 @@
       "preLaunchTask": "Dev (Backend + Frontend)"
     },
     {
+      "name": "Dev Remote (Tailscale)",
+      "request": "launch",
+      "type": "node-terminal",
+      "command": "echo \"Access at: http://$(tailscale ip -4):5173\"",
+      "preLaunchTask": "Dev Remote (Backend + Frontend)"
+    },
+    {
       "name": "Prod (Single Server)",
       "type": "node-terminal",
       "request": "launch",
