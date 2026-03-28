@@ -756,7 +756,7 @@ export function Liabilities() {
                   </div>
                 )}
               </div>
-              {(!tagDetection || !tagDetection.has_receipt) && (
+              {tagDetection && !tagDetection.has_receipt && (
                 <>
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -851,7 +851,8 @@ export function Liabilities() {
                 disabled={
                   !newLiability.name ||
                   !newLiability.tag ||
-                  (!tagDetection?.has_receipt &&
+                  !tagDetection ||
+                  (!tagDetection.has_receipt &&
                     (!newLiability.principal_amount ||
                       !newLiability.start_date)) ||
                   !newLiability.interest_rate ||
