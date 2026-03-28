@@ -696,6 +696,7 @@ function RecentTransactionsFeed({
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
+  const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null);
   const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
 
@@ -870,7 +871,13 @@ function RecentTransactionsFeed({
                 return (
                   <div key={txKey}>
                     <div
-                      className="flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors cursor-default"
+                      className={`flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${mobileActionsTxKey === txKey ? "bg-[var(--surface-light)]/30" : ""}`}
+                      onClick={() => {
+                        // On mobile (< sm), toggle action card
+                        if (window.innerWidth < 640) {
+                          setMobileActionsTxKey(mobileActionsTxKey === txKey ? null : txKey);
+                        }
+                      }}
                     >
                       <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
                       <div className="flex-1 min-w-0">
@@ -944,6 +951,51 @@ function RecentTransactionsFeed({
                         {formatCurrency(tx.amount)}
                       </span>
                     </div>
+
+                    {/* Mobile action buttons — shown on tap */}
+                    {mobileActionsTxKey === txKey && (
+                      <div className="sm:hidden flex items-center gap-1 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
+                        <button
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          onClick={(e) => { e.stopPropagation(); setEditingTxKey(isEditing ? null : txKey); }}
+                        >
+                          <Tag size={14} />
+                          {t("common.tag")}
+                        </button>
+                        <button
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                          onClick={(e) => { e.stopPropagation(); setSplittingTransaction(tx); }}
+                        >
+                          <Split size={14} />
+                          {t("common.split")}
+                        </button>
+                        {tx.amount < 0 ? (
+                          tx.pending_refund_id ? (
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-400">
+                              <RefreshCw size={14} className="animate-pulse" />
+                              {t("tooltips.pendingRefund")}
+                            </span>
+                          ) : (
+                            <button
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); markPendingMutation.mutate(tx); }}
+                              disabled={markPendingMutation.isPending}
+                            >
+                              <RefreshCw size={14} />
+                              {t("tooltips.markPendingRefund")}
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
+                          >
+                            <Link2 size={14} />
+                            {t("tooltips.linkAsRefund")}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Inline tag editing panel */}
                     {isEditing && categories && (
