@@ -55,7 +55,9 @@ class InsuranceAccountRepository:
             The created or updated record.
         """
         policy_id = fields.get("policy_id")
-        existing = self.get_by_policy_id(policy_id) if policy_id else None
+        if not policy_id:
+            raise ValueError("policy_id is required for upsert")
+        existing = self.get_by_policy_id(policy_id)
         if existing:
             for key, value in fields.items():
                 if key != "policy_id":

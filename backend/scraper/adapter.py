@@ -414,8 +414,8 @@ class InsuranceScraperAdapter(ScraperAdapter):
 
     def _post_save_hook(self, result) -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
-        from backend.repositories.insurance_account_repository import (
-            InsuranceAccountRepository,
+        from backend.services.insurance_account_service import (
+            InsuranceAccountService,
         )
 
         accounts_to_upsert = [
@@ -426,11 +426,17 @@ class InsuranceScraperAdapter(ScraperAdapter):
         if not accounts_to_upsert:
             return
 
-        with get_db_context() as db:
-            repo = InsuranceAccountRepository(db)
-            for meta in accounts_to_upsert:
-                repo.upsert(**meta)
-            logger.info(
-                "%s: %s: Saved metadata for %d insurance accounts",
-                self.provider_name, self.account_name, len(accounts_to_upsert),
+        try:
+            with get_db_context() as db:
+                service = InsuranceAccountService(db)
+                for meta in accounts_to_upsert:
+                    service.upsert(**meta)
+                logger.info(
+                    "%s: %s: Saved metadata for %d insurance accounts",
+                    self.provider_name, self.account_name, len(accounts_to_upsert),
+                )
+        except Exception as exc:
+            logger.error(
+                "%s: %s: Error saving insurance metadata — %s",
+                self.provider_name, self.account_name, exc,
             )

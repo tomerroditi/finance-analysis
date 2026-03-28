@@ -5,9 +5,6 @@ Computes FIRE projections, net worth trajectories, and retirement income
 phase analysis for the Israeli financial context.
 """
 
-import math
-
-import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
