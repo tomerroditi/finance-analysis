@@ -1590,6 +1590,8 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     2. Partial refund (one link, not fully covered) - electronics partial return
     3. Resolved refund (fully linked) - duplicate charge
     4. Closed refund (user accepted partial) - restaurant dispute
+    5. Partial refund with multiple links - expensive item with 2 refund txns
+    6. Partial refund for auto-split testing - 80 ILS remaining, 150 ILS refund available
     """
     # 1. Pending refund: recent shopping item, no links
     recent_shopping = [
@@ -1741,6 +1743,138 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             refund_source="bank_transactions",
             amount=closed_partial,
         ))
+
+    # 5. Partial refund with multiple links (test multi-link scenario)
+    # Source: an expensive CC transaction, linked to 2 partial refund bank transactions
+    expensive_shopping = [
+        t for t in cc_txns
+        if t.category == "Shopping" and t.type == "normal"
+        and t.amount < -500
+        and t not in recent_shopping and t not in electronics
+        and t not in (resolved_shopping if resolved_shopping else [])
+    ]
+    if expensive_shopping:
+        source_txn = expensive_shopping[-1]
+        expected = abs(source_txn.amount)
+        link1_amount = round(expected * 0.3, 2)
+        link2_amount = round(expected * 0.25, 2)
+
+        multi_link_refund = PendingRefund(
+            source_type="transaction",
+            source_id=source_txn.unique_id,
+            source_table="credit_card_transactions",
+            expected_amount=expected,
+            status="partial",
+            notes="Multiple partial refunds received, more expected",
+        )
+        session.add(multi_link_refund)
+        session.flush()
+
+        refund_txn_1 = BankTransaction(
+            id="demo-bank-refund-multi-1",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 3, 8),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="REFUND 1/3 - STORE CREDIT",
+            amount=link1_amount,
+            category="Shopping",
+            tag="Online",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        refund_txn_2 = BankTransaction(
+            id="demo-bank-refund-multi-2",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 10, 15),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="REFUND 2/3 - STORE CREDIT",
+            amount=link2_amount,
+            category="Shopping",
+            tag="Online",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add_all([refund_txn_1, refund_txn_2])
+        session.flush()
+
+        session.add(RefundLink(
+            pending_refund_id=multi_link_refund.id,
+            refund_transaction_id=refund_txn_1.unique_id,
+            refund_source="bank_transactions",
+            amount=link1_amount,
+        ))
+        session.add(RefundLink(
+            pending_refund_id=multi_link_refund.id,
+            refund_transaction_id=refund_txn_2.unique_id,
+            refund_source="bank_transactions",
+            amount=link2_amount,
+        ))
+
+    # 6. Pending refund with small remaining (test auto-split linking)
+    # Source: a CC transaction where we expect a 200 ILS refund. One 120 ILS
+    # refund already linked, leaving 80 ILS remaining. A 150 ILS bank refund
+    # transaction is available — linking it should auto-split to 80 + 70.
+    transport = [
+        t for t in cc_txns
+        if t.category == "Transport" and t.type == "normal"
+        and t.amount < -150
+    ]
+    if transport:
+        source_txn = transport[-1]
+        expected = 200.0
+        first_link = 120.0
+
+        autosplit_refund = PendingRefund(
+            source_type="transaction",
+            source_id=source_txn.unique_id,
+            source_table="credit_card_transactions",
+            expected_amount=expected,
+            status="partial",
+            notes="Overcharged ride fare - link the 150 ILS refund to test auto-split (remaining: 80)",
+        )
+        session.add(autosplit_refund)
+        session.flush()
+
+        first_refund_txn = BankTransaction(
+            id="demo-bank-refund-autosplit-1",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 5, 10),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="RIDE REFUND - PARTIAL",
+            amount=first_link,
+            category="Transport",
+            tag="Taxi",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(first_refund_txn)
+        session.flush()
+
+        session.add(RefundLink(
+            pending_refund_id=autosplit_refund.id,
+            refund_transaction_id=first_refund_txn.unique_id,
+            refund_source="bank_transactions",
+            amount=first_link,
+        ))
+
+        # This 150 ILS refund is available for linking — should auto-split to 80 + 70
+        autosplit_candidate = BankTransaction(
+            id="demo-bank-refund-autosplit-candidate",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 18, 25),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="RIDE REFUND - REMAINING (150, will auto-split to 80+70)",
+            amount=150.0,
+            category="Transport",
+            tag="Taxi",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(autosplit_candidate)
 
     session.flush()
 
