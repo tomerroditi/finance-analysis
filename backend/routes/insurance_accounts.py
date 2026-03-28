@@ -5,43 +5,49 @@ Provides a read-only endpoint for insurance account metadata
 (pension, keren hishtalmut, gemel) scraped from insurance providers.
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.models.insurance_account import InsuranceAccount
+from backend.services.insurance_account_service import InsuranceAccountService
 
 router = APIRouter()
 
 
-@router.get("/")
+class InsuranceAccountResponse(BaseModel):
+    """Response body for an insurance account record."""
+
+    id: int
+    provider: str
+    policy_id: str
+    policy_type: str
+    pension_type: Optional[str] = None
+    account_name: str
+    balance: Optional[float] = None
+    balance_date: Optional[str] = None
+    investment_tracks: Optional[str] = None
+    commission_deposits_pct: Optional[float] = None
+    commission_savings_pct: Optional[float] = None
+    insurance_covers: Optional[str] = None
+    insurance_costs: Optional[str] = None
+    liquidity_date: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get("/", response_model=list[InsuranceAccountResponse])
 async def get_insurance_accounts(
     db: Session = Depends(get_database),
-) -> list[dict]:
+):
     """Get all insurance account metadata records.
 
     Returns
     -------
-    list[dict]
+    list[InsuranceAccountResponse]
         List of insurance account records with all fields.
     """
-    rows = db.query(InsuranceAccount).all()
-    return [
-        {
-            "id": r.id,
-            "provider": r.provider,
-            "policy_id": r.policy_id,
-            "policy_type": r.policy_type,
-            "pension_type": r.pension_type,
-            "account_name": r.account_name,
-            "balance": r.balance,
-            "balance_date": r.balance_date,
-            "investment_tracks": r.investment_tracks,
-            "commission_deposits_pct": r.commission_deposits_pct,
-            "commission_savings_pct": r.commission_savings_pct,
-            "insurance_covers": r.insurance_covers,
-            "insurance_costs": r.insurance_costs,
-            "liquidity_date": r.liquidity_date,
-        }
-        for r in rows
-    ]
+    service = InsuranceAccountService(db)
+    return service.get_all()

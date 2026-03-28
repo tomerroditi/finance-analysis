@@ -416,6 +416,90 @@ export const pendingRefundsApi = {
     api.delete(`/pending-refunds/links/${linkId}`),
 };
 
+// Retirement API
+export interface RetirementGoal {
+  id: number;
+  current_age: number;
+  gender: string;
+  target_retirement_age: number;
+  life_expectancy: number;
+  monthly_expenses_in_retirement: number;
+  inflation_rate: number;
+  expected_return_rate: number;
+  withdrawal_rate: number;
+  pension_monthly_payout_estimate: number;
+  keren_hishtalmut_balance: number;
+  keren_hishtalmut_monthly_contribution: number;
+  bituach_leumi_eligible: boolean;
+  bituach_leumi_monthly_estimate: number;
+  other_passive_income: number;
+}
+
+export interface RetirementStatus {
+  net_worth: number;
+  avg_monthly_expenses: number;
+  avg_monthly_income: number;
+  savings_rate: number;
+  total_investments: number;
+  monthly_savings: number;
+}
+
+export interface RetirementSuggestions {
+  target_retirement_age: number;
+  monthly_expenses_in_retirement: number;
+  expected_return_rate: number;
+  life_expectancy: number;
+}
+
+export interface RetirementProjections {
+  fire_number: number;
+  years_to_fire: number;
+  fire_age: number;
+  earliest_possible_retirement_age: number;
+  monthly_savings_needed: number;
+  progress_pct: number;
+  readiness: "on_track" | "close" | "off_track";
+  portfolio_depleted_age: number | null;
+  target_retirement_age: number;
+  net_worth_projection: {
+    age: number;
+    net_worth_optimistic: number;
+    net_worth_baseline: number;
+    net_worth_conservative: number;
+  }[];
+  income_projection: {
+    age: number;
+    salary_savings: number;
+    portfolio_withdrawal: number;
+    pension: number;
+    bituach_leumi: number;
+    passive_income: number;
+    total_income: number;
+    expenses: number;
+  }[];
+}
+
+export const retirementApi = {
+  getGoal: () => api.get<RetirementGoal | null>("/retirement/goal"),
+  upsertGoal: (data: Omit<RetirementGoal, "id">) =>
+    api.put<RetirementGoal>("/retirement/goal", data),
+  getStatus: () => api.get<RetirementStatus>("/retirement/status"),
+  getProjections: () =>
+    api.get<RetirementProjections>("/retirement/projections"),
+  previewProjections: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementProjections>("/retirement/projections", data),
+  getKerenHishtalmutBalance: () =>
+    api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
+  getSuggestions: () =>
+    api.get<RetirementSuggestions>("/retirement/suggestions"),
+  previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementSuggestions>("/retirement/suggestions", data),
+  solveForField: (field: string) =>
+    api.get<{ field: string; value: number; unit: string }>(
+      `/retirement/solve/${field}`,
+    ),
+};
+
 export const testingApi = {
   toggleDemoMode: (enabled: boolean) =>
     api.post<{ status: string; demo_mode: boolean }>(

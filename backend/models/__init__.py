@@ -14,6 +14,7 @@ from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.pending_refund import PendingRefund, RefundLink
+from backend.models.retirement_goal import RetirementGoal
 from backend.models.scraping import ScrapingHistory
 from backend.models.tagging_rules import TaggingRule
 from backend.models.transaction import (
@@ -50,4 +51,5 @@ __all__ = [
     # Refund linking
     "PendingRefund",
     "RefundLink",
+    "RetirementGoal",
 ]
