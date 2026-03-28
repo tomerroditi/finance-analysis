@@ -173,6 +173,40 @@ class TestUnlinkRefund:
             service.unlink_refund(9999)
 
 
+class TestClosePendingRefund:
+    """Tests for closing a pending refund as accepted partial."""
+
+    def test_close_pending_refund(self, db_session):
+        """Close a pending refund sets status to closed."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        result = service.close_pending_refund(pending["id"])
+        assert result["status"] == "closed"
+
+    def test_close_partial_refund(self, db_session):
+        """Close a partial refund preserves links and sets status to closed."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 50.0)
+        result = service.close_pending_refund(pending["id"])
+        assert result["status"] == "closed"
+        assert result["total_refunded"] == 50.0
+
+    def test_close_resolved_refund_rejected(self, db_session):
+        """Cannot close an already resolved refund."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 100.0)
+        with pytest.raises(ValidationException):
+            service.close_pending_refund(pending["id"])
+
+    def test_close_not_found(self, db_session):
+        """Error when pending refund not found."""
+        service = PendingRefundsService(db_session)
+        with pytest.raises(EntityNotFoundException):
+            service.close_pending_refund(9999)
+
+
 class TestGetAllPendingEnrichment:
     """Tests for get_all_pending enrichment with real transaction data."""
 

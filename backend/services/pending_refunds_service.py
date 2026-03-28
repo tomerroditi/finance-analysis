@@ -410,6 +410,51 @@ class PendingRefundsService:
         # Note: In full implementation, would filter by source transaction dates
         return pending_df["expected_amount"].sum()
 
+    def close_pending_refund(self, pending_refund_id: int) -> dict:
+        """
+        Close a pending refund, accepting whatever has been refunded so far.
+
+        Parameters
+        ----------
+        pending_refund_id : int
+            ID of the pending refund to close.
+
+        Returns
+        -------
+        dict
+            Updated pending refund with closed status.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If pending refund not found.
+        ValidationException
+            If refund is already resolved or closed.
+        """
+        pending = self.repo.get_by_id(pending_refund_id)
+        if not pending:
+            raise EntityNotFoundException(
+                f"Pending refund {pending_refund_id} not found"
+            )
+
+        if pending.status in ("resolved", "closed"):
+            raise ValidationException(
+                f"Cannot close a refund that is already {pending.status}"
+            )
+
+        self.repo.update_status(pending_refund_id, "closed")
+
+        links = self.repo.get_links_for_pending(pending_refund_id)
+        total_refunded = links["amount"].sum() if not links.empty else 0
+
+        return {
+            "id": pending_refund_id,
+            "status": "closed",
+            "expected_amount": pending.expected_amount,
+            "total_refunded": total_refunded,
+            "remaining": max(0, pending.expected_amount - total_refunded),
+        }
+
     def unlink_refund(self, link_id: int) -> dict:
         """
         Unlink a refund transaction from its pending refund and recalculate status.

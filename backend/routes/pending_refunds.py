@@ -128,6 +128,16 @@ async def get_budget_adjustment(
     return {"adjustment": adjustment}
 
 
+@router.post("/{pending_id}/close")
+async def close_pending_refund(
+    pending_id: int,
+    db: Session = Depends(get_db),
+):
+    """Close a pending refund, accepting the current partial refund amount."""
+    service = PendingRefundsService(db)
+    return service.close_pending_refund(pending_id)
+
+
 @router.delete("/links/{link_id}")
 async def unlink_refund(
     link_id: int,
