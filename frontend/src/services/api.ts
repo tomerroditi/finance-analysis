@@ -274,6 +274,29 @@ export const investmentsApi = {
     }),
 };
 
+// Liabilities API
+export const liabilitiesApi = {
+  getAll: (includePaidOff = false) =>
+    api.get("/liabilities/", { params: { include_paid_off: includePaidOff } }),
+  getById: (id: number) => api.get(`/liabilities/${id}`),
+  getDebtOverTime: () => api.get("/liabilities/debt-over-time"),
+  create: (liability: object) => api.post("/liabilities/", liability),
+  update: (id: number, liability: object) =>
+    api.put(`/liabilities/${id}`, liability),
+  payOff: (id: number, paidOffDate: string) =>
+    api.post(`/liabilities/${id}/pay-off`, {
+      paid_off_date: paidOffDate,
+    }),
+  reopen: (id: number) => api.post(`/liabilities/${id}/reopen`),
+  delete: (id: number) => api.delete(`/liabilities/${id}`),
+  getAnalysis: (id: number) => api.get(`/liabilities/${id}/analysis`),
+  getTransactions: (id: number) => api.get(`/liabilities/${id}/transactions`),
+  detectTransactions: (tag: string) =>
+    api.get("/liabilities/detect-transactions", { params: { tag } }),
+  generateTransactions: (id: number) =>
+    api.post(`/liabilities/${id}/generate-transactions`),
+};
+
 // Analytics API
 export const analyticsApi = {
   getOverview: () =>

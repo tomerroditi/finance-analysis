@@ -9,6 +9,7 @@ import {
   Budget,
   Categories,
   Investments,
+  Liabilities,
   DataSources,
   EarlyRetirement,
 } from "./pages";
@@ -36,6 +37,7 @@ function App() {
                 <Route path="budget" element={<Budget />} />
                 <Route path="categories" element={<Categories />} />
                 <Route path="investments" element={<Investments />} />
+                <Route path="liabilities" element={<Liabilities />} />
                 <Route path="insurances" element={<InsurancesPrototype />} />
                 <Route path="early-retirement" element={<EarlyRetirement />} />
                 <Route path="data-sources" element={<DataSources />} />

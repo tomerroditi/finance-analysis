@@ -13,6 +13,7 @@ from backend.models.bank_balance import BankBalance
 from backend.models.budget import BudgetRule
 from backend.models.cash_balance import CashBalance
 from backend.models.investment import Investment
+from backend.models.liability import Liability
 from backend.models.tagging_rules import TaggingRule
 from backend.models.transaction import (
     BankTransaction,
@@ -1177,6 +1178,115 @@ def seed_categories(db_session, sample_categories_yaml):
 # ---------------------------------------------------------------------------
 # 10. Sample credentials YAML
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 11. Liabilities
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seed_liabilities(db_session: Session, seed_base_transactions) -> dict:
+    """Insert liability records and related bank transactions tagged as Liabilities.
+
+    Creates an active Car Loan and a paid-off Student Loan, plus 4 bank
+    transactions representing the Car Loan disbursement and monthly payments.
+
+    Returns a dict with keys ``liabilities`` and ``transactions``.
+    """
+    car_loan = Liability(
+        name="Car Loan",
+        lender="Bank Leumi",
+        category="Liabilities",
+        tag="Car Loan",
+        principal_amount=50000.0,
+        interest_rate=4.5,
+        term_months=48,
+        start_date="2023-06-01",
+        is_paid_off=0,
+        created_date="2023-06-01",
+    )
+    student_loan = Liability(
+        name="Student Loan",
+        lender="Bank Hapoalim",
+        category="Liabilities",
+        tag="Student Loan",
+        principal_amount=20000.0,
+        interest_rate=3.8,
+        term_months=36,
+        start_date="2022-01-01",
+        is_paid_off=1,
+        paid_off_date="2025-01-01",
+        created_date="2022-01-01",
+    )
+
+    db_session.add_all([car_loan, student_loan])
+    db_session.flush()
+
+    txns = [
+        BankTransaction(
+            id="bank_car_loan_disbursement",
+            date="2023-06-01",
+            provider="leumi",
+            account_name="Checking",
+            description="Car Loan Disbursement",
+            amount=50000.0,
+            category="Liabilities",
+            tag="Car Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        ),
+        BankTransaction(
+            id="bank_car_loan_payment_1",
+            date="2023-07-01",
+            provider="leumi",
+            account_name="Checking",
+            description="Car Loan Monthly Payment",
+            amount=-1150.0,
+            category="Liabilities",
+            tag="Car Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        ),
+        BankTransaction(
+            id="bank_car_loan_payment_2",
+            date="2023-08-01",
+            provider="leumi",
+            account_name="Checking",
+            description="Car Loan Monthly Payment",
+            amount=-1150.0,
+            category="Liabilities",
+            tag="Car Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        ),
+        BankTransaction(
+            id="bank_car_loan_payment_3",
+            date="2023-09-01",
+            provider="leumi",
+            account_name="Checking",
+            description="Car Loan Monthly Payment",
+            amount=-1150.0,
+            category="Liabilities",
+            tag="Car Loan",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        ),
+    ]
+
+    db_session.add_all(txns)
+    db_session.commit()
+    for obj in [car_loan, student_loan, *txns]:
+        db_session.refresh(obj)
+
+    return {
+        "liabilities": [car_loan, student_loan],
+        "transactions": txns,
+    }
 
 
 @pytest.fixture
