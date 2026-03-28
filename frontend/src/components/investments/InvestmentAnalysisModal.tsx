@@ -209,7 +209,7 @@ export function InvestmentAnalysisModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
                 <div>
                   <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
                     {t("investments.totalDeposits")}
@@ -284,7 +284,7 @@ export function InvestmentAnalysisModal({
                             <td className="py-2 text-white font-medium">
                               {snap.date}
                             </td>
-                            <td className="py-2 text-right text-white font-bold">
+                            <td className="py-2 text-end text-white font-bold">
                               {formatCurrency(snap.balance)}
                             </td>
                             <td className="py-2 text-center">

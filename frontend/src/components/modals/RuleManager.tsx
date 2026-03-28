@@ -323,13 +323,13 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                       setEditingRuleId(rule.id);
                       setIsCreating(false);
                     }}
-                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Edit2 size={18} />
                   </button>
                   <button
                     onClick={() => deleteMutation.mutate(rule.id)}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Trash2 size={18} />
                   </button>

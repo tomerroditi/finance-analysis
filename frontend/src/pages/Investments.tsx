@@ -192,7 +192,7 @@ function InvestmentCard({
       </div>
 
       {/* Metrics Strip */}
-      <div className="grid grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">

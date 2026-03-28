@@ -81,7 +81,7 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
     <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
       {items.map((item) => (
         <div key={item.name} className="flex justify-between text-xs">
-          <span className="text-[var(--text-muted)] truncate mr-2">{item.name}</span>
+          <span className="text-[var(--text-muted)] truncate me-2">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
         </div>
       ))}
@@ -570,7 +570,7 @@ function BudgetSpendingGauge({
               <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
 
               {/* Link to budget page */}
-              <div className="text-right">
+              <div className="text-end">
                 <Link
                   to="/budget"
                   className="text-sm font-medium text-[var(--primary)] hover:underline"
@@ -936,7 +936,7 @@ function RecentTransactionsFeed({
                         )}
                       </div>
                       <span
-                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-right w-[80px] ${
+                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
                           isPositive ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
@@ -947,7 +947,7 @@ function RecentTransactionsFeed({
 
                     {/* Inline tag editing panel */}
                     {isEditing && categories && (
-                      <div className="mx-2 mb-2 ml-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                      <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2">
                           <div className="flex-1 min-w-0">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
@@ -1828,8 +1828,8 @@ export function Dashboard() {
                               style={{ width: `${barWidth}%` }}
                             />
                           </div>
-                          <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                          <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                          <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                          <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                         </div>
                       );
                     })}
@@ -1858,8 +1858,8 @@ export function Dashboard() {
                                 style={{ width: `${barWidth}%` }}
                               />
                             </div>
-                            <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-right shrink-0">{formatCurrency(d.amount)}</span>
-                            <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-right shrink-0">{pct.toFixed(1)}%</span>
+                            <span className="text-xs md:text-sm font-bold tabular-nums w-16 md:w-24 text-end shrink-0">{formatCurrency(d.amount)}</span>
+                            <span className="text-[10px] md:text-xs text-[var(--text-muted)] w-10 md:w-12 text-end shrink-0">{pct.toFixed(1)}%</span>
                           </div>
                         );
                       })}

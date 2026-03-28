@@ -170,7 +170,7 @@ export function AutoTaggingPanel() {
                                         <div key={rule.id} className="group p-3 bg-[var(--surface-base)] rounded-xl border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-sm">{rule.name}</h4>
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={() => applySingleMutation.mutate({ id: rule.id, overwrite: false })}
                                                         className="p-1 hover:bg-emerald-500/10 text-emerald-400 rounded"

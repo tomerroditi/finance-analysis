@@ -784,7 +784,7 @@ export function Categories() {
                         deleteCategoryMutation.mutate(category);
                       }
                     }}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -826,7 +826,7 @@ export function Categories() {
                             {tag}
                           </span>
                         )}
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover/tag:opacity-100 transition-all ms-1">
+                        <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 group-hover/tag:opacity-100 transition-all ms-1">
                           <button
                             onClick={() => setIsRelocateOpen({ category, tag })}
                             className="p-1 hover:bg-blue-500/10 text-blue-400 rounded transition-colors"
@@ -992,7 +992,7 @@ export function Categories() {
                         <span>{cat}</span>
                         <MoveRight
                           size={16}
-                          className="opacity-0 group-hover:opacity-100 transition-all"
+                          className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                         />
                       </div>
                     </button>
