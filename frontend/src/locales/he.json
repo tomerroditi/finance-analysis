@@ -545,7 +545,7 @@
     "activeLiabilities": "הלוואות פעילות",
     "paidOffLiabilities": "הלוואות שנפרעו",
     "debtOverTime": "חוב לאורך זמן",
-    "debtAllocation": "התפלגות חוב"
+    "debtAllocation": "חוב נוכחי"
   },
   "insurance": {
     "title": "ביטוח",
