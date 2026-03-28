@@ -102,6 +102,22 @@ class TestPendingRefundsService:
         with pytest.raises(EntityNotFoundException):
             service.link_refund(9999, 99, "banks", 100.0)
 
+    def test_link_refund_to_closed_rejected(self, db_session):
+        """Cannot link a refund to a closed record."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.close_pending_refund(pending["id"])
+        with pytest.raises(ValidationException):
+            service.link_refund(pending["id"], 99, "banks", 50.0)
+
+    def test_link_refund_to_resolved_rejected(self, db_session):
+        """Cannot link a refund to a resolved record."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 100.0)
+        with pytest.raises(ValidationException):
+            service.link_refund(pending["id"], 100, "banks", 50.0)
+
     def test_cancel_pending_refund(self, db_session):
         """Cancel a pending refund."""
         service = PendingRefundsService(db_session)

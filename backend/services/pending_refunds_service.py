@@ -129,6 +129,11 @@ class PendingRefundsService:
                 f"Pending refund {pending_refund_id} not found"
             )
 
+        if pending.status in ("closed", "resolved"):
+            raise ValidationException(
+                f"Cannot link a refund to a {pending.status} record"
+            )
+
         # Calculate current remaining
         existing_links = self.repo.get_links_for_pending(pending_refund_id)
         already_refunded = existing_links["amount"].sum() if not existing_links.empty else 0
