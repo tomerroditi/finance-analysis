@@ -105,6 +105,7 @@ function LiabilityCard({
 }) {
   const { t } = useTranslation();
   const isPaidOff = !!liability.is_paid_off;
+  const [showNotes, setShowNotes] = useState(false);
 
   return (
     <div
@@ -230,13 +231,21 @@ function LiabilityCard({
             <Trash2 size={16} />
           </button>
           {liability.notes && (
-            <div className="group/notes relative">
-              <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
+            <div className="relative">
+              <button
+                className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help hover:text-white transition-colors"
+                onClick={() => setShowNotes(!showNotes)}
+              >
                 <Info size={16} />
-              </div>
-              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-100 md:opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
-                {liability.notes}
-              </div>
+              </button>
+              {showNotes && (
+                <>
+                  <div className="fixed inset-0 z-[9]" onClick={() => setShowNotes(false)} />
+                  <div className="absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white z-10 shadow-xl border border-white/5">
+                    {liability.notes}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -257,6 +266,7 @@ function LiabilityCard({
           </button>
         </div>
       </div>
+
     </div>
   );
 }
