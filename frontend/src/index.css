@@ -21,6 +21,7 @@ body {
   min-height: 100dvh;
   background: var(--background);
   color: var(--text);
+  overscroll-behavior-y: contain;
   font-family:
     "Inter",
     "Heebo",
