@@ -133,14 +133,14 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                 {/* Desktop inline buttons */}
                 <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                  title={t("budget.linkRefund")}
+                  data-tooltip={t("budget.linkRefund")}
                   onClick={() => setLinkingRefund(item)}
                 >
                   <Link2 size={16} />
                 </button>
                 <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-blue-500/10 text-blue-400/70 hover:text-blue-400 transition-colors"
-                  title={t("budget.closeRefund")}
+                  data-tooltip={t("budget.closeRefund")}
                   onClick={() => {
                     if (window.confirm(t("budget.confirmCloseRefund"))) {
                       closeMutation.mutate(item.id);
@@ -151,7 +151,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                 </button>
                 <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
-                  title={t("common.cancel")}
+                  data-tooltip={t("common.cancel")}
                   onClick={() => handleCancel(item.id)}
                 >
                   <X size={16} />
