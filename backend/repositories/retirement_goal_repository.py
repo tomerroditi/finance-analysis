@@ -7,6 +7,7 @@ Single-row upsert pattern — only one retirement goal profile per user.
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.models.insurance_account import InsuranceAccount
 from backend.models.retirement_goal import RetirementGoal
 
 
@@ -37,8 +38,7 @@ class RetirementGoalRepository:
         existing = self.get()
         if existing:
             for key, value in fields.items():
-                if value is not None:
-                    setattr(existing, key, value)
+                setattr(existing, key, value)
             self.db.commit()
             self.db.refresh(existing)
             return existing
@@ -48,6 +48,13 @@ class RetirementGoalRepository:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def get_keren_hishtalmut_accounts(self) -> list:
+        """Get all Keren Hishtalmut insurance accounts."""
+        stmt = select(InsuranceAccount).where(
+            InsuranceAccount.policy_type == "hishtalmut"
+        )
+        return list(self.db.execute(stmt).scalars().all())
 
     def delete(self) -> bool:
         """Delete the retirement goal profile."""

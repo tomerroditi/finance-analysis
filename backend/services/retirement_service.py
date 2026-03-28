@@ -11,12 +11,11 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
-from backend.models.insurance_account import InsuranceAccount
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityNotFoundException, ValidationException
 
 # Israeli pension milestones
 FULL_PENSION_AGE_MALE = 67
@@ -79,11 +78,7 @@ class RetirementService:
         float or None
             Sum of all hishtalmut account balances, or None if no data.
         """
-        accounts = (
-            self.db.query(InsuranceAccount)
-            .filter(InsuranceAccount.policy_type == "hishtalmut")
-            .all()
-        )
+        accounts = self.repo.get_keren_hishtalmut_accounts()
         if not accounts:
             return None
         total = sum(a.balance for a in accounts if a.balance is not None)
@@ -468,7 +463,7 @@ class RetirementService:
             value = self._solve_life_expectancy(goal_data, status)
             return {"field": field, "value": value, "unit": "age"}
 
-        raise ValueError(f"Cannot auto-adjust field: {field}")
+        raise ValidationException(f"Cannot auto-adjust field: {field}")
 
     def _survives_drawdown(self, goal: dict, status: dict) -> bool:
         """Check if portfolio survives through life expectancy.
