@@ -387,15 +387,15 @@ class PendingRefundsService:
         """
         Calculate total amount to exclude from budget for pending refunds.
 
-        For now, this returns the sum of all pending (not resolved) expected amounts.
-        In a full implementation, this would filter by transactions in the given month.
+        Includes full expected_amount for pending refunds and remaining
+        amount for partial refunds. Excludes resolved and closed refunds.
 
         Parameters
         ----------
         year : int
-            Budget year.
+            Budget year (reserved for future filtering).
         month : int
-            Budget month.
+            Budget month (reserved for future filtering).
 
         Returns
         -------
@@ -403,12 +403,17 @@ class PendingRefundsService:
             Total amount expecting refund (to exclude from budget).
         """
         pending_df = self.repo.get_all_pending_refunds(status="pending")
-        if pending_df.empty:
-            return 0.0
+        pending_total = pending_df["expected_amount"].sum() if not pending_df.empty else 0.0
 
-        # Sum expected amounts for pending refunds
-        # Note: In full implementation, would filter by source transaction dates
-        return pending_df["expected_amount"].sum()
+        partial_df = self.repo.get_all_pending_refunds(status="partial")
+        partial_remaining = 0.0
+        if not partial_df.empty:
+            for _, row in partial_df.iterrows():
+                links = self.repo.get_links_for_pending(int(row["id"]))
+                total_refunded = links["amount"].sum() if not links.empty else 0
+                partial_remaining += max(0, row["expected_amount"] - total_refunded)
+
+        return pending_total + partial_remaining
 
     def close_pending_refund(self, pending_refund_id: int) -> dict:
         """
@@ -524,7 +529,7 @@ class PendingRefundsService:
             return {"transaction_ids": set(), "split_ids": set()}
 
         # Filter for active pending refunds (pending or partial)
-        active_pending = pending_df[pending_df["status"] != "resolved"]
+        active_pending = pending_df[~pending_df["status"].isin(["resolved", "closed"])]
 
         # Get transaction unique_ids
         transaction_pending = active_pending[

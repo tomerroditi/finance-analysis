@@ -316,6 +316,24 @@ class TestGetBudgetAdjustment:
         result = service.get_budget_adjustment(2024, 1)
         assert result == 0.0
 
+    def test_budget_adjustment_includes_partial_remaining(self, db_session):
+        """Verify budget adjustment includes remaining amount of partial refunds."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        partial = service.mark_as_pending_refund("transaction", 2, "banks", 200.0)
+        service.link_refund(partial["id"], 99, "banks", 80.0)
+        result = service.get_budget_adjustment(2024, 1)
+        assert result == 220.0  # 100 + 120
+
+    def test_budget_adjustment_excludes_closed(self, db_session):
+        """Verify budget adjustment excludes closed refunds."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 50.0)
+        service.close_pending_refund(pending["id"])
+        result = service.get_budget_adjustment(2024, 1)
+        assert result == 0.0
+
     def test_budget_adjustment_excludes_resolved(self, db_session):
         """Verify budget adjustment excludes resolved refunds."""
         service = PendingRefundsService(db_session)
