@@ -156,10 +156,6 @@ export function Sidebar() {
           {(sidebarOpen || mobileSidebarOpen) && <span className="text-sm font-medium">{t("settings.title")}</span>}
         </button>
       </div>
-      <SettingsPopup
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
     </>
   );
 
@@ -187,20 +183,77 @@ export function Sidebar() {
         {sidebarContent}
       </aside>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay — full-width dropdown */}
       {mobileSidebarOpen && (
         <div
           className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 modal-overlay"
           onClick={() => setMobileSidebarOpen(false)}
         >
-          <aside
-            className="fixed inset-inline-start-0 top-0 h-dvh w-full max-w-64 bg-[var(--surface)] border-e border-[var(--surface-light)] animate-in slide-in-from-left duration-200 z-50"
+          <div
+            className="fixed top-0 inset-x-0 bg-[var(--surface)] border-b border-[var(--surface-light)] animate-in slide-in-from-top duration-200 z-50 max-h-dvh overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {sidebarContent}
-          </aside>
+            {/* Header row */}
+            <div className="h-14 flex items-center justify-between px-4 border-b border-[var(--surface-light)]">
+              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                {t("sidebar.logo")}
+              </span>
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                className="p-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Navigation grid */}
+            <nav className="p-3 grid grid-cols-3 gap-2">
+              {navItems.map((item) => {
+                const badge = getBadge(item.path);
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={({ isActive }) =>
+                      `relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${
+                        isActive
+                          ? "bg-[var(--primary)] text-white"
+                          : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+                      }`
+                    }
+                  >
+                    <item.icon size={20} />
+                    <span className="text-[11px] font-medium leading-tight">{t(`sidebar.${item.key}`)}</span>
+                    {badge != null && (
+                      <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
+              {/* Settings tile */}
+              <button
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                className={`relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${
+                  settingsOpen
+                    ? "bg-blue-500/10 text-[var(--primary)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+                }`}
+              >
+                <SettingsIcon size={20} />
+                <span className="text-[11px] font-medium leading-tight">{t("settings.title")}</span>
+              </button>
+            </nav>
+          </div>
         </div>
       )}
+
+      <SettingsPopup
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </>
   );
 }
