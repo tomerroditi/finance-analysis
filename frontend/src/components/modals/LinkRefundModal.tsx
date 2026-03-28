@@ -232,13 +232,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                           ),
                         );
                       }}
-                      className={`w-full p-4 rounded-xl border text-start transition-all ${
+                      className={`relative w-full p-4 rounded-xl border text-start transition-all ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500/10"
                           : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-4">
+                      <div className={`flex items-start justify-between gap-4 ${isSelected ? "pe-7" : ""}`}>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-white truncate mb-0.5">
                             {txn.description || txn.desc || t("modals.linkRefund.unknownExpense")}
@@ -293,13 +293,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         ),
                       );
                     }}
-                    className={`w-full p-4 rounded-xl border text-start transition-all ${
+                    className={`relative w-full p-4 rounded-xl border text-start transition-all ${
                       selectedPendingId === pending.id
                         ? "border-emerald-500 bg-emerald-500/10"
                         : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className={`flex items-start justify-between gap-4 ${selectedPendingId === pending.id ? "pe-7" : ""}`}>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-white truncate mb-0.5">
                           {pending.description || t("modals.linkRefund.unknownExpense")}
