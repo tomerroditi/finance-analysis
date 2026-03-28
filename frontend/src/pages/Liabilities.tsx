@@ -415,9 +415,9 @@ export function Liabilities() {
   const canAdd = availableTags.length > 0;
 
   // Debt over time chart data
-  const debtOverTimeData = useMemo(() => {
-    if (!activeLiabilities.length) return [];
-    return activeLiabilities.map((l: Liability) => {
+  const { series: debtOverTimeData, total: debtTotalLine } = useMemo(() => {
+    if (!activeLiabilities.length) return { series: [], total: [] };
+    const allSeries = activeLiabilities.map((l: Liability) => {
       const monthlyRate = l.interest_rate / 100 / 12;
       const payment =
         monthlyRate > 0
@@ -439,6 +439,19 @@ export function Liabilities() {
       }
       return { name: l.name, points };
     });
+
+    // Build total line by summing all balances at each date
+    const balanceByDate = new Map<string, number>();
+    for (const s of allSeries) {
+      for (const p of s.points) {
+        balanceByDate.set(p.date, (balanceByDate.get(p.date) || 0) + p.balance);
+      }
+    }
+    const total = [...balanceByDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, balance]) => ({ date, balance }));
+
+    return { series: allSeries, total };
   }, [activeLiabilities]);
 
   // Analysis modal tab
@@ -544,6 +557,18 @@ export function Liabilities() {
                       },
                     }),
                   ),
+                  ...(debtOverTimeData.length > 1
+                    ? [
+                        {
+                          x: debtTotalLine.map((p) => p.date),
+                          y: debtTotalLine.map((p) => p.balance),
+                          name: t("liabilities.totalDebt"),
+                          type: "scatter" as const,
+                          mode: "lines" as const,
+                          line: { color: "#ffffff", width: 3 },
+                        },
+                      ]
+                    : []),
                 ]}
                 layout={{
                   ...chartTheme,
