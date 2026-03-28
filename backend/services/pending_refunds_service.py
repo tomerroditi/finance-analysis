@@ -129,12 +129,61 @@ class PendingRefundsService:
                 f"Pending refund {pending_refund_id} not found"
             )
 
+        if pending.status in ("closed", "resolved"):
+            raise ValidationException(
+                f"Cannot link a refund to a {pending.status} record"
+            )
+
+        # Check if this transaction is already linked to any pending refund
+        existing_link = self.repo.get_link_for_transaction(
+            refund_transaction_id, refund_source
+        )
+        if existing_link:
+            raise ValidationException(
+                "This transaction is already linked to a refund request"
+            )
+
+        # Calculate current remaining
+        existing_links = self.repo.get_links_for_pending(pending_refund_id)
+        already_refunded = existing_links["amount"].sum() if not existing_links.empty else 0
+        remaining = max(0, pending.expected_amount - already_refunded)
+
+        # Auto-split if refund amount exceeds remaining
+        actual_link_amount = amount
+        if amount > remaining and remaining > 0:
+            actual_link_amount = remaining
+            excess = amount - remaining
+
+            from backend.repositories.transactions_repository import TransactionsRepository
+
+            trans_repo = TransactionsRepository(self.db)
+            repo = trans_repo.repo_map.get(refund_source)
+            if repo:
+                from sqlalchemy import select as sa_select
+
+                model = repo.model
+                txn = self.db.execute(
+                    sa_select(model).where(model.unique_id == refund_transaction_id)
+                ).scalar_one_or_none()
+
+                if txn:
+                    category = txn.category or ""
+                    tag = txn.tag or ""
+                    trans_repo.split_transaction(
+                        unique_id=refund_transaction_id,
+                        source=refund_source,
+                        splits=[
+                            {"amount": actual_link_amount, "category": category, "tag": tag},
+                            {"amount": excess, "category": category, "tag": tag},
+                        ],
+                    )
+
         # Add the link
         self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
             refund_source=refund_source,
-            amount=amount,
+            amount=actual_link_amount,
         )
 
         # Calculate total refunded
@@ -251,12 +300,6 @@ class PendingRefundsService:
                     # Since split repo is SQL-based/Pandas in parts, let's use the DB directly for efficiency if possible
                     # or just use the repo.
                     for split_id in ids:
-                        split_df = (
-                            trans_repo.split_repo.get_data()
-                        )  # Inefficient if large
-                        # Better to select specific split. split_repo doesn't have get_by_id?
-                        # It has get_splits_for_transaction.
-                        # Let's direct query split table
                         from backend.models.transaction import SplitTransaction
 
                         split = self.db.get(SplitTransaction, split_id)
@@ -299,6 +342,11 @@ class PendingRefundsService:
                 p["links"] = (
                     links_df.to_dict(orient="records") if not links_df.empty else []
                 )
+
+            # Compute totals from links
+            total_refunded = sum(link["amount"] for link in p["links"])
+            p["total_refunded"] = total_refunded
+            p["remaining"] = max(0, p["expected_amount"] - total_refunded)
 
             # Now enrich links
             link_sources = {}
@@ -387,15 +435,15 @@ class PendingRefundsService:
         """
         Calculate total amount to exclude from budget for pending refunds.
 
-        For now, this returns the sum of all pending (not resolved) expected amounts.
-        In a full implementation, this would filter by transactions in the given month.
+        Includes full expected_amount for pending refunds and remaining
+        amount for partial refunds. Excludes resolved and closed refunds.
 
         Parameters
         ----------
         year : int
-            Budget year.
+            Budget year (reserved for future filtering).
         month : int
-            Budget month.
+            Budget month (reserved for future filtering).
 
         Returns
         -------
@@ -403,12 +451,118 @@ class PendingRefundsService:
             Total amount expecting refund (to exclude from budget).
         """
         pending_df = self.repo.get_all_pending_refunds(status="pending")
-        if pending_df.empty:
-            return 0.0
+        pending_total = pending_df["expected_amount"].sum() if not pending_df.empty else 0.0
 
-        # Sum expected amounts for pending refunds
-        # Note: In full implementation, would filter by source transaction dates
-        return pending_df["expected_amount"].sum()
+        partial_df = self.repo.get_all_pending_refunds(status="partial")
+        partial_remaining = 0.0
+        if not partial_df.empty:
+            for _, row in partial_df.iterrows():
+                links = self.repo.get_links_for_pending(int(row["id"]))
+                total_refunded = links["amount"].sum() if not links.empty else 0
+                partial_remaining += max(0, row["expected_amount"] - total_refunded)
+
+        return pending_total + partial_remaining
+
+    def close_pending_refund(self, pending_refund_id: int) -> dict:
+        """
+        Close a pending refund, accepting whatever has been refunded so far.
+
+        Parameters
+        ----------
+        pending_refund_id : int
+            ID of the pending refund to close.
+
+        Returns
+        -------
+        dict
+            Updated pending refund with closed status.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If pending refund not found.
+        ValidationException
+            If refund is already resolved or closed.
+        """
+        pending = self.repo.get_by_id(pending_refund_id)
+        if not pending:
+            raise EntityNotFoundException(
+                f"Pending refund {pending_refund_id} not found"
+            )
+
+        if pending.status in ("resolved", "closed"):
+            raise ValidationException(
+                f"Cannot close a refund that is already {pending.status}"
+            )
+
+        self.repo.update_status(pending_refund_id, "closed")
+
+        links = self.repo.get_links_for_pending(pending_refund_id)
+        total_refunded = links["amount"].sum() if not links.empty else 0
+
+        return {
+            "id": pending_refund_id,
+            "status": "closed",
+            "expected_amount": pending.expected_amount,
+            "total_refunded": total_refunded,
+            "remaining": max(0, pending.expected_amount - total_refunded),
+        }
+
+    def unlink_refund(self, link_id: int) -> dict:
+        """
+        Unlink a refund transaction from its pending refund and recalculate status.
+
+        Parameters
+        ----------
+        link_id : int
+            ID of the refund link to remove.
+
+        Returns
+        -------
+        dict
+            Updated pending refund status with recalculated totals.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If link not found.
+        """
+        link = self.repo.get_link_by_id(link_id)
+        if not link:
+            raise EntityNotFoundException(f"Refund link {link_id} not found")
+
+        pending_refund_id = link.pending_refund_id
+        pending = self.repo.get_by_id(pending_refund_id)
+        if not pending:
+            raise EntityNotFoundException(
+                f"Pending refund {pending_refund_id} not found"
+            )
+
+        if pending.status == "closed":
+            raise ValidationException("Cannot unlink a refund from a closed record")
+
+        self.repo.delete_refund_link(link_id)
+
+        links = self.repo.get_links_for_pending(pending_refund_id)
+        total_refunded = links["amount"].sum() if not links.empty else 0
+
+        if total_refunded <= 0:
+            new_status = "pending"
+        elif total_refunded >= pending.expected_amount:
+            new_status = "resolved"
+        else:
+            new_status = "partial"
+
+        self.repo.update_status(pending_refund_id, new_status)
+
+        remaining = max(0, pending.expected_amount - total_refunded)
+        return {
+            "id": pending_refund_id,
+            "status": new_status,
+            "expected_amount": pending.expected_amount,
+            "total_refunded": total_refunded,
+            "remaining": remaining,
+        }
 
     def get_active_pending_identifiers(self) -> dict[str, set]:
         """
@@ -426,7 +580,7 @@ class PendingRefundsService:
             return {"transaction_ids": set(), "split_ids": set()}
 
         # Filter for active pending refunds (pending or partial)
-        active_pending = pending_df[pending_df["status"] != "resolved"]
+        active_pending = pending_df[~pending_df["status"].isin(["resolved", "closed"])]
 
         # Get transaction unique_ids
         transaction_pending = active_pending[

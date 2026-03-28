@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Link2, X } from "lucide-react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { RefreshCw, Link2, X, Lock } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { LinkRefundModal } from "../modals/LinkRefundModal";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -18,7 +19,16 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { items, total_expected } = pendingRefunds;
+  const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
   const [mobileActionsId, setMobileActionsId] = useState<number | null>(null);
+
+  const closeMutation = useMutation({
+    mutationFn: (id: number) => pendingRefundsApi.close(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+    },
+  });
 
   if (!items || items.length === 0) {
     return null;
@@ -29,6 +39,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     try {
       await pendingRefundsApi.cancel(id);
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
     } catch {
       alert(t("budget.failedCancelRefund"));
     }
@@ -114,17 +125,33 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                 <span className="text-amber-400 font-semibold">
                   {formatCurrency(item.expected_amount)}
                 </span>
+                {item.status === "partial" && item.total_refunded !== undefined && (
+                  <span className="text-xs text-emerald-400 hidden sm:inline">
+                    ({formatCurrency(item.total_refunded)} / {formatCurrency(item.expected_amount)})
+                  </span>
+                )}
                 {/* Desktop inline buttons */}
                 <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
-                  title={t("budget.linkRefund")}
-                  onClick={() => alert(t("budget.linkRefundComingSoon"))}
+                  data-tooltip={t("budget.linkRefund")}
+                  onClick={() => setLinkingRefund(item)}
                 >
                   <Link2 size={16} />
                 </button>
                 <button
+                  className="hidden sm:block p-1.5 rounded-md hover:bg-blue-500/10 text-blue-400/70 hover:text-blue-400 transition-colors"
+                  data-tooltip={t("budget.closeRefund")}
+                  onClick={() => {
+                    if (window.confirm(t("budget.confirmCloseRefund"))) {
+                      closeMutation.mutate(item.id);
+                    }
+                  }}
+                >
+                  <Lock size={16} />
+                </button>
+                <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-colors"
-                  title={t("common.cancel")}
+                  data-tooltip={t("common.cancel")}
                   onClick={() => handleCancel(item.id)}
                 >
                   <X size={16} />
@@ -137,10 +164,22 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
               <div className="sm:hidden flex items-center gap-1 px-3 pb-2 animate-in fade-in slide-in-from-top-1 duration-150">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); alert(t("budget.linkRefundComingSoon")); }}
+                  onClick={(e) => { e.stopPropagation(); setLinkingRefund(item); }}
                 >
                   <Link2 size={14} />
                   {t("budget.linkRefund")}
+                </button>
+                <button
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-blue-400/70 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(t("budget.confirmCloseRefund"))) {
+                      closeMutation.mutate(item.id);
+                    }
+                  }}
+                >
+                  <Lock size={14} />
+                  {t("budget.closeRefund")}
                 </button>
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors"
@@ -159,6 +198,14 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
       <div className="px-5 py-3 bg-amber-500/5 border-t border-amber-500/20 text-xs text-[var(--text-muted)]">
         {t("budget.pendingRefundsFooter")}
       </div>
+
+      {linkingRefund && (
+        <LinkRefundModal
+          isOpen={!!linkingRefund}
+          onClose={() => setLinkingRefund(null)}
+          pendingRefund={linkingRefund}
+        />
+      )}
     </div>
   );
 };

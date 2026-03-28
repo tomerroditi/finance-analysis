@@ -390,7 +390,7 @@ export interface PendingRefund {
   source_id: string | number;
   source_table: string;
   expected_amount: number;
-  status: "pending" | "resolved" | "partial";
+  status: "pending" | "resolved" | "partial" | "closed";
   notes?: string;
   total_refunded?: number;
   remaining?: number;
@@ -437,6 +437,7 @@ export const pendingRefundsApi = {
   ) => api.post(`/pending-refunds/${pendingId}/link`, data),
   unlinkRefund: (linkId: number) =>
     api.delete(`/pending-refunds/links/${linkId}`),
+  close: (id: number) => api.post(`/pending-refunds/${id}/close`),
 };
 
 // Retirement API

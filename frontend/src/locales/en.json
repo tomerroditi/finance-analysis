@@ -246,6 +246,14 @@
       "refundTransaction": "Refund Transaction",
       "active": "Active",
       "resolved": "Resolved",
+      "closed": "Closed",
+      "closeRefund": "Close Refund",
+      "confirmClose": "Close this refund? The unrefunded amount will count as an expense.",
+      "unlink": "Unlink",
+      "confirmUnlink": "Unlink this refund transaction?",
+      "confirmCancel": "Cancel this refund expectation? All linked refunds will be unlinked.",
+      "refundedOf": "{{refunded}} of {{expected}} refunded",
+      "partiallyRefunded": "Partially Refunded",
       "noExpectations": "No refund expectations found.",
       "markExpenses": "Mark expenses as \"Pending Refund\" in your transactions list to track them here."
     }
@@ -300,6 +308,8 @@
     "unknownTransaction": "Unknown Transaction",
     "linkRefund": "Link Refund",
     "linkRefundComingSoon": "Link Refund (Coming Soon)",
+    "closeRefund": "Close Refund",
+    "confirmCloseRefund": "Close this refund? The unrefunded remainder will count as an expense.",
     "confirmCancelRefund": "Cancel this refund expectation?",
     "failedCancelRefund": "Failed to cancel refund",
     "pendingRefundsFooter": "These are expenses you marked as expecting a refund",
@@ -620,7 +630,11 @@
       "unknownExpense": "Unknown Expense",
       "noDate": "No date",
       "amountToLink": "Amount to link",
-      "linking": "Linking..."
+      "linking": "Linking...",
+      "searchTransactions": "Search refund transactions...",
+      "noTransactions": "No refund transactions found",
+      "expectedRefund": "expected refund",
+      "refundLabel": "refund"
     },
     "project": {
       "title": "Project Budget",

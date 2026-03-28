@@ -1,42 +1,72 @@
-import React, { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeftRight,
   CheckCircle2,
   CircleDashed,
   Link,
+  Link2,
   Calendar,
   CreditCard,
+  X,
+  Lock,
+  Unlink,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { LinkRefundModal } from "../modals/LinkRefundModal";
 
 const RefundsView: React.FC = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
+
   const { data: refunds, isLoading } = useQuery({
     queryKey: ["pendingRefunds", "all"],
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
+  const closeMutation = useMutation({
+    mutationFn: (id: number) => pendingRefundsApi.close(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => pendingRefundsApi.cancel(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+    },
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    },
+  });
+
   const groupedRefunds = useMemo(() => {
-    if (!refunds) return { active: [], resolved: [] };
+    if (!refunds) return { active: [], completed: [] };
 
-    // Group by status, but keep partial in pending for now or separate?
-    // Let's separate resolved from active (pending/partial)
-    const active = refunds.filter((r) => r.status !== "resolved");
-    const resolved = refunds.filter((r) => r.status === "resolved");
+    const active = refunds.filter((r) => r.status !== "resolved" && r.status !== "closed");
+    const completed = refunds.filter((r) => r.status === "resolved" || r.status === "closed");
 
-    // Sort by date desc (if date available)
     const sorter = (a: PendingRefund, b: PendingRefund) => {
       const da = a.date ? new Date(a.date).getTime() : 0;
       const db = b.date ? new Date(b.date).getTime() : 0;
-      return db - da; // Descending
+      return db - da;
     };
 
     return {
       active: active.sort(sorter),
-      resolved: resolved.sort(sorter),
+      completed: completed.sort(sorter),
     };
   }, [refunds]);
 
@@ -63,10 +93,18 @@ const RefundsView: React.FC = () => {
       <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[var(--surface-light)]/30">
         <div className="flex items-start gap-4">
           <div
-            className={`p-2 rounded-lg ${item.status === "resolved" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}`}
+            className={`p-2 rounded-lg ${
+              item.status === "resolved"
+                ? "bg-emerald-500/10 text-emerald-500"
+                : item.status === "closed"
+                  ? "bg-slate-500/10 text-slate-400"
+                  : "bg-amber-500/10 text-amber-500"
+            }`}
           >
             {item.status === "resolved" ? (
               <CheckCircle2 size={20} />
+            ) : item.status === "closed" ? (
+              <Lock size={20} />
             ) : (
               <CircleDashed size={20} />
             )}
@@ -111,6 +149,39 @@ const RefundsView: React.FC = () => {
                 {t("budget.remaining")}: {formatCurrency(item.remaining)}
               </div>
             )}
+          {(item.status === "pending" || item.status === "partial") && (
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                onClick={() => setLinkingRefund(item)}
+              >
+                <Link2 size={14} />
+                {t("budget.linkRefund")}
+              </button>
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                onClick={() => {
+                  if (window.confirm(t("transactions.refunds.confirmClose"))) {
+                    closeMutation.mutate(item.id);
+                  }
+                }}
+              >
+                <Lock size={14} />
+                {t("transactions.refunds.closeRefund")}
+              </button>
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                onClick={() => {
+                  if (window.confirm(t("transactions.refunds.confirmCancel"))) {
+                    cancelMutation.mutate(item.id);
+                  }
+                }}
+              >
+                <X size={14} />
+                {t("common.cancel")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -144,8 +215,23 @@ const RefundsView: React.FC = () => {
                     ({link.date})
                   </span>
                 </div>
-                <div className="text-xs text-[var(--text-muted)] opacity-50 group-hover:opacity-100 transition-opacity">
-                  {humanizeService(link.refund_source)}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--text-muted)] opacity-50 group-hover:opacity-100 transition-opacity">
+                    {humanizeService(link.refund_source)}
+                  </span>
+                  {item.status !== "closed" && (
+                    <button
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-all"
+                      onClick={() => {
+                        if (window.confirm(t("transactions.refunds.confirmUnlink"))) {
+                          unlinkMutation.mutate(link.id);
+                        }
+                      }}
+                    >
+                      <Unlink size={14} />
+                      {t("transactions.refunds.unlink")}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -167,13 +253,13 @@ const RefundsView: React.FC = () => {
         </section>
       )}
 
-      {groupedRefunds.resolved.length > 0 && (
+      {groupedRefunds.completed.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-emerald-400">
             <CheckCircle2 size={20} />
-            {t("transactions.refunds.resolved")} ({groupedRefunds.resolved.length})
+            {t("transactions.refunds.resolved")} ({groupedRefunds.completed.length})
           </h2>
-          {groupedRefunds.resolved.map(renderRefundCard)}
+          {groupedRefunds.completed.map(renderRefundCard)}
         </section>
       )}
 
@@ -185,6 +271,14 @@ const RefundsView: React.FC = () => {
             {t("transactions.refunds.markExpenses")}
           </p>
         </div>
+      )}
+
+      {linkingRefund && (
+        <LinkRefundModal
+          isOpen={!!linkingRefund}
+          onClose={() => setLinkingRefund(null)}
+          pendingRefund={linkingRefund}
+        />
       )}
     </div>
   );
