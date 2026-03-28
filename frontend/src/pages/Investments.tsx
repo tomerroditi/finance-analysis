@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import {
   Plus,
   Trash2,
@@ -109,10 +110,10 @@ function InvestmentCard({
 
   return (
     <div
-      className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
+      className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between mb-3 md:mb-4">
+        <div className="flex items-center gap-2 md:gap-4">
           <div
             className={`p-3 rounded-xl ${inv.is_closed ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}
           >
@@ -139,7 +140,7 @@ function InvestmentCard({
       </div>
 
       {/* Balance + Sparkline */}
-      <div className="flex items-center justify-between mb-4 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+      <div className="flex items-center justify-between mb-3 md:mb-4 p-3 md:p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
         <div>
           {analysisData ? (
             inv.is_closed ? (
@@ -192,7 +193,7 @@ function InvestmentCard({
       </div>
 
       {/* Metrics Strip */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
@@ -275,7 +276,7 @@ function InvestmentCard({
               <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
                 <Info size={16} />
               </div>
-              <div className="absolute bottom-full start-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
+              <div className="absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-100 md:opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
                 {inv.notes}
               </div>
             </div>
@@ -349,6 +350,8 @@ export function Investments() {
     date: string;
     mode: "close" | "edit";
   }>({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
+
+  useScrollLock(isAddOpen || !!selectedAnalysisId || !!editForm.investmentId || !!balanceForm.investmentId || !!closeForm.investmentId);
 
   // Queries
   const {
@@ -485,9 +488,9 @@ export function Investments() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-8">
-        <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+        <Skeleton variant="text" lines={2} className="w-48 md:w-64" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
@@ -501,19 +504,19 @@ export function Investments() {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 pb-20">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
         <div>
-          <h1 className="text-3xl font-bold">{t("investments.title")}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">{t("investments.title")}</h1>
           <p className="text-[var(--text-muted)] mt-1">
             {t("investments.subtitle")}
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-3 md:gap-4">
           <button
             onClick={() => setIsAddOpen(true)}
             disabled={Object.keys(filteredCategories).length === 0}
-            className="flex items-center gap-2 px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
+            className="flex items-center gap-2 px-4 md:px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale text-sm md:text-base"
             title={
               Object.keys(filteredCategories).length === 0
                 ? t("investments.allTagsInUse")
@@ -540,13 +543,13 @@ export function Investments() {
       <div>
         {activeInvestments.length > 0 ? (
           <>
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2">
               {t("investments.activeInvestments")}
               <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
                 {activeInvestments.length}
               </span>
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
               {activeInvestments.map((inv: Investment) => (
                 <InvestmentCard
                   key={inv.id}
@@ -579,7 +582,7 @@ export function Investments() {
             </div>
           </>
         ) : (
-          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-16 text-center">
+          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-8 md:p-16 text-center">
             <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
               <TrendingUp size={32} />
             </div>
@@ -594,13 +597,13 @@ export function Investments() {
       {/* Closed Investments */}
       {closedInvestments.length > 0 && (
         <div className="pt-8 border-t border-[var(--surface-light)]">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[var(--text-muted)]">
+          <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2 text-[var(--text-muted)]">
             {t("investments.closedInvestments")}
             <span className="text-[10px] font-black bg-[var(--surface-light)] px-2 py-0.5 rounded-full">
               {closedInvestments.length}
             </span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 opacity-75 grayscale-[0.5]">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 opacity-75 grayscale-[0.5]">
             {closedInvestments.map((inv: Investment) => (
               <InvestmentCard
                 key={inv.id}
@@ -647,7 +650,7 @@ export function Investments() {
 
       {/* Update Balance Modal */}
       {balanceForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.updateBalance")}</h3>
             <div className="space-y-4">
@@ -713,7 +716,7 @@ export function Investments() {
 
       {/* Close / Edit Close Date Modal */}
       {closeForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {closeForm.mode === "close" ? t("investments.closeInvestment") : t("investments.editCloseDate")}
@@ -764,7 +767,7 @@ export function Investments() {
 
       {/* Edit Investment Modal */}
       {editForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.editInvestment")}</h3>
             <div className="space-y-4">
@@ -851,25 +854,25 @@ export function Investments() {
 
       {/* Add Modal (Existing) */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
             {/* ... Existing Add Modal Code ... */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4 md:mb-6">
               <div className="p-3 rounded-2xl bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20">
                 <TrendingUp size={24} />
               </div>
-              <h2 className="text-2xl font-bold">{t("investments.newInvestment")}</h2>
+              <h2 className="text-xl md:text-2xl font-bold">{t("investments.newInvestment")}</h2>
             </div>
 
             {createMutation.isError && (
-              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
+              <div className="mb-4 md:mb-6 p-3 md:p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
                 {(createMutation.error as unknown as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
                   t("investments.failedToCreate")}
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+              <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("investments.investmentName")}
                 </label>
@@ -955,7 +958,7 @@ export function Investments() {
                 />
               </div>
               )}
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("investments.notes")}
                 </label>

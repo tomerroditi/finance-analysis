@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import {
   X,
   Wallet,
@@ -81,6 +82,7 @@ export function InvestmentAnalysisModal({
 }: InvestmentAnalysisModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  useScrollLock(true);
 
   const { data: selectedAnalysis } = useQuery({
     queryKey: ["investment-analysis", investmentId],
@@ -121,7 +123,7 @@ export function InvestmentAnalysisModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold flex items-center gap-3">
@@ -209,7 +211,7 @@ export function InvestmentAnalysisModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
                 <div>
                   <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
                     {t("investments.totalDeposits")}
@@ -284,7 +286,7 @@ export function InvestmentAnalysisModal({
                             <td className="py-2 text-white font-medium">
                               {snap.date}
                             </td>
-                            <td className="py-2 text-right text-white font-bold">
+                            <td className="py-2 text-end text-white font-bold">
                               {formatCurrency(snap.balance)}
                             </td>
                             <td className="py-2 text-center">

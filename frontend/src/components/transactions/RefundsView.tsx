@@ -48,7 +48,7 @@ const RefundsView: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="p-8 text-center text-[var(--text-muted)]">
+      <div className="p-4 md:p-8 text-center text-[var(--text-muted)]">
         {t("transactions.refunds.loading")}
       </div>
     );

@@ -50,13 +50,18 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     const rect = buttonRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     const openUp = spaceBelow < 200 && rect.top > spaceBelow;
+    // On mobile, ensure minimum dropdown width and clamp to viewport
+    const viewportMax = window.innerWidth - 16;
+    const minWidth = onCreateNew ? Math.min(260, viewportMax) : Math.min(180, viewportMax);
+    const dropdownWidth = Math.min(Math.max(rect.width, minWidth), viewportMax);
+    const maxLeft = window.innerWidth - dropdownWidth - 8;
     setPos({
       top: openUp ? rect.top : rect.bottom,
-      left: rect.left,
-      width: rect.width,
+      left: Math.max(8, Math.min(rect.left, maxLeft)),
+      width: dropdownWidth,
       openUp,
     });
-  }, []);
+  }, [onCreateNew]);
 
    
   useEffect(() => {
@@ -302,8 +307,8 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     <div className="border-t border-[var(--surface-light)]" />
                   )}
                   {isCreating ? (
-                    <div className="p-1.5">
-                      <div className="flex items-center gap-1">
+                    <div className="p-2">
+                      <div className="flex items-center gap-1.5">
                         <input
                           ref={createInputRef}
                           type="text"
@@ -320,23 +325,23 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                             e.stopPropagation();
                           }}
                           placeholder={t("common.enterName")}
-                          className="flex-1 px-3 py-1.5 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
+                          className="flex-1 min-w-0 px-3 py-2 text-sm bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg outline-none focus:border-[var(--primary)] text-[var(--text-default)] placeholder:text-[var(--text-muted)]"
                         />
                         <button
                           type="button"
                           onClick={handleConfirmCreate}
                           aria-label={t("common.save")}
-                          className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                          className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors shrink-0"
                         >
-                          <Check size={14} />
+                          <Check size={16} />
                         </button>
                         <button
                           type="button"
                           onClick={handleCancelCreate}
                           aria-label={t("common.cancel")}
-                          className="p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                          className="p-2 text-[var(--text-muted)] hover:bg-[var(--surface-light)] rounded-lg transition-colors shrink-0"
                         >
-                          <X size={14} />
+                          <X size={16} />
                         </button>
                       </div>
                     </div>

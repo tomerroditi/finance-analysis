@@ -44,7 +44,7 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
+    <div className="bg-[var(--surface)] rounded-xl p-3 md:p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
       <div>
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
           {title}
@@ -83,8 +83,8 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
   });
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="space-y-4 md:space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <StatCard
           title={t("investments.totalValue")}
           value={formatCurrency(portfolioAnalysis.total_value)}
@@ -113,16 +113,16 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
         />
       </div>
       {/* Charts: Balance Over Time + Allocation side-by-side */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Balance Over Time Chart */}
-        <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)]">
+        <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-widest text-[var(--text-muted)]">
               {t("investments.balanceOverTime")}
             </h3>
             <button
               onClick={() => setChartIncludeClosed(!chartIncludeClosed)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${chartIncludeClosed ? "bg-[var(--surface-light)] border-[var(--surface-light)] text-white" : "border-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
+              className={`px-2 md:px-3 py-1.5 rounded-lg text-xs font-bold border transition-all whitespace-nowrap ${chartIncludeClosed ? "bg-[var(--surface-light)] border-[var(--surface-light)] text-white" : "border-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
             >
               {chartIncludeClosed ? t("investments.hideClosed") : t("investments.includeClosed")}
             </button>
@@ -172,8 +172,8 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
 
         {/* Allocation Pie Chart */}
         {portfolioAnalysis.allocation.filter((d) => d.balance > 0).length > 0 && (
-          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
+          <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
               {t("investments.portfolioAllocation")}
             </h3>
             <div className="h-[300px]">

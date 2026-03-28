@@ -93,7 +93,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     }).format(val);
 
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)] mb-6">
+    <div className="bg-[var(--surface)] rounded-xl p-4 md:p-6 border border-[var(--surface-light)] mb-4 md:mb-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[var(--text)] font-semibold flex items-center gap-2">
           <span className="text-xl">💵</span> {t("dashboard.cashBalances")}
@@ -316,25 +316,25 @@ export function Transactions() {
 
   return (
     <div className="flex relative">
-      <div className="space-y-6 min-w-0 flex-1 transition-all duration-300">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4 md:space-y-6 min-w-0 flex-1 transition-all duration-300">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold">{t("transactions.title")}</h1>
-            <p className="text-[var(--text-muted)]">
+            <h1 className="text-2xl md:text-3xl font-bold">{t("transactions.title")}</h1>
+            <p className="text-[var(--text-muted)] text-sm md:text-base">
               {t("transactions.subtitle")}
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2 md:gap-4 overflow-x-auto scrollbar-auto-hide pb-1">
+            <div className="flex gap-1.5 md:gap-2 items-center">
               {services.map(({ value, label }) => (
-                <div key={value} className="flex items-center gap-2">
+                <div key={value} className="flex items-center gap-1 md:gap-2">
                   {value === "refunds" && (
-                    <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
+                    <div className="w-px h-6 bg-[var(--surface-light)] mx-0.5 md:mx-1" />
                   )}
                   <button
                     onClick={() => setSelectedService(value as "all" | "credit_cards" | "banks" | "cash" | "manual_investments" | "refunds")}
-                    className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
+                    className={`px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${selectedService === value
                       ? "bg-[var(--primary)] text-white"
                       : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
                       }`}
@@ -347,7 +347,7 @@ export function Transactions() {
           </div>
         </div>
 
-        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-4">
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-2 md:p-4">
           {selectedService === "refunds" ? (
             <RefundsView />
           ) : isLoading ? (

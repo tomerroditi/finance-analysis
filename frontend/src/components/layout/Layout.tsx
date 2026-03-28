@@ -19,15 +19,15 @@ export function Layout() {
   }, [setSearchOpen]);
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-dvh bg-[var(--background)]">
       <Sidebar />
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <main
         className={`transition-all duration-300 ${
-          sidebarOpen ? "ms-64" : "ms-20"
-        }`}
+          sidebarOpen ? "md:ms-64" : "md:ms-20"
+        } ms-0 pt-10 md:pt-0`}
       >
-        <div className="p-8 pt-6">
+        <div className="p-2 pt-2 sm:p-4 sm:pt-4 md:p-8 md:pt-6">
           <Outlet />
         </div>
       </main>

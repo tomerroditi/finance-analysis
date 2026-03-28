@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface LinkRefundModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   refundTransaction,
 }) => {
   const { t } = useTranslation();
+  useScrollLock(isOpen);
   const queryClient = useQueryClient();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
     null,
@@ -79,7 +81,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -87,15 +89,15 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
       />
 
       {/* Modal */}
-      <div role="dialog" aria-modal="true" aria-labelledby="link-refund-title" className="relative z-10 w-full max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="link-refund-title" className="relative z-10 w-full max-w-[calc(100vw-2rem)] sm:max-w-lg bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-2xl">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
+        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center shrink-0">
               <Link2 className="w-5 h-5 text-emerald-400" />
             </div>
-            <div>
-              <h2 id="link-refund-title" className="text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
+            <div className="min-w-0">
+              <h2 id="link-refund-title" className="text-base md:text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
               {refundTransaction && (
                 <p className="text-sm text-[var(--text-muted)]">
                   {formatCurrency(refundTransaction.amount)} refund
@@ -113,7 +115,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
+        <div className="px-4 md:px-6 py-4 max-h-[60vh] overflow-y-auto">
           {/* Search */}
           <div className="relative mb-4">
             <Search
@@ -225,7 +227,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-[var(--surface-light)] flex justify-end gap-3">
+        <div className="px-4 md:px-6 py-4 border-t border-[var(--surface-light)] flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-[var(--surface-light)] transition-colors"
