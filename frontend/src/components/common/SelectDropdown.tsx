@@ -51,8 +51,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     const spaceBelow = window.innerHeight - rect.bottom;
     const openUp = spaceBelow < 200 && rect.top > spaceBelow;
     // On mobile, ensure minimum dropdown width and clamp to viewport
-    const minWidth = onCreateNew ? 260 : 180;
-    const dropdownWidth = Math.max(rect.width, minWidth);
+    const viewportMax = window.innerWidth - 16;
+    const minWidth = onCreateNew ? Math.min(260, viewportMax) : Math.min(180, viewportMax);
+    const dropdownWidth = Math.min(Math.max(rect.width, minWidth), viewportMax);
     const maxLeft = window.innerWidth - dropdownWidth - 8;
     setPos({
       top: openUp ? rect.top : rect.bottom,

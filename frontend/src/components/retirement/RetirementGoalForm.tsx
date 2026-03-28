@@ -462,7 +462,7 @@ function NumberField({
                 size={12}
                 className="text-[var(--text-muted)] cursor-help"
               />
-              <span className="absolute z-10 hidden group-hover:block w-64 p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
+              <span className="absolute z-10 hidden group-hover:block w-48 sm:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
                 {tooltip}
               </span>
             </span>

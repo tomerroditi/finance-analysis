@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Target,
@@ -63,12 +64,23 @@ function formatSuggestionValue(field: SuggestionField, value: number): string {
 }
 
 function InfoTooltip({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
   return (
     <span className="group relative">
-      <Info size={12} className="text-[var(--text-muted)] cursor-help inline" />
-      <span className="absolute z-10 hidden group-hover:block md:hidden md:group-hover:block w-48 sm:w-56 md:w-64 p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-5">
+      <Info
+        size={12}
+        className="text-[var(--text-muted)] cursor-help inline"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShow((v) => !v);
+        }}
+      />
+      <span className={`absolute z-10 w-48 sm:w-56 md:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-5 pointer-events-none ${show ? "block" : "hidden group-hover:block"}`}>
         {text}
       </span>
+      {show && (
+        <div className="fixed inset-0 z-[9]" onClick={() => setShow(false)} />
+      )}
     </span>
   );
 }
