@@ -1583,47 +1583,97 @@ def create_cash_balance(session):
 
 
 def create_pending_refunds(session, cc_txns, bank_txns):
-    """Create 2 pending refund records (1 pending, 1 resolved with refund link)."""
-    # 1. Pending refund: find a recent shopping item on CC
+    """Create pending refund records covering all statuses for demo testing.
+
+    Creates:
+    1. Pending refund (no links) - jacket return
+    2. Partial refund (one link, not fully covered) - electronics partial return
+    3. Resolved refund (fully linked) - duplicate charge
+    4. Closed refund (user accepted partial) - restaurant dispute
+    """
+    # 1. Pending refund: recent shopping item, no links
     recent_shopping = [
         t for t in cc_txns
         if t.category == "Shopping" and t.tag == "Online" and t.type == "normal"
         and t.amount < -100
     ]
     if recent_shopping:
-        source_txn = recent_shopping[-1]  # Most recently added
-        pending = PendingRefund(
+        source_txn = recent_shopping[-1]
+        session.add(PendingRefund(
             source_type="transaction",
             source_id=source_txn.unique_id,
             source_table="credit_card_transactions",
             expected_amount=abs(source_txn.amount),
             status="pending",
             notes="Returned jacket, waiting for refund",
-        )
-        session.add(pending)
+        ))
 
-    # 2. Resolved refund: pick another CC transaction and create a bank refund
-    resolved_shopping = [
+    # 2. Partial refund: electronics item with one partial link
+    electronics = [
         t for t in cc_txns
         if t.category == "Shopping" and t.tag == "Electronics" and t.type == "normal"
-        and t.amount < -100
+        and t.amount < -200
+    ]
+    if electronics:
+        source_txn = electronics[-1]
+        expected = abs(source_txn.amount)
+        partial_amount = round(expected * 0.4, 2)
+
+        partial_refund = PendingRefund(
+            source_type="transaction",
+            source_id=source_txn.unique_id,
+            source_table="credit_card_transactions",
+            expected_amount=expected,
+            status="partial",
+            notes="Partial refund for defective item, store credit pending",
+        )
+        session.add(partial_refund)
+        session.flush()
+
+        partial_refund_txn = BankTransaction(
+            id="demo-bank-refund-partial",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 5, 15),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="PARTIAL REFUND - VISA CAL",
+            amount=partial_amount,
+            category="Shopping",
+            tag="Electronics",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(partial_refund_txn)
+        session.flush()
+
+        session.add(RefundLink(
+            pending_refund_id=partial_refund.id,
+            refund_transaction_id=partial_refund_txn.unique_id,
+            refund_source="bank_transactions",
+            amount=partial_amount,
+        ))
+
+    # 3. Resolved refund: fully linked
+    resolved_shopping = [
+        t for t in cc_txns
+        if t.category == "Shopping" and t.tag == "Online" and t.type == "normal"
+        and t.amount < -100 and t not in recent_shopping
     ]
     if resolved_shopping:
         source_txn = resolved_shopping[-1]
-        refund_amount = 150.0
+        refund_amount = abs(source_txn.amount)
 
         resolved_refund = PendingRefund(
             source_type="transaction",
             source_id=source_txn.unique_id,
             source_table="credit_card_transactions",
-            expected_amount=abs(source_txn.amount),
+            expected_amount=refund_amount,
             status="resolved",
-            notes="Defective electronics item returned",
+            notes="Duplicate charge refunded",
         )
         session.add(resolved_refund)
         session.flush()
 
-        # Create the actual refund bank transaction
         refund_txn = BankTransaction(
             id="demo-bank-refund-001",
             date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 1, 20),
@@ -1640,12 +1690,56 @@ def create_pending_refunds(session, cc_txns, bank_txns):
         session.add(refund_txn)
         session.flush()
 
-        # Create the refund link
         session.add(RefundLink(
             pending_refund_id=resolved_refund.id,
             refund_transaction_id=refund_txn.unique_id,
             refund_source="bank_transactions",
             amount=refund_amount,
+        ))
+
+    # 4. Closed refund: user accepted partial, closed it
+    restaurant = [
+        t for t in cc_txns
+        if t.category == "Food" and t.tag == "Restaurants" and t.type == "normal"
+        and t.amount < -150
+    ]
+    if restaurant:
+        source_txn = restaurant[-1]
+        expected = abs(source_txn.amount)
+        closed_partial = round(expected * 0.5, 2)
+
+        closed_refund = PendingRefund(
+            source_type="transaction",
+            source_id=source_txn.unique_id,
+            source_table="credit_card_transactions",
+            expected_amount=expected,
+            status="closed",
+            notes="Restaurant dispute - accepted 50% settlement",
+        )
+        session.add(closed_refund)
+        session.flush()
+
+        closed_refund_txn = BankTransaction(
+            id="demo-bank-refund-closed",
+            date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 10, 20),
+            provider="hapoalim",
+            account_name="Main Account",
+            description="SETTLEMENT - RESTAURANT DISPUTE",
+            amount=closed_partial,
+            category="Food",
+            tag="Restaurants",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(closed_refund_txn)
+        session.flush()
+
+        session.add(RefundLink(
+            pending_refund_id=closed_refund.id,
+            refund_transaction_id=closed_refund_txn.unique_id,
+            refund_source="bank_transactions",
+            amount=closed_partial,
         ))
 
     session.flush()
