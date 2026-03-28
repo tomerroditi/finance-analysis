@@ -8,7 +8,7 @@ from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
 
 
-class Liability(Base):
+class Liability(Base, TimestampMixin):
     """ORM model for a tracked liability (loan/debt).
 
     Each liability is identified by its ``category`` + ``tag`` pair, which

@@ -238,12 +238,7 @@ class LiabilitiesService:
         total_payments = sum(abs(t["amount"]) for t in payments)
 
         num_payments = len(payments)
-        if num_payments == 0:
-            remaining_balance = record["principal_amount"]
-        elif num_payments <= len(schedule):
-            remaining_balance = schedule[num_payments - 1]["remaining_balance"]
-        else:
-            remaining_balance = 0.0
+        remaining_balance = max(record["principal_amount"] - total_payments, 0.0)
 
         # Interest split: already paid vs projected remaining
         interest_paid = sum(e["interest_portion"] for e in schedule[:num_payments])
@@ -253,7 +248,8 @@ class LiabilitiesService:
         # Monthly payment from schedule (constant for fixed-rate)
         monthly_payment = schedule[0]["payment"] if schedule else 0.0
 
-        percent_paid = (total_payments / record["principal_amount"] * 100) if record["principal_amount"] > 0 else 0.0
+        total_cost = monthly_payment * record["term_months"]
+        percent_paid = (total_payments / total_cost * 100) if total_cost > 0 else 0.0
 
         summary = {
             "total_receipts": total_receipts,
@@ -263,7 +259,7 @@ class LiabilitiesService:
             "interest_remaining": interest_remaining,
             "monthly_payment": monthly_payment,
             "remaining_balance": remaining_balance,
-            "percent_paid": round(percent_paid, 1),
+            "percent_paid": round(percent_paid, 2),
             "payments_made": num_payments,
         }
 
@@ -330,30 +326,31 @@ class LiabilitiesService:
             "has_receipt": receipt is not None,
         }
 
-    def get_liability_transactions(self, liability_id: int) -> List[Dict[str, Any]]:
+    def get_liability_transactions(
+        self, liability_id: int, tag: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get all transactions associated with a liability.
 
-        Fetches the liability's tag, then filters all transactions by
-        ``category == LIABILITIES_CATEGORY`` and matching tag, and also
-        includes auto-generated liability transactions. Sorted by date.
+        Fetches the liability's tag (unless provided), then filters all
+        transactions by ``category == LIABILITIES_CATEGORY`` and matching tag,
+        and also includes auto-generated liability transactions. Sorted by date.
 
         Parameters
         ----------
         liability_id : int
             ID of the liability.
+        tag : str, optional
+            Tag to filter by. If not provided, fetched from the liability record.
 
         Returns
         -------
         list[dict]
             Matching transactions sorted by date ascending.
         """
-        from sqlalchemy import select
-
-        from backend.models.liability import LiabilityTransaction
-
-        record_df = self.liabilities_repo.get_by_id(liability_id)
-        tag = record_df.iloc[0]["tag"]
+        if tag is None:
+            record_df = self.liabilities_repo.get_by_id(liability_id)
+            tag = record_df.iloc[0]["tag"]
 
         # Real transactions from bank/CC/cash tables
         all_txns = self.transactions_repo.get_table()
@@ -366,9 +363,7 @@ class LiabilitiesService:
                 frames.append(matched)
 
         # Auto-generated liability transactions
-        gen_txns = self.db.execute(
-            select(LiabilityTransaction).where(LiabilityTransaction.liability_id == liability_id)
-        ).scalars().all()
+        gen_txns = self.liabilities_repo.get_liability_transactions(liability_id)
         if gen_txns:
             gen_df = pd.DataFrame([
                 {LTF.DATE.value: t.date, LTF.AMOUNT.value: t.amount,
@@ -501,14 +496,10 @@ class LiabilitiesService:
             total_paid = 0.0
             payment_count = 0
 
-        if payment_count == 0:
-            remaining_balance = principal
-        elif payment_count <= len(schedule):
-            remaining_balance = schedule[payment_count - 1]["remaining_balance"]
-        else:
-            remaining_balance = 0.0
+        remaining_balance = max(principal - total_paid, 0.0)
 
-        percent_paid = (total_paid / (monthly_payment * term_months) * 100) if monthly_payment > 0 else 0.0
+        total_cost = monthly_payment * term_months
+        percent_paid = (total_paid / total_cost * 100) if total_cost > 0 else 0.0
 
         record["monthly_payment"] = round(monthly_payment, 2)
         record["total_interest"] = total_interest
@@ -516,6 +507,66 @@ class LiabilitiesService:
         record["total_paid"] = round(total_paid, 2)
         record["percent_paid"] = round(percent_paid, 2)
         record["payments_made"] = payment_count
+
+    def get_debt_over_time(self) -> Dict[str, Any]:
+        """Get debt-over-time data for all active liabilities using actual transactions.
+
+        Returns a time series per liability showing the remaining balance after
+        each actual payment, plus a total line across all liabilities.
+
+        Returns
+        -------
+        dict
+            Dictionary with ``series`` (per-liability) and ``total`` keys.
+        """
+        df = self.liabilities_repo.get_all_liabilities(include_paid_off=False)
+        if df.empty:
+            return {"series": [], "total": []}
+
+        all_txns = self.transactions_repo.get_table()
+        liab_txns = pd.DataFrame()
+        if not all_txns.empty:
+            liab_txns = all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
+            if not liab_txns.empty:
+                liab_txns["amount"] = pd.to_numeric(liab_txns["amount"], errors="coerce").fillna(0.0)
+
+        series = []
+        for _, row in df.iterrows():
+            tag = row["tag"]
+            principal = float(row["principal_amount"])
+            points = [{"date": row["start_date"], "balance": principal}]
+
+            if not liab_txns.empty and tag:
+                payments = liab_txns[
+                    (liab_txns["tag"] == tag) & (liab_txns["amount"] < 0)
+                ].sort_values("date")
+
+                cumulative_paid = 0.0
+                for _, txn in payments.iterrows():
+                    cumulative_paid += abs(float(txn["amount"]))
+                    points.append({
+                        "date": str(txn["date"])[:10],
+                        "balance": max(principal - cumulative_paid, 0.0),
+                    })
+
+            series.append({"name": row["name"], "points": points})
+
+        # Build total line using last-known balance per liability at each date
+        all_dates = sorted({p["date"] for s in series for p in s["points"]})
+        total = []
+        for d in all_dates:
+            total_balance = 0.0
+            for s in series:
+                last_balance = 0.0
+                for p in s["points"]:
+                    if p["date"] <= d:
+                        last_balance = p["balance"]
+                    else:
+                        break
+                total_balance += last_balance
+            total.append({"date": d, "balance": round(total_balance, 2)})
+
+        return {"series": series, "total": total}
 
     def generate_missing_transactions(self, liability_id: int) -> int:
         """Auto-generate missing payment transactions from the amortization schedule.
@@ -533,8 +584,6 @@ class LiabilitiesService:
         int
             Number of transactions created.
         """
-        from backend.models.liability import LiabilityTransaction
-
         record = self.get_liability(liability_id)
         start_date_obj = date.fromisoformat(record["start_date"])
 
@@ -546,7 +595,7 @@ class LiabilitiesService:
         )
 
         # Get existing payment months from all sources (real + generated)
-        transactions = self.get_liability_transactions(liability_id)
+        transactions = self.get_liability_transactions(liability_id, tag=record.get("tag"))
         existing_months = set()
         for txn in transactions:
             if txn.get("amount") is not None and txn["amount"] < 0:
@@ -562,18 +611,17 @@ class LiabilitiesService:
             if month_key in existing_months:
                 continue
 
-            txn = LiabilityTransaction(
+            self.liabilities_repo.add_liability_transaction(
                 liability_id=liability_id,
                 date=entry["date"],
                 amount=-entry["payment"],
                 payment_number=entry["payment_number"],
                 description=f"{record['name']} - Payment #{entry['payment_number']}",
             )
-            self.db.add(txn)
             created += 1
 
         if created > 0:
-            self.db.commit()
+            self.liabilities_repo.commit()
 
         return created
 

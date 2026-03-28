@@ -9,7 +9,7 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 from backend.errors import EntityNotFoundException
 
-from backend.models.liability import Liability
+from backend.models.liability import Liability, LiabilityTransaction
 from backend.constants.categories import LIABILITIES_CATEGORY
 from backend.constants.tables import LiabilitiesTableFields, Tables
 
@@ -113,7 +113,11 @@ class LiabilitiesRepository:
         if not include_paid_off:
             stmt = stmt.where(Liability.is_paid_off == 0)
 
-        return pd.read_sql(stmt, self.db.bind)
+        records = self.db.execute(stmt).scalars().all()
+        if not records:
+            return pd.DataFrame()
+        df = pd.DataFrame([r.__dict__ for r in records])
+        return df.drop(columns=["_sa_instance_state"], errors="ignore")
 
     def get_by_id(self, liability_id: int) -> pd.DataFrame:
         """Get a liability by its ID.
@@ -134,12 +138,13 @@ class LiabilitiesRepository:
             If no liability with the given ID exists.
         """
         stmt = select(Liability).where(Liability.id == liability_id)
-        df = pd.read_sql(stmt, self.db.bind)
-        if df.empty:
+        records = self.db.execute(stmt).scalars().all()
+        if not records:
             raise EntityNotFoundException(
                 f"No liability found with ID {liability_id}"
             )
-        return df
+        df = pd.DataFrame([r.__dict__ for r in records])
+        return df.drop(columns=["_sa_instance_state"], errors="ignore")
 
     def update_liability(self, liability_id: int, **fields) -> None:
         """Update a liability by ID.
@@ -161,12 +166,14 @@ class LiabilitiesRepository:
 
         stmt = update(Liability).where(Liability.id == liability_id).values(**fields)
         result = self.db.execute(stmt)
-        self.db.commit()
 
         if result.rowcount == 0:
+            self.db.rollback()
             raise EntityNotFoundException(
                 f"No liability found with ID {liability_id}"
             )
+
+        self.db.commit()
 
     def mark_paid_off(self, liability_id: int, paid_off_date: str) -> None:
         """Mark a liability as paid off.
@@ -177,13 +184,25 @@ class LiabilitiesRepository:
             Primary key of the liability to mark as paid off.
         paid_off_date : str
             Date the liability was paid off, in YYYY-MM-DD format.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no liability with the given ID exists.
         """
         stmt = (
             update(Liability)
             .where(Liability.id == liability_id)
             .values(is_paid_off=1, paid_off_date=paid_off_date)
         )
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
+
+        if result.rowcount == 0:
+            self.db.rollback()
+            raise EntityNotFoundException(
+                f"No liability found with ID {liability_id}"
+            )
+
         self.db.commit()
 
     def reopen(self, liability_id: int) -> None:
@@ -193,13 +212,59 @@ class LiabilitiesRepository:
         ----------
         liability_id : int
             Primary key of the liability to reopen.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no liability with the given ID exists.
         """
         stmt = (
             update(Liability)
             .where(Liability.id == liability_id)
             .values(is_paid_off=0, paid_off_date=None)
         )
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
+
+        if result.rowcount == 0:
+            self.db.rollback()
+            raise EntityNotFoundException(
+                f"No liability found with ID {liability_id}"
+            )
+
+        self.db.commit()
+
+    def get_liability_transactions(self, liability_id: int) -> list[LiabilityTransaction]:
+        """Get all auto-generated transactions for a liability.
+
+        Parameters
+        ----------
+        liability_id : int
+            FK of the owning liability.
+
+        Returns
+        -------
+        list[LiabilityTransaction]
+            All generated transactions for this liability, ordered by date.
+        """
+        stmt = (
+            select(LiabilityTransaction)
+            .where(LiabilityTransaction.liability_id == liability_id)
+            .order_by(LiabilityTransaction.date)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def add_liability_transaction(self, **fields) -> None:
+        """Create an auto-generated liability transaction.
+
+        Parameters
+        ----------
+        **fields
+            Fields for the LiabilityTransaction model.
+        """
+        self.db.add(LiabilityTransaction(**fields))
+
+    def commit(self) -> None:
+        """Commit the current transaction."""
         self.db.commit()
 
     def delete_liability(self, liability_id: int) -> None:
@@ -215,11 +280,19 @@ class LiabilitiesRepository:
         EntityNotFoundException
             If no liability with the given ID exists.
         """
+        # Delete child transactions first (SQLite may not enforce FK CASCADE)
+        self.db.execute(
+            delete(LiabilityTransaction).where(
+                LiabilityTransaction.liability_id == liability_id
+            )
+        )
         stmt = delete(Liability).where(Liability.id == liability_id)
         result = self.db.execute(stmt)
-        self.db.commit()
 
         if result.rowcount == 0:
+            self.db.rollback()
             raise EntityNotFoundException(
                 f"No liability found with ID {liability_id}"
             )
+
+        self.db.commit()

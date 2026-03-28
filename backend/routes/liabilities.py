@@ -4,10 +4,11 @@ Liabilities API routes.
 Provides endpoints for liability (loan/debt) tracking.
 """
 
+from datetime import date
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -25,6 +26,13 @@ class LiabilityCreate(BaseModel):
     start_date: str
     lender: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("start_date")
+    @classmethod
+    def validate_start_date(cls, v: str) -> str:
+        """Ensure start_date is a valid ISO date string."""
+        date.fromisoformat(v)
+        return v
 
 
 class LiabilityUpdate(BaseModel):
@@ -49,6 +57,15 @@ async def get_liabilities(
     """
     service = LiabilitiesService(db)
     return service.get_all_liabilities(include_paid_off=include_paid_off)
+
+
+@router.get("/debt-over-time")
+async def get_debt_over_time(
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return debt-over-time data for all active liabilities using actual transactions."""
+    service = LiabilitiesService(db)
+    return service.get_debt_over_time()
 
 
 @router.get("/detect-transactions")
@@ -118,14 +135,18 @@ async def update_liability(
 ) -> dict[str, str]:
     """Update a liability."""
     service = LiabilitiesService(db)
-    updates = {k: v for k, v in liability.model_dump().items() if v is not None}
+    updates = liability.model_dump(exclude_unset=True)
     service.update_liability(liability_id, **updates)
     return {"status": "success"}
 
 
+class PayOffRequest(BaseModel):
+    paid_off_date: str
+
+
 @router.post("/{liability_id}/pay-off")
 async def pay_off_liability(
-    liability_id: int, paid_off_date: str, db: Session = Depends(get_database)
+    liability_id: int, body: PayOffRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Mark a liability as paid off.
 
@@ -133,11 +154,11 @@ async def pay_off_liability(
     ----------
     liability_id : int
         ID of the liability to pay off.
-    paid_off_date : str
-        ISO date string (YYYY-MM-DD) recording when the liability was paid off.
+    body : PayOffRequest
+        Request body with ``paid_off_date`` (YYYY-MM-DD).
     """
     service = LiabilitiesService(db)
-    service.mark_paid_off(liability_id, paid_off_date)
+    service.mark_paid_off(liability_id, body.paid_off_date)
     return {"status": "success"}
 
 

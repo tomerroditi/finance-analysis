@@ -4,6 +4,8 @@ import pytest
 from datetime import date
 from unittest.mock import PropertyMock, patch
 
+from sqlalchemy import select
+
 from backend.models.liability import LiabilityTransaction
 from backend.services.liabilities_service import LiabilitiesService
 
@@ -93,8 +95,8 @@ class TestLiabilitiesService:
         assert summary["payments_made"] == 3
         assert abs(summary["total_payments"] - 3450.0) < 0.01
         assert abs(summary["total_receipts"] - 50000.0) < 0.01
-        # Remaining balance is from schedule entry for the 3rd payment (0-indexed: [2])
-        expected_balance = analysis["schedule"][2]["remaining_balance"]
+        # Remaining balance = principal - total actual payments
+        expected_balance = 50000.0 - 3450.0
         assert abs(summary["remaining_balance"] - expected_balance) < 0.01
 
     def test_analysis_interest_split_matches_schedule(self, db_session, seed_liabilities):
@@ -221,9 +223,11 @@ class TestLiabilitiesService:
         assert created == 3  # Oct, Nov, Dec
 
         # Verify transactions were inserted
-        gen_txns = db_session.query(LiabilityTransaction).filter_by(
-            liability_id=car_loan.id
-        ).all()
+        gen_txns = db_session.execute(
+            select(LiabilityTransaction).where(
+                LiabilityTransaction.liability_id == car_loan.id
+            )
+        ).scalars().all()
         assert len(gen_txns) == 3
         assert all(t.amount < 0 for t in gen_txns)
         assert {t.payment_number for t in gen_txns} == {4, 5, 6}

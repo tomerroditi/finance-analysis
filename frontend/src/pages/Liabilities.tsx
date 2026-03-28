@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Plot from "react-plotly.js";
@@ -384,7 +384,7 @@ export function Liabilities() {
     mutationFn: (id: number) => liabilitiesApi.generateTransactions(id),
     onSuccess: () => {
       invalidate();
-      queryClient.invalidateQueries({ queryKey: ["liability-analysis", analysisModalId] });
+      queryClient.invalidateQueries({ queryKey: ["liabilities", analysisModalId, "analysis"] });
     },
   });
 
@@ -415,57 +415,14 @@ export function Liabilities() {
     : [];
   const canAdd = availableTags.length > 0;
 
-  // Debt over time chart data — only points for actual payments made
-  const { series: debtOverTimeData, total: debtTotalLine } = useMemo(() => {
-    if (!activeLiabilities.length) return { series: [], total: [] };
-    const allSeries = activeLiabilities.map((l: Liability) => {
-      const monthlyRate = l.interest_rate / 100 / 12;
-      const payment =
-        monthlyRate > 0
-          ? (l.principal_amount * monthlyRate) /
-            (1 - Math.pow(1 + monthlyRate, -l.term_months))
-          : l.principal_amount / l.term_months;
-      const points: { date: string; balance: number }[] = [];
-      let balance = l.principal_amount;
-      const startDate = new Date(l.start_date);
-      // Only plot up to payments_made (not the full projected schedule)
-      const pointCount = l.payments_made + 1; // +1 for the initial balance
-      for (let i = 0; i < pointCount; i++) {
-        const d = new Date(startDate);
-        d.setMonth(d.getMonth() + i);
-        points.push({
-          date: d.toISOString().slice(0, 10),
-          balance: Math.max(0, balance),
-        });
-        const interest = balance * monthlyRate;
-        balance -= payment - interest;
-      }
-      return { name: l.name, points };
-    });
-
-    // Build total line: collect all unique dates, then sum each
-    // liability's balance at that date (using last known value)
-    const allDates = new Set<string>();
-    for (const s of allSeries) {
-      for (const p of s.points) allDates.add(p.date);
-    }
-    const sortedDates = [...allDates].sort();
-    const total = sortedDates.map((d) => {
-      let sum = 0;
-      for (const s of allSeries) {
-        // Find last point on or before this date
-        let lastBalance = 0;
-        for (const p of s.points) {
-          if (p.date <= d) lastBalance = p.balance;
-          else break;
-        }
-        sum += lastBalance;
-      }
-      return { date: d, balance: sum };
-    });
-
-    return { series: allSeries, total };
-  }, [activeLiabilities]);
+  // Debt over time chart data from actual transactions
+  const { data: debtOverTimeRaw } = useQuery({
+    queryKey: ["liabilities", "debt-over-time"],
+    queryFn: () => liabilitiesApi.getDebtOverTime().then((r) => r.data),
+    enabled: activeLiabilities.length > 0,
+  });
+  const debtOverTimeData = debtOverTimeRaw?.series || [];
+  const debtTotalLine = debtOverTimeRaw?.total || [];
 
   // Analysis modal tab
   const [analysisTab, setAnalysisTab] = useState<"schedule" | "actual">(
@@ -789,6 +746,43 @@ export function Liabilities() {
                   </div>
                 )}
               </div>
+              {(!tagDetection || !tagDetection.has_receipt) && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("liabilities.principalAmount")} *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newLiability.principal_amount}
+                      onChange={(e) =>
+                        setNewLiability({
+                          ...newLiability,
+                          principal_amount: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("liabilities.startDate")} *
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newLiability.start_date}
+                      onChange={(e) =>
+                        setNewLiability({
+                          ...newLiability,
+                          start_date: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("liabilities.interestRate")} (%) *
@@ -847,6 +841,9 @@ export function Liabilities() {
                 disabled={
                   !newLiability.name ||
                   !newLiability.tag ||
+                  (!tagDetection?.has_receipt &&
+                    (!newLiability.principal_amount ||
+                      !newLiability.start_date)) ||
                   !newLiability.interest_rate ||
                   !newLiability.term_months ||
                   createMutation.isPending
@@ -957,7 +954,9 @@ export function Liabilities() {
                     data: {
                       name: editForm.name,
                       lender: editForm.lender || undefined,
-                      interest_rate: Number(editForm.interest_rate),
+                      interest_rate: editForm.interest_rate
+                        ? Number(editForm.interest_rate)
+                        : undefined,
                       notes: editForm.notes || undefined,
                     },
                   })
