@@ -9,8 +9,6 @@ import {
   Calculator,
   Save,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
   Info,
   RefreshCw,
 } from "lucide-react";
@@ -89,7 +87,6 @@ export function RetirementGoalForm({
 }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [form, setForm] = useState(() => goalToForm(goal));
@@ -291,18 +288,8 @@ export function RetirementGoalForm({
         />
       </div>
 
-      {/* Israeli Savings Vehicles Toggle */}
-      <button
-        type="button"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-blue-300 transition-colors"
-      >
-        {showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        {t("earlyRetirement.form.israeliVehicles")}
-      </button>
-
-      {showAdvanced && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
+      {/* Israeli Savings Vehicles */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
           <NumberField
             label={t("earlyRetirement.form.pensionPayout")}
             value={form.pension_monthly_payout_estimate}
@@ -399,8 +386,7 @@ export function RetirementGoalForm({
             step={0.01}
             suffix="%"
           />
-        </div>
-      )}
+      </div>
 
       {/* Action Buttons */}
       <div className="flex items-center justify-end gap-3">
