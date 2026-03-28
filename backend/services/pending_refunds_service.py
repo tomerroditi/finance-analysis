@@ -134,6 +134,15 @@ class PendingRefundsService:
                 f"Cannot link a refund to a {pending.status} record"
             )
 
+        # Check if this transaction is already linked to any pending refund
+        existing_link = self.repo.get_link_for_transaction(
+            refund_transaction_id, refund_source
+        )
+        if existing_link:
+            raise ValidationException(
+                "This transaction is already linked to a refund request"
+            )
+
         # Calculate current remaining
         existing_links = self.repo.get_links_for_pending(pending_refund_id)
         already_refunded = existing_links["amount"].sum() if not existing_links.empty else 0

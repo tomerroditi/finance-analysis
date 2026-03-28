@@ -219,7 +219,7 @@ const RefundsView: React.FC = () => {
                   <span className="text-xs text-[var(--text-muted)] opacity-50 group-hover:opacity-100 transition-opacity">
                     {humanizeService(link.refund_source)}
                   </span>
-                  {(item.status === "pending" || item.status === "partial") && (
+                  {item.status !== "closed" && (
                     <button
                       className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-all"
                       title={t("transactions.refunds.confirmUnlink")}

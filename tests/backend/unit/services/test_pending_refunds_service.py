@@ -118,6 +118,15 @@ class TestPendingRefundsService:
         with pytest.raises(ValidationException):
             service.link_refund(pending["id"], 100, "banks", 50.0)
 
+    def test_link_same_transaction_to_multiple_refunds_rejected(self, db_session):
+        """Cannot link the same transaction to multiple refund requests."""
+        service = PendingRefundsService(db_session)
+        pending1 = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        pending2 = service.mark_as_pending_refund("transaction", 2, "banks", 200.0)
+        service.link_refund(pending1["id"], 99, "banks", 50.0)
+        with pytest.raises(ValidationException):
+            service.link_refund(pending2["id"], 99, "banks", 50.0)
+
     def test_cancel_pending_refund(self, db_session):
         """Cancel a pending refund."""
         service = PendingRefundsService(db_session)

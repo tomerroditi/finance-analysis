@@ -240,6 +240,31 @@ class PendingRefundsRepository:
             self.db.commit()
         return link
 
+    def get_link_for_transaction(
+        self, refund_transaction_id: int, refund_source: str
+    ) -> RefundLink | None:
+        """
+        Check if a transaction is already linked to any pending refund.
+
+        Parameters
+        ----------
+        refund_transaction_id : int
+            unique_id of the refund transaction.
+        refund_source : str
+            Table where refund lives.
+
+        Returns
+        -------
+        RefundLink or None
+            The existing link if found, None otherwise.
+        """
+        stmt = (
+            select(RefundLink)
+            .where(RefundLink.refund_transaction_id == refund_transaction_id)
+            .where(RefundLink.refund_source == refund_source)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
     def get_link_by_id(self, link_id: int) -> RefundLink | None:
         """
         Get a refund link by ID.
