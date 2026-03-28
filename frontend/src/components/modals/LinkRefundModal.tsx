@@ -167,7 +167,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               <h2 id="link-refund-title" className="text-base md:text-lg font-semibold text-white">{t("modals.linkRefund.title")}</h2>
               {refundTransaction && (
                 <p className="text-sm text-[var(--text-muted)]">
-                  {formatCurrency(refundTransaction.amount)} refund
+                  {formatCurrency(refundTransaction.amount)} {t("modals.linkRefund.refundLabel")}
                 </p>
               )}
               {pendingRefund && (

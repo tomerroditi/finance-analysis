@@ -166,6 +166,17 @@ class TestUnlinkRefund:
         assert result["status"] == "pending"
         assert result["total_refunded"] == 0
 
+    def test_unlink_refund_from_closed_rejected(self, db_session):
+        """Cannot unlink a refund from a closed record."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 50.0)
+        service.close_pending_refund(pending["id"])
+        details = service.get_pending_by_id(pending["id"])
+        link_id = details["links"][0]["id"]
+        with pytest.raises(ValidationException):
+            service.unlink_refund(link_id)
+
     def test_unlink_refund_not_found(self, db_session):
         """Error when link not found."""
         service = PendingRefundsService(db_session)
@@ -197,6 +208,14 @@ class TestClosePendingRefund:
         service = PendingRefundsService(db_session)
         pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
         service.link_refund(pending["id"], 99, "banks", 100.0)
+        with pytest.raises(ValidationException):
+            service.close_pending_refund(pending["id"])
+
+    def test_close_already_closed_refund_rejected(self, db_session):
+        """Cannot close a refund that is already closed."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.close_pending_refund(pending["id"])
         with pytest.raises(ValidationException):
             service.close_pending_refund(pending["id"])
 

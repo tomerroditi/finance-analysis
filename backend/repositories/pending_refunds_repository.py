@@ -65,7 +65,7 @@ class PendingRefundsRepository:
         Parameters
         ----------
         status : str, optional
-            Filter by status ('pending', 'resolved', 'partial').
+            Filter by status ('pending', 'partial', 'resolved', or 'closed').
 
         Returns
         -------

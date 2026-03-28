@@ -632,7 +632,8 @@
       "linking": "מקשר...",
       "searchTransactions": "חפש תנועות החזר...",
       "noTransactions": "לא נמצאו תנועות החזר",
-      "expectedRefund": "החזר צפוי"
+      "expectedRefund": "החזר צפוי",
+      "refundLabel": "החזר"
     },
     "project": {
       "title": "תקציב פרויקט",

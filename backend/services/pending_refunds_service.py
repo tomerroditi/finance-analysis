@@ -286,12 +286,6 @@ class PendingRefundsService:
                     # Since split repo is SQL-based/Pandas in parts, let's use the DB directly for efficiency if possible
                     # or just use the repo.
                     for split_id in ids:
-                        split_df = (
-                            trans_repo.split_repo.get_data()
-                        )  # Inefficient if large
-                        # Better to select specific split. split_repo doesn't have get_by_id?
-                        # It has get_splits_for_transaction.
-                        # Let's direct query split table
                         from backend.models.transaction import SplitTransaction
 
                         split = self.db.get(SplitTransaction, split_id)
@@ -529,6 +523,9 @@ class PendingRefundsService:
             raise EntityNotFoundException(
                 f"Pending refund {pending_refund_id} not found"
             )
+
+        if pending.status == "closed":
+            raise ValidationException("Cannot unlink a refund from a closed record")
 
         self.repo.delete_refund_link(link_id)
 

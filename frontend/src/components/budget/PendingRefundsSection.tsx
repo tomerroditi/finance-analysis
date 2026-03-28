@@ -39,6 +39,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     try {
       await pendingRefundsApi.cancel(id);
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
     } catch {
       alert(t("budget.failedCancelRefund"));
     }
