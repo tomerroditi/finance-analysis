@@ -567,6 +567,7 @@ export function Liabilities() {
                           "#ec4899",
                         ][i % 7],
                         width: 2,
+                        shape: "hv" as const,
                       },
                     }),
                   ),
@@ -578,7 +579,7 @@ export function Liabilities() {
                           name: t("liabilities.totalDebt"),
                           type: "scatter" as const,
                           mode: "lines" as const,
-                          line: { color: "#ffffff", width: 3 },
+                          line: { color: "#ffffff", width: 3, shape: "hv" as const },
                         },
                       ]
                     : []),
