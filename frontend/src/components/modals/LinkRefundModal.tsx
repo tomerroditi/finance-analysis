@@ -334,12 +334,6 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         {pending.notes}
                       </p>
                     )}
-                    {(pending.remaining ?? pending.expected_amount) !==
-                      pending.expected_amount && (
-                      <p className="text-xs text-emerald-400 mt-1">
-                        {formatCurrency(pending.remaining ?? 0)} {t("modals.split.remaining").toLowerCase()}
-                      </p>
-                    )}
                     {selectedPendingId === pending.id && (
                       <div className="absolute end-4 top-1/2 -translate-y-1/2">
                         <Check className="w-5 h-5 text-emerald-400" />
@@ -362,7 +356,10 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                 value={linkAmount}
                 onChange={(e) => setLinkAmount(Number(e.target.value))}
                 min={0}
-                max={isReverseMode ? selectedTransaction?.amount : refundTransaction?.amount}
+                max={isReverseMode
+                  ? Math.min(selectedTransaction?.amount || 0, pendingRefund?.remaining ?? pendingRefund?.expected_amount ?? 0)
+                  : (() => { const sel = (pendingRefunds || []).find((p: PendingRefund) => p.id === selectedPendingId); return Math.min(refundTransaction?.amount || 0, sel?.remaining ?? sel?.expected_amount ?? Infinity); })()
+                }
                 step={0.01}
                 className="w-full px-4 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-sm text-end font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               />

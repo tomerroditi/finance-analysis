@@ -335,6 +335,11 @@ class PendingRefundsService:
                     links_df.to_dict(orient="records") if not links_df.empty else []
                 )
 
+            # Compute totals from links
+            total_refunded = sum(link["amount"] for link in p["links"])
+            p["total_refunded"] = total_refunded
+            p["remaining"] = max(0, p["expected_amount"] - total_refunded)
+
             # Now enrich links
             link_sources = {}
             for link in p["links"]:

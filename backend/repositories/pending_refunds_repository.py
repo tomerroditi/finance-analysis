@@ -187,7 +187,7 @@ class PendingRefundsRepository:
         pending_id : int
             ID of the pending refund.
         status : str
-            New status ('pending', 'resolved', 'partial').
+            New status ('pending', 'partial', 'resolved', or 'closed').
         """
         pending = self.db.get(PendingRefund, pending_id)
         if pending:
