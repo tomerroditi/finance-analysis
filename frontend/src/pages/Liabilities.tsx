@@ -1154,25 +1154,25 @@ export function Liabilities() {
                 {/* Amortization Schedule Table */}
                 {analysisTab === "schedule" && (
                   <div className="overflow-x-auto max-h-96">
-                    <table className="w-full text-sm">
+                    <table className="min-w-[500px] w-full text-sm">
                       <thead className="sticky top-0 bg-[var(--surface)]">
-                        <tr className="text-[10px] uppercase font-black tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                          <th className="py-2 text-start ps-2">
+                        <tr className="text-[9px] md:text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+                          <th className="py-2 text-start ps-2 whitespace-nowrap">
                             {t("liabilities.paymentNumber")}
                           </th>
-                          <th className="py-2 text-start">
+                          <th className="py-2 text-start whitespace-nowrap">
                             {t("common.date")}
                           </th>
-                          <th className="py-2 text-end">
+                          <th className="py-2 text-end whitespace-nowrap">
                             {t("liabilities.payment")}
                           </th>
-                          <th className="py-2 text-end">
+                          <th className="py-2 text-end whitespace-nowrap">
                             {t("liabilities.principalPortion")}
                           </th>
-                          <th className="py-2 text-end">
+                          <th className="py-2 text-end whitespace-nowrap">
                             {t("liabilities.interestPortion")}
                           </th>
-                          <th className="py-2 text-end pe-2">
+                          <th className="py-2 text-end pe-2 whitespace-nowrap">
                             {t("liabilities.remainingBalance")}
                           </th>
                         </tr>
@@ -1186,17 +1186,17 @@ export function Liabilities() {
                             <td className="py-2 ps-2 text-[var(--text-muted)]">
                               {row.payment_number}
                             </td>
-                            <td className="py-2">{row.date}</td>
-                            <td className="py-2 text-end" dir="ltr">
+                            <td className="py-2 whitespace-nowrap">{row.date}</td>
+                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
                               {formatCurrency(row.payment)}
                             </td>
-                            <td className="py-2 text-end" dir="ltr">
+                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
                               {formatCurrency(row.principal_portion)}
                             </td>
-                            <td className="py-2 text-end" dir="ltr">
+                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
                               {formatCurrency(row.interest_portion)}
                             </td>
-                            <td className="py-2 text-end pe-2" dir="ltr">
+                            <td className="py-2 text-end pe-2 whitespace-nowrap" dir="ltr">
                               {formatCurrency(row.remaining_balance)}
                             </td>
                           </tr>
@@ -1209,19 +1209,19 @@ export function Liabilities() {
                 {/* Actual vs Expected Table */}
                 {analysisTab === "actual" && (
                   <div className="overflow-x-auto max-h-96">
-                    <table className="w-full text-sm">
+                    <table className="min-w-[400px] w-full text-sm">
                       <thead className="sticky top-0 bg-[var(--surface)]">
-                        <tr className="text-[10px] uppercase font-black tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                          <th className="py-2 text-start ps-2">
+                        <tr className="text-[9px] md:text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+                          <th className="py-2 text-start ps-2 whitespace-nowrap">
                             {t("common.date")}
                           </th>
-                          <th className="py-2 text-end">
+                          <th className="py-2 text-end whitespace-nowrap">
                             {t("liabilities.expectedPayment")}
                           </th>
-                          <th className="py-2 text-end">
+                          <th className="py-2 text-end whitespace-nowrap">
                             {t("liabilities.actualPayment")}
                           </th>
-                          <th className="py-2 text-end pe-2">
+                          <th className="py-2 text-end pe-2 whitespace-nowrap">
                             {t("liabilities.difference")}
                           </th>
                         </tr>
