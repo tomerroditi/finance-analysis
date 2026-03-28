@@ -238,7 +238,12 @@ class LiabilitiesService:
         total_payments = sum(abs(t["amount"]) for t in payments)
 
         num_payments = len(payments)
-        remaining_balance = schedule[num_payments]["remaining_balance"] if num_payments < len(schedule) else 0.0
+        if num_payments == 0:
+            remaining_balance = record["principal_amount"]
+        elif num_payments <= len(schedule):
+            remaining_balance = schedule[num_payments - 1]["remaining_balance"]
+        else:
+            remaining_balance = 0.0
 
         # Interest split: already paid vs projected remaining
         interest_paid = sum(e["interest_portion"] for e in schedule[:num_payments])
@@ -496,8 +501,10 @@ class LiabilitiesService:
             total_paid = 0.0
             payment_count = 0
 
-        if payment_count < len(schedule):
-            remaining_balance = schedule[payment_count]["remaining_balance"]
+        if payment_count == 0:
+            remaining_balance = principal
+        elif payment_count <= len(schedule):
+            remaining_balance = schedule[payment_count - 1]["remaining_balance"]
         else:
             remaining_balance = 0.0
 

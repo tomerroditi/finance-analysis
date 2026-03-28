@@ -93,8 +93,8 @@ class TestLiabilitiesService:
         assert summary["payments_made"] == 3
         assert abs(summary["total_payments"] - 3450.0) < 0.01
         assert abs(summary["total_receipts"] - 50000.0) < 0.01
-        # Remaining balance is from schedule entry after 3 payments
-        expected_balance = analysis["schedule"][3]["remaining_balance"]
+        # Remaining balance is from schedule entry for the 3rd payment (0-indexed: [2])
+        expected_balance = analysis["schedule"][2]["remaining_balance"]
         assert abs(summary["remaining_balance"] - expected_balance) < 0.01
 
     def test_analysis_interest_split_matches_schedule(self, db_session, seed_liabilities):
