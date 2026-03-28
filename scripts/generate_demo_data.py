@@ -1593,14 +1593,17 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     5. Partial refund with multiple links - expensive item with 2 refund txns
     6. Partial refund for auto-split testing - 80 ILS remaining, 150 ILS refund available
     """
+    used = set()  # Track used CC transaction unique_ids
+
     # 1. Pending refund: recent shopping item, no links
     recent_shopping = [
         t for t in cc_txns
         if t.category == "Shopping" and t.tag == "Online" and t.type == "normal"
-        and t.amount < -100
+        and t.amount < -100 and t.unique_id not in used
     ]
     if recent_shopping:
         source_txn = recent_shopping[-1]
+        used.add(source_txn.unique_id)
         session.add(PendingRefund(
             source_type="transaction",
             source_id=source_txn.unique_id,
@@ -1614,10 +1617,11 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     electronics = [
         t for t in cc_txns
         if t.category == "Shopping" and t.tag == "Electronics" and t.type == "normal"
-        and t.amount < -200
+        and t.amount < -200 and t.unique_id not in used
     ]
     if electronics:
         source_txn = electronics[-1]
+        used.add(source_txn.unique_id)
         expected = abs(source_txn.amount)
         partial_amount = round(expected * 0.4, 2)
 
@@ -1659,10 +1663,11 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     resolved_shopping = [
         t for t in cc_txns
         if t.category == "Shopping" and t.tag == "Online" and t.type == "normal"
-        and t.amount < -100 and t not in recent_shopping
+        and t.amount < -100 and t.unique_id not in used
     ]
     if resolved_shopping:
         source_txn = resolved_shopping[-1]
+        used.add(source_txn.unique_id)
         refund_amount = abs(source_txn.amount)
 
         resolved_refund = PendingRefund(
@@ -1703,10 +1708,11 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     restaurant = [
         t for t in cc_txns
         if t.category == "Food" and t.tag == "Restaurants" and t.type == "normal"
-        and t.amount < -150
+        and t.amount < -150 and t.unique_id not in used
     ]
     if restaurant:
         source_txn = restaurant[-1]
+        used.add(source_txn.unique_id)
         expected = abs(source_txn.amount)
         closed_partial = round(expected * 0.5, 2)
 
@@ -1749,12 +1755,11 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     expensive_shopping = [
         t for t in cc_txns
         if t.category == "Shopping" and t.type == "normal"
-        and t.amount < -500
-        and t not in recent_shopping and t not in electronics
-        and t not in (resolved_shopping if resolved_shopping else [])
+        and t.amount < -300 and t.unique_id not in used
     ]
     if expensive_shopping:
         source_txn = expensive_shopping[-1]
+        used.add(source_txn.unique_id)
         expected = abs(source_txn.amount)
         link1_amount = round(expected * 0.3, 2)
         link2_amount = round(expected * 0.25, 2)
@@ -1813,16 +1818,15 @@ def create_pending_refunds(session, cc_txns, bank_txns):
         ))
 
     # 6. Pending refund with small remaining (test auto-split linking)
-    # Source: a CC transaction where we expect a 200 ILS refund. One 120 ILS
-    # refund already linked, leaving 80 ILS remaining. A 150 ILS bank refund
-    # transaction is available — linking it should auto-split to 80 + 70.
-    transport = [
+    # Source: any CC transaction. We set expected=200, link 120, leaving 80 remaining.
+    # A 150 ILS bank refund is available — linking it should auto-split to 80 + 70.
+    autosplit_candidates = [
         t for t in cc_txns
-        if t.category == "Transport" and t.type == "normal"
-        and t.amount < -150
+        if t.type == "normal" and t.amount < -100 and t.unique_id not in used
     ]
-    if transport:
-        source_txn = transport[-1]
+    if autosplit_candidates:
+        source_txn = autosplit_candidates[-1]
+        used.add(source_txn.unique_id)
         expected = 200.0
         first_link = 120.0
 
