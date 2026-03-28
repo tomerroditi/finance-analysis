@@ -70,6 +70,16 @@ interface AnalysisData {
   };
 }
 
+interface DebtPoint {
+  date: string;
+  balance: number;
+}
+
+interface DebtOverTimeData {
+  series: Array<{ name: string; points: DebtPoint[] }>;
+  total: DebtPoint[];
+}
+
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -416,7 +426,7 @@ export function Liabilities() {
   const canAdd = availableTags.length > 0;
 
   // Debt over time chart data from actual transactions
-  const { data: debtOverTimeRaw } = useQuery({
+  const { data: debtOverTimeRaw } = useQuery<DebtOverTimeData>({
     queryKey: ["liabilities", "debt-over-time"],
     queryFn: () => liabilitiesApi.getDebtOverTime().then((r) => r.data),
     enabled: activeLiabilities.length > 0,
