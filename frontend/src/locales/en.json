@@ -541,7 +541,11 @@
     "interest": "interest",
     "noReceiptWarning": "No loan receipt transaction found for this tag. The principal amount and start date must be entered manually.",
     "receiptDetected": "Detected loan receipt: {{amount}} on {{date}} with {{payments}} payment(s) found.",
-    "generateMissing": "Generate Missing Payments"
+    "generateMissing": "Generate Missing Payments",
+    "activeLiabilities": "Active Liabilities",
+    "paidOffLiabilities": "Paid Off Liabilities",
+    "debtOverTime": "Debt Over Time",
+    "debtAllocation": "Debt Allocation"
   },
   "insurance": {
     "title": "Insurance",

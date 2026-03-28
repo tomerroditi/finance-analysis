@@ -1,6 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Plot from "react-plotly.js";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import {
   Plus,
   Landmark,
@@ -243,7 +245,6 @@ export function Liabilities() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  const [showPaidOff, setShowPaidOff] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [analysisModalId, setAnalysisModalId] = useState<number | null>(null);
   const [payOffForm, setPayOffForm] = useState<{
@@ -303,8 +304,8 @@ export function Liabilities() {
 
   // Queries
   const { data: liabilities, isLoading } = useQuery({
-    queryKey: ["liabilities", showPaidOff],
-    queryFn: () => liabilitiesApi.getAll(showPaidOff).then((r) => r.data),
+    queryKey: ["liabilities"],
+    queryFn: () => liabilitiesApi.getAll(true).then((r) => r.data),
   });
 
   const { data: categories } = useQuery({
@@ -389,6 +390,8 @@ export function Liabilities() {
   // Summary calculations
   const activeLiabilities =
     liabilities?.filter((l: Liability) => !l.is_paid_off) || [];
+  const paidOffLiabilities =
+    liabilities?.filter((l: Liability) => !!l.is_paid_off) || [];
   const totalDebt = activeLiabilities.reduce(
     (sum: number, l: Liability) => sum + l.remaining_balance,
     0,
@@ -410,6 +413,33 @@ export function Liabilities() {
     ? categories["Liabilities"].filter((tag: string) => !usedTags.has(tag))
     : [];
   const canAdd = availableTags.length > 0;
+
+  // Debt over time chart data
+  const debtOverTimeData = useMemo(() => {
+    if (!activeLiabilities.length) return [];
+    return activeLiabilities.map((l: Liability) => {
+      const monthlyRate = l.interest_rate / 100 / 12;
+      const payment =
+        monthlyRate > 0
+          ? (l.principal_amount * monthlyRate) /
+            (1 - Math.pow(1 + monthlyRate, -l.term_months))
+          : l.principal_amount / l.term_months;
+      const points: { date: string; balance: number }[] = [];
+      let balance = l.principal_amount;
+      const startDate = new Date(l.start_date);
+      for (let i = 0; i <= l.term_months; i++) {
+        const d = new Date(startDate);
+        d.setMonth(d.getMonth() + i);
+        points.push({
+          date: d.toISOString().slice(0, 10),
+          balance: Math.max(0, balance),
+        });
+        const interest = balance * monthlyRate;
+        balance -= payment - interest;
+      }
+      return { name: l.name, points };
+    });
+  }, [activeLiabilities]);
 
   // Analysis modal tab
   const [analysisTab, setAnalysisTab] = useState<"schedule" | "actual">(
@@ -451,17 +481,6 @@ export function Liabilities() {
         </button>
       </div>
 
-      {/* Show paid off toggle */}
-      <label className="flex items-center gap-2 text-sm text-[var(--text-muted)] cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={showPaidOff}
-          onChange={(e) => setShowPaidOff(e.target.checked)}
-          className="rounded"
-        />
-        {t("liabilities.paidOff")}
-      </label>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6">
@@ -490,42 +509,179 @@ export function Liabilities() {
         </div>
       </div>
 
-      {/* Liability Cards */}
-      {liabilities && liabilities.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {liabilities.map((l: Liability) => (
-            <LiabilityCard
-              key={l.id}
-              liability={l}
-              onAnalysis={setAnalysisModalId}
-              onEdit={(l: Liability) =>
-                setEditForm({
-                  id: l.id,
-                  name: l.name,
-                  lender: l.lender || "",
-                  interest_rate: String(l.interest_rate),
-                  notes: l.notes || "",
-                })
-              }
-              onPayOff={(id: number) =>
-                setPayOffForm({
-                  id,
-                  date: new Date().toISOString().split("T")[0],
-                })
-              }
-              onReopen={reopenMutation.mutate}
-              onDelete={deleteMutation.mutate}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-16 text-center">
-          <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
-            <Landmark size={32} />
+      {/* Charts: Debt Over Time + Debt Allocation */}
+      {activeLiabilities.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Debt Over Time */}
+          <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
+              {t("liabilities.debtOverTime")}
+            </h3>
+            <div className="h-[300px]">
+              <Plot
+                data={[
+                  ...debtOverTimeData.map(
+                    (
+                      s: { name: string; points: { date: string; balance: number }[] },
+                      i: number,
+                    ) => ({
+                      x: s.points.map((p) => p.date),
+                      y: s.points.map((p) => p.balance),
+                      name: s.name,
+                      type: "scatter" as const,
+                      mode: "lines" as const,
+                      line: {
+                        color: [
+                          "#3b82f6",
+                          "#10b981",
+                          "#f59e0b",
+                          "#ef4444",
+                          "#8b5cf6",
+                          "#06b6d4",
+                          "#ec4899",
+                        ][i % 7],
+                        width: 2,
+                      },
+                    }),
+                  ),
+                ]}
+                layout={{
+                  ...chartTheme,
+                  xaxis: { showgrid: false },
+                  yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
+                  showlegend: true,
+                  legend: { orientation: "h", y: -0.12, font: { size: 10 } },
+                }}
+                style={{ width: "100%", height: "100%" }}
+                config={plotlyConfig()}
+              />
+            </div>
           </div>
-          <h2 className="text-xl font-bold mb-2">
-            {t("liabilities.noLiabilities")}
+
+          {/* Debt Allocation Pie Chart */}
+          <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
+              {t("liabilities.debtAllocation")}
+            </h3>
+            <div className="h-[300px]">
+              <Plot
+                data={[
+                  {
+                    values: activeLiabilities.map(
+                      (l: Liability) => l.remaining_balance,
+                    ),
+                    labels: activeLiabilities.map((l: Liability) => l.name),
+                    type: "pie",
+                    hole: 0.5,
+                    marker: {
+                      colors: [
+                        "#3b82f6",
+                        "#10b981",
+                        "#f59e0b",
+                        "#ef4444",
+                        "#8b5cf6",
+                      ],
+                    },
+                  },
+                ]}
+                layout={{
+                  ...chartTheme,
+                  margin: { t: 0, b: 0, l: 0, r: 0 },
+                  showlegend: true,
+                  legend: { orientation: "h" },
+                }}
+                style={{ width: "100%", height: "100%" }}
+                config={plotlyConfig()}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Liabilities */}
+      <div>
+        {activeLiabilities.length > 0 ? (
+          <>
+            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+              {t("liabilities.activeLiabilities")}
+              <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
+                {activeLiabilities.length}
+              </span>
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {activeLiabilities.map((l: Liability) => (
+                <LiabilityCard
+                  key={l.id}
+                  liability={l}
+                  onAnalysis={setAnalysisModalId}
+                  onEdit={(l: Liability) =>
+                    setEditForm({
+                      id: l.id,
+                      name: l.name,
+                      lender: l.lender || "",
+                      interest_rate: String(l.interest_rate),
+                      notes: l.notes || "",
+                    })
+                  }
+                  onPayOff={(id: number) =>
+                    setPayOffForm({
+                      id,
+                      date: new Date().toISOString().split("T")[0],
+                    })
+                  }
+                  onReopen={reopenMutation.mutate}
+                  onDelete={deleteMutation.mutate}
+                />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-16 text-center">
+            <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
+              <Landmark size={32} />
+            </div>
+            <h2 className="text-xl font-bold mb-2">
+              {t("liabilities.noLiabilities")}
+            </h2>
+          </div>
+        )}
+      </div>
+
+      {/* Paid Off Liabilities */}
+      {paidOffLiabilities.length > 0 && (
+        <div className="pt-8 border-t border-[var(--surface-light)]">
+          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[var(--text-muted)]">
+            {t("liabilities.paidOffLiabilities")}
+            <span className="text-[10px] font-black bg-[var(--surface-light)] px-2 py-0.5 rounded-full">
+              {paidOffLiabilities.length}
+            </span>
           </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-75 grayscale-[0.5]">
+            {paidOffLiabilities.map((l: Liability) => (
+              <LiabilityCard
+                key={l.id}
+                liability={l}
+                onAnalysis={setAnalysisModalId}
+                onEdit={(l: Liability) =>
+                  setEditForm({
+                    id: l.id,
+                    name: l.name,
+                    lender: l.lender || "",
+                    interest_rate: String(l.interest_rate),
+                    notes: l.notes || "",
+                  })
+                }
+                onPayOff={(id: number) =>
+                  setPayOffForm({
+                    id,
+                    date: new Date().toISOString().split("T")[0],
+                  })
+                }
+                onReopen={reopenMutation.mutate}
+                onDelete={deleteMutation.mutate}
+              />
+            ))}
+          </div>
         </div>
       )}
 

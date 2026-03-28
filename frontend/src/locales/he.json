@@ -541,7 +541,11 @@
     "interest": "ריבית",
     "noReceiptWarning": "לא נמצאה תנועת קבלת הלוואה עבור תגית זו. יש להזין את סכום ההלוואה ותאריך ההתחלה ידנית.",
     "receiptDetected": "זוהתה קבלת הלוואה: {{amount}} בתאריך {{date}} עם {{payments}} תשלום(ים).",
-    "generateMissing": "צור תשלומים חסרים"
+    "generateMissing": "צור תשלומים חסרים",
+    "activeLiabilities": "הלוואות פעילות",
+    "paidOffLiabilities": "הלוואות שנפרעו",
+    "debtOverTime": "חוב לאורך זמן",
+    "debtAllocation": "התפלגות חוב"
   },
   "insurance": {
     "title": "ביטוח",
