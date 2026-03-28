@@ -410,6 +410,59 @@ class PendingRefundsService:
         # Note: In full implementation, would filter by source transaction dates
         return pending_df["expected_amount"].sum()
 
+    def unlink_refund(self, link_id: int) -> dict:
+        """
+        Unlink a refund transaction from its pending refund and recalculate status.
+
+        Parameters
+        ----------
+        link_id : int
+            ID of the refund link to remove.
+
+        Returns
+        -------
+        dict
+            Updated pending refund status with recalculated totals.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If link not found.
+        """
+        link = self.repo.get_link_by_id(link_id)
+        if not link:
+            raise EntityNotFoundException(f"Refund link {link_id} not found")
+
+        pending_refund_id = link.pending_refund_id
+        pending = self.repo.get_by_id(pending_refund_id)
+        if not pending:
+            raise EntityNotFoundException(
+                f"Pending refund {pending_refund_id} not found"
+            )
+
+        self.repo.delete_refund_link(link_id)
+
+        links = self.repo.get_links_for_pending(pending_refund_id)
+        total_refunded = links["amount"].sum() if not links.empty else 0
+
+        if total_refunded <= 0:
+            new_status = "pending"
+        elif total_refunded >= pending.expected_amount:
+            new_status = "resolved"
+        else:
+            new_status = "partial"
+
+        self.repo.update_status(pending_refund_id, new_status)
+
+        remaining = max(0, pending.expected_amount - total_refunded)
+        return {
+            "id": pending_refund_id,
+            "status": new_status,
+            "expected_amount": pending.expected_amount,
+            "total_refunded": total_refunded,
+            "remaining": remaining,
+        }
+
     def get_active_pending_identifiers(self) -> dict[str, set]:
         """
         Get sets of identifiers for active pending refunds.

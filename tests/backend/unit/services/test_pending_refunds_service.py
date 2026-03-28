@@ -139,6 +139,40 @@ class TestPendingRefundsService:
         assert len(result["links"]) == 1
 
 
+class TestUnlinkRefund:
+    """Tests for unlink_refund with status recalculation."""
+
+    def test_unlink_refund_reverts_resolved_to_partial(self, db_session):
+        """Unlinking one of multiple links reverts resolved to partial."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 60.0)
+        result = service.link_refund(pending["id"], 100, "banks", 40.0)
+        assert result["status"] == "resolved"
+        details = service.get_pending_by_id(pending["id"])
+        link_id = details["links"][1]["id"]
+        result = service.unlink_refund(link_id)
+        assert result["status"] == "partial"
+        assert result["total_refunded"] == 60.0
+
+    def test_unlink_refund_reverts_partial_to_pending(self, db_session):
+        """Unlinking the only link reverts partial to pending."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 50.0)
+        details = service.get_pending_by_id(pending["id"])
+        link_id = details["links"][0]["id"]
+        result = service.unlink_refund(link_id)
+        assert result["status"] == "pending"
+        assert result["total_refunded"] == 0
+
+    def test_unlink_refund_not_found(self, db_session):
+        """Error when link not found."""
+        service = PendingRefundsService(db_session)
+        with pytest.raises(EntityNotFoundException):
+            service.unlink_refund(9999)
+
+
 class TestGetAllPendingEnrichment:
     """Tests for get_all_pending enrichment with real transaction data."""
 
