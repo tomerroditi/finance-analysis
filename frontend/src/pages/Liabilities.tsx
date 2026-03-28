@@ -38,6 +38,7 @@ interface Liability {
   remaining_balance: number;
   total_paid: number;
   percent_paid: number;
+  payments_made: number;
 }
 
 interface AnalysisData {
@@ -414,7 +415,7 @@ export function Liabilities() {
     : [];
   const canAdd = availableTags.length > 0;
 
-  // Debt over time chart data
+  // Debt over time chart data — only points for actual payments made
   const { series: debtOverTimeData, total: debtTotalLine } = useMemo(() => {
     if (!activeLiabilities.length) return { series: [], total: [] };
     const allSeries = activeLiabilities.map((l: Liability) => {
@@ -427,7 +428,9 @@ export function Liabilities() {
       const points: { date: string; balance: number }[] = [];
       let balance = l.principal_amount;
       const startDate = new Date(l.start_date);
-      for (let i = 0; i <= l.term_months; i++) {
+      // Only plot up to payments_made (not the full projected schedule)
+      const pointCount = l.payments_made + 1; // +1 for the initial balance
+      for (let i = 0; i < pointCount; i++) {
         const d = new Date(startDate);
         d.setMonth(d.getMonth() + i);
         points.push({

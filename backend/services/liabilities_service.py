@@ -508,6 +508,7 @@ class LiabilitiesService:
         record["remaining_balance"] = round(remaining_balance, 2)
         record["total_paid"] = round(total_paid, 2)
         record["percent_paid"] = round(percent_paid, 2)
+        record["payments_made"] = payment_count
 
     def generate_missing_transactions(self, liability_id: int) -> int:
         """Auto-generate missing payment transactions from the amortization schedule.
