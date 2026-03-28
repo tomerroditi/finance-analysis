@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -41,6 +41,26 @@ export function Sidebar() {
   const { t, i18n } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const location = useLocation();
+
+  // Auto-hide mobile top bar on scroll down, show on scroll up
+  const [topBarVisible, setTopBarVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const handleScroll = useCallback(() => {
+    const y = window.scrollY;
+    if (y < 10) {
+      setTopBarVisible(true);
+    } else if (y > lastScrollY.current + 5) {
+      setTopBarVisible(false); // scrolling down
+    } else if (y < lastScrollY.current - 5) {
+      setTopBarVisible(true); // scrolling up
+    }
+    lastScrollY.current = y;
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
 
   const isRtl = i18n.language === "he";
 
@@ -161,17 +181,18 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 inset-inline-start-0 inset-inline-end-0 h-14 bg-[var(--surface)] border-b border-[var(--surface-light)] z-40 flex items-center px-4 gap-3">
+      {/* Mobile top bar — full width, slim, auto-hides on scroll */}
+      <div className={`md:hidden fixed top-0 inset-x-0 h-10 bg-[var(--surface)]/95 backdrop-blur-md border-b border-[var(--surface-light)] z-40 flex items-center justify-between px-3 transition-transform duration-200 ${topBarVisible ? "translate-y-0" : "-translate-y-full"}`}>
         <button
           onClick={() => setMobileSidebarOpen(true)}
-          className="p-2 -ms-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
+          className="p-1.5 -ms-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
         >
-          <Menu size={22} />
+          <Menu size={20} />
         </button>
-        <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+        <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
           {currentPageLabel || t("sidebar.logo")}
         </span>
+        <div className="w-8" />
       </div>
 
       {/* Desktop sidebar */}
@@ -194,8 +215,8 @@ export function Sidebar() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header row */}
-            <div className="h-14 flex items-center justify-between px-4 border-b border-[var(--surface-light)]">
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+            <div className="h-10 flex items-center justify-between px-3 border-b border-[var(--surface-light)]">
+              <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                 {t("sidebar.logo")}
               </span>
               <button

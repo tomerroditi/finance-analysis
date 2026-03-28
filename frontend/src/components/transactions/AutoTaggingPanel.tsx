@@ -241,7 +241,7 @@ export function AutoTaggingPanel() {
             {autoTaggingPanelOpen && (
                 <div className="modal-overlay md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={toggleAutoTaggingPanel}>
                     <div
-                        className="fixed inset-x-0 bottom-0 top-14 bg-[var(--surface)] rounded-t-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
+                        className="fixed inset-x-0 bottom-0 top-10 bg-[var(--surface)] rounded-t-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="p-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/10">
