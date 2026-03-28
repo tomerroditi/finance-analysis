@@ -39,6 +39,10 @@
     "weeksAgo": "w ago",
     "hide": "Hide",
     "show": "Show",
+    "split": "Split",
+    "refund": "Refund",
+    "link": "Link",
+    "pending": "Pending",
     "clearSelection": "Clear selection",
     "remove": "Remove"
   },
