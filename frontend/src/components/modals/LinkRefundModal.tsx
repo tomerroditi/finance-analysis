@@ -55,7 +55,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   // Mode 1: Fetch pending refunds if we're linking FROM a refund transaction
   const { data: pendingRefunds, isLoading: isLoadingPending } = useQuery({
     queryKey: ["pendingRefunds"],
-    queryFn: () => pendingRefundsApi.getAll("pending").then((res) => res.data),
+    queryFn: async () => {
+      const [pending, partial] = await Promise.all([
+        pendingRefundsApi.getAll("pending").then((res) => res.data),
+        pendingRefundsApi.getAll("partial").then((res) => res.data),
+      ]);
+      return [...pending, ...partial];
+    },
     enabled: isOpen && !!refundTransaction,
   });
 
@@ -316,6 +322,11 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         <div className="font-bold text-amber-400">
                           {formatCurrency(pending.expected_amount)}
                         </div>
+                        {pending.status === "partial" && pending.remaining !== undefined && (
+                          <div className="text-xs text-emerald-400">
+                            {t("budget.remaining")}: {formatCurrency(pending.remaining)}
+                          </div>
+                        )}
                       </div>
                     </div>
                     {pending.notes && (
