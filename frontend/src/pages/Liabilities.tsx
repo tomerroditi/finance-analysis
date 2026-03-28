@@ -681,21 +681,8 @@ export function Liabilities() {
                 key={l.id}
                 liability={l}
                 onAnalysis={setAnalysisModalId}
-                onEdit={(l: Liability) =>
-                  setEditForm({
-                    id: l.id,
-                    name: l.name,
-                    lender: l.lender || "",
-                    interest_rate: String(l.interest_rate),
-                    notes: l.notes || "",
-                  })
-                }
-                onPayOff={(id: number) =>
-                  setPayOffForm({
-                    id,
-                    date: new Date().toISOString().split("T")[0],
-                  })
-                }
+                onEdit={handleEdit}
+                onPayOff={handlePayOff}
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
               />

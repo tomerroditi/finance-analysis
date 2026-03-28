@@ -3,6 +3,7 @@ Liabilities repository with SQLAlchemy ORM.
 """
 
 from datetime import datetime
+from typing import Optional
 
 import pandas as pd
 from sqlalchemy import select, update, delete
@@ -35,8 +36,8 @@ class LiabilitiesRepository:
         interest_rate: float,
         term_months: int,
         start_date: str,
-        lender: str = None,
-        notes: str = None,
+        lender: Optional[str] = None,
+        notes: Optional[str] = None,
     ) -> None:
         """Create a new liability record.
 

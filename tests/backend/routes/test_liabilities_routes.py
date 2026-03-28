@@ -1,7 +1,5 @@
 """Tests for the /api/liabilities API endpoints."""
 
-import pytest
-
 
 class TestLiabilitiesRoutes:
     """Tests for liability API endpoints."""
