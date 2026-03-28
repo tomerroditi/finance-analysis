@@ -108,10 +108,10 @@ class LiabilitiesService:
         notes: Optional[str] = None,
     ) -> None:
         """
-        Create a new liability record and auto-create its tag.
+        Create a new liability record.
 
-        Adds the tag to the Liabilities category via ``CategoriesTagsService``
-        (no-op if the tag already exists), then persists the liability record.
+        The tag must already exist in the Liabilities category (selected
+        by the user from existing tags that represent loans).
 
         Parameters
         ----------
@@ -132,15 +132,6 @@ class LiabilitiesService:
         notes : str, optional
             Free-text notes about the liability.
         """
-        from backend.errors import EntityAlreadyExistsException
-        from backend.services.tagging_service import CategoriesTagsService
-
-        cat_service = CategoriesTagsService(self.db)
-        try:
-            cat_service.add_tag(LIABILITIES_CATEGORY, tag)
-        except EntityAlreadyExistsException:
-            pass
-
         self.liabilities_repo.create_liability(
             name=name,
             tag=tag,
