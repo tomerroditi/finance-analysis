@@ -443,16 +443,26 @@ export function Liabilities() {
       return { name: l.name, points };
     });
 
-    // Build total line by summing all balances at each date
-    const balanceByDate = new Map<string, number>();
+    // Build total line: collect all unique dates, then sum each
+    // liability's balance at that date (using last known value)
+    const allDates = new Set<string>();
     for (const s of allSeries) {
-      for (const p of s.points) {
-        balanceByDate.set(p.date, (balanceByDate.get(p.date) || 0) + p.balance);
-      }
+      for (const p of s.points) allDates.add(p.date);
     }
-    const total = [...balanceByDate.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, balance]) => ({ date, balance }));
+    const sortedDates = [...allDates].sort();
+    const total = sortedDates.map((d) => {
+      let sum = 0;
+      for (const s of allSeries) {
+        // Find last point on or before this date
+        let lastBalance = 0;
+        for (const p of s.points) {
+          if (p.date <= d) lastBalance = p.balance;
+          else break;
+        }
+        sum += lastBalance;
+      }
+      return { date: d, balance: sum };
+    });
 
     return { series: allSeries, total };
   }, [activeLiabilities]);
