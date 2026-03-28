@@ -56,7 +56,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
     return (
       <div className="w-full mb-2 py-2 px-3 md:px-4 border border-[var(--surface-light)] rounded-xl bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
         <div
-          className="flex items-center gap-2 md:gap-3 cursor-pointer flex-wrap"
+          className="flex items-center gap-2 md:gap-3 cursor-pointer"
           onClick={onToggleExpand}
         >
           {/* Status dot + label */}
@@ -83,9 +83,9 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
             </span>
           </span>
 
-          {/* Actions - always visible on mobile, hover on desktop */}
+          {/* Actions - inline on desktop only */}
           {actions && (
-            <div className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-1 shrink-0">
               {actions}
             </div>
           )}
@@ -97,6 +97,13 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
             </span>
           )}
         </div>
+
+        {/* Actions row - mobile only */}
+        {actions && (
+          <div className="md:hidden flex items-center gap-1 mt-1.5 ps-5">
+            {actions}
+          </div>
+        )}
 
         {isExpanded && children}
       </div>
@@ -129,8 +136,9 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {/* Actions - inline on desktop only */}
           {actions && (
-            <div className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 md:gap-2">
+            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
               {actions}
             </div>
           )}
@@ -152,6 +160,13 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Actions row - mobile only */}
+      {actions && (
+        <div className="md:hidden flex items-center gap-1 mb-3">
+          {actions}
+        </div>
+      )}
 
       <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
         <div
