@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import { X, Save, Loader2, AlertTriangle } from "lucide-react";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
@@ -26,6 +27,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    useScrollLock(isOpen);
     const { createCategory, createTag } = useCategoryTagCreate();
 
     // Form state
@@ -155,7 +157,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 

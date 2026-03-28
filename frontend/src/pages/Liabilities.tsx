@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import Plot from "react-plotly.js";
 import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import {
@@ -320,6 +321,7 @@ export function Liabilities() {
     interest_rate: string;
     notes: string;
   }>({ id: null, name: "", lender: "", interest_rate: "", notes: "" });
+  useScrollLock(isAddOpen || !!editForm.id || !!analysisModalId || !!payOffForm.id);
 
   // Queries
   const { data: liabilities, isLoading } = useQuery({
@@ -693,7 +695,7 @@ export function Liabilities() {
 
       {/* Create Modal */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.addLiability")}
@@ -882,7 +884,7 @@ export function Liabilities() {
 
       {/* Edit Modal */}
       {editForm.id && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.editLiability")}
@@ -983,7 +985,7 @@ export function Liabilities() {
 
       {/* Pay Off Modal */}
       {payOffForm.id && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("liabilities.payOff")}
@@ -1032,7 +1034,7 @@ export function Liabilities() {
 
       {/* Analysis Modal */}
       {analysisModalId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-4xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold">{t("liabilities.analysis")}</h3>

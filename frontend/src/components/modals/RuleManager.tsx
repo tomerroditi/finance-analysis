@@ -4,6 +4,7 @@ import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { taggingApi, type TaggingRule } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface RuleManagerProps {
   onClose: () => void;
@@ -11,6 +12,7 @@ interface RuleManagerProps {
 
 export function RuleManager({ onClose }: RuleManagerProps) {
   const { t } = useTranslation();
+  useScrollLock(true);
   const queryClient = useQueryClient();
   const [isCreating, setIsCreating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -105,7 +107,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     newRule.category && categories ? categories[newRule.category] || [] : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
           <div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import {
   Plus,
   Trash2,
@@ -350,6 +351,8 @@ export function Investments() {
     mode: "close" | "edit";
   }>({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
 
+  useScrollLock(isAddOpen || !!selectedAnalysisId || !!editForm.investmentId || !!balanceForm.investmentId || !!closeForm.investmentId);
+
   // Queries
   const {
     data: investments,
@@ -647,7 +650,7 @@ export function Investments() {
 
       {/* Update Balance Modal */}
       {balanceForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.updateBalance")}</h3>
             <div className="space-y-4">
@@ -713,7 +716,7 @@ export function Investments() {
 
       {/* Close / Edit Close Date Modal */}
       {closeForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {closeForm.mode === "close" ? t("investments.closeInvestment") : t("investments.editCloseDate")}
@@ -764,7 +767,7 @@ export function Investments() {
 
       {/* Edit Investment Modal */}
       {editForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.editInvestment")}</h3>
             <div className="space-y-4">
@@ -851,7 +854,7 @@ export function Investments() {
 
       {/* Add Modal (Existing) */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
             {/* ... Existing Add Modal Code ... */}
             <div className="flex items-center gap-3 mb-4 md:mb-6">

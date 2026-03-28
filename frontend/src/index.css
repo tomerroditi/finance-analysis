@@ -18,7 +18,7 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--background);
   color: var(--text);
   font-family:
@@ -80,6 +80,39 @@ select option {
 }
 .scrollbar-auto-hide:hover::-webkit-scrollbar-thumb {
   background: var(--surface-light);
+}
+
+/* Safe area support for notched devices (iPhone X+, Dynamic Island) */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Prevent iOS Safari auto-zoom on input focus (triggers when font-size < 16px) */
+@media screen and (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Modal scroll lock: applied to body via JS when a modal is open */
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  /* preserve scroll position via inline --scroll-y set by useScrollLock */
+  top: var(--scroll-y, 0);
+  width: 100%;
+}
+
+/* Prevent overscroll bounce on modal overlays */
+.modal-overlay {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 @keyframes shake {

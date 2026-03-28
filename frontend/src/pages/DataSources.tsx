@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import {
   Plus,
   Trash2,
@@ -85,6 +86,7 @@ export function DataSources() {
   );
   const [editingAccount, setEditingAccount] = useState<CredentialAccount | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
+  useScrollLock(isAddOpen || !!editingAccount);
 
   const {
     startScraper, scrapeAll, submitTfa, resendTfa, abortScraper,
@@ -688,7 +690,7 @@ export function DataSources() {
 
       {/* Connection Modal */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-4 md:p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
             <button
               onClick={resetForm}

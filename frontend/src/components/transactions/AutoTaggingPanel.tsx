@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import {
     Plus,
     Play,
@@ -28,6 +29,7 @@ export function AutoTaggingPanel() {
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<TaggingRule | null>(null);
+    useScrollLock(autoTaggingPanelOpen);
 
     const { data: rules, isLoading: rulesLoading } = useQuery({
         queryKey: ["tagging-rules"],
@@ -237,7 +239,7 @@ export function AutoTaggingPanel() {
                 </button>
             )}
             {autoTaggingPanelOpen && (
-                <div className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={toggleAutoTaggingPanel}>
+                <div className="modal-overlay md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={toggleAutoTaggingPanel}>
                     <div
                         className="fixed inset-x-0 bottom-0 top-14 bg-[var(--surface)] rounded-t-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
                         onClick={(e) => e.stopPropagation()}

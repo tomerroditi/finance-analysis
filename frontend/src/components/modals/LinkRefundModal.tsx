@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface LinkRefundModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   refundTransaction,
 }) => {
   const { t } = useTranslation();
+  useScrollLock(isOpen);
   const queryClient = useQueryClient();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
     null,
@@ -79,7 +81,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"

@@ -19,7 +19,7 @@ export function Layout() {
   }, [setSearchOpen]);
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-dvh bg-[var(--background)]">
       <Sidebar />
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
       <main

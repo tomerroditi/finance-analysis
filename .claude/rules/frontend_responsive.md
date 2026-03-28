@@ -114,6 +114,34 @@ Desktop sticky panels don't work on mobile. Pattern:
 - Desktop: `hidden md:flex` sticky side panel
 - Mobile: Floating action button (FAB) + full-screen bottom sheet overlay
 
+## Mobile Infrastructure
+
+### Viewport & Meta Tags (`index.html`)
+- `viewport-fit=cover` enables safe area support for notched devices
+- `theme-color` matches `--background` for native-like status bar
+- `apple-mobile-web-app-capable` + `black-translucent` status bar style
+
+### iOS Input Zoom Prevention (`index.css`)
+iOS Safari auto-zooms when focusing inputs with `font-size < 16px`. Global CSS rule forces `font-size: 16px` on all inputs/selects/textareas below `md:` breakpoint.
+
+### Safe Areas (`index.css`)
+Body has `env(safe-area-inset-*)` padding for notched devices (iPhone X+, Dynamic Island). Requires `viewport-fit=cover` in the viewport meta tag.
+
+### Dynamic Viewport Height
+Use `h-dvh` instead of `h-screen` for full-height elements on mobile. `100dvh` accounts for the mobile browser address bar, `100vh` does not.
+- Body: `min-height: 100dvh`
+- Layout wrapper: `min-h-dvh`
+- Mobile sidebar drawer: `h-dvh`
+
+### Modal Scroll Lock
+All modals/overlays MUST use the `useScrollLock(isOpen)` hook to prevent background scrolling on mobile:
+```tsx
+import { useScrollLock } from "../../hooks/useScrollLock";
+// Inside component:
+useScrollLock(isOpen);
+```
+Also add `modal-overlay` CSS class to the outermost `fixed inset-0` div for `overscroll-behavior: contain`.
+
 ## Anti-Patterns (Do NOT)
 
 - `flex-1` on tab buttons without `sm:` prefix — causes squishing instead of scrolling
@@ -122,3 +150,5 @@ Desktop sticky panels don't work on mobile. Pattern:
 - `opacity-0 group-hover:opacity-100` without mobile fallback — buttons invisible on touch
 - Physical `left`/`right` properties — use logical `start`/`end` (RTL compatibility)
 - Large fixed margins (`margin: { l: 100, r: 200 }`) on charts — clips on narrow screens
+- `h-screen` / `100vh` on mobile-visible elements — use `h-dvh` / `100dvh` instead
+- Inputs with `text-xs` / `text-sm` without the global iOS zoom fix — will cause unwanted zoom

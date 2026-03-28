@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, AlertTriangle } from "lucide-react";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface ConfirmationModalProps {
     isOpen: boolean;
@@ -27,8 +28,9 @@ export function ConfirmationModal({
     const resolvedConfirmLabel = confirmLabel ?? t("common.confirm");
     const resolvedCancelLabel = cancelLabel ?? t("common.cancel");
     const [isVisible, setIsVisible] = useState(false);
+    useScrollLock(isOpen);
 
-     
+
     useEffect(() => {
         if (isOpen) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -43,7 +45,7 @@ export function ConfirmationModal({
 
     return (
         <div
-            className={`fixed inset-0 z-[60] flex items-center justify-center p-4 transition-all duration-200 ${isOpen ? "bg-black/60 backdrop-blur-sm opacity-100" : "bg-black/0 opacity-0"
+            className={`modal-overlay fixed inset-0 z-[60] flex items-center justify-center p-4 transition-all duration-200 ${isOpen ? "bg-black/60 backdrop-blur-sm opacity-100" : "bg-black/0 opacity-0"
                 }`}
         >
             <div

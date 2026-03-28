@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -36,6 +37,7 @@ const navItems = [
 
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore();
+  useScrollLock(mobileSidebarOpen);
   const { t, i18n } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const location = useLocation();
@@ -188,11 +190,11 @@ export function Sidebar() {
       {/* Mobile sidebar overlay */}
       {mobileSidebarOpen && (
         <div
-          className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 modal-overlay"
           onClick={() => setMobileSidebarOpen(false)}
         >
           <aside
-            className="fixed inset-inline-start-0 top-0 h-screen w-64 bg-[var(--surface)] border-e border-[var(--surface-light)] animate-in slide-in-from-left duration-200 z-50"
+            className="fixed inset-inline-start-0 top-0 h-dvh w-full max-w-64 bg-[var(--surface)] border-e border-[var(--surface-light)] animate-in slide-in-from-left duration-200 z-50"
             onClick={(e) => e.stopPropagation()}
           >
             {sidebarContent}

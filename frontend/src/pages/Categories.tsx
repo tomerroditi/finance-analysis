@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
@@ -605,6 +606,8 @@ export function Categories() {
   const [editingTag, setEditingTag] = useState<{ category: string; tag: string } | null>(null);
   const [editName, setEditName] = useState("");
 
+  useScrollLock(isAddCategoryOpen || !!isAddTagOpen || !!isRelocateOpen || !!editingIcon);
+
   const { data: categories, isLoading } = useQuery({
     queryKey: ["categories"],
     queryFn: () => taggingApi.getCategories().then((res) => res.data),
@@ -873,7 +876,7 @@ export function Categories() {
 
       {/* Modals */}
       {isAddCategoryOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("categories.createNewCategory")}</h3>
             <input
@@ -914,7 +917,7 @@ export function Categories() {
       )}
 
       {isAddTagOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("categories.addTagTo")}{" "}
@@ -965,7 +968,7 @@ export function Categories() {
       )}
 
       {isRelocateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-2">{t("categories.relocateTag")}</h3>
             <p className="text-sm text-[var(--text-muted)] mb-6">
@@ -1010,7 +1013,7 @@ export function Categories() {
       )}
 
       {editingIcon && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-sm md:max-w-md animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {t("categories.changeIconFor")}{" "}
