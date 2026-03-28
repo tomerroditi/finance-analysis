@@ -39,7 +39,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
-import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, isTouchDevice } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -895,16 +895,16 @@ function RecentTransactionsFeed({
                         )}
                       </div>
                       {/* Action buttons — hidden on small mobile, visible on sm+ */}
-                      <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[75px]">
+                      <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[96px]">
                         <button
-                          className={`w-[25px] h-[25px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          className={`w-[32px] h-[32px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
                           title={t("tooltips.editCategoryTag")}
                           onClick={() => setEditingTxKey(isEditing ? null : txKey)}
                         >
                           <Tag size={13} />
                         </button>
                         <button
-                          className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                          className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
                           title={t("tooltips.splitTransaction")}
                           onClick={() => setSplittingTransaction(tx)}
                         >
@@ -912,12 +912,12 @@ function RecentTransactionsFeed({
                         </button>
                         {tx.amount < 0 ? (
                           tx.pending_refund_id ? (
-                            <span className="w-[25px] h-[25px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
+                            <span className="w-[32px] h-[32px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
                               <RefreshCw size={13} className="animate-pulse" />
                             </span>
                           ) : (
                             <button
-                              className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                              className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
                               title={t("tooltips.markPendingRefund")}
                               onClick={() => markPendingMutation.mutate(tx)}
                               disabled={markPendingMutation.isPending}
@@ -927,7 +927,7 @@ function RecentTransactionsFeed({
                           )
                         ) : (
                           <button
-                            className="w-[25px] h-[25px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                             title={t("tooltips.linkAsRefund")}
                             onClick={() => setLinkingTransaction(tx)}
                           >
@@ -1681,7 +1681,7 @@ export function Dashboard() {
                           barmode: "stack",
                           autosize: true,
                           height: Math.max(400, incomeBySourceData.length * 25),
-                          hovermode: "y unified",
+                          hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: {
                             range: [0, maxStack * 1.05],
                             fixedrange: true,
@@ -1689,10 +1689,10 @@ export function Dashboard() {
                           },
                           yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
-                            orientation: "v",
-                            y: 1,
-                            x: 1.02,
-                            xanchor: "left",
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
                           },
                           margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}
@@ -1740,14 +1740,14 @@ export function Dashboard() {
                           barmode: "stack",
                           autosize: true,
                           height: Math.max(400, expensesByCategoryOverTime.length * 25),
-                          hovermode: "y unified",
+                          hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
                           yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
-                            orientation: "v",
-                            y: 1,
-                            x: 1.02,
-                            xanchor: "left",
+                            orientation: "h",
+                            y: -0.15,
+                            x: 0.5,
+                            xanchor: "center",
                           },
                           margin: { ...chartTheme.margin, l: 80, r: 20 },
                         }}

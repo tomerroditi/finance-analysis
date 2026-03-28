@@ -118,7 +118,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
           >
             <X size={20} />
           </button>

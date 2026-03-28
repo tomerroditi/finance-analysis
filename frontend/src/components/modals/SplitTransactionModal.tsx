@@ -105,7 +105,7 @@ export function SplitTransactionModal({
           <button
             onClick={onClose}
             aria-label={t("common.close")}
-            className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
           >
             <X size={20} />
           </button>

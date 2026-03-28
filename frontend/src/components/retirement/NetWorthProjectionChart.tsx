@@ -1,6 +1,6 @@
 import Plot from "react-plotly.js";
 import { useTranslation } from "react-i18next";
-import { plotlyConfig, chartTheme } from "../../utils/plotlyLocale";
+import { plotlyConfig, chartTheme, isTouchDevice } from "../../utils/plotlyLocale";
 
 interface DataPoint {
   age: number;
@@ -153,7 +153,7 @@ export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) 
         },
         shapes,
         annotations,
-        hovermode: "x unified" as const,
+        hovermode: isTouchDevice ? "closest" : ("x unified" as const),
       }}
       config={plotlyConfig()}
       useResizeHandler

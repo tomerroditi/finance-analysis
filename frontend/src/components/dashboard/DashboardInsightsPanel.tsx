@@ -4,7 +4,7 @@ import Plot from "react-plotly.js";
 import { TrendingDown, Calculator, Tag } from "lucide-react";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, isTouchDevice } from "../../utils/plotlyLocale";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 type InsightTab = "income_expenses" | "net_worth" | "cash_flow" | "category";
@@ -599,7 +599,7 @@ export function DashboardInsightsPanel({
                         barmode: "stack",
                         autosize: true,
                         height: Math.max(400, incomeBySourceData.length * 25),
-                        hovermode: "y unified",
+                        hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                         xaxis: {
                           range: [0, maxStack * 1.05],
@@ -659,7 +659,7 @@ export function DashboardInsightsPanel({
                         barmode: "stack",
                         autosize: true,
                         height: Math.max(400, expensesByCategoryOverTime.length * 25),
-                        hovermode: "y unified",
+                        hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                         xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
                         yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },

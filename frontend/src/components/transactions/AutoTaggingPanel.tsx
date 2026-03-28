@@ -175,24 +175,24 @@ export function AutoTaggingPanel() {
                                                 <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={() => applySingleMutation.mutate({ id: rule.id, overwrite: false })}
-                                                        className="p-1 hover:bg-emerald-500/10 text-emerald-400 rounded"
+                                                        className="p-2 hover:bg-emerald-500/10 text-emerald-400 rounded"
                                                         title="Apply Rule"
                                                     >
-                                                        <Play size={14} />
+                                                        <Play size={16} />
                                                     </button>
                                                     <button
                                                         onClick={() => openEdit(rule)}
-                                                        className="p-1 hover:bg-blue-500/10 text-blue-400 rounded"
+                                                        className="p-2 hover:bg-blue-500/10 text-blue-400 rounded"
                                                     >
-                                                        <Edit2 size={14} />
+                                                        <Edit2 size={16} />
                                                     </button>
                                                     <button
                                                         onClick={() => {
                                                             if (confirm("Delete rule?")) deleteMutation.mutate(rule.id);
                                                         }}
-                                                        className="p-1 hover:bg-red-500/10 text-red-400 rounded"
+                                                        className="p-2 hover:bg-red-500/10 text-red-400 rounded"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <Trash2 size={16} />
                                                     </button>
                                                 </div>
                                             </div>

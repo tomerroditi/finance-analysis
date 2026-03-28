@@ -59,7 +59,7 @@ export function ConfirmationModal({
                     </h2>
                     <button
                         onClick={onClose}
-                        className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors text-[var(--text-muted)] hover:text-white"
+                        className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors text-[var(--text-muted)] hover:text-white"
                     >
                         <X size={20} />
                     </button>
