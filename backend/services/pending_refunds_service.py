@@ -129,12 +129,47 @@ class PendingRefundsService:
                 f"Pending refund {pending_refund_id} not found"
             )
 
+        # Calculate current remaining
+        existing_links = self.repo.get_links_for_pending(pending_refund_id)
+        already_refunded = existing_links["amount"].sum() if not existing_links.empty else 0
+        remaining = max(0, pending.expected_amount - already_refunded)
+
+        # Auto-split if refund amount exceeds remaining
+        actual_link_amount = amount
+        if amount > remaining and remaining > 0:
+            actual_link_amount = remaining
+            excess = amount - remaining
+
+            from backend.repositories.transactions_repository import TransactionsRepository
+
+            trans_repo = TransactionsRepository(self.db)
+            repo = trans_repo.repo_map.get(refund_source)
+            if repo:
+                from sqlalchemy import select as sa_select
+
+                model = repo.model
+                txn = self.db.execute(
+                    sa_select(model).where(model.unique_id == refund_transaction_id)
+                ).scalar_one_or_none()
+
+                if txn:
+                    category = txn.category or ""
+                    tag = txn.tag or ""
+                    trans_repo.split_transaction(
+                        unique_id=refund_transaction_id,
+                        source=refund_source,
+                        splits=[
+                            {"amount": actual_link_amount, "category": category, "tag": tag},
+                            {"amount": excess, "category": category, "tag": tag},
+                        ],
+                    )
+
         # Add the link
         self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
             refund_source=refund_source,
-            amount=amount,
+            amount=actual_link_amount,
         )
 
         # Calculate total refunded

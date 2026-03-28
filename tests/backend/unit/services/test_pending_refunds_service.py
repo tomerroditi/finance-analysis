@@ -345,3 +345,71 @@ class TestGetBudgetAdjustment:
 
         result = service.get_budget_adjustment(2024, 1)
         assert result == 50.0
+
+
+class TestLinkRefundAutoSplit:
+    """Tests for auto-split when refund amount exceeds pending remaining."""
+
+    def test_auto_split_when_amount_exceeds_remaining(self, db_session, seed_base_transactions):
+        """Auto-split refund transaction when amount > remaining."""
+        from backend.models.transaction import BankTransaction, SplitTransaction
+
+        expense_txn = db_session.query(BankTransaction).filter(
+            BankTransaction.amount < 0
+        ).first()
+        assert expense_txn is not None
+
+        refund_txn = BankTransaction(
+            id="test-refund-oversized",
+            date="2024-01-15",
+            provider="hapoalim",
+            account_name="Main Account",
+            description="Large refund",
+            amount=150.0,
+            category="Shopping",
+            tag="Online",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(refund_txn)
+        db_session.flush()
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", expense_txn.unique_id, "banks", 100.0,
+        )
+
+        result = service.link_refund(
+            pending["id"], refund_txn.unique_id, "bank_transactions", 150.0,
+        )
+
+        assert result["status"] == "resolved"
+        assert result["total_refunded"] == 100.0
+
+        db_session.refresh(refund_txn)
+        assert refund_txn.type == "split_parent"
+
+        splits = db_session.query(SplitTransaction).filter(
+            SplitTransaction.transaction_id == refund_txn.unique_id,
+        ).all()
+        assert len(splits) == 2
+        amounts = sorted([s.amount for s in splits])
+        assert amounts[0] == 50.0
+        assert amounts[1] == 100.0
+
+    def test_no_split_when_amount_equals_remaining(self, db_session):
+        """No split when refund amount exactly matches remaining."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        result = service.link_refund(pending["id"], 99, "banks", 100.0)
+        assert result["status"] == "resolved"
+        assert result["total_refunded"] == 100.0
+
+    def test_no_split_when_amount_less_than_remaining(self, db_session):
+        """No split when refund amount is less than remaining."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        result = service.link_refund(pending["id"], 99, "banks", 50.0)
+        assert result["status"] == "partial"
+        assert result["total_refunded"] == 50.0
