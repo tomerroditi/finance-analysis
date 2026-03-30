@@ -63,7 +63,18 @@
     "language": "Language",
     "english": "English",
     "hebrew": "עברית",
-    "demoMode": "Demo Mode"
+    "demoMode": "Demo Mode",
+    "backup": "Database Backup",
+    "createBackup": "Create Backup",
+    "restoreBackup": "Restore",
+    "creatingBackup": "Creating...",
+    "restoring": "Restoring...",
+    "noBackups": "No backups yet",
+    "restoreConfirm": "Restore this backup? A safety backup of the current database will be created first.",
+    "backupCreated": "Backup created successfully",
+    "backupRestored": "Backup restored successfully. Refreshing...",
+    "backupFailed": "Backup failed",
+    "restoreFailed": "Restore failed"
   },
   "globalSearch": {
     "placeholder": "Search transactions, categories, or tags...",

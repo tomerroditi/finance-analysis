@@ -523,6 +523,21 @@ export const retirementApi = {
     ),
 };
 
+export const backupApi = {
+  list: () =>
+    api.get<
+      { filename: string; created_at: string; size_bytes: number }[]
+    >("/backups/"),
+  create: () =>
+    api.post<{ filename: string; created_at: string; size_bytes: number }>(
+      "/backups/",
+    ),
+  restore: (filename: string) =>
+    api.post<{ status: string; filename: string }>("/backups/restore", {
+      filename,
+    }),
+};
+
 export const testingApi = {
   toggleDemoMode: (enabled: boolean) =>
     api.post<{ status: string; demo_mode: boolean }>(

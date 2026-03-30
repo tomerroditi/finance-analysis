@@ -63,7 +63,18 @@
     "language": "שפה",
     "english": "English",
     "hebrew": "עברית",
-    "demoMode": "מצב הדגמה"
+    "demoMode": "מצב הדגמה",
+    "backup": "גיבוי מסד נתונים",
+    "createBackup": "צור גיבוי",
+    "restoreBackup": "שחזר",
+    "creatingBackup": "יוצר...",
+    "restoring": "משחזר...",
+    "noBackups": "אין גיבויים עדיין",
+    "restoreConfirm": "לשחזר גיבוי זה? גיבוי בטיחות של מסד הנתונים הנוכחי ייווצר תחילה.",
+    "backupCreated": "גיבוי נוצר בהצלחה",
+    "backupRestored": "גיבוי שוחזר בהצלחה. מרענן...",
+    "backupFailed": "הגיבוי נכשל",
+    "restoreFailed": "השחזור נכשל"
   },
   "globalSearch": {
     "placeholder": "חיפוש תנועות, קטגוריות או תגיות...",

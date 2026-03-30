@@ -1,10 +1,23 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { backupApi } from "../../services/api";
 
 interface SettingsPopupProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+interface BackupEntry {
+  filename: string;
+  created_at: string;
+  size_bytes: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function SettingsPopup({
@@ -14,6 +27,9 @@ export function SettingsPopup({
   const { t, i18n } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const { isDemoMode, toggleDemoMode } = useDemoMode();
+  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -26,10 +42,42 @@ export function SettingsPopup({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (isOpen) {
+      backupApi.list().then((res) => setBackups(res.data));
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
+  };
+
+  const handleCreateBackup = async () => {
+    setCreating(true);
+    try {
+      await backupApi.create();
+      const res = await backupApi.list();
+      setBackups(res.data);
+    } catch {
+      alert(t("settings.backupFailed"));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRestore = async (filename: string) => {
+    if (!confirm(t("settings.restoreConfirm"))) return;
+    setRestoringFile(filename);
+    try {
+      await backupApi.restore(filename);
+      alert(t("settings.backupRestored"));
+      window.location.reload();
+    } catch {
+      alert(t("settings.restoreFailed"));
+      setRestoringFile(null);
+    }
   };
 
   return (
@@ -41,7 +89,7 @@ export function SettingsPopup({
     >
       <div
         ref={popupRef}
-        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-80 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 space-y-5 animate-in zoom-in-95 duration-200"
+        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
       >
         {/* Language Toggle */}
         <div>
@@ -98,6 +146,63 @@ export function SettingsPopup({
               />
             </div>
           </div>
+        </div>
+
+        {/* Database Backup */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              {t("settings.backup")}
+            </label>
+            <button
+              onClick={handleCreateBackup}
+              disabled={creating}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {creating ? t("settings.creatingBackup") : t("settings.createBackup")}
+            </button>
+          </div>
+
+          {backups.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)] text-center py-3">
+              {t("settings.noBackups")}
+            </p>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {backups.map((b) => (
+                <div
+                  key={b.filename}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[var(--surface-light)]/50 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[var(--text)] truncate" dir="ltr">
+                      {new Date(b.created_at).toLocaleString(
+                        i18n.language === "he" ? "he-IL" : "en-US",
+                        {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        },
+                      )}
+                    </div>
+                    <div className="text-[var(--text-muted)]" dir="ltr">
+                      {formatBytes(b.size_bytes)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(b.filename)}
+                    disabled={restoringFile !== null}
+                    className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-md bg-[var(--surface-light)] text-[var(--text)] hover:bg-[var(--surface-light)]/80 transition-colors disabled:opacity-50"
+                  >
+                    {restoringFile === b.filename
+                      ? t("settings.restoring")
+                      : t("settings.restoreBackup")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
