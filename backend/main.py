@@ -24,6 +24,7 @@ from backend.errors import (
 from backend.models import Base
 from backend.routes import (
     analytics,
+    backup,
     bank_balances,
     budget,
     cash_balances,
@@ -176,6 +177,7 @@ app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(liabilities.router, prefix="/api/liabilities", tags=["Liabilities"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(backup.router, prefix="/api/backups", tags=["Backups"])
 app.include_router(
     pending_refunds.router, prefix="/api/pending-refunds", tags=["Pending Refunds"]
 )
