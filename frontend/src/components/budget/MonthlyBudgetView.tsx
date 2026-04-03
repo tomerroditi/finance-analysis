@@ -141,6 +141,8 @@ export const MonthlyBudgetView: React.FC = () => {
 
   const copyMutation = useMutation({
     mutationFn: () => budgetApi.copyRules(year, month),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
   });
 
   const handlePreviousMonth = () => {
