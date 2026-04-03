@@ -6,6 +6,7 @@ import { pendingRefundsApi, transactionsApi, type PendingRefund } from "../../se
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
+import type { Transaction } from "../../types/transaction";
 
 interface RefundTransactionInfo {
   id: string | number;
@@ -21,18 +22,6 @@ interface LinkRefundModalProps {
   refundTransaction?: RefundTransactionInfo;
   // Mode 2: Linking a pending refund TO a refund transaction (from Budget page)
   pendingRefund?: PendingRefund;
-}
-
-interface Transaction {
-  unique_id?: string;
-  id?: number;
-  source?: string;
-  amount: number;
-  description?: string;
-  desc?: string;
-  date?: string;
-  account_name?: string;
-  provider?: string;
 }
 
 export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({

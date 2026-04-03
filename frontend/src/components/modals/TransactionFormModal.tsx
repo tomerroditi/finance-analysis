@@ -6,20 +6,9 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
+import type { Transaction } from "../../types/transaction";
 
-export interface Transaction {
-    id?: number;
-    unique_id?: string;
-    source?: string;
-    desc?: string;
-    description?: string;
-    amount: number;
-    date: string;
-    category?: string;
-    tag?: string;
-    provider?: string;
-    account_name?: string;
-}
+export type { Transaction };
 
 interface TransactionFormModalProps {
     isOpen: boolean;
