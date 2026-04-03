@@ -15,7 +15,7 @@ import { Skeleton } from "../common/Skeleton";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
-import type { Transaction } from "../TransactionsTable";
+import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useMemo } from "react";

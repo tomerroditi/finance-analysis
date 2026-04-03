@@ -1,5 +1,6 @@
 import React from "react";
-import { TransactionsTable, type Transaction } from "../TransactionsTable";
+import { TransactionsTable } from "../TransactionsTable";
+import type { Transaction } from "../../types/transaction";
 import { type PendingRefund } from "../../services/api";
 
 interface TransactionCollapsibleListProps {
