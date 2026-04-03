@@ -265,6 +265,7 @@
       "confirmCancel": "לבטל את בקשת ההחזר? כל ההחזרים המקושרים ינותקו.",
       "refundedOf": "{{refunded}} מתוך {{expected}} הוחזרו",
       "partiallyRefunded": "הוחזר חלקית",
+      "clickToCancel": "לחץ לביטול",
       "noExpectations": "לא נמצאו ציפיות להחזרים.",
       "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן."
     }

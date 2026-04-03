@@ -265,6 +265,7 @@
       "confirmCancel": "Cancel this refund expectation? All linked refunds will be unlinked.",
       "refundedOf": "{{refunded}} of {{expected}} refunded",
       "partiallyRefunded": "Partially Refunded",
+      "clickToCancel": "Click to Cancel",
       "noExpectations": "No refund expectations found.",
       "markExpenses": "Mark expenses as \"Pending Refund\" in your transactions list to track them here."
     }

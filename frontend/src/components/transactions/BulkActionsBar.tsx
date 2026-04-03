@@ -28,7 +28,6 @@ interface BulkActionsBarProps {
   onCreateTag: (category: string, name: string) => Promise<string>;
   isApplying: boolean;
   showDelete: boolean;
-  compact?: boolean;
 }
 
 export function BulkActionsBar({

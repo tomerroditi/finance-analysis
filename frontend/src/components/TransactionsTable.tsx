@@ -35,9 +35,9 @@ import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useCategories } from "../hooks/useCategories";
 import { useCashBalances } from "../hooks/useCashBalances";
 import { useTranslation } from "react-i18next";
+import { formatCurrency } from "../utils/numberFormatting";
 import type { Transaction } from "../types/transaction";
 
-export type { Transaction };
 
 export interface TransactionsTableProps {
   transactions: Transaction[];
@@ -850,7 +850,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
-                                    title={`Partially Refunded (${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.total_refunded || 0)} / ${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.expected_amount)}) - Click to Cancel`}
+                                    title={`${t("tooltips.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("tooltips.clickToCancel")}`}
                                     onClick={() => {
                                       if (
                                         window.confirm(
@@ -1011,7 +1011,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           onCreateTag={createTag}
           isApplying={bulkTagMutation.isPending}
           showDelete={showDelete}
-          compact={compact}
         />
       )}
 

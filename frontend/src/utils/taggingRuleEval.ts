@@ -14,7 +14,7 @@ export function evalCondition(node: ConditionNode, tx: Transaction): boolean {
   }
 
   const fieldMap: Record<string, string | number> = {
-    description: tx.description ?? "",
+    description: tx.description ?? tx.desc ?? "",
     amount: tx.amount,
     provider: tx.provider ?? "",
     account_name: tx.account_name ?? "",
