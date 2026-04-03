@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import {
     Plus,
@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "./RuleEditorModal";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useAppStore } from "../../stores/appStore";
 
 export function AutoTaggingPanel() {
@@ -31,10 +32,7 @@ export function AutoTaggingPanel() {
     const [editingRule, setEditingRule] = useState<TaggingRule | null>(null);
     useScrollLock(autoTaggingPanelOpen);
 
-    const { data: rules, isLoading: rulesLoading } = useQuery({
-        queryKey: ["tagging-rules"],
-        queryFn: () => taggingApi.getRules().then(res => res.data)
-    });
+    const { data: rules, isLoading: rulesLoading } = useTaggingRules();
 
     const deleteMutation = useMutation({
         mutationFn: (id: number) => taggingApi.deleteRule(id),

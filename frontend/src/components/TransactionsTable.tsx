@@ -27,7 +27,6 @@ import {
   transactionsApi,
   taggingApi,
   pendingRefundsApi,
-  cashBalancesApi,
   type PendingRefund,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
@@ -36,6 +35,8 @@ import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { SelectDropdown } from "./common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
+import { useCategories } from "../hooks/useCategories";
+import { useCashBalances } from "../hooks/useCashBalances";
 import { useTranslation } from "react-i18next";
 
 export interface Transaction {
@@ -203,19 +204,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
   const [amountType, setAmountType] = useState<"expense" | "income">("expense");
 
-  // Fetch categories for bulk tagging
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-    enabled: showBulkActions,
-  });
-
-  // Fetch cash balances for bulk account dropdown
-  const { data: cashBalances = [] } = useQuery({
-    queryKey: ["cash-balances"],
-    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-    enabled: showBulkActions,
-  });
+  const { data: categories } = useCategories({ enabled: showBulkActions });
+  const { data: cashBalances = [] } = useCashBalances({ enabled: showBulkActions });
 
   const invalidateAnalytics = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["income-outcome"] });

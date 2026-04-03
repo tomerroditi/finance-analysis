@@ -5,6 +5,7 @@ import { useScrollLock } from "../hooks/useScrollLock";
 import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
+import { useCategories } from "../hooks/useCategories";
 
 // [emoji, searchKeywords] — keywords are space-separated for fast substring matching
 const EMOJI_DATA: [string, string][] = [
@@ -608,10 +609,7 @@ export function Categories() {
 
   useScrollLock(isAddCategoryOpen || !!isAddTagOpen || !!isRelocateOpen || !!editingIcon);
 
-  const { data: categories, isLoading } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories, isLoading } = useCategories();
 
   const { data: icons } = useQuery({
     queryKey: ["category-icons"],

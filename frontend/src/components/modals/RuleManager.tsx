@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { taggingApi, type TaggingRule } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useScrollLock } from "../../hooks/useScrollLock";
+import { useCategories } from "../../hooks/useCategories";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 
 interface RuleManagerProps {
   onClose: () => void;
@@ -24,15 +26,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     tag: "",
   });
 
-  const { data: rules, isLoading } = useQuery({
-    queryKey: ["tagging-rules"],
-    queryFn: () => taggingApi.getRules().then((res) => res.data),
-  });
-
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: rules, isLoading } = useTaggingRules();
+  const { data: categories } = useCategories();
 
   const createMutation = useMutation({
     mutationFn: (rule: { name?: string; description_contains: string; category: string; tag: string }) => {

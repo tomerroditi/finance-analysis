@@ -13,6 +13,7 @@ import {
 import Plot from "react-plotly.js";
 import { investmentsApi } from "../../services/api";
 import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface Investment {
   id: number;
@@ -58,12 +59,6 @@ function StatCard({
     </div>
   );
 }
-
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-  }).format(val);
 
 const formatPercent = (val: number) =>
   `${val > 0 ? "+" : ""}${val.toFixed(2)}%`;

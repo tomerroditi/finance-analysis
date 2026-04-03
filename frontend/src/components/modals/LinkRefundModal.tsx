@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import { pendingRefundsApi, transactionsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface RefundTransactionInfo {
@@ -95,11 +96,6 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   if (!isOpen) return null;
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(amount);
 
   const filteredPending =
     pendingRefunds?.filter((p: PendingRefund) => {

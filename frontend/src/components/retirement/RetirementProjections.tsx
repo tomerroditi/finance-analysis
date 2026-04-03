@@ -18,6 +18,7 @@ import type {
 } from "../../services/api";
 import { NetWorthProjectionChart } from "./NetWorthProjectionChart";
 import { RetirementIncomeChart } from "./RetirementIncomeChart";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 type SuggestionField = keyof RetirementSuggestions;
 
@@ -26,13 +27,6 @@ interface Props {
   suggestions?: RetirementSuggestions | null;
   onAdjust?: (field: SuggestionField, value: number) => void;
 }
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
 
 const readinessConfig = {
   on_track: {

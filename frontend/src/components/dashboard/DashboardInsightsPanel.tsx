@@ -5,6 +5,7 @@ import { TrendingDown, Calculator, Tag } from "lucide-react";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
 import { chartTheme, plotlyConfig, isTouchDevice } from "../../utils/plotlyLocale";
+import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 type InsightTab = "income_expenses" | "net_worth" | "cash_flow" | "category";
@@ -67,20 +68,6 @@ interface SankeyData {
   }[];
 }
 
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(val || 0);
-
-const formatCompactCurrency = (val: number) => {
-  const abs = Math.abs(val || 0);
-  if (abs >= 1_000_000) return `₪${(val / 1_000_000).toFixed(1)}M`;
-  if (abs >= 10_000) return `₪${(val / 1_000).toFixed(0)}K`;
-  if (abs >= 1_000) return `₪${(val / 1_000).toFixed(1)}K`;
-  return formatCurrency(val);
-};
 
 
 interface DashboardInsightsPanelProps {

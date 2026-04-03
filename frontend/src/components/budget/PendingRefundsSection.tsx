@@ -4,6 +4,7 @@ import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { RefreshCw, Link2, X, Lock } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
+import { formatCurrency } from "../../utils/numberFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 
 interface PendingRefundsSectionProps {
@@ -45,11 +46,6 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     }
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(amount);
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-amber-500/30 overflow-hidden">

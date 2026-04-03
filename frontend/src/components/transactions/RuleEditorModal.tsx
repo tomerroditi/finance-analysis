@@ -9,6 +9,8 @@ import { RuleBuilder } from "./RuleBuilder";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useCategories } from "../../hooks/useCategories";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -36,17 +38,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     const [conditions, setConditions] = useState<ConditionNode>(EMPTY_CONDITIONS);
     const [error, setError] = useState<string | null>(null);
 
-    // Categories data
-    const { data: categories } = useQuery({
-        queryKey: ["categories"],
-        queryFn: () => taggingApi.getCategories().then(res => res.data as Record<string, string[]>)
-    });
-
-    // Existing rules - used to filter out tags that already have a rule
-    const { data: existingRules } = useQuery({
-        queryKey: ["tagging-rules"],
-        queryFn: () => taggingApi.getRules().then(res => res.data as TaggingRule[])
-    });
+    const { data: categories } = useCategories() as { data: Record<string, string[]> | undefined };
+    const { data: existingRules } = useTaggingRules();
 
     // Build set of tags that already have rules (excluding the rule being edited)
     const takenTags = new Set(

@@ -4,6 +4,7 @@ import { Shield, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { transactionsApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeProvider } from "../utils/textFormatting";
+import { formatCurrency } from "../utils/numberFormatting";
 
 interface InsuranceTransaction {
   unique_id: number;
@@ -14,14 +15,6 @@ interface InsuranceTransaction {
   account_number: string;
   account_name: string;
   memo?: string;
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(amount);
 }
 
 export function Insurances() {

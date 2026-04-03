@@ -32,6 +32,8 @@ import { LinkRefundModal } from "../components/modals/LinkRefundModal";
 import { ProjectModal } from "../components/modals/ProjectModal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
+import { useCategories } from "../hooks/useCategories";
+import { useTaggingRules } from "../hooks/useTaggingRules";
 import { SankeyChart } from "../components/SankeyChart";
 import { SemiGauge } from "../components/common/SemiGauge";
 import { Skeleton } from "../components/common/Skeleton";
@@ -39,25 +41,11 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { isToday, isYesterday } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { formatMonthYear, formatShortDate } from "../utils/dateFormatting";
+import { formatCurrency, formatCompactCurrency } from "../utils/numberFormatting";
 import { chartTheme, plotlyConfig, isTouchDevice } from "../utils/plotlyLocale";
 import i18n from "../i18n";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
-
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(val || 0);
-
-const formatCompactCurrency = (val: number) => {
-  const abs = Math.abs(val || 0);
-  if (abs >= 1_000_000) return `₪${(val / 1_000_000).toFixed(1)}M`;
-  if (abs >= 10_000) return `₪${(val / 1_000).toFixed(0)}K`;
-  if (abs >= 1_000) return `₪${(val / 1_000).toFixed(1)}K`;
-  return formatCurrency(val);
-};
 
 
 /* ------------------------------------------------------------------ */
@@ -701,17 +689,8 @@ function RecentTransactionsFeed({
   const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
 
   // Categories for inline tag editing
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-    enabled: !!editingTxKey,
-  });
-
-  // Tagging rules for match indicators
-  const { data: taggingRules } = useQuery({
-    queryKey: ["taggingRules"],
-    queryFn: () => taggingApi.getRules().then((res) => res.data),
-  });
+  const { data: categories } = useCategories({ enabled: !!editingTxKey });
+  const { data: taggingRules } = useTaggingRules();
 
   const invalidateAnalytics = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["income-outcome"] });

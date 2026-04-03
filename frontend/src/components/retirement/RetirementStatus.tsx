@@ -8,17 +8,11 @@ import {
   Percent,
 } from "lucide-react";
 import type { RetirementStatus as StatusType } from "../../services/api";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface Props {
   status: StatusType;
 }
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
 
 export function RetirementStatus({ status }: Props) {
   const { t } = useTranslation();
