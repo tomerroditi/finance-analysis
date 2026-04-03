@@ -133,7 +133,7 @@
     "portfolioAllocation": "Portfolio Allocation",
     "accountBalances": "Account Balances",
     "cashBalances": "Cash Balances",
-    "daysRemaining": "days remaining",
+    "daysRemaining": "{{count}} days remaining",
     "noProjectBudgets": "No project budgets yet",
     "viewAllBudgetRules": "View All Budget Rules",
     "done": "Done",

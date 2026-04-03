@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useScrollLock } from "../../hooks/useScrollLock";
@@ -7,9 +9,9 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   titleId?: string;
-  titleIcon?: React.ReactNode;
+  titleIcon?: ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl";
-  children: React.ReactNode;
+  children: ReactNode;
   zIndex?: "z-50" | "z-[60]";
 }
 
@@ -38,7 +40,8 @@ export function Modal({
 
   if (!isOpen) return null;
 
-  const resolvedTitleId = titleId ?? "modal-title";
+  const generatedId = useId();
+  const resolvedTitleId = titleId ?? generatedId;
 
   return (
     <div className={`modal-overlay fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200`}>

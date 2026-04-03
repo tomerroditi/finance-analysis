@@ -133,7 +133,7 @@
     "portfolioAllocation": "הרכב תיק",
     "accountBalances": "יתרות חשבונות",
     "cashBalances": "יתרות מזומן",
-    "daysRemaining": "ימים נותרו",
+    "daysRemaining": "{{count}} ימים נותרו",
     "noProjectBudgets": "עדיין אין תקציבי פרויקטים",
     "viewAllBudgetRules": "הצג את כל כללי התקציב",
     "done": "בוצע",

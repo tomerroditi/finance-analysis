@@ -69,14 +69,14 @@ export function BulkActionsBar({
               value={bulkEditData.date}
               onChange={(e) => onBulkEditDataChange({ ...bulkEditData, date: e.target.value })}
               className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-[var(--primary)]/50"
-              placeholder="Date"
+              placeholder={t("common.date")}
             />
             <input
               type="text"
               value={bulkEditData.description}
               onChange={(e) => onBulkEditDataChange({ ...bulkEditData, description: e.target.value })}
               className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[var(--primary)]/50"
-              placeholder="Description"
+              placeholder={t("common.description")}
             />
             <div className="flex bg-[var(--surface-light)] rounded-lg border border-[var(--surface-light)] p-0.5">
               <button
@@ -99,7 +99,7 @@ export function BulkActionsBar({
               value={bulkEditData.amount}
               onChange={(e) => onBulkEditDataChange({ ...bulkEditData, amount: e.target.value })}
               className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:border-[var(--primary)]/50"
-              placeholder="Amount"
+              placeholder={t("common.amount")}
               step="0.01"
             />
             <div className="w-36">
@@ -111,7 +111,7 @@ export function BulkActionsBar({
                 }
                 value={bulkEditData.account_name}
                 onChange={(val) => onBulkEditDataChange({ ...bulkEditData, account_name: val })}
-                placeholder="Account"
+                placeholder={t("common.account")}
                 size="sm"
               />
             </div>
@@ -125,7 +125,7 @@ export function BulkActionsBar({
             options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
             value={bulkEditData.category}
             onChange={(val) => onBulkEditDataChange({ ...bulkEditData, category: val, tag: "" })}
-            placeholder="Category"
+            placeholder={t("common.category")}
             size="sm"
             onCreateNew={async (name) => {
               const formatted = await onCreateCategory(name);
@@ -142,7 +142,7 @@ export function BulkActionsBar({
             }
             value={bulkEditData.tag}
             onChange={(val) => onBulkEditDataChange({ ...bulkEditData, tag: val })}
-            placeholder="Tag"
+            placeholder={t("common.tag")}
             size="sm"
             onCreateNew={async (name) => {
               const formatted = await onCreateTag(bulkEditData.category, name);

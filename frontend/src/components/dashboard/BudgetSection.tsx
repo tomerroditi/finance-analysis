@@ -341,7 +341,7 @@ export function BudgetSpendingGauge({
                       options={(projects ?? []).map((p) => ({ label: p, value: p }))}
                       value={selectedProject ?? ""}
                       onChange={setSelectedProject}
-                      placeholder="Select project..."
+                      placeholder={t("budget.selectProject")}
                       size="sm"
                     />
                   </div>

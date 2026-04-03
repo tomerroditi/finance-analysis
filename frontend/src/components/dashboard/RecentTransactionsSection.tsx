@@ -151,21 +151,20 @@ export function RecentTransactionsFeed({
     return groups;
   }, [visible]);
 
+  const getTxKey = (tx: Transaction) =>
+    `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${tx.amount}`}`;
+
   // Precompute which tagging rule matches each visible transaction
   const ruleMatchMap = useMemo(() => {
     if (!taggingRules || !visible.length) return new Map<string, TaggingRule>();
     const map = new Map<string, TaggingRule>();
-    for (let i = 0; i < visible.length; i++) {
-      const tx = visible[i];
-      const key = `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${i}`}`;
+    for (const tx of visible) {
+      const key = getTxKey(tx);
       const match = findMatchingRule(taggingRules, tx);
       if (match) map.set(key, match);
     }
     return map;
   }, [taggingRules, visible]);
-
-  const getTxKey = (tx: Transaction, i: number) =>
-    `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${i}`}`;
 
   if (isLoading) {
     return (
@@ -202,10 +201,10 @@ export function RecentTransactionsFeed({
               {group.label}
             </p>
             <div className="space-y-1">
-              {group.items.map((tx, i) => {
+              {group.items.map((tx) => {
                 const icon = tx.category ? categoryIcons?.[tx.category] ?? "" : "";
                 const isPositive = tx.amount >= 0;
-                const txKey = getTxKey(tx, i);
+                const txKey = getTxKey(tx);
                 const isEditing = editingTxKey === txKey;
                 const matchedRule = ruleMatchMap.get(txKey);
 
@@ -358,7 +357,7 @@ export function RecentTransactionsFeed({
                             <SelectDropdown
                               options={
                                 tx.category && categories[tx.category]
-                                  ? categories[tx.category].map((t: string) => ({ label: t, value: t }))
+                                  ? categories[tx.category].map((tagName: string) => ({ label: tagName, value: tagName }))
                                   : []
                               }
                               value={tx.tag || ""}
