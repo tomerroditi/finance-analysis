@@ -65,6 +65,7 @@ export function SettingsPopup({
       const res = await googleApi.getAuthUrl();
       window.location.href = res.data.url;
     } catch {
+      alert(t("settings.connectFailed"));
       setGoogleLoading(false);
     }
   };
@@ -242,7 +243,7 @@ export function SettingsPopup({
                   fill="#EA4335"
                 />
               </svg>
-              {t("settings.connectGoogle")}
+              {googleLoading ? t("settings.connecting") : t("settings.connectGoogle")}
             </button>
           )}
         </div>

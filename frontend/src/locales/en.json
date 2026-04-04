@@ -82,6 +82,7 @@
     "disconnectGoogle": "Disconnect",
     "disconnectConfirm": "Disconnect Google Drive? Automatic cloud backups will stop.",
     "connecting": "Connecting...",
+    "connectFailed": "Failed to connect Google Drive. Please check that Google OAuth credentials are configured.",
     "disconnecting": "Disconnecting...",
     "lastBackup": "Last backup: {{date}}",
     "cloudBackupActive": "Cloud backup active",

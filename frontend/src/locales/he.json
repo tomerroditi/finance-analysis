@@ -82,6 +82,7 @@
     "disconnectGoogle": "נתק",
     "disconnectConfirm": "לנתק את Google Drive? גיבויים אוטומטיים לענן יפסיקו.",
     "connecting": "מתחבר...",
+    "connectFailed": "החיבור ל-Google Drive נכשל. ודא שהגדרות OAuth של Google מוגדרות.",
     "disconnecting": "מנתק...",
     "lastBackup": "גיבוי אחרון: {{date}}",
     "cloudBackupActive": "גיבוי ענן פעיל",
