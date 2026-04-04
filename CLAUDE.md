@@ -47,6 +47,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
 - **Rules:** `.claude/rules/` — detailed architecture docs (9 files covering services, repos, scraper, frontend, testing)
+- **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
 

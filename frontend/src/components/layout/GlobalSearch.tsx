@@ -1,3 +1,5 @@
+// TODO: Remove this feature entirely — not useful enough to justify the code/UX surface area.
+// Files to clean up: GlobalSearch.tsx, Layout.tsx (keyboard listener + render), appStore.ts (isSearchOpen state), locale keys (globalSearch.*).
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import {
