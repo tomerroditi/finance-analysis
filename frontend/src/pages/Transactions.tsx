@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
+import { useCashBalances } from "../hooks/useCashBalances";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
 import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
@@ -11,6 +12,7 @@ import { Plus, Trash2, DollarSign, X } from "lucide-react";
 import { Skeleton } from "../components/common/Skeleton";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
+import { formatCurrency } from "../utils/numberFormatting";
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const { t } = useTranslation();
@@ -20,11 +22,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
   const [newAccountName, setNewAccountName] = useState("");
   const [newBalance, setNewBalance] = useState("");
 
-  // Fetch cash balances
-  const { data: balances = [], isLoading } = useQuery({
-    queryKey: ["cash-balances"],
-    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-  });
+  const { data: balances = [], isLoading } = useCashBalances();
 
   // Run migration on first load
   const migrationMutation = useMutation({
@@ -86,11 +84,6 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     }
   };
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(val);
 
   return (
     <div className="bg-[var(--surface)] rounded-xl p-4 md:p-6 border border-[var(--surface-light)] mb-4 md:mb-6">

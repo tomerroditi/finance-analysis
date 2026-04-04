@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { budgetApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
-import { useScrollLock } from "../../hooks/useScrollLock";
+import { Modal } from "../common/Modal";
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -22,7 +21,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   isEdit = false,
 }) => {
   const { t } = useTranslation();
-  useScrollLock(isOpen);
   const [category, setCategory] = useState("");
   const [totalBudget, setTotalBudget] = useState<number>(0);
 
@@ -56,8 +54,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     }
   }, [availableCategories, category, isEdit]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!category) return;
@@ -66,19 +62,12 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center p-4 md:p-6 border-b border-[var(--surface-light)]">
-          <h2 className="text-lg md:text-xl font-bold">
-            {isEdit ? `${t("modals.project.editProject")}: ${category} - ${t("common.total")}` : t("modals.project.newProject")}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-full transition-colors text-[var(--text-muted)]"
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEdit ? `${t("modals.project.editProject")}: ${category} - ${t("common.total")}` : t("modals.project.newProject")}
+      titleId="project-modal-title"
+    >
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
@@ -136,7 +125,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };

@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Plus, Trash2, AlertCircle } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { taggingApi, transactionsApi } from "../../services/api";
+import { Plus, Trash2, AlertCircle } from "lucide-react";
+import { transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
-import { useScrollLock } from "../../hooks/useScrollLock";
+import { useCategories } from "../../hooks/useCategories";
+import { Modal } from "../common/Modal";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface SplitTransactionModalProps {
   transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
@@ -25,7 +26,6 @@ export function SplitTransactionModal({
   onSuccess,
 }: SplitTransactionModalProps) {
   const { t } = useTranslation();
-  useScrollLock(true);
   const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
@@ -38,10 +38,7 @@ export function SplitTransactionModal({
 
   const { createCategory, createTag } = useCategoryTagCreate();
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories } = useCategories();
 
   const totalSplitAmount = useMemo(
     () => splits.reduce((sum, item) => sum + item.amount, 0),
@@ -89,26 +86,15 @@ export function SplitTransactionModal({
   };
 
   return (
-    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div role="dialog" aria-modal="true" aria-labelledby="split-transaction-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-          <div className="min-w-0 flex-1">
-            <h2 id="split-transaction-title" className="text-lg md:text-xl font-bold text-white">{t("modals.split.title")}</h2>
-            <p className="text-sm text-[var(--text-muted)]">
-              {transaction.description} •{" "}
-              {new Intl.NumberFormat("he-IL", {
-                style: "currency",
-                currency: "ILS",
-              }).format(originalAmount)}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label={t("common.close")}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
-          >
-            <X size={20} />
-          </button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={t("modals.split.title")}
+      titleId="split-transaction-title"
+      maxWidth="2xl"
+    >
+        <div className="px-4 md:px-6 pb-2 text-sm text-[var(--text-muted)]">
+          {transaction.description} • {formatCurrency(originalAmount, 2)}
         </div>
 
         <div className="p-4 md:p-6 overflow-y-auto flex-1">
@@ -204,10 +190,7 @@ export function SplitTransactionModal({
                 <AlertCircle size={18} />
                 <span className="text-sm font-medium">
                   {t("modals.split.remaining")}:{" "}
-                  {new Intl.NumberFormat("he-IL", {
-                    style: "currency",
-                    currency: "ILS",
-                  }).format(remainingAmount)}
+                  {formatCurrency(remainingAmount, 2)}
                 </span>
               </div>
             ) : (
@@ -234,7 +217,6 @@ export function SplitTransactionModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

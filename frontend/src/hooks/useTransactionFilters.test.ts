@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTransactionFilters } from "./useTransactionFilters";
-import type { Transaction } from "../components/TransactionsTable";
+import type { Transaction } from "../types/transaction";
 
 const makeTx = (overrides: Partial<Transaction> = {}): Transaction => ({
   id: 1,

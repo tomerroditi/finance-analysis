@@ -4,10 +4,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Search,
   X,
   Split,
@@ -27,32 +23,21 @@ import {
   transactionsApi,
   taggingApi,
   pendingRefundsApi,
-  cashBalancesApi,
   type PendingRefund,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
-import { SelectDropdown } from "./common/SelectDropdown";
+import { Pagination } from "./transactions/Pagination";
+import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
+import { useCategories } from "../hooks/useCategories";
+import { useCashBalances } from "../hooks/useCashBalances";
 import { useTranslation } from "react-i18next";
+import { formatCurrency } from "../utils/numberFormatting";
+import type { Transaction } from "../types/transaction";
 
-export interface Transaction {
-  id?: number;
-  unique_id?: string;
-  source?: string;
-  desc?: string;
-  description?: string;
-  amount: number;
-  date: string;
-  category?: string;
-  tag?: string;
-  provider?: string;
-  account_name?: string;
-  account_number?: string;
-  pending_refund_id?: number; // ID if this transaction has a pending refund
-}
 
 export interface TransactionsTableProps {
   transactions: Transaction[];
@@ -193,7 +178,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     useState<Transaction | null>(null);
 
   // Bulk actions state
-  const [bulkEditData, setBulkEditData] = useState({
+  const [bulkEditData, setBulkEditData] = useState<BulkEditData>({
     date: "",
     description: "",
     amount: "",
@@ -203,19 +188,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
   const [amountType, setAmountType] = useState<"expense" | "income">("expense");
 
-  // Fetch categories for bulk tagging
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-    enabled: showBulkActions,
-  });
-
-  // Fetch cash balances for bulk account dropdown
-  const { data: cashBalances = [] } = useQuery({
-    queryKey: ["cash-balances"],
-    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-    enabled: showBulkActions,
-  });
+  const { data: categories } = useCategories({ enabled: showBulkActions });
+  const { data: cashBalances = [] } = useCashBalances({ enabled: showBulkActions });
 
   const invalidateAnalytics = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
@@ -876,7 +850,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
-                                    title={`Partially Refunded (${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.total_refunded || 0)} / ${new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(pending.expected_amount)}) - Click to Cancel`}
+                                    title={`${t("tooltips.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("tooltips.clickToCancel")}`}
                                     onClick={() => {
                                       if (
                                         window.confirm(
@@ -890,14 +864,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                     }}
                                     disabled={cancelPendingMutation.isPending}
                                   >
-                                    <RefreshCw
-                                      size={14}
-                                      className="animate-spin-slow"
-                                    />
-                                    {/* Using RefreshCw for partial but maybe PieChart is better if imported? 
-                                        Let's stick to RefreshCw but blue distinct color, or PieChart if imported. 
-                                        PieChart is not imported. Let's use Link2 or RefreshCw. RefreshCw implies ongoing.
-                                    */}
                                     <RefreshCw size={14} />
                                   </button>
                                 );
@@ -1005,216 +971,39 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       </div>
 
       {/* Pagination */}
-      {totalPages > 0 && (
-        <div
-          className={`flex flex-col sm:flex-row items-center justify-between gap-2 ${compact ? "mt-3 px-2" : "mt-4 px-2 md:px-4 py-3 bg-[var(--surface-light)]/30 border-t border-[var(--surface-light)]"}`}
-        >
-          <div className="flex items-center gap-2 md:gap-4">
-            <span className="text-xs md:text-sm text-[var(--text-muted)] whitespace-nowrap">
-              {sortedTransactions.length > 0 ? (
-                <>
-                  {t("transactions.pagination.showing")}{" "}
-                  <span className="text-white font-medium">{startRow}</span> {t("transactions.pagination.to")}{" "}
-                  <span className="text-white font-medium">{endRow}</span> {t("transactions.pagination.of")}{" "}
-                  <span className="text-white font-medium">
-                    {sortedTransactions.length}
-                  </span>
-                </>
-              ) : (
-                t("transactions.noResults")
-              )}
-            </span>
-            {rowsPerPageOptions && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-[var(--text-muted)] whitespace-nowrap">
-                  {t("transactions.pagination.rows")}:
-                </span>
-                <select
-                  value={rowsPerPage}
-                  onChange={(e) => {
-                    setRowsPerPage(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-sm outline-none"
-                >
-                  {rowsPerPageOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
-            >
-              <ChevronsLeft size={compact ? 16 : 20} />
-            </button>
-            <button
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
-            >
-              <ChevronLeft size={compact ? 16 : 20} />
-            </button>
-            <span className={`px-4 text-sm whitespace-nowrap`}>
-              {t("transactions.pagination.page")} <span className="text-white font-medium">{currentPage}</span>{" "}
-              {t("transactions.pagination.of")}{" "}
-              <span className="text-white font-medium">{totalPages || 1}</span>
-            </span>
-            <button
-              onClick={() =>
-                setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-              }
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
-            >
-              <ChevronRight size={compact ? 16 : 20} />
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
-            >
-              <ChevronsRight size={compact ? 16 : 20} />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={sortedTransactions.length}
+        startRow={startRow}
+        endRow={endRow}
+        rowsPerPage={rowsPerPage}
+        rowsPerPageOptions={rowsPerPageOptions}
+        onPageChange={setCurrentPage}
+        onRowsPerPageChange={setRowsPerPage}
+        compact={compact}
+      />
 
       {/* Bulk Action Floating Bar */}
       {showBulkActions && selectedIds.size > 0 && (
-        <div className="fixed bottom-4 md:bottom-8 inset-x-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 bg-[var(--surface)] backdrop-blur-xl border-2 border-[var(--primary)] rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.5)] px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300 z-40 max-h-[60vh] overflow-y-auto">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm font-bold shadow-lg shadow-[var(--primary)]/20">
-              {selectedIds.size}
-            </div>
-            <span className="text-sm font-medium">{t("transactions.bulk.selected")}</span>
-          </div>
-          <div className="w-px h-8 bg-[var(--surface-light)]" />
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Details group - only for manual transactions */}
-            {allSelectedAreManual && (
-              <>
-                <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{t("transactions.bulk.details")}</span>
-                <input
-                  type="date"
-                  value={bulkEditData.date}
-                  onChange={(e) => setBulkEditData({ ...bulkEditData, date: e.target.value })}
-                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-36 focus:outline-none focus:border-[var(--primary)]/50"
-                  placeholder="Date"
-                />
-                <input
-                  type="text"
-                  value={bulkEditData.description}
-                  onChange={(e) => setBulkEditData({ ...bulkEditData, description: e.target.value })}
-                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[var(--primary)]/50"
-                  placeholder="Description"
-                />
-                <div className="flex bg-[var(--surface-light)] rounded-lg border border-[var(--surface-light)] p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setAmountType("expense")}
-                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "expense" ? "bg-red-500/20 text-red-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
-                  >
-                    {t("transactions.bulk.expense")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAmountType("income")}
-                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${amountType === "income" ? "bg-emerald-500/20 text-emerald-500" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"}`}
-                  >
-                    {t("transactions.bulk.income")}
-                  </button>
-                </div>
-                <input
-                  type="number"
-                  value={bulkEditData.amount}
-                  onChange={(e) => setBulkEditData({ ...bulkEditData, amount: e.target.value })}
-                  className="bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:border-[var(--primary)]/50"
-                  placeholder="Amount"
-                  step="0.01"
-                />
-                <div className="w-36">
-                  <SelectDropdown
-                    options={
-                      allSelectedAreCash
-                        ? cashBalances.map((b: { account_name: string }) => ({ label: b.account_name, value: b.account_name }))
-                        : []
-                    }
-                    value={bulkEditData.account_name}
-                    onChange={(val) => setBulkEditData({ ...bulkEditData, account_name: val })}
-                    placeholder="Account"
-                    size="sm"
-                  />
-                </div>
-                <div className="w-px h-6 bg-[var(--surface-light)]" />
-              </>
-            )}
-            {/* Tags group - always visible */}
-            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">{t("transactions.bulk.tags")}</span>
-            <div className="w-40">
-              <SelectDropdown
-                options={categories ? Object.keys(categories).map((cat) => ({ label: cat, value: cat })) : []}
-                value={bulkEditData.category}
-                onChange={(val) => setBulkEditData({ ...bulkEditData, category: val, tag: "" })}
-                placeholder="Category"
-                size="sm"
-                onCreateNew={async (name) => {
-                  const formatted = await createCategory(name);
-                  setBulkEditData({ ...bulkEditData, category: formatted, tag: "" });
-                }}
-              />
-            </div>
-            <div className="w-40">
-              <SelectDropdown
-                options={
-                  bulkEditData.category && categories?.[bulkEditData.category]
-                    ? categories[bulkEditData.category].map((tag: string) => ({ label: tag, value: tag }))
-                    : []
-                }
-                value={bulkEditData.tag}
-                onChange={(val) => setBulkEditData({ ...bulkEditData, tag: val })}
-                placeholder="Tag"
-                size="sm"
-                onCreateNew={async (name) => {
-                  const formatted = await createTag(bulkEditData.category, name);
-                  setBulkEditData({ ...bulkEditData, tag: formatted });
-                }}
-              />
-            </div>
-            <div className="w-px h-6 bg-[var(--surface-light)]" />
-            {/* Actions */}
-            <button
-              className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
-              onClick={handleBulkApply}
-              disabled={bulkTagMutation.isPending}
-              title={t("tooltips.applyChanges")}
-            >
-              <CheckCircle2 size={20} />
-            </button>
-            {showDelete && (
-              <button
-                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all"
-                onClick={handleBulkDelete}
-                title={t("tooltips.deleteSelected")}
-              >
-                <Trash2 size={18} />
-              </button>
-            )}
-            <button
-              className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)]"
-              onClick={() => setSelectedIds(new Set())}
-              title={t("tooltips.cancelSelection")}
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
+        <BulkActionsBar
+          selectedCount={selectedIds.size}
+          bulkEditData={bulkEditData}
+          onBulkEditDataChange={setBulkEditData}
+          amountType={amountType}
+          onAmountTypeChange={setAmountType}
+          allSelectedAreManual={allSelectedAreManual}
+          allSelectedAreCash={allSelectedAreCash}
+          categories={categories}
+          cashBalances={cashBalances}
+          onApply={handleBulkApply}
+          onBulkDelete={handleBulkDelete}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onCreateCategory={createCategory}
+          onCreateTag={createTag}
+          isApplying={bulkTagMutation.isPending}
+          showDelete={showDelete}
+        />
       )}
 
       {/* Modals */}

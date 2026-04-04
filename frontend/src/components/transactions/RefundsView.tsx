@@ -13,6 +13,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { formatCurrency } from "../../utils/numberFormatting";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
@@ -70,11 +71,6 @@ const RefundsView: React.FC = () => {
     };
   }, [refunds]);
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(amount);
 
   if (isLoading) {
     return (

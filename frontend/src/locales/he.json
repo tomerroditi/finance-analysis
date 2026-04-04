@@ -23,6 +23,7 @@
     "description": "תיאור",
     "category": "קטגוריה",
     "tag": "תגית",
+    "select": "בחר...",
     "account": "חשבון",
     "status": "סטטוס",
     "actions": "פעולות",
@@ -133,7 +134,7 @@
     "portfolioAllocation": "הרכב תיק",
     "accountBalances": "יתרות חשבונות",
     "cashBalances": "יתרות מזומן",
-    "daysRemaining": "ימים נותרו",
+    "daysRemaining": "{{count}} ימים נותרו",
     "noProjectBudgets": "עדיין אין תקציבי פרויקטים",
     "viewAllBudgetRules": "הצג את כל כללי התקציב",
     "done": "בוצע",
@@ -265,6 +266,7 @@
       "confirmCancel": "לבטל את בקשת ההחזר? כל ההחזרים המקושרים ינותקו.",
       "refundedOf": "{{refunded}} מתוך {{expected}} הוחזרו",
       "partiallyRefunded": "הוחזר חלקית",
+      "clickToCancel": "לחץ לביטול",
       "noExpectations": "לא נמצאו ציפיות להחזרים.",
       "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן."
     }

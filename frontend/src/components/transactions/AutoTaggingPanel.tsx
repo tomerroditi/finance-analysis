@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import {
     Plus,
@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "./RuleEditorModal";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useAppStore } from "../../stores/appStore";
 
 export function AutoTaggingPanel() {
@@ -31,10 +32,7 @@ export function AutoTaggingPanel() {
     const [editingRule, setEditingRule] = useState<TaggingRule | null>(null);
     useScrollLock(autoTaggingPanelOpen);
 
-    const { data: rules, isLoading: rulesLoading } = useQuery({
-        queryKey: ["tagging-rules"],
-        queryFn: () => taggingApi.getRules().then(res => res.data)
-    });
+    const { data: rules, isLoading: rulesLoading } = useTaggingRules();
 
     const deleteMutation = useMutation({
         mutationFn: (id: number) => taggingApi.deleteRule(id),
@@ -263,7 +261,7 @@ export function AutoTaggingPanel() {
                                         <Plus size={18} /> {t("transactions.autoTagging.newRule")}
                                     </button>
                                     <button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending} className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50">
-                                        <Play size={18} /> {t("transactions.autoTagging.applyAll")}
+                                        <Play size={18} /> {t("transactions.autoTagging.applyRules")}
                                     </button>
                                 </div>
                             </div>

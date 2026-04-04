@@ -38,6 +38,7 @@ import { useScraping } from "../hooks/useScraping";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 import { formatShortDate } from "../utils/dateFormatting";
+import { formatCurrency } from "../utils/numberFormatting";
 import i18n from "../i18n";
 
 function formatRelativeDate(dateString: string): string {
@@ -201,11 +202,6 @@ export function DataSources() {
     );
   };
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(val);
 
   useEffect(() => {
     if (!isAddOpen) return;

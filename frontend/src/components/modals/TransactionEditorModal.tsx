@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
+import { transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
-import { useScrollLock } from "../../hooks/useScrollLock";
+import { useCategories } from "../../hooks/useCategories";
+import { useCashBalances } from "../../hooks/useCashBalances";
+import { Modal } from "../common/Modal";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string };
@@ -19,7 +19,6 @@ export function TransactionEditorModal({
   onSuccess,
 }: TransactionEditorModalProps) {
   const { t } = useTranslation();
-  useScrollLock(true);
   const isManual =
     transaction.source?.includes("cash") ||
     transaction.source?.includes("manual_investment");
@@ -36,16 +35,8 @@ export function TransactionEditorModal({
 
   const { createCategory, createTag } = useCategoryTagCreate();
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
-
-  const { data: cashBalances = [] } = useQuery({
-    queryKey: ["cash-balances"],
-    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-    enabled: isCash,
-  });
+  const { data: categories } = useCategories();
+  const { data: cashBalances = [] } = useCashBalances({ enabled: isCash });
 
   const availableTags =
     formData.category && categories ? categories[formData.category] || [] : [];
@@ -65,19 +56,12 @@ export function TransactionEditorModal({
   };
 
   return (
-    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div role="dialog" aria-modal="true" aria-labelledby="transaction-editor-title" className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
-          <h2 id="transaction-editor-title" className="text-lg md:text-xl font-bold text-white">{t("modals.transactionForm.editTitle")}</h2>
-          <button
-            onClick={onClose}
-            aria-label={t("common.close")}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={t("modals.transactionForm.editTitle")}
+      titleId="transaction-editor-title"
+    >
         <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
           {!isManual && (
             <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
@@ -230,7 +214,6 @@ export function TransactionEditorModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -14,12 +14,13 @@ import {
   Pencil,
   Settings,
 } from "lucide-react";
-import { investmentsApi, taggingApi } from "../services/api";
+import { investmentsApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
+import { useCategories } from "../hooks/useCategories";
 
 interface Investment {
   id: number;
@@ -363,10 +364,7 @@ export function Investments() {
     queryFn: () => investmentsApi.getAll(true).then((res) => res.data),
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories } = useCategories();
 
   const { data: portfolioAnalysis } = useQuery({
     queryKey: ["portfolio-analysis"],

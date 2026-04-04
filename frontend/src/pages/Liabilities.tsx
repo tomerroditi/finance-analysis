@@ -16,9 +16,11 @@ import {
   AlertTriangle,
   CheckCircle,
 } from "lucide-react";
-import { liabilitiesApi, taggingApi } from "../services/api";
+import { liabilitiesApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
+import { formatCurrency } from "../utils/numberFormatting";
+import { useCategories } from "../hooks/useCategories";
 
 interface Liability {
   id: number;
@@ -80,13 +82,6 @@ interface DebtOverTimeData {
   series: Array<{ name: string; points: DebtPoint[] }>;
   total: DebtPoint[];
 }
-
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(val);
 
 function LiabilityCard({
   liability,
@@ -339,10 +334,7 @@ export function Liabilities() {
     queryFn: () => liabilitiesApi.getAll(true).then((r) => r.data),
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories } = useCategories();
 
   const { data: analysisData } = useQuery<AnalysisData>({
     queryKey: ["liabilities", analysisModalId, "analysis"],

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import type { Transaction } from "../components/TransactionsTable";
+import type { Transaction } from "../types/transaction";
 
 export interface TransactionFilterState {
   filterText: string;

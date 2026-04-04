@@ -3,7 +3,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
-import { TransactionsTable, type Transaction } from "./TransactionsTable";
+import { TransactionsTable } from "./TransactionsTable";
+import type { Transaction } from "../types/transaction";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => server.resetHandlers());
