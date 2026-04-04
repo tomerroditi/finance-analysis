@@ -2077,8 +2077,7 @@ def generate_insurance_data(session):
     for policy_id, account_name, monthly_amount, memo in deposit_configs:
         for year, month_num in months:
             txn_counter += 1
-            # Small monthly variance (±5%)
-            amount = round(monthly_amount * random.uniform(0.95, 1.05), 2)
+            amount = monthly_amount
             txn = InsuranceTransaction(
                 id=f"demo-ins-{txn_counter:04d}",
                 date=rand_date_in_month(year, month_num, 1, 10),
@@ -2101,7 +2100,7 @@ def generate_insurance_data(session):
                   if date(y, m, 1) < (REFERENCE_DATE - timedelta(days=180))]
     for year, month_num in old_months:
         txn_counter += 1
-        amount = round(1100.0 * random.uniform(0.95, 1.05), 2)
+        amount = 1100.0
         txn = InsuranceTransaction(
             id=f"demo-ins-{txn_counter:04d}",
             date=rand_date_in_month(year, month_num, 1, 10),
