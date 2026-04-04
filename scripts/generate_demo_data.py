@@ -2060,10 +2060,10 @@ def generate_insurance_data(session):
     pension_makifa_monthly = 3750.0
     # Pension mashlima: ~1,200/month (smaller supplementary)
     pension_mashlima_monthly = 1200.0
-    # KH active: 2.5% employee + 7.5% employer on 25k → ~2,500/month
-    kh_active_monthly = 2500.0
-    # KH spouse: ~900/month (teacher salary)
-    kh_spouse_monthly = 900.0
+    # KH active: 2.5% employee + 7.5% employer on 15k cap → 1,500/month
+    kh_active_monthly = 1500.0
+    # KH spouse: ~750/month (teacher salary)
+    kh_spouse_monthly = 750.0
 
     deposit_configs = [
         ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
