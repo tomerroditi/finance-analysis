@@ -261,7 +261,7 @@ export function AutoTaggingPanel() {
                                         <Plus size={18} /> {t("transactions.autoTagging.newRule")}
                                     </button>
                                     <button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending} className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50">
-                                        <Play size={18} /> {t("transactions.autoTagging.applyAll")}
+                                        <Play size={18} /> {t("transactions.autoTagging.applyRules")}
                                     </button>
                                 </div>
                             </div>
