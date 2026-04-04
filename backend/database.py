@@ -113,6 +113,9 @@ def get_session_factory(db_path: str = None):
     if _SessionLocal is None:
         engine = get_engine(db_path)
         _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        # Register cloud backup trigger on session commits
+        from sqlalchemy import event
+        event.listen(_SessionLocal, "after_commit", _on_after_commit)
     return _SessionLocal
 
 
@@ -183,3 +186,30 @@ def reset_engine():
         _engine.dispose()
     _engine = None
     _SessionLocal = None
+
+
+# Cloud backup scheduler instance — initialized by main.py lifespan
+_backup_scheduler = None
+
+
+def set_backup_scheduler(scheduler) -> None:
+    """Set the global backup scheduler for after_commit events.
+
+    Parameters
+    ----------
+    scheduler : BackupScheduler or None
+        The scheduler instance to notify on commits.
+    """
+    global _backup_scheduler
+    _backup_scheduler = scheduler
+
+
+def get_backup_scheduler():
+    """Get the global backup scheduler."""
+    return _backup_scheduler
+
+
+def _on_after_commit(session):
+    """SQLAlchemy event listener — schedule a cloud backup after commit."""
+    if _backup_scheduler is not None:
+        _backup_scheduler.schedule()

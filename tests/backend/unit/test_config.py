@@ -187,3 +187,22 @@ class TestAppConfig:
         assert not os.path.exists(demo_env_dir)
         config.set_demo_mode(True)
         assert os.path.isdir(demo_env_dir)
+
+
+class TestAppConfigGoogleKeyring:
+    """Tests for get_google_keyring_service method."""
+
+    def test_returns_production_service_name(self):
+        """Should return 'finance-analysis-google' in production mode."""
+        config = AppConfig()
+        config.set_demo_mode(False)
+        assert config.get_google_keyring_service() == "finance-analysis-google"
+
+    def test_returns_demo_service_name(self):
+        """Should return 'finance-analysis-google-demo' in demo mode."""
+        config = AppConfig()
+        config.set_demo_mode(True)
+        try:
+            assert config.get_google_keyring_service() == "finance-analysis-google-demo"
+        finally:
+            config.set_demo_mode(False)

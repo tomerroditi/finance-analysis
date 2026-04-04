@@ -23,6 +23,10 @@ alembic = "^1.14.0"
 # Scraper dependencies
 playwright = "^1.57.0"
 httpx = "^0.28.0"
+# Google Drive backup dependencies
+google-auth = ">=2.29.0"
+google-auth-oauthlib = ">=1.2.0"
+google-api-python-client = ">=2.130.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "==8.3.5"

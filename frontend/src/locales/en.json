@@ -75,7 +75,21 @@
     "backupCreated": "Backup created successfully",
     "backupRestored": "Backup restored successfully. Refreshing...",
     "backupFailed": "Backup failed",
-    "restoreFailed": "Restore failed"
+    "restoreFailed": "Restore failed",
+    "googleAccount": "Google Account",
+    "connectGoogle": "Connect Google Drive",
+    "connectedAs": "Connected as {{email}}",
+    "disconnectGoogle": "Disconnect",
+    "disconnectConfirm": "Disconnect Google Drive? Automatic cloud backups will stop.",
+    "connecting": "Connecting...",
+    "disconnecting": "Disconnecting...",
+    "lastBackup": "Last backup: {{date}}",
+    "cloudBackupActive": "Cloud backup active",
+    "cloudBackupDescription": "Your data is automatically backed up to Google Drive",
+    "pendingRestoreTitle": "Restore from Cloud Backup?",
+    "pendingRestoreMessage": "A cloud backup was found from {{date}}. Your local database is empty. Would you like to restore from the cloud backup?",
+    "pendingRestoreConfirm": "Restore Backup",
+    "pendingRestoreSkip": "Start Fresh"
   },
   "globalSearch": {
     "placeholder": "Search transactions, categories, or tags...",

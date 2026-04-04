@@ -75,7 +75,21 @@
     "backupCreated": "גיבוי נוצר בהצלחה",
     "backupRestored": "גיבוי שוחזר בהצלחה. מרענן...",
     "backupFailed": "הגיבוי נכשל",
-    "restoreFailed": "השחזור נכשל"
+    "restoreFailed": "השחזור נכשל",
+    "googleAccount": "חשבון Google",
+    "connectGoogle": "חבר Google Drive",
+    "connectedAs": "מחובר כ-{{email}}",
+    "disconnectGoogle": "נתק",
+    "disconnectConfirm": "לנתק את Google Drive? גיבויים אוטומטיים לענן יפסיקו.",
+    "connecting": "מתחבר...",
+    "disconnecting": "מנתק...",
+    "lastBackup": "גיבוי אחרון: {{date}}",
+    "cloudBackupActive": "גיבוי ענן פעיל",
+    "cloudBackupDescription": "הנתונים שלך מגובים אוטומטית ל-Google Drive",
+    "pendingRestoreTitle": "לשחזר מגיבוי ענן?",
+    "pendingRestoreMessage": "נמצא גיבוי ענן מתאריך {{date}}. מסד הנתונים המקומי ריק. האם ברצונך לשחזר מהגיבוי?",
+    "pendingRestoreConfirm": "שחזר גיבוי",
+    "pendingRestoreSkip": "התחל מחדש"
   },
   "globalSearch": {
     "placeholder": "חיפוש תנועות, קטגוריות או תגיות...",
