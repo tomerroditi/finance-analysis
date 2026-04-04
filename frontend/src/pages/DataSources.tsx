@@ -275,14 +275,7 @@ export function DataSources() {
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-0">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{t("dataSources.title")}</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            {t("dataSources.subtitle")}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
           <div className="relative">
             <select
               value={scrapingPeriodDays ?? "auto"}
@@ -312,7 +305,6 @@ export function DataSources() {
           >
             <Plus size={18} /> {t("dataSources.connectAccount")}
           </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">

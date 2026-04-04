@@ -444,19 +444,6 @@ export function InsurancesPrototype() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <header className="flex items-center gap-3">
-        <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-          <Shield size={24} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-white">{t("insurance.title")}</h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            {t("insurance.subtitle")}
-          </p>
-        </div>
-      </header>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <StatCard title={t("insurance.totalBalance")} value={fmt(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />

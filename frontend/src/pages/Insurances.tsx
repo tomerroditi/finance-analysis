@@ -63,18 +63,6 @@ export function Insurances() {
 
   return (
     <div className="flex flex-col gap-3 md:gap-6 p-4 md:p-6">
-      <header className="flex items-center gap-3">
-        <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-          <Shield size={24} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-white">Insurance</h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            Pension, Keren Hishtalmut & Gemel data verification
-          </p>
-        </div>
-      </header>
-
       {isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-24 w-full" />

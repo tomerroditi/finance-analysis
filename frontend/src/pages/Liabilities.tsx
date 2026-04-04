@@ -488,13 +488,7 @@ export function Liabilities() {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{t("liabilities.title")}</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            {t("liabilities.subtitle")}
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-3">
         <button
           onClick={() => setIsAddOpen(true)}
           disabled={!canAdd}

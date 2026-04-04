@@ -11,13 +11,6 @@ export const Budget: React.FC = () => {
   return (
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{t("budget.title")}</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            {t("budget.subtitle")}
-          </p>
-        </div>
-
         {/* Tab Switcher */}
         <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
           <button

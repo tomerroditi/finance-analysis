@@ -311,13 +311,6 @@ export function Transactions() {
     <div className="flex relative">
       <div className="space-y-4 md:space-y-6 min-w-0 flex-1 transition-all duration-300">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">{t("transactions.title")}</h1>
-            <p className="text-[var(--text-muted)] text-sm md:text-base">
-              {t("transactions.subtitle")}
-            </p>
-          </div>
-
           <div className="flex items-center gap-2 md:gap-4 overflow-x-auto scrollbar-auto-hide pb-1">
             <div className="flex gap-1.5 md:gap-2 items-center">
               {services.map(({ value, label }) => (
