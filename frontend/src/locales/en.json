@@ -872,7 +872,7 @@
       "earliestRetirement": "The earliest age you could retire based on current savings rate and projected growth. This equals the FIRE age in the baseline scenario.",
       "monthlySavings": "Additional monthly savings needed to reach your FIRE number by your target retirement age. Calculated using the future value of annuity formula.",
       "withdrawalRate": "The percentage of your portfolio you withdraw annually in retirement. 3.5% is conservative for Israel (vs. the US 4% rule) due to higher inflation.",
-      "pension": "Expected monthly pension payout at full pension age. Early withdrawal from age 60 receives ~70% of the full amount.",
+      "pension": "Expected monthly pension payout at full pension age.",
       "bituachLeumi": "National Insurance old-age pension. Starts at full pension age (67 for men, 65 for women).",
       "netWorthChart": "Baseline uses your expected return rate. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
       "incomeChart": "Income sources by age. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension (70% from age 60, 100% from full pension age) + Bituach Leumi + passive income."
