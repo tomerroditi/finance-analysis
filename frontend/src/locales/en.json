@@ -86,7 +86,7 @@
     "setupDescription": "To enable Google Drive backup, create OAuth credentials in Google Cloud Console:",
     "setupStep1": "Open Google Cloud Console → Credentials",
     "setupStep2": "Create OAuth client ID (Web application)",
-    "setupStep3": "Add redirect URI: http://localhost:8000/api/google/callback",
+    "setupStep3": "Add redirect URI: {{redirectUri}}",
     "setupStep4": "Copy the Client ID and Client Secret below",
     "clientIdPlaceholder": "Client ID",
     "clientSecretPlaceholder": "Client Secret",

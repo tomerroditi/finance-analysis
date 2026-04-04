@@ -4,7 +4,7 @@ Google account management API routes.
 Handles OAuth flow, connection status, disconnect, and pending restore detection.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -44,12 +44,17 @@ def save_oauth_credentials(creds: OAuthCredentials):
     return {"status": "configured"}
 
 
+def _get_callback_uri(request: Request) -> str:
+    """Build the OAuth callback URI from the current request's host."""
+    return f"{request.base_url}api/google/callback".rstrip("/")
+
+
 @router.get("/auth-url")
-def get_auth_url():
+def get_auth_url(request: Request):
     """Generate Google OAuth authorization URL."""
     service = GoogleDriveService()
     try:
-        url = service.get_auth_url()
+        url = service.get_auth_url(redirect_uri=_get_callback_uri(request))
     except ValueError as e:
         from backend.errors import ValidationException
 
@@ -58,10 +63,10 @@ def get_auth_url():
 
 
 @router.get("/callback")
-def oauth_callback(code: str):
+def oauth_callback(code: str, request: Request):
     """Handle Google OAuth callback — exchange code for tokens, redirect to frontend."""
     service = GoogleDriveService()
-    service.exchange_code(code)
+    service.exchange_code(code, redirect_uri=_get_callback_uri(request))
 
     from backend.utils.backup import is_db_empty
 
@@ -70,10 +75,11 @@ def oauth_callback(code: str):
         backups = service.list_backups()
         has_pending = len(backups) > 0
 
-    redirect_url = "http://localhost:5173/?google_connected=true"
+    # Redirect to frontend on the same host, default port 5173
+    frontend_url = f"http://{request.url.hostname}:5173/?google_connected=true"
     if has_pending:
-        redirect_url += "&pending_restore=true"
-    return RedirectResponse(url=redirect_url)
+        frontend_url += "&pending_restore=true"
+    return RedirectResponse(url=frontend_url)
 
 
 @router.get("/status", response_model=GoogleStatus)

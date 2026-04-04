@@ -139,8 +139,13 @@ class GoogleDriveService:
             except keyring.errors.PasswordDeleteError:
                 pass
 
-    def get_auth_url(self) -> str:
+    def get_auth_url(self, redirect_uri: str) -> str:
         """Generate Google OAuth authorization URL.
+
+        Parameters
+        ----------
+        redirect_uri : str
+            The callback URI Google should redirect to after consent.
 
         Returns
         -------
@@ -150,7 +155,7 @@ class GoogleDriveService:
         Raises
         ------
         ValueError
-            If ``GOOGLE_CLIENT_ID`` or ``GOOGLE_CLIENT_SECRET`` env vars are not set.
+            If OAuth client credentials are not configured.
         """
         from google_auth_oauthlib.flow import Flow
 
@@ -166,12 +171,12 @@ class GoogleDriveService:
                 }
             },
             scopes=SCOPES,
-            redirect_uri="http://localhost:8000/api/google/callback",
+            redirect_uri=redirect_uri,
         )
         auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
         return auth_url
 
-    def exchange_code(self, code: str) -> dict:
+    def exchange_code(self, code: str, redirect_uri: str) -> dict:
         """Exchange an authorization code for tokens.
 
         Fetches the token, retrieves user info, then stores all credentials
@@ -181,6 +186,8 @@ class GoogleDriveService:
         ----------
         code : str
             The authorization code returned by Google after user consent.
+        redirect_uri : str
+            The same callback URI used in :meth:`get_auth_url` (must match).
 
         Returns
         -------
@@ -202,7 +209,7 @@ class GoogleDriveService:
                 }
             },
             scopes=SCOPES,
-            redirect_uri="http://localhost:8000/api/google/callback",
+            redirect_uri=redirect_uri,
         )
         flow.fetch_token(code=code)
         credentials = flow.credentials

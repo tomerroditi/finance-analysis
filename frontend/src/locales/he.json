@@ -86,7 +86,7 @@
     "setupDescription": "כדי להפעיל גיבוי ל-Google Drive, צור הרשאות OAuth ב-Google Cloud Console:",
     "setupStep1": "פתח Google Cloud Console → Credentials",
     "setupStep2": "צור OAuth client ID (Web application)",
-    "setupStep3": "הוסף redirect URI: http://localhost:8000/api/google/callback",
+    "setupStep3": "הוסף redirect URI: {{redirectUri}}",
     "setupStep4": "העתק את ה-Client ID וה-Client Secret למטה",
     "clientIdPlaceholder": "Client ID",
     "clientSecretPlaceholder": "Client Secret",

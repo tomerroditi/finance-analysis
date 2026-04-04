@@ -271,7 +271,7 @@ export function SettingsPopup({
                   </a>
                 </li>
                 <li>{t("settings.setupStep2")}</li>
-                <li>{t("settings.setupStep3")}</li>
+                <li>{t("settings.setupStep3", { redirectUri: `${window.location.origin.replace(/:\d+$/, ":8000")}/api/google/callback` })}</li>
                 <li>{t("settings.setupStep4")}</li>
               </ol>
               <div className="space-y-2">
