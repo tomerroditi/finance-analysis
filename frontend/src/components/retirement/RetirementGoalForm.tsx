@@ -98,10 +98,10 @@ export function RetirementGoalForm({
     setForm(goalToForm(goal));
   }
 
-  const { data: khScraped } = useQuery({
-    queryKey: ["retirement", "keren-hishtalmut-balance"],
+  const { data: scrapedDefaults } = useQuery({
+    queryKey: ["retirement", "scraped-defaults"],
     queryFn: () =>
-      retirementApi.getKerenHishtalmutBalance().then((r) => r.data),
+      retirementApi.getScrapedDefaults().then((r) => r.data),
   });
 
   // Calculate: preview projections without saving
@@ -205,9 +205,21 @@ export function RetirementGoalForm({
     });
   };
 
-  const applyScrapedKh = () => {
-    if (khScraped?.balance != null) {
-      handleChange("keren_hishtalmut_balance", khScraped.balance);
+  const applyScrapedKhBalance = () => {
+    if (scrapedDefaults?.keren_hishtalmut_balance != null) {
+      handleChange("keren_hishtalmut_balance", scrapedDefaults.keren_hishtalmut_balance);
+    }
+  };
+
+  const applyScrapedKhMonthly = () => {
+    if (scrapedDefaults?.keren_hishtalmut_monthly_contribution != null) {
+      handleChange("keren_hishtalmut_monthly_contribution", scrapedDefaults.keren_hishtalmut_monthly_contribution);
+    }
+  };
+
+  const applyScrapedPension = () => {
+    if (scrapedDefaults?.pension_monthly_deposit != null) {
+      handleChange("pension_monthly_payout_estimate", scrapedDefaults.pension_monthly_deposit);
     }
   };
 
@@ -290,17 +302,31 @@ export function RetirementGoalForm({
 
       {/* Israeli Savings Vehicles */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
-          <NumberField
-            label={t("earlyRetirement.form.pensionPayout")}
-            value={form.pension_monthly_payout_estimate}
-            onChange={(v) =>
-              handleChange("pension_monthly_payout_estimate", v)
-            }
-            min={0}
-            step={500}
-            suffix="₪"
-            tooltip={t("earlyRetirement.tooltips.pension")}
-          />
+          <div>
+            <NumberField
+              label={t("earlyRetirement.form.pensionPayout")}
+              value={form.pension_monthly_payout_estimate}
+              onChange={(v) =>
+                handleChange("pension_monthly_payout_estimate", v)
+              }
+              min={0}
+              step={500}
+              suffix="₪"
+              tooltip={t("earlyRetirement.tooltips.pension")}
+            />
+            {scrapedDefaults?.pension_monthly_deposit != null && (
+              <button
+                type="button"
+                onClick={applyScrapedPension}
+                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+              >
+                <RefreshCw size={10} />
+                {t("earlyRetirement.form.useScrapedPension", {
+                  amount: ILS_FORMAT.format(scrapedDefaults.pension_monthly_deposit),
+                })}
+              </button>
+            )}
+          </div>
           <div>
             <NumberField
               label={t("earlyRetirement.form.kerenHishtalmutBalance")}
@@ -312,32 +338,46 @@ export function RetirementGoalForm({
               step={1000}
               suffix="₪"
             />
-            {khScraped?.balance != null && (
+            {scrapedDefaults?.keren_hishtalmut_balance != null && (
               <button
                 type="button"
-                onClick={applyScrapedKh}
+                onClick={applyScrapedKhBalance}
                 className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
               >
                 <RefreshCw size={10} />
                 {t("earlyRetirement.form.useScrapedKh", {
-                  amount: ILS_FORMAT.format(khScraped.balance),
+                  amount: ILS_FORMAT.format(scrapedDefaults.keren_hishtalmut_balance),
                 })}
               </button>
             )}
           </div>
-          <NumberField
-            label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
-            value={form.keren_hishtalmut_monthly_contribution}
-            onChange={(v) =>
-              handleChange(
-                "keren_hishtalmut_monthly_contribution",
-                v,
-              )
-            }
-            min={0}
-            step={100}
-            suffix="₪"
-          />
+          <div>
+            <NumberField
+              label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
+              value={form.keren_hishtalmut_monthly_contribution}
+              onChange={(v) =>
+                handleChange(
+                  "keren_hishtalmut_monthly_contribution",
+                  v,
+                )
+              }
+              min={0}
+              step={100}
+              suffix="₪"
+            />
+            {scrapedDefaults?.keren_hishtalmut_monthly_contribution != null && (
+              <button
+                type="button"
+                onClick={applyScrapedKhMonthly}
+                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+              >
+                <RefreshCw size={10} />
+                {t("earlyRetirement.form.useScrapedKhMonthly", {
+                  amount: ILS_FORMAT.format(scrapedDefaults.keren_hishtalmut_monthly_contribution),
+                })}
+              </button>
+            )}
+          </div>
           <div>
             <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1">
               <label className="flex items-center gap-1">

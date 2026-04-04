@@ -820,7 +820,9 @@
       "calculate": "Calculate",
       "savePlan": "Save Plan",
       "resetPlan": "Reset",
-      "useScrapedKh": "Use scraped balance: {{amount}}"
+      "useScrapedKh": "Use scraped balance: {{amount}}",
+      "useScrapedKhMonthly": "Use scraped deposit: {{amount}}",
+      "useScrapedPension": "Use scraped deposit: {{amount}}"
     },
     "status": {
       "netWorth": "Net Worth",

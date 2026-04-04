@@ -820,7 +820,9 @@
       "calculate": "חשב",
       "savePlan": "שמור תוכנית",
       "resetPlan": "איפוס",
-      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}"
+      "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}",
+      "useScrapedKhMonthly": "השתמש בהפקדה מגרידה: {{amount}}",
+      "useScrapedPension": "השתמש בהפקדה מגרידה: {{amount}}"
     },
     "status": {
       "netWorth": "שווי נקי",

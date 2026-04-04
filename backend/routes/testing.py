@@ -89,6 +89,7 @@ def _prepare_demo_database() -> None:
             "credit_card_transactions",
             "cash_transactions",
             "manual_investment_transactions",
+            "insurance_transactions",
         ]:
             conn.execute(text(
                 f"UPDATE {table} SET date = date(date, :offset)"
@@ -125,6 +126,12 @@ def _prepare_demo_database() -> None:
         conn.execute(text(
             "UPDATE liability_transactions SET date = date(date, :offset) WHERE date IS NOT NULL"
         ), {"offset": offset_str})
+
+        # Shift insurance account date fields
+        for col in ["balance_date", "liquidity_date"]:
+            conn.execute(text(
+                f"UPDATE insurance_accounts SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
+            ), {"offset": offset_str})
 
         # Shift budget rules year/month
         rows = conn.execute(text(
