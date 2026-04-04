@@ -2068,7 +2068,7 @@ def generate_insurance_data(session):
     deposit_configs = [
         ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
          "הפקדה - Cohen Technologies",
-         "עובד: 625 / מעסיק: 1,625 / פיצויים: 1,500"),
+         "עובד: 625 / מעסיק: 1625 / פיצויים: 1500"),
         ("PN-DEMO-002", "Pension Supplementary - School District", pension_mashlima_monthly,
          "הפקדה - Tel Aviv School District",
          "עובד: 400 / מעסיק: 500 / פיצויים: 300"),
