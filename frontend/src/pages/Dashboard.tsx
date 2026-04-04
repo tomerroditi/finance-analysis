@@ -388,11 +388,6 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold">📊 {t("dashboard.title")}</h1>
-        <p className="text-[var(--text-muted)] mt-1 text-sm md:text-base">✨ {t("dashboard.subtitle")}</p>
-      </div>
-
       {/* Section 1: Financial Health Header */}
       <FinancialHealthHeader
         netWorthData={netWorthData}

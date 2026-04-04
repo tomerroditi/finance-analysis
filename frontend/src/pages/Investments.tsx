@@ -503,13 +503,7 @@ export function Investments() {
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{t("investments.title")}</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            {t("investments.subtitle")}
-          </p>
-        </div>
+      <div className="flex items-center justify-end gap-3">
         <div className="flex gap-3 md:gap-4">
           <button
             onClick={() => setIsAddOpen(true)}

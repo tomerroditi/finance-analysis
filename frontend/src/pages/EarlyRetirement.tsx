@@ -58,15 +58,6 @@ export function EarlyRetirement() {
 
   return (
     <div className="flex flex-col gap-4 md:gap-6 p-4 md:p-6">
-      <header>
-        <h1 className="text-xl md:text-2xl font-bold text-[var(--text-primary)]">
-          {t("earlyRetirement.title")}
-        </h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">
-          {t("earlyRetirement.subtitle")}
-        </p>
-      </header>
-
       {/* Section 1: Current Status */}
       <Section
         icon={<Activity size={18} className="text-emerald-400" />}
