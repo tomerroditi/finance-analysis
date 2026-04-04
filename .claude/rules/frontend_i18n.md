@@ -69,7 +69,7 @@ Only when logical properties aren't sufficient:
 ## Date & Number Formatting
 
 - **Dates:** `frontend/src/utils/dateFormatting.ts` — uses `date-fns` with Hebrew locale (`he`) when language is Hebrew
-- **Numbers:** Use `Intl.NumberFormat("he-IL")` for locale-aware formatting
+- **Currency:** Always use `formatCurrency()` from `utils/numberFormatting.ts` — never inline `new Intl.NumberFormat()`
 - **Plotly charts:** Hebrew locale registered in `frontend/src/utils/plotlyLocale.ts` (day/month names, date format)
 
 ## Provider/Service Name Localization
