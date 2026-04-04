@@ -79,6 +79,36 @@ class RetirementService:
         """
         return self.insurance_account_service.get_keren_hishtalmut_balance()
 
+    def get_scraped_defaults(self) -> dict:
+        """Get all auto-fillable values from scraped insurance data.
+
+        For each field, returns the scraped value or None if unavailable.
+        Monthly contributions are estimated from the last transaction amount
+        of active accounts (those with transactions in the current or
+        previous month).
+
+        Returns
+        -------
+        dict
+            Keys: keren_hishtalmut_balance, keren_hishtalmut_monthly_contribution,
+            pension_monthly_deposit. Values are float or None.
+        """
+        return {
+            "keren_hishtalmut_balance": (
+                self.insurance_account_service.get_keren_hishtalmut_balance()
+            ),
+            "keren_hishtalmut_monthly_contribution": (
+                self.insurance_account_service.get_monthly_contribution_by_type(
+                    "hishtalmut"
+                )
+            ),
+            "pension_monthly_deposit": (
+                self.insurance_account_service.get_monthly_contribution_by_type(
+                    "pension"
+                )
+            ),
+        }
+
     def get_current_status(self) -> dict:
         """Aggregate current financial status from real dashboard data.
 

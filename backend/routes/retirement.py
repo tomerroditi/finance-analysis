@@ -130,6 +130,14 @@ class KerenHishtalmutBalanceResponse(BaseModel):
     balance: Optional[float] = None
 
 
+class ScrapedDefaultsResponse(BaseModel):
+    """Response body for auto-fillable values from scraped insurance data."""
+
+    keren_hishtalmut_balance: Optional[float] = None
+    keren_hishtalmut_monthly_contribution: Optional[float] = None
+    pension_monthly_deposit: Optional[float] = None
+
+
 @router.get("/goal", response_model=Optional[RetirementGoalResponse])
 async def get_goal(db: Session = Depends(get_database)):
     """Get the retirement goal profile, or null if not configured."""
@@ -198,3 +206,15 @@ async def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
     service = RetirementService(db)
     balance = service.get_keren_hishtalmut_scraped_balance()
     return {"balance": balance}
+
+
+@router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
+async def get_scraped_defaults(db: Session = Depends(get_database)):
+    """Get all auto-fillable values from scraped insurance data.
+
+    Returns Keren Hishtalmut balance and monthly contribution, plus
+    pension monthly deposit estimate. Values are null when no scraped
+    data is available.
+    """
+    service = RetirementService(db)
+    return service.get_scraped_defaults()

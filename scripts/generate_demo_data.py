@@ -35,6 +35,8 @@ from backend.models import (
     CashTransaction,
     Category,
     CreditCardTransaction,
+    InsuranceAccount,
+    InsuranceTransaction,
     Investment,
     InvestmentBalanceSnapshot,
     Liability,
@@ -1940,6 +1942,189 @@ def create_scraping_history(session):
 
 
 # ---------------------------------------------------------------------------
+# Insurance accounts & transactions
+# ---------------------------------------------------------------------------
+
+def generate_insurance_data(session):
+    """Generate insurance accounts (pension + keren hishtalmut) and monthly deposit transactions.
+
+    Creates:
+    - 2 pension accounts (makifa + mashlima) with monthly deposits
+    - 2 keren hishtalmut accounts with monthly deposits
+    - 1 inactive keren hishtalmut (old employer, no recent transactions)
+    """
+    months = list(month_range(START_DATE, REFERENCE_DATE))
+    txn_counter = 0
+
+    # --- Insurance Accounts ---
+    pension_makifa = InsuranceAccount(
+        provider="hafenix",
+        policy_id="PN-DEMO-001",
+        policy_type="pension",
+        pension_type="makifa",
+        account_name="Pension Comprehensive - Tech Company",
+        balance=520000.0,
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "General Track", "yield_pct": 7.2, "allocation_pct": 100, "sum": 520000.0},
+        ]),
+        commission_deposits_pct=1.49,
+        commission_savings_pct=0.22,
+        insurance_covers=json.dumps([
+            {"title": "Disability Insurance", "desc": "60% of salary", "sum": 15000},
+            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
+        ]),
+        insurance_costs=json.dumps([
+            {"title": "Life insurance premium", "amount": 85},
+            {"title": "Disability premium", "amount": 120},
+        ]),
+    )
+    session.add(pension_makifa)
+
+    pension_mashlima = InsuranceAccount(
+        provider="hafenix",
+        policy_id="PN-DEMO-002",
+        policy_type="pension",
+        pension_type="mashlima",
+        account_name="Pension Supplementary - School District",
+        balance=180000.0,
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "Bonds Track", "yield_pct": 4.1, "allocation_pct": 60, "sum": 108000.0},
+            {"name": "Equity Track", "yield_pct": 9.8, "allocation_pct": 40, "sum": 72000.0},
+        ]),
+        commission_deposits_pct=1.25,
+        commission_savings_pct=0.18,
+        insurance_covers=json.dumps([
+            {"title": "Disability Insurance", "desc": "40% of salary", "sum": 8000},
+        ]),
+        insurance_costs=json.dumps([
+            {"title": "Disability premium", "amount": 55},
+        ]),
+    )
+    session.add(pension_mashlima)
+
+    kh_active = InsuranceAccount(
+        provider="hafenix",
+        policy_id="KH-DEMO-001",
+        policy_type="hishtalmut",
+        account_name="Keren Hishtalmut - Tech Company",
+        balance=145000.0,
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "S&P 500 Track", "yield_pct": 12.5, "allocation_pct": 70, "sum": 101500.0},
+            {"name": "Israel Bond Track", "yield_pct": 3.8, "allocation_pct": 30, "sum": 43500.0},
+        ]),
+        commission_deposits_pct=0.0,
+        commission_savings_pct=0.74,
+        liquidity_date=(REFERENCE_DATE + timedelta(days=365 * 2)).isoformat(),
+    )
+    session.add(kh_active)
+
+    kh_spouse = InsuranceAccount(
+        provider="hafenix",
+        policy_id="KH-DEMO-002",
+        policy_type="hishtalmut",
+        account_name="Keren Hishtalmut - School District",
+        balance=62000.0,
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "General Track", "yield_pct": 6.9, "allocation_pct": 100, "sum": 62000.0},
+        ]),
+        commission_deposits_pct=0.0,
+        commission_savings_pct=0.85,
+        liquidity_date=(REFERENCE_DATE - timedelta(days=180)).isoformat(),
+    )
+    session.add(kh_spouse)
+
+    # Inactive KH — old employer, no recent transactions
+    kh_old = InsuranceAccount(
+        provider="hafenix",
+        policy_id="KH-DEMO-OLD",
+        policy_type="hishtalmut",
+        account_name="Keren Hishtalmut - Previous Employer",
+        balance=35000.0,
+        balance_date=(REFERENCE_DATE - timedelta(days=200)).isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "Default Track", "yield_pct": 5.1, "allocation_pct": 100, "sum": 35000.0},
+        ]),
+        commission_deposits_pct=0.0,
+        commission_savings_pct=0.95,
+        liquidity_date=(REFERENCE_DATE - timedelta(days=365)).isoformat(),
+    )
+    session.add(kh_old)
+
+    # --- Monthly deposit transactions ---
+    # Pension makifa: employee 2.5% + employer 6.5% + severance 6% on 25k salary
+    # → ~3,750/month total deposit
+    pension_makifa_monthly = 3750.0
+    # Pension mashlima: ~1,200/month (smaller supplementary)
+    pension_mashlima_monthly = 1200.0
+    # KH active: 2.5% employee + 7.5% employer on 15k cap → 1,500/month
+    kh_active_monthly = 1500.0
+    # KH spouse: ~750/month (teacher salary)
+    kh_spouse_monthly = 750.0
+
+    deposit_configs = [
+        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
+         "הפקדה - Cohen Technologies",
+         "עובד: 625 / מעסיק: 1625 / פיצויים: 1500"),
+        ("PN-DEMO-002", "Pension Supplementary - School District", pension_mashlima_monthly,
+         "הפקדה - Tel Aviv School District",
+         "עובד: 400 / מעסיק: 500 / פיצויים: 300"),
+        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_active_monthly,
+         "הפקדה - Cohen Technologies", None),
+        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_spouse_monthly,
+         "הפקדה - Tel Aviv School District", None),
+    ]
+
+    for policy_id, account_name, monthly_amount, description, memo in deposit_configs:
+        for year, month_num in months:
+            txn_counter += 1
+            amount = monthly_amount
+            txn = InsuranceTransaction(
+                id=f"demo-ins-{txn_counter:04d}",
+                date=rand_date_in_month(year, month_num, 1, 10),
+                provider="hafenix",
+                account_name=account_name,
+                account_number=policy_id,
+                description=description,
+                amount=amount,
+                category="Ignore",
+                tag=None,
+                source="insurance_transactions",
+                type="normal",
+                status="completed",
+                memo=memo,
+            )
+            session.add(txn)
+
+    # Old KH — only has transactions from 6+ months ago
+    old_months = [(y, m) for y, m in months
+                  if date(y, m, 1) < (REFERENCE_DATE - timedelta(days=180))]
+    for year, month_num in old_months:
+        txn_counter += 1
+        amount = 1100.0
+        txn = InsuranceTransaction(
+            id=f"demo-ins-{txn_counter:04d}",
+            date=rand_date_in_month(year, month_num, 1, 10),
+            provider="hafenix",
+            account_name="Keren Hishtalmut - Previous Employer",
+            account_number="KH-DEMO-OLD",
+            description="הפקדה",
+            amount=amount,
+            category="Ignore",
+            tag=None,
+            source="insurance_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(txn)
+
+    session.flush()
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -2028,6 +2213,10 @@ def main():
         print("  Creating scraping history...")
         create_scraping_history(session)
 
+        # 17. Insurance accounts & transactions
+        print("  Generating insurance data...")
+        generate_insurance_data(session)
+
         session.commit()
         print("\nDemo database created successfully!")
 
@@ -2038,6 +2227,8 @@ def main():
             "credit_card_transactions",
             "cash_transactions",
             "manual_investment_transactions",
+            "insurance_transactions",
+            "insurance_accounts",
             "categories",
             "budget_rules",
             "tagging_rules",

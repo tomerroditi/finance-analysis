@@ -303,6 +303,10 @@ class CredentialsService:
             Services.CREDIT_CARD.value, "visa cal", "Online Shopping",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
+        ensure_dummy_cred(
+            Services.INSURANCE.value, "hafenix", "The Cohens",
+            {Fields.ID.value: "demo", Fields.PHONE_NUMBER.value: "050-1234567"},
+        )
 
     def _invalidate_cache(self) -> None:
         """Clear cache and reload."""

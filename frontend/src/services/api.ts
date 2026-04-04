@@ -475,6 +475,12 @@ export interface RetirementSuggestions {
   life_expectancy: number;
 }
 
+export interface ScrapedDefaults {
+  keren_hishtalmut_balance: number | null;
+  keren_hishtalmut_monthly_contribution: number | null;
+  pension_monthly_deposit: number | null;
+}
+
 export interface RetirementProjections {
   fire_number: number;
   years_to_fire: number;
@@ -514,6 +520,8 @@ export const retirementApi = {
     api.post<RetirementProjections>("/retirement/projections", data),
   getKerenHishtalmutBalance: () =>
     api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
+  getScrapedDefaults: () =>
+    api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
   previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
