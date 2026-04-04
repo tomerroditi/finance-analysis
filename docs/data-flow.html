@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance Analysis — Data Flow</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e17;
+    --bg-elevated: #111827;
+    --bg-card: #151d2e;
+    --border: #1e2d44;
+    --border-active: #3b82f6;
+    --text: #c9d1d9;
+    --text-dim: #6b7b8d;
+    --text-bright: #e6edf3;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #22d3ee;
+    --accent-green: #34d399;
+    --accent-amber: #fbbf24;
+    --accent-rose: #f472b6;
+    --accent-violet: #a78bfa;
+    --accent-orange: #fb923c;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: 20px 40px;
+    background: linear-gradient(180deg, var(--bg) 60%, transparent);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .header h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--accent-cyan);
+    letter-spacing: 0.5px;
+  }
+
+  .header .subtitle {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  .header .legend {
+    margin-left: auto;
+    display: flex;
+    gap: 20px;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-dim);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .canvas {
+    position: relative;
+    padding: 0 40px 80px;
+  }
+
+  .connections-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .connections-layer path {
+    fill: none;
+    stroke-width: 1.5;
+    opacity: 0.25;
+    transition: opacity 0.3s, stroke-width 0.3s;
+  }
+
+  .connections-layer path.highlighted {
+    opacity: 0.7;
+    stroke-width: 2.5;
+  }
+
+  .connections-layer path.dimmed {
+    opacity: 0.06;
+  }
+
+  .flow-dot {
+    r: 2.5;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .flow-dot.active {
+    opacity: 0.9;
+  }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: 180px 180px 190px 190px 200px 200px 180px;
+    gap: 24px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .layer {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .column-headers {
+    display: grid;
+    grid-template-columns: 180px 180px 190px 190px 200px 200px 180px;
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 12px 40px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .layer-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .layer-label span {
+    opacity: 0.4;
+    margin-right: 6px;
+  }
+
+  .node {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 14px 12px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    overflow: hidden;
+  }
+
+  .node::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-radius: 8px 8px 0 0;
+    opacity: 0.7;
+  }
+
+  .node:hover {
+    border-color: var(--border-active);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .node.active {
+    border-color: var(--border-active);
+    box-shadow: 0 0 0 1px var(--border-active), 0 8px 32px rgba(59, 130, 246, 0.15);
+  }
+
+  .node-icon {
+    font-size: 18px;
+    margin-bottom: 8px;
+    display: block;
+    filter: grayscale(0.2);
+  }
+
+  .node-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+
+  .node-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    font-weight: 300;
+  }
+
+  .node-badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-top: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-blue);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+
+  .node[data-layer="sources"]::before { background: var(--accent-cyan); }
+  .node[data-layer="sources"] .node-badge { background: rgba(34,211,238,0.1); color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); }
+
+  .node[data-layer="ingestion"]::before { background: var(--accent-blue); }
+
+  .node[data-layer="processing"]::before { background: var(--accent-amber); }
+  .node[data-layer="processing"] .node-badge { background: rgba(251,191,36,0.1); color: var(--accent-amber); border-color: rgba(251,191,36,0.2); }
+
+  .node[data-layer="storage"]::before { background: var(--accent-green); }
+  .node[data-layer="storage"] .node-badge { background: rgba(52,211,153,0.1); color: var(--accent-green); border-color: rgba(52,211,153,0.2); }
+
+  .node[data-layer="management"]::before { background: var(--accent-orange); }
+  .node[data-layer="management"] .node-badge { background: rgba(251,146,60,0.1); color: var(--accent-orange); border-color: rgba(251,146,60,0.2); }
+
+  .node[data-layer="analytics"]::before { background: var(--accent-violet); }
+  .node[data-layer="analytics"] .node-badge { background: rgba(167,139,250,0.1); color: var(--accent-violet); border-color: rgba(167,139,250,0.2); }
+
+  .node[data-layer="frontend"]::before { background: var(--accent-rose); }
+  .node[data-layer="frontend"] .node-badge { background: rgba(244,114,182,0.1); color: var(--accent-rose); border-color: rgba(244,114,182,0.2); }
+
+  .detail-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .detail-panel.open {
+    transform: translateY(0);
+  }
+
+  .detail-inner {
+    padding: 28px 40px 36px;
+    max-width: 1100px;
+  }
+
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .detail-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
+  .detail-header .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-blue);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+
+  .detail-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .detail-close:hover {
+    border-color: var(--text-dim);
+    color: var(--text);
+  }
+
+  .detail-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .detail-section h3 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  .detail-section p,
+  .detail-section li {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    font-weight: 300;
+  }
+
+  .detail-section ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .detail-section li::before {
+    content: '\2192 ';
+    color: var(--accent-blue);
+    font-weight: 500;
+  }
+
+  .detail-section code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    background: rgba(59, 130, 246, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--accent-cyan);
+  }
+
+  .detail-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  .detail-flow .step {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .detail-flow .arrow {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .callout {
+    background: linear-gradient(135deg, rgba(251,191,36,0.04), rgba(251,191,36,0.01));
+    border: 1px solid rgba(251,191,36,0.15);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .callout-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .callout-text {
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    font-weight: 300;
+  }
+
+  .callout-text strong {
+    color: var(--accent-amber);
+    font-weight: 500;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .node {
+    animation: fadeInUp 0.5s ease both;
+  }
+
+  .layer:nth-child(1) .node { animation-delay: 0.05s; }
+  .layer:nth-child(2) .node { animation-delay: 0.10s; }
+  .layer:nth-child(3) .node { animation-delay: 0.15s; }
+  .layer:nth-child(4) .node { animation-delay: 0.20s; }
+  .layer:nth-child(5) .node { animation-delay: 0.25s; }
+  .layer:nth-child(6) .node { animation-delay: 0.30s; }
+  .layer:nth-child(7) .node { animation-delay: 0.35s; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 1600px) {
+    .flow-grid {
+      grid-template-columns: repeat(4, 1fr);
+      max-width: 900px;
+    }
+    .layer-label span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="column-headers">
+  <div class="layer-label" style="color:var(--accent-cyan)"><span>01</span> DATA SOURCES</div>
+  <div class="layer-label" style="color:var(--accent-blue)"><span>02</span> INGESTION</div>
+  <div class="layer-label" style="color:var(--accent-amber)"><span>03</span> PROCESSING</div>
+  <div class="layer-label" style="color:var(--accent-green)"><span>04</span> STORAGE</div>
+  <div class="layer-label" style="color:var(--accent-orange)"><span>05</span> DATA MANAGEMENT</div>
+  <div class="layer-label" style="color:var(--accent-violet)"><span>06</span> ANALYTICS</div>
+  <div class="layer-label" style="color:var(--accent-rose)"><span>07</span> FRONTEND</div>
+</div>
+
+<svg class="connections-layer" id="connections"></svg>
+
+<div class="canvas">
+  <div class="flow-grid" id="flowGrid">
+
+    <!-- LAYER 1: Sources -->
+    <div class="layer" data-layer-id="sources">
+      <div class="node" data-layer="sources" data-id="banks">
+        <span class="node-icon">&#x1F3E6;</span>
+        <div class="node-title">Banks</div>
+        <div class="node-desc">17 Israeli bank providers</div>
+        <span class="node-badge">PLAYWRIGHT</span>
+      </div>
+      <div class="node" data-layer="sources" data-id="credit-cards">
+        <span class="node-icon">&#x1F4B3;</span>
+        <div class="node-title">Credit Cards</div>
+        <div class="node-desc">6 providers — Max, Visa Cal, Isracard, Amex</div>
+        <span class="node-badge">PLAYWRIGHT</span>
+      </div>
+      <div class="node" data-layer="sources" data-id="insurance">
+        <span class="node-icon">&#x1F6E1;&#xFE0F;</span>
+        <div class="node-title">Insurance</div>
+        <div class="node-desc">Pension &amp; savings — Hafenix</div>
+        <span class="node-badge">PLAYWRIGHT</span>
+      </div>
+      <div class="node" data-layer="sources" data-id="manual">
+        <span class="node-icon">&#x270F;&#xFE0F;</span>
+        <div class="node-title">Manual Entry</div>
+        <div class="node-desc">Cash, investments, balance corrections</div>
+        <span class="node-badge">UI FORMS</span>
+      </div>
+    </div>
+
+    <!-- LAYER 2: Ingestion -->
+    <div class="layer" data-layer-id="ingestion">
+      <div class="node" data-layer="ingestion" data-id="scraper">
+        <span class="node-icon">&#x1F577;&#xFE0F;</span>
+        <div class="node-title">Scraper Framework</div>
+        <div class="node-desc">BrowserScraper (Playwright) &amp; ApiScraper (httpx). Login, 2FA, stealth, data fetch.</div>
+        <span class="node-badge">ASYNC</span>
+      </div>
+      <div class="node" data-layer="ingestion" data-id="adapter">
+        <span class="node-icon">&#x1F50C;</span>
+        <div class="node-title">ScraperAdapter</div>
+        <div class="node-desc">Result &rarr; DataFrame. Generates unique_id, normalizes fields, triggers pipeline.</div>
+        <span class="node-badge">BRIDGE</span>
+      </div>
+      <div class="node" data-layer="ingestion" data-id="api-routes">
+        <span class="node-icon">&#x1F310;</span>
+        <div class="node-title">API Routes</div>
+        <div class="node-desc">POST /transactions, /investments, /cash_balances, /bank_balances</div>
+        <span class="node-badge">FASTAPI</span>
+      </div>
+    </div>
+
+    <!-- LAYER 3: Processing -->
+    <div class="layer" data-layer-id="processing">
+      <div class="node" data-layer="processing" data-id="auto-tag">
+        <span class="node-icon">&#x1F3F7;&#xFE0F;</span>
+        <div class="node-title">Auto-Tagging</div>
+        <div class="node-desc">Recursive AND/OR rule engine. Priority-based, first match wins. CC bill matching.</div>
+        <span class="node-badge">RULES ENGINE</span>
+      </div>
+      <div class="node" data-layer="processing" data-id="balance-recalc">
+        <span class="node-icon">&#x2696;&#xFE0F;</span>
+        <div class="node-title">Balance Recalculation</div>
+        <div class="node-desc">Recomputes running bank balance from transaction history after each scrape.</div>
+      </div>
+      <div class="node" data-layer="processing" data-id="prior-wealth">
+        <span class="node-icon">&#x1F3DB;&#xFE0F;</span>
+        <div class="node-title">Prior Wealth</div>
+        <div class="node-desc">Bridges pre-tracking capital. entered_balance &minus; sum(transactions). Injected as synthetic rows.</div>
+        <span class="node-badge">SYNTHETIC ROWS</span>
+      </div>
+    </div>
+
+    <!-- LAYER 4: Storage -->
+    <div class="layer" data-layer-id="storage">
+      <div class="node" data-layer="storage" data-id="txn-tables">
+        <span class="node-icon">&#x1F4CB;</span>
+        <div class="node-title">Transaction Tables</div>
+        <div class="node-desc">5 parallel tables: bank, credit_card, cash, manual_investment, insurance + split_transactions.</div>
+        <span class="node-badge">5 TABLES</span>
+      </div>
+      <div class="node" data-layer="storage" data-id="bank-bal">
+        <span class="node-icon">&#x1F3E6;</span>
+        <div class="node-title">Bank Balances</div>
+        <div class="node-desc">Per-account balance + prior_wealth_amount.</div>
+      </div>
+      <div class="node" data-layer="storage" data-id="cash-bal">
+        <span class="node-icon">&#x1F4B5;</span>
+        <div class="node-title">Cash Balances</div>
+        <div class="node-desc">Per-envelope balance + prior_wealth. Multiple envelopes.</div>
+      </div>
+      <div class="node" data-layer="storage" data-id="inv-snapshots">
+        <span class="node-icon">&#x1F4F8;</span>
+        <div class="node-title">Investment Snapshots</div>
+        <div class="node-desc">Timestamped market values. manual | calculated | scraped.</div>
+        <span class="node-badge">SNAPSHOT-FIRST</span>
+      </div>
+      <div class="node" data-layer="storage" data-id="meta-tables">
+        <span class="node-icon">&#x2699;&#xFE0F;</span>
+        <div class="node-title">Metadata</div>
+        <div class="node-desc">categories, tagging_rules, budget_rules, investments, liabilities, pending_refunds.</div>
+      </div>
+    </div>
+
+    <!-- LAYER 5: Data Management (User Interaction) -->
+    <div class="layer" data-layer-id="management">
+      <div class="node" data-layer="management" data-id="manual-tagging">
+        <span class="node-icon">&#x1F3F7;&#xFE0F;</span>
+        <div class="node-title">Manual Tagging</div>
+        <div class="node-desc">Inline category/tag editing, bulk-tag operations on selected transactions.</div>
+        <span class="node-badge">USER-DRIVEN</span>
+      </div>
+      <div class="node" data-layer="management" data-id="splits">
+        <span class="node-icon">&#x2702;&#xFE0F;</span>
+        <div class="node-title">Split Transactions</div>
+        <div class="node-desc">Split one transaction across multiple categories/tags. Parent excluded, splits merged at analysis.</div>
+      </div>
+      <div class="node" data-layer="management" data-id="cc-dedup">
+        <span class="node-icon">&#x1F500;</span>
+        <div class="node-title">CC Deduplication</div>
+        <div class="node-desc">Bank CC bill + itemized CC overlap. Aggregates use bank view; breakdowns use itemized.</div>
+        <span class="node-badge">CRITICAL</span>
+      </div>
+      <div class="node" data-layer="management" data-id="refunds-mgmt">
+        <span class="node-icon">&#x1F4B8;</span>
+        <div class="node-title">Refund Management</div>
+        <div class="node-desc">Mark pending refunds, link to actual refund transactions, adjust budget calculations.</div>
+        <span class="node-badge">BUDGET ADJUST</span>
+      </div>
+      <div class="node" data-layer="management" data-id="invest-mgmt">
+        <span class="node-icon">&#x1F4BC;</span>
+        <div class="node-title">Investment Management</div>
+        <div class="node-desc">Create/close/reopen investments. Manual snapshots. Fixed-rate compounding generation.</div>
+      </div>
+      <div class="node" data-layer="management" data-id="liab-mgmt">
+        <span class="node-icon">&#x1F4DD;</span>
+        <div class="node-title">Liability Management</div>
+        <div class="node-desc">Create loans, track payments, mark as paid off. Amortization schedule generation.</div>
+      </div>
+      <div class="node" data-layer="management" data-id="budget-mgmt">
+        <span class="node-icon">&#x1F4CA;</span>
+        <div class="node-title">Budget Management</div>
+        <div class="node-desc">Monthly budget rules, project budgets, copy rules between months. Total Budget special limit.</div>
+        <span class="node-badge">RULES + PROJECTS</span>
+      </div>
+      <div class="node" data-layer="management" data-id="balance-mgmt">
+        <span class="node-icon">&#x1F4B1;</span>
+        <div class="node-title">Balance Management</div>
+        <div class="node-desc">Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation.</div>
+        <span class="node-badge">TRIGGERS PRIOR WEALTH</span>
+      </div>
+      <div class="node" data-layer="management" data-id="cat-mgmt">
+        <span class="node-icon">&#x1F4C1;</span>
+        <div class="node-title">Category &amp; Rules</div>
+        <div class="node-desc">Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions.</div>
+        <span class="node-badge">CASCADE</span>
+      </div>
+    </div>
+
+    <!-- LAYER 6: Analytics -->
+    <div class="layer" data-layer-id="analytics">
+      <div class="node" data-layer="analytics" data-id="analysis-svc">
+        <span class="node-icon">&#x1F4CA;</span>
+        <div class="node-title">AnalysisService</div>
+        <div class="node-desc">Overview, income/expenses, net balance, net worth, by-category, Sankey, income by source.</div>
+        <span class="node-badge">7 KPI METHODS</span>
+      </div>
+      <div class="node" data-layer="analytics" data-id="budget-svc">
+        <span class="node-icon">&#x1F3AF;</span>
+        <div class="node-title">BudgetService</div>
+        <div class="node-desc">Budget vs actual. Monthly limits + project budgets. Refund adjustments.</div>
+      </div>
+      <div class="node" data-layer="analytics" data-id="invest-svc">
+        <span class="node-icon">&#x1F4C8;</span>
+        <div class="node-title">InvestmentsService</div>
+        <div class="node-desc">P&amp;L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding.</div>
+      </div>
+      <div class="node" data-layer="analytics" data-id="liab-svc">
+        <span class="node-icon">&#x1F4C9;</span>
+        <div class="node-title">LiabilitiesService</div>
+        <div class="node-desc">Amortization, remaining balance, total interest, payment tracking.</div>
+      </div>
+      <div class="node" data-layer="analytics" data-id="retire-svc">
+        <span class="node-icon">&#x1F3D6;&#xFE0F;</span>
+        <div class="node-title">RetirementService</div>
+        <div class="node-desc">FIRE projections, savings rate, years to retirement, suggestions.</div>
+      </div>
+    </div>
+
+    <!-- LAYER 7: Frontend -->
+    <div class="layer" data-layer-id="frontend">
+      <div class="node" data-layer="frontend" data-id="dashboard">
+        <span class="node-icon">&#x1F5A5;&#xFE0F;</span>
+        <div class="node-title">Dashboard</div>
+        <div class="node-desc">Overview cards, net worth chart, income/expenses, Sankey, budget gauge.</div>
+        <span class="node-badge">10+ QUERIES</span>
+      </div>
+      <div class="node" data-layer="frontend" data-id="txn-page">
+        <span class="node-icon">&#x1F4D1;</span>
+        <div class="node-title">Transactions</div>
+        <div class="node-desc">Filterable table, inline tagging, splits, bulk ops, refunds.</div>
+      </div>
+      <div class="node" data-layer="frontend" data-id="budget-page">
+        <span class="node-icon">&#x1F4B0;</span>
+        <div class="node-title">Budget</div>
+        <div class="node-desc">Monthly gauges, per-tag breakdown, project budgets.</div>
+      </div>
+      <div class="node" data-layer="frontend" data-id="invest-page">
+        <span class="node-icon">&#x1F5C2;&#xFE0F;</span>
+        <div class="node-title">Investments</div>
+        <div class="node-desc">Portfolio overview, allocation, balance history, P&amp;L analysis.</div>
+      </div>
+      <div class="node" data-layer="frontend" data-id="liab-page">
+        <span class="node-icon">&#x1F3D7;&#xFE0F;</span>
+        <div class="node-title">Liabilities</div>
+        <div class="node-desc">Debt cards, payment timeline, amortization schedule.</div>
+      </div>
+      <div class="node" data-layer="frontend" data-id="retire-page">
+        <span class="node-icon">&#x1F305;</span>
+        <div class="node-title">Early Retirement</div>
+        <div class="node-desc">FIRE calculator, projections, status cards, suggestions.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Key Insights -->
+  <div style="margin-top: 48px; display: flex; flex-direction: column; gap: 16px; max-width: 1340px;">
+    <div class="callout">
+      <span class="callout-icon">&#x26A1;</span>
+      <div class="callout-text">
+        <strong>Amount Sign Convention (everywhere):</strong> Negative = money out (expenses, investment deposits). Positive = money in (salary, refunds, withdrawals). Applies across all tables, services, and calculations.
+      </div>
+    </div>
+    <div class="callout">
+      <span class="callout-icon">&#x26A1;</span>
+      <div class="callout-text">
+        <strong>CC Deduplication &mdash; the critical pattern:</strong> Bank CC bill payment and itemized CC purchases overlap. Aggregate KPIs (income, net worth) &rarr; bank view, exclude CC source. Category breakdowns (pie charts, budgets) &rarr; itemized view, exclude &quot;Credit Cards&quot; category.
+      </div>
+    </div>
+    <div class="callout">
+      <span class="callout-icon">&#x26A1;</span>
+      <div class="callout-text">
+        <strong>Prior Wealth bridges the gap:</strong> prior_wealth = entered_balance &minus; sum(transactions). Injected as synthetic &quot;Prior Wealth&quot; tagged rows. Investment prior wealth lives in bank balance (money originally came from banks).
+      </div>
+    </div>
+    <div class="callout">
+      <span class="callout-icon">&#x26A1;</span>
+      <div class="callout-text">
+        <strong>Investment Balance Resolution:</strong> Snapshot-first (manual &gt; calculated &gt; scraped), then transaction-sum fallback (&minus;sum(all amounts)). Closing creates a 0-balance snapshot. Fixed-rate investments auto-generate daily-compounded snapshots.
+      </div>
+    </div>
+    <div class="callout">
+      <span class="callout-icon">&#x26A1;</span>
+      <div class="callout-text">
+        <strong>Non-expense overrides:</strong> Investments, Liabilities, Income categories, Credit Cards excluded from expenses &mdash; <em>except</em> negative Liabilities (debt payments), which override back as real money outflows.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Panel -->
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-inner" id="detailContent"></div>
+</div>
+
+<script>
+// All detail data is static/hardcoded - no user input
+const details = {
+  "banks": {
+    title: "Banks", tag: "17 Providers",
+    sections: [
+      { heading: "Providers", text: "Hapoalim, Leumi, Discount, Mercantile, Mizrahi, Otsar Hahayal, Union, Beinleumi, Massad, Yahav, OneZero, Pagi, and more." },
+      { heading: "Data Produced", items: ["Account transactions (debits, deposits, CC bill payments, transfers)", "Account balance snapshot", "Fields: date, amount, description, account_number, status"] },
+      { heading: "Pipeline", flow: ["Playwright login", "Navigate to transactions", "Parse HTML/API response", "AccountResult", "ScraperAdapter"] }
+    ]
+  },
+  "credit-cards": {
+    title: "Credit Cards", tag: "6 Providers",
+    sections: [
+      { heading: "Providers", text: "Max, Visa Cal, Isracard, Amex, Beyahad Bishvilha, Behatsdaa." },
+      { heading: "Data Produced", items: ["Itemized purchases with categories", "Installment tracking (type: INSTALLMENTS)", "Original + charged amounts (foreign currency)"] },
+      { heading: "Overlap Warning", text: "These transactions overlap with bank CC bill payments. The CC Deduplication logic handles which view to use per KPI." }
+    ]
+  },
+  "insurance": {
+    title: "Insurance", tag: "Hafenix",
+    sections: [
+      { heading: "Data Produced", items: ["Pension/savings deposit transactions", "Memo field: deposit breakdown (employee/employer/compensation)", "Account metadata (policy type, investment tracks, commissions)"] },
+      { heading: "Special Handling", text: "InsuranceScraperAdapter extends base adapter with post-save hook to persist insurance account metadata." }
+    ]
+  },
+  "manual": {
+    title: "Manual Entry", tag: "UI Forms",
+    sections: [
+      { heading: "Entry Points", items: ["POST /transactions/ \u2014 cash or investment transactions", "POST /cash_balances/ \u2014 set cash envelope balance", "POST /bank_balances/ \u2014 enter bank balance (triggers prior wealth calc)", "POST /investments/ \u2014 create investment metadata", "POST /investments/{id}/snapshots \u2014 manual balance snapshot"] },
+      { heading: "Restrictions", text: "Manual entries can be fully edited/deleted. Scraped entries only allow category/tag changes." }
+    ]
+  },
+  "scraper": {
+    title: "Scraper Framework", tag: "Async",
+    sections: [
+      { heading: "Architecture", items: ["BaseScraper: initialize \u2192 login \u2192 fetch_data \u2192 terminate", "BrowserScraper: Playwright with stealth anti-detection", "ApiScraper: httpx async HTTP for API-only sources"] },
+      { heading: "Features", items: ["2FA/OTP handling with async callback", "Configurable scraping period (days back)", "Screenshot capture on failure", "Daily rate limit (one scrape per account per day)", "5-minute timeout"] },
+      { heading: "Output", text: "ScrapingResult { success, accounts: [{ account_number, transactions, balance }], error_type, error_message }" }
+    ]
+  },
+  "adapter": {
+    title: "ScraperAdapter", tag: "Bridge",
+    sections: [
+      { heading: "Pipeline Steps", flow: ["ScrapingResult", "DataFrame", "INSERT/UPDATE", "Auto-tag", "Rebalance", "Record history"] },
+      { heading: "Normalization", items: ["Generates unique_id: {provider}_{account}_{date}_{amount}_{identifier}", "Maps source to table name", "Normalizes all fields to unified schema"] },
+      { heading: "Demo Mode", text: "Automatically redirects to dummy scrapers that generate fake data." }
+    ]
+  },
+  "api-routes": {
+    title: "API Routes", tag: "FastAPI",
+    sections: [
+      { heading: "Transaction Routes", items: ["POST /transactions/ \u2014 create (cash, manual_investments)", "PUT /transactions/{id} \u2014 update fields", "DELETE /transactions/{id} \u2014 delete (manual only)", "POST /transactions/{id}/split \u2014 split into sub-transactions", "POST /transactions/bulk-tag \u2014 bulk category/tag update"] },
+      { heading: "Balance Routes", items: ["POST /bank_balances/ \u2014 triggers prior wealth calculation", "POST /cash_balances/ \u2014 triggers prior wealth + balance recalc"] }
+    ]
+  },
+  "auto-tag": {
+    title: "Auto-Tagging Engine", tag: "Rules Engine",
+    sections: [
+      { heading: "How It Works", items: ["Rules evaluated in priority order (DESC) \u2014 first match wins", "Conditions are recursive AND/OR trees", "Fields: description, account_name, provider, amount", "Operators: contains, equals, starts_with, gt, lt, between"] },
+      { heading: "CC Bill Matching", text: "Matches bank debit amounts to CC monthly totals (shifted +1 month, \u00b10.01 tolerance). Tags as Credit Cards category." },
+      { heading: "Conflict Detection", text: "Checks for overlapping rules assigning different tags before creating." }
+    ]
+  },
+  "balance-recalc": {
+    title: "Balance Recalculation", tag: "Bank Only",
+    sections: [
+      { heading: "When", text: "Triggered after every bank scrape. Recomputes running balance from full transaction history." },
+      { heading: "Why", text: "New transactions change cumulative sum. Stored balance must stay consistent." }
+    ]
+  },
+  "prior-wealth": {
+    title: "Prior Wealth", tag: "Synthetic Rows",
+    sections: [
+      { heading: "Formula", text: "prior_wealth = user_entered_balance \u2212 sum(all_tracked_transactions)" },
+      { heading: "Three Sources", items: ["Bank: calculated when user enters balance after scraping", "Cash: calculated when user sets cash balance", "Investments: investment.prior_wealth_amount = \u2212sum(all inv txns)"] },
+      { heading: "Why Inv Prior Wealth Lives in Bank", text: "Investment deposits came from bank accounts. Keeping inv_prior_wealth in bank balance maintains: net_worth = bank_balance + investment_value." }
+    ]
+  },
+  "manual-tagging": {
+    title: "Manual Tagging", tag: "User-Driven",
+    sections: [
+      { heading: "Operations", items: ["Inline category/tag editing on individual transactions", "Bulk-tag: select multiple transactions, apply same category/tag", "Scraped transactions: only category/tag can be changed", "Manual transactions: all fields editable"] },
+      { heading: "Cascade Effects", text: "Tagging a transaction invalidates analytics cache. TanStack Query re-fetches affected queries: transactions, categories, and 6+ analytics endpoints." },
+      { heading: "Flow", flow: ["User selects transaction(s)", "Choose category + tag", "PUT /transactions/{id} or POST /transactions/bulk-tag", "Cache invalidation", "Analytics re-render"] }
+    ]
+  },
+  "splits": {
+    title: "Split Transactions", tag: "User-Driven",
+    sections: [
+      { heading: "How It Works", items: ["User splits one transaction into multiple category/tag portions", "Parent stays in main table, marked type=split_parent", "Splits stored in split_transactions table with own amount, category, tag", "Service merges: replaces parents with splits for analysis"] },
+      { heading: "Example", text: "\u2212500 Supermarket \u2192 Split 1: \u2212300 Food/Groceries + Split 2: \u2212200 Home/Cleaning. Parent excluded from totals." },
+      { heading: "Impact", text: "Split amounts flow into budget calculations and category breakdowns independently." }
+    ]
+  },
+  "cc-dedup": {
+    title: "CC Deduplication", tag: "Critical Pattern",
+    sections: [
+      { heading: "The Problem", text: "A 3,000\u20AA CC bill = ONE bank txn AND ~N itemized CC txns totaling ~3,000\u20AA. Both = double-count." },
+      { heading: "Strategy by KPI", items: ["Aggregate KPIs (income, balance, net worth) \u2192 bank view, exclude CC source", "Category breakdowns (pie, budgets) \u2192 itemized CC, exclude Credit Cards category", "Sankey flow \u2192 hybrid, CC gap shown as Unknown"] },
+      { heading: "CC Gap", text: "cc_gap = abs(bank CC bills) \u2212 abs(itemized CC). Caused by timing, pending txns, fees, FX rounding." }
+    ]
+  },
+  "refunds-mgmt": {
+    title: "Refund Management", tag: "Budget Adjust",
+    sections: [
+      { heading: "Workflow", items: ["Mark a transaction or split as \u201cpending refund\u201d with expected amount", "When actual refund arrives, link it to the pending refund", "Supports partial refunds (multiple links to one pending)", "Status tracking: pending \u2192 partial \u2192 resolved \u2192 closed"] },
+      { heading: "Budget Impact", text: "Pending refund adjustments are subtracted from budget spent amounts. This prevents temporary overspend alerts for expenses that will be refunded." },
+      { heading: "Flow", flow: ["Mark pending", "Link refund txn", "Update status", "Budget recalculates"] }
+    ]
+  },
+  "invest-mgmt": {
+    title: "Investment Management", tag: "Lifecycle",
+    sections: [
+      { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate fixed-rate compounded snapshots automatically", "Close investment \u2192 creates 0-balance snapshot on last txn date", "Reopen closed investments, edit close date"] },
+      { heading: "Balance Resolution", items: ["1. Latest snapshot on/before today \u2192 use snapshot", "2. No snapshots \u2192 fallback to \u2212sum(all transactions)", "Snapshot sources: manual > calculated > scraped"] },
+      { heading: "Linked Via", text: "Investments are linked to their transactions via category+tag pair, not a foreign key." }
+    ]
+  },
+  "liab-mgmt": {
+    title: "Liability Management", tag: "Loan Tracking",
+    sections: [
+      { heading: "Operations", items: ["Create liability (principal, rate, term, start date)", "Track payment records against amortization schedule", "Mark as paid off with specific date", "Reopen if needed"] },
+      { heading: "Amortization", text: "Auto-generates monthly payment schedule with principal/interest split. Tracks remaining balance and percent paid." },
+      { heading: "Category Override", text: "Negative Liabilities (debt payments) override into expenses despite Liabilities being a non-expense category." }
+    ]
+  },
+  "budget-mgmt": {
+    title: "Budget Management", tag: "Rules + Projects",
+    sections: [
+      { heading: "Monthly Budgets", items: ["Create spending limit per category/tag for a specific month", "Edit or delete existing budget rules", "Copy all rules from a previous month to a new month", "'Total Budget' \u2014 special overall monthly spending limit"] },
+      { heading: "Project Budgets", items: ["Time-limited budgets for specific goals (e.g., Home Renovation)", "Track spending vs budget with gauge visualization", "View all transactions tagged to the project"] },
+      { heading: "Budget vs Actual", text: "Compares actual spending against budget rules. Excludes Credit Cards, Investments, Liabilities, Ignore categories. Pending refund adjustments are subtracted from spent amounts." }
+    ]
+  },
+  "balance-mgmt": {
+    title: "Balance Management", tag: "Triggers Prior Wealth",
+    sections: [
+      { heading: "Bank Balance Entry", items: ["Set current bank balance after scraping", "Triggers prior wealth calculation: balance \u2212 sum(all bank txns)", "Validates that a scrape was performed today", "Stores per-account: provider, account_name, balance, prior_wealth_amount"] },
+      { heading: "Cash Envelope Management", items: ["Create new cash envelopes with starting balance", "Edit envelope balance \u2192 recalculates prior wealth", "Delete envelopes with confirmation", "Each envelope tracks independent balance and prior wealth"] },
+      { heading: "Prior Wealth Trigger", text: "Both bank and cash balance entry trigger the prior wealth pipeline. The calculated prior_wealth_amount is used as synthetic rows in all analytics calculations." }
+    ]
+  },
+  "cat-mgmt": {
+    title: "Category & Rules Management", tag: "Cascade",
+    sections: [
+      { heading: "Category Operations", items: ["Create/rename/delete categories and tags", "Rename cascades to all transactions, splits, rules, budgets", "Delete nullifies category/tag on affected transactions", "Protected categories (Salary, Credit Cards, etc.) cannot be deleted"] },
+      { heading: "Tagging Rules", items: ["Create rules with recursive AND/OR conditions", "Preview matching transactions before saving", "Conflict detection: warns if rules overlap with different targets", "Rules apply immediately on creation to matching untagged transactions"] },
+      { heading: "Tag Reallocation", text: "Move a tag from one category to another. All transactions with that tag are re-categorized." }
+    ]
+  },
+  "txn-tables": {
+    title: "Transaction Tables", tag: "5 Tables",
+    sections: [
+      { heading: "Tables", items: ["bank_transactions \u2014 debits, deposits, CC bills, transfers", "credit_card_transactions \u2014 itemized CC purchases", "cash_transactions \u2014 manual cash entries", "manual_investment_transactions \u2014 deposits/withdrawals", "insurance_transactions \u2014 pension/savings (+ memo)"] },
+      { heading: "Unified Schema", items: ["unique_id (PK), id, date, amount, description", "provider, account_name, account_number", "category, tag, source, type, status"] }
+    ]
+  },
+  "bank-bal": {
+    title: "Bank Balances", tag: "Per-Account",
+    sections: [
+      { heading: "Fields", items: ["provider + account_name (composite key)", "balance \u2014 current bank balance", "prior_wealth_amount \u2014 pre-tracking capital"] },
+      { heading: "Used In", text: "Net worth calculation, overview KPIs, prior wealth injection into analysis." }
+    ]
+  },
+  "cash-bal": {
+    title: "Cash Balances", tag: "Envelopes",
+    sections: [
+      { heading: "Fields", items: ["account_name \u2014 envelope identifier", "balance, prior_wealth_amount"] },
+      { heading: "Multiple Envelopes", text: "Each has independent balance and prior wealth. Total sums across all." }
+    ]
+  },
+  "inv-snapshots": {
+    title: "Investment Snapshots", tag: "Snapshot-First",
+    sections: [
+      { heading: "Resolution Order", items: ["1. Latest snapshot on/before today \u2192 use it", "2. No snapshots \u2192 fallback to \u2212sum(transactions)"] },
+      { heading: "Sources", items: ["manual \u2014 user-entered", "calculated \u2014 fixed-rate daily compounding", "scraped \u2014 future integration"] },
+      { heading: "Closing", text: "Auto-creates 0-balance snapshot on last transaction date." }
+    ]
+  },
+  "meta-tables": {
+    title: "Metadata Tables", tag: "Configuration",
+    sections: [
+      { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 conditions (recursive JSON), priority", "budget_rules \u2014 amount, category, tags (semicolon-sep)", "investments \u2014 type, rates, commissions, dates", "liabilities \u2014 principal, rate, term, dates", "pending_refunds \u2014 source tracking, resolution"] }
+    ]
+  },
+  "analysis-svc": {
+    title: "AnalysisService", tag: "7 KPI Methods",
+    sections: [
+      { heading: "Methods", items: ["get_overview() \u2014 totals + net change", "get_income_expenses_over_time() \u2014 monthly bars", "get_net_balance_over_time() \u2014 cumulative trend", "get_net_worth_over_time() \u2014 bank + cash + investments", "get_expenses_by_category() \u2014 pie chart", "get_sankey_data() \u2014 income \u2192 expenses flow", "get_income_by_source_over_time() \u2014 stacked breakdown"] },
+      { heading: "Transaction Masks", items: ["Income: Salary, Other Income, + positive Liabilities", "Investment: Investments category", "Expense: everything else + negative Liabilities"] }
+    ]
+  },
+  "budget-svc": {
+    title: "BudgetService", tag: "Budget vs Actual",
+    sections: [
+      { heading: "Features", items: ["Monthly spending limits per category/tag", "Project budgets (time-limited)", "Total Budget special category", "Pending refund adjustments"] },
+      { heading: "Exclusions", text: "Excludes Credit Cards, Investments, Liabilities, Ignore from calculations." }
+    ]
+  },
+  "invest-svc": {
+    title: "InvestmentsService", tag: "P&L Engine",
+    sections: [
+      { heading: "Key Metrics", items: ["Total deposits = abs(sum of negatives)", "Net invested = deposits \u2212 withdrawals", "Current balance = snapshot OR \u2212sum(amounts)", "Profit/Loss = balance \u2212 net_invested", "ROI = (final_value / deposits \u2212 1) \u00d7 100"] },
+      { heading: "Portfolio", text: "Aggregates total_value, total_profit, portfolio_roi, allocation % across all open investments." }
+    ]
+  },
+  "liab-svc": {
+    title: "LiabilitiesService", tag: "Amortization",
+    sections: [
+      { heading: "Calculations", items: ["Monthly payment schedule", "Total interest over lifetime", "Remaining balance, percent paid"] },
+      { heading: "Category", text: "Positive = loan receipts (income). Negative = debt payments (override into expenses)." }
+    ]
+  },
+  "retire-svc": {
+    title: "RetirementService", tag: "FIRE",
+    sections: [
+      { heading: "Inputs", items: ["Net worth, income, expenses, savings rate", "Target retirement age, annual expenses", "Withdrawal rate (e.g., 4% rule)"] },
+      { heading: "Outputs", items: ["Years to financial independence", "Net worth projection chart", "Income scenarios, optimization suggestions"] }
+    ]
+  },
+  "dashboard": {
+    title: "Dashboard", tag: "10+ Queries",
+    sections: [
+      { heading: "Data Sources", items: ["analyticsApi: 10 endpoints", "bankBalancesApi + cashBalancesApi", "investmentsApi.getPortfolioAnalysis()", "transactionsApi.getAll() for recent feed"] },
+      { heading: "Components", text: "Financial health header, net worth chart, income/expenses bars, Sankey flow, budget gauge, recent transactions." }
+    ]
+  },
+  "txn-page": {
+    title: "Transactions Page", tag: "Filterable",
+    sections: [
+      { heading: "Features", items: ["Sortable/filterable table", "Inline tag editing", "Split creation, bulk operations", "Pending refunds section"] },
+      { heading: "Cache Invalidation", text: "Tagging invalidates: transactions, categories, and 6 analytics queries." }
+    ]
+  },
+  "budget-page": {
+    title: "Budget Page", tag: "Monthly + Projects",
+    sections: [
+      { heading: "Views", items: ["Monthly: gauge + rule cards", "Per-tag breakdown within categories", "Project budgets with progress"] }
+    ]
+  },
+  "invest-page": {
+    title: "Investments Page", tag: "Portfolio",
+    sections: [
+      { heading: "Views", items: ["Portfolio: total value, profit, ROI", "Allocation pie chart", "Balance history line chart", "Individual analysis modal"] }
+    ]
+  },
+  "liab-page": {
+    title: "Liabilities Page", tag: "Debt Tracking",
+    sections: [
+      { heading: "Views", items: ["Liability cards with metrics", "Debt over time chart", "Amortization schedule", "Payment history"] }
+    ]
+  },
+  "retire-page": {
+    title: "Early Retirement Page", tag: "FIRE Calculator",
+    sections: [
+      { heading: "Components", items: ["Retirement goal form", "6-card status grid", "Projection charts", "Optimization suggestions"] }
+    ]
+  }
+};
+
+const connectionDefs = [
+  // Sources -> Ingestion
+  { from: "banks", to: "scraper", color: "var(--accent-cyan)" },
+  { from: "credit-cards", to: "scraper", color: "var(--accent-cyan)" },
+  { from: "insurance", to: "scraper", color: "var(--accent-cyan)" },
+  { from: "manual", to: "api-routes", color: "var(--accent-cyan)" },
+  // Ingestion -> Processing
+  { from: "scraper", to: "adapter", color: "var(--accent-blue)" },
+  { from: "adapter", to: "auto-tag", color: "var(--accent-blue)" },
+  { from: "adapter", to: "balance-recalc", color: "var(--accent-blue)" },
+  // Ingestion -> Storage
+  { from: "adapter", to: "txn-tables", color: "var(--accent-blue)" },
+  { from: "api-routes", to: "txn-tables", color: "var(--accent-blue)" },
+  // Processing -> Storage
+  { from: "auto-tag", to: "txn-tables", color: "var(--accent-amber)" },
+  { from: "balance-recalc", to: "bank-bal", color: "var(--accent-amber)" },
+  { from: "prior-wealth", to: "bank-bal", color: "var(--accent-amber)" },
+  { from: "prior-wealth", to: "cash-bal", color: "var(--accent-amber)" },
+  { from: "prior-wealth", to: "inv-snapshots", color: "var(--accent-amber)" },
+  { from: "api-routes", to: "prior-wealth", color: "var(--accent-blue)" },
+  // Storage -> Management
+  { from: "txn-tables", to: "manual-tagging", color: "var(--accent-green)" },
+  { from: "txn-tables", to: "splits", color: "var(--accent-green)" },
+  { from: "txn-tables", to: "cc-dedup", color: "var(--accent-green)" },
+  { from: "txn-tables", to: "refunds-mgmt", color: "var(--accent-green)" },
+  { from: "txn-tables", to: "invest-mgmt", color: "var(--accent-green)" },
+  { from: "txn-tables", to: "liab-mgmt", color: "var(--accent-green)" },
+  { from: "meta-tables", to: "cat-mgmt", color: "var(--accent-green)" },
+  { from: "meta-tables", to: "manual-tagging", color: "var(--accent-green)" },
+  { from: "inv-snapshots", to: "invest-mgmt", color: "var(--accent-green)" },
+  // Management -> Storage (writes back)
+  { from: "manual-tagging", to: "txn-tables", color: "var(--accent-orange)" },
+  { from: "splits", to: "txn-tables", color: "var(--accent-orange)" },
+  { from: "cat-mgmt", to: "meta-tables", color: "var(--accent-orange)" },
+  { from: "invest-mgmt", to: "inv-snapshots", color: "var(--accent-orange)" },
+  // Management -> Analytics
+  { from: "cc-dedup", to: "analysis-svc", color: "var(--accent-orange)" },
+  { from: "refunds-mgmt", to: "budget-svc", color: "var(--accent-orange)" },
+  { from: "invest-mgmt", to: "invest-svc", color: "var(--accent-orange)" },
+  { from: "liab-mgmt", to: "liab-svc", color: "var(--accent-orange)" },
+  { from: "splits", to: "analysis-svc", color: "var(--accent-orange)" },
+  { from: "manual-tagging", to: "analysis-svc", color: "var(--accent-orange)" },
+  // Management -> Storage (budget & balance writes)
+  { from: "budget-mgmt", to: "meta-tables", color: "var(--accent-orange)" },
+  { from: "balance-mgmt", to: "bank-bal", color: "var(--accent-orange)" },
+  { from: "balance-mgmt", to: "cash-bal", color: "var(--accent-orange)" },
+  // Management -> Analytics (budget & balance)
+  { from: "budget-mgmt", to: "budget-svc", color: "var(--accent-orange)" },
+  { from: "balance-mgmt", to: "analysis-svc", color: "var(--accent-orange)" },
+  // Storage -> Management (budget & balance reads)
+  { from: "meta-tables", to: "budget-mgmt", color: "var(--accent-green)" },
+  { from: "bank-bal", to: "balance-mgmt", color: "var(--accent-green)" },
+  { from: "cash-bal", to: "balance-mgmt", color: "var(--accent-green)" },
+  // Storage -> Analytics (direct reads)
+  { from: "bank-bal", to: "analysis-svc", color: "var(--accent-green)" },
+  { from: "cash-bal", to: "analysis-svc", color: "var(--accent-green)" },
+  { from: "meta-tables", to: "budget-svc", color: "var(--accent-green)" },
+  // Analytics -> Frontend
+  { from: "analysis-svc", to: "dashboard", color: "var(--accent-violet)" },
+  { from: "budget-svc", to: "budget-page", color: "var(--accent-violet)" },
+  { from: "invest-svc", to: "invest-page", color: "var(--accent-violet)" },
+  { from: "liab-svc", to: "liab-page", color: "var(--accent-violet)" },
+  { from: "retire-svc", to: "retire-page", color: "var(--accent-violet)" },
+  { from: "txn-tables", to: "txn-page", color: "var(--accent-green)" },
+];
+
+function getNodeCenter(id) {
+  const el = document.querySelector('[data-id="' + id + '"]');
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const sx = window.scrollX, sy = window.scrollY;
+  return {
+    x: rect.left + sx + rect.width / 2,
+    y: rect.top + sy + rect.height / 2,
+    right: rect.right + sx,
+    left: rect.left + sx,
+    top: rect.top + sy,
+    bottom: rect.bottom + sy
+  };
+}
+
+function drawConnections() {
+  const svg = document.getElementById('connections');
+  svg.setAttribute('width', document.documentElement.scrollWidth);
+  svg.setAttribute('height', document.documentElement.scrollHeight);
+
+  // Clear and add defs
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+  filter.id = 'glow';
+  const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+  blur.setAttribute('stdDeviation', '2');
+  blur.setAttribute('result', 'blur');
+  filter.appendChild(blur);
+  const merge = document.createElementNS('http://www.w3.org/2000/svg', 'feMerge');
+  const mn1 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+  mn1.setAttribute('in', 'blur');
+  const mn2 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+  mn2.setAttribute('in', 'SourceGraphic');
+  merge.appendChild(mn1);
+  merge.appendChild(mn2);
+  filter.appendChild(merge);
+  defs.appendChild(filter);
+  svg.appendChild(defs);
+
+  connectionDefs.forEach(function(conn, i) {
+    const from = getNodeCenter(conn.from);
+    const to = getNodeCenter(conn.to);
+    if (!from || !to) return;
+
+    var startX = from.right - 2;
+    var startY = from.y;
+    var endX = to.left + 2;
+    var endY = to.y;
+    var dx = endX - startX;
+    var cp1x = startX + dx * 0.4;
+    var cp2x = endX - dx * 0.4;
+
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + startX + ' ' + startY + ' C ' + cp1x + ' ' + startY + ', ' + cp2x + ' ' + endY + ', ' + endX + ' ' + endY);
+    path.setAttribute('stroke', conn.color);
+    path.setAttribute('data-from', conn.from);
+    path.setAttribute('data-to', conn.to);
+    path.id = 'conn-' + i;
+
+    var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.classList.add('flow-dot');
+    circle.setAttribute('fill', conn.color);
+    var animate = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+    animate.setAttribute('dur', (2 + Math.random() * 2) + 's');
+    animate.setAttribute('repeatCount', 'indefinite');
+    animate.setAttribute('begin', (Math.random() * 3) + 's');
+    var motionPath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
+    motionPath.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#conn-' + i);
+    animate.appendChild(motionPath);
+    circle.appendChild(animate);
+
+    svg.appendChild(path);
+    svg.appendChild(circle);
+  });
+}
+
+function highlightNode(nodeId) {
+  var paths = document.querySelectorAll('.connections-layer path');
+  var dots = document.querySelectorAll('.flow-dot');
+
+  paths.forEach(function(p, i) {
+    var from = p.getAttribute('data-from');
+    var to = p.getAttribute('data-to');
+    if (from === nodeId || to === nodeId) {
+      p.classList.add('highlighted');
+      p.classList.remove('dimmed');
+      if (dots[i]) dots[i].classList.add('active');
+    } else {
+      p.classList.add('dimmed');
+      p.classList.remove('highlighted');
+      if (dots[i]) dots[i].classList.remove('active');
+    }
+  });
+
+  document.querySelectorAll('.node').forEach(function(n) {
+    var id = n.dataset.id;
+    var isConnected = connectionDefs.some(function(c) {
+      return (c.from === nodeId && c.to === id) || (c.to === nodeId && c.from === id);
+    });
+    n.style.opacity = (id !== nodeId && !isConnected) ? '0.3' : '1';
+  });
+}
+
+function clearHighlight() {
+  document.querySelectorAll('.connections-layer path').forEach(function(p) {
+    p.classList.remove('highlighted', 'dimmed');
+  });
+  document.querySelectorAll('.flow-dot').forEach(function(d) {
+    d.classList.remove('active');
+  });
+  document.querySelectorAll('.node').forEach(function(n) {
+    n.style.opacity = '1';
+  });
+}
+
+var activeNode = null;
+
+function buildDetailHTML(data) {
+  // Build DOM safely instead of innerHTML
+  var container = document.createDocumentFragment();
+
+  // Header
+  var header = document.createElement('div');
+  header.className = 'detail-header';
+  var h2 = document.createElement('h2');
+  h2.textContent = data.title;
+  header.appendChild(h2);
+  var tagEl = document.createElement('span');
+  tagEl.className = 'tag';
+  tagEl.textContent = data.tag;
+  header.appendChild(tagEl);
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'detail-close';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.addEventListener('click', closeDetail);
+  header.appendChild(closeBtn);
+  container.appendChild(header);
+
+  // Body
+  var body = document.createElement('div');
+  body.className = 'detail-body';
+
+  data.sections.forEach(function(s) {
+    var section = document.createElement('div');
+    section.className = 'detail-section';
+    var h3 = document.createElement('h3');
+    h3.textContent = s.heading;
+    section.appendChild(h3);
+
+    if (s.text) {
+      var p = document.createElement('p');
+      p.textContent = s.text;
+      section.appendChild(p);
+    }
+    if (s.items) {
+      var ul = document.createElement('ul');
+      s.items.forEach(function(item) {
+        var li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+      section.appendChild(ul);
+    }
+    if (s.flow) {
+      var flowDiv = document.createElement('div');
+      flowDiv.className = 'detail-flow';
+      s.flow.forEach(function(f, idx) {
+        if (idx > 0) {
+          var arrow = document.createElement('span');
+          arrow.className = 'arrow';
+          arrow.textContent = '\u2192';
+          flowDiv.appendChild(arrow);
+        }
+        var step = document.createElement('span');
+        step.className = 'step';
+        step.textContent = f;
+        flowDiv.appendChild(step);
+      });
+      section.appendChild(flowDiv);
+    }
+    body.appendChild(section);
+  });
+
+  container.appendChild(body);
+  return container;
+}
+
+function openDetail(nodeId) {
+  var data = details[nodeId];
+  if (!data) return;
+
+  var panel = document.getElementById('detailPanel');
+  var content = document.getElementById('detailContent');
+
+  // Clear existing content safely
+  while (content.firstChild) content.removeChild(content.firstChild);
+  content.appendChild(buildDetailHTML(data));
+
+  panel.classList.add('open');
+
+  document.querySelectorAll('.node').forEach(function(n) { n.classList.remove('active'); });
+  var nodeEl = document.querySelector('[data-id="' + nodeId + '"]');
+  if (nodeEl) nodeEl.classList.add('active');
+  activeNode = nodeId;
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.querySelectorAll('.node').forEach(function(n) { n.classList.remove('active'); });
+  clearHighlight();
+  activeNode = null;
+}
+
+// Event listeners
+document.querySelectorAll('.node').forEach(function(node) {
+  node.addEventListener('mouseenter', function() { highlightNode(node.dataset.id); });
+  node.addEventListener('mouseleave', function() {
+    if (!activeNode) clearHighlight();
+    else highlightNode(activeNode);
+  });
+  node.addEventListener('click', function() {
+    var id = node.dataset.id;
+    if (activeNode === id) { closeDetail(); return; }
+    openDetail(id);
+    highlightNode(id);
+  });
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeDetail();
+});
+
+window.addEventListener('load', function() {
+  drawConnections();
+  window.addEventListener('resize', drawConnections);
+});
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@ import {
   Liabilities,
   DataSources,
   EarlyRetirement,
+  DataFlow,
 } from "./pages";
 import { InsurancesPrototype } from "./pages/InsurancesPrototype";
 
@@ -41,6 +42,7 @@ function App() {
                 <Route path="insurances" element={<InsurancesPrototype />} />
                 <Route path="early-retirement" element={<EarlyRetirement />} />
                 <Route path="data-sources" element={<DataSources />} />
+                <Route path="data-flow" element={<DataFlow />} />
               </Route>
             </Routes>
           </BrowserRouter>

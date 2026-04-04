@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Receipt,
@@ -16,6 +16,7 @@ import {
   Settings as SettingsIcon,
   Menu,
   X,
+  Workflow,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -36,6 +37,7 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  const navigate = useNavigate();
   const { sidebarOpen, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useAppStore();
   useScrollLock(mobileSidebarOpen);
   const { t, i18n } = useTranslation();
@@ -162,8 +164,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Settings */}
-      <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)]">
+      {/* Settings & Data Flow */}
+      <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)] space-y-1">
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
@@ -174,6 +176,20 @@ export function Sidebar() {
         >
           <SettingsIcon size={20} />
           {(sidebarOpen || mobileSidebarOpen) && <span className="text-sm font-medium">{t("settings.title")}</span>}
+        </button>
+        <button
+          onClick={() => {
+            navigate("/data-flow");
+            setMobileSidebarOpen(false);
+          }}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
+            location.pathname === "/data-flow"
+              ? "bg-[var(--primary)] text-white"
+              : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+          }`}
+        >
+          <Workflow size={20} />
+          {(sidebarOpen || mobileSidebarOpen) && <span className="text-sm font-medium">{t("dataFlow.title")}</span>}
         </button>
       </div>
     </>
@@ -266,6 +282,21 @@ export function Sidebar() {
                 <SettingsIcon size={20} />
                 <span className="text-[11px] font-medium leading-tight">{t("settings.title")}</span>
               </button>
+              {/* Data Flow tile */}
+              <NavLink
+                to="/data-flow"
+                onClick={() => setMobileSidebarOpen(false)}
+                className={({ isActive }) =>
+                  `relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${
+                    isActive
+                      ? "bg-[var(--primary)] text-white"
+                      : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+                  }`
+                }
+              >
+                <Workflow size={20} />
+                <span className="text-[11px] font-medium leading-tight">{t("dataFlow.title")}</span>
+              </NavLink>
             </nav>
           </div>
         </div>

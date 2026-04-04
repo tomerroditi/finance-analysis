@@ -57,7 +57,8 @@
     "liabilities": "Liabilities",
     "insurance": "Insurance",
     "dataSources": "Data Sources",
-    "earlyRetirement": "Early Retirement"
+    "earlyRetirement": "Early Retirement",
+    "dataFlow": "Data Flow"
   },
   "settings": {
     "title": "Settings",
@@ -877,5 +878,9 @@
       "netWorthChart": "Baseline uses your expected return rate. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
       "incomeChart": "Income sources by age. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension (70% from age 60, 100% from full pension age) + Bituach Leumi + passive income."
     }
+  },
+  "dataFlow": {
+    "title": "Data Flow",
+    "subtitle": "How data moves through the system — from sources to dashboard"
   }
 }
