@@ -104,6 +104,24 @@ export function RetirementGoalForm({
       retirementApi.getScrapedDefaults().then((r) => r.data),
   });
 
+  // Auto-fill scraped insurance values when no saved goal exists
+  const [scrapedApplied, setScrapedApplied] = useState(false);
+  if (!scrapedApplied && scrapedDefaults && !goal) {
+    setScrapedApplied(true);
+    setForm((prev) => ({
+      ...prev,
+      ...(scrapedDefaults.keren_hishtalmut_balance != null && {
+        keren_hishtalmut_balance: scrapedDefaults.keren_hishtalmut_balance,
+      }),
+      ...(scrapedDefaults.keren_hishtalmut_monthly_contribution != null && {
+        keren_hishtalmut_monthly_contribution: scrapedDefaults.keren_hishtalmut_monthly_contribution,
+      }),
+      ...(scrapedDefaults.pension_monthly_deposit != null && {
+        pension_monthly_payout_estimate: scrapedDefaults.pension_monthly_deposit,
+      }),
+    }));
+  }
+
   // Calculate: preview projections without saving
   const calculateMutation = useMutation({
     mutationFn: (overrideForm?: ReturnType<typeof goalToForm>) => {
