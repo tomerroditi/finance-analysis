@@ -9,7 +9,6 @@ export interface NodeData {
 export interface LayerData {
   id: string;
   label: string;
-  number: string;
   color: string;
   badgeColors: { bg: string; text: string; border: string };
   nodes: NodeData[];
@@ -38,7 +37,6 @@ export const layers: LayerData[] = [
   {
     id: "sources",
     label: "DATA SOURCES",
-    number: "01",
     color: "#22d3ee",
     badgeColors: { bg: "rgba(34,211,238,0.1)", text: "#22d3ee", border: "rgba(34,211,238,0.2)" },
     nodes: [
@@ -51,7 +49,6 @@ export const layers: LayerData[] = [
   {
     id: "ingestion",
     label: "INGESTION",
-    number: "02",
     color: "#3b82f6",
     badgeColors: { bg: "rgba(59,130,246,0.1)", text: "#3b82f6", border: "rgba(59,130,246,0.2)" },
     nodes: [
@@ -63,7 +60,6 @@ export const layers: LayerData[] = [
   {
     id: "processing",
     label: "PROCESSING",
-    number: "03",
     color: "#fbbf24",
     badgeColors: { bg: "rgba(251,191,36,0.1)", text: "#fbbf24", border: "rgba(251,191,36,0.2)" },
     nodes: [
@@ -75,7 +71,6 @@ export const layers: LayerData[] = [
   {
     id: "storage",
     label: "STORAGE",
-    number: "04",
     color: "#34d399",
     badgeColors: { bg: "rgba(52,211,153,0.1)", text: "#34d399", border: "rgba(52,211,153,0.2)" },
     nodes: [
@@ -84,12 +79,13 @@ export const layers: LayerData[] = [
       { id: "cash-bal", icon: "\u{1F4B5}", title: "Cash Balances", desc: "Per-envelope balance + prior_wealth. Multiple envelopes." },
       { id: "inv-snapshots", icon: "\u{1F4F8}", title: "Investment Snapshots", desc: "Timestamped market values. manual | calculated | scraped.", badge: "SNAPSHOT-FIRST" },
       { id: "meta-tables", icon: "\u2699\uFE0F", title: "Metadata", desc: "categories, tagging_rules, budget_rules, investments, liabilities, pending_refunds." },
+      { id: "demo-mode", icon: "\uD83E\uddEA", title: "Demo Mode", desc: "Isolated demo DB with date-shifted sample data. Dummy scrapers for testing.", badge: "TOGGLE" },
+      { id: "backup", icon: "\uD83D\uDCBE", title: "Backup & Restore", desc: "Database snapshots. Create, list, restore with safety backup.", badge: "SNAPSHOTS" },
     ],
   },
   {
     id: "management",
     label: "DATA MANAGEMENT",
-    number: "05",
     color: "#fb923c",
     badgeColors: { bg: "rgba(251,146,60,0.1)", text: "#fb923c", border: "rgba(251,146,60,0.2)" },
     nodes: [
@@ -107,7 +103,6 @@ export const layers: LayerData[] = [
   {
     id: "analytics",
     label: "ANALYTICS",
-    number: "06",
     color: "#a78bfa",
     badgeColors: { bg: "rgba(167,139,250,0.1)", text: "#a78bfa", border: "rgba(167,139,250,0.2)" },
     nodes: [
@@ -121,19 +116,18 @@ export const layers: LayerData[] = [
   {
     id: "frontend",
     label: "FRONTEND",
-    number: "07",
     color: "#f472b6",
     badgeColors: { bg: "rgba(244,114,182,0.1)", text: "#f472b6", border: "rgba(244,114,182,0.2)" },
     nodes: [
       { id: "dashboard", icon: "\u{1F5A5}\uFE0F", title: "Dashboard", desc: "Overview cards, net worth chart, income/expenses, Sankey, budget gauge.", badge: "10+ QUERIES" },
       { id: "txn-page", icon: "\u{1F4D1}", title: "Transactions", desc: "Filterable table, inline tagging, splits, bulk ops, refunds." },
       { id: "budget-page", icon: "\u{1F4B0}", title: "Budget", desc: "Monthly gauges, per-tag breakdown, project budgets." },
+      { id: "categories-page", icon: "\u{1F3F7}\uFE0F", title: "Categories", desc: "Category/tag management, drag-and-drop reorder, tagging rules." },
       { id: "invest-page", icon: "\u{1F5C2}\uFE0F", title: "Investments", desc: "Portfolio overview, allocation, balance history, P&L analysis." },
       { id: "liab-page", icon: "\u{1F3D7}\uFE0F", title: "Liabilities", desc: "Debt cards, payment timeline, amortization schedule." },
-      { id: "categories-page", icon: "\u{1F3F7}\uFE0F", title: "Categories", desc: "Category/tag management, drag-and-drop reorder, tagging rules." },
       { id: "insurance-page", icon: "\u{1F6E1}\uFE0F", title: "Insurance", desc: "Insurance policy tracking, pension/savings accounts." },
-      { id: "datasources-page", icon: "\u{1F4E1}", title: "Data Sources", desc: "Bank/CC account management, scraping triggers, stale data alerts." },
       { id: "retire-page", icon: "\u{1F305}", title: "Early Retirement", desc: "FIRE calculator, projections, status cards, suggestions." },
+      { id: "datasources-page", icon: "\u{1F4E1}", title: "Data Sources", desc: "Bank/CC account management, scraping triggers, stale data alerts." },
     ],
   },
 ];
@@ -205,6 +199,12 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "meta-tables", to: "categories-page", color: "#34d399" },
   { from: "txn-tables", to: "insurance-page", color: "#34d399" },
   { from: "meta-tables", to: "datasources-page", color: "#34d399" },
+  // Demo Mode connections
+  { from: "demo-mode", to: "scraper", color: "#34d399" },
+  { from: "demo-mode", to: "txn-tables", color: "#34d399" },
+  // Backup connections
+  { from: "backup", to: "txn-tables", color: "#34d399" },
+  { from: "backup", to: "meta-tables", color: "#34d399" },
 ];
 
 export const details: Record<string, DetailData> = {
@@ -469,6 +469,21 @@ export const details: Record<string, DetailData> = {
       { heading: "Features", items: ["Insurance policy cards", "Pension/savings account details", "Deposit history and breakdowns", "Investment track information"] },
     ],
   },
+  "demo-mode": {
+    title: "Demo Mode", tag: "Toggle",
+    sections: [
+      { heading: "How It Works", items: ["Toggle in app header switches to isolated demo database", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
+      { heading: "Scraper Redirect", text: "When demo mode is active, scraping requests are automatically redirected to dummy scrapers that generate fake data. No real financial institutions are contacted." },
+      { heading: "Isolation", text: "Completely separate database — no production data is read or affected. Safe for UI testing and demos." },
+    ],
+  },
+  backup: {
+    title: "Backup & Restore", tag: "Snapshots",
+    sections: [
+      { heading: "Operations", items: ["Create backup — full snapshot of current database file", "List backups — all available snapshots with size and date", "Restore — revert to a previous backup (creates safety backup first)"] },
+      { heading: "Storage", text: "Backups stored in ~/.finance-analysis/backups/ as timestamped SQLite copies." },
+    ],
+  },
   "datasources-page": {
     title: "Data Sources Page", tag: "Scraping",
     sections: [
@@ -476,6 +491,28 @@ export const details: Record<string, DetailData> = {
     ],
   },
 };
+
+export interface PlatformFeature {
+  icon: string;
+  title: string;
+  desc: string;
+  highlights: string[];
+}
+
+export const platformFeatures: PlatformFeature[] = [
+  {
+    icon: "\uD83C\uDF10",
+    title: "Internationalization (i18n)",
+    desc: "Full Hebrew + English bilingual support with automatic RTL layout switching.",
+    highlights: ["i18next + react-i18next", "Logical CSS properties (ps/pe/ms/me) for RTL", "Locale-aware date, currency, chart formatting", "All strings via t() — no hardcoded text"],
+  },
+  {
+    icon: "\uD83D\uDCF1",
+    title: "Responsive Design",
+    desc: "Mobile-first layout with adaptive patterns across all breakpoints.",
+    highlights: ["Sidebar → drawer overlay on mobile", "Tap-to-reveal actions (no hover on touch)", "Dynamic viewport height (dvh)", "iOS safe areas, scroll-snap, touch targets ≥ 32px"],
+  },
+];
 
 export const callouts = [
   { icon: "\u26A1", title: "Amount Sign Convention (everywhere):", text: "Negative = money out (expenses, investment deposits). Positive = money in (salary, refunds, withdrawals). Applies across all tables, services, and calculations." },

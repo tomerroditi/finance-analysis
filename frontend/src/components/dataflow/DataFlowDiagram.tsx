@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X } from "lucide-react";
-import { layers, connectionDefs, details, callouts } from "./dataFlowData";
+import { layers, connectionDefs, details, callouts, platformFeatures } from "./dataFlowData";
 import type { DetailData } from "./dataFlowData";
 
 interface Connection {
@@ -115,16 +115,15 @@ export function DataFlowDiagram() {
     <div className="relative h-full flex flex-col">
       {/* Column Headers - sticky */}
       <div
-        className="sticky top-0 z-10 grid gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)]"
+        className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)]"
         style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
       >
         {layers.map((layer) => (
           <div
             key={layer.id}
-            className="text-[10px] font-medium uppercase tracking-[2px] pb-2 border-b border-[var(--surface-light)] font-mono"
+            className="text-[10px] font-medium uppercase tracking-[2px] font-mono text-center"
             style={{ color: layer.color }}
           >
-            <span className="opacity-40 me-1.5">{layer.number}</span>
             {layer.label}
           </div>
         ))}
@@ -224,6 +223,41 @@ export function DataFlowDiagram() {
               ))}
             </div>
           ))}
+        </div>
+
+        {/* Platform Features */}
+        <div className="px-10 pt-4 pb-6 max-w-[1340px]">
+          <h2
+            className="text-[10px] font-medium uppercase tracking-[2px] font-mono mb-4 pb-2 border-b border-[var(--surface-light)]"
+            style={{ color: "#94a3b8" }}
+          >
+            <span className="opacity-40 me-1.5">✦</span>
+            Platform Features
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            {platformFeatures.map((f, i) => (
+              <div
+                key={i}
+                className="rounded-lg p-4 border border-[var(--surface-light)] bg-[var(--surface)]"
+              >
+                <div className="flex items-center gap-2.5 mb-2.5">
+                  <span className="text-lg">{f.icon}</span>
+                  <h3 className="font-semibold text-[13px] text-[var(--text-primary)]">{f.title}</h3>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed font-light mb-3">{f.desc}</p>
+                <ul className="list-none p-0 m-0">
+                  {f.highlights.map((h, j) => (
+                    <li
+                      key={j}
+                      className="text-[11px] leading-relaxed text-[var(--text-primary)] font-light before:content-['→_'] before:text-slate-500 before:font-medium"
+                    >
+                      {h}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Key Insights */}

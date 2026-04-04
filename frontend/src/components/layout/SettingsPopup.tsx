@@ -203,7 +203,8 @@ export function SettingsPopup({
               ))}
             </div>
           )}
-        </div>      </div>
+        </div>
+      </div>
     </div>
   );
 }
