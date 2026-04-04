@@ -347,7 +347,7 @@ export function RecentTransactionsFeed({
                               options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
                               value={tx.category || ""}
                               onChange={(cat) => tagMutation.mutate({ tx, category: cat, tag: "" })}
-                              placeholder="Select..."
+                              placeholder={t("common.select")}
                               size="sm"
                               onCreateNew={async (name) => { await createCategory(name); }}
                             />
@@ -362,7 +362,7 @@ export function RecentTransactionsFeed({
                               }
                               value={tx.tag || ""}
                               onChange={(tag) => tagMutation.mutate({ tx, category: tx.category || "", tag })}
-                              placeholder="Select..."
+                              placeholder={t("common.select")}
                               size="sm"
                               onCreateNew={
                                 tx.category

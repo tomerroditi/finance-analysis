@@ -23,6 +23,7 @@
     "description": "Description",
     "category": "Category",
     "tag": "Tag",
+    "select": "Select...",
     "account": "Account",
     "status": "Status",
     "actions": "Actions",

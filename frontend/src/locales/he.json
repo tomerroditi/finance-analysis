@@ -23,6 +23,7 @@
     "description": "תיאור",
     "category": "קטגוריה",
     "tag": "תגית",
+    "select": "בחר...",
     "account": "חשבון",
     "status": "סטטוס",
     "actions": "פעולות",

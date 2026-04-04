@@ -36,11 +36,11 @@ export function Modal({
   zIndex = "z-50",
 }: ModalProps) {
   const { t } = useTranslation();
+  const generatedId = useId();
   useScrollLock(isOpen);
 
   if (!isOpen) return null;
 
-  const generatedId = useId();
   const resolvedTitleId = titleId ?? generatedId;
 
   return (

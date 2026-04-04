@@ -864,14 +864,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                     }}
                                     disabled={cancelPendingMutation.isPending}
                                   >
-                                    <RefreshCw
-                                      size={14}
-                                      className="animate-spin-slow"
-                                    />
-                                    {/* Using RefreshCw for partial but maybe PieChart is better if imported? 
-                                        Let's stick to RefreshCw but blue distinct color, or PieChart if imported. 
-                                        PieChart is not imported. Let's use Link2 or RefreshCw. RefreshCw implies ongoing.
-                                    */}
                                     <RefreshCw size={14} />
                                   </button>
                                 );
