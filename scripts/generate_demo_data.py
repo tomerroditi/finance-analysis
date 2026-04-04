@@ -2067,14 +2067,18 @@ def generate_insurance_data(session):
 
     deposit_configs = [
         ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
+         "הפקדה - Cohen Technologies",
          "עובד: 625 / מעסיק: 1,625 / פיצויים: 1,500"),
         ("PN-DEMO-002", "Pension Supplementary - School District", pension_mashlima_monthly,
+         "הפקדה - Tel Aviv School District",
          "עובד: 400 / מעסיק: 500 / פיצויים: 300"),
-        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_active_monthly, None),
-        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_spouse_monthly, None),
+        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_active_monthly,
+         "הפקדה - Cohen Technologies", None),
+        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_spouse_monthly,
+         "הפקדה - Tel Aviv School District", None),
     ]
 
-    for policy_id, account_name, monthly_amount, memo in deposit_configs:
+    for policy_id, account_name, monthly_amount, description, memo in deposit_configs:
         for year, month_num in months:
             txn_counter += 1
             amount = monthly_amount
@@ -2084,7 +2088,7 @@ def generate_insurance_data(session):
                 provider="hafenix",
                 account_name=account_name,
                 account_number=policy_id,
-                description="הפקדה",
+                description=description,
                 amount=amount,
                 category="Ignore",
                 tag=None,
