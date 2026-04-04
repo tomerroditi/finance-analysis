@@ -13,9 +13,17 @@ from backend.services.google_drive_service import GoogleDriveService
 router = APIRouter()
 
 
+class OAuthCredentials(BaseModel):
+    """Google OAuth client credentials for setup."""
+
+    client_id: str
+    client_secret: str
+
+
 class GoogleStatus(BaseModel):
     """Google account connection status."""
 
+    configured: bool
     connected: bool
     email: str | None = None
     avatar_url: str | None = None
@@ -26,6 +34,14 @@ class PendingRestore(BaseModel):
 
     available: bool
     latest_backup_date: str | None = None
+
+
+@router.post("/setup")
+def save_oauth_credentials(creds: OAuthCredentials):
+    """Save Google OAuth client credentials to keyring."""
+    service = GoogleDriveService()
+    service.save_oauth_credentials(creds.client_id, creds.client_secret)
+    return {"status": "configured"}
 
 
 @router.get("/auth-url")
@@ -66,6 +82,7 @@ def get_status():
     service = GoogleDriveService()
     status = service.get_status()
     return GoogleStatus(
+        configured=service.is_configured(),
         connected=status["connected"],
         email=status.get("email"),
         avatar_url=status.get("avatar_url"),

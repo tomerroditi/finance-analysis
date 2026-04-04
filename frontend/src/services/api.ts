@@ -551,10 +551,16 @@ export const googleApi = {
   getAuthUrl: () => api.get<{ url: string }>("/google/auth-url"),
   getStatus: () =>
     api.get<{
+      configured: boolean;
       connected: boolean;
       email?: string;
       avatar_url?: string;
     }>("/google/status"),
+  setup: (client_id: string, client_secret: string) =>
+    api.post<{ status: string }>("/google/setup", {
+      client_id,
+      client_secret,
+    }),
   disconnect: () => api.post<{ status: string }>("/google/disconnect"),
   getPendingRestore: () =>
     api.get<{

@@ -20,6 +20,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.profile",
 ]
 _KEYRING_KEYS = ("refresh_token", "user_email", "user_avatar_url")
+_OAUTH_KEYRING_KEYS = ("client_id", "client_secret")
 
 
 class GoogleDriveService:
@@ -33,6 +34,53 @@ class GoogleDriveService:
     @property
     def _keyring_service(self) -> str:
         return self._config.get_google_keyring_service()
+
+    def is_configured(self) -> bool:
+        """Check if Google OAuth client credentials are set up.
+
+        Returns
+        -------
+        bool
+            True if client_id and client_secret are stored in the OS keyring.
+        """
+        client_id = keyring.get_password(self._keyring_service, "client_id")
+        client_secret = keyring.get_password(self._keyring_service, "client_secret")
+        return bool(client_id and client_secret)
+
+    def save_oauth_credentials(self, client_id: str, client_secret: str) -> None:
+        """Store Google OAuth client credentials in the OS keyring.
+
+        Parameters
+        ----------
+        client_id : str
+            The Google OAuth client ID.
+        client_secret : str
+            The Google OAuth client secret.
+        """
+        keyring.set_password(self._keyring_service, "client_id", client_id)
+        keyring.set_password(self._keyring_service, "client_secret", client_secret)
+
+    def _get_client_credentials(self) -> tuple[str, str]:
+        """Retrieve OAuth client credentials from keyring, falling back to env vars.
+
+        Returns
+        -------
+        tuple[str, str]
+            (client_id, client_secret)
+
+        Raises
+        ------
+        ValueError
+            If credentials are not found in keyring or env vars.
+        """
+        client_id = keyring.get_password(self._keyring_service, "client_id")
+        client_secret = keyring.get_password(self._keyring_service, "client_secret")
+        if not client_id or not client_secret:
+            client_id = os.environ.get("GOOGLE_CLIENT_ID")
+            client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            raise ValueError("Google OAuth credentials not configured")
+        return client_id, client_secret
 
     def is_connected(self) -> bool:
         """Check if a Google account is connected (refresh token exists).
@@ -106,10 +154,7 @@ class GoogleDriveService:
         """
         from google_auth_oauthlib.flow import Flow
 
-        client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-        if not client_id or not client_secret:
-            raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set")
+        client_id, client_secret = self._get_client_credentials()
 
         flow = Flow.from_client_config(
             {
@@ -145,8 +190,7 @@ class GoogleDriveService:
         from google_auth_oauthlib.flow import Flow
         from googleapiclient.discovery import build
 
-        client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        client_id, client_secret = self._get_client_credentials()
 
         flow = Flow.from_client_config(
             {
@@ -187,8 +231,10 @@ class GoogleDriveService:
         if not refresh_token:
             return None
 
-        client_id = os.environ.get("GOOGLE_CLIENT_ID")
-        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        try:
+            client_id, client_secret = self._get_client_credentials()
+        except ValueError:
+            return None
 
         return Credentials(
             token=None,
