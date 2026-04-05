@@ -547,6 +547,28 @@ export const backupApi = {
     }),
 };
 
+export const googleApi = {
+  getAuthUrl: () => api.get<{ url: string }>("/google/auth-url"),
+  getStatus: () =>
+    api.get<{
+      configured: boolean;
+      connected: boolean;
+      email?: string;
+      avatar_url?: string;
+    }>("/google/status"),
+  setup: (client_id: string, client_secret: string) =>
+    api.post<{ status: string }>("/google/setup", {
+      client_id,
+      client_secret,
+    }),
+  disconnect: () => api.post<{ status: string }>("/google/disconnect"),
+  getPendingRestore: () =>
+    api.get<{
+      available: boolean;
+      latest_backup_date?: string;
+    }>("/google/pending-restore"),
+};
+
 export const testingApi = {
   toggleDemoMode: (enabled: boolean) =>
     api.post<{ status: string; demo_mode: boolean }>(

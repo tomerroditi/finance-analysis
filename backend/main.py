@@ -143,8 +143,23 @@ async def lifespan(app: FastAPI):
             for _, row in inv_all_df[pw_mask].iterrows():
                 manual_inv_repo.delete_transaction_by_unique_id(str(row[uid_col]))
 
+    # Initialize cloud backup scheduler
+    from backend.services.google_drive_service import GoogleDriveService
+    from backend.utils.cloud_backup import BackupScheduler
+    from backend.database import set_backup_scheduler
+
+    drive_service = GoogleDriveService()
+    scheduler = BackupScheduler(drive_service)
+    set_backup_scheduler(scheduler)
+
     yield
     # Shutdown
+    from backend.database import get_backup_scheduler
+
+    scheduler = get_backup_scheduler()
+    if scheduler and scheduler.is_pending:
+        print("Flushing pending cloud backup before shutdown...")
+        scheduler.flush()
     print("Shutting down Finance Analysis API...")
 
 
@@ -217,6 +232,12 @@ except ImportError:
 try:
     from backend.routes import testing
     app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
+except ImportError:
+    pass
+
+try:
+    from backend.routes import google
+    app.include_router(google.router, prefix="/api/google", tags=["Google"])
 except ImportError:
     pass
 

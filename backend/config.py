@@ -86,3 +86,10 @@ class AppConfig:
             return os.environ.get("FAD_CATEGORIES_ICONS_PATH")
 
         return os.path.join(self.get_user_dir(), "categories_icons.yaml")
+
+    def get_google_keyring_service(self) -> str:
+        """Get the keyring service name for Google OAuth tokens."""
+        service = "finance-analysis-google"
+        if self._demo_mode:
+            service += "-demo"
+        return service

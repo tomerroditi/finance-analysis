@@ -141,3 +141,32 @@ def restore_backup(filename: str) -> None:
     src_conn.close()
 
     logger.info("Database restored from %s", filename)
+
+
+def is_db_empty() -> bool:
+    """Check if the database has no user transaction data.
+
+    Used for new-machine detection — the DB exists (created by create_all)
+    but has no actual user data.
+
+    Returns
+    -------
+    bool
+        True if all transaction tables are empty.
+    """
+    from sqlalchemy import text
+
+    from backend.database import get_db_context
+
+    tables = [
+        "bank_transactions",
+        "credit_card_transactions",
+        "cash_transactions",
+        "manual_investment_transactions",
+    ]
+    with get_db_context() as db:
+        for table in tables:
+            count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+            if count > 0:
+                return False
+    return True
