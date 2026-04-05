@@ -881,6 +881,7 @@
   },
   "dataFlow": {
     "title": "Data Flow",
-    "subtitle": "How data moves through the system — from sources to dashboard"
+    "subtitle": "How data moves through the system — from sources to dashboard",
+    "platformFeatures": "Platform Features"
   }
 }
