@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
-import { layers, connectionDefs, details, callouts, platformFeatures } from "./dataFlowData";
+import { useDataFlowData } from "./useDataFlowData";
 import type { DetailData } from "./dataFlowData";
 
 interface Connection {
@@ -11,6 +12,8 @@ interface Connection {
 }
 
 export function DataFlowDiagram() {
+  const { t } = useTranslation();
+  const { layers, connectionDefs, details, callouts, platformFeatures } = useDataFlowData();
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -232,7 +235,7 @@ export function DataFlowDiagram() {
             style={{ color: "#94a3b8" }}
           >
             <span className="opacity-40 me-1.5">✦</span>
-            Platform Features
+            {t("dataFlow.platformFeatures")}
           </h2>
           <div className="grid grid-cols-2 gap-4">
             {platformFeatures.map((f, i) => (
