@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, MoveRight, Wallet, Search,
-  ChevronDown, ChevronRight, ChevronsUpDown, Tags, Hash, Pencil,
+  ChevronDown, ChevronRight, ChevronsUpDown, Pencil,
 } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
@@ -112,15 +112,14 @@ export function Categories() {
   // Computed values
   const categoriesRecord = categories as Record<string, string[]> | undefined;
 
-  const { filteredEntries, totalTags, matchingTagsByCategory } = useMemo(() => {
-    if (!categoriesRecord) return { filteredEntries: [], totalTags: 0, matchingTagsByCategory: new Map<string, Set<string>>() };
+  const { filteredEntries, matchingTagsByCategory } = useMemo(() => {
+    if (!categoriesRecord) return { filteredEntries: [], matchingTagsByCategory: new Map<string, Set<string>>() };
 
     const allEntries = Object.entries(categoriesRecord).sort(([a], [b]) => a.localeCompare(b));
-    const total = allEntries.reduce((sum, [, tags]) => sum + tags.length, 0);
     const query = searchQuery.toLowerCase().trim();
 
     if (!query) {
-      return { filteredEntries: allEntries, totalTags: total, matchingTagsByCategory: new Map() };
+      return { filteredEntries: allEntries, matchingTagsByCategory: new Map() };
     }
 
     const matchingTags = new Map<string, Set<string>>();
@@ -133,7 +132,7 @@ export function Categories() {
       return categoryMatches || matchedTags.length > 0;
     });
 
-    return { filteredEntries: filtered, totalTags: total, matchingTagsByCategory: matchingTags };
+    return { filteredEntries: filtered, matchingTagsByCategory: matchingTags };
   }, [categoriesRecord, searchQuery]);
 
   // Actions
@@ -188,24 +187,8 @@ export function Categories() {
         </button>
       </div>
 
-      {/* Stats + Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Stats */}
-        <div className="flex gap-2 shrink-0">
-          <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
-            <Tags size={14} className="text-[var(--primary)]" />
-            <span className="text-xs font-bold text-[var(--text-muted)]">
-              {t("categories.categoriesCount", { count: filteredEntries.length })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
-            <Hash size={14} className="text-[var(--secondary)]" />
-            <span className="text-xs font-bold text-[var(--text-muted)]">
-              {t("categories.tagsCount", { count: totalTags })}
-            </span>
-          </div>
-        </div>
-
+      {/* Search Bar + Toggle All */}
+      <div className="flex gap-3">
         {/* Search */}
         <div className="relative flex-1">
           <Search size={16} className="absolute inset-inline-start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
