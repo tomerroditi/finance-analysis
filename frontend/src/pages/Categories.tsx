@@ -316,12 +316,13 @@ export function Categories() {
                   </button>
                   <button
                     onClick={() => {
-                      if (window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
+                      if (!isProtected && window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
                         deleteCategoryMutation.mutate(category);
                       }
                     }}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 transition-colors"
-                    title={t("categories.deleteCategory")}
+                    disabled={isProtected}
+                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
+                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.deleteCategory")}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -347,12 +348,13 @@ export function Categories() {
                   </button>
                   <button
                     onClick={() => {
-                      if (window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
+                      if (!isProtected && window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
                         deleteCategoryMutation.mutate(category);
                       }
                     }}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 transition-colors"
-                    title={t("categories.deleteCategory")}
+                    disabled={isProtected}
+                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
+                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.deleteCategory")}
                   >
                     <Trash2 size={16} />
                   </button>
