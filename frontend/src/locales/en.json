@@ -361,10 +361,16 @@
     "searchEmojis": "Search emojis...",
     "customEmojiOrText": "Custom Emoji or Text",
     "noEmojisMatch": "No emojis match your search",
-    "renameCategory": "Click to rename",
+    "renameCategory": "Rename",
     "renameTag": "Click to rename",
     "renameError": "Cannot rename. The name may already exist or is protected.",
-    "protectedCannotRename": "Protected items cannot be renamed"
+    "protectedCannotRename": "Protected items cannot be renamed",
+    "categoriesCount": "{{count}} categories",
+    "tagsCount": "{{count}} tags",
+    "searchPlaceholder": "Search categories and tags...",
+    "toggleAll": "Toggle All",
+    "noResults": "No matching categories or tags",
+    "noResultsHint": "Try a different search term"
   },
   "investments": {
     "title": "Investments",
