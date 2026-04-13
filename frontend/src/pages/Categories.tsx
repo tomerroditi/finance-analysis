@@ -191,13 +191,13 @@ export function Categories() {
       <div className="flex gap-3">
         {/* Search */}
         <div className="relative flex-1">
-          <Search size={16} className="absolute inset-inline-start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Search size={16} className="absolute inset-inline-start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder={t("categories.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-9 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
+            className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-11 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
           />
         </div>
 
