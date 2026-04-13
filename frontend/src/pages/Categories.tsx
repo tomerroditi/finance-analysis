@@ -281,15 +281,14 @@ export function Categories() {
 
                 {/* Action Buttons - Desktop hover reveal */}
                 <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                  {!isProtected && (
-                    <button
-                      onClick={() => { setEditingCategory(category); setEditName(category); }}
-                      className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
-                      title={t("categories.renameCategory")}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => { if (!isProtected) { setEditingCategory(category); setEditName(category); } }}
+                    disabled={isProtected}
+                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400"}`}
+                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
+                  >
+                    <Pencil size={14} />
+                  </button>
                   <button
                     onClick={() => setIsAddTagOpen({ category })}
                     className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
@@ -313,15 +312,14 @@ export function Categories() {
 
                 {/* Action Buttons - Mobile always visible */}
                 <div className="md:hidden flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {!isProtected && (
-                    <button
-                      onClick={() => { setEditingCategory(category); setEditName(category); }}
-                      className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
-                      title={t("categories.renameCategory")}
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => { if (!isProtected) { setEditingCategory(category); setEditName(category); } }}
+                    disabled={isProtected}
+                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400"}`}
+                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
+                  >
+                    <Pencil size={14} />
+                  </button>
                   <button
                     onClick={() => setIsAddTagOpen({ category })}
                     className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
