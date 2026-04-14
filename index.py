@@ -35,4 +35,6 @@ Base.metadata.create_all(bind=get_engine())
 
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.
-from backend.main import app  # noqa: E402, F401
+from backend.main import app  # noqa: E402
+
+__all__ = ["app"]
