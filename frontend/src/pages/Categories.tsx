@@ -191,7 +191,7 @@ export function Categories() {
       <div className="flex gap-3">
         {/* Search */}
         <div className="relative flex-1">
-          <Search size={16} className="absolute inset-inline-start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder={t("categories.searchPlaceholder")}
