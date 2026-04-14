@@ -6,7 +6,6 @@ prior wealth calculations, and balance recalculation based on transactions.
 
 from typing import Optional
 import pandas as pd
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.repositories.cash_balance_repository import CashBalanceRepository
@@ -210,9 +209,6 @@ class CashBalanceService:
             Sum of all cash transaction amounts for the account.
         """
         # Get cash transactions for this account
-        stmt = select(CashTransaction).where(
-            CashTransaction.account_name == account_name
-        )
         transactions_df = self.cash_repo.get_table()
 
         if transactions_df.empty:

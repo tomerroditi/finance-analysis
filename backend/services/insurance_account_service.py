@@ -7,7 +7,7 @@ and derived calculations like total balances.
 
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models.insurance_account import InsuranceAccount

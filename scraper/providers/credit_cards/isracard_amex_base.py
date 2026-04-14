@@ -16,7 +16,6 @@ from scraper.models.transaction import (
 )
 from scraper.utils import (
     fetch_get_within_page,
-    fetch_post_within_page,
     filter_old_transactions,
     fix_installments,
     get_all_months,

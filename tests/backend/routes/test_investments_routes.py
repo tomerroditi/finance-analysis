@@ -1,6 +1,5 @@
 """Tests for the /api/investments API endpoints."""
 
-import pytest
 
 
 class TestInvestmentsRoutes:

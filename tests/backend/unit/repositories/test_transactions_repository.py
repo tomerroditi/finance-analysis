@@ -7,9 +7,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import (
-    BankTransaction,
     CashTransaction,
-    CreditCardTransaction,
 )
 from backend.repositories.transactions_repository import (
     TransactionsRepository,

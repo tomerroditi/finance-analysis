@@ -5,7 +5,6 @@ Unit tests for InvestmentsService snapshot-related methods.
 from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
 from sqlalchemy.orm import Session
 
 from backend.models.investment import Investment

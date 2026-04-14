@@ -1,6 +1,5 @@
 """Tests for LiabilitiesService using real in-memory SQLite database."""
 
-import pytest
 from datetime import date
 from unittest.mock import patch
 

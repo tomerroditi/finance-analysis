@@ -23,7 +23,6 @@ if not os.path.exists(_demo_dst):
     shutil.copy2(_demo_src, _demo_dst)
 
 from backend.config import AppConfig  # noqa: E402
-from backend.main import app  # noqa: E402
 
 config = AppConfig()
 config.set_demo_mode(True)

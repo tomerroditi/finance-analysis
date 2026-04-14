@@ -4,7 +4,6 @@ Unit tests for CashBalanceRepository operations.
 
 from sqlalchemy.orm import Session
 
-from backend.models.cash_balance import CashBalance
 from backend.repositories.cash_balance_repository import CashBalanceRepository
 
 

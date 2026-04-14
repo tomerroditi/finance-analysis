@@ -9,6 +9,8 @@ interface Connection {
   to: string;
   color: string;
   path: string;
+  animDur: number;
+  animBegin: number;
 }
 
 export function DataFlowDiagram() {
@@ -67,10 +69,12 @@ export function DataFlowDiagram() {
         to: conn.to,
         color: conn.color,
         path: `M ${startX} ${startY} C ${cp1x} ${startY}, ${cp2x} ${endY}, ${endX} ${endY}`,
+        animDur: 2 + Math.random() * 2,
+        animBegin: Math.random() * 3,
       });
     }
     setConnections(newConnections);
-  }, []);
+  }, [connectionDefs]);
 
   useEffect(() => {
     // Draw after initial render
@@ -162,9 +166,9 @@ export function DataFlowDiagram() {
               {(conn.from === highlightedId || conn.to === highlightedId) && (
                 <circle r={2.5} fill={conn.color} opacity={0.9}>
                   <animateMotion
-                    dur={`${2 + Math.random() * 2}s`}
+                    dur={`${conn.animDur}s`}
                     repeatCount="indefinite"
-                    begin={`${Math.random() * 3}s`}
+                    begin={`${conn.animBegin}s`}
                     path={conn.path}
                   />
                 </circle>

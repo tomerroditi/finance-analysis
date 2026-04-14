@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
 from backend.models.investment import Investment
-from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.repositories.investment_snapshots_repository import (
     InvestmentSnapshotsRepository,
 )
