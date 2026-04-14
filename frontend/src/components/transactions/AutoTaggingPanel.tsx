@@ -18,11 +18,13 @@ import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "./RuleEditorModal";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useAppStore } from "../../stores/appStore";
+import { useConfirm } from "../../context/DialogContext";
 
 export function AutoTaggingPanel() {
     const { t } = useTranslation();
     const { autoTaggingPanelOpen, toggleAutoTaggingPanel } = useAppStore();
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -38,6 +40,18 @@ export function AutoTaggingPanel() {
         mutationFn: (id: number) => taggingApi.deleteRule(id),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tagging-rules"] })
     });
+
+    const askDeleteRule = async (rule: TaggingRule) => {
+        const ok = await confirm({
+            title: t("common.deleteTitle"),
+            message: rule.name
+                ? t("transactions.autoTagging.confirmDeleteNamedRule", { name: rule.name })
+                : t("transactions.autoTagging.confirmDeleteRule"),
+            confirmLabel: t("common.delete"),
+            isDestructive: true,
+        });
+        if (ok && rule.id != null) deleteMutation.mutate(rule.id);
+    };
 
     const applyMutation = useMutation({
         mutationFn: () => taggingApi.applyRules(),
@@ -185,9 +199,7 @@ export function AutoTaggingPanel() {
                                                         <Edit2 size={16} />
                                                     </button>
                                                     <button
-                                                        onClick={() => {
-                                                            if (confirm("Delete rule?")) deleteMutation.mutate(rule.id);
-                                                        }}
+                                                        onClick={() => askDeleteRule(rule)}
                                                         className="p-2 hover:bg-red-500/10 text-red-400 rounded"
                                                     >
                                                         <Trash2 size={16} />
@@ -274,7 +286,7 @@ export function AutoTaggingPanel() {
                                         <div className="flex items-center gap-1">
                                             <button onClick={() => applySingleMutation.mutate({ id: rule.id!, overwrite: false })} className="p-1 rounded hover:bg-emerald-500/20 text-emerald-400/60 hover:text-emerald-400 transition-colors"><Play size={14} /></button>
                                             <button onClick={() => { setEditingRule(rule); setIsModalOpen(true); }} className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"><Edit2 size={14} /></button>
-                                            <button onClick={() => { if (confirm(`Delete rule "${rule.name}"?`)) deleteMutation.mutate(rule.id!); }} className="p-1 rounded hover:bg-rose-500/20 text-rose-400/60 hover:text-rose-400 transition-colors"><Trash2 size={14} /></button>
+                                            <button onClick={() => askDeleteRule(rule)} className="p-1 rounded hover:bg-rose-500/20 text-rose-400/60 hover:text-rose-400 transition-colors"><Trash2 size={14} /></button>
                                         </div>
                                     </div>
                                     <div className="text-xs text-[var(--text-muted)]">

@@ -7,6 +7,7 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { Modal } from "../common/Modal";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { useNotify } from "../../context/DialogContext";
 
 interface SplitTransactionModalProps {
   transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
@@ -26,6 +27,7 @@ export function SplitTransactionModal({
   onSuccess,
 }: SplitTransactionModalProps) {
   const { t } = useTranslation();
+  const notify = useNotify();
   const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
@@ -81,7 +83,7 @@ export function SplitTransactionModal({
       onSuccess();
       onClose();
     } catch {
-      alert("Failed to split transaction.");
+      notify.error(t("transactions.failedSplit"));
     }
   };
 

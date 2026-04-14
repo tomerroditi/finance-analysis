@@ -7,6 +7,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
 import type { Transaction } from "../../types/transaction";
+import { useNotify } from "../../context/DialogContext";
 
 export type { Transaction };
 
@@ -26,6 +27,7 @@ export function TransactionFormModal({
     onSuccess,
 }: TransactionFormModalProps) {
     const { t } = useTranslation();
+    const notify = useNotify();
     const isEditMode = !!transaction;
 
     // If editing, check if it's a manual transaction (cash/investments)
@@ -103,7 +105,7 @@ export function TransactionFormModal({
                 });
             } else {
                 if (!service) {
-                    alert("Service (Cash/Investments) is required for new transactions");
+                    notify.error(t("transactions.serviceRequiredForNew"));
                     return;
                 }
                 await transactionsApi.create({
@@ -117,7 +119,7 @@ export function TransactionFormModal({
             onClose();
         } catch (err) {
             console.error(err);
-            alert("Failed to save transaction.");
+            notify.error(t("transactions.failedSave"));
         }
     };
 

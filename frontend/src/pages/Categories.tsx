@@ -6,6 +6,7 @@ import { Plus, Trash2, MoveRight, Wallet, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { useCategories } from "../hooks/useCategories";
+import { useConfirm, useNotify } from "../context/DialogContext";
 
 // [emoji, searchKeywords] — keywords are space-separated for fast substring matching
 const EMOJI_DATA: [string, string][] = [
@@ -587,6 +588,8 @@ const EMOJI_DATA: [string, string][] = [
 export function Categories() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const PROTECTED_CATEGORIES = ["Credit Cards", "Salary", "Other Income", "Investments", "Ignore", "Liabilities"];
   const PROTECTED_TAGS = ["Prior Wealth"];
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
@@ -673,7 +676,7 @@ export function Categories() {
       setEditingCategory(null);
     },
     onError: () => {
-      alert(t("categories.renameError"));
+      notify.error(t("categories.renameError"));
     },
   });
 
@@ -685,7 +688,7 @@ export function Categories() {
       setEditingTag(null);
     },
     onError: () => {
-      alert(t("categories.renameError"));
+      notify.error(t("categories.renameError"));
     },
   });
 
@@ -770,14 +773,14 @@ export function Categories() {
                     )}
                   </div>
                   <button
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          t("categories.confirmDeleteCategory", { name: category }),
-                        )
-                      ) {
-                        deleteCategoryMutation.mutate(category);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: t("categories.deleteCategory"),
+                        message: t("categories.confirmDeleteCategory", { name: category }),
+                        confirmLabel: t("common.delete"),
+                        isDestructive: true,
+                      });
+                      if (ok) deleteCategoryMutation.mutate(category);
                     }}
                     className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
@@ -830,14 +833,14 @@ export function Categories() {
                             <MoveRight size={12} />
                           </button>
                           <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  t("categories.confirmDeleteTag", { tag, category }),
-                                )
-                              ) {
-                                deleteTagMutation.mutate({ category, tag });
-                              }
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: t("categories.deleteTag"),
+                                message: t("categories.confirmDeleteTag", { tag, category }),
+                                confirmLabel: t("common.delete"),
+                                isDestructive: true,
+                              });
+                              if (ok) deleteTagMutation.mutate({ category, tag });
                             }}
                             className="p-1 hover:bg-red-500/10 text-red-400 rounded transition-colors"
                             title={t("categories.deleteTag")}

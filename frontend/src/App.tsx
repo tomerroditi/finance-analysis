@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DemoModeProvider } from "./context/DemoModeContext";
+import { DialogProvider } from "./context/DialogContext";
 import {
   Dashboard,
   Transactions,
@@ -30,6 +31,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
         <DemoModeProvider>
+          <DialogProvider>
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Layout />}>
@@ -46,6 +48,7 @@ function App() {
               </Route>
             </Routes>
           </BrowserRouter>
+          </DialogProvider>
         </DemoModeProvider>
       </ErrorBoundary>
     </QueryClientProvider>

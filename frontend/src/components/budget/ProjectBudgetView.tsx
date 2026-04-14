@@ -8,6 +8,7 @@ import { BudgetProgressBar } from "../BudgetProgressBar";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import { useConfirm } from "../../context/DialogContext";
 
 interface ProjectBudgetRule {
   id: number;
@@ -44,6 +45,7 @@ interface ProjectTransaction {
 
 export const ProjectBudgetView: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
@@ -162,10 +164,14 @@ export const ProjectBudgetView: React.FC = () => {
     });
   };
 
-  const handleDeleteProject = () => {
-    if (
-      confirm(t("budget.confirmDeleteProject", { name: selectedProject }))
-    ) {
+  const handleDeleteProject = async () => {
+    const ok = await confirm({
+      title: t("common.deleteTitle"),
+      message: t("budget.confirmDeleteProject", { name: selectedProject }),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (ok) {
       deleteMutation.mutate(selectedProject);
     }
   };

@@ -6,6 +6,7 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
+import { useNotify } from "../../context/DialogContext";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string };
@@ -19,6 +20,7 @@ export function TransactionEditorModal({
   onSuccess,
 }: TransactionEditorModalProps) {
   const { t } = useTranslation();
+  const notify = useNotify();
   const isManual =
     transaction.source?.includes("cash") ||
     transaction.source?.includes("manual_investment");
@@ -51,7 +53,7 @@ export function TransactionEditorModal({
       onSuccess();
       onClose();
     } catch {
-      alert("Failed to update transaction.");
+      notify.error(t("transactions.failedUpdate"));
     }
   };
 

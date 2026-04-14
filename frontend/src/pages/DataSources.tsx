@@ -34,6 +34,7 @@ import {
 import type { BankBalance } from "../services/api";
 
 import { useDemoMode } from "../context/DemoModeContext";
+import { useConfirm, useNotify } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
@@ -73,6 +74,8 @@ export function DataSources() {
   const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<
@@ -169,7 +172,9 @@ export function DataSources() {
     },
     onError: (error: unknown) => {
       const axiosErr = error as { response?: { data?: { detail?: string } } };
-      alert(axiosErr.response?.data?.detail || "Failed to set balance.");
+      notify.error(
+        axiosErr.response?.data?.detail || t("dataSources.failedSetBalance"),
+      );
     },
   });
 
@@ -564,9 +569,14 @@ export function DataSources() {
                       <Edit2 size={20} />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(t("dataSources.confirmDisconnect", { name: acc.account_name })))
-                          deleteMutation.mutate(acc);
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("dataSources.disconnectAccount"),
+                          message: t("dataSources.confirmDisconnect", { name: acc.account_name }),
+                          confirmLabel: t("dataSources.disconnectAccount"),
+                          isDestructive: true,
+                        });
+                        if (ok) deleteMutation.mutate(acc);
                       }}
                       className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
                       title={t("dataSources.disconnectAccount")}
