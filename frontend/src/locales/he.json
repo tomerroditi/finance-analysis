@@ -381,10 +381,16 @@
     "searchEmojis": "חפש אמוג'י...",
     "customEmojiOrText": "אמוג'י או טקסט מותאם",
     "noEmojisMatch": "אין אמוג'ים שתואמים לחיפוש שלך",
-    "renameCategory": "לחץ לשינוי שם",
+    "renameCategory": "שנה שם",
     "renameTag": "לחץ לשינוי שם",
     "renameError": "לא ניתן לשנות שם. השם עשוי להיות קיים כבר או מוגן.",
-    "protectedCannotRename": "לא ניתן לשנות שם של פריטים מוגנים"
+    "protectedCannotRename": "לא ניתן לשנות שם של פריטים מוגנים",
+    "categoriesCount": "{{count}} קטגוריות",
+    "tagsCount": "{{count}} תגיות",
+    "searchPlaceholder": "חפש קטגוריות ותגיות...",
+    "toggleAll": "הרחב/כווץ הכל",
+    "noResults": "לא נמצאו קטגוריות או תגיות תואמות",
+    "noResultsHint": "נסה מונח חיפוש אחר"
   },
   "investments": {
     "title": "השקעות",
