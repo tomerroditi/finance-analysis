@@ -68,6 +68,41 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "Backend (Codespaces)",
+      "type": "shell",
+      "command": "poetry run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev-codespaces",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Frontend (Codespaces)",
+      "type": "shell",
+      "command": "npm run dev -- --host 0.0.0.0",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev-codespaces",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Dev (Codespaces)",
+      "dependsOn": ["Backend (Codespaces)", "Frontend (Codespaces)"],
+      "problemMatcher": [],
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
     }
   ]
 }
