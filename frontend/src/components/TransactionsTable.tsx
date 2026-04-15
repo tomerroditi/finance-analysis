@@ -37,6 +37,7 @@ import { useCashBalances } from "../hooks/useCashBalances";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../utils/numberFormatting";
 import type { Transaction } from "../types/transaction";
+import { useConfirm, useNotify } from "../context/DialogContext";
 
 
 export interface TransactionsTableProps {
@@ -110,6 +111,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { createCategory, createTag } = useCategoryTagCreate();
+  const confirm = useConfirm();
+  const notify = useNotify();
   // State
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(initialRowsPerPage);
@@ -391,7 +394,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       await transactionsApi.delete(deletingTransaction.unique_id || "", deletingTransaction.source || "");
       onTransactionUpdated?.();
     } catch {
-      alert("Failed to delete transaction.");
+      notify.error(t("transactions.failedDelete"));
     } finally {
       setDeletingTransaction(null);
     }
@@ -440,12 +443,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   };
 
   const handleBulkDelete = async () => {
-    if (
-      !window.confirm(
-        `Delete ${selectedIds.size} transactions? Only manual entries will be removed.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: t("common.deleteTitle"),
+      message: t("transactions.bulkDeleteOnlyManual", { count: selectedIds.size }),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (!ok) return;
     const selectedTxs = transactions.filter((tx) =>
       selectedIds.has(getTransactionId(tx)),
     );
@@ -461,7 +465,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       setSelectedIds(new Set());
       onTransactionUpdated?.();
     } catch {
-      alert("Partial failure during bulk deletion.");
+      notify.error(t("transactions.bulkDeletePartialFailure"));
     }
   };
 
@@ -829,16 +833,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                   <button
                                     className="p-1.5 rounded-md bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
                                     title={t("tooltips.refundResolved")}
-                                    onClick={() => {
-                                      if (
-                                        window.confirm(
-                                          "This refund is marked as resolved. Do you want to remove this record?",
-                                        )
-                                      ) {
-                                        cancelPendingMutation.mutate(
-                                          pending.id,
-                                        );
-                                      }
+                                    onClick={async () => {
+                                      const ok = await confirm({
+                                        title: t("tooltips.refundResolved"),
+                                        message: t("transactions.confirmRemoveResolvedRefund"),
+                                        confirmLabel: t("common.remove"),
+                                        isDestructive: true,
+                                      });
+                                      if (ok) cancelPendingMutation.mutate(pending.id);
                                     }}
                                     disabled={cancelPendingMutation.isPending}
                                   >
@@ -851,16 +853,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                   <button
                                     className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
                                     title={`${t("tooltips.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("tooltips.clickToCancel")}`}
-                                    onClick={() => {
-                                      if (
-                                        window.confirm(
-                                          "Remove this partial refund request? Linked refunds will be unlinked.",
-                                        )
-                                      ) {
-                                        cancelPendingMutation.mutate(
-                                          pending.id,
-                                        );
-                                      }
+                                    onClick={async () => {
+                                      const ok = await confirm({
+                                        title: t("tooltips.partiallyRefunded"),
+                                        message: t("transactions.confirmRemovePartialRefund"),
+                                        confirmLabel: t("common.remove"),
+                                        isDestructive: true,
+                                      });
+                                      if (ok) cancelPendingMutation.mutate(pending.id);
                                     }}
                                     disabled={cancelPendingMutation.isPending}
                                   >
@@ -872,14 +872,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 <button
                                   className="p-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
                                   title={t("tooltips.cancelPendingRefund")}
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        "Remove this request? If it is linked to refunds, those links will be broken.",
-                                      )
-                                    ) {
-                                      cancelPendingMutation.mutate(pending.id);
-                                    }
+                                  onClick={async () => {
+                                    const ok = await confirm({
+                                      title: t("tooltips.cancelPendingRefund"),
+                                      message: t("transactions.confirmRemoveRefundRequest"),
+                                      confirmLabel: t("common.remove"),
+                                      isDestructive: true,
+                                    });
+                                    if (ok) cancelPendingMutation.mutate(pending.id);
                                   }}
                                   disabled={cancelPendingMutation.isPending}
                                 >
@@ -913,14 +913,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 <button
                                   className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
                                   title={t("tooltips.linkedToPending")}
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        "Unlink this refund from the pending request?",
-                                      )
-                                    ) {
-                                      unlinkRefundMutation.mutate(linkId);
-                                    }
+                                  onClick={async () => {
+                                    const ok = await confirm({
+                                      title: t("transactions.refunds.unlink"),
+                                      message: t("transactions.confirmUnlinkRefund"),
+                                      confirmLabel: t("transactions.refunds.unlink"),
+                                      isDestructive: true,
+                                    });
+                                    if (ok) unlinkRefundMutation.mutate(linkId);
                                   }}
                                   disabled={unlinkRefundMutation.isPending}
                                 >

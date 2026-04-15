@@ -21,6 +21,7 @@ import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { formatCurrency } from "../utils/numberFormatting";
 import { useCategories } from "../hooks/useCategories";
+import { useConfirm } from "../context/DialogContext";
 
 interface Liability {
   id: number;
@@ -99,6 +100,7 @@ function LiabilityCard({
   onDelete: (id: number) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const isPaidOff = !!liability.is_paid_off;
   const [showNotes, setShowNotes] = useState(false);
 
@@ -216,9 +218,14 @@ function LiabilityCard({
             </button>
           )}
           <button
-            onClick={() => {
-              if (window.confirm(t("liabilities.confirmDelete")))
-                onDelete(liability.id);
+            onClick={async () => {
+              const ok = await confirm({
+                title: t("common.deleteTitle"),
+                message: t("liabilities.confirmDelete"),
+                confirmLabel: t("common.delete"),
+                isDestructive: true,
+              });
+              if (ok) onDelete(liability.id);
             }}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
             title={t("common.delete")}

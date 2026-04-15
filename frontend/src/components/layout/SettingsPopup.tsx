@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { backupApi } from "../../services/api";
 
 interface SettingsPopupProps {
@@ -27,6 +28,8 @@ export function SettingsPopup({
   const { t, i18n } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const { isDemoMode, toggleDemoMode } = useDemoMode();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [creating, setCreating] = useState(false);
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
@@ -61,21 +64,26 @@ export function SettingsPopup({
       const res = await backupApi.list();
       setBackups(res.data);
     } catch {
-      alert(t("settings.backupFailed"));
+      notify.error(t("settings.backupFailed"));
     } finally {
       setCreating(false);
     }
   };
 
   const handleRestore = async (filename: string) => {
-    if (!confirm(t("settings.restoreConfirm"))) return;
+    const ok = await confirm({
+      title: t("settings.restoreBackup"),
+      message: t("settings.restoreConfirm"),
+      confirmLabel: t("settings.restoreBackup"),
+    });
+    if (!ok) return;
     setRestoringFile(filename);
     try {
       await backupApi.restore(filename);
-      alert(t("settings.backupRestored"));
+      notify.success(t("settings.backupRestored"));
       window.location.reload();
     } catch {
-      alert(t("settings.restoreFailed"));
+      notify.error(t("settings.restoreFailed"));
       setRestoringFile(null);
     }
   };

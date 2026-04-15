@@ -10,6 +10,7 @@ import { Skeleton } from "../components/common/Skeleton";
 import { Modal } from "../components/common/Modal";
 import { useCategories } from "../hooks/useCategories";
 import { IconPickerModal } from "../components/categories/IconPickerModal";
+import { useConfirm, useNotify } from "../context/DialogContext";
 
 const PROTECTED_CATEGORIES = ["Credit Cards", "Salary", "Other Income", "Investments", "Ignore", "Liabilities"];
 const PROTECTED_TAGS = ["Prior Wealth"];
@@ -18,6 +19,8 @@ export function Categories() {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === "he";
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const notify = useNotify();
 
   // UI state
   const [searchQuery, setSearchQuery] = useState("");
@@ -93,7 +96,7 @@ export function Categories() {
       setEditingCategory(null);
     },
     onError: () => {
-      alert(t("categories.renameError"));
+      notify.error(t("categories.renameError"));
     },
   });
 
@@ -105,7 +108,7 @@ export function Categories() {
       setEditingTag(null);
     },
     onError: () => {
-      alert(t("categories.renameError"));
+      notify.error(t("categories.renameError"));
     },
   });
 
@@ -297,10 +300,15 @@ export function Categories() {
                     <Plus size={16} />
                   </button>
                   <button
-                    onClick={() => {
-                      if (!isProtected && window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
-                        deleteCategoryMutation.mutate(category);
-                      }
+                    onClick={async () => {
+                      if (isProtected) return;
+                      const ok = await confirm({
+                        title: t("categories.deleteCategory"),
+                        message: t("categories.confirmDeleteCategory", { name: category }),
+                        confirmLabel: t("common.delete"),
+                        isDestructive: true,
+                      });
+                      if (ok) deleteCategoryMutation.mutate(category);
                     }}
                     disabled={isProtected}
                     className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
@@ -328,10 +336,15 @@ export function Categories() {
                     <Plus size={16} />
                   </button>
                   <button
-                    onClick={() => {
-                      if (!isProtected && window.confirm(t("categories.confirmDeleteCategory", { name: category }))) {
-                        deleteCategoryMutation.mutate(category);
-                      }
+                    onClick={async () => {
+                      if (isProtected) return;
+                      const ok = await confirm({
+                        title: t("categories.deleteCategory"),
+                        message: t("categories.confirmDeleteCategory", { name: category }),
+                        confirmLabel: t("common.delete"),
+                        isDestructive: true,
+                      });
+                      if (ok) deleteCategoryMutation.mutate(category);
                     }}
                     disabled={isProtected}
                     className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
@@ -398,10 +411,14 @@ export function Categories() {
                                 <MoveRight size={12} />
                               </button>
                               <button
-                                onClick={() => {
-                                  if (window.confirm(t("categories.confirmDeleteTag", { tag: tagName, category }))) {
-                                    deleteTagMutation.mutate({ category, tag: tagName });
-                                  }
+                                onClick={async () => {
+                                  const ok = await confirm({
+                                    title: t("categories.deleteTag"),
+                                    message: t("categories.confirmDeleteTag", { tag: tagName, category }),
+                                    confirmLabel: t("common.delete"),
+                                    isDestructive: true,
+                                  });
+                                  if (ok) deleteTagMutation.mutate({ category, tag: tagName });
                                 }}
                                 className="p-1 hover:bg-red-500/10 text-red-400 rounded transition-colors"
                                 title={t("categories.deleteTag")}

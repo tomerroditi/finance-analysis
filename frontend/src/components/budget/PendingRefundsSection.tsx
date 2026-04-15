@@ -6,6 +6,7 @@ import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -19,6 +20,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const { items, total_expected } = pendingRefunds;
   const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
   const [mobileActionsId, setMobileActionsId] = useState<number | null>(null);
@@ -36,14 +39,29 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   }
 
   const handleCancel = async (id: number) => {
-    if (!window.confirm(t("budget.confirmCancelRefund"))) return;
+    const ok = await confirm({
+      title: t("common.cancel"),
+      message: t("budget.confirmCancelRefund"),
+      confirmLabel: t("common.confirm"),
+      isDestructive: true,
+    });
+    if (!ok) return;
     try {
       await pendingRefundsApi.cancel(id);
       queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
     } catch {
-      alert(t("budget.failedCancelRefund"));
+      notify.error(t("budget.failedCancelRefund"));
     }
+  };
+
+  const handleClose = async (id: number) => {
+    const ok = await confirm({
+      title: t("budget.closeRefund"),
+      message: t("budget.confirmCloseRefund"),
+      confirmLabel: t("budget.closeRefund"),
+    });
+    if (ok) closeMutation.mutate(id);
   };
 
 
@@ -137,11 +155,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                 <button
                   className="hidden sm:block p-1.5 rounded-md hover:bg-blue-500/10 text-blue-400/70 hover:text-blue-400 transition-colors"
                   data-tooltip={t("budget.closeRefund")}
-                  onClick={() => {
-                    if (window.confirm(t("budget.confirmCloseRefund"))) {
-                      closeMutation.mutate(item.id);
-                    }
-                  }}
+                  onClick={() => handleClose(item.id)}
                 >
                   <Lock size={16} />
                 </button>
@@ -169,9 +183,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-blue-400/70 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (window.confirm(t("budget.confirmCloseRefund"))) {
-                      closeMutation.mutate(item.id);
-                    }
+                    handleClose(item.id);
                   }}
                 >
                   <Lock size={14} />

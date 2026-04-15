@@ -19,6 +19,7 @@ import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useMemo } from "react";
+import { useConfirm } from "../../context/DialogContext";
 
 interface BudgetRule {
   id: number;
@@ -43,6 +44,7 @@ interface ProjectSpendingItem {
 
 export const MonthlyBudgetView: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
@@ -272,14 +274,13 @@ export const MonthlyBudgetView: React.FC = () => {
             {t("budget.currentMonth")}
           </button>
           <button
-            onClick={() => {
-              if (
-                confirm(
-                  t("budget.confirmCopyRules"),
-                )
-              ) {
-                copyMutation.mutate();
-              }
+            onClick={async () => {
+              const ok = await confirm({
+                title: t("budget.replicatePreviousMonth"),
+                message: t("budget.confirmCopyRules"),
+                confirmLabel: t("common.confirm"),
+              });
+              if (ok) copyMutation.mutate();
             }}
             disabled={copyMutation.isPending}
             className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
@@ -421,15 +422,15 @@ export const MonthlyBudgetView: React.FC = () => {
                     )}
                     {item.allow_delete && (
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          if (
-                            confirm(
-                              t("budget.confirmDeleteRule"),
-                            )
-                          ) {
-                            deleteMutation.mutate(item.rule.id);
-                          }
+                          const ok = await confirm({
+                            title: t("budget.deleteRule"),
+                            message: t("budget.confirmDeleteRule"),
+                            confirmLabel: t("common.delete"),
+                            isDestructive: true,
+                          });
+                          if (ok) deleteMutation.mutate(item.rule.id);
                         }}
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
                         title={t("budget.deleteRule")}

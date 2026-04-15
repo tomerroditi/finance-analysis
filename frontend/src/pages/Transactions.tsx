@@ -13,9 +13,11 @@ import { Skeleton } from "../components/common/Skeleton";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 import { formatCurrency } from "../utils/numberFormatting";
+import { useConfirm } from "../context/DialogContext";
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -158,14 +160,14 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       <DollarSign size={16} className="text-amber-500" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (
-                          confirm(
-                            `Delete cash envelope "${balance.account_name}"?`
-                          )
-                        ) {
-                          deleteMutation.mutate(balance.account_name);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("tooltips.deleteEnvelope"),
+                          message: t("transactions.confirmDeleteEnvelope", { name: balance.account_name }),
+                          confirmLabel: t("common.delete"),
+                          isDestructive: true,
+                        });
+                        if (ok) deleteMutation.mutate(balance.account_name);
                       }}
                       className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors"
                       title={t("tooltips.deleteEnvelope")}

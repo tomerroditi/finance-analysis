@@ -17,10 +17,12 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
+import { useConfirm } from "../../context/DialogContext";
 
 const RefundsView: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
 
   const { data: refunds, isLoading } = useQuery({
@@ -156,10 +158,13 @@ const RefundsView: React.FC = () => {
               </button>
               <button
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
-                onClick={() => {
-                  if (window.confirm(t("transactions.refunds.confirmClose"))) {
-                    closeMutation.mutate(item.id);
-                  }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t("transactions.refunds.closeRefund"),
+                    message: t("transactions.refunds.confirmClose"),
+                    confirmLabel: t("transactions.refunds.closeRefund"),
+                  });
+                  if (ok) closeMutation.mutate(item.id);
                 }}
               >
                 <Lock size={14} />
@@ -167,10 +172,14 @@ const RefundsView: React.FC = () => {
               </button>
               <button
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                onClick={() => {
-                  if (window.confirm(t("transactions.refunds.confirmCancel"))) {
-                    cancelMutation.mutate(item.id);
-                  }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t("common.cancel"),
+                    message: t("transactions.refunds.confirmCancel"),
+                    confirmLabel: t("common.confirm"),
+                    isDestructive: true,
+                  });
+                  if (ok) cancelMutation.mutate(item.id);
                 }}
               >
                 <X size={14} />
@@ -218,10 +227,14 @@ const RefundsView: React.FC = () => {
                   {item.status !== "closed" && (
                     <button
                       className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium hover:bg-red-500/10 text-red-400/70 hover:text-red-400 transition-all"
-                      onClick={() => {
-                        if (window.confirm(t("transactions.refunds.confirmUnlink"))) {
-                          unlinkMutation.mutate(link.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("transactions.refunds.unlink"),
+                          message: t("transactions.refunds.confirmUnlink"),
+                          confirmLabel: t("transactions.refunds.unlink"),
+                          isDestructive: true,
+                        });
+                        if (ok) unlinkMutation.mutate(link.id);
                       }}
                     >
                       <Unlink size={14} />

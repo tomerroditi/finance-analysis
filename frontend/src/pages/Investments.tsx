@@ -21,6 +21,7 @@ import { Sparkline } from "../components/common/Sparkline";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
 import { useCategories } from "../hooks/useCategories";
+import { useConfirm } from "../context/DialogContext";
 
 interface Investment {
   id: number;
@@ -95,6 +96,7 @@ function InvestmentCard({
   analysisData?: AllocationItem;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
         (new Date().getTime() - new Date(inv.latest_snapshot_date).getTime()) /
@@ -264,8 +266,14 @@ function InvestmentCard({
             </button>
           )}
           <button
-            onClick={() => {
-              if (window.confirm(t("investments.confirmDelete"))) onDelete(inv.id);
+            onClick={async () => {
+              const ok = await confirm({
+                title: t("common.deleteTitle"),
+                message: t("investments.confirmDelete"),
+                confirmLabel: t("common.delete"),
+                isDestructive: true,
+              });
+              if (ok) onDelete(inv.id);
             }}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
             title={t("common.delete")}
