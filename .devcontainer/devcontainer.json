@@ -30,7 +30,8 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "python.terminal.activateEnvironment": false
+        "python.terminal.activateEnvironment": false,
+        "task.allowAutomaticTasks": "on"
       }
     }
   },
