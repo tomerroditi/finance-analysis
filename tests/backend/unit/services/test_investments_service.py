@@ -4,7 +4,6 @@ import pandas as pd
 import pytest
 
 from backend.models.investment import Investment as InvestmentModel
-from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.transaction import ManualInvestmentTransaction
 from backend.services.investments_service import InvestmentsService
 

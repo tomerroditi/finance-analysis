@@ -23,7 +23,6 @@ if not os.path.exists(_demo_dst):
     shutil.copy2(_demo_src, _demo_dst)
 
 from backend.config import AppConfig  # noqa: E402
-from backend.main import app  # noqa: E402
 
 config = AppConfig()
 config.set_demo_mode(True)
@@ -36,3 +35,6 @@ Base.metadata.create_all(bind=get_engine())
 
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.
+from backend.main import app  # noqa: E402
+
+__all__ = ["app"]

@@ -66,7 +66,7 @@ class RetirementService:
 
     def upsert_goal(self, **fields) -> dict:
         """Create or update the retirement goal and return it as dict."""
-        goal = self.repo.upsert(**fields)
+        self.repo.upsert(**fields)
         return self.get_goal()
 
     def get_keren_hishtalmut_scraped_balance(self) -> float | None:

@@ -2,7 +2,6 @@
 Unit tests for text_utils module.
 """
 
-import pytest
 
 from backend.utils.text_utils import INITIALISMS, to_title_case
 

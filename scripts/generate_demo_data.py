@@ -10,7 +10,6 @@ Usage
 """
 
 import json
-import os
 import random
 import sys
 from datetime import date, datetime, timedelta
@@ -22,12 +21,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
 
-from backend.models.base import Base
-from backend.models import (
+from backend.models.base import Base  # noqa: E402
+from backend.models import (  # noqa: E402
     BankBalance,
     BankTransaction,
     BudgetRule,
@@ -1331,11 +1330,6 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
         cumulative_deposits += 2000.0
         # Base growth: 8% annual, compounded monthly
         months_elapsed = i + 1
-        base_growth = cumulative_deposits * (1 + 0.085 / 12) ** months_elapsed / (
-            (1 + 0.085 / 12) ** months_elapsed
-            if months_elapsed > 0
-            else 1
-        )
         # Simpler: cumulative deposits + growth with monthly variance
         growth_factor = 1 + (0.085 * months_elapsed / 12) + random.uniform(-0.03, 0.05) * (months_elapsed / len(months))
         balance = round(cumulative_deposits * growth_factor, 2)
@@ -1387,7 +1381,6 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
         ))
 
     # --- Corporate Bond: 6 monthly snapshots before closure, then 0 ---
-    bond_created = START_DATE + timedelta(days=30)
     bond_deposit_date = REFERENCE_DATE - timedelta(days=365)
     bond_closed_date = REFERENCE_DATE - timedelta(days=180)
 
@@ -1887,7 +1880,6 @@ def create_pending_refunds(session, cc_txns, bank_txns):
 
 def create_scraping_history(session):
     """Create 5 scraping history records."""
-    now = datetime.now()
     recent = REFERENCE_DATE - timedelta(days=1)
     older = REFERENCE_DATE - timedelta(days=21)
 
@@ -2163,7 +2155,7 @@ def main():
 
         # 4. Untagged transactions (updates monthly_cc_totals for bill consistency)
         print("  Generating untagged transactions...")
-        untagged_txns = generate_untagged_transactions(session, monthly_cc_totals)
+        generate_untagged_transactions(session, monthly_cc_totals)
 
         # 5. Bank transactions (uses CC totals for bill amounts)
         print("  Generating bank transactions...")

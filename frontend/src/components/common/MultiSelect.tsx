@@ -24,6 +24,11 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   const searchRef = useRef<HTMLInputElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
+  const closeDropdown = useCallback(() => {
+    setIsOpen(false);
+    setSearch("");
+  }, []);
+
   const updatePosition = useCallback(() => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
@@ -37,10 +42,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) {
-      setSearch("");
-      return;
-    }
+    if (!isOpen) return;
     updatePosition();
     requestAnimationFrame(() => searchRef.current?.focus());
     const onScroll = () => updatePosition();
@@ -61,11 +63,11 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         dropdownRef.current?.contains(target)
       )
         return;
-      setIsOpen(false);
+      closeDropdown();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isOpen]);
+  }, [isOpen, closeDropdown]);
 
   const filteredOptions = options.filter((opt) =>
     opt.toLowerCase().includes(search.toLowerCase()),
@@ -88,7 +90,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     <div className="relative">
       <button
         ref={buttonRef}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => (isOpen ? closeDropdown() : setIsOpen(true))}
         type="button"
         className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg hover:border-[var(--primary)]/50 transition-colors text-start"
       >

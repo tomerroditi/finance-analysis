@@ -1,6 +1,5 @@
 """Tests for the /api/bank-balances API endpoints."""
 
-import pytest
 
 
 class TestBankBalanceRoutes:

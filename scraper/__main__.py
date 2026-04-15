@@ -16,8 +16,12 @@ import json
 import os
 import sys
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from scraper.models.credentials import PROVIDER_CONFIGS
+
+if TYPE_CHECKING:
+    from scraper.models.result import ScrapingResult
 
 
 def build_parser() -> argparse.ArgumentParser:

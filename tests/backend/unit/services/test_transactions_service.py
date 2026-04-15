@@ -65,7 +65,6 @@ class TestTransactionsServiceDataRetrieval:
         # The split transactions fixture has 5 children total (3 CC + 2 bank).
         # Verify specific split amounts are present to confirm children are included.
         amount_col = TransactionsTableFields.AMOUNT.value
-        category_col = TransactionsTableFields.CATEGORY.value
 
         # CC splits: -150 (Food/Groceries), -100 (Home/Cleaning), -50 (Other)
         cc_split_amounts = {-150.0, -100.0, -50.0}
@@ -750,7 +749,6 @@ class TestTransactionsServicePriorWealth:
 
     def test_sync_prior_wealth_skips_manual_investments(self, db_session):
         """Verify sync_prior_wealth_offset does not create offset for manual_investments."""
-        from backend.models.transaction import ManualInvestmentTransaction
         from backend.constants.categories import PRIOR_WEALTH_TAG
         inv_tx = ManualInvestmentTransaction(
             id="test_inv_1",

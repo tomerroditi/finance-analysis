@@ -1,6 +1,5 @@
 """Tests for the /api/pending-refunds API endpoints."""
 
-import pytest
 
 
 class TestPendingRefundsRoutes:

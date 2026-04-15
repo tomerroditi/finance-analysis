@@ -323,7 +323,7 @@ class TestClearCache:
 
     def test_clear_cache_sets_none(self, mock_repo, monkeypatch):
         """Verify clear_cache sets module-level cache to None."""
-        service = CredentialsService(MagicMock())
+        CredentialsService(MagicMock())
         assert cs._credentials_cache is not None
 
         CredentialsService.clear_cache()

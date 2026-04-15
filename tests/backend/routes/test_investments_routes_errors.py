@@ -4,7 +4,6 @@ Covers 404 responses for non-existent investments, Pydantic validation
 errors, and exception propagation from the service layer.
 """
 
-import pytest
 
 
 class TestInvestmentNotFoundErrors:

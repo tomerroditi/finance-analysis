@@ -4,7 +4,6 @@ Covers validation errors, not-found scenarios, and duplicate detection
 for budget rules and project budget endpoints.
 """
 
-from unittest.mock import patch, MagicMock
 
 import pytest
 

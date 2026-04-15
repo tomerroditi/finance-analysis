@@ -8,7 +8,6 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.config import AppConfig
 from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 

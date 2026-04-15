@@ -126,7 +126,7 @@ class TaggingRulesService:
         if isinstance(conditions, str):
             try:
                 conditions = json.loads(conditions)
-            except:
+            except (ValueError, TypeError):
                 # Fallback if invalid JSON string (shouldn't happen with JSON column)
                 return {
                     "type": "CONDITION",

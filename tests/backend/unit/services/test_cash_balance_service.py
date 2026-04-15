@@ -1,7 +1,6 @@
 """Unit tests for CashBalanceService functionality."""
 
 import pytest
-from unittest.mock import MagicMock
 from sqlalchemy.orm import Session
 
 from backend.services.cash_balance_service import CashBalanceService

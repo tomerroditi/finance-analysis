@@ -320,7 +320,7 @@ class TestGetAllPendingEnrichment:
     def test_graceful_on_missing_source_transaction(self, db_session):
         """Verify enrichment gracefully handles nonexistent source transaction IDs."""
         service = PendingRefundsService(db_session)
-        pending = service.mark_as_pending_refund(
+        service.mark_as_pending_refund(
             "transaction", 99999, "banks", 100.0,
         )
 

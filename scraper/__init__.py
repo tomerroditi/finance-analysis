@@ -2,6 +2,16 @@ from scraper.base.base_scraper import BaseScraper, ScraperOptions
 from scraper.models.credentials import PROVIDER_CONFIGS, ProviderConfig
 from scraper.models.result import ScrapingResult
 
+__all__ = [
+    "BaseScraper",
+    "ScraperOptions",
+    "PROVIDER_CONFIGS",
+    "ProviderConfig",
+    "ScrapingResult",
+    "create_scraper",
+    "is_2fa_required",
+]
+
 
 def create_scraper(
     provider: str, credentials: dict, options: ScraperOptions | None = None

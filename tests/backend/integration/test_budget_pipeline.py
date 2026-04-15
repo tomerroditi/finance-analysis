@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
-from backend.models.budget import BudgetRule
 from backend.models.transaction import CreditCardTransaction
 from backend.services.budget_service import (
     MonthlyBudgetService,
