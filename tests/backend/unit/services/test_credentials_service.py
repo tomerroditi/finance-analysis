@@ -280,15 +280,27 @@ class TestGetScraperCredentials:
 class TestSeedDemoCredentials:
     """Tests for demo credential seeding."""
 
-    def test_seeds_all_three_when_none_exist(self, mock_repo):
-        """Verify all three demo credentials are created when none exist."""
+    def test_seeds_all_when_none_exist(self, mock_repo):
+        """Verify every demo credential is created when none exist.
+
+        Seeds cover bank (hapoalim), credit cards (max, visa cal) and insurance
+        (hafenix) — four accounts in total. Each should trigger a save.
+        """
         from backend.errors import EntityNotFoundException
 
         mock_repo.get_credentials.side_effect = EntityNotFoundException("Not found")
         service = CredentialsService(MagicMock())
         service.seed_demo_credentials()
 
-        assert mock_repo.save_credentials.call_count == 3
+        assert mock_repo.save_credentials.call_count == 4
+        saved_targets = {
+            (call.args[0], call.args[1], call.args[2])
+            for call in mock_repo.save_credentials.call_args_list
+        }
+        assert ("banks", "hapoalim", "Main Account") in saved_targets
+        assert ("credit_cards", "max", "Family Card") in saved_targets
+        assert ("credit_cards", "visa cal", "Online Shopping") in saved_targets
+        assert ("insurances", "hafenix", "The Cohens") in saved_targets
 
     def test_skips_existing_credentials(self, mock_repo):
         """Verify existing demo credentials are not re-inserted."""
@@ -299,7 +311,11 @@ class TestSeedDemoCredentials:
         mock_repo.save_credentials.assert_not_called()
 
     def test_partial_seeding(self, mock_repo):
-        """Verify only missing demo credentials are created."""
+        """Verify only missing demo credentials are created.
+
+        The first credential already exists (returned by the repo); the
+        remaining three raise EntityNotFoundException and therefore get saved.
+        """
         from backend.errors import EntityNotFoundException
 
         call_count = 0
@@ -315,7 +331,7 @@ class TestSeedDemoCredentials:
         service = CredentialsService(MagicMock())
         service.seed_demo_credentials()
 
-        assert mock_repo.save_credentials.call_count == 2
+        assert mock_repo.save_credentials.call_count == 3
 
 
 class TestClearCache:
