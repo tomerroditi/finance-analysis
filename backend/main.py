@@ -148,24 +148,85 @@ async def lifespan(app: FastAPI):
     print("Shutting down Finance Analysis API...")
 
 
+# Only expose OpenAPI/Swagger docs outside of production. ``ENVIRONMENT=production``
+# (or ``DISABLE_DOCS=1``) disables ``/docs``, ``/redoc`` and ``/openapi.json``
+# so attackers cannot enumerate the API surface from a public deployment.
+_environment = os.getenv("ENVIRONMENT", "development").lower()
+_docs_disabled = _environment == "production" or os.getenv("DISABLE_DOCS") == "1"
+
 app = FastAPI(
     title="Finance Analysis API",
     description="API for personal finance tracking and analysis",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None if _docs_disabled else "/docs",
+    redoc_url=None if _docs_disabled else "/redoc",
+    openapi_url=None if _docs_disabled else "/openapi.json",
 )
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.getenv(
+# Configure CORS. A wildcard origin (``*``) may never be combined with
+# ``allow_credentials=True`` — browsers reject such responses, and the
+# combination would also permit any site to read authenticated responses.
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
         "CORS_ORIGINS",
         "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    ).split(",")
+    if origin.strip()
+]
+_cors_allow_credentials = "*" not in _cors_origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+
+# Cap request body size to mitigate memory-exhaustion DoS. 10 MB comfortably
+# covers any JSON payload this app exchanges while blocking multi-GB bodies.
+_MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Reject requests whose declared body exceeds ``MAX_REQUEST_BYTES``."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > _MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid Content-Length header"},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Apply conservative security headers to every response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=(), payment=()",
+    )
+    # HSTS is only meaningful over HTTPS; emit it when the request was TLS.
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
 
 
 # Include routers
@@ -214,11 +275,18 @@ try:
 except ImportError:
     pass
 
-try:
-    from backend.routes import testing
-    app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
-except ImportError:
-    pass
+# Testing routes expose demo-mode toggling and DB reset helpers. They must
+# never be reachable in production: ``ENABLE_TESTING_ROUTES=1`` or a non-
+# production ``ENVIRONMENT`` is required to mount them.
+_enable_testing_routes = (
+    os.getenv("ENABLE_TESTING_ROUTES") == "1" or _environment != "production"
+)
+if _enable_testing_routes:
+    try:
+        from backend.routes import testing
+        app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
+    except ImportError:
+        pass
 
 
 @app.exception_handler(EntityNotFoundException)
@@ -263,13 +331,31 @@ _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if _frontend_dist.is_dir():
     app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="static-assets")
 
+    _frontend_dist_resolved = _frontend_dist.resolve()
+
     @app.exception_handler(404)
     async def spa_fallback(request: Request, exc):
-        """Serve the React SPA for non-API 404s (client-side routing)."""
+        """Serve the React SPA for non-API 404s (client-side routing).
+
+        Resolves the requested path and verifies it lives inside the frontend
+        dist directory before serving to prevent path traversal (e.g.
+        ``GET /../../etc/passwd``).
+        """
         if request.url.path.startswith("/api/"):
             detail = getattr(exc, "detail", "Not found")
             return JSONResponse(status_code=404, content={"detail": detail})
-        file_path = _frontend_dist / request.url.path.lstrip("/")
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(_frontend_dist / "index.html")
+
+        index_html = _frontend_dist_resolved / "index.html"
+        requested = request.url.path.lstrip("/")
+        if not requested:
+            return FileResponse(index_html)
+
+        candidate = (_frontend_dist_resolved / requested).resolve()
+        try:
+            candidate.relative_to(_frontend_dist_resolved)
+        except ValueError:
+            return FileResponse(index_html)
+
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(index_html)

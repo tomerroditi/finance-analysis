@@ -6,6 +6,8 @@ API, which is safe to run while the database is in use.
 """
 
 import logging
+import os
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,11 @@ from backend.config import AppConfig
 logger = logging.getLogger(__name__)
 
 MAX_BACKUPS = 5
+
+# Backup filenames always follow ``data_YYYYMMDD_HHMMSS.db``. Restrict restore
+# input to this shape so a malicious filename cannot traverse out of the
+# backup directory (e.g. ``../../etc/passwd``) or point at arbitrary files.
+_BACKUP_FILENAME_RE = re.compile(r"^data_\d{8}_\d{6}\.db$")
 
 
 def get_backup_dir() -> Path:
@@ -56,6 +63,10 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
         src_conn.backup(dst_conn)
         dst_conn.close()
         src_conn.close()
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            logger.debug("Unable to chmod backup %s", dest)
         logger.info("Database backed up to %s", dest)
     except Exception:
         logger.exception("Database backup failed")
@@ -114,12 +125,35 @@ def restore_backup(filename: str) -> None:
     ------
     FileNotFoundError
         If the backup file does not exist.
+    ValueError
+        If the filename is not a valid backup name, escapes the backup
+        directory, or the file is not a readable SQLite database.
     """
-    backup_dir = get_backup_dir()
-    backup_path = backup_dir / filename
+    # Reject anything that isn't a plain backup filename — no slashes, no
+    # traversal, no symlinks pointing elsewhere.
+    if not _BACKUP_FILENAME_RE.match(filename):
+        raise ValueError(f"Invalid backup filename: {filename}")
 
-    if not backup_path.exists():
+    backup_dir = get_backup_dir().resolve()
+    backup_path = (backup_dir / filename).resolve()
+    try:
+        backup_path.relative_to(backup_dir)
+    except ValueError as exc:
+        raise ValueError(f"Backup path escapes backup directory: {filename}") from exc
+
+    if not backup_path.is_file():
         raise FileNotFoundError(f"Backup file not found: {filename}")
+
+    # Validate the file is actually a readable SQLite database before we
+    # overwrite the live DB — prevents restoring a corrupt or hostile file.
+    try:
+        test_conn = sqlite3.connect(f"file:{backup_path}?mode=ro", uri=True)
+        try:
+            test_conn.execute("PRAGMA schema_version").fetchone()
+        finally:
+            test_conn.close()
+    except sqlite3.DatabaseError as exc:
+        raise ValueError(f"Backup file is not a valid SQLite database: {filename}") from exc
 
     config = AppConfig()
     db_path = Path(config.get_db_path())
@@ -139,5 +173,10 @@ def restore_backup(filename: str) -> None:
     src_conn.backup(dst_conn)
     dst_conn.close()
     src_conn.close()
+
+    try:
+        os.chmod(db_path, 0o600)
+    except OSError:
+        logger.debug("Unable to chmod restored DB %s", db_path)
 
     logger.info("Database restored from %s", filename)
