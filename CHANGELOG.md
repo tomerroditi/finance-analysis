@@ -1,3 +1,9 @@
+## v1.2.1 (2026-04-18)
+
+### Fix
+
+- **security**: harden path handling, CORS, headers, and backup restore
+
 ## v1.2.0 (2026-04-18)
 
 ### Feat
