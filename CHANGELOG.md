@@ -1,3 +1,191 @@
+## v1.2.0 (2026-04-18)
+
+### Feat
+
+- **ui**: replace browser confirm/alert with custom dialogs
+- **categories**: redesign categories page with accordion layout and search
+- **i18n**: add Hebrew support to data flow diagram page
+- enhance data flow diagram with missing features and polish
+- add interactive data flow diagram page
+- add comprehensive UI tests and features document
+- autofill retirement calculator fields from scraped insurance data
+- **backup**: add manual database backup and restore via settings UI
+- **demo**: add multi-link and auto-split refund test scenarios
+- **demo**: add diverse refund scenarios (pending, partial, resolved, closed)
+- **refunds**: add close button and partial progress to budget PendingRefundsSection
+- **refunds**: add full management UI to RefundsView (link, close, cancel, unlink)
+- **refunds**: fetch partial refunds in LinkRefundModal, show remaining
+- **refunds**: add i18n keys for close, unlink, and partial refund UI
+- **refunds**: add closed status type and close API method
+- **refunds**: auto-split refund transaction when amount exceeds remaining
+- **refunds**: update budget adjustment to include partial remaining, exclude closed
+- **refunds**: add close_pending_refund endpoint for accepting partial refunds
+- **refunds**: add unlink_refund service method with status recalculation
+- **budget**: enable link refund from budget pending refunds section
+- add remote access launch configs for Tailscale
+- **sidebar**: slim full-width mobile top bar with auto-hide on scroll
+- **sidebar**: redesign mobile sidebar as full-width dropdown grid
+- **dashboard**: add mobile tap-to-reveal action buttons on transactions
+- **frontend**: native mobile feel — touch UX, chart hover fix, tap feedback
+- **frontend**: add mobile infrastructure — scroll lock, safe areas, dvh, iOS fixes
+- **liabilities**: add loan amount to liability cards
+- **demo**: add Personal Loan with missing receipt and payment gaps
+- make Israeli Savings Vehicles always visible
+- move unit suffixes from input to field label
+- make retirement form fields compact and dense
+- add longevity check and life expectancy suggestion to retirement planner
+- separate Calculate (preview) from Save Plan (persist)
+- move adjust-plan suggestions to KPI cards in projections
+- replace auto-adjust toggles with post-calculation suggestions
+- add auto-adjust solver for retirement calculator fields
+- enhance early retirement calculator with 7 improvements
+- add early retirement calculator page
+- **liabilities**: add total debt line to debt over time chart
+- **liabilities**: replace paid-off checkbox with sections, add debt charts
+- **liabilities**: add LiabilityTransactionsTableFields to constants
+- **liabilities**: add tag auto-detection and missing payment generation
+- **liabilities**: add loan type and interest label to card metadata
+- **liabilities**: limit actual vs expected to current month, restore total interest card
+- **liabilities**: split interest into paid vs remaining in analysis
+- **liabilities**: add demo data with Mortgage and Car Loan liabilities
+- **liabilities**: use tag dropdown and disable add when no tags available
+- **liabilities**: add Liabilities page with cards, modals, and analysis
+- **liabilities**: add frontend API service, i18n, and navigation
+- **liabilities**: add API routes and register in main app
+- **liabilities**: add LiabilitiesService with amortization calculation
+- **liabilities**: add LiabilitiesRepository with CRUD operations
+- **liabilities**: add Liability model and Tables enum entry
+- **frontend**: add full mobile responsiveness across the entire app
+- add GitHub Actions workflow for PR preview deployments
+- add Vercel project configuration
+- add slim requirements for Vercel serverless function
+- add Vercel serverless adapter for FastAPI
+- gate optional routes for serverless compatibility
+- **dashboard**: add enriched analytics figures with horizontal charts and KPI cards
+- **frontend**: improve net worth chart with dual y-axis and dark hover tooltips
+- **frontend**: add i18n support to Insurances page
+- **frontend**: add React Error Boundary for graceful error handling
+- **frontend**: add accessibility attributes to interactive components
+
+### Fix
+
+- restore app import in Vercel entry point
+- **deps**: resolve 12 npm security vulnerabilities via audit fix
+- **categories**: correct invalid Tailwind class for search icon position
+- **categories**: disable delete button on protected categories
+- remove early withdrawal text from pension tooltip
+- **insurance**: hide pension-only columns for keren hishtalmut and fix mobile card layout
+- auto-fill retirement form with scraped insurance defaults
+- remove commas from pension makifa memo numbers
+- cap keren hishtalmut demo deposits to realistic amounts (<=1500)
+- add employer names to demo insurance descriptions and ensure all pension txns have memo
+- use fixed amounts for insurance demo deposits
+- use correct i18n key in mobile auto-tagging panel
+- **frontend**: round 2 review — hooks rule, duplicate icon, i18n
+- **frontend**: address component review findings
+- **frontend**: address code review findings before merge
+- **budget**: add missing query invalidation to copyMutation
+- **demo**: fix refund demo data filters, regenerate demo DB
+- **ui**: add text label to unlink button for clarity
+- **ui**: fast 500ms tooltips on icon buttons, always-visible unlink button
+- **refunds**: prevent duplicate transaction linking, allow unlink from resolved
+- **ui**: fix checkmark overlap in LinkRefundModal transaction list
+- **refunds**: guard link_refund against closed/resolved records
+- **refunds**: fix route shadowing, guard closed unlink, remove dead code, fix i18n
+- **refunds**: compute total_refunded/remaining in get_all_pending, fix max constraint and stale docs
+- **budget**: sort refund transactions by date descending in link modal
+- use full Tailscale CLI path on macOS
+- **liabilities**: fix dense table headers in analysis modal on mobile
+- **liabilities**: fix notes tooltip overflow, use tap-to-toggle
+- **dashboard**: fix mobile action button text and icon inconsistencies
+- **budget**: tap-to-reveal link/cancel buttons on pending refunds (mobile)
+- **budget**: show edit/delete buttons on dedicated row on mobile
+- **TransactionsTable**: hide checkboxes on mobile, move account column last
+- **layout**: reduce mobile page padding from 16px to 8px
+- **frontend**: fix floating panels, legends, and budget overflow on mobile
+- **SelectDropdown**: fix +create new layout on mobile
+- **frontend**: prevent browser pull-to-refresh on app body
+- **frontend**: apply mobile responsiveness to new Liabilities and Retirement pages
+- **liabilities**: allow recreating a liability with an existing tag
+- **demo**: Personal Loan missing data reflects scraping start date
+- **liabilities**: hide principal/start_date fields until tag is selected
+- **demo**: fix demo mode toggle failing on schema mismatch
+- **frontend**: add type annotations for debt-over-time query data
+- **liabilities**: review fixes and actual transaction-based charts
+- address PR #31 review — repo pattern, Pydantic v2, response models
+- remove pension age note from gender field label
+- shorten Monthly Pension label
+- move gender pension note into label for grid alignment
+- move Bituach Leumi checkbox into label row for grid alignment
+- align form inputs in retirement goal form
+- allow 2 decimal places on percentage fields
+- remove early pension withdrawal (age 60) from retirement calculator
+- round percentage fields to avoid floating-point display errors
+- solvers now verify portfolio survives through life expectancy
+- remove stub goal that was corrupting form state on Calculate
+- prevent form fields from emptying on Calculate and fix Adjust Plan recalculation
+- adjust plan buttons now update form and re-preview correctly
+- clarify optimistic/conservative paths in net worth chart
+- apply auto-adjusted solved value when submitting retirement form
+- prevent form values from resetting after Calculate button press
+- calculate button first-press behavior and chart y-axis labels
+- **liabilities**: fix off-by-one in remaining balance calculation
+- **liabilities**: use step lines in debt over time chart
+- **liabilities**: fix total debt line using last-known balance interpolation
+- **liabilities**: debt over time chart only shows actual payment data points
+- **liabilities**: rename debt pie chart to "Current Debt"
+- **models**: add LiabilityTransaction to __all__ exports
+- **liabilities**: remove principal amount and start date fields from create form
+- **liabilities**: hide principal/start date fields when receipt is detected
+- **liabilities**: make cards denser with interest cost stat and larger text
+- **liabilities**: add border to progress bar for visibility
+- **demo**: use constant loan payment amounts matching amortization schedule
+- **liabilities**: remove redundant total loan cost card from analysis
+- **liabilities**: fix analysis modal crash and add total loan cost
+- **vercel**: auto-enable demo mode on Vercel deployments
+- **demo**: auto-fallback to demo database when no DB file exists
+- **vercel**: disable framework auto-detection to prevent FastAPI conflict
+- **vercel**: add vercel.json for build configuration
+- **frontend**: fix remaining mobile responsiveness issues
+- **transactions**: make bulk action bar fully opaque on mobile
+- **budget**: show edit/delete buttons on mobile budget rules
+- **dashboard**: fix insight tab bar clipping and chart height on mobile
+- **dashboard**: fix KPI cards overflow on mobile
+- **ci**: install uv in PR preview workflow
+- reference 'vercel' environment for GitHub secrets
+- create missing tables in demo DB on Vercel cold start
+- resolve keyring import chain for Vercel serverless
+- remove explicit Python runtime from vercel.json
+- **dashboard**: fix debt payments chart axis, net worth line color, and date axis
+- **dashboard**: fix net worth chart empty data by setting xaxis type to category
+- **dashboard**: restore unified hover, dark hoverlabel, and dual y-axis on net worth chart
+- **frontend**: remove orphaned JSX div tag in Investments page
+- reset Dashboard and Investments to main (charts are in extracted components)
+- **test**: remove unused import and fix misleading test docstrings
+- **backend**: replace deprecated .dict() with .model_dump()
+- **backend**: remove broad exception handlers that conflict with global handlers
+- **backend**: add error handling to analytics, bank_balances, cash_balances, and tagging routes
+- **frontend**: add i18n for aria-label strings in MultiSelect
+
+### Refactor
+
+- **categories**: remove stats badges from toolbar
+- remove page titles and subtitles from all pages
+- **frontend**: extract TransactionsTable sub-components and consolidate imports
+- **frontend**: decompose Dashboard.tsx into focused sub-components
+- **frontend**: extract shared utilities, Modal component, and data hooks
+- **liabilities**: cleanup round 2 - unused imports, type hints, dedup
+- **liabilities**: simplify code and remove redundancy
+- **liabilities**: remove unnecessary tag creation on liability save
+- review fixes — Pydantic response model, tests, error handling
+- extract InsuranceAccountRepository and InsuranceAccountService
+- **liabilities**: use LiabilityTransactionsTableFields constants in service
+- remove PR preview workflow
+- **ci**: remove PR comment step from preview workflow
+- **frontend**: centralize chartTheme in plotlyLocale utility
+- **frontend**: extract sub-components from Dashboard and Investments pages
+- **frontend**: extract sub-components from Dashboard and Investments
+
 ## v1.1.1 (2026-03-21)
 
 ### Fix
