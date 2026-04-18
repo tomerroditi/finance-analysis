@@ -623,7 +623,8 @@ class TestAnalysisServiceIncomeBySource:
 
         assert len(result) == 1
         sources = result[0]["sources"]
-        assert sources["Loans"] == 50000.0
+        # Positive Liabilities with a tag are labeled "Loans / {tag}"
+        assert sources["Loans / Mortgage"] == 50000.0
         assert sources["Salary"] == 8000.0
 
     def test_get_income_by_source_over_time_excludes_prior_wealth(
