@@ -52,7 +52,7 @@ from backend.models import (  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 REFERENCE_DATE = date(2026, 2, 25)
-START_DATE = REFERENCE_DATE - timedelta(days=420)  # ~14 months back
+START_DATE = REFERENCE_DATE - timedelta(days=365 * 3 + 1)  # ~3 years back
 DB_PATH = PROJECT_ROOT / "backend" / "resources" / "demo_data.db"
 
 random.seed(42)
@@ -113,6 +113,7 @@ CATEGORIES_DATA = {
     "Credit Cards": ([], None),
     "Ignore": (["Credit Card Bill", "Internal Transactions"], "🚫"),
     "Home Renovation": (["Materials", "Labor", "Furniture"], "🏠"),
+    "Wedding": (["Venue", "Catering", "Photography", "Attire", "Rings", "Invitations", "Honeymoon"], "💒"),
 }
 
 TAGGING_RULES_DATA = [
@@ -198,6 +199,25 @@ def generate_cc_transactions(session):
 
     # Track which months are in the last 6 for home renovation
     six_months_ago = REFERENCE_DATE - timedelta(days=180)
+    # Wedding planning: roughly last 10 months — gradual vendor payments.
+    # Use a generous threshold so the schedule's earliest entry (months_back=10) isn't
+    # dropped just because the mid-month anchor falls slightly before the 300-day mark.
+    ten_months_ago = REFERENCE_DATE - timedelta(days=330)
+
+    # Wedding vendor schedule (CC card, roughly one per month in the last 10 months).
+    # Bigger payments (venue, catering) go via the bank — see generate_bank_transactions.
+    wedding_cc_schedule = {
+        10: ("TIFFANY RINGS ISRAEL", "Rings", -9800.0),
+        9:  ("PHOTOGRAPHER BOOKING", "Photography", -2500.0),
+        8:  ("WEDDING DRESS - ROTEM", "Attire", -5800.0),
+        7:  ("GROOM SUIT - HUGO BOSS", "Attire", -3600.0),
+        6:  ("INVITATIONS - PAPER KING", "Invitations", -1450.0),
+        5:  ("WEDDING BAND - MUSIC DUO", "Catering", -2800.0),
+        4:  ("PHOTOGRAPHER - FINAL", "Photography", -3500.0),
+        3:  ("HAIR & MAKEUP TRIAL", "Attire", -900.0),
+        2:  ("WEDDING FAVORS - ETSY", "Invitations", -680.0),
+        1:  ("HONEYMOON FLIGHTS", "Honeymoon", -9400.0),
+    }
 
     for year, month in months:
         max_total = 0.0
@@ -487,8 +507,207 @@ def generate_cc_transactions(session):
             all_cc_txns.append(txn)
             max_total += amt
 
-        # Home Renovation — last 6 months only, on Max card
         month_date = date(year, month, 15)
+
+        # Kids school supplies surge in August–September
+        if month in (8, 9):
+            for _ in range(random.randint(1, 3)):
+                cc_counter += 1
+                desc = random.choice(["KRAVITZ SCHOOL", "OFFICE DEPOT BACK-TO-SCHOOL", "SHILAV"])
+                amt = rand_amount(-350, -120)
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 15, 28),
+                    provider="max",
+                    account_name="Family Card",
+                    description=desc,
+                    amount=amt,
+                    category="Kids",
+                    tag="School Supplies",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Kids birthday parties — twice a year (March + October)
+        if month in (3, 10):
+            cc_counter += 1
+            amt = rand_amount(-1200, -600)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month),
+                provider="max",
+                account_name="Family Card",
+                description="KIDS BIRTHDAY - PARTY HALL",
+                amount=amt,
+                category="Kids",
+                tag="Activities",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            max_total += amt
+
+        # Summer family vacation — August each year, on Visa Cal (online bookings)
+        if month == 8:
+            # Flights
+            cc_counter += 1
+            flights_amt = rand_amount(-7500, -5500)
+            destination = random.choice(["GREECE", "CYPRUS", "ITALY"])
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 1, 10),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description=f"EL AL FLIGHTS - {destination}",
+                amount=flights_amt,
+                category="Vacations",
+                tag="Flights",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += flights_amt
+
+            # Hotel
+            cc_counter += 1
+            hotel_amt = rand_amount(-6500, -4500)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 5, 15),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description="BOOKING.COM HOTEL",
+                amount=hotel_amt,
+                category="Vacations",
+                tag="Hotel",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += hotel_amt
+
+            # Vacation food (a few charges)
+            for _ in range(random.randint(3, 5)):
+                cc_counter += 1
+                amt = rand_amount(-450, -120)
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 15, 28),
+                    provider="max",
+                    account_name="Family Card",
+                    description=f"RESTAURANT - {destination}",
+                    amount=amt,
+                    category="Vacations",
+                    tag="Food",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Short winter getaway — December each year (domestic, hotel only)
+        if month == 12:
+            cc_counter += 1
+            amt = rand_amount(-2800, -1800)
+            resort = random.choice(["DEAD SEA RESORT", "EILAT ISROTEL", "GALILEE LODGE"])
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 20, 28),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description=resort,
+                amount=amt,
+                category="Vacations",
+                tag="Hotel",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += amt
+
+        # Extra holiday gifts in December (Hanukkah) and March/April (Passover)
+        if month in (12, 3, 4):
+            for _ in range(random.randint(2, 4)):
+                cc_counter += 1
+                amt = rand_amount(-400, -120)
+                desc = random.choice(["HAMASHBIR GIFTS", "TOYS R US", "HOLIDAY GIFT SHOP"])
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month),
+                    provider="visa cal",
+                    account_name="Online Shopping",
+                    description=desc,
+                    amount=amt,
+                    category="Shopping",
+                    tag="Gifts",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                visa_total += amt
+
+        # Car service — annual in spring
+        if month == 4:
+            cc_counter += 1
+            amt = rand_amount(-2500, -1200)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 5, 20),
+                provider="max",
+                account_name="Family Card",
+                description="CAR SERVICE - ANNUAL",
+                amount=amt,
+                category="Transportation",
+                tag=None,
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            max_total += amt
+
+        # Wedding planning — last 10 months on Max card (one vendor per month).
+        if month_date >= ten_months_ago:
+            months_back = (REFERENCE_DATE.year - year) * 12 + (REFERENCE_DATE.month - month)
+            vendor = wedding_cc_schedule.get(months_back)
+            if vendor:
+                desc, tag, amt = vendor
+                cc_counter += 1
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 10, 25),
+                    provider="max",
+                    account_name="Family Card",
+                    description=desc,
+                    amount=amt,
+                    category="Wedding",
+                    tag=tag,
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Home Renovation — last 6 months only, on Max card
         if month_date >= six_months_ago:
             # 1-2 renovation transactions per qualifying month (to get ~15 total)
             reno_count = random.randint(1, 3)
@@ -1002,6 +1221,56 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
                 amount=amt,
                 category="Other Income",
                 tag="Freelance",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_bank_txns.append(txn)
+
+        # Annual tech-company bonus — every December
+        if month == 12:
+            bank_counter += 1
+            bonus = round(rand_amount(26000, 35000), 2)
+            txn = BankTransaction(
+                id=f"demo-bank-{bank_counter:04d}",
+                date=date(year, month, 20).isoformat(),
+                provider="hapoalim",
+                account_name="Main Account",
+                description="TECH COMPANY LTD - ANNUAL BONUS",
+                amount=bonus,
+                category="Salary",
+                tag="Tech Company",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_bank_txns.append(txn)
+
+        # Big wedding vendor payments via bank transfer (last 8 months).
+        # Paired with the CC-side schedule above — these are the large deposits
+        # that don't fit on a credit card.
+        wedding_bank_schedule = {
+            8: ("WEDDING VENUE - DEPOSIT", "Venue", -20000.0),
+            5: ("CATERING - DEPOSIT", "Catering", -12000.0),
+            2: ("CATERING - FINAL PAYMENT", "Catering", -18000.0),
+            1: ("VENUE - BALANCE PAYMENT", "Venue", -15000.0),
+        }
+        months_back = (REFERENCE_DATE.year - year) * 12 + (REFERENCE_DATE.month - month)
+        wedding_payment = wedding_bank_schedule.get(months_back)
+        if wedding_payment:
+            bank_counter += 1
+            desc, tag, amt = wedding_payment
+            txn = BankTransaction(
+                id=f"demo-bank-{bank_counter:04d}",
+                date=rand_date_in_month(year, month, 10, 25),
+                provider="hapoalim",
+                account_name="Main Account",
+                description=desc,
+                amount=amt,
+                category="Wedding",
+                tag=tag,
                 source="bank_transactions",
                 type="normal",
                 status="completed",
@@ -1543,7 +1812,7 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 
 
 def create_budget_rules(session):
-    """Create monthly budgets for last 3 months + project budget."""
+    """Create monthly budgets for the last 6 months + two project budgets."""
     monthly_budgets = [
         # Category-level rules
         ("Total Budget", 28000, "Total Budget", None),
@@ -1554,6 +1823,7 @@ def create_budget_rules(session):
         ("Health Budget", 600, "Health", None),
         ("Kids Budget", 3500, "Kids", None),
         ("Shopping Budget", 2000, "Shopping", None),
+        ("Vacations Budget", 4000, "Vacations", None),
         # Tag-level rules — exercises per-tag breakdown within categories
         ("Groceries", 2800, "Food", "Groceries"),
         ("Restaurants", 1200, "Food", "Restaurants"),
@@ -1561,20 +1831,13 @@ def create_budget_rules(session):
         ("Online Shopping", 1500, "Shopping", "Online"),
     ]
 
-    # Last 3 months before REFERENCE_DATE
-    ref = REFERENCE_DATE
+    # Last 6 months ending with the current REFERENCE_DATE month
     budget_months = []
-    current = ref
-    for _ in range(3):
-        # Go to previous month
-        current = current.replace(day=1) - timedelta(days=1)
+    current = date(REFERENCE_DATE.year, REFERENCE_DATE.month, 1)
+    for _ in range(6):
         budget_months.append((current.year, current.month))
-    # Also include the current month
-    budget_months.append((ref.year, ref.month))
-    # Sort chronologically
+        current = current.replace(day=1) - timedelta(days=1)
     budget_months.sort()
-    # Take last 3
-    budget_months = budget_months[-3:]
 
     for year, month in budget_months:
         for name, amount, category, tags in monthly_budgets:
@@ -1587,12 +1850,20 @@ def create_budget_rules(session):
                 month=month,
             ))
 
-    # Project budget
+    # Project budgets
     session.add(BudgetRule(
         name="Home Renovation",
         amount=30000,
         category="Home Renovation",
         tags="Materials;Labor;Furniture",
+        year=None,
+        month=None,
+    ))
+    session.add(BudgetRule(
+        name="Our Wedding",
+        amount=120000,
+        category="Wedding",
+        tags="Venue;Catering;Photography;Attire;Rings;Invitations;Honeymoon",
         year=None,
         month=None,
     ))
