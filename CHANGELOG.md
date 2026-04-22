@@ -1,3 +1,9 @@
+## v1.2.3 (2026-04-22)
+
+### Fix
+
+- **layout**: scroll to top on route change
+
 ## v1.2.2 (2026-04-22)
 
 ### Fix
