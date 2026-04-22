@@ -120,24 +120,24 @@ export function DataFlowDiagram() {
 
   return (
     <div className="relative h-full flex flex-col">
-      {/* Column Headers - sticky */}
-      <div
-        className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)]"
-        style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
-      >
-        {layers.map((layer) => (
-          <div
-            key={layer.id}
-            className="text-[10px] font-medium uppercase tracking-[2px] font-mono text-center"
-            style={{ color: layer.color }}
-          >
-            {layer.label}
-          </div>
-        ))}
-      </div>
-
       {/* Scrollable content */}
       <div ref={containerRef} className="flex-1 overflow-auto relative">
+        {/* Column Headers - sticky, scrolls horizontally with content */}
+        <div
+          className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)]"
+          style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
+        >
+          {layers.map((layer) => (
+            <div
+              key={layer.id}
+              className="text-[10px] font-medium uppercase tracking-[2px] font-mono text-center"
+              style={{ color: layer.color }}
+            >
+              {layer.label}
+            </div>
+          ))}
+        </div>
+
         {/* SVG Connections */}
         <svg
           className="absolute inset-0 pointer-events-none"
