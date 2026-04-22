@@ -6,13 +6,14 @@ Usage:
     # Use default configuration (Finance Analysis Backend & Frontend)
     python .claude/scripts/with_server.py -- python automation.py
 
-    # single server
+    # single server (argv is parsed with shlex.split and run without a shell)
     python .claude/scripts/with_server.py --server "npm run dev" --port 5173 -- python automation.py
 
-    # Multiple servers
+    # Multiple servers. Each --server is a single argv string. No shell is
+    # invoked, so use ``bash -c '...'`` if you need shell features like cd &&.
     python .claude/scripts/with_server.py \
-      --server "cd backend && python server.py" --port 3000 \
-      --server "cd frontend && npm run dev" --port 5173 \
+      --server "python backend/server.py" --port 3000 \
+      --server "bash -c 'cd frontend && npm run dev'" --port 5173 \
       -- python test.py
 """
 
