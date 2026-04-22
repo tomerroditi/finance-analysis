@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { Maximize2, Minus, Plus, X } from "lucide-react";
 import { useDataFlowData } from "./useDataFlowData";
 import type { DetailData } from "./dataFlowData";
+
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 1.5;
+const ZOOM_STEP = 0.1;
+const roundZoom = (z: number) => Math.round(z * 100) / 100;
 
 interface Connection {
   from: string;
@@ -20,8 +25,24 @@ export function DataFlowDiagram() {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [svgSize, setSvgSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const fitZoomToViewport = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return 1;
+    // scrollWidth reflects the currently-zoomed content, so divide by the
+    // active zoom to recover the intrinsic (unzoomed) width.
+    const intrinsic = container.scrollWidth / zoom;
+    const target = container.clientWidth - 8;
+    if (intrinsic <= 0) return 1;
+    return Math.max(MIN_ZOOM, Math.min(1, roundZoom(target / intrinsic)));
+  }, [zoom]);
+
+  const handleZoomIn = () => setZoom((z) => roundZoom(Math.min(MAX_ZOOM, z + ZOOM_STEP)));
+  const handleZoomOut = () => setZoom((z) => roundZoom(Math.max(MIN_ZOOM, z - ZOOM_STEP)));
+  const handleFit = () => setZoom(fitZoomToViewport());
 
   const highlightedId = hoveredNode ?? activeNode;
 
@@ -77,14 +98,29 @@ export function DataFlowDiagram() {
   }, [connectionDefs]);
 
   useEffect(() => {
-    // Draw after initial render
+    // Draw after initial render; redraw on zoom change.
     const timer = setTimeout(drawConnections, 100);
     window.addEventListener("resize", drawConnections);
     return () => {
       clearTimeout(timer);
       window.removeEventListener("resize", drawConnections);
     };
-  }, [drawConnections]);
+  }, [drawConnections, zoom]);
+
+  useEffect(() => {
+    // Auto fit-to-width on mobile so the whole pipeline is visible on first load.
+    // Runs once on mount; zoom is 1 here so scrollWidth equals the intrinsic width.
+    if (window.innerWidth >= 768) return;
+    const timer = setTimeout(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const intrinsic = container.scrollWidth;
+      const target = container.clientWidth - 8;
+      if (intrinsic <= 0) return;
+      setZoom(Math.max(MIN_ZOOM, Math.min(1, roundZoom(target / intrinsic))));
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -122,9 +158,12 @@ export function DataFlowDiagram() {
     <div className="relative h-full flex flex-col">
       {/* Scrollable content */}
       <div ref={containerRef} className="flex-1 overflow-auto relative">
-        {/* Column Headers - sticky, scrolls horizontally with content */}
+        <div style={{ zoom }}>
+        {/* Column Headers - sticky, scrolls horizontally with content.
+            `w-max` makes the background span the full grid width so all
+            labels stay readable on top of the diagram when scrolled. */}
         <div
-          className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)]"
+          className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)] w-max"
           style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
         >
           {layers.map((layer) => (
@@ -285,6 +324,43 @@ export function DataFlowDiagram() {
             </div>
           ))}
         </div>
+        </div>
+      </div>
+
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 end-4 z-20 flex items-center gap-0.5 bg-[var(--surface)]/95 backdrop-blur border border-[var(--surface-light)] rounded-lg shadow-lg p-1">
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          disabled={zoom <= MIN_ZOOM}
+          aria-label={t("dataFlow.zoomOut")}
+          title={t("dataFlow.zoomOut")}
+          className="w-8 h-8 flex items-center justify-center rounded text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <Minus size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={handleFit}
+          aria-label={t("dataFlow.fitToScreen")}
+          title={t("dataFlow.fitToScreen")}
+          className="h-8 px-2 flex items-center justify-center gap-1.5 rounded text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors"
+        >
+          <Maximize2 size={14} />
+          <span className="font-mono text-[11px] text-[var(--text-muted)] tabular-nums">
+            {Math.round(zoom * 100)}%
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          disabled={zoom >= MAX_ZOOM}
+          aria-label={t("dataFlow.zoomIn")}
+          title={t("dataFlow.zoomIn")}
+          className="w-8 h-8 flex items-center justify-center rounded text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <Plus size={16} />
+        </button>
       </div>
 
       {/* Detail Panel */}

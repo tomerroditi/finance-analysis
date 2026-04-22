@@ -909,6 +909,9 @@
   "dataFlow": {
     "title": "זרימת מידע",
     "subtitle": "איך מידע זורם במערכת — ממקורות ועד לוח הבקרה",
-    "platformFeatures": "יכולות פלטפורמה"
+    "platformFeatures": "יכולות פלטפורמה",
+    "zoomIn": "התקרב",
+    "zoomOut": "התרחק",
+    "fitToScreen": "התאם למסך"
   }
 }
