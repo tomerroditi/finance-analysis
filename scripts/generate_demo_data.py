@@ -143,6 +143,16 @@ TAGGING_RULES_DATA = [
         {"type": "CONDITION", "field": "description", "operator": "contains", "value": "AMAZON"},
         {"type": "CONDITION", "field": "description", "operator": "contains", "value": "ALIEXPRESS"},
     ]}, "Shopping", "Online"),
+    # Operator variety — exercises starts_with, equals, between in the rule preview/editor.
+    ("Food Delivery", {"type": "CONDITION", "field": "description", "operator": "starts_with", "value": "WOLT"}, "Food", "Delivery"),
+    ("Salary - Tech", {"type": "AND", "subconditions": [
+        {"type": "CONDITION", "field": "description", "operator": "equals", "value": "TECH COMPANY LTD - SALARY"},
+        {"type": "CONDITION", "field": "provider", "operator": "equals", "value": "hapoalim"},
+    ]}, "Salary", "Tech Company"),
+    ("Small ATM Fees", {"type": "AND", "subconditions": [
+        {"type": "CONDITION", "field": "description", "operator": "contains", "value": "ATM"},
+        {"type": "CONDITION", "field": "amount", "operator": "between", "value": ["-25", "-1"]},
+    ]}, "Other", "Bank Commisions"),
 ]
 
 
@@ -1111,6 +1121,27 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
         session.add(txn)
         all_bank_txns.append(txn)
 
+    # One-time "Prior Wealth" deposit early in the period — exercises the Sankey
+    # path that treats Other Income/Prior Wealth tagged transactions as a separate
+    # source (excluded from recurring income but added to the Prior Wealth bucket).
+    bank_counter += 1
+    pw_date = (START_DATE + timedelta(days=12)).isoformat()
+    pw_txn = BankTransaction(
+        id=f"demo-bank-{bank_counter:04d}",
+        date=pw_date,
+        provider="hapoalim",
+        account_name="Main Account",
+        description="OPENING DEPOSIT - SAVINGS TRANSFER",
+        amount=15000.0,
+        category="Other Income",
+        tag="Prior Wealth",
+        source="bank_transactions",
+        type="normal",
+        status="completed",
+    )
+    session.add(pw_txn)
+    all_bank_txns.append(pw_txn)
+
     # Secondary bank account: Leumi Savings Account — monthly transfers from Main
     # Demonstrates multi-account bank support (per-account balances, separate
     # account tile on Data Sources).
@@ -1389,6 +1420,23 @@ def create_investments(session):
     session.add(bond)
 
     session.flush()
+
+    # Recalculate prior_wealth_amount per investment from its transactions —
+    # mirrors backend's recalculate_prior_wealth (`-sum(all inv txns)`). Without
+    # this, the Sankey "Prior Wealth" node and the Overview total_income KPI
+    # under-report investment-side prior wealth.
+    for inv in (stock_fund, savings_plan, bond):
+        total = (
+            session.query(ManualInvestmentTransaction)
+            .filter(
+                ManualInvestmentTransaction.category == inv.category,
+                ManualInvestmentTransaction.tag == inv.tag,
+            )
+            .all()
+        )
+        inv.prior_wealth_amount = -sum(t.amount for t in total)
+    session.flush()
+
     return stock_fund, savings_plan, bond
 
 
@@ -1497,6 +1545,7 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 def create_budget_rules(session):
     """Create monthly budgets for last 3 months + project budget."""
     monthly_budgets = [
+        # Category-level rules
         ("Total Budget", 28000, "Total Budget", None),
         ("Food Budget", 5000, "Food", None),
         ("Transportation Budget", 1800, "Transportation", None),
@@ -1505,6 +1554,11 @@ def create_budget_rules(session):
         ("Health Budget", 600, "Health", None),
         ("Kids Budget", 3500, "Kids", None),
         ("Shopping Budget", 2000, "Shopping", None),
+        # Tag-level rules — exercises per-tag breakdown within categories
+        ("Groceries", 2800, "Food", "Groceries"),
+        ("Restaurants", 1200, "Food", "Restaurants"),
+        ("Gas", 1200, "Transportation", "Gas"),
+        ("Online Shopping", 1500, "Shopping", "Online"),
     ]
 
     # Last 3 months before REFERENCE_DATE
@@ -1621,6 +1675,33 @@ def create_split_transactions(session, cc_txns: list[CreditCardTransaction]):
             amount=round(parent.amount * 0.4, 2),
             category="Kids",
             tag="Clothing",
+        ))
+
+    # 4. Split on a cash transaction — exercises non-CC split source variety.
+    cash_candidates = (
+        session.query(CashTransaction)
+        .filter(CashTransaction.amount <= -40, CashTransaction.type == "normal")
+        .order_by(CashTransaction.unique_id.desc())
+        .limit(1)
+        .all()
+    )
+    if cash_candidates:
+        parent = cash_candidates[0]
+        parent.type = "split_parent"
+        parent.description = "Mixed Cash Purchase"
+        session.add(SplitTransaction(
+            transaction_id=parent.unique_id,
+            source="cash_transactions",
+            amount=round(parent.amount * 0.5, 2),
+            category="Food",
+            tag="Groceries",
+        ))
+        session.add(SplitTransaction(
+            transaction_id=parent.unique_id,
+            source="cash_transactions",
+            amount=round(parent.amount * 0.5, 2),
+            category="Other",
+            tag="Haircut",
         ))
 
     session.flush()
@@ -1929,7 +2010,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             account_name="Main Account",
             description="RIDE REFUND - PARTIAL",
             amount=first_link,
-            category="Transport",
+            category="Transportation",
             tag="Taxi",
             source="bank_transactions",
             type="normal",
@@ -1953,13 +2034,31 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             account_name="Main Account",
             description="RIDE REFUND - REMAINING (150, will auto-split to 80+70)",
             amount=150.0,
-            category="Transport",
+            category="Transportation",
             tag="Taxi",
             source="bank_transactions",
             type="normal",
             status="completed",
         )
         session.add(autosplit_candidate)
+
+    # 7. Pending refund on a SPLIT (source_type='split') — exercises refund tracking
+    # against a sub-portion of a split parent rather than a raw transaction.
+    split_target = (
+        session.query(SplitTransaction)
+        .filter(SplitTransaction.source == "credit_card_transactions",
+                SplitTransaction.amount <= -100)
+        .first()
+    )
+    if split_target:
+        session.add(PendingRefund(
+            source_type="split",
+            source_id=split_target.id,
+            source_table="credit_card_transactions",
+            expected_amount=abs(split_target.amount),
+            status="pending",
+            notes="Refund expected on split portion — supplier offered store credit",
+        ))
 
     session.flush()
 
