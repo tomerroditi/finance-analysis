@@ -1,3 +1,9 @@
+## v1.2.2 (2026-04-22)
+
+### Fix
+
+- **security**: encode URL params, sanitize error logs, add CSP, tighten CORS
+
 ## v1.2.1 (2026-04-18)
 
 ### Fix
