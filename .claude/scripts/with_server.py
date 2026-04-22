@@ -6,21 +6,24 @@ Usage:
     # Use default configuration (Finance Analysis Backend & Frontend)
     python .claude/scripts/with_server.py -- python automation.py
 
-    # single server
+    # single server (argv is parsed with shlex.split and run without a shell)
     python .claude/scripts/with_server.py --server "npm run dev" --port 5173 -- python automation.py
 
-    # Multiple servers
+    # Multiple servers. Each --server is a single argv string. No shell is
+    # invoked, so use ``bash -c '...'`` if you need shell features like cd &&.
     python .claude/scripts/with_server.py \
-      --server "cd backend && python server.py" --port 3000 \
-      --server "cd frontend && npm run dev" --port 5173 \
+      --server "python backend/server.py" --port 3000 \
+      --server "bash -c 'cd frontend && npm run dev'" --port 5173 \
       -- python test.py
 """
 
-import subprocess
-import socket
-import time
-import sys
 import argparse
+import os
+import shlex
+import socket
+import subprocess
+import sys
+import time
 
 
 def is_server_ready(port, timeout=30):
@@ -78,11 +81,21 @@ def main():
         for cmd, port in zip(args.servers, args.ports):
             servers.append({"cmd": cmd, "port": port})
     else:
-        # Default configuration for Finance Analysis repo
+        # Default configuration for Finance Analysis repo. Each entry carries
+        # a ready-to-exec argv list plus the directory it should run in, so we
+        # never have to invoke a shell to interpret ``cd`` or ``&&``.
         print("Using default Finance Analysis configuration...")
         servers = [
-            {"cmd": "poetry run uvicorn backend.main:app --port 8000", "port": 8000},
-            {"cmd": "cd frontend && npm run dev", "port": 5173},
+            {
+                "argv": ["poetry", "run", "uvicorn", "backend.main:app", "--port", "8000"],
+                "cwd": None,
+                "port": 8000,
+            },
+            {
+                "argv": ["npm", "run", "dev"],
+                "cwd": "frontend",
+                "port": 5173,
+            },
         ]
 
     server_processes = []
@@ -90,12 +103,23 @@ def main():
     try:
         # Start all servers
         for i, server in enumerate(servers):
-            print(f"Starting server {i + 1}/{len(servers)}: {server['cmd']}")
+            # When the user supplied --server strings we parse them with
+            # ``shlex.split`` so the command is tokenised safely, and we invoke
+            # the process with ``shell=False``. This prevents shell-metachar
+            # injection (e.g. ``--server "foo; rm -rf /"``) from escaping into
+            # the developer's shell.
+            argv = server.get("argv")
+            cwd = server.get("cwd")
+            if argv is None:
+                argv = shlex.split(server["cmd"])
+            display_cmd = " ".join(shlex.quote(a) for a in argv)
+            where = f" (cwd={cwd})" if cwd else ""
+            print(f"Starting server {i + 1}/{len(servers)}: {display_cmd}{where}")
 
-            # Use shell=True to support commands with cd and &&
             process = subprocess.Popen(
-                server["cmd"],
-                shell=True,
+                argv,
+                cwd=cwd if cwd is None else os.path.abspath(cwd),
+                shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )

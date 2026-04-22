@@ -12,15 +12,19 @@ import shutil
 # AppConfig._base_user_dir is evaluated at class-definition time from FAD_USER_DIR.
 # CORS_ORIGINS is read at middleware init time during `from backend.main import app`.
 os.environ["FAD_USER_DIR"] = "/tmp/finance-analysis"
-# Default to the deployed Vercel URL when available; only fall back to the
-# wildcard (no credentials) so browsers cannot read authenticated responses
-# from arbitrary origins. Override via the ``CORS_ORIGINS`` env var in Vercel
-# project settings to pin a specific domain.
+# Default to the deployed Vercel URL when available. We deliberately avoid a
+# wildcard fallback so a misconfigured deployment fails closed (browsers will
+# simply refuse cross-origin requests) rather than silently accepting every
+# origin. Override ``CORS_ORIGINS`` in Vercel project settings to pin a
+# specific domain.
 _vercel_url = os.environ.get("VERCEL_URL")
 if _vercel_url and "CORS_ORIGINS" not in os.environ:
     os.environ["CORS_ORIGINS"] = f"https://{_vercel_url}"
 else:
-    os.environ.setdefault("CORS_ORIGINS", "*")
+    os.environ.setdefault(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
 os.environ.setdefault("VERCEL", "1")
 
 # Seed demo DB into /tmp before app startup

@@ -4,6 +4,7 @@ FastAPI main application entry point.
 This module sets up the FastAPI application with CORS, routes, and exception handlers.
 """
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,6 +40,8 @@ from backend.routes import (
 )
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -317,6 +320,26 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     return JSONResponse(
         status_code=400,
         content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Swallow unexpected exceptions with a generic 500 response.
+
+    Individual routes wrap ``ValueError`` / ``BadRequestException`` with their
+    own ``HTTPException(detail=str(e))`` calls, which is fine for messages the
+    service layer intentionally surfaced. Anything that reaches this handler
+    is an unhandled bug — returning ``str(exc)`` would leak stack frames,
+    SQL fragments, file paths, or secrets present in the exception message.
+    The real detail is kept in the server log for operators to inspect.
+    """
+    logger.exception(
+        "Unhandled exception handling %s %s", request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
     )
 
 
