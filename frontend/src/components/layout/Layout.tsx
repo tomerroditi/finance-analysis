@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { GlobalSearch } from "./GlobalSearch";
 import { useAppStore } from "../../stores/appStore";
 
 export function Layout() {
   const { sidebarOpen, searchOpen, setSearchOpen } = useAppStore();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -17,6 +18,10 @@ export function Layout() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [setSearchOpen]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
 
   return (
     <div className="min-h-dvh bg-[var(--background)]">
