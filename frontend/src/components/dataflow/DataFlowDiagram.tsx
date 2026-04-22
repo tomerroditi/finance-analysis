@@ -161,28 +161,14 @@ export function DataFlowDiagram() {
     <div className="relative h-full flex flex-col">
       {/* Scrollable content */}
       <div ref={containerRef} className="flex-1 overflow-auto relative">
-        <div ref={zoomableRef} style={{ zoom }}>
-        {/* Column Headers - sticky, scrolls horizontally with content.
-            `w-max` makes the background span the full grid width so all
-            labels stay readable on top of the diagram when scrolled. */}
-        <div
-          className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)] w-max"
-          style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
-        >
-          {layers.map((layer) => (
-            <div
-              key={layer.id}
-              className="text-[10px] font-medium uppercase tracking-[2px] font-mono text-center"
-              style={{ color: layer.color }}
-            >
-              {layer.label}
-            </div>
-          ))}
-        </div>
-
-        {/* SVG Connections */}
+        {/* SVG Connections — OUTSIDE the zoom wrapper so paths render in the
+            container's (unzoomed) coordinate space. getBoundingClientRect on
+            zoomed nodes returns visual coordinates, which match the SVG's
+            pixel space exactly; if the SVG lived inside the zoom wrapper it
+            would get scaled a second time and paths would land in the
+            top-left corner. */}
         <svg
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none z-0"
           width={svgSize.width}
           height={svgSize.height}
         >
@@ -218,6 +204,25 @@ export function DataFlowDiagram() {
             </g>
           ))}
         </svg>
+
+        <div ref={zoomableRef} style={{ zoom }} className="relative z-[1]">
+        {/* Column Headers - sticky, scrolls horizontally with content.
+            `w-max` makes the background span the full grid width so all
+            labels stay readable on top of the diagram when scrolled. */}
+        <div
+          className="sticky top-0 z-10 grid items-center gap-6 px-10 py-3 border-b border-[var(--surface-light)] bg-[var(--background)] w-max"
+          style={{ gridTemplateColumns: "180px 180px 190px 190px 200px 200px 180px" }}
+        >
+          {layers.map((layer) => (
+            <div
+              key={layer.id}
+              className="text-[10px] font-medium uppercase tracking-[2px] font-mono text-center"
+              style={{ color: layer.color }}
+            >
+              {layer.label}
+            </div>
+          ))}
+        </div>
 
         {/* Flow Grid */}
         <div
