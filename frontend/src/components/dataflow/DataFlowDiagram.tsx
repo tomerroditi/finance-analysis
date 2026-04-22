@@ -27,14 +27,16 @@ export function DataFlowDiagram() {
   const [svgSize, setSvgSize] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
+  const zoomableRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const fitZoomToViewport = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return 1;
-    // scrollWidth reflects the currently-zoomed content, so divide by the
-    // active zoom to recover the intrinsic (unzoomed) width.
-    const intrinsic = container.scrollWidth / zoom;
+    const zoomable = zoomableRef.current;
+    if (!container || !zoomable) return 1;
+    // zoomable.scrollWidth reflects the zoomed diagram width, so divide by
+    // the active zoom to recover the intrinsic (unzoomed) diagram width.
+    const intrinsic = zoomable.scrollWidth / zoom;
     const target = container.clientWidth - 8;
     if (intrinsic <= 0) return 1;
     return Math.max(MIN_ZOOM, Math.min(1, roundZoom(target / intrinsic)));
@@ -113,8 +115,9 @@ export function DataFlowDiagram() {
     if (window.innerWidth >= 768) return;
     const timer = setTimeout(() => {
       const container = containerRef.current;
-      if (!container) return;
-      const intrinsic = container.scrollWidth;
+      const zoomable = zoomableRef.current;
+      if (!container || !zoomable) return;
+      const intrinsic = zoomable.scrollWidth;
       const target = container.clientWidth - 8;
       if (intrinsic <= 0) return;
       setZoom(Math.max(MIN_ZOOM, Math.min(1, roundZoom(target / intrinsic))));
@@ -158,7 +161,7 @@ export function DataFlowDiagram() {
     <div className="relative h-full flex flex-col">
       {/* Scrollable content */}
       <div ref={containerRef} className="flex-1 overflow-auto relative">
-        <div style={{ zoom }}>
+        <div ref={zoomableRef} style={{ zoom }}>
         {/* Column Headers - sticky, scrolls horizontally with content.
             `w-max` makes the background span the full grid width so all
             labels stay readable on top of the diagram when scrolled. */}
@@ -270,9 +273,10 @@ export function DataFlowDiagram() {
             </div>
           ))}
         </div>
+        </div>
 
         {/* Platform Features */}
-        <div className="px-10 pt-4 pb-6 max-w-[1340px]">
+        <div className="px-4 md:px-10 pt-4 pb-6 max-w-[1340px]">
           <h2
             className="text-[10px] font-medium uppercase tracking-[2px] font-mono mb-4 pb-2 border-b border-[var(--surface-light)]"
             style={{ color: "#94a3b8" }}
@@ -280,7 +284,7 @@ export function DataFlowDiagram() {
             <span className="opacity-40 me-1.5">✦</span>
             {t("dataFlow.platformFeatures")}
           </h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {platformFeatures.map((f, i) => (
               <div
                 key={i}
@@ -307,7 +311,7 @@ export function DataFlowDiagram() {
         </div>
 
         {/* Key Insights */}
-        <div className="flex flex-col gap-4 px-10 pb-20 max-w-[1340px]">
+        <div className="flex flex-col gap-4 px-4 md:px-10 pb-20 max-w-[1340px]">
           {callouts.map((c, i) => (
             <div
               key={i}
@@ -323,7 +327,6 @@ export function DataFlowDiagram() {
               </p>
             </div>
           ))}
-        </div>
         </div>
       </div>
 
