@@ -7,11 +7,21 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for error handling
+// Response interceptor: log only safe metadata about failures so raw server
+// payloads (which may include stack traces, SQL fragments, or file paths)
+// never land in the browser console where browser extensions or screenshots
+// could exfiltrate them.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("API Error:", error.response?.data || error.message);
+    const safeError = {
+      method: error.config?.method,
+      url: error.config?.url,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      message: error.message,
+    };
+    console.error("API Error:", safeError);
     return Promise.reject(error);
   },
 );
@@ -25,11 +35,11 @@ export const transactionsApi = {
   getById: (id: number) => api.get(`/transactions/${id}`),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
-    api.put(`/transactions/${uniqueId}`, data),
+    api.put(`/transactions/${encodeURIComponent(uniqueId)}`, data),
   delete: (uniqueId: string, source: string) =>
-    api.delete(`/transactions/${uniqueId}`, { params: { source } }),
+    api.delete(`/transactions/${encodeURIComponent(uniqueId)}`, { params: { source } }),
   updateTag: (id: string, category: string, tag: string, service: string) =>
-    api.put(`/transactions/${id}/tag`, null, {
+    api.put(`/transactions/${encodeURIComponent(id)}/tag`, null, {
       params: { category, tag, service },
     }),
   bulkTag: (data: {
@@ -73,12 +83,13 @@ export const budgetApi = {
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
   updateProject: (name: string, data: { total_budget: number }) =>
-    api.put(`/budget/projects/${name}`, data),
+    api.put(`/budget/projects/${encodeURIComponent(name)}`, data),
   getProjectDetails: (name: string, includeSplitParents = false) =>
-    api.get(`/budget/projects/${name}`, {
+    api.get(`/budget/projects/${encodeURIComponent(name)}`, {
       params: { include_split_parents: includeSplitParents },
     }),
-  deleteProject: (name: string) => api.delete(`/budget/projects/${name}`),
+  deleteProject: (name: string) =>
+    api.delete(`/budget/projects/${encodeURIComponent(name)}`),
 };
 
 // Tagging API
@@ -116,11 +127,14 @@ export const taggingApi = {
   getCategories: () => api.get("/tagging/categories"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
-  deleteCategory: (name: string) => api.delete(`/tagging/categories/${name}`),
+  deleteCategory: (name: string) =>
+    api.delete(`/tagging/categories/${encodeURIComponent(name)}`),
   createTag: (category: string, name: string) =>
     api.post("/tagging/tags", { category, name }),
   deleteTag: (category: string, name: string) =>
-    api.delete(`/tagging/tags/${category}/${name}`),
+    api.delete(
+      `/tagging/tags/${encodeURIComponent(category)}/${encodeURIComponent(name)}`,
+    ),
   renameCategory: (name: string, newName: string) =>
     api.put(`/tagging/categories/${encodeURIComponent(name)}`, { new_name: newName }),
   renameTag: (category: string, name: string, newName: string) =>
@@ -133,7 +147,9 @@ export const taggingApi = {
     }),
   getIcons: () => api.get("/tagging/icons"),
   updateIcon: (category: string, icon: string) =>
-    api.put(`/tagging/icons/${category}`, null, { params: { icon } }),
+    api.put(`/tagging/icons/${encodeURIComponent(category)}`, null, {
+      params: { icon },
+    }),
 
   // Rules Management (New routes/tagging_rules.py)
   getRules: () =>
@@ -170,7 +186,8 @@ export const credentialsApi = {
   getAll: () => api.get("/credentials"),
   getAccounts: () => api.get("/credentials/accounts"),
   getProviders: () => api.get("/credentials/providers"),
-  getFields: (provider: string) => api.get(`/credentials/fields/${provider}`),
+  getFields: (provider: string) =>
+    api.get(`/credentials/fields/${encodeURIComponent(provider)}`),
   create: (data: {
     service: string;
     provider: string;
@@ -178,9 +195,13 @@ export const credentialsApi = {
     credentials: Record<string, string>;
   }) => api.post("/credentials", data),
   getAccountDetails: (service: string, provider: string, accountName: string) =>
-    api.get(`/credentials/${service}/${provider}/${accountName}`),
+    api.get(
+      `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(accountName)}`,
+    ),
   delete: (service: string, provider: string, account_name: string) =>
-    api.delete(`/credentials/${service}/${provider}/${account_name}`),
+    api.delete(
+      `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(account_name)}`,
+    ),
 };
 
 // Scraping API
@@ -379,7 +400,7 @@ export const cashBalancesApi = {
   setBalance: (data: { account_name: string; balance: number }) =>
     api.post<CashBalance>("/cash-balances/", data),
   delete: (accountName: string) =>
-    api.delete(`/cash-balances/${accountName}`),
+    api.delete(`/cash-balances/${encodeURIComponent(accountName)}`),
   migrate: () => api.post<CashBalance[]>("/cash-balances/migrate"),
 };
 
@@ -528,7 +549,7 @@ export const retirementApi = {
     api.post<RetirementSuggestions>("/retirement/suggestions", data),
   solveForField: (field: string) =>
     api.get<{ field: string; value: number; unit: string }>(
-      `/retirement/solve/${field}`,
+      `/retirement/solve/${encodeURIComponent(field)}`,
     ),
 };
 

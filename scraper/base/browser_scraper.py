@@ -3,6 +3,7 @@ import random
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Union
+from urllib.parse import urlparse
 
 from playwright.async_api import Browser, Frame, Page, async_playwright
 
@@ -215,10 +216,18 @@ class BrowserScraper(BaseScraper):
         Parameters
         ----------
         url : str
-            Target URL.
+            Target URL. Must use an ``http`` or ``https`` scheme — ``javascript:``,
+            ``file:``, ``data:``, and other schemes are rejected so a compromised
+            credential or provider config cannot pivot the browser into executing
+            attacker-supplied scripts or reading local files.
         wait_until : str
             Playwright load state to wait for.
         """
+        scheme = urlparse(url).scheme.lower()
+        if scheme not in ("http", "https"):
+            raise ValueError(
+                f"Refusing to navigate to non-http(s) URL scheme: {scheme!r}"
+            )
         response = await self.page.goto(url, wait_until=wait_until)
         if response and not response.ok:
             logger.warning(
