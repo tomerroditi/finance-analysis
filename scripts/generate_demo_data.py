@@ -42,6 +42,7 @@ from backend.models import (  # noqa: E402
     ManualInvestmentTransaction,
     PendingRefund,
     RefundLink,
+    RetirementGoal,
     ScrapingHistory,
     SplitTransaction,
     TaggingRule,
@@ -1110,13 +1111,57 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
         session.add(txn)
         all_bank_txns.append(txn)
 
+    # Secondary bank account: Leumi Savings Account — monthly transfers from Main
+    # Demonstrates multi-account bank support (per-account balances, separate
+    # account tile on Data Sources).
+    months = list(month_range(START_DATE, REFERENCE_DATE))
+    for year, month in months:
+        # Outgoing transfer from Main Account (treated as an internal transfer)
+        bank_counter += 1
+        transfer_date = date(year, month, 20).isoformat()
+        out_txn = BankTransaction(
+            id=f"demo-bank-{bank_counter:04d}",
+            date=transfer_date,
+            provider="hapoalim",
+            account_name="Main Account",
+            description="TRANSFER TO LEUMI SAVINGS",
+            amount=-2000.0,
+            category="Ignore",
+            tag="Internal Transactions",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(out_txn)
+        all_bank_txns.append(out_txn)
+
+        # Matching deposit into Leumi Savings
+        bank_counter += 1
+        savings_txn = BankTransaction(
+            id=f"demo-bank-{bank_counter:04d}",
+            date=transfer_date,
+            provider="leumi",
+            account_name="Savings Account",
+            description="INCOMING TRANSFER - HAPOALIM",
+            amount=2000.0,
+            category="Ignore",
+            tag="Internal Transactions",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(savings_txn)
+        all_bank_txns.append(savings_txn)
+
     session.flush()
     return all_bank_txns
 
 
 def create_liabilities(session):
-    """Create liability records for Mortgage and Car Loan."""
+    """Create liability records for Mortgage, Car Loan, and a paid-off Personal Loan."""
     car_loan_start = START_DATE + timedelta(days=240)
+    personal_loan_start = START_DATE
+    personal_loan_paid_off = REFERENCE_DATE - timedelta(days=90)
 
     mortgage = Liability(
         name="Home Mortgage",
@@ -1148,40 +1193,67 @@ def create_liabilities(session):
     )
     session.add(car_loan)
 
+    personal_loan = Liability(
+        name="Personal Loan",
+        lender="Bank Discount",
+        category="Liabilities",
+        tag="Personal Loan",
+        principal_amount=25000.0,
+        interest_rate=6.0,
+        term_months=12,
+        start_date=personal_loan_start.isoformat(),
+        is_paid_off=1,
+        paid_off_date=personal_loan_paid_off.isoformat(),
+        notes="Short-term personal loan, paid off early",
+        created_date=personal_loan_start.isoformat(),
+    )
+    session.add(personal_loan)
+
     session.flush()
 
 
 def generate_cash_transactions(session):
-    """Generate ~50-70 cash transactions over 14 months."""
+    """Generate ~50-70 cash transactions across two envelopes over 14 months."""
     cash_counter = 0
     months = list(month_range(START_DATE, REFERENCE_DATE))
 
-    cash_templates = [
+    petty_templates = [
         ("Cash Market Purchase", "Food", "Groceries", -60, -20),
         ("Tip", "Other", None, -50, -10),
         ("Flea Market", "Shopping", None, -100, -30),
     ]
+    kids_templates = [
+        ("Kids Allowance", "Kids", "Activities", -50, -20),
+        ("School Lunch Money", "Kids", "School Supplies", -40, -15),
+        ("Ice Cream Outing", "Food", "Restaurants", -60, -25),
+    ]
+
+    envelopes = [
+        ("Petty Cash", petty_templates, 3, 5),
+        ("Kids Envelope", kids_templates, 1, 3),
+    ]
 
     for year, month in months:
-        count = random.randint(3, 5)
-        for _ in range(count):
-            cash_counter += 1
-            desc, cat, tag, lo, hi = random.choice(cash_templates)
-            amt = rand_amount(lo, hi)
-            txn = CashTransaction(
-                id=f"demo-cash-{cash_counter:04d}",
-                date=rand_date_in_month(year, month),
-                provider="cash",
-                account_name="Petty Cash",
-                description=desc,
-                amount=amt,
-                category=cat,
-                tag=tag,
-                source="cash_transactions",
-                type="normal",
-                status="completed",
-            )
-            session.add(txn)
+        for account_name, templates, lo_count, hi_count in envelopes:
+            count = random.randint(lo_count, hi_count)
+            for _ in range(count):
+                cash_counter += 1
+                desc, cat, tag, lo, hi = random.choice(templates)
+                amt = rand_amount(lo, hi)
+                txn = CashTransaction(
+                    id=f"demo-cash-{cash_counter:04d}",
+                    date=rand_date_in_month(year, month),
+                    provider="cash",
+                    account_name=account_name,
+                    description=desc,
+                    amount=amt,
+                    category=cat,
+                    tag=tag,
+                    source="cash_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
 
     session.flush()
 
@@ -1555,7 +1627,7 @@ def create_split_transactions(session, cc_txns: list[CreditCardTransaction]):
 
 
 def create_bank_balance(session):
-    """Create bank balance record."""
+    """Create bank balance records for all tracked bank accounts."""
     session.add(BankBalance(
         provider="hapoalim",
         account_name="Main Account",
@@ -1563,16 +1635,30 @@ def create_bank_balance(session):
         prior_wealth_amount=50000.0,
         last_scrape_update=(REFERENCE_DATE - timedelta(days=1)).isoformat(),
     ))
+    # Savings account: starts with 5k prior wealth + 14 months of 2k transfers
+    session.add(BankBalance(
+        provider="leumi",
+        account_name="Savings Account",
+        balance=33000.0,
+        prior_wealth_amount=5000.0,
+        last_scrape_update=(REFERENCE_DATE - timedelta(days=1)).isoformat(),
+    ))
     session.flush()
 
 
 def create_cash_balance(session):
-    """Create cash balance record."""
+    """Create cash balance records for all envelopes."""
     session.add(CashBalance(
         account_name="Petty Cash",
         balance=520.0,
         prior_wealth_amount=1000.0,
         last_manual_update=(REFERENCE_DATE - timedelta(days=7)).isoformat(),
+    ))
+    session.add(CashBalance(
+        account_name="Kids Envelope",
+        balance=180.0,
+        prior_wealth_amount=300.0,
+        last_manual_update=(REFERENCE_DATE - timedelta(days=14)).isoformat(),
     ))
     session.flush()
 
@@ -1878,17 +1964,50 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     session.flush()
 
 
+def create_retirement_goal(session):
+    """Create a retirement goal record for FIRE page testing.
+
+    Based on the Cohen family profile: two incomes, mortgage, KH + pension
+    balances from the insurance accounts. Target is early retirement at 55.
+    """
+    session.add(RetirementGoal(
+        current_age=38,
+        gender="male",
+        target_retirement_age=55,
+        life_expectancy=90,
+        monthly_expenses_in_retirement=20000.0,
+        inflation_rate=0.025,
+        expected_return_rate=0.045,
+        withdrawal_rate=0.035,
+        pension_monthly_payout_estimate=9500.0,
+        keren_hishtalmut_balance=242000.0,
+        keren_hishtalmut_monthly_contribution=2250.0,
+        bituach_leumi_eligible=1,
+        bituach_leumi_monthly_estimate=2800.0,
+        other_passive_income=0.0,
+    ))
+    session.flush()
+
+
 def create_scraping_history(session):
     """Create 5 scraping history records."""
     recent = REFERENCE_DATE - timedelta(days=1)
     older = REFERENCE_DATE - timedelta(days=21)
 
-    # 3 recent successful scrapes
+    # 4 recent successful scrapes (two bank accounts + two CC accounts)
     session.add(ScrapingHistory(
         service_name="banks",
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 30, 0).isoformat(),
+        status="SUCCESS",
+        start_date=(recent - timedelta(days=30)).isoformat(),
+    ))
+    session.add(ScrapingHistory(
+        service_name="banks",
+        provider_name="leumi",
+        account_name="Savings Account",
+        date=datetime(recent.year, recent.month, recent.day, 8, 32, 0).isoformat(),
         status="SUCCESS",
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
@@ -2209,6 +2328,10 @@ def main():
         print("  Generating insurance data...")
         generate_insurance_data(session)
 
+        # 18. Retirement goal
+        print("  Creating retirement goal...")
+        create_retirement_goal(session)
+
         session.commit()
         print("\nDemo database created successfully!")
 
@@ -2233,6 +2356,7 @@ def main():
             "cash_balances",
             "split_transactions",
             "liabilities",
+            "retirement_goals",
         ]
         from sqlalchemy import text
         for table in tables:
