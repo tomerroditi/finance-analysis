@@ -2339,7 +2339,21 @@ def create_retirement_goal(session):
 
     Based on the Cohen family profile: two incomes, mortgage, KH + pension
     balances from the insurance accounts. Target is early retirement at 55.
+
+    The KH balance/contribution numbers below are the SUM of the three
+    Keren Hishtalmut accounts seeded in generate_insurance_data
+    (active tech + spouse + previous employer). Keep these in sync with
+    the InsuranceAccount balances and the per-employee KH percentages
+    derived from Israeli law (2.5% employee + 7.5% employer of gross,
+    capped at the 15,712 ILS/month tax-exempt cap for the tech employee).
     """
+    # KH totals must match generate_insurance_data:
+    #   tech:  110,000 balance, 1,571/mo contribution (capped)
+    #   teacher: 95,000 balance, 1,400/mo
+    #   old:    50,000 balance, frozen (no current contribution)
+    kh_total_balance = 110_000.0 + 95_000.0 + 50_000.0  # 255,000
+    kh_total_monthly = 1_571.0 + 1_400.0                # 2,971
+
     session.add(RetirementGoal(
         current_age=38,
         gender="male",
@@ -2349,9 +2363,9 @@ def create_retirement_goal(session):
         inflation_rate=0.025,
         expected_return_rate=0.045,
         withdrawal_rate=0.035,
-        pension_monthly_payout_estimate=9500.0,
-        keren_hishtalmut_balance=242000.0,
-        keren_hishtalmut_monthly_contribution=2250.0,
+        pension_monthly_payout_estimate=8500.0,
+        keren_hishtalmut_balance=kh_total_balance,
+        keren_hishtalmut_monthly_contribution=kh_total_monthly,
         bituach_leumi_eligible=1,
         bituach_leumi_monthly_estimate=2800.0,
         other_passive_income=0.0,
@@ -2433,26 +2447,103 @@ def generate_insurance_data(session):
     - 2 pension accounts (makifa + mashlima) with monthly deposits
     - 2 keren hishtalmut accounts with monthly deposits
     - 1 inactive keren hishtalmut (old employer, no recent transactions)
+
+    Israeli pension/KH law (compulsory pension reform, in force since 2017)
+    -----------------------------------------------------------------------
+    Contribution percentages are taken off the employee's GROSS salary
+    (before income tax / Bituach Leumi). Employer-side contributions are
+    added on top of the gross salary, not deducted from it.
+
+    Pension Comprehensive (קרן פנסיה מקיפה) — minimum legal contribution:
+        - Employee (תגמולי עובד):     6.0%   of gross
+        - Employer savings (תגמולי מעסיק): 6.5% of gross
+        - Employer severance (פיצויים):    6.0% of gross
+                                       -----
+        Total monthly deposit:         18.5% of gross salary
+
+    Keren Hishtalmut (קרן השתלמות) — typical full-employee setup:
+        - Employee:  2.5% of gross
+        - Employer:  7.5% of gross
+                     ----
+        Total:       10%  of gross
+
+        Tax-exempt cap (2024-2025): gross salary up to 15,712 ILS/month —
+        deposits beyond this are taxable for the employee. We cap KH
+        deposits at this base to model the realistic, common case.
+
+    Demo couple (gross salaries — net amounts you see in the bank are after
+    income tax + Bituach Leumi + employee-side pension/KH deductions):
+        - Tech employee:     22,000 ILS gross  (≈ 18,000 net)
+        - School employee:   14,000 ILS gross  (≈ 12,000 net)
+
+    Each employee has been at their current job ~5 years (i.e. ~2 years
+    of contributions before the demo's 3-year tracked window). Account
+    balances reflect a realistic ~5-6% annual real return on those
+    contributions, not the (inflated) headline yields some sub-tracks
+    show in any given good year.
     """
     months = list(month_range(START_DATE, REFERENCE_DATE))
     txn_counter = 0
 
+    # Gross monthly salaries (basis for pension/KH percentages).
+    tech_gross = 22_000.0
+    teacher_gross = 14_000.0
+    # Tax-exempt KH cap (per משרד האוצר 2024-2025 figures).
+    kh_cap = 15_712.0
+
+    # Pension shares (employee 6% / employer 6.5% / severance 6%).
+    pn_employee_pct = 0.06
+    pn_employer_pct = 0.065
+    pn_severance_pct = 0.06
+    pn_total_pct = pn_employee_pct + pn_employer_pct + pn_severance_pct  # 0.185
+
+    # KH shares (employee 2.5% / employer 7.5%).
+    kh_employee_pct = 0.025
+    kh_employer_pct = 0.075
+    kh_total_pct = kh_employee_pct + kh_employer_pct  # 0.10
+
+    # --- Monthly deposit amounts derived from the rules above ---
+    # Tech employee: 22,000 gross
+    pn_makifa_employee = round(tech_gross * pn_employee_pct, 2)        # 1,320
+    pn_makifa_employer = round(tech_gross * pn_employer_pct, 2)        # 1,430
+    pn_makifa_severance = round(tech_gross * pn_severance_pct, 2)      # 1,320
+    pn_makifa_total = round(tech_gross * pn_total_pct, 2)              # 4,070
+
+    # KH for tech employee — capped at kh_cap for tax exemption.
+    kh_tech_base = min(tech_gross, kh_cap)
+    kh_tech_employee = round(kh_tech_base * kh_employee_pct, 2)        # 393
+    kh_tech_employer = round(kh_tech_base * kh_employer_pct, 2)        # 1,178
+    kh_tech_total = round(kh_tech_base * kh_total_pct, 2)              # 1,571
+
+    # Teacher: 14,000 gross (below KH cap, no capping)
+    pn_mashlima_employee = round(teacher_gross * pn_employee_pct, 2)   # 840
+    pn_mashlima_employer = round(teacher_gross * pn_employer_pct, 2)   # 910
+    pn_mashlima_severance = round(teacher_gross * pn_severance_pct, 2)  # 840
+    pn_mashlima_total = round(teacher_gross * pn_total_pct, 2)         # 2,590
+
+    kh_teacher_employee = round(teacher_gross * kh_employee_pct, 2)    # 350
+    kh_teacher_employer = round(teacher_gross * kh_employer_pct, 2)    # 1,050
+    kh_teacher_total = round(teacher_gross * kh_total_pct, 2)          # 1,400
+
     # --- Insurance Accounts ---
+    # Balances reflect ~5 years of contributions (3 tracked + 2 prior) plus
+    # ~5-6%/year real growth. Computed with the formula
+    # `monthly * 60 * 1.15` ≈ contributions × growth factor.
     pension_makifa = InsuranceAccount(
         provider="hafenix",
         policy_id="PN-DEMO-001",
         policy_type="pension",
         pension_type="makifa",
         account_name="Pension Comprehensive - Tech Company",
-        balance=520000.0,
+        balance=290_000.0,  # ≈ 4,070 × 60 × 1.19 (5 yrs + growth)
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "General Track", "yield_pct": 7.2, "allocation_pct": 100, "sum": 520000.0},
+            {"name": "General Track", "yield_pct": 5.8, "allocation_pct": 100, "sum": 290000.0},
         ]),
         commission_deposits_pct=1.49,
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "60% of salary", "sum": 15000},
+            {"title": "Disability Insurance", "desc": "60% of salary", "sum": 13200},
             {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
         ]),
         insurance_costs=json.dumps([
@@ -2468,16 +2559,16 @@ def generate_insurance_data(session):
         policy_type="pension",
         pension_type="mashlima",
         account_name="Pension Supplementary - School District",
-        balance=180000.0,
+        balance=175_000.0,  # ≈ 2,590 × 60 × 1.13 (5 yrs + growth)
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "Bonds Track", "yield_pct": 4.1, "allocation_pct": 60, "sum": 108000.0},
-            {"name": "Equity Track", "yield_pct": 9.8, "allocation_pct": 40, "sum": 72000.0},
+            {"name": "Bonds Track", "yield_pct": 3.5, "allocation_pct": 60, "sum": 105000.0},
+            {"name": "Equity Track", "yield_pct": 6.5, "allocation_pct": 40, "sum": 70000.0},
         ]),
         commission_deposits_pct=1.25,
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "40% of salary", "sum": 8000},
+            {"title": "Disability Insurance", "desc": "40% of salary", "sum": 5600},
         ]),
         insurance_costs=json.dumps([
             {"title": "Disability premium", "amount": 55},
@@ -2490,11 +2581,11 @@ def generate_insurance_data(session):
         policy_id="KH-DEMO-001",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Tech Company",
-        balance=145000.0,
+        balance=110_000.0,  # ≈ 1,571 × 60 × 1.17 (5 yrs + growth)
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "S&P 500 Track", "yield_pct": 12.5, "allocation_pct": 70, "sum": 101500.0},
-            {"name": "Israel Bond Track", "yield_pct": 3.8, "allocation_pct": 30, "sum": 43500.0},
+            {"name": "S&P 500 Track", "yield_pct": 8.2, "allocation_pct": 70, "sum": 77000.0},
+            {"name": "Israel Bond Track", "yield_pct": 3.2, "allocation_pct": 30, "sum": 33000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.74,
@@ -2507,10 +2598,10 @@ def generate_insurance_data(session):
         policy_id="KH-DEMO-002",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - School District",
-        balance=62000.0,
+        balance=95_000.0,  # ≈ 1,400 × 60 × 1.13 (5 yrs + growth)
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "General Track", "yield_pct": 6.9, "allocation_pct": 100, "sum": 62000.0},
+            {"name": "General Track", "yield_pct": 5.4, "allocation_pct": 100, "sum": 95000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.85,
@@ -2518,16 +2609,17 @@ def generate_insurance_data(session):
     )
     session.add(kh_spouse)
 
-    # Inactive KH — old employer, no recent transactions
+    # Inactive KH — old employer, no recent transactions. Smaller previous
+    # job (gross ~12k) for ~3 years, then frozen. Modest growth ≈ 4%/yr.
     kh_old = InsuranceAccount(
         provider="hafenix",
         policy_id="KH-DEMO-OLD",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Previous Employer",
-        balance=35000.0,
+        balance=50_000.0,  # 1,200 × 36 + ~4%/yr growth since freeze
         balance_date=(REFERENCE_DATE - timedelta(days=200)).isoformat(),
         investment_tracks=json.dumps([
-            {"name": "Default Track", "yield_pct": 5.1, "allocation_pct": 100, "sum": 35000.0},
+            {"name": "Default Track", "yield_pct": 4.5, "allocation_pct": 100, "sum": 50000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.95,
@@ -2536,26 +2628,27 @@ def generate_insurance_data(session):
     session.add(kh_old)
 
     # --- Monthly deposit transactions ---
-    # Pension makifa: employee 2.5% + employer 6.5% + severance 6% on 25k salary
-    # → ~3,750/month total deposit
-    pension_makifa_monthly = 3750.0
-    # Pension mashlima: ~1,200/month (smaller supplementary)
-    pension_mashlima_monthly = 1200.0
-    # KH active: 2.5% employee + 7.5% employer on 15k cap → 1,500/month
-    kh_active_monthly = 1500.0
-    # KH spouse: ~750/month (teacher salary)
-    kh_spouse_monthly = 750.0
+    # The memo string follows the pension fund convention:
+    # "עובד: <employee> / מעסיק: <employer savings> / פיצויים: <severance>"
+    pn_makifa_memo = (
+        f"עובד: {pn_makifa_employee:.0f} / "
+        f"מעסיק: {pn_makifa_employer:.0f} / "
+        f"פיצויים: {pn_makifa_severance:.0f}"
+    )
+    pn_mashlima_memo = (
+        f"עובד: {pn_mashlima_employee:.0f} / "
+        f"מעסיק: {pn_mashlima_employer:.0f} / "
+        f"פיצויים: {pn_mashlima_severance:.0f}"
+    )
 
     deposit_configs = [
-        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
-         "הפקדה - Cohen Technologies",
-         "עובד: 625 / מעסיק: 1625 / פיצויים: 1500"),
-        ("PN-DEMO-002", "Pension Supplementary - School District", pension_mashlima_monthly,
-         "הפקדה - Tel Aviv School District",
-         "עובד: 400 / מעסיק: 500 / פיצויים: 300"),
-        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_active_monthly,
+        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pn_makifa_total,
+         "הפקדה - Cohen Technologies", pn_makifa_memo),
+        ("PN-DEMO-002", "Pension Supplementary - School District", pn_mashlima_total,
+         "הפקדה - Tel Aviv School District", pn_mashlima_memo),
+        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_tech_total,
          "הפקדה - Cohen Technologies", None),
-        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_spouse_monthly,
+        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_teacher_total,
          "הפקדה - Tel Aviv School District", None),
     ]
 
@@ -2580,12 +2673,13 @@ def generate_insurance_data(session):
             )
             session.add(txn)
 
-    # Old KH — only has transactions from 6+ months ago
+    # Old KH — only has transactions from 6+ months ago. Previous gross of
+    # 12,000 → KH deposit of 1,200/month before the account froze.
+    old_kh_monthly = 12_000.0 * kh_total_pct  # 1,200
     old_months = [(y, m) for y, m in months
                   if date(y, m, 1) < (REFERENCE_DATE - timedelta(days=180))]
     for year, month_num in old_months:
         txn_counter += 1
-        amount = 1100.0
         txn = InsuranceTransaction(
             id=f"demo-ins-{txn_counter:04d}",
             date=rand_date_in_month(year, month_num, 1, 10),
@@ -2593,7 +2687,7 @@ def generate_insurance_data(session):
             account_name="Keren Hishtalmut - Previous Employer",
             account_number="KH-DEMO-OLD",
             description="הפקדה",
-            amount=amount,
+            amount=old_kh_monthly,
             category="Ignore",
             tag=None,
             source="insurance_transactions",
