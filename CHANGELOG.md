@@ -1,3 +1,19 @@
+## v1.3.0 (2026-04-24)
+
+### Feat
+
+- **dataflow**: bound diagram in its own viewport with drag-to-pan
+
+### Fix
+
+- **dataflow**: size SVG from visual rect so scroll area matches zoom
+- **dataflow**: stop scroll area from leaking past the zoomed diagram
+- **dataflow**: align connection SVG with zoomed node positions
+- **dataflow**: scope zoom to diagram, stack feature cards on mobile
+- **dataflow**: opaque sticky header + zoom controls on mobile
+- **dataflow**: scroll column headers with content on mobile
+- **dataflow**: responsive layout for mobile screens
+
 ## v1.2.3 (2026-04-22)
 
 ### Fix
