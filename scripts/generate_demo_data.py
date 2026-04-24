@@ -2444,106 +2444,128 @@ def generate_insurance_data(session):
     """Generate insurance accounts (pension + keren hishtalmut) and monthly deposit transactions.
 
     Creates:
-    - 2 pension accounts (makifa + mashlima) with monthly deposits
-    - 2 keren hishtalmut accounts with monthly deposits
-    - 1 inactive keren hishtalmut (old employer, no recent transactions)
+    - Tech employee: pension makifa + pension mashlima (because gross > Makifa cap)
+    - School employee: pension makifa only (gross < Makifa cap)
+    - 2 active keren hishtalmut accounts (one per spouse, Tech's is capped)
+    - 1 inactive keren hishtalmut (Tech's previous employer, no recent transactions)
 
-    Israeli pension/KH law (compulsory pension reform, in force since 2017)
-    -----------------------------------------------------------------------
-    Contribution percentages are taken off the employee's GROSS salary
-    (before income tax / Bituach Leumi). Employer-side contributions are
-    added on top of the gross salary, not deducted from it.
+    Israeli pension/KH law (see .claude/skills/israeli-salary-knowledge for
+    the full write-up — keep these numbers in sync with that reference)
+    ---------------------------------------------------------------------
+    All percentages are applied to the employee's GROSS salary. Employer
+    shares are added on top of the gross, not deducted from it.
 
-    Pension Comprehensive (קרן פנסיה מקיפה) — minimum legal contribution:
-        - Employee (תגמולי עובד):     6.0%   of gross
-        - Employer savings (תגמולי מעסיק): 6.5% of gross
-        - Employer severance (פיצויים):    6.0% of gross
-                                       -----
-        Total monthly deposit:         18.5% of gross salary
+    Pension (18.5% of gross, legal minimum since 2017):
+        - Employee (תגמולי עובד):         6.0%
+        - Employer savings (תגמולי מעסיק): 6.5%
+        - Employer severance (פיצויים):    6.0%
 
-    Keren Hishtalmut (קרן השתלמות) — typical full-employee setup:
-        - Employee:  2.5% of gross
-        - Employer:  7.5% of gross
-                     ----
-        Total:       10%  of gross
+    Makifa vs Mashlima split:
+        - The first ~25,000 ILS/month of gross salary (= 2× שכר ממוצע במשק)
+          goes to Keren Pensia Makifa (קרן פנסיה מקיפה). Makifa is the
+          main fund and carries disability + life-insurance coverage.
+        - Excess salary above the cap routes the SAME 18.5% percentages
+          into Keren Pensia Mashlima (קרן פנסיה משלימה), which is a pure
+          savings plan with no insurance component.
+        - A worker below the cap has ONLY a Makifa account.
+        - A worker above the cap has BOTH (each fed from its own slice
+          of the gross).
 
-        Tax-exempt cap (2024-2025): gross salary up to 15,712 ILS/month —
-        deposits beyond this are taxable for the employee. We cap KH
-        deposits at this base to model the realistic, common case.
+    Keren Hishtalmut (10% of gross):
+        - Employee: 2.5% of gross
+        - Employer: 7.5% of gross
+        - Tax-exempt gross-salary cap (2026): 15,712 ILS/month.
+          Deposits above the cap are allowed but taxable for the
+          employee, so most payrolls cap them at this base — which is
+          what we model.
 
-    Demo couple (gross salaries — net amounts you see in the bank are after
-    income tax + Bituach Leumi + employee-side pension/KH deductions):
-        - Tech employee:     22,000 ILS gross  (≈ 18,000 net)
-        - School employee:   14,000 ILS gross  (≈ 12,000 net)
+    Demo couple:
+        - Tech employee:  28,000 ILS gross  (≈ 18,000 net after pension,
+                          KH, income tax, Bituach Leumi) — ABOVE Makifa cap
+        - Teacher:        14,000 ILS gross  (≈ 11,000 net)
+                          — BELOW Makifa cap, no Mashlima account
 
-    Each employee has been at their current job ~5 years (i.e. ~2 years
-    of contributions before the demo's 3-year tracked window). Account
-    balances reflect a realistic ~5-6% annual real return on those
-    contributions, not the (inflated) headline yields some sub-tracks
-    show in any given good year.
+    Each individual's pension and KH accounts are funded exclusively from
+    THAT individual's gross salary. Spouses' accounts are never pooled.
+
+    Account balances reflect ~5 years of contributions (2 prior + 3 tracked)
+    with a realistic ~5-6%/year real return.
     """
     months = list(month_range(START_DATE, REFERENCE_DATE))
     txn_counter = 0
 
-    # Gross monthly salaries (basis for pension/KH percentages).
-    tech_gross = 22_000.0
-    teacher_gross = 14_000.0
-    # Tax-exempt KH cap (per משרד האוצר 2024-2025 figures).
+    # --- Gross monthly salaries (see skill doc for net-calculation example) ---
+    tech_gross = 28_000.0       # above Makifa cap → gets Makifa + Mashlima
+    teacher_gross = 14_000.0    # below Makifa cap → Makifa only
+
+    # --- Legal thresholds (2026 — update with annual indexation) ---
+    # Makifa deposit cap expressed as a monthly salary (≈ 2× שכר ממוצע).
+    # Deposits on gross above this amount route to Mashlima instead.
+    makifa_salary_cap = 25_000.0
+    # KH tax-exempt monthly gross salary base.
     kh_cap = 15_712.0
 
-    # Pension shares (employee 6% / employer 6.5% / severance 6%).
+    # Pension shares (legal minimum since 2017).
     pn_employee_pct = 0.06
     pn_employer_pct = 0.065
     pn_severance_pct = 0.06
     pn_total_pct = pn_employee_pct + pn_employer_pct + pn_severance_pct  # 0.185
 
-    # KH shares (employee 2.5% / employer 7.5%).
+    # KH shares.
     kh_employee_pct = 0.025
     kh_employer_pct = 0.075
     kh_total_pct = kh_employee_pct + kh_employer_pct  # 0.10
 
+    # --- Per-individual pension bases after the Makifa cap split ---
+    tech_makifa_base = min(tech_gross, makifa_salary_cap)               # 25,000
+    tech_mashlima_base = max(0.0, tech_gross - makifa_salary_cap)       # 3,000
+    teacher_makifa_base = min(teacher_gross, makifa_salary_cap)         # 14,000
+    teacher_mashlima_base = max(0.0, teacher_gross - makifa_salary_cap)  # 0 → no account
+
     # --- Monthly deposit amounts derived from the rules above ---
-    # Tech employee: 22,000 gross
-    pn_makifa_employee = round(tech_gross * pn_employee_pct, 2)        # 1,320
-    pn_makifa_employer = round(tech_gross * pn_employer_pct, 2)        # 1,430
-    pn_makifa_severance = round(tech_gross * pn_severance_pct, 2)      # 1,320
-    pn_makifa_total = round(tech_gross * pn_total_pct, 2)              # 4,070
+    # Tech employee — Makifa (first 25k)
+    pn_tech_makifa_employee = round(tech_makifa_base * pn_employee_pct, 2)    # 1,500
+    pn_tech_makifa_employer = round(tech_makifa_base * pn_employer_pct, 2)    # 1,625
+    pn_tech_makifa_severance = round(tech_makifa_base * pn_severance_pct, 2)  # 1,500
+    pn_tech_makifa_total = round(tech_makifa_base * pn_total_pct, 2)          # 4,625
 
-    # KH for tech employee — capped at kh_cap for tax exemption.
+    # Tech employee — Mashlima (the 3k above the cap)
+    pn_tech_mashlima_employee = round(tech_mashlima_base * pn_employee_pct, 2)    # 180
+    pn_tech_mashlima_employer = round(tech_mashlima_base * pn_employer_pct, 2)    # 195
+    pn_tech_mashlima_severance = round(tech_mashlima_base * pn_severance_pct, 2)  # 180
+    pn_tech_mashlima_total = round(tech_mashlima_base * pn_total_pct, 2)          # 555
+
+    # Teacher — Makifa only (below cap)
+    pn_teacher_makifa_employee = round(teacher_makifa_base * pn_employee_pct, 2)     # 840
+    pn_teacher_makifa_employer = round(teacher_makifa_base * pn_employer_pct, 2)     # 910
+    pn_teacher_makifa_severance = round(teacher_makifa_base * pn_severance_pct, 2)   # 840
+    pn_teacher_makifa_total = round(teacher_makifa_base * pn_total_pct, 2)           # 2,590
+
+    # KH for tech employee — capped at the tax-exempt base.
     kh_tech_base = min(tech_gross, kh_cap)
-    kh_tech_employee = round(kh_tech_base * kh_employee_pct, 2)        # 393
-    kh_tech_employer = round(kh_tech_base * kh_employer_pct, 2)        # 1,178
-    kh_tech_total = round(kh_tech_base * kh_total_pct, 2)              # 1,571
+    kh_tech_total = round(kh_tech_base * kh_total_pct, 2)               # 1,571
 
-    # Teacher: 14,000 gross (below KH cap, no capping)
-    pn_mashlima_employee = round(teacher_gross * pn_employee_pct, 2)   # 840
-    pn_mashlima_employer = round(teacher_gross * pn_employer_pct, 2)   # 910
-    pn_mashlima_severance = round(teacher_gross * pn_severance_pct, 2)  # 840
-    pn_mashlima_total = round(teacher_gross * pn_total_pct, 2)         # 2,590
-
-    kh_teacher_employee = round(teacher_gross * kh_employee_pct, 2)    # 350
-    kh_teacher_employer = round(teacher_gross * kh_employer_pct, 2)    # 1,050
-    kh_teacher_total = round(teacher_gross * kh_total_pct, 2)          # 1,400
+    # KH for teacher — below cap, full gross.
+    kh_teacher_total = round(teacher_gross * kh_total_pct, 2)           # 1,400
 
     # --- Insurance Accounts ---
-    # Balances reflect ~5 years of contributions (3 tracked + 2 prior) plus
-    # ~5-6%/year real growth. Computed with the formula
-    # `monthly * 60 * 1.15` ≈ contributions × growth factor.
-    pension_makifa = InsuranceAccount(
+    # Balances reflect ~5 years of contributions (2 prior + 3 tracked)
+    # plus ~5-6%/year real growth. Rough target: monthly × 60 × 1.13..1.19.
+    pension_tech_makifa = InsuranceAccount(
         provider="hafenix",
         policy_id="PN-DEMO-001",
         policy_type="pension",
         pension_type="makifa",
         account_name="Pension Comprehensive - Tech Company",
-        balance=290_000.0,  # ≈ 4,070 × 60 × 1.19 (5 yrs + growth)
+        balance=330_000.0,  # ≈ 4,625 × 60 × 1.19
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "General Track", "yield_pct": 5.8, "allocation_pct": 100, "sum": 290000.0},
+            {"name": "General Track", "yield_pct": 5.8, "allocation_pct": 100, "sum": 330000.0},
         ]),
         commission_deposits_pct=1.49,
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "60% of salary", "sum": 13200},
+            {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 18750},
             {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
         ]),
         insurance_costs=json.dumps([
@@ -2551,15 +2573,39 @@ def generate_insurance_data(session):
             {"title": "Disability premium", "amount": 120},
         ]),
     )
-    session.add(pension_makifa)
+    session.add(pension_tech_makifa)
 
-    pension_mashlima = InsuranceAccount(
+    # Tech's Mashlima — opened when gross first crossed the Makifa cap
+    # (i.e. only the slice above 25,000 has been routed here). Much smaller
+    # balance than the Makifa account because the contribution base is small.
+    pension_tech_mashlima = InsuranceAccount(
+        provider="hafenix",
+        policy_id="PN-DEMO-003",
+        policy_type="pension",
+        pension_type="mashlima",
+        account_name="Pension Supplementary - Tech Company",
+        balance=38_000.0,   # ≈ 555 × 60 × 1.14
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "Equity Track", "yield_pct": 6.8, "allocation_pct": 100, "sum": 38000.0},
+        ]),
+        commission_deposits_pct=1.35,
+        commission_savings_pct=0.20,
+        # Mashlima is pure savings — no disability/life coverage (insurance
+        # is carried by the Makifa account).
+    )
+    session.add(pension_tech_mashlima)
+
+    # Teacher's Makifa — she is below the cap, so no Mashlima account at all.
+    # The policy_id slot PN-DEMO-002 was previously a (wrong) Mashlima account;
+    # reusing the id to stay stable across regenerations.
+    pension_teacher_makifa = InsuranceAccount(
         provider="hafenix",
         policy_id="PN-DEMO-002",
         policy_type="pension",
-        pension_type="mashlima",
-        account_name="Pension Supplementary - School District",
-        balance=175_000.0,  # ≈ 2,590 × 60 × 1.13 (5 yrs + growth)
+        pension_type="makifa",
+        account_name="Pension Comprehensive - School District",
+        balance=175_000.0,  # ≈ 2,590 × 60 × 1.13
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
             {"name": "Bonds Track", "yield_pct": 3.5, "allocation_pct": 60, "sum": 105000.0},
@@ -2568,20 +2614,21 @@ def generate_insurance_data(session):
         commission_deposits_pct=1.25,
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "40% of salary", "sum": 5600},
+            {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 10500},
+            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 250000},
         ]),
         insurance_costs=json.dumps([
             {"title": "Disability premium", "amount": 55},
         ]),
     )
-    session.add(pension_mashlima)
+    session.add(pension_teacher_makifa)
 
     kh_active = InsuranceAccount(
         provider="hafenix",
         policy_id="KH-DEMO-001",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Tech Company",
-        balance=110_000.0,  # ≈ 1,571 × 60 × 1.17 (5 yrs + growth)
+        balance=110_000.0,  # ≈ 1,571 × 60 × 1.17
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
             {"name": "S&P 500 Track", "yield_pct": 8.2, "allocation_pct": 70, "sum": 77000.0},
@@ -2598,7 +2645,7 @@ def generate_insurance_data(session):
         policy_id="KH-DEMO-002",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - School District",
-        balance=95_000.0,  # ≈ 1,400 × 60 × 1.13 (5 yrs + growth)
+        balance=95_000.0,   # ≈ 1,400 × 60 × 1.13
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
             {"name": "General Track", "yield_pct": 5.4, "allocation_pct": 100, "sum": 95000.0},
@@ -2609,14 +2656,14 @@ def generate_insurance_data(session):
     )
     session.add(kh_spouse)
 
-    # Inactive KH — old employer, no recent transactions. Smaller previous
-    # job (gross ~12k) for ~3 years, then frozen. Modest growth ≈ 4%/yr.
+    # Inactive KH — Tech employee's previous employer (gross ~12k at that job)
+    # for ~3 years, then frozen. Modest growth ≈ 4%/yr since then.
     kh_old = InsuranceAccount(
         provider="hafenix",
         policy_id="KH-DEMO-OLD",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Previous Employer",
-        balance=50_000.0,  # 1,200 × 36 + ~4%/yr growth since freeze
+        balance=50_000.0,   # 1,200 × 36 + ~4%/yr growth since freeze
         balance_date=(REFERENCE_DATE - timedelta(days=200)).isoformat(),
         investment_tracks=json.dumps([
             {"name": "Default Track", "yield_pct": 4.5, "allocation_pct": 100, "sum": 50000.0},
@@ -2628,24 +2675,32 @@ def generate_insurance_data(session):
     session.add(kh_old)
 
     # --- Monthly deposit transactions ---
-    # The memo string follows the pension fund convention:
-    # "עובד: <employee> / מעסיק: <employer savings> / פיצויים: <severance>"
-    pn_makifa_memo = (
-        f"עובד: {pn_makifa_employee:.0f} / "
-        f"מעסיק: {pn_makifa_employer:.0f} / "
-        f"פיצויים: {pn_makifa_severance:.0f}"
+    # Memo format matches the pension fund convention:
+    #   "עובד: <employee> / מעסיק: <employer savings> / פיצויים: <severance>"
+    # The three Hebrew sub-amounts MUST sum to the transaction's `amount`.
+    pn_tech_makifa_memo = (
+        f"עובד: {pn_tech_makifa_employee:.0f} / "
+        f"מעסיק: {pn_tech_makifa_employer:.0f} / "
+        f"פיצויים: {pn_tech_makifa_severance:.0f}"
     )
-    pn_mashlima_memo = (
-        f"עובד: {pn_mashlima_employee:.0f} / "
-        f"מעסיק: {pn_mashlima_employer:.0f} / "
-        f"פיצויים: {pn_mashlima_severance:.0f}"
+    pn_tech_mashlima_memo = (
+        f"עובד: {pn_tech_mashlima_employee:.0f} / "
+        f"מעסיק: {pn_tech_mashlima_employer:.0f} / "
+        f"פיצויים: {pn_tech_mashlima_severance:.0f}"
+    )
+    pn_teacher_makifa_memo = (
+        f"עובד: {pn_teacher_makifa_employee:.0f} / "
+        f"מעסיק: {pn_teacher_makifa_employer:.0f} / "
+        f"פיצויים: {pn_teacher_makifa_severance:.0f}"
     )
 
     deposit_configs = [
-        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pn_makifa_total,
-         "הפקדה - Cohen Technologies", pn_makifa_memo),
-        ("PN-DEMO-002", "Pension Supplementary - School District", pn_mashlima_total,
-         "הפקדה - Tel Aviv School District", pn_mashlima_memo),
+        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pn_tech_makifa_total,
+         "הפקדה - Cohen Technologies", pn_tech_makifa_memo),
+        ("PN-DEMO-003", "Pension Supplementary - Tech Company", pn_tech_mashlima_total,
+         "הפקדה - Cohen Technologies", pn_tech_mashlima_memo),
+        ("PN-DEMO-002", "Pension Comprehensive - School District", pn_teacher_makifa_total,
+         "הפקדה - Tel Aviv School District", pn_teacher_makifa_memo),
         ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_tech_total,
          "הפקדה - Cohen Technologies", None),
         ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_teacher_total,

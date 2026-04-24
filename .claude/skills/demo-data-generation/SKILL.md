@@ -62,45 +62,32 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 
 ## Pension and Keren Hishtalmut — the rules
 
-This is the section most prone to drift. **Every individual's pension and KH deposits are derived from that individual's own gross salary** via the legally-defined percentages below. Each employee also has their **own separate pension and KH accounts** — they are never pooled. Treat the `generate_insurance_data` function as the single source of truth; keep balances and monthly contributions consistent with the percentages below if you touch any of them.
+**Full reference: `.claude/skills/israeli-salary-knowledge/SKILL.md`.** That skill is the canonical source of truth for percentages, caps, and legal thresholds — this section tells you how those rules are applied to the demo couple and what invariants to preserve.
 
-### Israeli compulsory-pension law (in force since 2017)
+**Every individual's pension and KH deposits are derived from that individual's own gross salary** via the legally-defined percentages in the reference skill. Each employee has their **own separate pension and KH accounts** — spouses' accounts are never pooled. Treat `generate_insurance_data` as the single source of truth; keep balances and monthly contributions consistent with the percentages below.
 
-All percentages are applied to the employee's **gross** salary (the number before income tax and Bituach Leumi are deducted). Employer-side contributions are added **on top of** the gross salary — they are not taken from the employee's paycheck. Only the employee share appears as a deduction from the net figure that lands in the bank account.
+### Makifa vs Mashlima — per individual
 
-**Pension (קרן פנסיה) — total 18.5% of gross:**
-
-| Share | Label (code) | Label (UI / Hebrew) | Pct |
-|---|---|---|---|
-| Employee | `pn_employee_pct` | עובד (תגמולי עובד) | **6.0%** |
-| Employer savings | `pn_employer_pct` | מעסיק (תגמולי מעסיק) | **6.5%** |
-| Employer severance | `pn_severance_pct` | פיצויים | **6.0%** |
-| **Total** | `pn_total_pct` | סה״כ הפקדה | **18.5%** |
-
-Memo string written to every pension transaction:
-`"עובד: {employee} / מעסיק: {employer_savings} / פיצויים: {severance}"` — the three numbers must sum to `amount`.
-
-**Keren Hishtalmut (קרן השתלמות) — total 10% of gross:**
-
-| Share | Code | Pct |
-|---|---|---|
-| Employee | `kh_employee_pct` | **2.5%** |
-| Employer | `kh_employer_pct` | **7.5%** |
-| **Total** | `kh_total_pct` | **10%** |
-
-**KH tax-exempt cap (2024–2025): gross salary up to 15,712 ILS/month.** Deposits above the cap are taxable for the employee, and real-world payroll systems commonly cap KH deposits at this base. We follow that convention — so a high-earner's KH contribution is `min(gross, 15_712) × 10%`, *not* `gross × 10%`.
+- The first **25,000 ILS/month of gross salary** (≈ 2× שכר ממוצע) routes pension deposits to **Keren Pensia Makifa** (קרן פנסיה מקיפה — the main fund with disability + life insurance).
+- Gross salary **above** the cap routes the same 18.5% percentages to **Keren Pensia Mashlima** (pure savings, no insurance).
+- A worker below the cap has **only** a Makifa account. A worker above the cap has **both**, each fed from its own slice of the gross.
 
 ### How this maps to the demo couple
 
-Both the Tech employee and the Teacher have their **own** pension account *and* their **own** KH account. The Tech employee additionally has a frozen KH account from a previous employer. No account is shared between spouses.
+| Individual | Gross | Makifa base | Makifa deposit | Mashlima base | Mashlima deposit | KH base (capped at 15,712) | KH deposit |
+|---|---|---|---|---|---|---|---|
+| Tech Company (above cap) | **28,000** | 25,000 | 4,625 | 3,000 | 555 | 15,712 | 1,571 |
+| School District (below cap) | **14,000** | 14,000 | 2,590 | 0 (no account) | — | 14,000 | 1,400 |
+| Tech — previous employer (frozen) | 12,000 (assumed) | — | — | — | — | 12,000 | 1,200 |
 
-| Individual | Gross salary | Pension total | KH base (after cap) | KH total |
-|---|---|---|---|---|
-| Tech Company employee | **22,000** | `22,000 × 18.5% = 4,070` | `min(22,000, 15,712) = 15,712` | `15,712 × 10% = 1,571` |
-| School District employee | **14,000** | `14,000 × 18.5% = 2,590` | `14,000` (no cap) | `14,000 × 10% = 1,400` |
-| Tech — previous employer (frozen) | 12,000 (assumed) | — | `12,000` | `12,000 × 10% = 1,200` |
+Account layout:
+- **Tech**: PN-DEMO-001 (Makifa) + PN-DEMO-003 (Mashlima) + KH-DEMO-001 (active) + KH-DEMO-OLD (frozen, previous employer)
+- **Teacher**: PN-DEMO-002 (Makifa) + KH-DEMO-002
 
-All derived numbers (individual shares, memo breakdowns, monthly totals) come from the same constants. If you bump a gross salary the rest of the account propagates automatically — don't hand-edit the monthly amounts and leave the percentages stale, and vice versa. The function comment at the top of `generate_insurance_data` is the canonical write-up of this.
+Memo string written to every pension transaction:
+`"עובד: {employee} / מעסיק: {employer_savings} / פיצויים: {severance}"` — the three Hebrew sub-amounts **must sum to the transaction's `amount`**.
+
+All derived numbers (individual shares, memo breakdowns, monthly totals) come from the same constants at the top of `generate_insurance_data`. If you change `tech_gross`, `teacher_gross`, `makifa_salary_cap`, or any percentage, the rest of the account propagates automatically — **don't hand-edit monthly amounts and leave the percentages stale**, and vice versa.
 
 ### Account-balance calibration
 
@@ -111,6 +98,10 @@ balance ≈ monthly_contribution × 60 months × (1.13 .. 1.19 growth factor)
 ```
 
 Use this as a sanity check whenever a balance is edited. If you change a monthly contribution or the gross salary it derives from, recompute the target balance with this rule of thumb. The `RetirementGoal` row's `keren_hishtalmut_balance` and `keren_hishtalmut_monthly_contribution` must equal the sum across the three KH accounts — they are already computed this way; don't hard-code them again.
+
+### Mashlima account rule
+
+A Mashlima account should exist **only if** that individual's gross salary exceeds `makifa_salary_cap` (25,000). Do not create a Mashlima account for someone below the cap — the teacher, for instance, has only a Makifa account. If you change `tech_gross` below the cap, delete the Tech Mashlima account (PN-DEMO-003) or the script will emit 0-amount transactions.
 
 ### Yields on investment tracks
 
