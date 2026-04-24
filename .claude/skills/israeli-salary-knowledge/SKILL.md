@@ -11,8 +11,8 @@ Reference for how gross salary in Israel is converted to net — the rules every
 
 When a question needs a historical figure, or when you're sanity-checking a demo-data entry for a specific year, consult the companion files in this same skill directory:
 
-- **[`historical-thresholds.md`](./historical-thresholds.md)** — year-by-year tables of income-tax brackets, credit-point value, KH cap, Makifa cap, Bituach Leumi ceilings, and average wage from 2020 onwards. Use this whenever you need a number for a year that isn't "current".
-- **[`historical-interest-rates.md`](./historical-interest-rates.md)** — Bank of Israel key-rate timeline (decision dates + year-end snapshots), the "prime" convention (`BoI + 1.5%`), and a sanity-check table for realistic product yields by era (savings plans, bonds, mortgage prime tracks, pension tracks). Use this when reasoning about mortgage rates, fixed-rate investments, or yields in demo data.
+- **[`historical-thresholds.md`](./historical-thresholds.md)** — year-by-year tables from **2000 → 2026** for income-tax brackets, credit-point value, KH cap, Makifa cap, Bituach Leumi ceilings, average wage, and minimum wage. Confidence tiers are noted (pre-2010 = approximate; 2022+ = high-confidence). Also contains the "useful reference sources" section with direct links to the authoritative government pages (Israel Tax Authority, Bituach Leumi, Bank of Israel, Capital Market Authority, CBS) for when you need a precise figure beyond what the tables capture.
+- **[`historical-interest-rates.md`](./historical-interest-rates.md)** — Bank of Israel key-rate timeline from **2000 → 2026** (year-end rates + governor context + decision-level granularity for 2020+), the "prime" convention (`BoI + 1.5%`), a sanity-check table for realistic product yields by era (savings plans, bonds, mortgage prime tracks, pension tracks), and its own "useful reference sources" block for BoI / FRED / global-rates data.
 
 ---
 
