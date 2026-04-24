@@ -72,16 +72,18 @@ export function DataFlowDiagram() {
     if (!container || !zoomable) return;
 
     const containerRect = container.getBoundingClientRect();
+    const zoomableRect = zoomable.getBoundingClientRect();
     const scrollLeft = container.scrollLeft;
     const scrollTop = container.scrollTop;
 
-    // Size the SVG to the zoomable wrapper, not the scroll container —
-    // container.scrollWidth/scrollHeight include the SVG itself, so a stale
-    // large SVG would keep the container scrollable into empty space after
-    // zooming out.
+    // Size the SVG to the zoomable wrapper's visual dimensions.
+    // `scrollWidth/scrollHeight` return the intrinsic (unzoomed) values under
+    // CSS `zoom`, so they don't shrink after zooming out — the SVG would
+    // stay huge and leave empty scrollable space. getBoundingClientRect,
+    // by contrast, returns the visual (scaled) rect, which is what we want.
     setSvgSize({
-      width: zoomable.scrollWidth,
-      height: zoomable.scrollHeight,
+      width: zoomableRect.width,
+      height: zoomableRect.height,
     });
 
     const newConnections: Connection[] = [];
