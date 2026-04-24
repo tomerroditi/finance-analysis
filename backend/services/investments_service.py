@@ -1029,9 +1029,6 @@ class InvestmentsService:
             return manual_txns
 
         inv_df = self.investments_repo.get_by_id(investment_id)
-        if inv_df.empty:
-            return manual_txns
-
         policy_id = inv_df.iloc[0].get("insurance_policy_id")
         if not policy_id or pd.isna(policy_id):
             return manual_txns
