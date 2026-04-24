@@ -56,7 +56,8 @@ class InvestmentsRepository:
         liquidity_date: str = None,
         maturity_date: str = None,
         notes: str = None,
-    ) -> None:
+        insurance_policy_id: str = None,
+    ) -> int:
         """Create a new investment record.
 
         Parameters
@@ -85,13 +86,14 @@ class InvestmentsRepository:
             Maturity date of the investment, in YYYY-MM-DD format.
         notes : str, optional
             Free-text notes about the investment.
+        insurance_policy_id : str, optional
+            Linked insurance policy ID for auto-synced investments.
 
         Returns
         -------
-        None
+        int
+            Primary key of the newly created investment.
         """
-        # Check if already exists? Original SQL used UNIQUE constraint on (category, tag).
-        # We rely on DB constraint or catch IntegrityError if needed, but for now simple insert.
         new_inv = Investment(
             category=category,
             tag=tag,
@@ -106,9 +108,11 @@ class InvestmentsRepository:
             maturity_date=maturity_date,
             created_date=datetime.today().strftime("%Y-%m-%d"),
             notes=notes,
+            insurance_policy_id=insurance_policy_id,
         )
         self.db.add(new_inv)
         self.db.commit()
+        return new_inv.id
 
     def get_all_investments(self, include_closed: bool = False) -> pd.DataFrame:
         """Get all investments, optionally including closed ones.

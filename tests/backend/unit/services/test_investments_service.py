@@ -3,9 +3,10 @@
 import pandas as pd
 import pytest
 
+from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
-from backend.models.transaction import ManualInvestmentTransaction
+from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
 from backend.services.investments_service import InvestmentsService
 
 
@@ -695,3 +696,143 @@ class TestSyncFromInsurance:
         assert len(investments) == 1
         snapshots = service.get_balance_snapshots(investments[0]["id"])
         assert len(snapshots) == 0
+
+    def test_create_path_writes_policy_id_atomically(self, db_session):
+        """Verify insurance_policy_id is set as part of the initial insert, not a follow-up update."""
+        service = InvestmentsService(db_session)
+        service.sync_from_insurance(self._make_hishtalmut_meta())
+
+        row = db_session.query(InvestmentModel).one()
+        assert row.insurance_policy_id == "POL-HST-001"
+
+    def test_links_legacy_investment_when_no_policy_id(self, db_session):
+        """Verify an existing unlinked investment with the legacy tag gets linked instead of duplicated."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix",
+            type_="hishtalmut",
+            name="Legacy Hishtalmut",
+            interest_rate_type="variable",
+        )
+
+        service.sync_from_insurance(self._make_hishtalmut_meta())
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        assert investments[0]["insurance_policy_id"] == "POL-HST-001"
+        assert investments[0]["tag"] == "Keren Hishtalmut - hafenix (POL-HST-001)"
+
+
+class TestBackfillFromInsuranceAccounts:
+    """Tests for the hishtalmut backfill service method."""
+
+    def _seed_insurance_account(self, db, **fields):
+        """Insert an InsuranceAccount row, filling required defaults."""
+        defaults = {
+            "provider": "hafenix",
+            "policy_id": "POL-HST-100",
+            "policy_type": "hishtalmut",
+            "account_name": "Backfill Fund",
+            "balance": 75000.0,
+            "balance_date": "2025-05-01",
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.3,
+            "liquidity_date": "2028-01-01",
+        }
+        defaults.update(fields)
+        db.add(InsuranceAccount(**defaults))
+        db.commit()
+
+    def test_backfill_processes_only_hishtalmut(self, db_session):
+        """Verify pension rows are skipped and hishtalmut rows are synced."""
+        self._seed_insurance_account(db_session, policy_id="HST-1")
+        self._seed_insurance_account(
+            db_session, policy_id="PEN-1", policy_type="pension"
+        )
+
+        service = InvestmentsService(db_session)
+        processed = service.backfill_from_insurance_accounts()
+
+        assert processed == 1
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        assert investments[0]["insurance_policy_id"] == "HST-1"
+
+    def test_backfill_is_idempotent(self, db_session):
+        """Verify re-running backfill does not create duplicates."""
+        self._seed_insurance_account(db_session, policy_id="HST-2")
+        service = InvestmentsService(db_session)
+
+        service.backfill_from_insurance_accounts()
+        service.backfill_from_insurance_accounts()
+
+        assert len(service.get_all_investments()) == 1
+
+
+class TestInsuranceLinkedTransactions:
+    """Tests for merging insurance transactions into investment calculations."""
+
+    def _seed_linked_investment(self, service, policy_id="POL-INS-1"):
+        meta = {
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "Linked Fund",
+            "balance": None,
+            "balance_date": None,
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2030-01-01",
+        }
+        service.sync_from_insurance(meta)
+        return service.get_all_investments()[0]["id"]
+
+    def test_insurance_deposits_included_in_profit_loss(self, db_session):
+        """Verify insurance deposits are negated and counted as deposits in P/L."""
+        service = InvestmentsService(db_session)
+        inv_id = self._seed_linked_investment(service, policy_id="POL-PL")
+
+        db_session.add(InsuranceTransaction(
+            id="ins-1",
+            date="2025-01-15",
+            provider="hafenix",
+            account_name="Linked Fund",
+            account_number="POL-PL",
+            description="Monthly deposit",
+            amount=1000.0,
+            source="insurance_transactions",
+        ))
+        db_session.commit()
+
+        metrics = service.calculate_profit_loss(inv_id)
+        assert metrics["total_deposits"] == 1000.0
+        assert metrics["total_withdrawals"] == 0.0
+        assert metrics["first_transaction_date"] == "2025-01-15"
+
+    def test_unlinked_investment_ignores_insurance_transactions(self, db_session):
+        """Verify insurance transactions do not leak into investments without a policy link."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Standalone",
+            type_="etf",
+            name="Standalone ETF",
+            interest_rate_type="variable",
+        )
+        inv_id = service.get_all_investments()[0]["id"]
+
+        db_session.add(InsuranceTransaction(
+            id="ins-unrelated",
+            date="2025-02-01",
+            provider="hafenix",
+            account_name="Other",
+            account_number="POL-OTHER",
+            description="Not mine",
+            amount=500.0,
+            source="insurance_transactions",
+        ))
+        db_session.commit()
+
+        metrics = service.calculate_profit_loss(inv_id)
+        assert metrics["total_deposits"] == 0.0

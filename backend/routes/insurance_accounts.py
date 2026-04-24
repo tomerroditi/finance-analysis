@@ -54,29 +54,13 @@ async def sync_hishtalmut_investments(
 ) -> dict:
     """Backfill investments from existing hishtalmut insurance accounts.
 
-    Creates Investment records (with balance snapshots) for any hishtalmut
-    policies that don't already have a linked investment.
+    Creates or updates Investment records (with balance snapshots) for all
+    hishtalmut policies. Idempotent — safe to re-run.
 
     Returns
     -------
     dict
-        Count of synced policies.
+        Count of hishtalmut policies processed.
     """
-    rows = db.query(InsuranceAccount).filter_by(policy_type="hishtalmut").all()
-    inv_service = InvestmentsService(db)
-    synced = 0
-    for r in rows:
-        meta = {
-            "policy_type": r.policy_type,
-            "policy_id": r.policy_id,
-            "provider": r.provider,
-            "account_name": r.account_name,
-            "balance": r.balance,
-            "balance_date": r.balance_date,
-            "commission_deposits_pct": r.commission_deposits_pct,
-            "commission_savings_pct": r.commission_savings_pct,
-            "liquidity_date": r.liquidity_date,
-        }
-        inv_service.sync_from_insurance(meta)
-        synced += 1
-    return {"synced": synced}
+    processed = InvestmentsService(db).backfill_from_insurance_accounts()
+    return {"synced": processed}

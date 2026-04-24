@@ -9,9 +9,13 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.constants.providers import Services
+from backend.models.insurance_account import InsuranceAccount
+from backend.models.transaction import InsuranceTransaction
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -186,40 +190,34 @@ class InvestmentsService:
         if insurance_meta.get("policy_type") != "hishtalmut":
             return
 
-        from backend.constants.categories import INVESTMENTS_CATEGORY
-
         policy_id = insurance_meta["policy_id"]
         provider = insurance_meta.get("provider", "unknown")
         account_name = insurance_meta["account_name"]
         tag = f"Keren Hishtalmut - {provider} ({policy_id})"
+        metadata_fields = {
+            "tag": tag,
+            "name": account_name,
+            "commission_deposit": insurance_meta.get("commission_deposits_pct"),
+            "commission_management": insurance_meta.get("commission_savings_pct"),
+            "liquidity_date": insurance_meta.get("liquidity_date"),
+        }
 
         existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
-
-        if existing.empty:
-            # Check if an unlinked investment exists with any legacy tag for this provider
-            legacy_tags = [
-                f"Keren Hishtalmut - {provider}",
-            ]
-            linked = False
-            for legacy_tag in legacy_tags:
-                by_tag = self.investments_repo.get_by_category_tag(
-                    INVESTMENTS_CATEGORY, legacy_tag
+        if not existing.empty:
+            inv_id = int(existing.iloc[0]["id"])
+            self.investments_repo.update_investment(inv_id, **metadata_fields)
+        else:
+            legacy_tag = f"Keren Hishtalmut - {provider}"
+            by_tag = self.investments_repo.get_by_category_tag(
+                INVESTMENTS_CATEGORY, legacy_tag
+            )
+            if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
+                inv_id = int(by_tag.iloc[0]["id"])
+                self.investments_repo.update_investment(
+                    inv_id, insurance_policy_id=policy_id, **metadata_fields
                 )
-                if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
-                    inv_id = int(by_tag.iloc[0]["id"])
-                    self.investments_repo.update_investment(
-                        inv_id,
-                        insurance_policy_id=policy_id,
-                        tag=tag,
-                        name=account_name,
-                        commission_deposit=insurance_meta.get("commission_deposits_pct"),
-                        commission_management=insurance_meta.get("commission_savings_pct"),
-                        liquidity_date=insurance_meta.get("liquidity_date"),
-                    )
-                    linked = True
-                    break
-            if not linked:
-                self.investments_repo.create_investment(
+            else:
+                inv_id = self.investments_repo.create_investment(
                     category=INVESTMENTS_CATEGORY,
                     tag=tag,
                     type_="hishtalmut",
@@ -228,37 +226,49 @@ class InvestmentsService:
                     commission_deposit=insurance_meta.get("commission_deposits_pct"),
                     commission_management=insurance_meta.get("commission_savings_pct"),
                     liquidity_date=insurance_meta.get("liquidity_date"),
+                    insurance_policy_id=policy_id,
                 )
-                created = self.investments_repo.get_by_category_tag(INVESTMENTS_CATEGORY, tag)
-                if not created.empty:
-                    inv_id = int(created.iloc[0]["id"])
-                    self.investments_repo.update_investment(
-                        inv_id, insurance_policy_id=policy_id
-                    )
-        else:
-            inv_id = int(existing.iloc[0]["id"])
-            self.investments_repo.update_investment(
-                inv_id,
-                tag=tag,
-                name=account_name,
-                commission_deposit=insurance_meta.get("commission_deposits_pct"),
-                commission_management=insurance_meta.get("commission_savings_pct"),
-                liquidity_date=insurance_meta.get("liquidity_date"),
-            )
 
         balance = insurance_meta.get("balance")
         balance_date = insurance_meta.get("balance_date")
-        if balance is not None and balance_date is not None:
-            inv_df = self.investments_repo.get_by_insurance_policy_id(policy_id)
-            inv_id = int(inv_df.iloc[0]["id"])
+        if balance is None or balance_date is None:
+            return
 
-            existing_snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
-            if not existing_snapshots.empty:
-                date_match = existing_snapshots[existing_snapshots["date"] == balance_date]
-                if not date_match.empty and date_match.iloc[0]["source"] == "manual":
-                    return
+        existing_snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
+        if not existing_snapshots.empty:
+            date_match = existing_snapshots[existing_snapshots["date"] == balance_date]
+            if not date_match.empty and date_match.iloc[0]["source"] == "manual":
+                return
 
-            self.snapshots_repo.upsert_snapshot(inv_id, balance_date, balance, source="scraped")
+        self.snapshots_repo.upsert_snapshot(inv_id, balance_date, balance, source="scraped")
+
+    def backfill_from_insurance_accounts(self) -> int:
+        """Sync investments for all existing hishtalmut insurance accounts.
+
+        Idempotent: re-running does not create duplicates because
+        ``sync_from_insurance`` matches by ``insurance_policy_id``.
+
+        Returns
+        -------
+        int
+            Number of hishtalmut policies processed.
+        """
+        rows = self.db.execute(
+            select(InsuranceAccount).where(InsuranceAccount.policy_type == "hishtalmut")
+        ).scalars().all()
+        for row in rows:
+            self.sync_from_insurance({
+                "policy_type": row.policy_type,
+                "policy_id": row.policy_id,
+                "provider": row.provider,
+                "account_name": row.account_name,
+                "balance": row.balance,
+                "balance_date": row.balance_date,
+                "commission_deposits_pct": row.commission_deposits_pct,
+                "commission_savings_pct": row.commission_savings_pct,
+                "liquidity_date": row.liquidity_date,
+            })
+        return len(rows)
 
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """
@@ -1026,9 +1036,6 @@ class InvestmentsService:
         if not policy_id or pd.isna(policy_id):
             return manual_txns
 
-        from backend.models.transaction import InsuranceTransaction
-        from sqlalchemy import select
-
         stmt = select(InsuranceTransaction).where(
             InsuranceTransaction.account_number == policy_id
         )
@@ -1044,7 +1051,8 @@ class InvestmentsService:
         if manual_txns.empty:
             return ins_txns
 
-        common_cols = list(set(manual_txns.columns) & set(ins_txns.columns))
+        # Preserve manual_txns column order so downstream code sees a stable schema
+        common_cols = [c for c in manual_txns.columns if c in ins_txns.columns]
         return pd.concat(
             [manual_txns[common_cols], ins_txns[common_cols]], ignore_index=True
         )
