@@ -45,7 +45,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       <div
-        className={`grid ${compact ? "grid-cols-2 gap-3" : "grid-cols-5 gap-4"}`}
+        className={`grid ${compact ? "grid-cols-1 sm:grid-cols-2 gap-3" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-4"}`}
       >
         {/* Account Multi-Select */}
         <div>

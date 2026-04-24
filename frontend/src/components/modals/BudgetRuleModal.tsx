@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { taggingApi } from "../../services/api";
+import { useCategories } from "../../hooks/useCategories";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { Modal } from "../common/Modal";
 
 interface BudgetRuleModalProps {
   isOpen: boolean;
@@ -31,11 +30,7 @@ export function BudgetRuleModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch categories for dropdown
-  const { data: categoriesMap } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categoriesMap } = useCategories();
 
   const categories = categoriesMap ? Object.keys(categoriesMap) : [];
   const availableTags =
@@ -97,30 +92,22 @@ export function BudgetRuleModal({
     }
   };
 
-  if (!isOpen) return null;
-
   const isProjectRule = selectedYear === 0;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 h-fit max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-[var(--surface-light)] shrink-0">
-          <h2 className="text-xl font-bold">
-            {initialData
-              ? isProjectRule
-                ? `${t("modals.budgetRule.editRule")}: ${category} - ${Array.isArray(initialData.tags) ? initialData.tags.join(", ") : initialData.tags}`
-                : t("modals.budgetRule.editRule")
-              : t("modals.budgetRule.addRule")}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-full transition-colors"
-          >
-            <X size={20} className="text-[var(--text-muted)]" />
-          </button>
-        </div>
+  const modalTitle = initialData
+    ? isProjectRule
+      ? `${t("modals.budgetRule.editRule")}: ${category} - ${Array.isArray(initialData.tags) ? initialData.tags.join(", ") : initialData.tags}`
+      : t("modals.budgetRule.editRule")
+    : t("modals.budgetRule.addRule");
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={modalTitle}
+      titleId="budget-rule-modal-title"
+    >
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
               {t("modals.budgetRule.ruleName")}
@@ -254,7 +241,6 @@ export function BudgetRuleModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

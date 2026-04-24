@@ -60,6 +60,37 @@ async def get_all_pending_refunds(
     return service.get_all_pending(status=status)
 
 
+@router.get("/budget-adjustment")
+async def get_budget_adjustment(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    """Return the total amount to exclude from budget expenses for pending refunds.
+
+    Sums the ``expected_amount`` of all currently pending (unresolved) refunds.
+    This value can be subtracted from reported expenses in the monthly budget
+    view to account for money the user expects to recover. The ``year``/``month``
+    parameters are accepted for future filtering but are not yet applied.
+
+    Parameters
+    ----------
+    year : int
+        Budget year (reserved for future month-level filtering).
+    month : int
+        Budget month 1–12 (reserved for future month-level filtering).
+
+    Returns
+    -------
+    dict
+        ``{"adjustment": float}`` — a positive number representing the sum
+        of expected refund amounts outstanding.
+    """
+    service = PendingRefundsService(db)
+    adjustment = service.get_budget_adjustment(year, month)
+    return {"adjustment": adjustment}
+
+
 @router.get("/{pending_id}")
 async def get_pending_refund(
     pending_id: int,
@@ -97,35 +128,14 @@ async def link_refund(
     )
 
 
-@router.get("/budget-adjustment")
-async def get_budget_adjustment(
-    year: int,
-    month: int,
+@router.post("/{pending_id}/close")
+async def close_pending_refund(
+    pending_id: int,
     db: Session = Depends(get_db),
 ):
-    """Return the total amount to exclude from budget expenses for pending refunds.
-
-    Sums the ``expected_amount`` of all currently pending (unresolved) refunds.
-    This value can be subtracted from reported expenses in the monthly budget
-    view to account for money the user expects to recover. The ``year``/``month``
-    parameters are accepted for future filtering but are not yet applied.
-
-    Parameters
-    ----------
-    year : int
-        Budget year (reserved for future month-level filtering).
-    month : int
-        Budget month 1–12 (reserved for future month-level filtering).
-
-    Returns
-    -------
-    dict
-        ``{"adjustment": float}`` — a positive number representing the sum
-        of expected refund amounts outstanding.
-    """
+    """Close a pending refund, accepting the current partial refund amount."""
     service = PendingRefundsService(db)
-    adjustment = service.get_budget_adjustment(year, month)
-    return {"adjustment": adjustment}
+    return service.close_pending_refund(pending_id)
 
 
 @router.delete("/links/{link_id}")

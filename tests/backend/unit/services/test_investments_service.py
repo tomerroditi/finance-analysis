@@ -5,7 +5,6 @@ import pytest
 
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
-from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
 from backend.services.investments_service import InvestmentsService
 

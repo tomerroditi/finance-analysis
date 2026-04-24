@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Plus, Trash2, AlertCircle } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { taggingApi, transactionsApi } from "../../services/api";
+import { Plus, Trash2, AlertCircle } from "lucide-react";
+import { transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useCategories } from "../../hooks/useCategories";
+import { Modal } from "../common/Modal";
+import { formatCurrency } from "../../utils/numberFormatting";
+import { useNotify } from "../../context/DialogContext";
 
 interface SplitTransactionModalProps {
   transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
@@ -24,6 +27,7 @@ export function SplitTransactionModal({
   onSuccess,
 }: SplitTransactionModalProps) {
   const { t } = useTranslation();
+  const notify = useNotify();
   const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
@@ -36,10 +40,7 @@ export function SplitTransactionModal({
 
   const { createCategory, createTag } = useCategoryTagCreate();
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories } = useCategories();
 
   const totalSplitAmount = useMemo(
     () => splits.reduce((sum, item) => sum + item.amount, 0),
@@ -82,45 +83,35 @@ export function SplitTransactionModal({
       onSuccess();
       onClose();
     } catch {
-      alert("Failed to split transaction.");
+      notify.error(t("transactions.failedSplit"));
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-        <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-          <div>
-            <h2 className="text-xl font-bold text-white">{t("modals.split.title")}</h2>
-            <p className="text-sm text-[var(--text-muted)]">
-              {transaction.description} •{" "}
-              {new Intl.NumberFormat("he-IL", {
-                style: "currency",
-                currency: "ILS",
-              }).format(originalAmount)}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
-          >
-            <X size={20} />
-          </button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={t("modals.split.title")}
+      titleId="split-transaction-title"
+      maxWidth="2xl"
+    >
+        <div className="px-4 md:px-6 pb-2 text-sm text-[var(--text-muted)]">
+          {transaction.description} • {formatCurrency(originalAmount, 2)}
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
+        <div className="p-4 md:p-6 overflow-y-auto flex-1">
           <div className="space-y-4">
             {splits.map((split, index) => (
               <div
                 key={index}
-                className="flex gap-4 items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
+                className="flex flex-col sm:flex-row gap-4 sm:items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
               >
                 <div className="flex-1 space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.amount")}
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                    <span className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
                       ₪
                     </span>
                     <input
@@ -134,13 +125,13 @@ export function SplitTransactionModal({
                           parseFloat(e.target.value) || 0,
                         )
                       }
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-lg ps-8 pe-3 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
                     />
                   </div>
                 </div>
 
                 <div className="flex-[1.5] space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.category")}
                   </label>
                   <SelectDropdown
@@ -157,7 +148,7 @@ export function SplitTransactionModal({
                 </div>
 
                 <div className="flex-[1.5] space-y-2">
-                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ml-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-wider ms-1">
                     {t("common.tag")}
                   </label>
                   <SelectDropdown
@@ -177,6 +168,7 @@ export function SplitTransactionModal({
                 <button
                   onClick={() => removeSplit(index)}
                   disabled={splits.length <= 2}
+                  aria-label={t("common.delete")}
                   className="p-2 mb-0.5 rounded-lg hover:bg-rose-500/10 text-rose-400 disabled:opacity-20 transition-all"
                 >
                   <Trash2 size={18} />
@@ -193,17 +185,14 @@ export function SplitTransactionModal({
           </button>
         </div>
 
-        <div className="p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex items-center justify-between">
+        <div className="p-4 md:p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             {Math.abs(remainingAmount) >= 0.01 ? (
               <div className="flex items-center gap-2 text-amber-400">
                 <AlertCircle size={18} />
                 <span className="text-sm font-medium">
                   {t("modals.split.remaining")}:{" "}
-                  {new Intl.NumberFormat("he-IL", {
-                    style: "currency",
-                    currency: "ILS",
-                  }).format(remainingAmount)}
+                  {formatCurrency(remainingAmount, 2)}
                 </span>
               </div>
             ) : (
@@ -230,7 +219,6 @@ export function SplitTransactionModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

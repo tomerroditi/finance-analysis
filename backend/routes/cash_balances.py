@@ -35,10 +35,13 @@ async def set_cash_balance(
 ) -> dict:
     """Set current balance for a cash account."""
     service = CashBalanceService(db)
-    return service.set_balance(
-        account_name=request.account_name,
-        balance=request.balance,
-    )
+    try:
+        return service.set_balance(
+            account_name=request.account_name,
+            balance=request.balance,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/migrate")

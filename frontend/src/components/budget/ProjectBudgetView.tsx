@@ -8,6 +8,7 @@ import { BudgetProgressBar } from "../BudgetProgressBar";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import { useConfirm } from "../../context/DialogContext";
 
 interface ProjectBudgetRule {
   id: number;
@@ -44,6 +45,7 @@ interface ProjectTransaction {
 
 export const ProjectBudgetView: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
@@ -162,10 +164,14 @@ export const ProjectBudgetView: React.FC = () => {
     });
   };
 
-  const handleDeleteProject = () => {
-    if (
-      confirm(t("budget.confirmDeleteProject", { name: selectedProject }))
-    ) {
+  const handleDeleteProject = async () => {
+    const ok = await confirm({
+      title: t("common.deleteTitle"),
+      message: t("budget.confirmDeleteProject", { name: selectedProject }),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (ok) {
       deleteMutation.mutate(selectedProject);
     }
   };
@@ -247,14 +253,14 @@ export const ProjectBudgetView: React.FC = () => {
   }, [projectDetails, projectTotalRule]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 md:space-y-8">
       {/* Header / Project Selection */}
-      <div className="flex items-center justify-between bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
-        <div className="flex items-center gap-4">
-          <label className="font-semibold text-[var(--text-default)]">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-0 bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 md:gap-4 w-full md:w-auto">
+          <label className="font-semibold text-sm md:text-base text-[var(--text-default)]">
             {t("budget.selectProject")}
           </label>
-          <div className="w-64">
+          <div className="w-full sm:w-64">
             <SelectDropdown
               options={projects.length > 0 ? projects.map((p: string) => ({ label: p, value: p })) : []}
               value={selectedProject}
@@ -266,10 +272,10 @@ export const ProjectBudgetView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full md:w-auto">
           <button
             onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium"
+            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium"
           >
             <Plus size={20} />
             {t("budget.newProject")}
@@ -277,7 +283,7 @@ export const ProjectBudgetView: React.FC = () => {
           {selectedProject && (
             <button
               onClick={handleDeleteProject}
-              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium"
+              className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium"
             >
               <Trash2 size={20} />
               {t("common.delete")}
@@ -355,7 +361,7 @@ export const ProjectBudgetView: React.FC = () => {
 
           {/* Other Transactions Section */}
           {otherTransactions.length > 0 && (
-            <div className="pt-4 border-t border-[var(--surface-light)] mt-8">
+            <div className="pt-4 border-t border-[var(--surface-light)] mt-4 md:mt-8">
               <h3 className="text-sm font-bold text-[var(--text-muted)] mb-3 uppercase tracking-wider">
                 {t("budget.otherProjectTransactions")}
               </h3>
@@ -397,7 +403,7 @@ export const ProjectBudgetView: React.FC = () => {
       )}
 
       {!selectedProject && projects.length === 0 && (
-        <div className="text-center text-[var(--text-muted)] py-12 bg-[var(--surface)] rounded-xl border border-dashed border-[var(--surface-light)]">
+        <div className="text-center text-[var(--text-muted)] py-8 md:py-12 bg-[var(--surface)] rounded-xl border border-dashed border-[var(--surface-light)]">
           <h3 className="text-lg font-medium mb-2">{t("budget.noProjectsFound")}</h3>
           <p className="mb-4">{t("budget.createProjectToStart")}</p>
         </div>

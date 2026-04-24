@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
+import { useCashBalances } from "../hooks/useCashBalances";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
 import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
@@ -11,20 +12,19 @@ import { Plus, Trash2, DollarSign, X } from "lucide-react";
 import { Skeleton } from "../components/common/Skeleton";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
+import { formatCurrency } from "../utils/numberFormatting";
+import { useConfirm } from "../context/DialogContext";
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [newAccountName, setNewAccountName] = useState("");
   const [newBalance, setNewBalance] = useState("");
 
-  // Fetch cash balances
-  const { data: balances = [], isLoading } = useQuery({
-    queryKey: ["cash-balances"],
-    queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-  });
+  const { data: balances = [], isLoading } = useCashBalances();
 
   // Run migration on first load
   const migrationMutation = useMutation({
@@ -86,14 +86,9 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     }
   };
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(val);
 
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--surface-light)] mb-6">
+    <div className="bg-[var(--surface)] rounded-xl p-4 md:p-6 border border-[var(--surface-light)] mb-4 md:mb-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-[var(--text)] font-semibold flex items-center gap-2">
           <span className="text-xl">💵</span> {t("dashboard.cashBalances")}
@@ -132,7 +127,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       type="number"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      className="w-32 px-2 py-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded text-[var(--text)] text-right"
+                      className="w-32 px-2 py-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded text-[var(--text)] text-end"
                       placeholder="0"
                       min="0"
                       autoFocus
@@ -152,7 +147,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                   </div>
                 ) : (
                   <>
-                    <span className="text-[var(--text-muted)] text-sm min-w-24 text-right">
+                    <span className="text-[var(--text-muted)] text-sm min-w-24 text-end">
                       {formatCurrency(balance.balance)}
                     </span>
                     <button
@@ -165,14 +160,14 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       <DollarSign size={16} className="text-amber-500" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (
-                          confirm(
-                            `Delete cash envelope "${balance.account_name}"?`
-                          )
-                        ) {
-                          deleteMutation.mutate(balance.account_name);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("tooltips.deleteEnvelope"),
+                          message: t("transactions.confirmDeleteEnvelope", { name: balance.account_name }),
+                          confirmLabel: t("common.delete"),
+                          isDestructive: true,
+                        });
+                        if (ok) deleteMutation.mutate(balance.account_name);
                       }}
                       className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors"
                       title={t("tooltips.deleteEnvelope")}
@@ -316,25 +311,18 @@ export function Transactions() {
 
   return (
     <div className="flex relative">
-      <div className="space-y-6 min-w-0 flex-1 transition-all duration-300">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">{t("transactions.title")}</h1>
-            <p className="text-[var(--text-muted)]">
-              {t("transactions.subtitle")}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex gap-2 items-center">
+      <div className="space-y-4 md:space-y-6 min-w-0 flex-1 transition-all duration-300">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 md:gap-4 overflow-x-auto scrollbar-auto-hide pb-1">
+            <div className="flex gap-1.5 md:gap-2 items-center">
               {services.map(({ value, label }) => (
-                <div key={value} className="flex items-center gap-2">
+                <div key={value} className="flex items-center gap-1 md:gap-2">
                   {value === "refunds" && (
-                    <div className="w-px h-6 bg-[var(--surface-light)] mx-1" />
+                    <div className="w-px h-6 bg-[var(--surface-light)] mx-0.5 md:mx-1" />
                   )}
                   <button
                     onClick={() => setSelectedService(value as "all" | "credit_cards" | "banks" | "cash" | "manual_investments" | "refunds")}
-                    className={`px-4 py-2 rounded-lg transition-colors ${selectedService === value
+                    className={`px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors text-sm whitespace-nowrap ${selectedService === value
                       ? "bg-[var(--primary)] text-white"
                       : "bg-[var(--surface)] text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
                       }`}
@@ -347,7 +335,7 @@ export function Transactions() {
           </div>
         </div>
 
-        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-4">
+        <div className="bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] overflow-hidden p-2 md:p-4">
           {selectedService === "refunds" ? (
             <RefundsView />
           ) : isLoading ? (

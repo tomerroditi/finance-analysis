@@ -40,6 +40,8 @@ class Tables(Enum):
         Name of the table storing categories, tags, and icons.
     CREDENTIALS : str
         Name of the table storing provider account credentials.
+    LIABILITY_TRANSACTIONS : str
+        Name of the table storing auto-generated liability payment transactions.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -60,6 +62,9 @@ class Tables(Enum):
     CREDENTIALS = "credentials"
     INSURANCE = "insurance_transactions"
     INSURANCE_ACCOUNTS = "insurance_accounts"
+    LIABILITIES = "liabilities"
+    LIABILITY_TRANSACTIONS = "liability_transactions"
+    RETIREMENT_GOAL = "retirement_goals"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
@@ -162,3 +167,32 @@ class InvestmentBalanceSnapshotsTableFields(Enum):
     DATE = "date"
     BALANCE = "balance"
     SOURCE = "source"
+
+
+class LiabilitiesTableFields(Enum):
+    """Field names for the liabilities table."""
+
+    ID = "id"
+    NAME = "name"
+    LENDER = "lender"
+    CATEGORY = "category"
+    TAG = "tag"
+    PRINCIPAL_AMOUNT = "principal_amount"
+    INTEREST_RATE = "interest_rate"
+    TERM_MONTHS = "term_months"
+    START_DATE = "start_date"
+    IS_PAID_OFF = "is_paid_off"
+    PAID_OFF_DATE = "paid_off_date"
+    NOTES = "notes"
+    CREATED_DATE = "created_date"
+
+
+class LiabilityTransactionsTableFields(Enum):
+    """Field names for the liability_transactions table."""
+
+    ID = "id"
+    LIABILITY_ID = "liability_id"
+    DATE = "date"
+    AMOUNT = "amount"
+    PAYMENT_NUMBER = "payment_number"
+    DESCRIPTION = "description"

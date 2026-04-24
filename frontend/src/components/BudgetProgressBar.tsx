@@ -54,21 +54,21 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
 
   if (compact) {
     return (
-      <div className="w-full mb-2 py-2 px-4 border border-[var(--surface-light)] rounded-xl bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
+      <div className="w-full mb-2 py-2 px-3 md:px-4 border border-[var(--surface-light)] rounded-xl bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
         <div
-          className="flex items-center gap-3 cursor-pointer"
+          className="flex items-center gap-2 md:gap-3 cursor-pointer"
           onClick={onToggleExpand}
         >
           {/* Status dot + label */}
           <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
           {label && (
-            <span className="font-semibold text-sm text-[var(--text-default)] whitespace-nowrap">
+            <span className="font-semibold text-sm text-[var(--text-default)] whitespace-nowrap truncate max-w-[40vw] md:max-w-none">
               {label}
             </span>
           )}
 
           {/* Progress bar - fills remaining space */}
-          <div className="flex-1 min-w-0 bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+          <div className="flex-1 min-w-[60px] bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
             <div
               className={`h-2 rounded-full ${colorClass} transition-all duration-500 ease-out`}
               style={{ width: `${percent}%` }}
@@ -76,27 +76,34 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
 
           {/* Numbers */}
-          <span className="font-bold font-mono text-sm whitespace-nowrap">
+          <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap">
             {spent.toFixed(0)}{" "}
-            <span className="text-[var(--text-muted)] text-xs font-normal">
+            <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
               / {total.toFixed(0)}
             </span>
           </span>
 
-          {/* Actions - hover only */}
+          {/* Actions - inline on desktop only */}
           {actions && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-1 shrink-0">
               {actions}
             </div>
           )}
 
           {/* Expand chevron */}
           {onToggleExpand && (
-            <span className="text-[var(--text-muted)]">
+            <span className="text-[var(--text-muted)] shrink-0">
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </span>
           )}
         </div>
+
+        {/* Actions row - mobile only */}
+        {actions && (
+          <div className="md:hidden flex items-center gap-1 mt-1.5 ps-5">
+            {actions}
+          </div>
+        )}
 
         {isExpanded && children}
       </div>
@@ -104,40 +111,41 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
   }
 
   return (
-    <div className="w-full mb-4 p-4 border border-[var(--surface-light)] rounded-xl bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
-      <div className="flex justify-between items-center mb-3">
-        <div className="flex items-center gap-3">
+    <div className="w-full mb-4 p-3 md:p-4 border border-[var(--surface-light)] rounded-xl bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           {onToggleExpand && (
             <button
               onClick={onToggleExpand}
-              className="p-1 rounded-full hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
+              className="p-1 rounded-full hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors shrink-0"
             >
               {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </button>
           )}
-          <div>
+          <div className="min-w-0">
             {label && (
-              <div className="font-semibold text-[var(--text-default)]">
+              <div className="font-semibold text-[var(--text-default)] truncate">
                 {label}
               </div>
             )}
             {subLabel && (
-              <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+              <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide truncate">
                 {subLabel}
               </div>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {/* Actions - inline on desktop only */}
           {actions && (
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
               {actions}
             </div>
           )}
-          <div className="text-right">
-            <div className="font-bold font-mono">
+          <div className="text-end">
+            <div className="font-bold font-mono text-sm md:text-base">
               {spent.toFixed(2)}{" "}
-              <span className="text-[var(--text-muted)] text-sm font-normal">
+              <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
                 / {total.toFixed(2)}
               </span>
             </div>
@@ -152,6 +160,13 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Actions row - mobile only */}
+      {actions && (
+        <div className="md:hidden flex items-center gap-1 mb-3">
+          {actions}
+        </div>
+      )}
 
       <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
         <div

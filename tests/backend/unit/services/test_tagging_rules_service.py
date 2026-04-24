@@ -85,12 +85,6 @@ class TestTaggingRulesService:
 
     def test_check_conflicts_no_conflict(self, service, setup_transactions):
         """Test adding a non-conflicting rule."""
-        conditions = {
-            "type": "CONDITION",
-            "field": "description",
-            "operator": "contains",
-            "value": "Azure",
-        }
         # Transaction is AWS, so Azure should not match, so no conflict check needed really
         # But let's add a rule that MATCHES AWS first
 

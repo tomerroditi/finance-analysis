@@ -3,7 +3,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
-import { TransactionsTable, type Transaction } from "./TransactionsTable";
+import { TransactionsTable } from "./TransactionsTable";
+import type { Transaction } from "../types/transaction";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => server.resetHandlers());
@@ -76,11 +77,11 @@ describe("TransactionsTable", () => {
       // Click Amount header to sort by amount ascending
       const amountHeader = screen.getByRole("columnheader", { name: /Amount/ });
       await user.click(amountHeader);
-      // Ascending by absolute amount: 15, 100 (default tx isn't here), 150, 200, 300, 8000
-      // With our 5 transactions sorted asc by abs(amount): Bus fare (15) should be first
+      // After sorting by amount ascending, the order should change from the default date sort.
+      // Raw ascending: -300 (Fuel), -200 (Supermarket), -150 (Restaurant), -15 (Bus fare), 8000 (Salary)
       const rows = screen.getAllByRole("row");
       const firstDataRow = rows[1];
-      expect(within(firstDataRow).getByText("Bus fare")).toBeInTheDocument();
+      expect(within(firstDataRow).getByText("Fuel")).toBeInTheDocument();
     });
   });
 

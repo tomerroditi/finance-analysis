@@ -1,6 +1,5 @@
 """Tests for the /api/pending-refunds API endpoints."""
 
-import pytest
 
 
 class TestPendingRefundsRoutes:
@@ -108,3 +107,55 @@ class TestPendingRefundsRoutes:
         data = response.json()
         assert data["id"] == pending_id
         assert data["total_refunded"] > 0
+
+
+class TestCloseRefundRoute:
+    """Tests for POST /pending-refunds/{id}/close endpoint."""
+
+    def test_close_pending_refund(self, test_client):
+        """Close a pending refund returns closed status."""
+        create_resp = test_client.post("/api/pending-refunds/", json={
+            "source_type": "transaction",
+            "source_id": 1,
+            "source_table": "banks",
+            "expected_amount": 100.0,
+        })
+        pending_id = create_resp.json()["id"]
+        response = test_client.post(f"/api/pending-refunds/{pending_id}/close")
+        assert response.status_code == 200
+        assert response.json()["status"] == "closed"
+
+    def test_close_nonexistent_refund(self, test_client):
+        """Close nonexistent refund returns 404."""
+        response = test_client.post("/api/pending-refunds/9999/close")
+        assert response.status_code == 404
+
+
+class TestUnlinkRefundRoute:
+    """Tests for DELETE /pending-refunds/links/{id} endpoint."""
+
+    def test_unlink_refund(self, test_client):
+        """Unlink a refund returns updated status."""
+        create_resp = test_client.post("/api/pending-refunds/", json={
+            "source_type": "transaction",
+            "source_id": 1,
+            "source_table": "banks",
+            "expected_amount": 100.0,
+        })
+        pending_id = create_resp.json()["id"]
+        link_resp = test_client.post(f"/api/pending-refunds/{pending_id}/link", json={
+            "refund_transaction_id": 99,
+            "refund_source": "banks",
+            "amount": 50.0,
+        })
+        assert link_resp.status_code == 200
+        details = test_client.get(f"/api/pending-refunds/{pending_id}")
+        link_id = details.json()["links"][0]["id"]
+        response = test_client.delete(f"/api/pending-refunds/links/{link_id}")
+        assert response.status_code == 200
+        assert response.json()["status"] == "pending"
+
+    def test_unlink_nonexistent_link(self, test_client):
+        """Unlink nonexistent link returns 404."""
+        response = test_client.delete("/api/pending-refunds/links/9999")
+        assert response.status_code == 404

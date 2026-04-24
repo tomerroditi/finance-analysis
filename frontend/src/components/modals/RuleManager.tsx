@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, ShieldCheck, Play, Edit2 } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { taggingApi, type TaggingRule } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { useScrollLock } from "../../hooks/useScrollLock";
+import { useCategories } from "../../hooks/useCategories";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 
 interface RuleManagerProps {
   onClose: () => void;
@@ -11,6 +14,7 @@ interface RuleManagerProps {
 
 export function RuleManager({ onClose }: RuleManagerProps) {
   const { t } = useTranslation();
+  useScrollLock(true);
   const queryClient = useQueryClient();
   const [isCreating, setIsCreating] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -22,15 +26,8 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     tag: "",
   });
 
-  const { data: rules, isLoading } = useQuery({
-    queryKey: ["tagging-rules"],
-    queryFn: () => taggingApi.getRules().then((res) => res.data),
-  });
-
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: rules, isLoading } = useTaggingRules();
+  const { data: categories } = useCategories();
 
   const createMutation = useMutation({
     mutationFn: (rule: { name?: string; description_contains: string; category: string; tag: string }) => {
@@ -105,25 +102,25 @@ export function RuleManager({ onClose }: RuleManagerProps) {
     newRule.category && categories ? categories[newRule.category] || [] : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-        <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+        <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-white">{t("modals.ruleManager.title")}</h2>
+            <h2 className="text-lg md:text-xl font-bold text-white">{t("modals.ruleManager.title")}</h2>
             <p className="text-sm text-[var(--text-muted)]">
               {t("modals.ruleManager.subtitle")}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
-          <div className="flex gap-4 mb-4">
+        <div className="p-4 md:p-6 overflow-y-auto flex-1">
+          <div className="flex flex-col sm:flex-row gap-4 mb-4">
             <button
               onClick={() => {
                 setIsCreating(true);
@@ -323,13 +320,13 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                       setEditingRuleId(rule.id);
                       setIsCreating(false);
                     }}
-                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Edit2 size={18} />
                   </button>
                   <button
                     onClick={() => deleteMutation.mutate(rule.id)}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-2 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400 opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -340,7 +337,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
         </div>
       </div>
 
-      <div className="p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex justify-end">
+      <div className="p-4 md:p-6 border-t border-[var(--surface-light)] bg-[var(--surface-light)]/10 flex justify-end">
         <button
           onClick={onClose}
           className="px-6 py-2 rounded-xl bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-sm font-semibold transition-all"

@@ -65,7 +65,7 @@ class PendingRefundsRepository:
         Parameters
         ----------
         status : str, optional
-            Filter by status ('pending', 'resolved', 'partial').
+            Filter by status ('pending', 'partial', 'resolved', or 'closed').
 
         Returns
         -------
@@ -187,7 +187,7 @@ class PendingRefundsRepository:
         pending_id : int
             ID of the pending refund.
         status : str
-            New status ('pending', 'resolved', 'partial').
+            New status ('pending', 'partial', 'resolved', or 'closed').
         """
         pending = self.db.get(PendingRefund, pending_id)
         if pending:
@@ -239,3 +239,44 @@ class PendingRefundsRepository:
             self.db.delete(link)
             self.db.commit()
         return link
+
+    def get_link_for_transaction(
+        self, refund_transaction_id: int, refund_source: str
+    ) -> RefundLink | None:
+        """
+        Check if a transaction is already linked to any pending refund.
+
+        Parameters
+        ----------
+        refund_transaction_id : int
+            unique_id of the refund transaction.
+        refund_source : str
+            Table where refund lives.
+
+        Returns
+        -------
+        RefundLink or None
+            The existing link if found, None otherwise.
+        """
+        stmt = (
+            select(RefundLink)
+            .where(RefundLink.refund_transaction_id == refund_transaction_id)
+            .where(RefundLink.refund_source == refund_source)
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_link_by_id(self, link_id: int) -> RefundLink | None:
+        """
+        Get a refund link by ID.
+
+        Parameters
+        ----------
+        link_id : int
+            ID of the link.
+
+        Returns
+        -------
+        RefundLink or None
+            The link if found, None otherwise.
+        """
+        return self.db.get(RefundLink, link_id)

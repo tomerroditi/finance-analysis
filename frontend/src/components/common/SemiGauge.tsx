@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface SemiGaugeProps {
     spent: number;
@@ -6,13 +7,6 @@ interface SemiGaugeProps {
     size?: number;
     className?: string;
 }
-
-const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("he-IL", {
-        style: "currency",
-        currency: "ILS",
-        maximumFractionDigits: 0,
-    }).format(n || 0);
 
 function getGaugeColor(percentage: number): string {
     if (percentage > 100) return "#ef4444";

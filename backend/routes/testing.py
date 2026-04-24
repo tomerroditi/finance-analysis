@@ -68,6 +68,12 @@ def _prepare_demo_database() -> None:
     if os.path.exists(source_db):
         shutil.copy2(source_db, demo_db_path)
 
+    # Ensure schema is up-to-date (create missing tables, add missing columns)
+    database.reset_engine()
+    engine = database.get_engine()
+    Base.metadata.create_all(bind=engine)
+    _sync_missing_columns(engine)
+
     # Shift dates
     offset_days = (date.today() - DEMO_REFERENCE_DATE).days
     if offset_days == 0:
@@ -83,15 +89,21 @@ def _prepare_demo_database() -> None:
             "credit_card_transactions",
             "cash_transactions",
             "manual_investment_transactions",
+            "insurance_transactions",
         ]:
             conn.execute(text(
                 f"UPDATE {table} SET date = date(date, :offset)"
             ), {"offset": offset_str})
 
-        # Shift investment balance snapshots
-        conn.execute(text(
-            "UPDATE investment_balance_snapshots SET date = date(date, :offset)"
-        ), {"offset": offset_str})
+        # Shift investment balance snapshots (order avoids UNIQUE collisions)
+        order = "DESC" if offset_days > 0 else "ASC"
+        snapshot_ids = conn.execute(text(
+            f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}"
+        )).fetchall()
+        for (sid,) in snapshot_ids:
+            conn.execute(text(
+                "UPDATE investment_balance_snapshots SET date = date(date, :offset) WHERE id = :id"
+            ), {"offset": offset_str, "id": sid})
 
         # Shift investment date fields
         for col in ["created_date", "closed_date", "liquidity_date", "maturity_date"]:
@@ -103,6 +115,23 @@ def _prepare_demo_database() -> None:
         conn.execute(text(
             "UPDATE scraping_history SET date = date(date, :offset)"
         ), {"offset": offset_str})
+
+        # Shift liability date fields
+        for col in ["start_date", "paid_off_date", "created_date"]:
+            conn.execute(text(
+                f"UPDATE liabilities SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
+            ), {"offset": offset_str})
+
+        # Shift liability transaction dates
+        conn.execute(text(
+            "UPDATE liability_transactions SET date = date(date, :offset) WHERE date IS NOT NULL"
+        ), {"offset": offset_str})
+
+        # Shift insurance account date fields
+        for col in ["balance_date", "liquidity_date"]:
+            conn.execute(text(
+                f"UPDATE insurance_accounts SET {col} = date({col}, :offset) WHERE {col} IS NOT NULL"
+            ), {"offset": offset_str})
 
         # Shift budget rules year/month
         rows = conn.execute(text(
@@ -156,11 +185,8 @@ async def toggle_demo_mode(
         CredentialsService.clear_cache()
         CategoriesTagsService.clear_cache()
 
-        # If enabling demo mode, ensure the database schema exists and seed credentials
+        # If enabling demo mode, copy source DB then ensure schema is up-to-date
         if request.enabled:
-            engine = database.get_engine()
-            Base.metadata.create_all(bind=engine)
-            _sync_missing_columns(engine)
             _prepare_demo_database()
 
             with get_db_context() as demo_db:

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import {
     Plus,
     Play,
@@ -15,12 +16,15 @@ import { useTranslation } from "react-i18next";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "./RuleEditorModal";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useAppStore } from "../../stores/appStore";
+import { useConfirm } from "../../context/DialogContext";
 
 export function AutoTaggingPanel() {
     const { t } = useTranslation();
     const { autoTaggingPanelOpen, toggleAutoTaggingPanel } = useAppStore();
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -28,16 +32,26 @@ export function AutoTaggingPanel() {
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<TaggingRule | null>(null);
+    useScrollLock(autoTaggingPanelOpen);
 
-    const { data: rules, isLoading: rulesLoading } = useQuery({
-        queryKey: ["tagging-rules"],
-        queryFn: () => taggingApi.getRules().then(res => res.data)
-    });
+    const { data: rules, isLoading: rulesLoading } = useTaggingRules();
 
     const deleteMutation = useMutation({
         mutationFn: (id: number) => taggingApi.deleteRule(id),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tagging-rules"] })
     });
+
+    const askDeleteRule = async (rule: TaggingRule) => {
+        const ok = await confirm({
+            title: t("common.deleteTitle"),
+            message: rule.name
+                ? t("transactions.autoTagging.confirmDeleteNamedRule", { name: rule.name })
+                : t("transactions.autoTagging.confirmDeleteRule"),
+            confirmLabel: t("common.delete"),
+            isDestructive: true,
+        });
+        if (ok && rule.id != null) deleteMutation.mutate(rule.id);
+    };
 
     const applyMutation = useMutation({
         mutationFn: () => taggingApi.applyRules(),
@@ -92,7 +106,7 @@ export function AutoTaggingPanel() {
 
     return (
         <>
-            <div className={`shrink-0 z-40 h-[calc(100vh-2rem)] sticky top-4 ml-4 flex flex-col transition-all duration-300 overflow-hidden ${
+            <div className={`shrink-0 z-40 h-[calc(100vh-2rem)] sticky top-4 ms-4 flex-col transition-all duration-300 overflow-hidden hidden md:flex ${
                 autoTaggingPanelOpen ? "w-[400px]" : "w-12"
             }`}>
                 {autoTaggingPanelOpen ? (
@@ -134,12 +148,12 @@ export function AutoTaggingPanel() {
 
                                 {/* Search */}
                                 <div className="relative">
-                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                                    <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                                     <input
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         placeholder={t("transactions.autoTagging.searchRules")}
-                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 pl-9 pr-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
+                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 ps-9 pe-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
                                     />
                                 </div>
                             </div>
@@ -170,27 +184,25 @@ export function AutoTaggingPanel() {
                                         <div key={rule.id} className="group p-3 bg-[var(--surface-base)] rounded-xl border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-sm">{rule.name}</h4>
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
                                                         onClick={() => applySingleMutation.mutate({ id: rule.id, overwrite: false })}
-                                                        className="p-1 hover:bg-emerald-500/10 text-emerald-400 rounded"
+                                                        className="p-2 hover:bg-emerald-500/10 text-emerald-400 rounded"
                                                         title="Apply Rule"
                                                     >
-                                                        <Play size={14} />
+                                                        <Play size={16} />
                                                     </button>
                                                     <button
                                                         onClick={() => openEdit(rule)}
-                                                        className="p-1 hover:bg-blue-500/10 text-blue-400 rounded"
+                                                        className="p-2 hover:bg-blue-500/10 text-blue-400 rounded"
                                                     >
-                                                        <Edit2 size={14} />
+                                                        <Edit2 size={16} />
                                                     </button>
                                                     <button
-                                                        onClick={() => {
-                                                            if (confirm("Delete rule?")) deleteMutation.mutate(rule.id);
-                                                        }}
-                                                        className="p-1 hover:bg-red-500/10 text-red-400 rounded"
+                                                        onClick={() => askDeleteRule(rule)}
+                                                        className="p-2 hover:bg-red-500/10 text-red-400 rounded"
                                                     >
-                                                        <Trash2 size={14} />
+                                                        <Trash2 size={16} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -225,6 +237,67 @@ export function AutoTaggingPanel() {
                     </button>
                 )}
             </div>
+
+            {/* Mobile: floating button + full-screen overlay */}
+            {!autoTaggingPanelOpen && (
+                <button
+                    onClick={toggleAutoTaggingPanel}
+                    className="md:hidden fixed bottom-20 end-4 z-40 w-12 h-12 rounded-full bg-[var(--primary)] text-white shadow-lg flex items-center justify-center hover:bg-[var(--primary-hover)] transition-colors"
+                    title={t("transactions.autoTagging.title")}
+                >
+                    <ShieldCheck size={22} />
+                </button>
+            )}
+            {autoTaggingPanelOpen && (
+                <div className="modal-overlay md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={toggleAutoTaggingPanel}>
+                    <div
+                        className="fixed inset-x-0 bottom-0 top-10 bg-[var(--surface)] rounded-t-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/10">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck className="text-[var(--primary)]" size={20} />
+                                <h2 className="font-bold text-lg">{t("transactions.autoTagging.title")}</h2>
+                            </div>
+                            <button
+                                onClick={toggleAutoTaggingPanel}
+                                className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
+                            >
+                                <ChevronRight size={18} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            <div className="space-y-4 mb-4">
+                                <div className="flex gap-2">
+                                    <button onClick={() => { setEditingRule(null); setIsModalOpen(true); }} className="flex-1 py-2 flex items-center justify-center gap-2 bg-[var(--primary)]/10 text-[var(--primary)] rounded-xl border border-[var(--primary)]/20 hover:bg-[var(--primary)]/20 font-bold transition-all">
+                                        <Plus size={18} /> {t("transactions.autoTagging.newRule")}
+                                    </button>
+                                    <button onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending} className="flex-1 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50">
+                                        <Play size={18} /> {t("transactions.autoTagging.applyRules")}
+                                    </button>
+                                </div>
+                            </div>
+                            {rulesLoading ? (
+                                <p className="text-center text-[var(--text-muted)] py-8">{t("common.loading")}</p>
+                            ) : (rules || []).filter(r => !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase())).map((rule) => (
+                                <div key={rule.id} className="bg-[var(--surface-light)]/30 rounded-xl p-3 border border-[var(--surface-light)]">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="font-semibold text-sm truncate">{rule.name}</span>
+                                        <div className="flex items-center gap-1">
+                                            <button onClick={() => applySingleMutation.mutate({ id: rule.id!, overwrite: false })} className="p-1 rounded hover:bg-emerald-500/20 text-emerald-400/60 hover:text-emerald-400 transition-colors"><Play size={14} /></button>
+                                            <button onClick={() => { setEditingRule(rule); setIsModalOpen(true); }} className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"><Edit2 size={14} /></button>
+                                            <button onClick={() => askDeleteRule(rule)} className="p-1 rounded hover:bg-rose-500/20 text-rose-400/60 hover:text-rose-400 transition-colors"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+                                    <div className="text-xs text-[var(--text-muted)]">
+                                        {rule.category}{rule.tag ? ` / ${rule.tag}` : ""}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal */}
             <RuleEditorModal

@@ -13,7 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import Plot from "react-plotly.js";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 
@@ -181,29 +181,29 @@ function AccountCardFull({
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-5 flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400">
+      <div className="px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
             <Shield size={22} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-white font-bold text-lg">{account.account_name}</h3>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
               {policyTypeBadge(account.policy_type, account.pension_type, t)}
             </div>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
               {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
             </p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-start sm:text-end shrink-0 ps-[52px] sm:ps-0">
           <p className="text-2xl font-black text-white">{fmt(account.balance ?? 0)}</p>
           <p className="text-xs text-[var(--text-muted)]">{t("insurance.currentBalance")}</p>
         </div>
       </div>
 
       {/* Metrics Grid */}
-      <div className="px-6 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="px-4 sm:px-6 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Investment Tracks */}
         <div className="bg-[var(--background)]/50 rounded-xl p-3">
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
@@ -211,7 +211,7 @@ function AccountCardFull({
           </p>
           {tracks.map((t, i) => (
             <div key={i} className="flex justify-between items-center text-xs mb-1">
-              <span className="text-[var(--text-muted)] truncate mr-2">{t.name}</span>
+              <span className="text-[var(--text-muted)] truncate me-2">{t.name}</span>
               <span
                 className={`font-mono font-bold whitespace-nowrap ${t.yield_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
               >
@@ -261,7 +261,7 @@ function AccountCardFull({
             </p>
             {covers.map((c, i) => (
               <div key={i} className="flex justify-between text-xs mb-1">
-                <span className="text-[var(--text-muted)] truncate mr-2">{c.title}</span>
+                <span className="text-[var(--text-muted)] truncate me-2">{c.title}</span>
                 <span className="text-white font-mono font-bold">{fmt(unwrapAmount(c.sum))}</span>
               </div>
             ))}
@@ -316,34 +316,42 @@ function AccountCardFull({
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
-                  <th className="text-start px-6 py-2 font-bold">{t("common.date")}</th>
-                  <th className="text-start px-6 py-2 font-bold">{t("common.description")}</th>
-                  <th className="text-right px-6 py-2 font-bold">{t("insurance.employee")}</th>
-                  <th className="text-right px-6 py-2 font-bold">{t("insurance.employer")}</th>
-                  <th className="text-right px-6 py-2 font-bold">{t("insurance.compensation")}</th>
-                  <th className="text-right px-6 py-2 font-bold">{t("common.total")}</th>
+                  <th className="text-start px-4 sm:px-6 py-2 font-bold">{t("common.date")}</th>
+                  <th className="text-start px-4 sm:px-6 py-2 font-bold">{t("common.description")}</th>
+                  {account.policy_type === "pension" && (
+                    <>
+                      <th className="text-end px-4 sm:px-6 py-2 font-bold">{t("insurance.employee")}</th>
+                      <th className="text-end px-4 sm:px-6 py-2 font-bold">{t("insurance.employer")}</th>
+                      <th className="text-end px-4 sm:px-6 py-2 font-bold">{t("insurance.compensation")}</th>
+                    </>
+                  )}
+                  <th className="text-end px-4 sm:px-6 py-2 font-bold">{t("common.total")}</th>
                 </tr>
               </thead>
               <tbody>
                 {txs.map((tx) => {
-                  const breakdown = parseMemo(tx.memo);
+                  const breakdown = account.policy_type === "pension" ? parseMemo(tx.memo) : null;
                   return (
                     <tr
                       key={tx.unique_id}
                       className="border-b border-[var(--surface-light)]/30 hover:bg-[var(--surface-light)]/20 transition-colors"
                     >
-                      <td className="px-6 py-2 text-[var(--text-muted)] whitespace-nowrap">{tx.date}</td>
-                      <td className="px-6 py-2 text-white">{tx.description}</td>
-                      <td className="px-6 py-2 text-right font-mono text-xs text-[var(--text-muted)]">
-                        {breakdown.employee !== null ? fmt(breakdown.employee) : "—"}
-                      </td>
-                      <td className="px-6 py-2 text-right font-mono text-xs text-[var(--text-muted)]">
-                        {breakdown.employer !== null ? fmt(breakdown.employer) : "—"}
-                      </td>
-                      <td className="px-6 py-2 text-right font-mono text-xs text-[var(--text-muted)]">
-                        {breakdown.compensation !== null ? fmt(breakdown.compensation) : "—"}
-                      </td>
-                      <td className="px-6 py-2 text-right whitespace-nowrap">
+                      <td className="px-4 sm:px-6 py-2 text-[var(--text-muted)] whitespace-nowrap">{tx.date}</td>
+                      <td className="px-4 sm:px-6 py-2 text-white">{tx.description}</td>
+                      {breakdown !== null && (
+                        <>
+                          <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
+                            {breakdown.employee !== null ? fmt(breakdown.employee) : "—"}
+                          </td>
+                          <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
+                            {breakdown.employer !== null ? fmt(breakdown.employer) : "—"}
+                          </td>
+                          <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
+                            {breakdown.compensation !== null ? fmt(breakdown.compensation) : "—"}
+                          </td>
+                        </>
+                      )}
+                      <td className="px-4 sm:px-6 py-2 text-end whitespace-nowrap">
                         <span
                           className={`font-mono font-bold ${tx.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                         >
@@ -384,7 +392,7 @@ export function InsurancesPrototype() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96 text-[var(--text-muted)]">
-        <Loader2 size={24} className="animate-spin mr-2" />
+        <Loader2 size={24} className="animate-spin me-2" />
         {t("insurance.loadingData")}
       </div>
     );
@@ -436,19 +444,6 @@ export function InsurancesPrototype() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Header */}
-      <header className="flex items-center gap-3">
-        <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
-          <Shield size={24} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-white">{t("insurance.title")}</h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            {t("insurance.subtitle")}
-          </p>
-        </div>
-      </header>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <StatCard title={t("insurance.totalBalance")} value={fmt(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
@@ -479,30 +474,29 @@ export function InsurancesPrototype() {
                 type: "bar",
                 x: months.map((m) => m + "-01"),
                 y: monthlyValues,
-                name: "Monthly",
+                name: t("insurance.chartMonthly"),
                 marker: { color: "#10b981", opacity: 0.7 },
               },
               {
                 type: "scatter",
                 x: months.map((m) => m + "-01"),
                 y: cumulativeValues,
-                name: "Cumulative",
+                name: t("insurance.chartCumulative"),
                 yaxis: "y2",
                 line: { color: "#3b82f6", width: 2 },
                 mode: "lines",
               },
             ]}
             layout={{
+              ...chartTheme,
               height: 280,
               margin: { t: 20, b: 40, l: 50, r: 50 },
-              paper_bgcolor: "transparent",
-              plot_bgcolor: "transparent",
               xaxis: { color: "#94a3b8", gridcolor: "#334155", tickfont: { size: 10 } },
               yaxis: {
                 color: "#94a3b8",
                 gridcolor: "#334155",
                 tickfont: { size: 10 },
-                title: { text: "Monthly", font: { size: 10, color: "#94a3b8" } },
+                title: { text: t("insurance.chartMonthly"), font: { size: 10, color: "#94a3b8" } },
               },
               yaxis2: {
                 color: "#94a3b8",
@@ -510,7 +504,7 @@ export function InsurancesPrototype() {
                 side: "right",
                 gridcolor: "transparent",
                 tickfont: { size: 10 },
-                title: { text: "Cumulative", font: { size: 10, color: "#94a3b8" } },
+                title: { text: t("insurance.chartCumulative"), font: { size: 10, color: "#94a3b8" } },
               },
               legend: { font: { color: "#94a3b8", size: 10 }, x: 0, y: 1.15, orientation: "h" },
               showlegend: true,
@@ -541,10 +535,9 @@ export function InsurancesPrototype() {
                 },
               ]}
               layout={{
+                ...chartTheme,
                 height: 280,
                 margin: { t: 20, b: 20, l: 20, r: 20 },
-                paper_bgcolor: "transparent",
-                plot_bgcolor: "transparent",
                 showlegend: false,
                 annotations: [
                   {

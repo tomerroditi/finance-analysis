@@ -7,11 +7,21 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for error handling
+// Response interceptor: log only safe metadata about failures so raw server
+// payloads (which may include stack traces, SQL fragments, or file paths)
+// never land in the browser console where browser extensions or screenshots
+// could exfiltrate them.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("API Error:", error.response?.data || error.message);
+    const safeError = {
+      method: error.config?.method,
+      url: error.config?.url,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      message: error.message,
+    };
+    console.error("API Error:", safeError);
     return Promise.reject(error);
   },
 );
@@ -25,11 +35,11 @@ export const transactionsApi = {
   getById: (id: number) => api.get(`/transactions/${id}`),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
-    api.put(`/transactions/${uniqueId}`, data),
+    api.put(`/transactions/${encodeURIComponent(uniqueId)}`, data),
   delete: (uniqueId: string, source: string) =>
-    api.delete(`/transactions/${uniqueId}`, { params: { source } }),
+    api.delete(`/transactions/${encodeURIComponent(uniqueId)}`, { params: { source } }),
   updateTag: (id: string, category: string, tag: string, service: string) =>
-    api.put(`/transactions/${id}/tag`, null, {
+    api.put(`/transactions/${encodeURIComponent(id)}/tag`, null, {
       params: { category, tag, service },
     }),
   bulkTag: (data: {
@@ -73,12 +83,13 @@ export const budgetApi = {
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
   updateProject: (name: string, data: { total_budget: number }) =>
-    api.put(`/budget/projects/${name}`, data),
+    api.put(`/budget/projects/${encodeURIComponent(name)}`, data),
   getProjectDetails: (name: string, includeSplitParents = false) =>
-    api.get(`/budget/projects/${name}`, {
+    api.get(`/budget/projects/${encodeURIComponent(name)}`, {
       params: { include_split_parents: includeSplitParents },
     }),
-  deleteProject: (name: string) => api.delete(`/budget/projects/${name}`),
+  deleteProject: (name: string) =>
+    api.delete(`/budget/projects/${encodeURIComponent(name)}`),
 };
 
 // Tagging API
@@ -116,11 +127,14 @@ export const taggingApi = {
   getCategories: () => api.get("/tagging/categories"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
-  deleteCategory: (name: string) => api.delete(`/tagging/categories/${name}`),
+  deleteCategory: (name: string) =>
+    api.delete(`/tagging/categories/${encodeURIComponent(name)}`),
   createTag: (category: string, name: string) =>
     api.post("/tagging/tags", { category, name }),
   deleteTag: (category: string, name: string) =>
-    api.delete(`/tagging/tags/${category}/${name}`),
+    api.delete(
+      `/tagging/tags/${encodeURIComponent(category)}/${encodeURIComponent(name)}`,
+    ),
   renameCategory: (name: string, newName: string) =>
     api.put(`/tagging/categories/${encodeURIComponent(name)}`, { new_name: newName }),
   renameTag: (category: string, name: string, newName: string) =>
@@ -133,7 +147,9 @@ export const taggingApi = {
     }),
   getIcons: () => api.get("/tagging/icons"),
   updateIcon: (category: string, icon: string) =>
-    api.put(`/tagging/icons/${category}`, null, { params: { icon } }),
+    api.put(`/tagging/icons/${encodeURIComponent(category)}`, null, {
+      params: { icon },
+    }),
 
   // Rules Management (New routes/tagging_rules.py)
   getRules: () =>
@@ -170,7 +186,8 @@ export const credentialsApi = {
   getAll: () => api.get("/credentials"),
   getAccounts: () => api.get("/credentials/accounts"),
   getProviders: () => api.get("/credentials/providers"),
-  getFields: (provider: string) => api.get(`/credentials/fields/${provider}`),
+  getFields: (provider: string) =>
+    api.get(`/credentials/fields/${encodeURIComponent(provider)}`),
   create: (data: {
     service: string;
     provider: string;
@@ -178,9 +195,13 @@ export const credentialsApi = {
     credentials: Record<string, string>;
   }) => api.post("/credentials", data),
   getAccountDetails: (service: string, provider: string, accountName: string) =>
-    api.get(`/credentials/${service}/${provider}/${accountName}`),
+    api.get(
+      `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(accountName)}`,
+    ),
   delete: (service: string, provider: string, account_name: string) =>
-    api.delete(`/credentials/${service}/${provider}/${account_name}`),
+    api.delete(
+      `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(account_name)}`,
+    ),
 };
 
 // Scraping API
@@ -274,6 +295,29 @@ export const investmentsApi = {
     }),
 };
 
+// Liabilities API
+export const liabilitiesApi = {
+  getAll: (includePaidOff = false) =>
+    api.get("/liabilities/", { params: { include_paid_off: includePaidOff } }),
+  getById: (id: number) => api.get(`/liabilities/${id}`),
+  getDebtOverTime: () => api.get("/liabilities/debt-over-time"),
+  create: (liability: object) => api.post("/liabilities/", liability),
+  update: (id: number, liability: object) =>
+    api.put(`/liabilities/${id}`, liability),
+  payOff: (id: number, paidOffDate: string) =>
+    api.post(`/liabilities/${id}/pay-off`, {
+      paid_off_date: paidOffDate,
+    }),
+  reopen: (id: number) => api.post(`/liabilities/${id}/reopen`),
+  delete: (id: number) => api.delete(`/liabilities/${id}`),
+  getAnalysis: (id: number) => api.get(`/liabilities/${id}/analysis`),
+  getTransactions: (id: number) => api.get(`/liabilities/${id}/transactions`),
+  detectTransactions: (tag: string) =>
+    api.get("/liabilities/detect-transactions", { params: { tag } }),
+  generateTransactions: (id: number) =>
+    api.post(`/liabilities/${id}/generate-transactions`),
+};
+
 // Analytics API
 export const analyticsApi = {
   getOverview: () =>
@@ -288,11 +332,20 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: () =>
+  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludeRefunds = false) =>
     api.get<{ month: string; income: number; expenses: number }[]>(
-      "/analytics/income-expenses-over-time"
+      "/analytics/income-expenses-over-time",
+      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities, exclude_refunds: excludeRefunds } }
+    ),
+  getDebtPaymentsOverTime: () =>
+    api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
+      "/analytics/debt-payments-over-time"
     ),
   getByCategory: () => api.get("/analytics/by-category"),
+  getExpensesByCategoryOverTime: () =>
+    api.get<{ month: string; categories: Record<string, number> }[]>(
+      "/analytics/expenses-by-category-over-time"
+    ),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
@@ -347,7 +400,7 @@ export const cashBalancesApi = {
   setBalance: (data: { account_name: string; balance: number }) =>
     api.post<CashBalance>("/cash-balances/", data),
   delete: (accountName: string) =>
-    api.delete(`/cash-balances/${accountName}`),
+    api.delete(`/cash-balances/${encodeURIComponent(accountName)}`),
   migrate: () => api.post<CashBalance[]>("/cash-balances/migrate"),
 };
 
@@ -358,7 +411,7 @@ export interface PendingRefund {
   source_id: string | number;
   source_table: string;
   expected_amount: number;
-  status: "pending" | "resolved" | "partial";
+  status: "pending" | "resolved" | "partial" | "closed";
   notes?: string;
   total_refunded?: number;
   remaining?: number;
@@ -405,6 +458,114 @@ export const pendingRefundsApi = {
   ) => api.post(`/pending-refunds/${pendingId}/link`, data),
   unlinkRefund: (linkId: number) =>
     api.delete(`/pending-refunds/links/${linkId}`),
+  close: (id: number) => api.post(`/pending-refunds/${id}/close`),
+};
+
+// Retirement API
+export interface RetirementGoal {
+  id: number;
+  current_age: number;
+  gender: string;
+  target_retirement_age: number;
+  life_expectancy: number;
+  monthly_expenses_in_retirement: number;
+  inflation_rate: number;
+  expected_return_rate: number;
+  withdrawal_rate: number;
+  pension_monthly_payout_estimate: number;
+  keren_hishtalmut_balance: number;
+  keren_hishtalmut_monthly_contribution: number;
+  bituach_leumi_eligible: boolean;
+  bituach_leumi_monthly_estimate: number;
+  other_passive_income: number;
+}
+
+export interface RetirementStatus {
+  net_worth: number;
+  avg_monthly_expenses: number;
+  avg_monthly_income: number;
+  savings_rate: number;
+  total_investments: number;
+  monthly_savings: number;
+}
+
+export interface RetirementSuggestions {
+  target_retirement_age: number;
+  monthly_expenses_in_retirement: number;
+  expected_return_rate: number;
+  life_expectancy: number;
+}
+
+export interface ScrapedDefaults {
+  keren_hishtalmut_balance: number | null;
+  keren_hishtalmut_monthly_contribution: number | null;
+  pension_monthly_deposit: number | null;
+}
+
+export interface RetirementProjections {
+  fire_number: number;
+  years_to_fire: number;
+  fire_age: number;
+  earliest_possible_retirement_age: number;
+  monthly_savings_needed: number;
+  progress_pct: number;
+  readiness: "on_track" | "close" | "off_track";
+  portfolio_depleted_age: number | null;
+  target_retirement_age: number;
+  net_worth_projection: {
+    age: number;
+    net_worth_optimistic: number;
+    net_worth_baseline: number;
+    net_worth_conservative: number;
+  }[];
+  income_projection: {
+    age: number;
+    salary_savings: number;
+    portfolio_withdrawal: number;
+    pension: number;
+    bituach_leumi: number;
+    passive_income: number;
+    total_income: number;
+    expenses: number;
+  }[];
+}
+
+export const retirementApi = {
+  getGoal: () => api.get<RetirementGoal | null>("/retirement/goal"),
+  upsertGoal: (data: Omit<RetirementGoal, "id">) =>
+    api.put<RetirementGoal>("/retirement/goal", data),
+  getStatus: () => api.get<RetirementStatus>("/retirement/status"),
+  getProjections: () =>
+    api.get<RetirementProjections>("/retirement/projections"),
+  previewProjections: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementProjections>("/retirement/projections", data),
+  getKerenHishtalmutBalance: () =>
+    api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
+  getScrapedDefaults: () =>
+    api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
+  getSuggestions: () =>
+    api.get<RetirementSuggestions>("/retirement/suggestions"),
+  previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
+    api.post<RetirementSuggestions>("/retirement/suggestions", data),
+  solveForField: (field: string) =>
+    api.get<{ field: string; value: number; unit: string }>(
+      `/retirement/solve/${encodeURIComponent(field)}`,
+    ),
+};
+
+export const backupApi = {
+  list: () =>
+    api.get<
+      { filename: string; created_at: string; size_bytes: number }[]
+    >("/backups/"),
+  create: () =>
+    api.post<{ filename: string; created_at: string; size_bytes: number }>(
+      "/backups/",
+    ),
+  restore: (filename: string) =>
+    api.post<{ status: string; filename: string }>("/backups/restore", {
+      filename,
+    }),
 };
 
 export const testingApi = {

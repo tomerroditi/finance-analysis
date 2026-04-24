@@ -1,4 +1,7 @@
+// TODO: Remove this feature entirely — not useful enough to justify the code/UX surface area.
+// Files to clean up: GlobalSearch.tsx, Layout.tsx (keyboard listener + render), appStore.ts (isSearchOpen state), locale keys (globalSearch.*).
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import {
   Search as SearchIcon,
   X,
@@ -17,6 +20,7 @@ interface GlobalSearchProps {
 }
 
 export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
+  useScrollLock(isOpen);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -131,35 +135,37 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] px-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] md:pt-[15vh] px-3 md:px-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 modal-overlay"
       onClick={onClose}
     >
       <div
-        className="bg-[var(--surface)] w-full max-w-2xl rounded-2xl border border-[var(--surface-light)] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-[var(--surface)] w-full max-w-[calc(100vw-1.5rem)] md:max-w-2xl rounded-2xl border border-[var(--surface-light)] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative border-b border-[var(--surface-light)] bg-[var(--surface-light)]/20">
           <SearchIcon
-            className="absolute left-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+            className="absolute start-5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
             size={20}
           />
           <input
             ref={inputRef}
             type="text"
             placeholder={t("globalSearch.placeholder")}
-            className="w-full bg-transparent pl-14 pr-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
+            aria-label={t("globalSearch.placeholder")}
+            className="w-full bg-transparent ps-14 pe-16 py-5 text-lg outline-none text-white placeholder-[var(--text-muted)]"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setSelectedIndex(0);
             }}
           />
-          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          <div className="absolute end-5 top-1/2 -translate-y-1/2 flex items-center gap-2">
             <span className="px-1.5 py-0.5 rounded border border-[var(--surface-light)] bg-[var(--surface)] text-[10px] text-[var(--text-muted)] font-mono">
               ESC
             </span>
             <button
               onClick={onClose}
+              aria-label={t("common.close")}
               className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
             >
               <X size={18} />

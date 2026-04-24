@@ -5,6 +5,10 @@ interface AppState {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
 
+  // Mobile sidebar overlay
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (open: boolean) => void;
+
   // Selected filters
   selectedYear: number;
   selectedMonth: number;
@@ -30,6 +34,10 @@ export const useAppStore = create<AppState>((set) => ({
   // Sidebar
   sidebarOpen: true,
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+
+  // Mobile sidebar
+  mobileSidebarOpen: false,
+  setMobileSidebarOpen: (open) => set({ mobileSidebarOpen: open }),
 
   // Filters - default to current month/year
   selectedYear: new Date().getFullYear(),

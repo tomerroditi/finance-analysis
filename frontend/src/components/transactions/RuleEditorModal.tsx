@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import { X, Save, Loader2, AlertTriangle } from "lucide-react";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
@@ -8,6 +9,8 @@ import { RuleBuilder } from "./RuleBuilder";
 import { ResizableSplitPane } from "../common/ResizableSplitPane";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useCategories } from "../../hooks/useCategories";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -26,6 +29,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    useScrollLock(isOpen);
     const { createCategory, createTag } = useCategoryTagCreate();
 
     // Form state
@@ -34,17 +38,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     const [conditions, setConditions] = useState<ConditionNode>(EMPTY_CONDITIONS);
     const [error, setError] = useState<string | null>(null);
 
-    // Categories data
-    const { data: categories } = useQuery({
-        queryKey: ["categories"],
-        queryFn: () => taggingApi.getCategories().then(res => res.data as Record<string, string[]>)
-    });
-
-    // Existing rules - used to filter out tags that already have a rule
-    const { data: existingRules } = useQuery({
-        queryKey: ["tagging-rules"],
-        queryFn: () => taggingApi.getRules().then(res => res.data as TaggingRule[])
-    });
+    const { data: categories } = useCategories() as { data: Record<string, string[]> | undefined };
+    const { data: existingRules } = useTaggingRules();
 
     // Build set of tags that already have rules (excluding the rule being edited)
     const takenTags = new Set(
@@ -155,19 +150,20 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
             {/* Modal */}
-            <div className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
+            <div role="dialog" aria-modal="true" aria-labelledby="rule-editor-title" className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
-                    <h2 className="text-xl font-bold">
+                <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
+                    <h2 id="rule-editor-title" className="text-lg md:text-xl font-bold">
                         {editingRule ? t("transactions.autoTagging.editRule") : t("transactions.autoTagging.createRule")}
                     </h2>
                     <button
                         onClick={onClose}
+                        aria-label={t("common.close")}
                         className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
                     >
                         <X size={20} />
@@ -183,7 +179,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                         minRightWidth={25}
                         left={<TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={preview?.count || 0} />}
                         right={
-                            <div className="h-full overflow-y-auto p-6">
+                            <div className="h-full overflow-y-auto p-4 md:p-6">
                                 <RuleForm
                                     name={name}
                                     category={category}
@@ -210,7 +206,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center gap-3 px-6 py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
+                <div className="flex items-center gap-3 px-4 md:px-6 py-3 md:py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
                     {error && (
                         <div className="flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in slide-in-from-left-2 duration-200">
                             <AlertTriangle size={16} className="shrink-0" />
@@ -282,7 +278,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
             <div className="flex-1 overflow-auto">
                 {loading ? (
                     <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
-                        <Loader2 size={24} className="animate-spin mr-2" />
+                        <Loader2 size={24} className="animate-spin me-2" />
                         {t("transactions.autoTagging.loadingPreview")}
                     </div>
                 ) : matches.length === 0 ? (
@@ -296,7 +292,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
                             <tr className="text-start text-[var(--text-muted)]">
                                 <th className="px-4 py-2 font-medium">{t("common.date")}</th>
                                 <th className="px-4 py-2 font-medium">{t("common.description")}</th>
-                                <th className="px-4 py-2 font-medium text-right">{t("common.amount")}</th>
+                                <th className="px-4 py-2 font-medium text-end">{t("common.amount")}</th>
                                 <th className="px-4 py-2 font-medium">{t("transactions.autoTagging.currentTag")}</th>
                             </tr>
                         </thead>
@@ -309,7 +305,7 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
                                     <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
                                         {tx.description}
                                     </td>
-                                    <td className={`px-4 py-2 text-right whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
+                                    <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
                                         {formatAmount(tx.amount ?? 0)}
                                     </td>
                                     <td className="px-4 py-2">

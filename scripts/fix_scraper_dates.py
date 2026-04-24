@@ -140,7 +140,7 @@ def print_summary(
     print(f"  Split txns to re-link:            {len(splits_to_relink)}")
 
     if duplicates:
-        print(f"\n  Sample duplicates (up to 5):")
+        print("\n  Sample duplicates (up to 5):")
         for old_txn, new_txn in duplicates[:5]:
             corrected = shift_date_forward(old_txn["date"])
             print(f"    OLD uid={old_txn['unique_id']} date={old_txn['date']}->{corrected} "

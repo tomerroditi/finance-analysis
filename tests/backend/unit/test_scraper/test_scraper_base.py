@@ -1,8 +1,6 @@
 """Tests for scraper adapter, factory function, and 2FA requirement checks."""
 
-import asyncio
 
-import pytest
 
 from scraper.models.result import ScrapingResult
 from scraper.models.account import AccountResult

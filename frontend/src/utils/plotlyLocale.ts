@@ -19,6 +19,22 @@ const heLocale = {
   },
 };
 
+export const isTouchDevice =
+  typeof window !== "undefined" &&
+  (navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+
+/** Shared Plotly layout theme for dark mode charts */
+export const chartTheme: Partial<Plotly.Layout> = {
+  paper_bgcolor: "rgba(0,0,0,0)",
+  plot_bgcolor: "rgba(0,0,0,0)",
+  font: { color: "#94a3b8", family: "Inter, sans-serif" },
+  margin: { t: 40, b: 40, l: 40, r: 20 },
+  hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" }, namelength: -1 },
+  hovermode: isTouchDevice ? "closest" : "x unified",
+  legend: { orientation: "h", y: -0.15, x: 0.5, xanchor: "center", font: { size: 11 }, itemwidth: 30 },
+  xaxis: { showspikes: false },
+};
+
 /** Plotly config with locale-aware date formatting */
 export function plotlyConfig(
   extra?: Partial<Plotly.Config>,
@@ -28,6 +44,8 @@ export function plotlyConfig(
     responsive: true,
     locale: i18n.language,
     locales: { he: heLocale },
+    doubleClick: "reset+autosize",
     ...extra,
   };
 }
+

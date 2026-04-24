@@ -1,24 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { taggingApi, transactionsApi, cashBalancesApi } from "../../services/api";
+import { transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import { useCategories } from "../../hooks/useCategories";
+import { useCashBalances } from "../../hooks/useCashBalances";
+import { Modal } from "../common/Modal";
+import type { Transaction } from "../../types/transaction";
+import { useNotify } from "../../context/DialogContext";
 
-export interface Transaction {
-    id?: number;
-    unique_id?: string;
-    source?: string;
-    desc?: string;
-    description?: string;
-    amount: number;
-    date: string;
-    category?: string;
-    tag?: string;
-    provider?: string;
-    account_name?: string;
-}
+export type { Transaction };
 
 interface TransactionFormModalProps {
     isOpen: boolean;
@@ -36,6 +27,7 @@ export function TransactionFormModal({
     onSuccess,
 }: TransactionFormModalProps) {
     const { t } = useTranslation();
+    const notify = useNotify();
     const isEditMode = !!transaction;
 
     // If editing, check if it's a manual transaction (cash/investments)
@@ -86,20 +78,12 @@ export function TransactionFormModal({
 
     const { createCategory, createTag } = useCategoryTagCreate();
 
-    const { data: categories } = useQuery({
-        queryKey: ["categories"],
-        queryFn: () => taggingApi.getCategories().then((res) => res.data),
-        enabled: isOpen,
-    });
+    const { data: categories } = useCategories({ enabled: isOpen });
 
     // Fetch cash balances (envelopes) for cash transactions (both new and edit)
     const isCashTransaction = (!isEditMode && service === "cash") ||
                                (isEditMode && transaction?.source?.includes("cash"));
-    const { data: cashBalances = [] } = useQuery({
-        queryKey: ["cash-balances"],
-        queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
-        enabled: isOpen && isCashTransaction,
-    });
+    const { data: cashBalances = [] } = useCashBalances({ enabled: isOpen && isCashTransaction });
 
     const availableTags =
         formData.category && categories ? categories[formData.category] || [] : [];
@@ -121,7 +105,7 @@ export function TransactionFormModal({
                 });
             } else {
                 if (!service) {
-                    alert("Service (Cash/Investments) is required for new transactions");
+                    notify.error(t("transactions.serviceRequiredForNew"));
                     return;
                 }
                 await transactionsApi.create({
@@ -135,28 +119,18 @@ export function TransactionFormModal({
             onClose();
         } catch (err) {
             console.error(err);
-            alert("Failed to save transaction.");
+            notify.error(t("transactions.failedSave"));
         }
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20">
-                    <h2 className="text-xl font-bold text-white">
-                        {isEditMode ? t("modals.transactionForm.editTitle") : t("modals.transactionForm.addTitle")}
-                    </h2>
-                    <button
-                        onClick={onClose}
-                        className="p-1 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
-                    >
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title={isEditMode ? t("modals.transactionForm.editTitle") : t("modals.transactionForm.addTitle")}
+            titleId="transaction-form-title"
+        >
+                <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 overflow-y-auto">
                     {isEditMode && !isManual && (
                         <div className="bg-blue-500/10 border border-blue-500/20 text-blue-400 p-3 rounded-xl text-xs mb-4">
                             {t("modals.transactionForm.readOnlyNote")}
@@ -166,7 +140,7 @@ export function TransactionFormModal({
                     <div className="space-y-4">
                         {/* Date */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.date")}
                             </label>
                             <input
@@ -184,7 +158,7 @@ export function TransactionFormModal({
                         {/* Account Name - Shown only on Create or if Manual Edit */}
                         {(isManual) && (
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("modals.transactionForm.accountName")}
                                 </label>
                                 {isCashTransaction ? (
@@ -217,7 +191,7 @@ export function TransactionFormModal({
 
                         {/* Description */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.description")}
                             </label>
                             <input
@@ -234,7 +208,7 @@ export function TransactionFormModal({
 
                         {/* Amount and Type */}
                         <div>
-                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                 {t("common.amount")}
                             </label>
                             <div className="flex gap-2">
@@ -257,7 +231,7 @@ export function TransactionFormModal({
                                     </div>
                                 )}
                                 <div className="relative flex-1">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">
+                                    <span className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-sm">
                                         ₪
                                     </span>
                                     <input
@@ -272,16 +246,16 @@ export function TransactionFormModal({
                                                 amount: parseFloat(e.target.value),
                                             })
                                         }
-                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"
+                                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl ps-10 pe-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"
                                         required
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[var(--surface-light)] mt-4">
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("common.category")}
                                 </label>
                                 <SelectDropdown
@@ -303,7 +277,7 @@ export function TransactionFormModal({
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ml-1">
+                                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5 ms-1">
                                     {t("common.tag")}
                                 </label>
                                 <SelectDropdown
@@ -339,7 +313,6 @@ export function TransactionFormModal({
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
+        </Modal>
     );
 }

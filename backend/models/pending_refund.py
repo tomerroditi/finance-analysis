@@ -21,7 +21,7 @@ class PendingRefund(Base, TimestampMixin):
     expected_amount : float
         Positive amount expected to be refunded.
     status : str
-        Current status: 'pending', 'resolved', or 'partial'.
+        Current status: 'pending', 'partial', 'resolved', or 'closed'.
     notes : str, optional
         User notes about this pending refund.
     """

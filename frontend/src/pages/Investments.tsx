@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useScrollLock } from "../hooks/useScrollLock";
 import {
   Plus,
   Trash2,
@@ -9,19 +10,18 @@ import {
   TrendingUp,
   Info,
   BarChart2,
-  X,
-  Wallet,
   DollarSign,
-  Percent,
   Pencil,
   Settings,
 } from "lucide-react";
-import { investmentsApi, taggingApi } from "../services/api";
+import { investmentsApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
-import Plot from "react-plotly.js";
-import { plotlyConfig } from "../utils/plotlyLocale";
+import { PortfolioOverview } from "../components/investments/PortfolioOverview";
+import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
+import { useCategories } from "../hooks/useCategories";
+import { useConfirm } from "../context/DialogContext";
 
 interface Investment {
   id: number;
@@ -60,43 +60,6 @@ interface BalancePoint {
   balance: number;
 }
 
-interface BalanceSeries {
-  name: string;
-  data: BalancePoint[];
-}
-
-interface Snapshot {
-  id: number;
-  date: string;
-  balance: number;
-  source: string;
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ComponentType<{ size: number }>;
-  color: string;
-}) {
-  return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
-      <div>
-        <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
-          {title}
-        </p>
-        <p className="text-xl font-black mt-1 text-white">{value}</p>
-      </div>
-      <div className={`p-3 rounded-xl ${color}`}>
-        <Icon size={20} />
-      </div>
-    </div>
-  );
-}
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
 
@@ -133,6 +96,7 @@ function InvestmentCard({
   analysisData?: AllocationItem;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const snapshotAgeDays = inv.latest_snapshot_date
     ? Math.floor(
         (new Date().getTime() - new Date(inv.latest_snapshot_date).getTime()) /
@@ -149,10 +113,10 @@ function InvestmentCard({
 
   return (
     <div
-      className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
+      className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between mb-3 md:mb-4">
+        <div className="flex items-center gap-2 md:gap-4">
           <div
             className={`p-3 rounded-xl ${inv.is_closed ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}
           >
@@ -179,7 +143,7 @@ function InvestmentCard({
       </div>
 
       {/* Balance + Sparkline */}
-      <div className="flex items-center justify-between mb-4 p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
+      <div className="flex items-center justify-between mb-3 md:mb-4 p-3 md:p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
         <div>
           {analysisData ? (
             inv.is_closed ? (
@@ -217,7 +181,7 @@ function InvestmentCard({
             </div>
           )}
         </div>
-        <div className="flex-shrink-0 ml-4">
+        <div className="flex-shrink-0 ms-4">
           {(analysisData?.history?.length ?? 0) >= 2 ? (
             <Sparkline
               data={analysisData!.history!.map(p => p.balance)}
@@ -232,7 +196,7 @@ function InvestmentCard({
       </div>
 
       {/* Metrics Strip */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
@@ -302,8 +266,14 @@ function InvestmentCard({
             </button>
           )}
           <button
-            onClick={() => {
-              if (window.confirm(t("investments.confirmDelete"))) onDelete(inv.id);
+            onClick={async () => {
+              const ok = await confirm({
+                title: t("common.deleteTitle"),
+                message: t("investments.confirmDelete"),
+                confirmLabel: t("common.delete"),
+                isDestructive: true,
+              });
+              if (ok) onDelete(inv.id);
             }}
             className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
             title={t("common.delete")}
@@ -315,7 +285,7 @@ function InvestmentCard({
               <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
                 <Info size={16} />
               </div>
-              <div className="absolute bottom-full left-0 mb-2 w-48 p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
+              <div className="absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-100 md:opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
                 {inv.notes}
               </div>
             </div>
@@ -390,6 +360,8 @@ export function Investments() {
     mode: "close" | "edit";
   }>({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
 
+  useScrollLock(isAddOpen || !!selectedAnalysisId || !!editForm.investmentId || !!balanceForm.investmentId || !!closeForm.investmentId);
+
   // Queries
   const {
     data: investments,
@@ -400,10 +372,7 @@ export function Investments() {
     queryFn: () => investmentsApi.getAll(true).then((res) => res.data),
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => taggingApi.getCategories().then((res) => res.data),
-  });
+  const { data: categories } = useCategories();
 
   const { data: portfolioAnalysis } = useQuery({
     queryKey: ["portfolio-analysis"],
@@ -411,34 +380,6 @@ export function Investments() {
       investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
-  const [chartIncludeClosed, setChartIncludeClosed] = useState(true);
-  const { data: balanceHistory } = useQuery({
-    queryKey: ["portfolio-balance-history", chartIncludeClosed],
-    queryFn: () =>
-      investmentsApi.getPortfolioBalanceHistory(chartIncludeClosed).then((res) => res.data),
-  });
-
-  const { data: selectedAnalysis } = useQuery({
-    queryKey: ["investment-analysis", selectedAnalysisId],
-    queryFn: () =>
-      selectedAnalysisId
-        ? investmentsApi
-            .getInvestmentAnalysis(selectedAnalysisId)
-            .then((res) => res.data)
-        : null,
-    enabled: !!selectedAnalysisId,
-  });
-
-  const { data: selectedSnapshots } = useQuery({
-    queryKey: ["investment-snapshots", selectedAnalysisId],
-    queryFn: () =>
-      selectedAnalysisId
-        ? investmentsApi
-            .getBalanceSnapshots(selectedAnalysisId)
-            .then((res) => res.data)
-        : null,
-    enabled: !!selectedAnalysisId,
-  });
 
   // Mutations
   const editMutation = useMutation({
@@ -523,27 +464,6 @@ export function Investments() {
     },
   });
 
-  const deleteSnapshotMutation = useMutation({
-    mutationFn: ({ investmentId, snapshotId }: { investmentId: number; snapshotId: number }) =>
-      investmentsApi.deleteBalanceSnapshot(investmentId, snapshotId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-    },
-  });
-
-  const calculateMutation = useMutation({
-    mutationFn: (investmentId: number) =>
-      investmentsApi.calculateFixedRateSnapshots(investmentId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-    },
-  });
 
   // Filtering logic for New Investment dropdowns
   const usedTagsSet = new Set(
@@ -564,21 +484,6 @@ export function Investments() {
         }, {} as Record<string, string[]>)
     : {};
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(val);
-  const formatPercent = (val: number) =>
-    `${val > 0 ? "+" : ""}${val.toFixed(2)}%`;
-
-  const chartTheme = {
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: "#94a3b8", family: "Inter, sans-serif" },
-    margin: { t: 30, b: 30, l: 40, r: 20 },
-  };
-
   const activeInvestments =
     investments?.filter((inv: Investment) => !inv.is_closed) || [];
   const closedInvestments =
@@ -589,9 +494,9 @@ export function Investments() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-8">
-        <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+        <Skeleton variant="text" lines={2} className="w-48 md:w-64" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
@@ -605,19 +510,13 @@ export function Investments() {
     );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">{t("investments.title")}</h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            {t("investments.subtitle")}
-          </p>
-        </div>
-        <div className="flex gap-4">
+    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 pb-20">
+      <div className="flex items-center justify-end gap-3">
+        <div className="flex gap-3 md:gap-4">
           <button
             onClick={() => setIsAddOpen(true)}
             disabled={Object.keys(filteredCategories).length === 0}
-            className="flex items-center gap-2 px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale"
+            className="flex items-center gap-2 px-4 md:px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale text-sm md:text-base"
             title={
               Object.keys(filteredCategories).length === 0
                 ? t("investments.allTagsInUse")
@@ -637,149 +536,20 @@ export function Investments() {
 
       {/* Portfolio Overview */}
       {portfolioAnalysis && (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatCard
-                title={t("investments.totalValue")}
-                value={formatCurrency(portfolioAnalysis.total_value)}
-                icon={Wallet}
-                color="bg-blue-500/10 text-blue-400"
-              />
-              <StatCard
-                title={t("investments.totalProfitLoss")}
-                value={formatCurrency(portfolioAnalysis.total_profit)}
-                icon={DollarSign}
-                color={
-                  portfolioAnalysis.total_profit >= 0
-                    ? "bg-emerald-500/10 text-emerald-400"
-                    : "bg-red-500/10 text-red-400"
-                }
-              />
-              <StatCard
-                title={t("investments.portfolioRoi")}
-                value={formatPercent(portfolioAnalysis.portfolio_roi)}
-                icon={Percent}
-                color={
-                  portfolioAnalysis.portfolio_roi >= 0
-                    ? "bg-emerald-500/10 text-emerald-400"
-                    : "bg-red-500/10 text-red-400"
-                }
-              />
-            </div>
-            {/* Charts: Balance Over Time + Allocation side-by-side */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Balance Over Time Chart */}
-              <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)]">
-                    {t("investments.balanceOverTime")}
-                  </h3>
-                  <button
-                    onClick={() => setChartIncludeClosed(!chartIncludeClosed)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${chartIncludeClosed ? "bg-[var(--surface-light)] border-[var(--surface-light)] text-white" : "border-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-                  >
-                    {chartIncludeClosed ? t("investments.hideClosed") : t("investments.includeClosed")}
-                  </button>
-                </div>
-                <div className="h-[300px]">
-                  {balanceHistory?.series?.length > 0 ? (
-                    <Plot
-                      data={[
-                        ...balanceHistory.series.map((s: BalanceSeries, i: number) => ({
-                          x: s.data.map((d: BalancePoint) => d.date),
-                          y: s.data.map((d: BalancePoint) => d.balance),
-                          name: s.name,
-                          type: "scatter" as const,
-                          mode: "lines" as const,
-                          line: {
-                            color: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"][i % 7],
-                            width: 2,
-                            shape: "hv" as const,
-                          },
-                        })),
-                        {
-                          x: balanceHistory.total.map((d: BalancePoint) => d.date),
-                          y: balanceHistory.total.map((d: BalancePoint) => d.balance),
-                          name: "Total",
-                          type: "scatter" as const,
-                          mode: "lines" as const,
-                          line: { color: "#ffffff", width: 3, shape: "hv" as const },
-                        },
-                      ]}
-                      layout={{
-                        ...chartTheme,
-                        xaxis: { showgrid: false },
-                        yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
-                        showlegend: true,
-                        legend: { orientation: "h", y: -0.12, font: { size: 10 } },
-                      }}
-                      style={{ width: "100%", height: "100%" }}
-                      config={plotlyConfig()}
-                    />
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-[var(--text-muted)] text-sm">
-                      {t("investments.noBalanceHistory")}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Allocation Pie Chart */}
-              {portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).length > 0 && (
-                <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                  <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
-                    {t("investments.portfolioAllocation")}
-                  </h3>
-                  <div className="h-[300px]">
-                    <Plot
-                      data={[
-                        {
-                          values: portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).map(
-                            (d: BalancePoint) => d.balance,
-                          ),
-                          labels: portfolioAnalysis.allocation.filter((d: BalancePoint) => d.balance > 0).map(
-                            (d: AllocationItem) => d.name,
-                          ),
-                          type: "pie",
-                          hole: 0.5,
-                          marker: {
-                            colors: [
-                              "#3b82f6",
-                              "#10b981",
-                              "#f59e0b",
-                              "#ef4444",
-                              "#8b5cf6",
-                            ],
-                          },
-                        },
-                      ]}
-                      layout={{
-                        ...chartTheme,
-                        margin: { t: 0, b: 0, l: 0, r: 0 },
-                        showlegend: true,
-                        legend: { orientation: "h" },
-                      }}
-                      style={{ width: "100%", height: "100%" }}
-                      config={plotlyConfig()}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-        </div>
+        <PortfolioOverview portfolioAnalysis={portfolioAnalysis} />
       )}
 
       {/* Active Investments */}
       <div>
         {activeInvestments.length > 0 ? (
           <>
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2">
               {t("investments.activeInvestments")}
               <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
                 {activeInvestments.length}
               </span>
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
               {activeInvestments.map((inv: Investment) => (
                 <InvestmentCard
                   key={inv.id}
@@ -812,7 +582,7 @@ export function Investments() {
             </div>
           </>
         ) : (
-          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-16 text-center">
+          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-8 md:p-16 text-center">
             <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
               <TrendingUp size={32} />
             </div>
@@ -827,13 +597,13 @@ export function Investments() {
       {/* Closed Investments */}
       {closedInvestments.length > 0 && (
         <div className="pt-8 border-t border-[var(--surface-light)]">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-[var(--text-muted)]">
+          <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2 text-[var(--text-muted)]">
             {t("investments.closedInvestments")}
             <span className="text-[10px] font-black bg-[var(--surface-light)] px-2 py-0.5 rounded-full">
               {closedInvestments.length}
             </span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 opacity-75 grayscale-[0.5]">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 opacity-75 grayscale-[0.5]">
             {closedInvestments.map((inv: Investment) => (
               <InvestmentCard
                 key={inv.id}
@@ -871,221 +641,16 @@ export function Investments() {
 
       {/* Analysis Modal */}
       {selectedAnalysisId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold flex items-center gap-3">
-                <BarChart2 className="text-[var(--primary)]" /> {t("investments.investmentAnalysis")}
-              </h2>
-              <button
-                onClick={() => setSelectedAnalysisId(null)}
-                className="p-2 hover:bg-[var(--surface-light)] rounded-full transition-colors"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="p-8 space-y-8">
-              {selectedAnalysis ? (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <StatCard
-                      title={t("investments.currentBalance")}
-                      value={formatCurrency(
-                        selectedAnalysis.metrics.current_balance,
-                      )}
-                      icon={Wallet}
-                      color="bg-blue-500/10 text-blue-400"
-                    />
-                    <StatCard
-                      title={t("investments.profitLoss")}
-                      value={formatCurrency(
-                        selectedAnalysis.metrics.absolute_profit_loss,
-                      )}
-                      icon={DollarSign}
-                      color={
-                        selectedAnalysis.metrics.absolute_profit_loss >= 0
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-red-500/10 text-red-400"
-                      }
-                    />
-                    <StatCard
-                      title={t("investments.roi")}
-                      value={formatPercent(
-                        selectedAnalysis.metrics.roi_percentage,
-                      )}
-                      icon={Percent}
-                      color={
-                        selectedAnalysis.metrics.roi_percentage >= 0
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-red-500/10 text-red-400"
-                      }
-                    />
-                    <StatCard
-                      title={t("investments.cagr")}
-                      value={formatPercent(
-                        selectedAnalysis.metrics.cagr_percentage,
-                      )}
-                      icon={TrendingUp}
-                      color="bg-purple-500/10 text-purple-400"
-                    />
-                  </div>
-
-                  <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                    <h3 className="text-lg font-bold mb-6">{t("investments.balanceHistory")}</h3>
-                    <div className="h-[400px]">
-                      <Plot
-                        data={[
-                          {
-                            x: selectedAnalysis.history.map((d: BalancePoint) => d.date),
-                            y: selectedAnalysis.history.map(
-                              (d: BalancePoint) => d.balance,
-                            ),
-                            type: "scatter",
-                            mode: "lines",
-                            fill: "tozeroy",
-                            line: { color: "#3b82f6", width: 3 },
-                            fillcolor: "rgba(59, 130, 246, 0.1)",
-                          },
-                        ]}
-                        layout={{
-                          ...chartTheme,
-                          xaxis: { showgrid: false },
-                          yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
-                        }}
-                        style={{ width: "100%", height: "100%" }}
-                        config={plotlyConfig()}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
-                    <div>
-                      <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        {t("investments.totalDeposits")}
-                      </p>
-                      <p className="text-white text-lg font-bold">
-                        {formatCurrency(
-                          selectedAnalysis.metrics.total_deposits,
-                        )}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        {t("investments.totalWithdrawals")}
-                      </p>
-                      <p className="text-white text-lg font-bold">
-                        {formatCurrency(
-                          selectedAnalysis.metrics.total_withdrawals,
-                        )}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
-                        {t("investments.holdingPeriod")}
-                      </p>
-                      <p className="text-white text-lg font-bold">
-                        {selectedAnalysis.metrics.total_years.toFixed(1)} {t("investments.years")}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Fixed-Rate Calculation */}
-                  {investments?.find((i: Investment) => i.id === selectedAnalysisId)
-                    ?.interest_rate_type === "fixed" &&
-                    !!investments?.find((i: Investment) => i.id === selectedAnalysisId)
-                      ?.interest_rate && (
-                    <div className="flex justify-end">
-                      <button
-                        onClick={() => calculateMutation.mutate(selectedAnalysisId!)}
-                        disabled={calculateMutation.isPending}
-                        className="px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                      >
-                        {calculateMutation.isPending
-                          ? t("investments.calculating")
-                          : t("investments.calculateFixedRate")}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Balance Snapshots */}
-                  {selectedSnapshots?.length > 0 && (
-                    <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold">{t("investments.balanceSnapshots")}</h3>
-                        <span className="text-xs text-[var(--text-muted)]">
-                          {selectedSnapshots.length} entries
-                        </span>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                              <th className="text-start py-2 font-bold">{t("common.date")}</th>
-                              <th className="text-right py-2 font-bold">{t("investments.balance")}</th>
-                              <th className="text-center py-2 font-bold">{t("investments.source")}</th>
-                              <th className="text-right py-2 font-bold"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedSnapshots.map((snap: Snapshot) => (
-                              <tr
-                                key={snap.id}
-                                className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
-                              >
-                                <td className="py-2 text-white font-medium">
-                                  {snap.date}
-                                </td>
-                                <td className="py-2 text-right text-white font-bold">
-                                  {formatCurrency(snap.balance)}
-                                </td>
-                                <td className="py-2 text-center">
-                                  <span
-                                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                                      snap.source === "manual"
-                                        ? "bg-blue-500/20 text-blue-400"
-                                        : snap.source === "calculated"
-                                          ? "bg-purple-500/20 text-purple-400"
-                                          : "bg-emerald-500/20 text-emerald-400"
-                                    }`}
-                                  >
-                                    {snap.source}
-                                  </span>
-                                </td>
-                                <td className="py-2 text-right">
-                                  <button
-                                    onClick={() =>
-                                      deleteSnapshotMutation.mutate({
-                                        investmentId: selectedAnalysisId!,
-                                        snapshotId: snap.id,
-                                      })
-                                    }
-                                    className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-20 text-[var(--text-muted)]">
-                  {t("investments.loadingAnalysis")}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <InvestmentAnalysisModal
+          investmentId={selectedAnalysisId}
+          investment={investments?.find((i: Investment) => i.id === selectedAnalysisId)}
+          onClose={() => setSelectedAnalysisId(null)}
+        />
       )}
 
       {/* Update Balance Modal */}
       {balanceForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.updateBalance")}</h3>
             <div className="space-y-4">
@@ -1151,7 +716,7 @@ export function Investments() {
 
       {/* Close / Edit Close Date Modal */}
       {closeForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">
               {closeForm.mode === "close" ? t("investments.closeInvestment") : t("investments.editCloseDate")}
@@ -1202,7 +767,7 @@ export function Investments() {
 
       {/* Edit Investment Modal */}
       {editForm.investmentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
             <h3 className="text-lg font-bold mb-4">{t("investments.editInvestment")}</h3>
             <div className="space-y-4">
@@ -1289,25 +854,25 @@ export function Investments() {
 
       {/* Add Modal (Existing) */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
             {/* ... Existing Add Modal Code ... */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4 md:mb-6">
               <div className="p-3 rounded-2xl bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20">
                 <TrendingUp size={24} />
               </div>
-              <h2 className="text-2xl font-bold">{t("investments.newInvestment")}</h2>
+              <h2 className="text-xl md:text-2xl font-bold">{t("investments.newInvestment")}</h2>
             </div>
 
             {createMutation.isError && (
-              <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
+              <div className="mb-4 md:mb-6 p-3 md:p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
                 {(createMutation.error as unknown as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
                   t("investments.failedToCreate")}
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4 md:mb-6">
+              <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("investments.investmentName")}
                 </label>
@@ -1393,7 +958,7 @@ export function Investments() {
                 />
               </div>
               )}
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                   {t("investments.notes")}
                 </label>

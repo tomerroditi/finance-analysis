@@ -250,7 +250,7 @@ class ScrapingService:
                 start_date = datetime.fromisoformat(last_scrape).date() - timedelta(
                     days=7
                 )
-            except:
+            except (ValueError, TypeError):
                 start_date = date.today() - timedelta(days=365)
         else:
             start_date = date.today() - timedelta(days=365)

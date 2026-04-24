@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 
 from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.constants.providers import Services
-from backend.models.insurance_account import InsuranceAccount
 from backend.models.transaction import InsuranceTransaction
+from backend.repositories.insurance_account_repository import InsuranceAccountRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -253,9 +253,7 @@ class InvestmentsService:
         int
             Number of hishtalmut policies processed.
         """
-        rows = self.db.execute(
-            select(InsuranceAccount).where(InsuranceAccount.policy_type == "hishtalmut")
-        ).scalars().all()
+        rows = InsuranceAccountRepository(self.db).get_by_policy_type("hishtalmut")
         for row in rows:
             self.sync_from_insurance({
                 "policy_type": row.policy_type,

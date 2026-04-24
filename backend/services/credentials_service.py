@@ -8,7 +8,6 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from backend.config import AppConfig
 from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
 from backend.repositories.credentials_repository import CredentialsRepository
 
@@ -302,6 +301,10 @@ class CredentialsService:
         ensure_dummy_cred(
             Services.CREDIT_CARD.value, "visa cal", "Online Shopping",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
+        )
+        ensure_dummy_cred(
+            Services.INSURANCE.value, "hafenix", "The Cohens",
+            {Fields.ID.value: "demo", Fields.PHONE_NUMBER.value: "050-1234567"},
         )
 
     def _invalidate_cache(self) -> None:

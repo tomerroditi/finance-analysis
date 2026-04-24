@@ -5,7 +5,6 @@ Integration tests for cash balance with transaction lifecycle.
 from datetime import datetime
 
 import pytest
-from sqlalchemy.orm import Session
 
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.transactions_service import TransactionsService

@@ -1,7 +1,5 @@
 """Tests for the /api/cash-balances API endpoints."""
 
-import pytest
-
 
 class TestCashBalancesRoutes:
     """Tests for cash balance API endpoints."""
@@ -28,17 +26,18 @@ class TestCashBalancesRoutes:
         assert "last_manual_update" in data
 
     def test_post_cash_balance_negative_rejected(self, test_client):
-        """POST /api/cash-balances/ rejects negative balance with ValueError.
+        """POST /api/cash-balances/ rejects negative balance with 400.
 
-        The service raises ValueError for negative balance. TestClient re-raises
-        this exception in tests, so we catch it with pytest.raises.
+        The service raises ValueError for negative balance; the route translates
+        that into an HTTP 400 with the error message in ``detail``.
         """
         payload = {
             "account_name": "Wallet",
             "balance": -100.0,
         }
-        with pytest.raises(ValueError, match="Balance must be >= 0"):
-            test_client.post("/api/cash-balances/", json=payload)
+        response = test_client.post("/api/cash-balances/", json=payload)
+        assert response.status_code == 400
+        assert "Balance must be >= 0" in response.json()["detail"]
 
     def test_get_cash_balances_after_create(self, test_client):
         """GET /api/cash-balances/ returns created record after POST."""
