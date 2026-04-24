@@ -70,6 +70,18 @@ def _ensure_columns(engine, table: str, columns: dict[str, str]) -> None:
 
 _ensure_columns(_engine, "investments", {"insurance_policy_id": "VARCHAR"})
 
+# Backfill hishtalmut investments. The frozen demo DB was built before the
+# auto-sync from insurance accounts existed, so its three hishtalmut policies
+# have no linked Investment records. Idempotent (matches by policy_id).
+from backend.config import AppConfig as _AppConfig  # noqa: E402
+
+if _AppConfig().is_demo_mode:
+    from backend.database import get_db_context  # noqa: E402
+    from backend.services.investments_service import InvestmentsService  # noqa: E402
+
+    with get_db_context() as _db:
+        InvestmentsService(_db).backfill_from_insurance_accounts()
+
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.
 from backend.main import app  # noqa: E402
