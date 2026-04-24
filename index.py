@@ -43,7 +43,32 @@ config.set_demo_mode(True)
 # added after the demo DB was built). Safe — only creates missing tables.
 from backend.database import get_engine  # noqa: E402
 from backend.models import Base  # noqa: E402
-Base.metadata.create_all(bind=get_engine())
+
+_engine = get_engine()
+Base.metadata.create_all(bind=_engine)
+
+
+def _ensure_columns(engine, table: str, columns: dict[str, str]) -> None:
+    """Add columns to ``table`` if they are absent.
+
+    The demo DB is a frozen binary shipped in the repo. When a migration adds
+    a new column to an existing table, ``create_all`` above does not touch
+    it, so reads fail with ``no such column``. This helper bridges the gap
+    for each cold start.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    if table not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns(table)}
+    with engine.begin() as conn:
+        for name, ddl in columns.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
+_ensure_columns(_engine, "investments", {"insurance_policy_id": "VARCHAR"})
 
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.
