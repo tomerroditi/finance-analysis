@@ -1,11 +1,50 @@
 ---
 name: israeli-salary-knowledge
-description: Reference knowledge for how Israeli gross-to-net payroll actually works. Use when generating demo data, writing calculators, or reasoning about anything that touches Israeli salaries, pension (קרן פנסיה מקיפה / משלימה), Keren Hishtalmut (קרן השתלמות), income tax (מס הכנסה), Bituach Leumi + health tax (ביטוח לאומי, מס בריאות), or credit points (נקודות זיכוי). Triggers on "Israeli salary", "gross to net", "pension makifa", "pension mashlima", "keren hishtalmut", "KH cap", "bituach leumi", "nekudat zikuy", "credit point", "Israeli tax bracket", "מס הכנסה", "פנסיה מקיפה", "קרן השתלמות".
+description: Reference knowledge for how Israeli gross-to-net payroll actually works. Use when generating demo data, writing calculators, or reasoning about anything that touches Israeli salaries, pension (קרן פנסיה מקיפה / משלימה), Keren Hishtalmut (קרן השתלמות), income tax (מס הכנסה), Bituach Leumi + health tax (ביטוח לאומי, מס בריאות), credit points (נקודות זיכוי), mortgage prime rates, or Bank of Israel interest-rate history. Triggers on "Israeli salary", "gross to net", "pension makifa", "pension mashlima", "keren hishtalmut", "KH cap", "bituach leumi", "nekudat zikuy", "credit point", "Israeli tax bracket", "prime rate Israel", "Bank of Israel rate", "מס הכנסה", "פנסיה מקיפה", "קרן השתלמות", "ריבית בנק ישראל".
 ---
 
 # Israeli Salary Landscape
 
 Reference for how gross salary in Israel is converted to net — the rules every payroll stub follows. Numbers below are for **2026** (with 2025 fallbacks noted where relevant). All ceilings and credit-point values are indexed annually; update them when the Ministry of Finance publishes new figures.
+
+## Companion reference documents
+
+When a question needs a historical figure, or when you're sanity-checking a demo-data entry for a specific year, consult the companion files in this same skill directory:
+
+- **[`historical-thresholds.md`](./historical-thresholds.md)** — year-by-year tables of income-tax brackets, credit-point value, KH cap, Makifa cap, Bituach Leumi ceilings, and average wage from 2020 onwards. Use this whenever you need a number for a year that isn't "current".
+- **[`historical-interest-rates.md`](./historical-interest-rates.md)** — Bank of Israel key-rate timeline (decision dates + year-end snapshots), the "prime" convention (`BoI + 1.5%`), and a sanity-check table for realistic product yields by era (savings plans, bonds, mortgage prime tracks, pension tracks). Use this when reasoning about mortgage rates, fixed-rate investments, or yields in demo data.
+
+---
+
+## External reference: Kol Zchut (כל זכות / All-Rights)
+
+**<https://www.kolzchut.org.il/>** (Hebrew main site; partial English mirror at `/en/Main_Page`).
+
+Kol Zchut is a non-profit ~6,000-article wiki covering every kind of social and economic right an Israeli resident has — employment law, pension, Keren Hishtalmut, Bituach Leumi benefits, income tax, consumer rights, housing, healthcare, disability, unemployment, single parents, olim, reservists, and more. It's supported by the Ministries of Justice and National Digitization, reaches >50% of Israeli adults annually, and is the de-facto starting point for any Israeli wondering "what am I entitled to?" or "how does X work in practice?".
+
+**Use it as a bridge**, not as an authoritative legal source:
+
+- Each article summarizes the relevant law in plain Hebrew, then links to the **official government source** (חוק, תקנה, תקנון ביטוח לאומי, etc.). Follow those links for anything quoted in code or a calculator.
+- For our purposes (demo data, calculators, reasoning), a Kol Zchut article is an excellent way to:
+  1. Get an **overview** of a topic quickly (e.g. "how does maternity leave pay work?", "what is a מענק עבודה?")
+  2. Find out **which official document** to then fetch for exact numbers
+  3. Cross-check a figure from a secondary source against a plain-language summary
+- Kol Zchut explicitly states it is **not authoritative** — the authoritative sources are the Israeli Tax Authority, National Insurance Institute (ביטוח לאומי), Ministry of Finance, and Ministry of Justice. Use Kol Zchut to understand the landscape, then verify figures against those.
+
+**Topic scope relevant to this project** — Kol Zchut has deep coverage of:
+
+| Area | Relevance to our codebase |
+|---|---|
+| Income tax (מס הכנסה), credit points, tax refunds | Gross→net calculations, retirement calculator, demo salaries |
+| Pension (חובה to join, Makifa/Mashlima, פיצויים withdrawal) | `generate_insurance_data`, retirement projections |
+| Keren Hishtalmut (deposits, 6-year liquidity, tax exemption) | KH accounts in the demo, investment page |
+| Bituach Leumi (contribution rates, benefits, old-age pension, disability, maternity) | Retirement calculator (Bituach Leumi payout estimate), net-salary models |
+| Mortgages (מסלולי משכנתא, subsidies, grants for first-time buyers) | Liabilities page, mortgage amortization |
+| Consumer rights, debts, collection, bankruptcy | Future — liabilities/debt workflows |
+
+Whenever a user asks "how should X really work?" about Israeli personal finance, check Kol Zchut first for the plain-language summary, then consult the linked official source for any figure you plan to put in code.
+
+---
 
 ---
 
