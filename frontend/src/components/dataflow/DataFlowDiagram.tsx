@@ -68,15 +68,20 @@ export function DataFlowDiagram() {
 
   const drawConnections = useCallback(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const zoomable = zoomableRef.current;
+    if (!container || !zoomable) return;
 
     const containerRect = container.getBoundingClientRect();
     const scrollLeft = container.scrollLeft;
     const scrollTop = container.scrollTop;
 
+    // Size the SVG to the zoomable wrapper, not the scroll container —
+    // container.scrollWidth/scrollHeight include the SVG itself, so a stale
+    // large SVG would keep the container scrollable into empty space after
+    // zooming out.
     setSvgSize({
-      width: container.scrollWidth,
-      height: container.scrollHeight,
+      width: zoomable.scrollWidth,
+      height: zoomable.scrollHeight,
     });
 
     const newConnections: Connection[] = [];
