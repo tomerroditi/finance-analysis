@@ -1,3 +1,25 @@
+## v1.7.0 (2026-04-25)
+
+### Feat
+
+- **insurances**: preview switcher for insurance card header layouts
+
+### Refactor
+
+- **insurances**: finalize policy card header with accent stripe
+
+## v1.6.0 (2026-04-25)
+
+### Feat
+
+- **investments**: polish — tooltips, snapshot edit, withdrawals, empty state
+- **investments**: tap-to-toggle notes tooltip + monthly deposits column
+
+### Fix
+
+- **investments**: contain table horizontal scroll inside the modal
+- **investments**: tidy snapshot table layout — center columns, profit col
+
 ## v1.5.0 (2026-04-25)
 
 ### Feat
