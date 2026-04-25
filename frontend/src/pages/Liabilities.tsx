@@ -21,6 +21,7 @@ import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { formatCurrency } from "../utils/numberFormatting";
 import { useCategories } from "../hooks/useCategories";
+import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
 
 interface Liability {
@@ -342,6 +343,7 @@ export function Liabilities() {
   });
 
   const { data: categories } = useCategories();
+  const { createTag } = useCategoryTagCreate();
 
   const { data: analysisData } = useQuery<AnalysisData>({
     queryKey: ["liabilities", analysisModalId, "analysis"],
@@ -739,6 +741,10 @@ export function Liabilities() {
                   value={newLiability.tag}
                   onChange={handleTagChange}
                   placeholder={t("liabilities.selectTag")}
+                  onCreateNew={async (name) => {
+                    const formatted = await createTag("Liabilities", name);
+                    await handleTagChange(formatted);
+                  }}
                 />
                 {tagDetection && !tagDetection.has_receipt && (
                   <div className="flex items-start gap-2 mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm">
