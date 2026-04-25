@@ -52,7 +52,9 @@ export const MonthlyBudgetView: React.FC = () => {
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
-  const [copiedFromMsg, setCopiedFromMsg] = useState<string | null>(null);
+  const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
+    new Set(),
+  );
 
   const queryClient = useQueryClient();
 
@@ -77,16 +79,6 @@ export const MonthlyBudgetView: React.FC = () => {
       });
     }
   }, [year, month, includeSplitParents, queryClient]);
-
-   
-  useEffect(() => {
-    if (analysis?.copied_from) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCopiedFromMsg(analysis.copied_from);
-      const timer = setTimeout(() => setCopiedFromMsg(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [analysis?.copied_from]);
 
   // Fetch pending refunds to know which transactions are already marked
   const { data: pendingRefunds } = useQuery({
@@ -240,6 +232,12 @@ export const MonthlyBudgetView: React.FC = () => {
     year === today.getFullYear() && month === today.getMonth() + 1;
   const daysLeft = isCurrentMonth ? daysInMonth - today.getDate() : daysInMonth;
 
+  const currentMonthKey = `${year}-${month}`;
+  const copiedFromForThisMonth =
+    analysis?.copied_from && !dismissedCopyMonths.has(currentMonthKey)
+      ? analysis.copied_from
+      : null;
+
 
   return (
     <div className="space-y-4 md:space-y-8">
@@ -302,13 +300,20 @@ export const MonthlyBudgetView: React.FC = () => {
         </div>
       </div>
 
-      {/* Auto-copy toast */}
-      {copiedFromMsg && (
-        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
-          <span>{t("budget.rulesCopiedFrom", { month: copiedFromMsg })}</span>
+      {/* Auto-copy notice — scoped to the month being viewed */}
+      {copiedFromForThisMonth && (
+        <div className="flex items-start justify-between gap-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
+          <span>
+            {t("budget.rulesCopiedFrom", { month: copiedFromForThisMonth })}
+          </span>
           <button
-            onClick={() => setCopiedFromMsg(null)}
-            className="ms-4 text-blue-400/60 hover:text-blue-400 transition-colors"
+            onClick={() =>
+              setDismissedCopyMonths((prev) =>
+                new Set(prev).add(currentMonthKey),
+              )
+            }
+            aria-label={t("common.dismiss")}
+            className="shrink-0 text-blue-400/60 hover:text-blue-400 transition-colors"
           >
             ✕
           </button>
