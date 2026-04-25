@@ -326,7 +326,7 @@ export function DataSources() {
               onClick={() => setIsAddOpen(true)}
               className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--surface-light)] text-white rounded-xl font-bold hover:bg-[var(--surface-base)] transition-all border border-white/5"
             >
-              <Plus size={18} /> {t("dataSources.addFirstAccount")}
+              <Plus size={18} /> {t("dataSources.connectFirstAccount")}
             </button>
           </div>
         ) : (
