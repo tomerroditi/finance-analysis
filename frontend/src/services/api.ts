@@ -10,7 +10,9 @@ const api = axios.create({
 // Response interceptor: log only safe metadata about failures so raw server
 // payloads (which may include stack traces, SQL fragments, or file paths)
 // never land in the browser console where browser extensions or screenshots
-// could exfiltrate them.
+// could exfiltrate them. When the request never reached the server (no
+// `response`), also dispatches an `api-network-failed` window event so the
+// global NetworkStatusToast can surface a single transient toast.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -22,6 +24,11 @@ api.interceptors.response.use(
       message: error.message,
     };
     console.error("API Error:", safeError);
+    if (typeof window !== "undefined" && !error.response) {
+      window.dispatchEvent(
+        new CustomEvent("api-network-failed", { detail: safeError }),
+      );
+    }
     return Promise.reject(error);
   },
 );

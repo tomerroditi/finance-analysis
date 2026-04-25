@@ -111,6 +111,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 3. Access data via Repository.
 4. Add endpoint to `frontend/src/services/api.ts`.
 5. Or use `python .claude/scripts/scaffold_feature.py <name>` to generate boilerplate.
+6. **PWA cache layer:** decide whether the response is sensitive (credentials), real-time (scraping/polling), or normal. Update SW + persister exclusion lists accordingly. See `.claude/rules/frontend_pwa.md`.
 
 ### New UI Page/Component
 1. Create in `frontend/src/pages/` or `frontend/src/components/`.

@@ -940,5 +940,14 @@
     "zoomIn": "התקרב",
     "zoomOut": "התרחק",
     "fitToScreen": "התאם למסך"
+  },
+  "pwa": {
+    "offlineReady": "האפליקציה זמינה לשימוש גם במצב לא מקוון.",
+    "updateAvailableTitle": "גרסה חדשה זמינה",
+    "updateAvailableMessage": "טען מחדש כדי להחיל את השיפורים האחרונים.",
+    "reload": "טען מחדש",
+    "dismiss": "סגור",
+    "networkFailedTitle": "בעיית חיבור",
+    "networkFailedMessage": "לא הצלחנו להתחבר לשרת — מוצגים נתונים מהמטמון."
   }
 }

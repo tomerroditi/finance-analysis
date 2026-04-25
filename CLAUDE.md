@@ -46,7 +46,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
-- **Rules:** `.claude/rules/` — detailed architecture docs (9 files covering services, repos, scraper, frontend, testing)
+- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing
 - **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
@@ -88,6 +88,15 @@ The `scraper/` package at the project root is a pure-Python scraper framework us
 - **Demo mode:** Automatically redirects to dummy scrapers that generate fake data
 - **Adding a new provider:** Create a class in `scraper/providers/banks/` or `credit_cards/`, register in `scraper/models/credentials.py` PROVIDER_CONFIGS, and export in the `__init__.py`
 - **Import caveat:** `backend/scraper/` and root `scraper/` share a name. Backend code uses `_import_scraper_module()` helper (in `adapter.py`) to resolve root package. Test dirs use `test_scraper/` prefix to avoid pytest collision.
+
+## PWA / Offline Cache
+
+The frontend ships as a PWA — service worker precaches the build, persists the React Query cache to IndexedDB, and shows toasts for SW lifecycle events.
+
+- **Service worker:** `frontend/src/sw.ts` (custom, `injectManifest` mode). Runtime-caches `/api` GETs (NetworkFirst, 4 s timeout); excludes `/api/credentials/*`, `/api/scraping/*`, `/api/backups`.
+- **Query persistence:** `frontend/src/queryClient.ts` — `idb-keyval` async persister + global `MutationCache.onSuccess` debounced invalidator (200 ms). Bump `PERSIST_BUSTER` when API response shapes change.
+- **When adding endpoints:** decide if the response is sensitive / real-time / normal and update both the SW URL filter AND the persister `shouldDehydrateQuery` rule. Never one without the other.
+- **Detailed rules:** `.claude/rules/frontend_pwa.md`
 
 ## Internationalization (Hebrew/English)
 
