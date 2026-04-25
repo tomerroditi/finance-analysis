@@ -1,3 +1,9 @@
+## v1.10.0 (2026-04-25)
+
+### Feat
+
+- **frontend**: redesign auto-tagging rule editor for mobile
+
 ## v1.9.0 (2026-04-25)
 
 ### Feat
