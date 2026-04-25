@@ -52,6 +52,8 @@ interface MonthRow {
   snapshot: Snapshot | null;
   deposits: number;
   withdrawals: number;
+  profit: number | null;
+  profitPct: number | null;
 }
 
 function StatCard({
@@ -341,6 +343,8 @@ export function InvestmentAnalysisModal({
                     snapshot: null,
                     deposits: m.deposits,
                     withdrawals: m.withdrawals,
+                    profit: null,
+                    profitPct: null,
                   });
                 }
                 const rows: MonthRow[] = [];
@@ -354,10 +358,35 @@ export function InvestmentAnalysisModal({
                     snapshot: snap,
                     deposits: monthDeposit?.deposits ?? 0,
                     withdrawals: monthDeposit?.withdrawals ?? 0,
+                    profit: null,
+                    profitPct: null,
                   });
                   monthMap.delete(month);
                 }
                 for (const orphan of monthMap.values()) rows.push(orphan);
+
+                // Compute profit per snapshot row vs the previous (older) snapshot,
+                // netting out deposits/withdrawals between the two snapshot months.
+                const ascSnapshotRows = rows
+                  .filter((r) => r.snapshot && r.date)
+                  .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+                const monthlyByMonth = new Map<string, MonthlyTransaction>();
+                for (const m of monthly) monthlyByMonth.set(m.month, m);
+                for (let i = 1; i < ascSnapshotRows.length; i++) {
+                  const prev = ascSnapshotRows[i - 1];
+                  const curr = ascSnapshotRows[i];
+                  let netInflow = 0;
+                  for (const [m, txn] of monthlyByMonth) {
+                    if (m > prev.month && m <= curr.month) {
+                      netInflow += txn.deposits - txn.withdrawals;
+                    }
+                  }
+                  const profit =
+                    curr.snapshot!.balance - prev.snapshot!.balance - netInflow;
+                  const base = prev.snapshot!.balance + netInflow;
+                  curr.profit = profit;
+                  curr.profitPct = base > 0 ? (profit / base) * 100 : null;
+                }
 
                 rows.sort((a, b) => {
                   const ka = a.date ?? `${a.month}-00`;
@@ -373,16 +402,16 @@ export function InvestmentAnalysisModal({
                         {rows.length} {t("investments.entries")}
                       </span>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                    <div className="overflow-x-auto -mx-4 md:mx-0">
+                      <table className="w-full min-w-[640px] text-sm">
                         <thead>
                           <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                            <th className="text-start py-2 font-bold">{t("common.date")}</th>
-                            <th className="text-end py-2 font-bold">{t("investments.balance")}</th>
-                            <th className="text-end py-2 font-bold">{t("investments.deposits")}</th>
-                            <th className="text-end py-2 font-bold">{t("investments.withdrawals")}</th>
-                            <th className="text-center py-2 font-bold">{t("investments.source")}</th>
-                            <th className="text-end py-2 font-bold"></th>
+                            <th className="text-start px-3 py-2 font-bold whitespace-nowrap">{t("common.date")}</th>
+                            <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.balance")}</th>
+                            <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.deposits")}</th>
+                            <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.withdrawals")}</th>
+                            <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.profit")}</th>
+                            <th className="text-center px-3 py-2 font-bold w-px"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -394,7 +423,7 @@ export function InvestmentAnalysisModal({
                                 key={row.key}
                                 className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
                               >
-                                <td className="py-2 text-white font-medium">
+                                <td className="px-3 py-2 text-white font-medium whitespace-nowrap">
                                   {isEditing ? (
                                     <input
                                       type="date"
@@ -408,7 +437,7 @@ export function InvestmentAnalysisModal({
                                     row.date ?? row.month
                                   )}
                                 </td>
-                                <td className="py-2 text-end font-bold">
+                                <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
                                   {isEditing ? (
                                     <input
                                       type="number"
@@ -420,43 +449,49 @@ export function InvestmentAnalysisModal({
                                       className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded px-2 py-1 text-sm w-28 text-end"
                                     />
                                   ) : row.snapshot ? (
-                                    <span className="text-white">{formatCurrency(row.snapshot.balance)}</span>
+                                    <span className="text-white" dir="ltr">{formatCurrency(row.snapshot.balance)}</span>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}
                                 </td>
-                                <td className="py-2 text-end font-bold">
+                                <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
                                   {row.deposits > 0 ? (
-                                    <span className="text-emerald-400">{formatCurrency(row.deposits)}</span>
+                                    <span className="text-emerald-400" dir="ltr">{formatCurrency(row.deposits)}</span>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}
                                 </td>
-                                <td className="py-2 text-end font-bold">
+                                <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
                                   {row.withdrawals > 0 ? (
-                                    <span className="text-amber-400">{formatCurrency(row.withdrawals)}</span>
+                                    <span className="text-amber-400" dir="ltr">{formatCurrency(row.withdrawals)}</span>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}
                                 </td>
-                                <td className="py-2 text-center">
-                                  {row.snapshot ? (
-                                    <span
-                                      className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                                        row.snapshot.source === "manual"
-                                          ? "bg-blue-500/20 text-blue-400"
-                                          : row.snapshot.source === "calculated"
-                                            ? "bg-purple-500/20 text-purple-400"
-                                            : "bg-emerald-500/20 text-emerald-400"
+                                <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
+                                  {row.profit !== null ? (
+                                    <div
+                                      className={`inline-flex items-baseline gap-1 ${
+                                        row.profit >= 0 ? "text-emerald-400" : "text-rose-400"
                                       }`}
+                                      dir="ltr"
                                     >
-                                      {row.snapshot.source}
-                                    </span>
+                                      <span>
+                                        {row.profit >= 0 ? "+" : ""}
+                                        {formatCurrency(row.profit)}
+                                      </span>
+                                      {row.profitPct !== null && (
+                                        <span className="text-[10px] font-medium opacity-80">
+                                          ({row.profitPct >= 0 ? "+" : ""}
+                                          {row.profitPct.toFixed(1)}%)
+                                        </span>
+                                      )}
+                                    </div>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}
                                 </td>
-                                <td className="py-2 text-end">
+                                <td className="px-3 py-2 text-center whitespace-nowrap">
                                   {row.snapshot && isEditing ? (
                                     <div className="inline-flex items-center gap-1">
                                       <button

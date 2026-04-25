@@ -468,6 +468,7 @@
     "failedToCreate": "Failed to create investment",
     "deposits": "Deposits",
     "withdrawals": "Withdrawals",
+    "profit": "Profit",
     "confirmDelete": "Are you sure you want to delete this investment and all its transactions?",
     "reopen": "Reopen",
     "viewAnalysis": "View Analysis",
