@@ -228,6 +228,8 @@
       "untagged": "Untagged",
       "ruleDetails": "Rule Details",
       "conditions": "Conditions",
+      "tabRule": "Rule",
+      "tabMatches": "Matches",
       "confirmDeleteRule": "Delete rule?",
       "confirmDeleteNamedRule": "Delete rule \"{{name}}\"?"
     },

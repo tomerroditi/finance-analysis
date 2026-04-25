@@ -37,6 +37,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     const [tag, setTag] = useState("");
     const [conditions, setConditions] = useState<ConditionNode>(EMPTY_CONDITIONS);
     const [error, setError] = useState<string | null>(null);
+    const [mobileTab, setMobileTab] = useState<"rule" | "matches">("rule");
 
     const { data: categories } = useCategories() as { data: Record<string, string[]> | undefined };
     const { data: existingRules } = useTaggingRules();
@@ -80,8 +81,10 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
              
             setConditions(EMPTY_CONDITIONS);
         }
-         
+
         setError(null);
+
+        setMobileTab("rule");
     }, [editingRule, isOpen]);
 
     // Debounced conditions for preview
@@ -149,81 +152,130 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
 
     if (!isOpen) return null;
 
+    const ruleForm = (
+        <RuleForm
+            name={name}
+            category={category}
+            setCategory={(c) => { setCategory(c); setTag(""); }}
+            tag={tag}
+            setTag={setTag}
+            conditions={conditions}
+            setConditions={setConditions}
+            availableCategories={availableCategories}
+            availableTags={availableTags}
+            onCreateCategory={async (name) => {
+                const formatted = await createCategory(name);
+                setCategory(formatted);
+                setTag("");
+            }}
+            onCreateTag={async (name) => {
+                const formatted = await createTag(category, name);
+                setTag(formatted);
+            }}
+        />
+    );
+
+    const previewCount = preview?.count ?? 0;
+    const showPreviewBadge = !previewLoading && hasValidCondition(debouncedConditions);
+
     return (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-stretch sm:items-center justify-center">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
             {/* Modal */}
-            <div role="dialog" aria-modal="true" aria-labelledby="rule-editor-title" className="relative w-[95vw] h-[90vh] bg-[var(--surface-base)] rounded-2xl shadow-2xl border border-[var(--surface-light)] flex flex-col overflow-hidden">
+            <div role="dialog" aria-modal="true" aria-labelledby="rule-editor-title" className="relative w-full h-dvh sm:w-[95vw] sm:h-[90vh] bg-[var(--surface-base)] sm:rounded-2xl shadow-2xl sm:border sm:border-[var(--surface-light)] flex flex-col overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
-                    <h2 id="rule-editor-title" className="text-lg md:text-xl font-bold">
+                    <h2 id="rule-editor-title" className="text-lg md:text-xl font-bold truncate">
                         {editingRule ? t("transactions.autoTagging.editRule") : t("transactions.autoTagging.createRule")}
                     </h2>
                     <button
                         onClick={onClose}
                         aria-label={t("common.close")}
-                        className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                        className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors shrink-0"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 overflow-hidden">
+                {/* Mobile tabs */}
+                <div className="md:hidden flex border-b border-[var(--surface-light)] bg-[var(--surface)]">
+                    <button
+                        onClick={() => setMobileTab("rule")}
+                        className={`flex-1 px-4 py-3 text-sm font-bold transition-colors border-b-2 ${
+                            mobileTab === "rule"
+                                ? "border-[var(--primary)] text-[var(--primary)]"
+                                : "border-transparent text-[var(--text-muted)]"
+                        }`}
+                    >
+                        {t("transactions.autoTagging.tabRule")}
+                    </button>
+                    <button
+                        onClick={() => setMobileTab("matches")}
+                        className={`flex-1 px-4 py-3 text-sm font-bold transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
+                            mobileTab === "matches"
+                                ? "border-[var(--primary)] text-[var(--primary)]"
+                                : "border-transparent text-[var(--text-muted)]"
+                        }`}
+                    >
+                        {t("transactions.autoTagging.tabMatches")}
+                        {showPreviewBadge && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                mobileTab === "matches"
+                                    ? "bg-[var(--primary)]/20 text-[var(--primary)]"
+                                    : "bg-[var(--surface-light)] text-[var(--text-muted)]"
+                            }`} dir="ltr">{previewCount}</span>
+                        )}
+                    </button>
+                </div>
+
+                {/* Content - mobile (single panel based on tab) */}
+                <div className="md:hidden flex-1 overflow-hidden">
+                    {mobileTab === "rule" ? (
+                        <div className="h-full overflow-y-auto p-4">
+                            {ruleForm}
+                        </div>
+                    ) : (
+                        <TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={previewCount} showHeader={false} />
+                    )}
+                </div>
+
+                {/* Content - desktop (split pane) */}
+                <div className="hidden md:block flex-1 overflow-hidden">
                     <ResizableSplitPane
                         storageKey="rule-editor-split"
                         defaultLeftWidth={55}
                         minLeftWidth={30}
                         minRightWidth={25}
-                        left={<TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={preview?.count || 0} />}
+                        left={<TransactionPreview matches={(preview?.matches || []) as PreviewTransaction[]} loading={previewLoading} count={previewCount} />}
                         right={
                             <div className="h-full overflow-y-auto p-4 md:p-6">
-                                <RuleForm
-                                    name={name}
-                                    category={category}
-                                    setCategory={(c) => { setCategory(c); setTag(""); }}
-                                    tag={tag}
-                                    setTag={setTag}
-                                    conditions={conditions}
-                                    setConditions={setConditions}
-                                    availableCategories={availableCategories}
-                                    availableTags={availableTags}
-                                    onCreateCategory={async (name) => {
-                                        const formatted = await createCategory(name);
-                                        setCategory(formatted);
-                                        setTag("");
-                                    }}
-                                    onCreateTag={async (name) => {
-                                        const formatted = await createTag(category, name);
-                                        setTag(formatted);
-                                    }}
-                                />
+                                {ruleForm}
                             </div>
                         }
                     />
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center gap-3 px-4 md:px-6 py-3 md:py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 md:px-6 py-3 md:py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
                     {error && (
                         <div className="flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in slide-in-from-left-2 duration-200">
                             <AlertTriangle size={16} className="shrink-0" />
                             <span className="line-clamp-2">{error}</span>
                         </div>
                     )}
-                    <div className="flex items-center gap-3 ms-auto">
+                    <div className="flex items-center gap-3 sm:ms-auto">
                         <button
                             onClick={onClose}
-                            className="px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
+                            className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-medium hover:bg-[var(--surface-light)] transition-colors"
                         >
                             {t("common.cancel")}
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={!category || !tag || isSaving}
-                            className={`px-6 py-2.5 text-white rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
+                            className={`flex-1 sm:flex-initial px-6 py-2.5 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
                                 error ? "bg-red-500 hover:bg-red-600 animate-[shake_0.3s_ease-in-out]" : "bg-[var(--primary)] hover:bg-[var(--primary-dark)]"
                             }`}
                         >
@@ -259,7 +311,7 @@ interface PreviewTransaction {
     [key: string]: unknown;
 }
 
-function TransactionPreview({ matches, loading, count }: { matches: PreviewTransaction[]; loading: boolean; count: number }) {
+function TransactionPreview({ matches, loading, count, showHeader = true }: { matches: PreviewTransaction[]; loading: boolean; count: number; showHeader?: boolean }) {
     const { t } = useTranslation();
     const formatAmount = (amount: number) => {
         const formatted = Math.abs(amount).toLocaleString("he-IL", { style: "currency", currency: "ILS" });
@@ -268,16 +320,18 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
 
     return (
         <div className="h-full flex flex-col bg-[var(--surface)]">
-            <div className="px-4 py-3 border-b border-[var(--surface-light)] flex items-center justify-between">
-                <h3 className="font-bold text-[var(--text-muted)]">{t("transactions.autoTagging.matchingTransactions")}</h3>
-                <span className="text-sm text-[var(--text-muted)]">
-                    {loading ? t("common.loading") : `${count} ${t("transactions.autoTagging.matches")}`}
-                </span>
-            </div>
+            {showHeader && (
+                <div className="px-4 py-3 border-b border-[var(--surface-light)] flex items-center justify-between">
+                    <h3 className="font-bold text-[var(--text-muted)]">{t("transactions.autoTagging.matchingTransactions")}</h3>
+                    <span className="text-sm text-[var(--text-muted)]">
+                        {loading ? t("common.loading") : `${count} ${t("transactions.autoTagging.matches")}`}
+                    </span>
+                </div>
+            )}
 
             <div className="flex-1 overflow-auto">
                 {loading ? (
-                    <div className="flex items-center justify-center h-full text-[var(--text-muted)]">
+                    <div className="flex items-center justify-center h-full text-[var(--text-muted)] p-8">
                         <Loader2 size={24} className="animate-spin me-2" />
                         {t("transactions.autoTagging.loadingPreview")}
                     </div>
@@ -287,41 +341,73 @@ function TransactionPreview({ matches, loading, count }: { matches: PreviewTrans
                         {t("transactions.autoTagging.startTyping")}
                     </div>
                 ) : (
-                    <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--surface-light)]">
-                            <tr className="text-start text-[var(--text-muted)]">
-                                <th className="px-4 py-2 font-medium">{t("common.date")}</th>
-                                <th className="px-4 py-2 font-medium">{t("common.description")}</th>
-                                <th className="px-4 py-2 font-medium text-end">{t("common.amount")}</th>
-                                <th className="px-4 py-2 font-medium">{t("transactions.autoTagging.currentTag")}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <>
+                        {/* Mobile: card list */}
+                        <ul className="md:hidden divide-y divide-[var(--surface-light)]/50">
                             {matches.map((tx, i) => (
-                                <tr key={tx.unique_id || i} className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/20">
-                                    <td className="px-4 py-2 text-[var(--text-muted)] whitespace-nowrap">
-                                        {tx.date?.split("T")[0] || "—"}
-                                    </td>
-                                    <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
+                                <li key={tx.unique_id || i} className="px-4 py-3 hover:bg-[var(--surface-light)]/20">
+                                    <div className="flex items-start justify-between gap-3 mb-1">
+                                        <span className="text-xs text-[var(--text-muted)] whitespace-nowrap" dir="ltr">
+                                            {tx.date?.split("T")[0] || "—"}
+                                        </span>
+                                        <span className={`text-sm font-mono font-semibold whitespace-nowrap ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`} dir="ltr">
+                                            {formatAmount(tx.amount ?? 0)}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm break-words" title={tx.description}>
                                         {tx.description}
-                                    </td>
-                                    <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
-                                        {formatAmount(tx.amount ?? 0)}
-                                    </td>
-                                    <td className="px-4 py-2">
+                                    </div>
+                                    <div className="mt-1.5">
                                         {tx.category ? (
-                                            <span className="inline-flex gap-1 text-xs">
+                                            <span className="inline-flex flex-wrap gap-1 text-xs">
                                                 <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{tx.category}</span>
                                                 {tx.tag && <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{tx.tag}</span>}
                                             </span>
                                         ) : (
                                             <span className="text-[var(--text-muted)] text-xs">{t("transactions.autoTagging.untagged")}</span>
                                         )}
-                                    </td>
-                                </tr>
+                                    </div>
+                                </li>
                             ))}
-                        </tbody>
-                    </table>
+                        </ul>
+
+                        {/* Desktop: table */}
+                        <table className="hidden md:table w-full text-sm">
+                            <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--surface-light)]">
+                                <tr className="text-start text-[var(--text-muted)]">
+                                    <th className="px-4 py-2 font-medium text-start whitespace-nowrap">{t("common.date")}</th>
+                                    <th className="px-4 py-2 font-medium text-start">{t("common.description")}</th>
+                                    <th className="px-4 py-2 font-medium text-end whitespace-nowrap">{t("common.amount")}</th>
+                                    <th className="px-4 py-2 font-medium text-start whitespace-nowrap">{t("transactions.autoTagging.currentTag")}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {matches.map((tx, i) => (
+                                    <tr key={tx.unique_id || i} className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/20">
+                                        <td className="px-4 py-2 text-[var(--text-muted)] whitespace-nowrap">
+                                            {tx.date?.split("T")[0] || "—"}
+                                        </td>
+                                        <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
+                                            {tx.description}
+                                        </td>
+                                        <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
+                                            <span dir="ltr">{formatAmount(tx.amount ?? 0)}</span>
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            {tx.category ? (
+                                                <span className="inline-flex gap-1 text-xs">
+                                                    <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">{tx.category}</span>
+                                                    {tx.tag && <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{tx.tag}</span>}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[var(--text-muted)] text-xs">{t("transactions.autoTagging.untagged")}</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </>
                 )}
             </div>
         </div>
@@ -351,14 +437,14 @@ function RuleForm({
         <div className="space-y-6">
             {/* Basic Info */}
             <div className="space-y-4 p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                     <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">{t("transactions.autoTagging.ruleDetails")}</h4>
                     {name && (
-                        <span className="text-xs text-[var(--text-muted)] font-mono">{name}</span>
+                        <span className="text-xs text-[var(--text-muted)] font-mono break-all">{name}</span>
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">{t("common.category")}</label>
                         <div className="mt-1">

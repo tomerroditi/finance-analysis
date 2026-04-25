@@ -228,6 +228,8 @@
       "untagged": "ללא תגית",
       "ruleDetails": "פרטי כלל",
       "conditions": "תנאים",
+      "tabRule": "כלל",
+      "tabMatches": "התאמות",
       "confirmDeleteRule": "למחוק את הכלל?",
       "confirmDeleteNamedRule": "למחוק את הכלל \"{{name}}\"?"
     },

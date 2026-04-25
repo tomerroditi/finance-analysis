@@ -82,10 +82,10 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
               overflow-hidden transition-all
           `}>
                 {/* Group Header */}
-                <div className="flex items-center gap-2 p-2 bg-[var(--surface-light)]/20 border-b border-[var(--surface-light)]">
-                    <div className="flex items-center gap-1">
-                        <Layers size={14} className="text-[var(--primary)]" />
-                        <div className="w-40">
+                <div className="flex flex-wrap items-center gap-2 p-2 bg-[var(--surface-light)]/20 border-b border-[var(--surface-light)]">
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <Layers size={14} className="text-[var(--primary)] shrink-0" />
+                        <div className="flex-1 min-w-0 max-w-[180px]">
                         <SelectDropdown
                             options={[
                                 { label: t("ruleBuilder.andAllMatch"), value: "AND" },
@@ -98,26 +98,25 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                         </div>
                     </div>
 
-                    <div className="flex-1" />
-
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 shrink-0">
                         <button
                             onClick={() => addSubCondition("CONDITION")}
-                            className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
+                            className="flex items-center gap-1 px-2 py-1.5 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
                             <Plus size={10} /> {t("ruleBuilder.condition")}
                         </button>
                         <button
                             onClick={() => addSubCondition("AND")}
-                            className="flex items-center gap-1 px-2 py-1 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
+                            className="flex items-center gap-1 px-2 py-1.5 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
                             <Plus size={10} /> {t("ruleBuilder.group")}
                         </button>
                         {depth > 0 && onRemove && (
                             <button
                                 onClick={onRemove}
-                                className="p-1 rounded hover:bg-red-500/10 text-red-400"
+                                className="p-1.5 rounded hover:bg-red-500/10 text-red-400"
                                 title={t("ruleBuilder.deleteGroup")}
+                                aria-label={t("ruleBuilder.deleteGroup")}
                             >
                                 <Trash2 size={12} />
                             </button>
@@ -161,12 +160,12 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
     const operators = OPERATORS[fieldDef.type] || OPERATORS.text;
 
     return (
-        <div className="flex items-center gap-2 p-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
-            <div className="p-1.5 rounded bg-[var(--surface)] text-[var(--text-muted)]">
+        <div className="grid grid-cols-[auto_1fr_auto] sm:flex sm:items-center gap-2 p-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
+            <div className="p-1.5 rounded bg-[var(--surface)] text-[var(--text-muted)] self-start sm:self-auto">
                 <FileText size={14} />
             </div>
 
-            <div className="w-32">
+            <div className="min-w-0 sm:w-32">
             <SelectDropdown
                 options={FIELDS.map(f => ({ label: t(`ruleBuilder.${f.labelKey}`), value: f.value }))}
                 value={value.field || "description"}
@@ -175,7 +174,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
             />
             </div>
 
-            <div className="w-32">
+            <div className="row-start-2 col-span-3 sm:row-auto sm:col-span-1 sm:w-32">
             <SelectDropdown
                 options={operators.map(op => ({ label: t(`ruleBuilder.${op.labelKey}`), value: op.value }))}
                 value={value.operator || "contains"}
@@ -185,43 +184,47 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
             </div>
 
             {value.operator === "between" ? (
-                <div className="flex items-center gap-1">
+                <div className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 flex items-center gap-1 sm:flex-1">
                     <input
                         type="number"
+                        inputMode="decimal"
                         placeholder={t("ruleBuilder.min")}
                         value={Array.isArray(value.value) ? value.value[0] : ""}
                         onChange={(e) => onChange({
                             ...value,
                             value: [Number(e.target.value), Array.isArray(value.value) ? value.value[1] : 0]
                         })}
-                        className="w-20 bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"
+                        className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                     />
                     <span className="text-xs text-[var(--text-muted)]">-</span>
                     <input
                         type="number"
+                        inputMode="decimal"
                         placeholder={t("ruleBuilder.max")}
                         value={Array.isArray(value.value) ? value.value[1] : ""}
                         onChange={(e) => onChange({
                             ...value,
                             value: [Array.isArray(value.value) ? value.value[0] : 0, Number(e.target.value)]
                         })}
-                        className="w-20 bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"
+                        className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                     />
                 </div>
             ) : (
                 <input
                     type={inputType}
+                    inputMode={inputType === "number" ? "decimal" : undefined}
                     placeholder={t("ruleBuilder.value")}
                     value={value.value != null && typeof value.value !== "boolean" && !Array.isArray(value.value) ? value.value : ""}
                     onChange={(e) => onChange({ ...value, value: inputType === 'number' ? Number(e.target.value) : e.target.value })}
-                    className="flex-1 min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1 text-xs outline-none focus:border-[var(--primary)]"
+                    className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 sm:flex-1 sm:min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                 />
             )}
 
             {onRemove && (
                 <button
                     onClick={onRemove}
-                    className="p-1 rounded hover:bg-red-500/10 text-red-400 transition-colors"
+                    className="row-start-1 col-start-3 sm:row-auto sm:col-start-auto p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-colors self-start sm:self-auto justify-self-end"
+                    aria-label={t("common.delete")}
                 >
                     <Trash2 size={14} />
                 </button>
