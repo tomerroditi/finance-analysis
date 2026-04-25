@@ -915,6 +915,78 @@ class MonthlyBudgetService(BudgetService):
             "total_spent": float(project_txns[amount_col].sum() * -1),
         }
 
+    def get_alerts(
+        self,
+        year: int,
+        month: int,
+        warning_threshold: float = 0.8,
+    ) -> list[dict]:
+        """
+        Identify monthly budget rules whose spend has reached a warning threshold.
+
+        A rule is "tripped" when ``current_amount / amount`` is at or above
+        ``warning_threshold``. The "Total Budget" rule and the auto-generated
+        "Other Expenses" pseudo-rule are excluded — Total Budget is a roll-up
+        and would double-count, and "Other Expenses" has no user-set amount.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        warning_threshold : float, optional
+            Fraction of the budget at which an alert starts firing. Default is
+            ``0.8`` (80%). Rules at 100% or above are tagged with severity
+            ``"critical"``; rules between the warning threshold and 100% are
+            tagged ``"warning"``.
+
+        Returns
+        -------
+        list[dict]
+            One entry per tripped rule, each with keys ``rule_id``, ``name``,
+            ``category``, ``tags`` (list), ``amount`` (budget), ``spent``,
+            ``percentage`` (0.0–∞, where 1.0 = exactly at budget), and
+            ``severity`` (``"warning"`` or ``"critical"``). Empty list when
+            no rules are tripped or no rules exist for the month.
+        """
+        view = self.get_monthly_budget_view(year, month)
+        if view is None:
+            return []
+
+        alerts = []
+        for entry in view:
+            rule = entry["rule"]
+            category = rule.get(CATEGORY)
+            if category in (TOTAL_BUDGET, "Other Expenses"):
+                continue
+
+            amount = float(rule.get(AMOUNT) or 0)
+            if amount <= 0:
+                continue
+
+            spent = float(entry.get("current_amount") or 0)
+            percentage = spent / amount
+            if percentage < warning_threshold:
+                continue
+
+            severity = "critical" if percentage >= 1.0 else "warning"
+            alerts.append(
+                {
+                    "rule_id": int(rule[ID]),
+                    "name": str(rule.get(NAME) or ""),
+                    "category": str(category),
+                    "tags": list(rule.get(TAGS) or []),
+                    "amount": amount,
+                    "spent": spent,
+                    "percentage": percentage,
+                    "severity": severity,
+                }
+            )
+
+        alerts.sort(key=lambda a: a["percentage"], reverse=True)
+        return alerts
+
 
 class ProjectBudgetService(BudgetService):
     """Service for managing project-based budget rules."""

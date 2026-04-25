@@ -410,6 +410,148 @@ class TestMonthlyBudgetService:
         assert jan_rules_after.empty
 
 
+class TestMonthlyBudgetServiceAlerts:
+    """Tests for MonthlyBudgetService.get_alerts (in-app budget alerts)."""
+
+    def _seed_food_only(self, service, food_amount: float) -> None:
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=10000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        service.add_rule(
+            name="Food",
+            amount=food_amount,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+
+    def test_get_alerts_returns_empty_when_no_rules(self, db_session):
+        """Verify empty list when the month has no budget rules."""
+        service = MonthlyBudgetService(db_session)
+        assert service.get_alerts(2024, 1) == []
+
+    def test_get_alerts_below_threshold_returns_empty(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify rules under the warning threshold do not appear."""
+        service = MonthlyBudgetService(db_session)
+        # Jan 2024 Food spend is 245.0; against a 5000 budget that's 4.9%.
+        self._seed_food_only(service, food_amount=5000.0)
+        assert service.get_alerts(2024, 1) == []
+
+    def test_get_alerts_warning_severity(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify rules between threshold and 100% are tagged as 'warning'."""
+        service = MonthlyBudgetService(db_session)
+        # Jan 2024 Food spend is 245.0; budget 280 -> 87.5% -> warning.
+        self._seed_food_only(service, food_amount=280.0)
+        alerts = service.get_alerts(2024, 1)
+        assert len(alerts) == 1
+        food = alerts[0]
+        assert food["category"] == "Food"
+        assert food["spent"] == 245.0
+        assert food["amount"] == 280.0
+        assert food["severity"] == "warning"
+        assert 0.8 <= food["percentage"] < 1.0
+
+    def test_get_alerts_critical_severity(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify rules at or above 100% spend are tagged as 'critical'."""
+        service = MonthlyBudgetService(db_session)
+        # Jan 2024 Food spend 245.0; budget 200 -> 122.5% -> critical.
+        self._seed_food_only(service, food_amount=200.0)
+        alerts = service.get_alerts(2024, 1)
+        assert len(alerts) == 1
+        assert alerts[0]["severity"] == "critical"
+        assert alerts[0]["percentage"] >= 1.0
+
+    def test_get_alerts_excludes_total_budget_and_other_expenses(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify Total Budget and the 'Other Expenses' pseudo-rule are excluded.
+
+        Total Budget rolls up other categories (would double-count) and
+        Other Expenses has no user-set amount.
+        """
+        service = MonthlyBudgetService(db_session)
+        # Tiny Total Budget so it would otherwise be tripped.
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=100.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        service.add_rule(
+            name="Food",
+            amount=10000.0,  # well under threshold so Food is not tripped
+            category="Food",
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        alerts = service.get_alerts(2024, 1)
+        assert all(a["category"] not in (TOTAL_BUDGET, "Other Expenses") for a in alerts)
+
+    def test_get_alerts_sorted_by_percentage_desc(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify alerts are returned sorted by severity (most over first)."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=10000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        # Food: 245 / 250 = 98% (warning)
+        service.add_rule(
+            name="Food",
+            amount=250.0,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        # Home: 3000 / 1500 = 200% (critical)
+        service.add_rule(
+            name="Home",
+            amount=1500.0,
+            category="Home",
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        alerts = service.get_alerts(2024, 1)
+        assert len(alerts) == 2
+        assert alerts[0]["category"] == "Home"
+        assert alerts[1]["category"] == "Food"
+
+    def test_get_alerts_custom_threshold(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify the threshold parameter overrides the 80% default."""
+        service = MonthlyBudgetService(db_session)
+        # Food: 245 / 500 = 49%. With default 80% threshold -> no alert.
+        # With threshold 0.4 -> alert.
+        self._seed_food_only(service, food_amount=500.0)
+        assert service.get_alerts(2024, 1) == []
+        alerts = service.get_alerts(2024, 1, warning_threshold=0.4)
+        assert len(alerts) == 1
+        assert alerts[0]["category"] == "Food"
+
+
 class TestProjectBudgetService:
     """Tests for ProjectBudgetService functionality."""
 

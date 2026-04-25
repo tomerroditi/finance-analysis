@@ -341,6 +341,16 @@
     "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר",
     "addRule": "הוסף כלל"
   },
+  "budgetAlerts": {
+    "title": "התראות תקציב",
+    "loading": "טוען התראות...",
+    "empty": "הכל תחת שליטה. אין תקציב מעל סף האזהרה.",
+    "severityWarning": "אזהרה",
+    "severityCritical": "חריגה",
+    "dismiss": "הסר",
+    "dismissAll": "הסר הכל",
+    "openBudget": "פתח תקציב"
+  },
   "categories": {
     "title": "קטגוריות",
     "subtitle": "נהל את הקטגוריות והתגיות שלך",

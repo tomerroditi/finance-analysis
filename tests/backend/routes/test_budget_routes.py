@@ -159,6 +159,64 @@ class TestBudgetRoutes:
         assert isinstance(data["rules"], list)
         assert len(data["rules"]) > 0
 
+    def test_get_month_alerts(
+        self, test_client, seed_base_transactions, monkeypatch
+    ):
+        """GET /api/budget/alerts/{year}/{month} returns alerts payload."""
+        monkeypatch.setattr(
+            "backend.services.tagging_service._categories_cache",
+            SAMPLE_CATEGORIES,
+        )
+        # Seed a tight Food budget that will be tripped by Jan 2024 transactions.
+        test_client.post(
+            "/api/budget/rules",
+            json={
+                "name": "Total Budget",
+                "amount": 10000.0,
+                "category": "Total Budget",
+                "tags": ["all_tags"],
+                "year": 2024,
+                "month": 1,
+            },
+        )
+        test_client.post(
+            "/api/budget/rules",
+            json={
+                "name": "Food",
+                "amount": 200.0,
+                "category": "Food",
+                "tags": ["all_tags"],
+                "year": 2024,
+                "month": 1,
+            },
+        )
+
+        response = test_client.get("/api/budget/alerts/2024/1")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["year"] == 2024
+        assert data["month"] == 1
+        assert isinstance(data["alerts"], list)
+        assert len(data["alerts"]) == 1
+        food_alert = data["alerts"][0]
+        assert food_alert["category"] == "Food"
+        assert food_alert["severity"] == "critical"
+
+    def test_get_current_month_alerts_returns_payload(
+        self, test_client, monkeypatch
+    ):
+        """GET /api/budget/alerts returns current-month payload, even when empty."""
+        monkeypatch.setattr(
+            "backend.services.tagging_service._categories_cache",
+            SAMPLE_CATEGORIES,
+        )
+        response = test_client.get("/api/budget/alerts")
+        assert response.status_code == 200
+        data = response.json()
+        assert "year" in data
+        assert "month" in data
+        assert data["alerts"] == []
+
     def test_get_projects(self, test_client, seed_project_transactions):
         """GET /api/budget/projects returns project names."""
         response = test_client.get("/api/budget/projects")

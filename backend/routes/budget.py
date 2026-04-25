@@ -4,6 +4,7 @@ Budget API routes.
 Provides endpoints for budget rule management, analysis, and project management.
 """
 
+from datetime import date
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -164,6 +165,63 @@ async def get_monthly_analysis(
     """
     service = MonthlyBudgetService(db)
     return service.get_monthly_analysis(year, month, include_split_parents)
+
+
+# --- Alert Endpoints ---
+
+
+@router.get("/alerts")
+async def get_current_month_alerts(
+    threshold: float = Query(0.8, ge=0.0, le=1.0),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return budget alerts for the current calendar month.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Fraction of the budget at which an alert fires. Default is ``0.8``
+        (80%). Constrained to ``[0.0, 1.0]``.
+
+    Returns
+    -------
+    dict
+        ``{"year": Y, "month": M, "alerts": [...]}``. Each alert has
+        ``rule_id``, ``name``, ``category``, ``tags``, ``amount``, ``spent``,
+        ``percentage``, and ``severity`` (``"warning"`` or ``"critical"``).
+    """
+    today = date.today()
+    service = MonthlyBudgetService(db)
+    alerts = service.get_alerts(today.year, today.month, warning_threshold=threshold)
+    return {"year": today.year, "month": today.month, "alerts": alerts}
+
+
+@router.get("/alerts/{year}/{month}")
+async def get_month_alerts(
+    year: int,
+    month: int,
+    threshold: float = Query(0.8, ge=0.0, le=1.0),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return budget alerts for a specific calendar month.
+
+    Parameters
+    ----------
+    year : int
+        Calendar year.
+    month : int
+        Calendar month (1–12).
+    threshold : float, optional
+        Fraction of the budget at which an alert fires. Default is ``0.8``.
+
+    Returns
+    -------
+    dict
+        ``{"year": year, "month": month, "alerts": [...]}``.
+    """
+    service = MonthlyBudgetService(db)
+    alerts = service.get_alerts(year, month, warning_threshold=threshold)
+    return {"year": year, "month": month, "alerts": alerts}
 
 
 # --- Project Endpoints ---
