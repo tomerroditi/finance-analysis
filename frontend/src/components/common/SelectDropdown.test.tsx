@@ -1,13 +1,8 @@
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SelectDropdown } from "./SelectDropdown";
 import { renderWithProviders } from "../../test-utils";
-import { server } from "../../mocks/server";
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
 
 const defaultOptions = [
   { label: "Food", value: "food" },

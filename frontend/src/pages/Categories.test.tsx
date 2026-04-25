@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { server } from "../mocks/server";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test-utils";
 import { Categories } from "./Categories";
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
 
 describe("Categories", () => {
   describe("rendering", () => {
@@ -29,8 +25,14 @@ describe("Categories", () => {
       });
     });
 
-    it("displays tags within categories", async () => {
+    it("displays tags within categories after expanding", async () => {
+      const user = userEvent.setup();
       renderWithProviders(<Categories />);
+      await waitFor(() => {
+        expect(screen.getByText("Food")).toBeInTheDocument();
+      });
+      // Categories collapse their tags by default; tap the row to reveal them.
+      await user.click(screen.getByText("Food"));
       await waitFor(() => {
         expect(screen.getByText("Groceries")).toBeInTheDocument();
         expect(screen.getByText("Restaurants")).toBeInTheDocument();

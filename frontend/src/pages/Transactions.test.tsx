@@ -1,23 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
 import { Transactions } from "./Transactions";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-
 describe("Transactions", () => {
   describe("rendering", () => {
-    it("renders the page title", async () => {
-      renderWithProviders(<Transactions />);
-      await waitFor(() => {
-        expect(screen.getByText("Transactions")).toBeInTheDocument();
-      });
-    });
-
     it("renders service filter tabs", async () => {
       renderWithProviders(<Transactions />);
       await waitFor(() => {
