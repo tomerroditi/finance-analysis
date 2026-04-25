@@ -12,6 +12,8 @@
       "Bash(npm run build *)",
       "Bash(until curl -fs http://localhost:5173 > /dev/null 2>&1)",
       "Bash(until curl -fs http://localhost:8000/docs > /dev/null 2>&1)",
+      "Bash(git add *)",
+      "Bash(poetry run uvicorn backend.main:app --port 8000 *)",
       "mcp__plugin_playwright_playwright__browser_navigate",
       "mcp__plugin_playwright_playwright__browser_resize",
       "mcp__plugin_playwright_playwright__browser_snapshot",
