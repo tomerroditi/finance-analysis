@@ -5,6 +5,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useBudgetAlerts } from "../../hooks/useBudgetAlerts";
 import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 interface BudgetAlertsPopupProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
     data?.year,
     data?.month,
   );
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,7 +45,7 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 modal-overlay pt-16 sm:pt-24 px-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-md sm:backdrop-blur-sm animate-in fade-in duration-200 modal-overlay pt-16 sm:pt-24 px-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
