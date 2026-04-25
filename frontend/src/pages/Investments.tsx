@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
@@ -8,7 +8,6 @@ import {
   Power,
   PowerOff,
   TrendingUp,
-  Info,
   BarChart2,
   DollarSign,
   Pencil,
@@ -18,10 +17,12 @@ import { investmentsApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
+import { InfoTooltip } from "../components/common/InfoTooltip";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
 import { useCategories } from "../hooks/useCategories";
 import { useConfirm } from "../context/DialogContext";
+import { formatCurrency } from "../utils/numberFormatting";
 
 interface Investment {
   id: number;
@@ -62,46 +63,6 @@ interface BalancePoint {
 
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
-
-function NotesTooltip({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!show) return;
-    const handler = (e: MouseEvent | TouchEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setShow(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("touchstart", handler);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("touchstart", handler);
-    };
-  }, [show]);
-
-  return (
-    <div ref={wrapRef} className="group/notes relative">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setShow((v) => !v);
-        }}
-        className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-      >
-        <Info size={16} />
-      </button>
-      <div
-        className={`absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white transition-opacity pointer-events-none z-10 shadow-xl border border-white/5 ${show ? "opacity-100" : "opacity-0"} md:group-hover/notes:opacity-100`}
-      >
-        {text}
-      </div>
-    </div>
-  );
-}
 
 const TYPE_KEY_MAP: Record<string, string> = {
   stocks: "stocks",
@@ -144,13 +105,6 @@ function InvestmentCard({
       )
     : 0;
 
-  const formatCardCurrency = (val: number) =>
-    new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-      maximumFractionDigits: 0,
-    }).format(val);
-
   return (
     <div
       className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
@@ -192,7 +146,7 @@ function InvestmentCard({
                   className={`text-2xl font-black ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                 >
                   {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
-                  {formatCardCurrency(analysisData.profit_loss ?? 0)}
+                  {formatCurrency(analysisData.profit_loss ?? 0)}
                 </p>
                 <p className="text-sm font-semibold mt-1 text-[var(--text-muted)]">
                   {analysisData.roi != null &&
@@ -202,13 +156,13 @@ function InvestmentCard({
             ) : (
               <>
                 <p className="text-2xl font-black text-white">
-                  {formatCardCurrency(analysisData.balance)}
+                  {formatCurrency(analysisData.balance)}
                 </p>
                 <p
                   className={`text-sm font-semibold mt-1 ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                 >
                   {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
-                  {formatCardCurrency(analysisData.profit_loss ?? 0)}
+                  {formatCurrency(analysisData.profit_loss ?? 0)}
                   {analysisData.roi != null &&
                     ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
                 </p>
@@ -240,13 +194,13 @@ function InvestmentCard({
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCardCurrency(analysisData.total_deposits ?? 0) : "—"}
+            {analysisData ? formatCurrency(analysisData.total_deposits ?? 0) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.withdrawals")}</p>
           <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCardCurrency(analysisData.total_withdrawals ?? 0) : "—"}
+            {analysisData ? formatCurrency(analysisData.total_withdrawals ?? 0) : "—"}
           </p>
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
@@ -320,7 +274,11 @@ function InvestmentCard({
           >
             <Trash2 size={16} />
           </button>
-          {inv.notes && <NotesTooltip text={inv.notes} />}
+          {inv.notes && (
+            <div className="p-2 rounded-lg bg-[var(--surface-light)]">
+              <InfoTooltip text={inv.notes} iconSize={16} width={192} />
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -520,8 +478,15 @@ export function Investments() {
   const closedInvestments =
     investments?.filter((inv: Investment) => inv.is_closed) || [];
 
-  const getAllocationData = (invId: number) =>
-    portfolioAnalysis?.allocation?.find((a: AllocationItem) => a.id === invId);
+  const allocationById = useMemo(() => {
+    const map = new Map<number, AllocationItem>();
+    for (const a of (portfolioAnalysis?.allocation ?? []) as AllocationItem[]) {
+      map.set(a.id, a);
+    }
+    return map;
+  }, [portfolioAnalysis]);
+
+  const getAllocationData = (invId: number) => allocationById.get(invId);
 
   if (isLoading)
     return (

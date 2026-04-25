@@ -439,6 +439,14 @@
     "calculateFixedRate": "Calculate Fixed Rate",
     "balanceSnapshots": "Balance Snapshots",
     "entries": "entries",
+    "noTransactionsYet": "No transactions yet",
+    "noTransactionsYetDesc": "Add transactions tagged with this investment's category and tag to start seeing analysis.",
+    "tooltips": {
+      "currentBalance": "Latest known market value: the most recent balance snapshot, or, if none exists, minus the cumulative sum of all transactions (deposits and withdrawals).",
+      "profitLoss": "Current balance minus net invested. Net invested = total deposits − total withdrawals. Positive = gain, negative = loss.",
+      "roi": "Return on investment as a percentage of total deposits: (final value / total deposits − 1) × 100. Final value adds withdrawals back so partial cash-outs still count.",
+      "cagr": "Compound annual growth rate: the constant yearly return that would turn your total deposits into the current value over the holding period."
+    },
     "loadingAnalysis": "Loading analysis...",
     "updateBalance": "Update Balance",
     "currentMarketValue": "Current Market Value",
