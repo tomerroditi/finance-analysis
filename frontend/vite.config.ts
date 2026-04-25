@@ -16,14 +16,14 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        // Use injectManifest so we can hand-write the SW. We need a custom
-        // Workbox plugin that broadcasts `API_NETWORK_FAILED` to the page
-        // whenever an /api fetch fails (so the user sees a toast even when
-        // the SW silently serves stale cache). generateSW serializes the
-        // workbox config to JSON and can't carry inline plugin functions.
-        strategies: "injectManifest",
-        srcDir: "src",
-        filename: "sw.ts",
+        // generateSW: Workbox builds the SW from JSON config. We previously
+        // ran injectManifest with a hand-written src/sw.ts to use a custom
+        // fetchDidFail plugin, but that path consistently failed Vercel's
+        // build (works locally + GitHub Actions). The network-failure
+        // surface is now reproduced client-side via an axios response
+        // interceptor in src/services/api.ts, so we don't need the inline
+        // plugin and can stay on the simpler, build-portable generateSW
+        // strategy.
         registerType: "prompt",
         injectRegister: false,
         includeAssets: [
@@ -61,18 +61,38 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
-        injectManifest: {
-          // App shell precaching — JS/CSS/HTML/icons go into the SW cache so
-          // first paint works offline and on a flaky connection.
+        workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-          // Plotly inflates the main bundle past Workbox's 2 MiB default.
-          // Bumped so the entire app shell precaches; revisit once we
-          // code-split Plotly off the dashboard route.
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+          navigateFallback: "/index.html",
+          navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi/],
+          cleanupOutdatedCaches: true,
+          runtimeCaching: [
+            {
+              // Cacheable API GETs. Excluded:
+              //   /api/scraping/*    real-time scraper state
+              //   /api/credentials*  PII (account metadata)
+              //   /api/backups       must reflect server truth
+              urlPattern: ({ url, request }) =>
+                request.method === "GET" &&
+                url.pathname.startsWith("/api/") &&
+                !url.pathname.startsWith("/api/scraping/") &&
+                !url.pathname.startsWith("/api/credentials") &&
+                !url.pathname.startsWith("/api/backups"),
+              handler: "NetworkFirst",
+              options: {
+                cacheName: "finance-api-get",
+                networkTimeoutSeconds: 4,
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                },
+                cacheableResponse: { statuses: [0, 200] },
+              },
+            },
+          ],
         },
         devOptions: {
-          // The SW is generated only on `vite build`. Keep it disabled in
-          // dev to avoid stale cache surprises while iterating.
           enabled: false,
         },
       }),

@@ -4,13 +4,19 @@ const TOAST_VISIBLE_MS = 3500;
 const FAILURE_DEBOUNCE_MS = 5000;
 
 /**
- * Subscribes to the `API_NETWORK_FAILED` postMessage broadcast from our
- * service worker (see `src/sw.ts`). Returns a transient `visible` flag so
- * the host component can render a toast for a few seconds.
+ * Subscribes to the `api-network-failed` window event dispatched from our
+ * axios response interceptor whenever an API request never reached the
+ * server. Returns a transient `visible` flag so the host component can
+ * render a toast for a few seconds.
  *
  * Debouncing: a single toast covers a burst of failures from parallel
  * queries. After it dismisses we wait `FAILURE_DEBOUNCE_MS` before another
- * toast can appear, so a steady network outage doesn't spam the UI.
+ * toast can appear, so a steady outage doesn't spam the UI.
+ *
+ * Note: with the SW's NetworkFirst strategy, requests that fail the
+ * network but hit the cache resolve successfully from axios's view, so
+ * those silent fallbacks aren't surfaced here. Only true failures (no
+ * cache, or mutation/cred/scraping endpoints that bypass the cache) fire.
  */
 export function useNetworkFailureToast(): {
   visible: boolean;
@@ -21,10 +27,7 @@ export function useNetworkFailureToast(): {
   const hideTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
-
-    const handler = (event: MessageEvent) => {
-      if (event.data?.type !== "API_NETWORK_FAILED") return;
+    const handler = () => {
       const now = Date.now();
       if (now - lastShownRef.current < FAILURE_DEBOUNCE_MS) return;
       lastShownRef.current = now;
@@ -35,9 +38,9 @@ export function useNetworkFailureToast(): {
       }, TOAST_VISIBLE_MS);
     };
 
-    navigator.serviceWorker.addEventListener("message", handler);
+    window.addEventListener("api-network-failed", handler);
     return () => {
-      navigator.serviceWorker.removeEventListener("message", handler);
+      window.removeEventListener("api-network-failed", handler);
       window.clearTimeout(hideTimerRef.current);
     };
   }, []);
