@@ -134,6 +134,7 @@
     "cashBalances": "Cash Balances",
     "daysRemaining": "{{count}} days remaining",
     "noProjectBudgets": "No project budgets yet",
+    "noBudgetRulesForMonth": "No budget rules for this month yet",
     "viewAllBudgetRules": "View All Budget Rules",
     "done": "Done",
     "incomeAndExpenses": "Income & Expenses",

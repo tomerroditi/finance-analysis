@@ -134,6 +134,7 @@
     "cashBalances": "יתרות מזומן",
     "daysRemaining": "{{count}} ימים נותרו",
     "noProjectBudgets": "עדיין אין תקציבי פרויקטים",
+    "noBudgetRulesForMonth": "עדיין אין כללי תקציב לחודש זה",
     "viewAllBudgetRules": "הצג את כל כללי התקציב",
     "done": "בוצע",
     "incomeAndExpenses": "הכנסות והוצאות",
