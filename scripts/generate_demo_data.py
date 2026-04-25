@@ -42,6 +42,7 @@ from backend.models import (  # noqa: E402
     ManualInvestmentTransaction,
     PendingRefund,
     RefundLink,
+    RetirementGoal,
     ScrapingHistory,
     SplitTransaction,
     TaggingRule,
@@ -51,7 +52,7 @@ from backend.models import (  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 REFERENCE_DATE = date(2026, 2, 25)
-START_DATE = REFERENCE_DATE - timedelta(days=420)  # ~14 months back
+START_DATE = REFERENCE_DATE - timedelta(days=365 * 3 + 1)  # ~3 years back
 DB_PATH = PROJECT_ROOT / "backend" / "resources" / "demo_data.db"
 
 random.seed(42)
@@ -112,6 +113,7 @@ CATEGORIES_DATA = {
     "Credit Cards": ([], None),
     "Ignore": (["Credit Card Bill", "Internal Transactions"], "🚫"),
     "Home Renovation": (["Materials", "Labor", "Furniture"], "🏠"),
+    "Wedding": (["Venue", "Catering", "Photography", "Attire", "Rings", "Invitations", "Honeymoon"], "💒"),
 }
 
 TAGGING_RULES_DATA = [
@@ -142,6 +144,16 @@ TAGGING_RULES_DATA = [
         {"type": "CONDITION", "field": "description", "operator": "contains", "value": "AMAZON"},
         {"type": "CONDITION", "field": "description", "operator": "contains", "value": "ALIEXPRESS"},
     ]}, "Shopping", "Online"),
+    # Operator variety — exercises starts_with, equals, between in the rule preview/editor.
+    ("Food Delivery", {"type": "CONDITION", "field": "description", "operator": "starts_with", "value": "WOLT"}, "Food", "Delivery"),
+    ("Salary - Tech", {"type": "AND", "subconditions": [
+        {"type": "CONDITION", "field": "description", "operator": "equals", "value": "TECH COMPANY LTD - SALARY"},
+        {"type": "CONDITION", "field": "provider", "operator": "equals", "value": "hapoalim"},
+    ]}, "Salary", "Tech Company"),
+    ("Small ATM Fees", {"type": "AND", "subconditions": [
+        {"type": "CONDITION", "field": "description", "operator": "contains", "value": "ATM"},
+        {"type": "CONDITION", "field": "amount", "operator": "between", "value": ["-25", "-1"]},
+    ]}, "Other", "Bank Commisions"),
 ]
 
 
@@ -187,6 +199,25 @@ def generate_cc_transactions(session):
 
     # Track which months are in the last 6 for home renovation
     six_months_ago = REFERENCE_DATE - timedelta(days=180)
+    # Wedding planning: roughly last 10 months — gradual vendor payments.
+    # Use a generous threshold so the schedule's earliest entry (months_back=10) isn't
+    # dropped just because the mid-month anchor falls slightly before the 300-day mark.
+    ten_months_ago = REFERENCE_DATE - timedelta(days=330)
+
+    # Wedding vendor schedule (CC card, roughly one per month in the last 10 months).
+    # Bigger payments (venue, catering) go via the bank — see generate_bank_transactions.
+    wedding_cc_schedule = {
+        10: ("TIFFANY RINGS ISRAEL", "Rings", -9800.0),
+        9:  ("PHOTOGRAPHER BOOKING", "Photography", -2500.0),
+        8:  ("WEDDING DRESS - ROTEM", "Attire", -5800.0),
+        7:  ("GROOM SUIT - HUGO BOSS", "Attire", -3600.0),
+        6:  ("INVITATIONS - PAPER KING", "Invitations", -1450.0),
+        5:  ("WEDDING BAND - MUSIC DUO", "Catering", -2800.0),
+        4:  ("PHOTOGRAPHER - FINAL", "Photography", -3500.0),
+        3:  ("HAIR & MAKEUP TRIAL", "Attire", -900.0),
+        2:  ("WEDDING FAVORS - ETSY", "Invitations", -680.0),
+        1:  ("HONEYMOON FLIGHTS", "Honeymoon", -9400.0),
+    }
 
     for year, month in months:
         max_total = 0.0
@@ -476,8 +507,207 @@ def generate_cc_transactions(session):
             all_cc_txns.append(txn)
             max_total += amt
 
-        # Home Renovation — last 6 months only, on Max card
         month_date = date(year, month, 15)
+
+        # Kids school supplies surge in August–September
+        if month in (8, 9):
+            for _ in range(random.randint(1, 3)):
+                cc_counter += 1
+                desc = random.choice(["KRAVITZ SCHOOL", "OFFICE DEPOT BACK-TO-SCHOOL", "SHILAV"])
+                amt = rand_amount(-350, -120)
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 15, 28),
+                    provider="max",
+                    account_name="Family Card",
+                    description=desc,
+                    amount=amt,
+                    category="Kids",
+                    tag="School Supplies",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Kids birthday parties — twice a year (March + October)
+        if month in (3, 10):
+            cc_counter += 1
+            amt = rand_amount(-1200, -600)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month),
+                provider="max",
+                account_name="Family Card",
+                description="KIDS BIRTHDAY - PARTY HALL",
+                amount=amt,
+                category="Kids",
+                tag="Activities",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            max_total += amt
+
+        # Summer family vacation — August each year, on Visa Cal (online bookings)
+        if month == 8:
+            # Flights
+            cc_counter += 1
+            flights_amt = rand_amount(-7500, -5500)
+            destination = random.choice(["GREECE", "CYPRUS", "ITALY"])
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 1, 10),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description=f"EL AL FLIGHTS - {destination}",
+                amount=flights_amt,
+                category="Vacations",
+                tag="Flights",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += flights_amt
+
+            # Hotel
+            cc_counter += 1
+            hotel_amt = rand_amount(-6500, -4500)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 5, 15),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description="BOOKING.COM HOTEL",
+                amount=hotel_amt,
+                category="Vacations",
+                tag="Hotel",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += hotel_amt
+
+            # Vacation food (a few charges)
+            for _ in range(random.randint(3, 5)):
+                cc_counter += 1
+                amt = rand_amount(-450, -120)
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 15, 28),
+                    provider="max",
+                    account_name="Family Card",
+                    description=f"RESTAURANT - {destination}",
+                    amount=amt,
+                    category="Vacations",
+                    tag="Food",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Short winter getaway — December each year (domestic, hotel only)
+        if month == 12:
+            cc_counter += 1
+            amt = rand_amount(-2800, -1800)
+            resort = random.choice(["DEAD SEA RESORT", "EILAT ISROTEL", "GALILEE LODGE"])
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 20, 28),
+                provider="visa cal",
+                account_name="Online Shopping",
+                description=resort,
+                amount=amt,
+                category="Vacations",
+                tag="Hotel",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            visa_total += amt
+
+        # Extra holiday gifts in December (Hanukkah) and March/April (Passover)
+        if month in (12, 3, 4):
+            for _ in range(random.randint(2, 4)):
+                cc_counter += 1
+                amt = rand_amount(-400, -120)
+                desc = random.choice(["HAMASHBIR GIFTS", "TOYS R US", "HOLIDAY GIFT SHOP"])
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month),
+                    provider="visa cal",
+                    account_name="Online Shopping",
+                    description=desc,
+                    amount=amt,
+                    category="Shopping",
+                    tag="Gifts",
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                visa_total += amt
+
+        # Car service — annual in spring
+        if month == 4:
+            cc_counter += 1
+            amt = rand_amount(-2500, -1200)
+            txn = CreditCardTransaction(
+                id=f"demo-cc-{cc_counter:04d}",
+                date=rand_date_in_month(year, month, 5, 20),
+                provider="max",
+                account_name="Family Card",
+                description="CAR SERVICE - ANNUAL",
+                amount=amt,
+                category="Transportation",
+                tag=None,
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_cc_txns.append(txn)
+            max_total += amt
+
+        # Wedding planning — last 10 months on Max card (one vendor per month).
+        if month_date >= ten_months_ago:
+            months_back = (REFERENCE_DATE.year - year) * 12 + (REFERENCE_DATE.month - month)
+            vendor = wedding_cc_schedule.get(months_back)
+            if vendor:
+                desc, tag, amt = vendor
+                cc_counter += 1
+                txn = CreditCardTransaction(
+                    id=f"demo-cc-{cc_counter:04d}",
+                    date=rand_date_in_month(year, month, 10, 25),
+                    provider="max",
+                    account_name="Family Card",
+                    description=desc,
+                    amount=amt,
+                    category="Wedding",
+                    tag=tag,
+                    source="credit_card_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
+                all_cc_txns.append(txn)
+                max_total += amt
+
+        # Home Renovation — last 6 months only, on Max card
         if month_date >= six_months_ago:
             # 1-2 renovation transactions per qualifying month (to get ~15 total)
             reno_count = random.randint(1, 3)
@@ -998,6 +1228,56 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
             session.add(txn)
             all_bank_txns.append(txn)
 
+        # Annual tech-company bonus — every December
+        if month == 12:
+            bank_counter += 1
+            bonus = round(rand_amount(26000, 35000), 2)
+            txn = BankTransaction(
+                id=f"demo-bank-{bank_counter:04d}",
+                date=date(year, month, 20).isoformat(),
+                provider="hapoalim",
+                account_name="Main Account",
+                description="TECH COMPANY LTD - ANNUAL BONUS",
+                amount=bonus,
+                category="Salary",
+                tag="Tech Company",
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_bank_txns.append(txn)
+
+        # Big wedding vendor payments via bank transfer (last 8 months).
+        # Paired with the CC-side schedule above — these are the large deposits
+        # that don't fit on a credit card.
+        wedding_bank_schedule = {
+            8: ("WEDDING VENUE - DEPOSIT", "Venue", -20000.0),
+            5: ("CATERING - DEPOSIT", "Catering", -12000.0),
+            2: ("CATERING - FINAL PAYMENT", "Catering", -18000.0),
+            1: ("VENUE - BALANCE PAYMENT", "Venue", -15000.0),
+        }
+        months_back = (REFERENCE_DATE.year - year) * 12 + (REFERENCE_DATE.month - month)
+        wedding_payment = wedding_bank_schedule.get(months_back)
+        if wedding_payment:
+            bank_counter += 1
+            desc, tag, amt = wedding_payment
+            txn = BankTransaction(
+                id=f"demo-bank-{bank_counter:04d}",
+                date=rand_date_in_month(year, month, 10, 25),
+                provider="hapoalim",
+                account_name="Main Account",
+                description=desc,
+                amount=amt,
+                category="Wedding",
+                tag=tag,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+            session.add(txn)
+            all_bank_txns.append(txn)
+
         # CC bill payments — posted on the 2nd of the NEXT month
         ny, nm = next_month(year, month)
         # Only create the bill if the next month is within our range (or at most one month past)
@@ -1110,13 +1390,78 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
         session.add(txn)
         all_bank_txns.append(txn)
 
+    # One-time "Prior Wealth" deposit early in the period — exercises the Sankey
+    # path that treats Other Income/Prior Wealth tagged transactions as a separate
+    # source (excluded from recurring income but added to the Prior Wealth bucket).
+    bank_counter += 1
+    pw_date = (START_DATE + timedelta(days=12)).isoformat()
+    pw_txn = BankTransaction(
+        id=f"demo-bank-{bank_counter:04d}",
+        date=pw_date,
+        provider="hapoalim",
+        account_name="Main Account",
+        description="OPENING DEPOSIT - SAVINGS TRANSFER",
+        amount=15000.0,
+        category="Other Income",
+        tag="Prior Wealth",
+        source="bank_transactions",
+        type="normal",
+        status="completed",
+    )
+    session.add(pw_txn)
+    all_bank_txns.append(pw_txn)
+
+    # Secondary bank account: Leumi Savings Account — monthly transfers from Main
+    # Demonstrates multi-account bank support (per-account balances, separate
+    # account tile on Data Sources).
+    months = list(month_range(START_DATE, REFERENCE_DATE))
+    for year, month in months:
+        # Outgoing transfer from Main Account (treated as an internal transfer)
+        bank_counter += 1
+        transfer_date = date(year, month, 20).isoformat()
+        out_txn = BankTransaction(
+            id=f"demo-bank-{bank_counter:04d}",
+            date=transfer_date,
+            provider="hapoalim",
+            account_name="Main Account",
+            description="TRANSFER TO LEUMI SAVINGS",
+            amount=-2000.0,
+            category="Ignore",
+            tag="Internal Transactions",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(out_txn)
+        all_bank_txns.append(out_txn)
+
+        # Matching deposit into Leumi Savings
+        bank_counter += 1
+        savings_txn = BankTransaction(
+            id=f"demo-bank-{bank_counter:04d}",
+            date=transfer_date,
+            provider="leumi",
+            account_name="Savings Account",
+            description="INCOMING TRANSFER - HAPOALIM",
+            amount=2000.0,
+            category="Ignore",
+            tag="Internal Transactions",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        session.add(savings_txn)
+        all_bank_txns.append(savings_txn)
+
     session.flush()
     return all_bank_txns
 
 
 def create_liabilities(session):
-    """Create liability records for Mortgage and Car Loan."""
+    """Create liability records for Mortgage, Car Loan, and a paid-off Personal Loan."""
     car_loan_start = START_DATE + timedelta(days=240)
+    personal_loan_start = START_DATE
+    personal_loan_paid_off = REFERENCE_DATE - timedelta(days=90)
 
     mortgage = Liability(
         name="Home Mortgage",
@@ -1148,40 +1493,67 @@ def create_liabilities(session):
     )
     session.add(car_loan)
 
+    personal_loan = Liability(
+        name="Personal Loan",
+        lender="Bank Discount",
+        category="Liabilities",
+        tag="Personal Loan",
+        principal_amount=25000.0,
+        interest_rate=6.0,
+        term_months=12,
+        start_date=personal_loan_start.isoformat(),
+        is_paid_off=1,
+        paid_off_date=personal_loan_paid_off.isoformat(),
+        notes="Short-term personal loan, paid off early",
+        created_date=personal_loan_start.isoformat(),
+    )
+    session.add(personal_loan)
+
     session.flush()
 
 
 def generate_cash_transactions(session):
-    """Generate ~50-70 cash transactions over 14 months."""
+    """Generate ~50-70 cash transactions across two envelopes over 14 months."""
     cash_counter = 0
     months = list(month_range(START_DATE, REFERENCE_DATE))
 
-    cash_templates = [
+    petty_templates = [
         ("Cash Market Purchase", "Food", "Groceries", -60, -20),
         ("Tip", "Other", None, -50, -10),
         ("Flea Market", "Shopping", None, -100, -30),
     ]
+    kids_templates = [
+        ("Kids Allowance", "Kids", "Activities", -50, -20),
+        ("School Lunch Money", "Kids", "School Supplies", -40, -15),
+        ("Ice Cream Outing", "Food", "Restaurants", -60, -25),
+    ]
+
+    envelopes = [
+        ("Petty Cash", petty_templates, 3, 5),
+        ("Kids Envelope", kids_templates, 1, 3),
+    ]
 
     for year, month in months:
-        count = random.randint(3, 5)
-        for _ in range(count):
-            cash_counter += 1
-            desc, cat, tag, lo, hi = random.choice(cash_templates)
-            amt = rand_amount(lo, hi)
-            txn = CashTransaction(
-                id=f"demo-cash-{cash_counter:04d}",
-                date=rand_date_in_month(year, month),
-                provider="cash",
-                account_name="Petty Cash",
-                description=desc,
-                amount=amt,
-                category=cat,
-                tag=tag,
-                source="cash_transactions",
-                type="normal",
-                status="completed",
-            )
-            session.add(txn)
+        for account_name, templates, lo_count, hi_count in envelopes:
+            count = random.randint(lo_count, hi_count)
+            for _ in range(count):
+                cash_counter += 1
+                desc, cat, tag, lo, hi = random.choice(templates)
+                amt = rand_amount(lo, hi)
+                txn = CashTransaction(
+                    id=f"demo-cash-{cash_counter:04d}",
+                    date=rand_date_in_month(year, month),
+                    provider="cash",
+                    account_name=account_name,
+                    description=desc,
+                    amount=amt,
+                    category=cat,
+                    tag=tag,
+                    source="cash_transactions",
+                    type="normal",
+                    status="completed",
+                )
+                session.add(txn)
 
     session.flush()
 
@@ -1317,6 +1689,23 @@ def create_investments(session):
     session.add(bond)
 
     session.flush()
+
+    # Recalculate prior_wealth_amount per investment from its transactions —
+    # mirrors backend's recalculate_prior_wealth (`-sum(all inv txns)`). Without
+    # this, the Sankey "Prior Wealth" node and the Overview total_income KPI
+    # under-report investment-side prior wealth.
+    for inv in (stock_fund, savings_plan, bond):
+        total = (
+            session.query(ManualInvestmentTransaction)
+            .filter(
+                ManualInvestmentTransaction.category == inv.category,
+                ManualInvestmentTransaction.tag == inv.tag,
+            )
+            .all()
+        )
+        inv.prior_wealth_amount = -sum(t.amount for t in total)
+    session.flush()
+
     return stock_fund, savings_plan, bond
 
 
@@ -1423,8 +1812,9 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 
 
 def create_budget_rules(session):
-    """Create monthly budgets for last 3 months + project budget."""
+    """Create monthly budgets for the last 6 months + two project budgets."""
     monthly_budgets = [
+        # Category-level rules
         ("Total Budget", 28000, "Total Budget", None),
         ("Food Budget", 5000, "Food", None),
         ("Transportation Budget", 1800, "Transportation", None),
@@ -1433,22 +1823,21 @@ def create_budget_rules(session):
         ("Health Budget", 600, "Health", None),
         ("Kids Budget", 3500, "Kids", None),
         ("Shopping Budget", 2000, "Shopping", None),
+        ("Vacations Budget", 4000, "Vacations", None),
+        # Tag-level rules — exercises per-tag breakdown within categories
+        ("Groceries", 2800, "Food", "Groceries"),
+        ("Restaurants", 1200, "Food", "Restaurants"),
+        ("Gas", 1200, "Transportation", "Gas"),
+        ("Online Shopping", 1500, "Shopping", "Online"),
     ]
 
-    # Last 3 months before REFERENCE_DATE
-    ref = REFERENCE_DATE
+    # Last 6 months ending with the current REFERENCE_DATE month
     budget_months = []
-    current = ref
-    for _ in range(3):
-        # Go to previous month
-        current = current.replace(day=1) - timedelta(days=1)
+    current = date(REFERENCE_DATE.year, REFERENCE_DATE.month, 1)
+    for _ in range(6):
         budget_months.append((current.year, current.month))
-    # Also include the current month
-    budget_months.append((ref.year, ref.month))
-    # Sort chronologically
+        current = current.replace(day=1) - timedelta(days=1)
     budget_months.sort()
-    # Take last 3
-    budget_months = budget_months[-3:]
 
     for year, month in budget_months:
         for name, amount, category, tags in monthly_budgets:
@@ -1461,12 +1850,20 @@ def create_budget_rules(session):
                 month=month,
             ))
 
-    # Project budget
+    # Project budgets
     session.add(BudgetRule(
         name="Home Renovation",
         amount=30000,
         category="Home Renovation",
         tags="Materials;Labor;Furniture",
+        year=None,
+        month=None,
+    ))
+    session.add(BudgetRule(
+        name="Our Wedding",
+        amount=120000,
+        category="Wedding",
+        tags="Venue;Catering;Photography;Attire;Rings;Invitations;Honeymoon",
         year=None,
         month=None,
     ))
@@ -1551,11 +1948,38 @@ def create_split_transactions(session, cc_txns: list[CreditCardTransaction]):
             tag="Clothing",
         ))
 
+    # 4. Split on a cash transaction — exercises non-CC split source variety.
+    cash_candidates = (
+        session.query(CashTransaction)
+        .filter(CashTransaction.amount <= -40, CashTransaction.type == "normal")
+        .order_by(CashTransaction.unique_id.desc())
+        .limit(1)
+        .all()
+    )
+    if cash_candidates:
+        parent = cash_candidates[0]
+        parent.type = "split_parent"
+        parent.description = "Mixed Cash Purchase"
+        session.add(SplitTransaction(
+            transaction_id=parent.unique_id,
+            source="cash_transactions",
+            amount=round(parent.amount * 0.5, 2),
+            category="Food",
+            tag="Groceries",
+        ))
+        session.add(SplitTransaction(
+            transaction_id=parent.unique_id,
+            source="cash_transactions",
+            amount=round(parent.amount * 0.5, 2),
+            category="Other",
+            tag="Haircut",
+        ))
+
     session.flush()
 
 
 def create_bank_balance(session):
-    """Create bank balance record."""
+    """Create bank balance records for all tracked bank accounts."""
     session.add(BankBalance(
         provider="hapoalim",
         account_name="Main Account",
@@ -1563,16 +1987,30 @@ def create_bank_balance(session):
         prior_wealth_amount=50000.0,
         last_scrape_update=(REFERENCE_DATE - timedelta(days=1)).isoformat(),
     ))
+    # Savings account: starts with 5k prior wealth + 14 months of 2k transfers
+    session.add(BankBalance(
+        provider="leumi",
+        account_name="Savings Account",
+        balance=33000.0,
+        prior_wealth_amount=5000.0,
+        last_scrape_update=(REFERENCE_DATE - timedelta(days=1)).isoformat(),
+    ))
     session.flush()
 
 
 def create_cash_balance(session):
-    """Create cash balance record."""
+    """Create cash balance records for all envelopes."""
     session.add(CashBalance(
         account_name="Petty Cash",
         balance=520.0,
         prior_wealth_amount=1000.0,
         last_manual_update=(REFERENCE_DATE - timedelta(days=7)).isoformat(),
+    ))
+    session.add(CashBalance(
+        account_name="Kids Envelope",
+        balance=180.0,
+        prior_wealth_amount=300.0,
+        last_manual_update=(REFERENCE_DATE - timedelta(days=14)).isoformat(),
     ))
     session.flush()
 
@@ -1843,7 +2281,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             account_name="Main Account",
             description="RIDE REFUND - PARTIAL",
             amount=first_link,
-            category="Transport",
+            category="Transportation",
             tag="Taxi",
             source="bank_transactions",
             type="normal",
@@ -1867,7 +2305,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             account_name="Main Account",
             description="RIDE REFUND - REMAINING (150, will auto-split to 80+70)",
             amount=150.0,
-            category="Transport",
+            category="Transportation",
             tag="Taxi",
             source="bank_transactions",
             type="normal",
@@ -1875,6 +2313,63 @@ def create_pending_refunds(session, cc_txns, bank_txns):
         )
         session.add(autosplit_candidate)
 
+    # 7. Pending refund on a SPLIT (source_type='split') — exercises refund tracking
+    # against a sub-portion of a split parent rather than a raw transaction.
+    split_target = (
+        session.query(SplitTransaction)
+        .filter(SplitTransaction.source == "credit_card_transactions",
+                SplitTransaction.amount <= -100)
+        .first()
+    )
+    if split_target:
+        session.add(PendingRefund(
+            source_type="split",
+            source_id=split_target.id,
+            source_table="credit_card_transactions",
+            expected_amount=abs(split_target.amount),
+            status="pending",
+            notes="Refund expected on split portion — supplier offered store credit",
+        ))
+
+    session.flush()
+
+
+def create_retirement_goal(session):
+    """Create a retirement goal record for FIRE page testing.
+
+    Based on the Cohen family profile: two incomes, mortgage, KH + pension
+    balances from the insurance accounts. Target is early retirement at 55.
+
+    The KH balance/contribution numbers below are the SUM of the three
+    Keren Hishtalmut accounts seeded in generate_insurance_data
+    (active tech + spouse + previous employer). Keep these in sync with
+    the InsuranceAccount balances and the per-employee KH percentages
+    derived from Israeli law (2.5% employee + 7.5% employer of gross,
+    capped at the 15,712 ILS/month tax-exempt cap for the tech employee).
+    """
+    # KH totals must match generate_insurance_data:
+    #   tech:  110,000 balance, 1,571/mo contribution (capped)
+    #   teacher: 95,000 balance, 1,400/mo
+    #   old:    50,000 balance, frozen (no current contribution)
+    kh_total_balance = 110_000.0 + 95_000.0 + 50_000.0  # 255,000
+    kh_total_monthly = 1_571.0 + 1_400.0                # 2,971
+
+    session.add(RetirementGoal(
+        current_age=38,
+        gender="male",
+        target_retirement_age=55,
+        life_expectancy=90,
+        monthly_expenses_in_retirement=20000.0,
+        inflation_rate=0.025,
+        expected_return_rate=0.045,
+        withdrawal_rate=0.035,
+        pension_monthly_payout_estimate=8500.0,
+        keren_hishtalmut_balance=kh_total_balance,
+        keren_hishtalmut_monthly_contribution=kh_total_monthly,
+        bituach_leumi_eligible=1,
+        bituach_leumi_monthly_estimate=2800.0,
+        other_passive_income=0.0,
+    ))
     session.flush()
 
 
@@ -1883,12 +2378,20 @@ def create_scraping_history(session):
     recent = REFERENCE_DATE - timedelta(days=1)
     older = REFERENCE_DATE - timedelta(days=21)
 
-    # 3 recent successful scrapes
+    # 4 recent successful scrapes (two bank accounts + two CC accounts)
     session.add(ScrapingHistory(
         service_name="banks",
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 30, 0).isoformat(),
+        status="SUCCESS",
+        start_date=(recent - timedelta(days=30)).isoformat(),
+    ))
+    session.add(ScrapingHistory(
+        service_name="banks",
+        provider_name="leumi",
+        account_name="Savings Account",
+        date=datetime(recent.year, recent.month, recent.day, 8, 32, 0).isoformat(),
         status="SUCCESS",
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
@@ -1941,29 +2444,128 @@ def generate_insurance_data(session):
     """Generate insurance accounts (pension + keren hishtalmut) and monthly deposit transactions.
 
     Creates:
-    - 2 pension accounts (makifa + mashlima) with monthly deposits
-    - 2 keren hishtalmut accounts with monthly deposits
-    - 1 inactive keren hishtalmut (old employer, no recent transactions)
+    - Tech employee: pension makifa + pension mashlima (because gross > Makifa cap)
+    - School employee: pension makifa only (gross < Makifa cap)
+    - 2 active keren hishtalmut accounts (one per spouse, Tech's is capped)
+    - 1 inactive keren hishtalmut (Tech's previous employer, no recent transactions)
+
+    Israeli pension/KH law (see .claude/skills/israeli-salary-knowledge for
+    the full write-up — keep these numbers in sync with that reference)
+    ---------------------------------------------------------------------
+    All percentages are applied to the employee's GROSS salary. Employer
+    shares are added on top of the gross, not deducted from it.
+
+    Pension (18.5% of gross, legal minimum since 2017):
+        - Employee (תגמולי עובד):         6.0%
+        - Employer savings (תגמולי מעסיק): 6.5%
+        - Employer severance (פיצויים):    6.0%
+
+    Makifa vs Mashlima split:
+        - The first ~25,000 ILS/month of gross salary (= 2× שכר ממוצע במשק)
+          goes to Keren Pensia Makifa (קרן פנסיה מקיפה). Makifa is the
+          main fund and carries disability + life-insurance coverage.
+        - Excess salary above the cap routes the SAME 18.5% percentages
+          into Keren Pensia Mashlima (קרן פנסיה משלימה), which is a pure
+          savings plan with no insurance component.
+        - A worker below the cap has ONLY a Makifa account.
+        - A worker above the cap has BOTH (each fed from its own slice
+          of the gross).
+
+    Keren Hishtalmut (10% of gross):
+        - Employee: 2.5% of gross
+        - Employer: 7.5% of gross
+        - Tax-exempt gross-salary cap (2026): 15,712 ILS/month.
+          Deposits above the cap are allowed but taxable for the
+          employee, so most payrolls cap them at this base — which is
+          what we model.
+
+    Demo couple:
+        - Tech employee:  28,000 ILS gross  (≈ 18,000 net after pension,
+                          KH, income tax, Bituach Leumi) — ABOVE Makifa cap
+        - Teacher:        14,000 ILS gross  (≈ 11,000 net)
+                          — BELOW Makifa cap, no Mashlima account
+
+    Each individual's pension and KH accounts are funded exclusively from
+    THAT individual's gross salary. Spouses' accounts are never pooled.
+
+    Account balances reflect ~5 years of contributions (2 prior + 3 tracked)
+    with a realistic ~5-6%/year real return.
     """
     months = list(month_range(START_DATE, REFERENCE_DATE))
     txn_counter = 0
 
+    # --- Gross monthly salaries (see skill doc for net-calculation example) ---
+    tech_gross = 28_000.0       # above Makifa cap → gets Makifa + Mashlima
+    teacher_gross = 14_000.0    # below Makifa cap → Makifa only
+
+    # --- Legal thresholds (2026 — update with annual indexation) ---
+    # Makifa deposit cap expressed as a monthly salary (≈ 2× שכר ממוצע).
+    # Deposits on gross above this amount route to Mashlima instead.
+    makifa_salary_cap = 25_000.0
+    # KH tax-exempt monthly gross salary base.
+    kh_cap = 15_712.0
+
+    # Pension shares (legal minimum since 2017).
+    pn_employee_pct = 0.06
+    pn_employer_pct = 0.065
+    pn_severance_pct = 0.06
+    pn_total_pct = pn_employee_pct + pn_employer_pct + pn_severance_pct  # 0.185
+
+    # KH shares.
+    kh_employee_pct = 0.025
+    kh_employer_pct = 0.075
+    kh_total_pct = kh_employee_pct + kh_employer_pct  # 0.10
+
+    # --- Per-individual pension bases after the Makifa cap split ---
+    tech_makifa_base = min(tech_gross, makifa_salary_cap)               # 25,000
+    tech_mashlima_base = max(0.0, tech_gross - makifa_salary_cap)       # 3,000
+    teacher_makifa_base = min(teacher_gross, makifa_salary_cap)         # 14,000
+    teacher_mashlima_base = max(0.0, teacher_gross - makifa_salary_cap)  # 0 → no account
+
+    # --- Monthly deposit amounts derived from the rules above ---
+    # Tech employee — Makifa (first 25k)
+    pn_tech_makifa_employee = round(tech_makifa_base * pn_employee_pct, 2)    # 1,500
+    pn_tech_makifa_employer = round(tech_makifa_base * pn_employer_pct, 2)    # 1,625
+    pn_tech_makifa_severance = round(tech_makifa_base * pn_severance_pct, 2)  # 1,500
+    pn_tech_makifa_total = round(tech_makifa_base * pn_total_pct, 2)          # 4,625
+
+    # Tech employee — Mashlima (the 3k above the cap)
+    pn_tech_mashlima_employee = round(tech_mashlima_base * pn_employee_pct, 2)    # 180
+    pn_tech_mashlima_employer = round(tech_mashlima_base * pn_employer_pct, 2)    # 195
+    pn_tech_mashlima_severance = round(tech_mashlima_base * pn_severance_pct, 2)  # 180
+    pn_tech_mashlima_total = round(tech_mashlima_base * pn_total_pct, 2)          # 555
+
+    # Teacher — Makifa only (below cap)
+    pn_teacher_makifa_employee = round(teacher_makifa_base * pn_employee_pct, 2)     # 840
+    pn_teacher_makifa_employer = round(teacher_makifa_base * pn_employer_pct, 2)     # 910
+    pn_teacher_makifa_severance = round(teacher_makifa_base * pn_severance_pct, 2)   # 840
+    pn_teacher_makifa_total = round(teacher_makifa_base * pn_total_pct, 2)           # 2,590
+
+    # KH for tech employee — capped at the tax-exempt base.
+    kh_tech_base = min(tech_gross, kh_cap)
+    kh_tech_total = round(kh_tech_base * kh_total_pct, 2)               # 1,571
+
+    # KH for teacher — below cap, full gross.
+    kh_teacher_total = round(teacher_gross * kh_total_pct, 2)           # 1,400
+
     # --- Insurance Accounts ---
-    pension_makifa = InsuranceAccount(
+    # Balances reflect ~5 years of contributions (2 prior + 3 tracked)
+    # plus ~5-6%/year real growth. Rough target: monthly × 60 × 1.13..1.19.
+    pension_tech_makifa = InsuranceAccount(
         provider="hafenix",
         policy_id="PN-DEMO-001",
         policy_type="pension",
         pension_type="makifa",
         account_name="Pension Comprehensive - Tech Company",
-        balance=520000.0,
+        balance=330_000.0,  # ≈ 4,625 × 60 × 1.19
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "General Track", "yield_pct": 7.2, "allocation_pct": 100, "sum": 520000.0},
+            {"name": "General Track", "yield_pct": 5.8, "allocation_pct": 100, "sum": 330000.0},
         ]),
         commission_deposits_pct=1.49,
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "60% of salary", "sum": 15000},
+            {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 18750},
             {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
         ]),
         insurance_costs=json.dumps([
@@ -1971,41 +2573,66 @@ def generate_insurance_data(session):
             {"title": "Disability premium", "amount": 120},
         ]),
     )
-    session.add(pension_makifa)
+    session.add(pension_tech_makifa)
 
-    pension_mashlima = InsuranceAccount(
+    # Tech's Mashlima — opened when gross first crossed the Makifa cap
+    # (i.e. only the slice above 25,000 has been routed here). Much smaller
+    # balance than the Makifa account because the contribution base is small.
+    pension_tech_mashlima = InsuranceAccount(
+        provider="hafenix",
+        policy_id="PN-DEMO-003",
+        policy_type="pension",
+        pension_type="mashlima",
+        account_name="Pension Supplementary - Tech Company",
+        balance=38_000.0,   # ≈ 555 × 60 × 1.14
+        balance_date=REFERENCE_DATE.isoformat(),
+        investment_tracks=json.dumps([
+            {"name": "Equity Track", "yield_pct": 6.8, "allocation_pct": 100, "sum": 38000.0},
+        ]),
+        commission_deposits_pct=1.35,
+        commission_savings_pct=0.20,
+        # Mashlima is pure savings — no disability/life coverage (insurance
+        # is carried by the Makifa account).
+    )
+    session.add(pension_tech_mashlima)
+
+    # Teacher's Makifa — she is below the cap, so no Mashlima account at all.
+    # The policy_id slot PN-DEMO-002 was previously a (wrong) Mashlima account;
+    # reusing the id to stay stable across regenerations.
+    pension_teacher_makifa = InsuranceAccount(
         provider="hafenix",
         policy_id="PN-DEMO-002",
         policy_type="pension",
-        pension_type="mashlima",
-        account_name="Pension Supplementary - School District",
-        balance=180000.0,
+        pension_type="makifa",
+        account_name="Pension Comprehensive - School District",
+        balance=175_000.0,  # ≈ 2,590 × 60 × 1.13
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "Bonds Track", "yield_pct": 4.1, "allocation_pct": 60, "sum": 108000.0},
-            {"name": "Equity Track", "yield_pct": 9.8, "allocation_pct": 40, "sum": 72000.0},
+            {"name": "Bonds Track", "yield_pct": 3.5, "allocation_pct": 60, "sum": 105000.0},
+            {"name": "Equity Track", "yield_pct": 6.5, "allocation_pct": 40, "sum": 70000.0},
         ]),
         commission_deposits_pct=1.25,
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
-            {"title": "Disability Insurance", "desc": "40% of salary", "sum": 8000},
+            {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 10500},
+            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 250000},
         ]),
         insurance_costs=json.dumps([
             {"title": "Disability premium", "amount": 55},
         ]),
     )
-    session.add(pension_mashlima)
+    session.add(pension_teacher_makifa)
 
     kh_active = InsuranceAccount(
         provider="hafenix",
         policy_id="KH-DEMO-001",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Tech Company",
-        balance=145000.0,
+        balance=110_000.0,  # ≈ 1,571 × 60 × 1.17
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "S&P 500 Track", "yield_pct": 12.5, "allocation_pct": 70, "sum": 101500.0},
-            {"name": "Israel Bond Track", "yield_pct": 3.8, "allocation_pct": 30, "sum": 43500.0},
+            {"name": "S&P 500 Track", "yield_pct": 8.2, "allocation_pct": 70, "sum": 77000.0},
+            {"name": "Israel Bond Track", "yield_pct": 3.2, "allocation_pct": 30, "sum": 33000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.74,
@@ -2018,10 +2645,10 @@ def generate_insurance_data(session):
         policy_id="KH-DEMO-002",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - School District",
-        balance=62000.0,
+        balance=95_000.0,   # ≈ 1,400 × 60 × 1.13
         balance_date=REFERENCE_DATE.isoformat(),
         investment_tracks=json.dumps([
-            {"name": "General Track", "yield_pct": 6.9, "allocation_pct": 100, "sum": 62000.0},
+            {"name": "General Track", "yield_pct": 5.4, "allocation_pct": 100, "sum": 95000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.85,
@@ -2029,16 +2656,17 @@ def generate_insurance_data(session):
     )
     session.add(kh_spouse)
 
-    # Inactive KH — old employer, no recent transactions
+    # Inactive KH — Tech employee's previous employer (gross ~12k at that job)
+    # for ~3 years, then frozen. Modest growth ≈ 4%/yr since then.
     kh_old = InsuranceAccount(
         provider="hafenix",
         policy_id="KH-DEMO-OLD",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Previous Employer",
-        balance=35000.0,
+        balance=50_000.0,   # 1,200 × 36 + ~4%/yr growth since freeze
         balance_date=(REFERENCE_DATE - timedelta(days=200)).isoformat(),
         investment_tracks=json.dumps([
-            {"name": "Default Track", "yield_pct": 5.1, "allocation_pct": 100, "sum": 35000.0},
+            {"name": "Default Track", "yield_pct": 4.5, "allocation_pct": 100, "sum": 50000.0},
         ]),
         commission_deposits_pct=0.0,
         commission_savings_pct=0.95,
@@ -2047,26 +2675,35 @@ def generate_insurance_data(session):
     session.add(kh_old)
 
     # --- Monthly deposit transactions ---
-    # Pension makifa: employee 2.5% + employer 6.5% + severance 6% on 25k salary
-    # → ~3,750/month total deposit
-    pension_makifa_monthly = 3750.0
-    # Pension mashlima: ~1,200/month (smaller supplementary)
-    pension_mashlima_monthly = 1200.0
-    # KH active: 2.5% employee + 7.5% employer on 15k cap → 1,500/month
-    kh_active_monthly = 1500.0
-    # KH spouse: ~750/month (teacher salary)
-    kh_spouse_monthly = 750.0
+    # Memo format matches the pension fund convention:
+    #   "עובד: <employee> / מעסיק: <employer savings> / פיצויים: <severance>"
+    # The three Hebrew sub-amounts MUST sum to the transaction's `amount`.
+    pn_tech_makifa_memo = (
+        f"עובד: {pn_tech_makifa_employee:.0f} / "
+        f"מעסיק: {pn_tech_makifa_employer:.0f} / "
+        f"פיצויים: {pn_tech_makifa_severance:.0f}"
+    )
+    pn_tech_mashlima_memo = (
+        f"עובד: {pn_tech_mashlima_employee:.0f} / "
+        f"מעסיק: {pn_tech_mashlima_employer:.0f} / "
+        f"פיצויים: {pn_tech_mashlima_severance:.0f}"
+    )
+    pn_teacher_makifa_memo = (
+        f"עובד: {pn_teacher_makifa_employee:.0f} / "
+        f"מעסיק: {pn_teacher_makifa_employer:.0f} / "
+        f"פיצויים: {pn_teacher_makifa_severance:.0f}"
+    )
 
     deposit_configs = [
-        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pension_makifa_monthly,
-         "הפקדה - Cohen Technologies",
-         "עובד: 625 / מעסיק: 1625 / פיצויים: 1500"),
-        ("PN-DEMO-002", "Pension Supplementary - School District", pension_mashlima_monthly,
-         "הפקדה - Tel Aviv School District",
-         "עובד: 400 / מעסיק: 500 / פיצויים: 300"),
-        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_active_monthly,
+        ("PN-DEMO-001", "Pension Comprehensive - Tech Company", pn_tech_makifa_total,
+         "הפקדה - Cohen Technologies", pn_tech_makifa_memo),
+        ("PN-DEMO-003", "Pension Supplementary - Tech Company", pn_tech_mashlima_total,
+         "הפקדה - Cohen Technologies", pn_tech_mashlima_memo),
+        ("PN-DEMO-002", "Pension Comprehensive - School District", pn_teacher_makifa_total,
+         "הפקדה - Tel Aviv School District", pn_teacher_makifa_memo),
+        ("KH-DEMO-001", "Keren Hishtalmut - Tech Company", kh_tech_total,
          "הפקדה - Cohen Technologies", None),
-        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_spouse_monthly,
+        ("KH-DEMO-002", "Keren Hishtalmut - School District", kh_teacher_total,
          "הפקדה - Tel Aviv School District", None),
     ]
 
@@ -2091,12 +2728,13 @@ def generate_insurance_data(session):
             )
             session.add(txn)
 
-    # Old KH — only has transactions from 6+ months ago
+    # Old KH — only has transactions from 6+ months ago. Previous gross of
+    # 12,000 → KH deposit of 1,200/month before the account froze.
+    old_kh_monthly = 12_000.0 * kh_total_pct  # 1,200
     old_months = [(y, m) for y, m in months
                   if date(y, m, 1) < (REFERENCE_DATE - timedelta(days=180))]
     for year, month_num in old_months:
         txn_counter += 1
-        amount = 1100.0
         txn = InsuranceTransaction(
             id=f"demo-ins-{txn_counter:04d}",
             date=rand_date_in_month(year, month_num, 1, 10),
@@ -2104,7 +2742,7 @@ def generate_insurance_data(session):
             account_name="Keren Hishtalmut - Previous Employer",
             account_number="KH-DEMO-OLD",
             description="הפקדה",
-            amount=amount,
+            amount=old_kh_monthly,
             category="Ignore",
             tag=None,
             source="insurance_transactions",
@@ -2209,6 +2847,10 @@ def main():
         print("  Generating insurance data...")
         generate_insurance_data(session)
 
+        # 18. Retirement goal
+        print("  Creating retirement goal...")
+        create_retirement_goal(session)
+
         session.commit()
         print("\nDemo database created successfully!")
 
@@ -2233,6 +2875,7 @@ def main():
             "cash_balances",
             "split_transactions",
             "liabilities",
+            "retirement_goals",
         ]
         from sqlalchemy import text
         for table in tables:
