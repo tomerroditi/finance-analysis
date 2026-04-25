@@ -1,3 +1,9 @@
+## v1.8.1 (2026-04-25)
+
+### Fix
+
+- **investments**: align icon row heights on investment card
+
 ## v1.8.0 (2026-04-25)
 
 ### Feat
