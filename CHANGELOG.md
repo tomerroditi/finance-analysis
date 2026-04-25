@@ -1,3 +1,13 @@
+## v1.7.0 (2026-04-25)
+
+### Feat
+
+- **insurances**: preview switcher for insurance card header layouts
+
+### Refactor
+
+- **insurances**: finalize policy card header with accent stripe
+
 ## v1.6.0 (2026-04-25)
 
 ### Feat
