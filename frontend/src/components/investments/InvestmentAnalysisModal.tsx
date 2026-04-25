@@ -167,7 +167,7 @@ export function InvestmentAnalysisModal({
 
   return (
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold flex items-center gap-3">
             <BarChart2 className="text-[var(--primary)]" /> {t("investments.investmentAnalysis")}
@@ -402,7 +402,7 @@ export function InvestmentAnalysisModal({
                         {rows.length} {t("investments.entries")}
                       </span>
                     </div>
-                    <div className="overflow-x-auto -mx-4 md:mx-0">
+                    <div className="overflow-x-auto">
                       <table className="w-full min-w-[640px] text-sm">
                         <thead>
                           <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
