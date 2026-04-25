@@ -6,7 +6,19 @@
       "Bash(gh api repos/eshaham/israeli-bank-scrapers/contents/package.json --jq '.content')",
       "Bash(gh api \"repos/eshaham/israeli-bank-scrapers/git/trees/master?recursive=1\" --jq '.tree[] | .path')",
       "Bash(gh api repos/eshaham/israeli-bank-scrapers/contents/src/index.ts --jq '.content')",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(poetry run pytest *)",
+      "Bash(npm run lint *)",
+      "Bash(npm run build *)",
+      "Bash(until curl -fs http://localhost:5173 > /dev/null 2>&1)",
+      "Bash(until curl -fs http://localhost:8000/docs > /dev/null 2>&1)",
+      "Bash(git add *)",
+      "Bash(poetry run uvicorn backend.main:app --port 8000 *)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_resize",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_wait_for"
     ],
     "additionalDirectories": []
   },

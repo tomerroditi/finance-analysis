@@ -652,7 +652,12 @@
     "policy": "פוליסה",
     "updated": "עודכן",
     "chartMonthly": "חודשי",
-    "chartCumulative": "מצטבר"
+    "chartCumulative": "מצטבר",
+    "renameFund": "שנה שם קרן",
+    "renameFundHint": "הגדר שם ידידותי (למשל \"הפנסיה שלי\")",
+    "resetToScrapedName": "אפס לשם המקורי",
+    "save": "שמור",
+    "cancel": "ביטול"
   },
   "modals": {
     "confirm": {

@@ -41,6 +41,31 @@ class InsuranceAccountRepository:
         )
         return self.db.execute(stmt).scalars().first()
 
+    def set_custom_name(
+        self, policy_id: str, custom_name: str | None
+    ) -> InsuranceAccount | None:
+        """Set or clear the user-defined display name for an insurance account.
+
+        Parameters
+        ----------
+        policy_id : str
+            Policy identifying the account to rename.
+        custom_name : str or None
+            New display name. ``None`` or empty string clears the override.
+
+        Returns
+        -------
+        InsuranceAccount or None
+            The updated record, or ``None`` if no account matches ``policy_id``.
+        """
+        account = self.get_by_policy_id(policy_id)
+        if account is None:
+            return None
+        account.custom_name = custom_name or None
+        self.db.commit()
+        self.db.refresh(account)
+        return account
+
     def upsert(self, **fields) -> InsuranceAccount:
         """Create or update an insurance account by policy_id.
 

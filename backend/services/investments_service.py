@@ -202,6 +202,11 @@ class InvestmentsService:
         """
         Update an investment record.
 
+        For Keren Hishtalmut investments (linked via ``insurance_policy_id``),
+        a ``name`` change is also persisted to ``insurance_accounts.custom_name``
+        so the rename survives subsequent scrapes and stays consistent with the
+        Insurances page.
+
         Parameters
         ----------
         investment_id : int
@@ -210,6 +215,14 @@ class InvestmentsService:
             Field names and new values forwarded to the repository.
         """
         self.investments_repo.update_investment(investment_id, **updates)
+
+        if "name" in updates:
+            row = self.investments_repo.get_by_id(investment_id)
+            policy_id = row.iloc[0].get("insurance_policy_id")
+            if policy_id and pd.notna(policy_id):
+                InsuranceAccountRepository(self.db).set_custom_name(
+                    str(policy_id), updates["name"]
+                )
 
     def sync_from_insurance(self, insurance_meta: dict) -> None:
         """Create or update an Investment from scraped insurance account metadata.
@@ -233,10 +246,16 @@ class InvestmentsService:
         policy_id = insurance_meta["policy_id"]
         provider = insurance_meta.get("provider", "unknown")
         account_name = insurance_meta["account_name"]
+        custom_name = insurance_meta.get("custom_name")
+        if custom_name is None:
+            persisted = InsuranceAccountRepository(self.db).get_by_policy_id(policy_id)
+            if persisted is not None:
+                custom_name = persisted.custom_name
+        display_name = custom_name or account_name
         tag = f"Keren Hishtalmut - {provider} ({policy_id})"
         metadata_fields = {
             "tag": tag,
-            "name": account_name,
+            "name": display_name,
             "commission_deposit": insurance_meta.get("commission_deposits_pct"),
             "commission_management": insurance_meta.get("commission_savings_pct"),
             "liquidity_date": insurance_meta.get("liquidity_date"),
@@ -261,7 +280,7 @@ class InvestmentsService:
                     category=INVESTMENTS_CATEGORY,
                     tag=tag,
                     type_="hishtalmut",
-                    name=account_name,
+                    name=display_name,
                     interest_rate_type="variable",
                     commission_deposit=insurance_meta.get("commission_deposits_pct"),
                     commission_management=insurance_meta.get("commission_savings_pct"),
@@ -300,6 +319,7 @@ class InvestmentsService:
                 "policy_id": row.policy_id,
                 "provider": row.provider,
                 "account_name": row.account_name,
+                "custom_name": row.custom_name,
                 "balance": row.balance,
                 "balance_date": row.balance_date,
                 "commission_deposits_pct": row.commission_deposits_pct,

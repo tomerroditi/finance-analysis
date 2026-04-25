@@ -243,6 +243,7 @@ export interface InsuranceAccount {
   policy_type: string;
   pension_type: string | null;
   account_name: string;
+  custom_name: string | null;
   balance: number | null;
   balance_date: string | null;
   investment_tracks: string | null;
@@ -255,6 +256,11 @@ export interface InsuranceAccount {
 
 export const insuranceAccountsApi = {
   getAll: () => api.get<InsuranceAccount[]>("/insurance-accounts/"),
+  rename: (policyId: string, customName: string | null) =>
+    api.patch<InsuranceAccount>(
+      `/insurance-accounts/${encodeURIComponent(policyId)}/rename`,
+      { custom_name: customName },
+    ),
 };
 
 // Investments API

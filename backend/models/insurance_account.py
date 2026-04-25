@@ -24,7 +24,11 @@ class InsuranceAccount(Base, TimestampMixin):
     pension_type : str, optional
         Pension sub-type: ``makifa`` or ``mashlima`` (pension only).
     account_name : str
-        Human-readable policy/product name.
+        Human-readable policy/product name (from scraper).
+    custom_name : str, optional
+        User-set display name that overrides ``account_name`` in the UI. Persists
+        across scrapes so users can give meaningful names to funds whose scraped
+        names are uninformative numbers.
     balance : float, optional
         Current account balance.
     balance_date : str, optional
@@ -51,6 +55,7 @@ class InsuranceAccount(Base, TimestampMixin):
     policy_type = Column(String, nullable=False)
     pension_type = Column(String, nullable=True)
     account_name = Column(String, nullable=False)
+    custom_name = Column(String, nullable=True)
     balance = Column(Float, nullable=True)
     balance_date = Column(String, nullable=True)
     investment_tracks = Column(Text, nullable=True)
