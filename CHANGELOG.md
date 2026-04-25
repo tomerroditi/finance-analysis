@@ -1,3 +1,9 @@
+## v1.14.1 (2026-04-25)
+
+### Fix
+
+- **budget**: clamp Other Expenses budget to 0 when over-allocated
+
 ## v1.14.0 (2026-04-25)
 
 ### Feat
