@@ -1,3 +1,28 @@
+## v1.5.0 (2026-04-25)
+
+### Feat
+
+- include insurance transactions in investment calculations
+- sync hishtalmut investments from insurance scraper post-save hook
+- add sync_from_insurance to InvestmentsService
+- add get_by_insurance_policy_id to InvestmentsRepository
+- add migration for insurance_policy_id column
+- add insurance_policy_id column to Investment model
+
+### Fix
+
+- **demo**: backfill hishtalmut investments for frozen demo DB
+- **vercel**: add insurance_policy_id to frozen demo DB on cold start
+- support snapshot-only investments and multiple hishtalmut policies
+- handle existing investments in hishtalmut sync and add backfill endpoint
+- use batch_alter_table for SQLite-compatible migration
+
+### Refactor
+
+- drop unreachable empty check after get_by_id
+- eliminate create+update race in hishtalmut sync
+- always include policy_id in hishtalmut investment tags
+
 ## v1.4.0 (2026-04-25)
 
 ### Feat
