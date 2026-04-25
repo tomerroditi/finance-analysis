@@ -343,6 +343,16 @@
     "pendingRefundsFooter": "These are expenses you marked as expecting a refund",
     "addRule": "Add Rule"
   },
+  "budgetAlerts": {
+    "title": "Budget Alerts",
+    "loading": "Loading alerts...",
+    "empty": "You're on track. No budgets are over the warning threshold.",
+    "severityWarning": "Warning",
+    "severityCritical": "Over Budget",
+    "dismiss": "Dismiss",
+    "dismissAll": "Dismiss all",
+    "openBudget": "Open Budget"
+  },
   "categories": {
     "title": "Categories",
     "subtitle": "Manage your categories and tags",

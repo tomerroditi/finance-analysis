@@ -1,3 +1,16 @@
+## v1.11.0 (2026-04-25)
+
+### Feat
+
+- **budget**: in-app budget alerts with sidebar bell
+
+### Fix
+
+- **budget-alerts**: sync dismissals across bell + popup instances
+- **budget-alerts**: portal popup so overlay covers viewport on mobile
+- **budget-alerts**: stronger mobile backdrop blur + scroll lock
+- **demo**: apply date shift on Vercel cold start
+
 ## v1.10.0 (2026-04-25)
 
 ### Feat
