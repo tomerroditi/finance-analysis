@@ -106,10 +106,25 @@ For recurring rent, salary, subscriptions — let the user mark them, and
 forecasting / budget rules can use the flag to project forward
 deterministically rather than statistically.
 
-### 10. Inline category create-on-the-fly
-Many forms use `SelectDropdown.onCreateNew` already. Audit the remaining
-modals (split, bulk-tag, refunds) and ensure they all support
-"+ New category" / "+ New tag" without leaving the modal.
+### 10. Inline category create-on-the-fly — DONE
+`SelectDropdown.onCreateNew` is now wired across the remaining
+category/tag forms:
+
+- `RuleManager` (auto-tagging quick-rule modal) — category + tag
+- `Liabilities` new-debt form — Liabilities-scoped tag (chained into
+  `handleTagChange` so receipt detection still fires after create)
+- `Investments` new-investment form — Investments-scoped tag (the
+  category field is intentionally pinned to `Investments`, so only the
+  tag dropdown takes inline create)
+
+Already had it before this pass: `SplitTransactionModal`,
+`BulkActionsBar`, `TransactionFormModal`, `TransactionEditorModal`,
+`BudgetRuleModal`, `RuleEditorModal`, `RecentTransactionsSection`.
+
+Deferred: `ProjectModal` — its category dropdown is fed by a derived
+"categories not yet used as a project" backend list, so wiring inline
+create there needs coordinated cache invalidation and is a different
+shape than the others.
 
 ### 11. Dark / light theme toggle
 Today the UI is dark-only via CSS custom properties. Adding a `light`
