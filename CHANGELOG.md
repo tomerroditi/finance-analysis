@@ -1,3 +1,19 @@
+## v1.8.0 (2026-04-25)
+
+### Feat
+
+- **insurance**: allow renaming pension and Keren Hishtalmut funds
+
+### Fix
+
+- **insurance**: preserve custom Investment.name when renaming KH fund
+- **insurances**: wire fund rename UI into the routed page
+- **insurances**: keep rename pencil visible on narrow viewports
+
+### Refactor
+
+- **insurance**: keep KH name propagation unconditional in both directions
+
 ## v1.7.0 (2026-04-25)
 
 ### Feat
