@@ -1,3 +1,16 @@
+## v1.4.0 (2026-04-25)
+
+### Feat
+
+- **demo**: add israeli-salary-knowledge skill + split pension across Makifa/Mashlima per individual
+- **demo**: extend to 3 years and enrich with couple-with-kids lifestyle
+- **demo**: cover tag-budgets, split sources, refund-on-split, operator variety, prior wealth
+- **demo**: cover retirement goal, multi-envelope cash, paid-off liability, second bank account
+
+### Fix
+
+- **demo**: align pension/KH deposits with Israeli law and reduce inflated balances
+
 ## v1.3.0 (2026-04-24)
 
 ### Feat
