@@ -73,3 +73,4 @@ $RECYCLE.BIN/
 .vercel
 .env*.local
 .playwright-mcp/
+.claude/settings.local.json
