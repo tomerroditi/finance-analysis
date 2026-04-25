@@ -788,7 +788,11 @@ class MonthlyBudgetService(BudgetService):
 
         if not remaining_data.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
-            total_amt = total_rule.iloc[0][AMOUNT] - total_alloc
+            # When per-category rules sum to more than the total budget, the
+            # remainder is negative — surface it as 0 (no headroom) rather than
+            # a meaningless negative budget. The bar then correctly reads as
+            # "any unbudgeted spend is over budget".
+            total_amt = max(total_rule.iloc[0][AMOUNT] - total_alloc, 0.0)
             view.append(
                 {
                     "rule": {

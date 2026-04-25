@@ -1815,19 +1815,23 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 def create_budget_rules(session):
     """Create monthly budgets for the last 6 months + two project budgets."""
     monthly_budgets = [
-        # Category-level rules — "all_tags" sentinel means "every tag in the category".
-        # Storing None/empty leaves the rule matching no transactions, so they all
-        # spill into the auto-generated "Other Expenses" bucket.
+        # Category-level rules — "all_tags" sentinel means "every tag in the
+        # category". Storing None/empty leaves the rule matching no transactions,
+        # so they all spill into the auto-generated "Other Expenses" bucket.
+        # Amounts cover only the residual spend within each category — the tags
+        # NOT carved out by an explicit tag-level rule below — so the sum fits
+        # inside Total Budget and leaves headroom for unbudgeted categories
+        # (Education, Subscriptions, Other). Sum: 24,600 ≤ 28,000.
         ("Total Budget", 28000, "Total Budget", "all_tags"),
-        ("Food Budget", 5000, "Food", "all_tags"),
-        ("Transportation Budget", 1800, "Transportation", "all_tags"),
-        ("Household Budget", 8000, "Household", "all_tags"),
+        ("Food Budget", 1500, "Food", "all_tags"),
+        ("Transportation Budget", 1000, "Transportation", "all_tags"),
+        ("Household Budget", 6500, "Household", "all_tags"),
         ("Entertainment Budget", 800, "Entertainment", "all_tags"),
         ("Health Budget", 600, "Health", "all_tags"),
         ("Kids Budget", 3500, "Kids", "all_tags"),
-        ("Shopping Budget", 2000, "Shopping", "all_tags"),
-        ("Vacations Budget", 4000, "Vacations", "all_tags"),
-        # Tag-level rules — exercises per-tag breakdown within categories
+        ("Shopping Budget", 1000, "Shopping", "all_tags"),
+        ("Vacations Budget", 3000, "Vacations", "all_tags"),
+        # Tag-level rules — carve out specific sub-budgets within categories
         ("Groceries", 2800, "Food", "Groceries"),
         ("Restaurants", 1200, "Food", "Restaurants"),
         ("Gas", 1200, "Transportation", "Gas"),

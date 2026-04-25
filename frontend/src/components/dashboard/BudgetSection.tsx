@@ -23,8 +23,8 @@ interface BudgetRule {
   spent_amount: number;
 }
 
-function getProgressColor(pct: number): string {
-  if (pct > 100) return "bg-rose-500";
+function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
+  if (isUnbudgetedSpend || pct > 100) return "bg-rose-500";
   if (pct >= 75) return "bg-amber-500";
   return "bg-emerald-500";
 }
@@ -42,7 +42,17 @@ function BudgetRuleCards({
       {rules.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {rules.map((rule) => {
-            const pct = rule.budget_amount > 0 ? (rule.spent_amount / rule.budget_amount) * 100 : 0;
+            // budget_amount can be 0 (e.g., "Other Expenses" when the user has
+            // allocated their full Total Budget across explicit rules). Treat any
+            // spend in a zero-budget rule as fully over budget so the bar fills
+            // rose instead of staying empty.
+            const isUnbudgetedSpend =
+              rule.budget_amount <= 0 && rule.spent_amount > 0;
+            const pct = rule.budget_amount > 0
+              ? (rule.spent_amount / rule.budget_amount) * 100
+              : isUnbudgetedSpend
+                ? 100
+                : 0;
             const remaining = rule.budget_amount - rule.spent_amount;
             const icon = categoryIcons?.[rule.category] ?? "";
             return (
@@ -56,7 +66,7 @@ function BudgetRuleCards({
                     <span className="text-xs font-semibold truncate">{rule.name}</span>
                   </div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    pct > 100
+                    isUnbudgetedSpend || pct > 100
                       ? "bg-rose-500/20 text-rose-400"
                       : pct >= 75
                         ? "bg-amber-500/20 text-amber-400"
@@ -73,7 +83,7 @@ function BudgetRuleCards({
                 </p>
                 <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${getProgressColor(pct)}`}
+                    className={`h-full rounded-full transition-all ${getProgressColor(pct, isUnbudgetedSpend)}`}
                     style={{ width: `${Math.min(pct, 100)}%` }}
                   />
                 </div>

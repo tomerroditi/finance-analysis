@@ -364,6 +364,40 @@ class TestMonthlyBudgetService:
         assert other_entry["allow_delete"] is False
         # Other Expenses = Transport(60+10) + Entertainment(40) + Home(3000) + Other(250) = 3360.0
         assert other_entry["current_amount"] == 3360.0
+        # Headroom for Other = 10000 - 2000 = 8000
+        assert other_entry["rule"][AMOUNT] == 8000.0
+
+    def test_get_monthly_budget_view_other_expenses_over_allocated(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify 'Other Expenses' budget is clamped to 0 when explicit rules exceed total."""
+        service = MonthlyBudgetService(db_session)
+
+        # Total Budget is 1000 but Food alone is allocated 5000 — the user
+        # has over-allocated. Other Expenses should not get a negative budget.
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=1000.0,
+            category=TOTAL_BUDGET,
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+        service.add_rule(
+            name="Food",
+            amount=5000.0,
+            category="Food",
+            tags=[ALL_TAGS],
+            month=1,
+            year=2024,
+        )
+
+        view = service.get_monthly_budget_view(2024, 1)
+        other_entry = next(
+            (v for v in view if v["rule"][NAME] == "Other Expenses"), None
+        )
+        assert other_entry is not None
+        assert other_entry["rule"][AMOUNT] == 0.0
 
     def test_get_monthly_analysis(self, db_session, seed_base_transactions):
         """Verify full analysis includes rules, project spending, pending refunds."""
