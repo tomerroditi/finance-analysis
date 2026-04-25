@@ -178,25 +178,25 @@ function AccountCardFull({
   const deposits = txs.filter((t) => t.amount > 0);
   const totalCosts = insuranceCosts.reduce((s, c) => s + Math.abs(c.amount), 0);
 
+  const stripeColor = account.policy_type === "pension" ? "bg-blue-400" : "bg-purple-400";
+
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
+    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative">
+      {/* Policy-type accent stripe */}
+      <div className={`absolute inset-y-0 inset-inline-start-0 w-1 ${stripeColor}`} />
+
       {/* Header */}
-      <div className="px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
-            <Shield size={22} />
+      <div className="ps-5 pe-4 sm:ps-7 sm:pe-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
+            {policyTypeBadge(account.policy_type, account.pension_type, t)}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
-              {policyTypeBadge(account.policy_type, account.pension_type, t)}
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-              {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
-            </p>
-          </div>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+            {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
+          </p>
         </div>
-        <div className="text-start sm:text-end shrink-0 ps-[52px] sm:ps-0">
+        <div className="text-start sm:text-end shrink-0">
           <p className="text-2xl font-black text-white">{fmt(account.balance ?? 0)}</p>
           <p className="text-xs text-[var(--text-muted)]">{t("insurance.currentBalance")}</p>
         </div>
