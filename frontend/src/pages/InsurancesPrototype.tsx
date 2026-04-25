@@ -159,13 +159,17 @@ function StatCard({
   );
 }
 
+type HeaderLayout = "A" | "C" | "D";
+
 // ─── Account Card ────────────────────────────────────────────────────────
 function AccountCardFull({
   account,
   transactions,
+  headerLayout = "A",
 }: {
   account: InsuranceAccount;
   transactions: InsuranceTransaction[];
+  headerLayout?: HeaderLayout;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -178,25 +182,44 @@ function AccountCardFull({
   const deposits = txs.filter((t) => t.amount > 0);
   const totalCosts = insuranceCosts.reduce((s, c) => s + Math.abs(c.amount), 0);
 
+  const isPension = account.policy_type === "pension";
+  const stripeColor = isPension ? "bg-blue-400" : "bg-purple-400";
+  const stripeIconColor = isPension ? "text-blue-400" : "text-purple-400";
+
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
+    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative">
+      {/* Layout C — corner watermark */}
+      {headerLayout === "C" && (
+        <Shield
+          size={18}
+          className="absolute top-3 inset-inline-end-3 text-emerald-400 opacity-20 pointer-events-none"
+        />
+      )}
+
+      {/* Layout D — accent stripe on inline-start edge */}
+      {headerLayout === "D" && (
+        <div className={`absolute inset-y-0 inset-inline-start-0 w-1 ${stripeColor}`} />
+      )}
+
       {/* Header */}
-      <div className="px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
-            <Shield size={22} />
+      <div
+        className={`py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 ${
+          headerLayout === "D" ? "ps-5 pe-4 sm:ps-7 sm:pe-6" : "px-4 sm:px-6"
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {headerLayout === "D" && (
+              <Shield size={14} className={`shrink-0 ${stripeIconColor}`} />
+            )}
+            <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
+            {policyTypeBadge(account.policy_type, account.pension_type, t)}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
-              {policyTypeBadge(account.policy_type, account.pension_type, t)}
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-              {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
-            </p>
-          </div>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+            {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
+          </p>
         </div>
-        <div className="text-start sm:text-end shrink-0 ps-[52px] sm:ps-0">
+        <div className="text-start sm:text-end shrink-0">
           <p className="text-2xl font-black text-white">{fmt(account.balance ?? 0)}</p>
           <p className="text-xs text-[var(--text-muted)]">{t("insurance.currentBalance")}</p>
         </div>
@@ -374,6 +397,7 @@ function AccountCardFull({
 // ─── Main Page ───────────────────────────────────────────────────────────
 export function InsurancesPrototype() {
   const { t } = useTranslation();
+  const [headerLayout, setHeaderLayout] = useState<HeaderLayout>("A");
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
     queryKey: ["insurance-accounts"],
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
@@ -561,9 +585,41 @@ export function InsurancesPrototype() {
         </div>
       </div>
 
+      {/* TEMP — header layout preview switcher (remove after picking) */}
+      <div className="flex flex-wrap items-center gap-2 bg-[var(--surface)] rounded-xl p-3 border border-dashed border-emerald-500/40">
+        <span className="text-xs text-[var(--text-muted)] uppercase tracking-widest font-bold me-2">
+          Card layout preview:
+        </span>
+        {(
+          [
+            { id: "A", label: "A — No icon" },
+            { id: "C", label: "C — Corner watermark" },
+            { id: "D", label: "D — Accent stripe" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setHeaderLayout(opt.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+              headerLayout === opt.id
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                : "bg-[var(--surface-light)]/40 text-[var(--text-muted)] border border-transparent hover:text-white"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {/* Per-account rich cards */}
       {accounts.map((account) => (
-        <AccountCardFull key={account.id} account={account} transactions={transactions} />
+        <AccountCardFull
+          key={account.id}
+          account={account}
+          transactions={transactions}
+          headerLayout={headerLayout}
+        />
       ))}
     </div>
   );
