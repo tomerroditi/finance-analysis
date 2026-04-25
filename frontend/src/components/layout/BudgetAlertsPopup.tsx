@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, X } from "lucide-react";
@@ -43,9 +44,12 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
     navigate("/budget");
   };
 
-  return (
+  // Portal to document.body so the overlay isn't trapped inside the mobile top
+  // bar's transformed ancestor (which would clip `fixed inset-0` to the top
+  // bar's containing block instead of the viewport).
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-md sm:backdrop-blur-sm animate-in fade-in duration-200 modal-overlay pt-16 sm:pt-24 px-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 backdrop-blur-2xl sm:bg-black/60 sm:backdrop-blur-sm animate-in fade-in duration-200 modal-overlay pt-16 sm:pt-24 px-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -164,6 +168,7 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
