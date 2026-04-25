@@ -275,7 +275,7 @@ function InvestmentCard({
             <Trash2 size={16} />
           </button>
           {inv.notes && (
-            <div className="p-2 rounded-lg bg-[var(--surface-light)]">
+            <div className="p-2 rounded-lg bg-[var(--surface-light)] flex items-center">
               <InfoTooltip text={inv.notes} iconSize={16} width={192} />
             </div>
           )}
