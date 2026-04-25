@@ -44,11 +44,9 @@ class InsuranceAccountService:
         """Set the user-defined display name for a fund.
 
         Persists across scrapes (the scraper never writes to ``custom_name``).
-        For ``hishtalmut`` policies, also updates the linked Investment's
-        ``name`` — but only when the investment's current name still matches
-        the previously-displayed fund name. If the user already gave the
-        investment its own name on the Investments page, that customization is
-        preserved and not overwritten by an Insurances-side rename.
+        For ``hishtalmut`` policies, the linked Investment's ``name`` is kept
+        in lockstep — propagation is unconditional in both directions, so the
+        two fields cannot drift apart.
 
         Parameters
         ----------
@@ -69,24 +67,19 @@ class InsuranceAccountService:
             If no insurance account matches ``policy_id``.
         """
         normalized = (custom_name or "").strip() or None
-
-        existing = self.repo.get_by_policy_id(policy_id)
-        if existing is None:
+        account = self.repo.set_custom_name(policy_id, normalized)
+        if account is None:
             raise EntityNotFoundException(
                 f"No insurance account found for policy_id={policy_id}"
             )
-        old_display_name = existing.custom_name or existing.account_name
-
-        account = self.repo.set_custom_name(policy_id, normalized)
-        new_display_name = normalized or account.account_name
 
         if account.policy_type == "hishtalmut":
             investments_repo = InvestmentsRepository(self.db)
             linked = investments_repo.get_by_insurance_policy_id(policy_id)
-            if not linked.empty and linked.iloc[0]["name"] == old_display_name:
+            if not linked.empty:
                 investments_repo.update_investment(
                     int(linked.iloc[0]["id"]),
-                    name=new_display_name,
+                    name=normalized or account.account_name,
                 )
         return account
 
