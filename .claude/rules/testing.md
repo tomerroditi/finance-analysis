@@ -162,4 +162,41 @@ poetry run pytest tests/backend/integration/           # integration tests only
 poetry run pytest -k "test_budget"                     # by keyword
 ```
 
+## Verifying UI patches with Playwright (REQUIRED)
+
+For any UI fix — **including small, "obvious" patches** like one-line state
+changes, focus tweaks, event handler edits, dropdown/modal behavior — do not
+ship the change with only type-checking and reasoning. Reasoning misses cases
+that a real browser surfaces immediately (stale closures, focus traps, layout
+shifts from the soft keyboard, click-outside handlers eating taps, query
+invalidations remounting components mid-interaction).
+
+**Before claiming a UI fix is resolved, you MUST:**
+
+1. Start the dev servers (`python .claude/scripts/with_server.py -- <cmd>`
+   or backend + frontend manually).
+2. Drive the actual user flow with the Playwright MCP — open the page,
+   enable Demo Mode (Settings → Demo Mode toggle, see CLAUDE.md), and
+   reproduce the exact interaction the user reported.
+3. Confirm the broken behavior **and** that your patch makes it work
+   end-to-end, not just that the affected component renders. Click through
+   every step of the original repro.
+4. Add a Playwright e2e spec under `frontend/e2e/` covering the flow so
+   the regression can't return silently. The spec uses Demo Mode and the
+   helpers in `frontend/e2e/helpers.ts`. Run it once locally
+   (`cd frontend && npx playwright test e2e/<file>.spec.ts`).
+
+**Never** mark a UI patch resolved on the strength of a one-line code change
+plus `tsc -b`. The bug, by definition, was something static analysis missed.
+
+**E2E test conventions:**
+- Place specs under `frontend/e2e/<feature>.spec.ts`.
+- Wrap related cases in `test.describe(...)`. Toggle Demo Mode in
+  `beforeAll` / `afterAll` using `enableDemoMode` / `disableDemoMode`.
+- Prefer role-based locators (`getByRole("button", { name: ... })`,
+  `getByRole("option")`) over CSS selectors — they survive markup churn.
+- For inline editors / popovers / dropdowns, assert that the panel stays
+  open across mutations when it should, and that the displayed value
+  updates after each selection.
+
 > When changing test structure, naming conventions, or global fixtures, update this rule file.

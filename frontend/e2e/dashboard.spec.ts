@@ -42,4 +42,41 @@ test.describe("Dashboard", () => {
     await page.goto("/");
     await expect(page.getByText(/Budget Progress/i)).toBeVisible();
   });
+
+  test("inline tag editor stays open across category and tag selection", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 15_000 });
+
+    const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });
+    await editButtons.first().waitFor();
+    await editButtons.first().click();
+
+    const panel = page.locator("text=CATEGORY").locator("..").locator("..");
+    await expect(panel).toBeVisible();
+
+    const categorySelect = panel.getByRole("button").nth(0);
+    const initialCategory = (await categorySelect.textContent())?.trim() ?? "";
+
+    await categorySelect.click();
+    const newCategory = page
+      .getByRole("option")
+      .filter({ hasNotText: new RegExp(`^${initialCategory}$`) })
+      .first();
+    const newCategoryName = (await newCategory.textContent())?.trim() ?? "";
+    await newCategory.click();
+
+    await expect(panel).toBeVisible();
+    await expect(categorySelect).toHaveText(new RegExp(newCategoryName));
+
+    const tagSelect = panel.getByRole("button").nth(1);
+    await tagSelect.click();
+    const tagOption = page.getByRole("option").first();
+    const tagName = (await tagOption.textContent())?.trim() ?? "";
+    if (tagName) {
+      await tagOption.click();
+      await expect(panel).toBeVisible();
+      await expect(tagSelect).toHaveText(new RegExp(tagName));
+    }
+  });
 });

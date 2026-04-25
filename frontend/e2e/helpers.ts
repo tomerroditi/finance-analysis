@@ -1,42 +1,45 @@
 import { type Page, expect } from "@playwright/test";
 
 /**
- * Enable Demo Mode via the UI toggle in the header.
- * Must be called at the start of each test suite to ensure
- * tests run against the demo database with sample data.
+ * Open the Settings popup (sidebar Settings button) and toggle Demo Mode.
+ * Used by both enable/disable helpers — Demo Mode lives inside the Settings
+ * popup, not directly in the sidebar, so we must open the popup first.
  */
-export async function enableDemoMode(page: Page) {
-  // Navigate to the app
+async function toggleDemoMode(page: Page, expectedAfter: "on" | "off") {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-
-  // Check if demo mode is already active
-  const demoIndicator = page.locator("text=Demo Mode");
-  if (await demoIndicator.isVisible().catch(() => false)) {
-    return; // Already in demo mode
+  await page.getByRole("button", { name: /^settings$/i }).click();
+  const toggleRow = page.getByText(/^Demo Mode$/);
+  await toggleRow.waitFor();
+  // Read current state from background color of the inner switch indicator
+  const isOn = await page.evaluate(() => {
+    const labels = Array.from(document.querySelectorAll("*"));
+    const row = labels.find((el) => el.textContent?.trim() === "Demo Mode");
+    if (!row) return null;
+    const switchEl = row.parentElement?.querySelector('[class*="amber"]');
+    return !!switchEl;
+  });
+  if ((expectedAfter === "on" && !isOn) || (expectedAfter === "off" && isOn)) {
+    await toggleRow.click();
   }
+  // Click somewhere else to dismiss the settings popup, then wait for reload.
+  await page.keyboard.press("Escape");
+  await page.waitForLoadState("networkidle");
+}
 
-  // Find and click the demo mode toggle in the header
-  const demoToggle = page.getByRole("button", { name: /demo/i });
-  if (await demoToggle.isVisible().catch(() => false)) {
-    await demoToggle.click();
-    // Wait for the page to reload with demo data
-    await page.waitForLoadState("networkidle");
-  }
+/**
+ * Enable Demo Mode via the Settings popup. Must be called at the start of
+ * each test suite to ensure tests run against the demo database.
+ */
+export async function enableDemoMode(page: Page) {
+  await toggleDemoMode(page, "on");
 }
 
 /**
  * Disable Demo Mode after tests complete.
  */
 export async function disableDemoMode(page: Page) {
-  await page.goto("/");
-  await page.waitForLoadState("networkidle");
-
-  const demoToggle = page.getByRole("button", { name: /demo/i });
-  if (await demoToggle.isVisible().catch(() => false)) {
-    await demoToggle.click();
-    await page.waitForLoadState("networkidle");
-  }
+  await toggleDemoMode(page, "off");
 }
 
 /**

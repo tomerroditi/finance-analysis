@@ -78,6 +78,13 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 
 When smoke-testing UI changes in the browser, **enable Demo Mode first** (toggle in the top-right header). Demo Mode switches the backend to a separate demo database with pre-built sample data, so real financial data is not accidentally modified. Remember to disable it when done.
 
+**REQUIRED for every UI patch (including small ones):** Drive the actual user
+flow with the Playwright MCP before marking the fix resolved, and add an e2e
+spec under `frontend/e2e/`. Type-checking and reasoning miss the bugs UI
+patches usually contain (focus traps, click-outside handlers, keyboard-induced
+reposition, query invalidation remounting). Full procedure in
+`.claude/rules/testing.md` → "Verifying UI patches with Playwright".
+
 ## Scraper Framework
 
 The `scraper/` package at the project root is a pure-Python scraper framework using Playwright and httpx, replacing the old Node.js integration. It provides:
