@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
+import { isTouchDevice } from "../../utils/plotlyLocale";
 
 interface SelectDropdownProps {
   options: { label: string; value: string }[];
@@ -75,7 +76,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     }
     updatePosition();
     requestAnimationFrame(() => {
-      if (showSearch) {
+      if (showSearch && !isTouchDevice) {
         searchRef.current?.focus();
       } else {
         dropdownRef.current?.focus();
