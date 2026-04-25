@@ -1,3 +1,9 @@
+## v1.14.2 (2026-04-25)
+
+### Fix
+
+- **dashboard**: keep budget section visible for months with no rules
+
 ## v1.14.1 (2026-04-25)
 
 ### Fix
