@@ -80,6 +80,27 @@ export const MonthlyBudgetView: React.FC = () => {
     }
   }, [year, month, includeSplitParents, queryClient]);
 
+  // When the active month's analysis reports an auto-fill, sibling months
+  // may have prefetched in parallel and cached an empty result before the
+  // fill committed. Refetch the others so navigation shows the rules
+  // without a hard refresh. The active query is excluded so its
+  // `copied_from` (and our notice) survives.
+  useEffect(() => {
+    if (!analysis?.copied_from) return;
+    queryClient.refetchQueries({
+      queryKey: ["budgetAnalysis"],
+      predicate: (query) => {
+        const [, qYear, qMonth] = query.queryKey as [
+          string,
+          number,
+          number,
+          boolean,
+        ];
+        return qYear !== year || qMonth !== month;
+      },
+    });
+  }, [analysis?.copied_from, year, month, queryClient]);
+
   // Fetch pending refunds to know which transactions are already marked
   const { data: pendingRefunds } = useQuery({
     queryKey: ["pendingRefunds", "all"],
