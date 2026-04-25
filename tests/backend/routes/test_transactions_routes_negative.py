@@ -18,7 +18,7 @@ class TestTransactionValidationErrors:
         ``amount``, ``account_name``, and ``service``. Omitting all of them
         triggers FastAPI/Pydantic validation.
         """
-        response = test_client.post("/api/transactions", json={})
+        response = test_client.post("/api/transactions/", json={})
         assert response.status_code == 422
 
     def test_create_transaction_missing_amount(self, test_client):
@@ -29,7 +29,7 @@ class TestTransactionValidationErrors:
             "account_name": "Wallet",
             "service": "cash",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 422
 
     def test_create_transaction_missing_date(self, test_client):
@@ -40,7 +40,7 @@ class TestTransactionValidationErrors:
             "account_name": "Wallet",
             "service": "cash",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 422
 
     def test_create_transaction_invalid_date_format(self, test_client):
@@ -56,7 +56,7 @@ class TestTransactionValidationErrors:
             "account_name": "Wallet",
             "service": "cash",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 422
 
     def test_create_transaction_missing_service(self, test_client):
@@ -67,7 +67,7 @@ class TestTransactionValidationErrors:
             "amount": -50.0,
             "account_name": "Wallet",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 422
 
     def test_update_transaction_missing_source(self, test_client):

@@ -98,6 +98,9 @@ class AnalysisService:
         """
         df = self.repo.get_table()
 
+        if df.empty:
+            return []
+
         if exclude_projects:
             from backend.services.budget_service import ProjectBudgetService
 
@@ -143,6 +146,10 @@ class AnalysisService:
             - ``amount`` – total debt payments for the month (positive value).
         """
         df = self.repo.get_table()
+
+        if df.empty:
+            return []
+
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
         liabilities = df[
             (df[TransactionsTableFields.CATEGORY.value] == LIABILITIES_CATEGORY)

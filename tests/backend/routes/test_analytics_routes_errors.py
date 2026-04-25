@@ -98,13 +98,10 @@ class TestAnalyticsRoutesErrors:
         assert response.json() == []
 
     def test_get_income_expenses_over_time_empty(self, test_client):
-        """Verify income-expenses-over-time raises KeyError with no data.
-
-        The service accesses ``df['date']`` without guarding against an
-        empty DataFrame, so an empty database causes an internal error.
-        """
-        with pytest.raises(KeyError):
-            test_client.get("/api/analytics/income-expenses-over-time")
+        """Verify income-expenses-over-time returns empty list with no data."""
+        response = test_client.get("/api/analytics/income-expenses-over-time")
+        assert response.status_code == 200
+        assert response.json() == []
 
     def test_get_net_worth_over_time_empty(self, test_client):
         """Verify net-worth-over-time returns empty list with no data."""

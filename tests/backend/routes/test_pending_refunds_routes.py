@@ -7,7 +7,7 @@ class TestPendingRefundsRoutes:
 
     def _create_pending_refund(self, test_client, seed_base_transactions):
         """Helper to create a pending refund and return the response data."""
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         tx = txns[0]
         response = test_client.post(
             "/api/pending-refunds/",
@@ -68,7 +68,7 @@ class TestPendingRefundsRoutes:
         self, test_client, seed_base_transactions
     ):
         """POST same source twice returns 400 (ValidationException)."""
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         tx = txns[0]
         payload = {
             "source_type": "transaction",
@@ -92,7 +92,7 @@ class TestPendingRefundsRoutes:
         pending_id = create_resp.json()["id"]
 
         # Use a different transaction as the refund transaction
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         refund_tx = txns[1]
 
         response = test_client.post(
