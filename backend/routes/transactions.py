@@ -76,15 +76,12 @@ async def get_transactions(
 ) -> list[dict[str, Any]]:
     """Get all transactions, optionally filtered by service."""
     repo = TransactionsRepository(db)
-    try:
-        df = repo.get_table(
-            service=service,
-            include_split_parents=include_split_parents,
-            exclude_services=[Services.INSURANCE.value],
-        )
-        return df.to_dict(orient="records")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    df = repo.get_table(
+        service=service,
+        include_split_parents=include_split_parents,
+        exclude_services=[Services.INSURANCE.value],
+    )
+    return df.to_dict(orient="records")
 
 
 @router.post("/")
@@ -135,8 +132,8 @@ async def update_transaction(
             data.model_dump(exclude={"source"}, exclude_none=True),
         )
         return {"status": "success" if updated else "no_changes"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{unique_id}")
@@ -161,15 +158,13 @@ async def split_transaction(
     unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Split a transaction into multiple parts."""
-    repo = TransactionsRepository(db)
+    service = TransactionsService(db)
     try:
         splits = [s.model_dump() for s in data.splits]
-        success = repo.split_transaction(unique_id, data.source, splits)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to split transaction")
+        service.split_transaction(unique_id, data.source, splits)
         return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{unique_id}/split")
@@ -179,14 +174,12 @@ async def revert_split(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Revert a transaction split."""
-    repo = TransactionsRepository(db)
+    service = TransactionsService(db)
     try:
-        success = repo.revert_split(unique_id, source)
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to revert split")
+        service.revert_split(unique_id, source)
         return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/bulk-tag")
@@ -207,8 +200,8 @@ async def bulk_tag_transactions(
             data.amount,
         )
         return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{transaction_id}")
@@ -253,8 +246,8 @@ async def update_transaction_tag(
     try:
         tx_service.update_tagging_by_id(service, transaction_id, category, tag)
         return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/latest-date")

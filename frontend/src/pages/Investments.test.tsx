@@ -1,12 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
 import { Investments } from "./Investments";
-
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
 
 describe("Investments", () => {
   describe("rendering", () => {

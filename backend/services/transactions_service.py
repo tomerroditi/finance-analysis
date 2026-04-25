@@ -681,6 +681,54 @@ class TransactionsService:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
 
+    def split_transaction(
+        self, unique_id: int, source: str, splits: list[dict]
+    ) -> None:
+        """Split a transaction into multiple partial amounts across categories.
+
+        Wraps the repository operation so the route layer never reaches into
+        repositories directly.
+
+        Parameters
+        ----------
+        unique_id : int
+            Unique ID of the transaction to split.
+        source : str
+            Source table name (e.g. ``"bank_transactions"``).
+        splits : list[dict]
+            One entry per resulting split, each with ``amount``, ``category``,
+            ``tag``.
+
+        Raises
+        ------
+        ValueError
+            If the source is not recognized or the split fails to commit.
+        """
+        success = self.transactions_repository.split_transaction(
+            unique_id, source, splits
+        )
+        if not success:
+            raise ValueError("Failed to split transaction")
+
+    def revert_split(self, unique_id: int, source: str) -> None:
+        """Revert a split transaction back to a normal transaction.
+
+        Parameters
+        ----------
+        unique_id : int
+            Unique ID of the split-parent transaction to revert.
+        source : str
+            Source table name (e.g. ``"bank_transactions"``).
+
+        Raises
+        ------
+        ValueError
+            If the source is not recognized or the revert fails to commit.
+        """
+        success = self.transactions_repository.revert_split(unique_id, source)
+        if not success:
+            raise ValueError("Failed to revert split")
+
     def bulk_tag_transactions(
         self,
         transaction_ids: list[int],

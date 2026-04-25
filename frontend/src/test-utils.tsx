@@ -3,6 +3,7 @@ import { render, type RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { DemoModeProvider } from "./context/DemoModeContext";
+import { DialogProvider } from "./context/DialogContext";
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -28,7 +29,9 @@ export function renderWithProviders(
     return (
       <QueryClientProvider client={queryClient}>
         <DemoModeProvider>
-          <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          <DialogProvider>
+            <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+          </DialogProvider>
         </DemoModeProvider>
       </QueryClientProvider>
     );
