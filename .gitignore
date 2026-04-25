@@ -72,3 +72,4 @@ $RECYCLE.BIN/
 .claude/worktrees/
 .vercel
 .env*.local
+.playwright-mcp/
