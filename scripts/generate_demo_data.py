@@ -1813,18 +1813,23 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 
 def create_budget_rules(session):
     """Create monthly budgets for the last 6 months + two project budgets."""
+    # Category-level amounts cover only the residual spend within their category
+    # — i.e., the tags NOT carved out by an explicit tag-level rule below — so
+    # that the sum of all monthly rules fits inside Total Budget and leaves
+    # headroom for unbudgeted categories (Education, Subscriptions, Other) to
+    # surface in the synthetic "Other Expenses" tile. Sum: 24,600 ≤ 28,000.
     monthly_budgets = [
         # Category-level rules
         ("Total Budget", 28000, "Total Budget", None),
-        ("Food Budget", 5000, "Food", None),
-        ("Transportation Budget", 1800, "Transportation", None),
-        ("Household Budget", 8000, "Household", None),
+        ("Food Budget", 1500, "Food", None),  # Coffee, Delivery
+        ("Transportation Budget", 1000, "Transportation", None),  # Parking, Public Transport, Taxi
+        ("Household Budget", 6500, "Household", None),
         ("Entertainment Budget", 800, "Entertainment", None),
         ("Health Budget", 600, "Health", None),
         ("Kids Budget", 3500, "Kids", None),
-        ("Shopping Budget", 2000, "Shopping", None),
-        ("Vacations Budget", 4000, "Vacations", None),
-        # Tag-level rules — exercises per-tag breakdown within categories
+        ("Shopping Budget", 1000, "Shopping", None),  # Electronics, Clothing, Gifts
+        ("Vacations Budget", 3000, "Vacations", None),
+        # Tag-level rules — carve out specific sub-budgets within categories
         ("Groceries", 2800, "Food", "Groceries"),
         ("Restaurants", 1200, "Food", "Restaurants"),
         ("Gas", 1200, "Transportation", "Gas"),
