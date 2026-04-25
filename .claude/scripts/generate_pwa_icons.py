@@ -6,7 +6,7 @@ whenever the brand colors (in `frontend/src/index.css`) change.
 
 Usage::
 
-    python scripts/generate_pwa_icons.py
+    python .claude/scripts/generate_pwa_icons.py
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+PUBLIC_DIR = REPO_ROOT / "frontend" / "public"
 ICONS_DIR = PUBLIC_DIR / "icons"
 
 BG = (15, 23, 42)            # --background  #0f172a
