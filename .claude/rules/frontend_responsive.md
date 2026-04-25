@@ -88,10 +88,54 @@ const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null
 - Label buttons with text (not just icons) — mobile users need clarity
 - Tapping another row should move the card, tapping the same row dismisses it
 
-### Tables: Checkbox Columns
-- **Desktop:** Show checkbox column for row selection
-- **Mobile:** Hide checkbox column (`hidden md:table-cell`) — row tap already toggles selection with visual highlight, saving ~50px of horizontal space
-- Reorder columns so the most important data (date, description, amount) appears first; less critical columns (account) come last
+### Tables: Layout & Alignment
+
+**The default `<table>` will squish itself to fit the viewport — on mobile that means headers collide ("BALANCEDEPOSITSWITHDRAWALS"), date cells wrap mid-token ("2026-/02-28"), badges and action buttons get clipped at the edge.** Force horizontal scroll instead:
+
+```tsx
+<div className="overflow-x-auto">
+  <table className="w-full min-w-[640px] text-sm">
+    <thead>
+      <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+        <th className="text-start  px-3 py-2 font-bold whitespace-nowrap">{t("common.date")}</th>
+        <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.balance")}</th>
+        <th className="text-center px-3 py-2 font-bold whitespace-nowrap">{t("investments.profit")}</th>
+        <th className="text-center px-3 py-2 font-bold w-px"></th>{/* actions: collapse to content */}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((row) => (
+        <tr key={row.key} className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30">
+          <td className="text-start  px-3 py-2 whitespace-nowrap">{row.date}</td>
+          <td className="text-center px-3 py-2 whitespace-nowrap">
+            <span dir="ltr">{formatCurrency(row.balance)}</span>
+          </td>
+          <td className="text-center px-3 py-2 whitespace-nowrap">…</td>
+          <td className="text-center px-3 py-2 whitespace-nowrap">{actionButtons}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+```
+
+**Required pattern:**
+- **Wrap in `overflow-x-auto`** so the table can scroll horizontally inside its container instead of overflowing the modal/card.
+- **Set `min-w-[640px]`** (or whatever the table needs) so columns can't squish below readability — the wrapper scrolls instead.
+- **Make sure the modal/card the table lives in has `overflow-x-hidden`** (or `overflow-hidden` / `overflow-auto`). Otherwise, even with `overflow-x-auto` on the wrapper, a wide table can leak past the parent and turn the whole modal into a sideways-scrollable sheet of empty space. **Do not use `-mx-*` to extend the wrapper past the card padding** — the negative margin propagates the overflow out of the parent and produces that exact bug.
+- **Every `<th>` and `<td>` must have `px-3 py-2`** — no padding = headers/cells run into each other.
+- **Every cell needs `whitespace-nowrap`** — dates, currency, badges, and action buttons must not wrap or get truncated mid-content. If a cell genuinely needs to wrap (long descriptions), opt out explicitly.
+- **Match alignment between `<th>` and `<td>`** — mixing `text-end` cells with `text-center` headers makes columns look misaligned. Pick one per column and apply it to both.
+  - Numeric columns (currency, percentages): `text-center` in both header and cell.
+  - Date / identifier columns: `text-start`.
+  - Action / button columns: `text-center` and `w-px` to collapse to content width.
+- **Wrap currency/numbers in `dir="ltr"`** so the shekel sign and minus stay in the right place under RTL.
+- **Use `formatCurrency()`** (never `Intl.NumberFormat` inline) so RTL/locale handling is consistent.
+
+### Tables: Mobile Column Trimming
+- **Checkbox columns:** Hide on mobile with `hidden md:table-cell` — row tap already toggles selection with visual highlight, saving ~50px of horizontal space.
+- **Column order:** Most important data (date, description, amount) appears first; less critical columns (account, source) come last so horizontal scroll on mobile shows the important columns first.
+- **Source/badge columns** are often noise on mobile — consider whether they earn their column or whether the value can move into the row's primary cell or be removed entirely.
 
 ### Tooltips: Hover (Desktop) vs Tap-to-Toggle (Mobile)
 Hover tooltips (`hidden group-hover:block`) don't work on touch. Use tap-to-toggle:
@@ -262,4 +306,10 @@ hovermode: isTouchDevice ? "closest" : "y unified",
 - `w-80` or other fixed widths on popover panels without `max-w-[calc(100vw-2rem)]` — overflows on small phones
 - `hidden group-hover:block` on tooltips without tap-to-toggle fallback — inaccessible on touch
 - Checkbox columns in tables on mobile — waste space when row tap already selects
+- `<table className="w-full">` without `min-w-[…]` — columns squish on mobile, headers collide, dates wrap mid-token, badges/actions get clipped at the edge
+- Table cells without `px-3` and `whitespace-nowrap` — adjacent column content touches and labels like "BALANCEDEPOSITS" run together
+- Mixing `text-end` cells with `text-center` headers (or vice versa) — values look misaligned with their column header on narrow screens
+- Currency/numbers in tables without a `dir="ltr"` wrapper — shekel sign and minus drift around in RTL
+- `-mx-*` on a horizontally-scrollable table wrapper to "bleed to the edge" of the card — combined with a missing `overflow-x-hidden` on the modal/card, the whole modal becomes sideways-scrollable into empty space
+- Modal/card that hosts a wide table without `overflow-x-hidden` — same root cause; the table overflows the modal even though the wrapper has `overflow-x-auto`
 - Inline action buttons in lists on mobile without tap-to-reveal alternative — unreachable
