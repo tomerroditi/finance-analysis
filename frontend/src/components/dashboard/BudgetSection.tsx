@@ -253,9 +253,8 @@ export function BudgetSpendingGauge({
       .sort((a, b) => b.spent_amount - a.spent_amount);
   }, [activeAnalysis]);
 
-  // For monthly: hide card entirely if no data at all
-  if (viewMode === "monthly" && !monthlyLoading && (!budgetAnalysis || budgetAnalysis.rules.length === 0)) return null;
-
+  const hasNoMonthlyRules =
+    viewMode === "monthly" && (!budgetAnalysis || budgetAnalysis.rules.length === 0);
   const hasNoProjects = viewMode === "projects" && (!projects || projects.length === 0);
 
   const toggleViewMode = () =>
@@ -321,8 +320,7 @@ export function BudgetSpendingGauge({
                   </p>
                   <button
                     onClick={handleNextMonth}
-                    disabled={isCurrentMonth}
-                    className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                    className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
                   >
                     <ChevronRight size={16} />
                   </button>
@@ -368,6 +366,17 @@ export function BudgetSpendingGauge({
                 <Plus size={16} />
                 {t("budget.addProject")}
               </button>
+            </div>
+          ) : hasNoMonthlyRules ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <p className="text-sm text-[var(--text-muted)] mb-3">{t("dashboard.noBudgetRulesForMonth")}</p>
+              <Link
+                to="/budget"
+                className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
+              >
+                <Plus size={16} />
+                {t("budget.addRule")}
+              </Link>
             </div>
           ) : (
             <>
