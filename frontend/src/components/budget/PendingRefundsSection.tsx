@@ -5,6 +5,7 @@ import { RefreshCw, Link2, X, Lock } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { formatDate } from "../../utils/dateFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 
@@ -100,8 +101,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
               <div className="flex flex-col gap-1 min-w-0">
                 {/* Top row: Date & Description */}
                 <div className="flex items-center gap-2 md:gap-3">
-                  <span className="text-xs font-mono text-[var(--text-muted)] bg-[var(--surface-light)] px-1.5 py-0.5 rounded shrink-0">
-                    {item.date || "NO DATE"}
+                  <span className="text-xs font-mono text-[var(--text-muted)] bg-[var(--surface-light)] px-1.5 py-0.5 rounded shrink-0" dir="ltr">
+                    {item.date ? formatDate(item.date) : t("transactions.refunds.noDate")}
                   </span>
                   <span className="font-medium text-[var(--text-primary)] truncate">
                     {item.description || t("budget.unknownTransaction")}

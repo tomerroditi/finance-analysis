@@ -309,7 +309,8 @@ export const MonthlyBudgetView: React.FC = () => {
             className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
           >
             <Copy size={18} className="shrink-0" />
-            <span className="truncate">{t("budget.replicatePreviousMonth")}</span>
+            <span className="truncate md:hidden">{t("budget.replicatePreviousMonthShort")}</span>
+            <span className="truncate hidden md:inline">{t("budget.replicatePreviousMonth")}</span>
           </button>
           <button
             onClick={openAddModal}
@@ -363,13 +364,14 @@ export const MonthlyBudgetView: React.FC = () => {
               <span className="text-xl font-bold text-emerald-400">
                 {onTrackCount}
               </span>
-              <span className="text-xs text-[var(--text-muted)]">{t("budget.onTrack")}</span>
+              <span className="text-xs text-[var(--text-muted)]">{t("budget.onTrackLabel")}</span>
               {overCount > 0 && (
                 <>
+                  <span className="text-xs text-[var(--text-muted)]">·</span>
                   <span className="text-xl font-bold text-rose-400">
                     {overCount}
                   </span>
-                  <span className="text-xs text-[var(--text-muted)]">{t("budget.over")}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{t("budget.overBudgetLabel")}</span>
                 </>
               )}
             </div>
