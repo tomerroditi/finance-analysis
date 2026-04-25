@@ -47,10 +47,26 @@ const idbStore = createStore(DB_NAME, STORE_NAME);
  * every mutation site is fragile. Mounted queries refetch immediately;
  * unmounted ones refetch on next mount and the persister updates the
  * IndexedDB snapshot through its throttle.
+ *
+ * Trailing-edge debounce: when several mutations land in a burst (bulk
+ * tagging, split-then-edit, etc.) we coalesce them into a single sweep
+ * 200 ms after the last one settles instead of refetching every query
+ * once per mutation.
  */
+const INVALIDATE_DEBOUNCE_MS = 200;
+let invalidateTimer: ReturnType<typeof setTimeout> | undefined;
+
+const scheduleInvalidateAll = () => {
+  if (invalidateTimer !== undefined) clearTimeout(invalidateTimer);
+  invalidateTimer = setTimeout(() => {
+    invalidateTimer = undefined;
+    queryClient.invalidateQueries();
+  }, INVALIDATE_DEBOUNCE_MS);
+};
+
 const mutationCache = new MutationCache({
   onSuccess: () => {
-    queryClient.invalidateQueries();
+    scheduleInvalidateAll();
   },
 });
 
