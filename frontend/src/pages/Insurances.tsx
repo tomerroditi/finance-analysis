@@ -224,8 +224,8 @@ export function Insurances() {
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-white font-bold truncate">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <h3 className="text-white font-bold truncate min-w-0 flex-1">
                             {humanizeProvider(group.provider)} — {displayName}
                           </h3>
                           <button
