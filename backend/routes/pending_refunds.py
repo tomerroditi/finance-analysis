@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.dependencies import get_database
 from backend.services.pending_refunds_service import PendingRefundsService
 
 router = APIRouter(tags=["pending-refunds"])
@@ -37,7 +37,7 @@ class LinkRefundRequest(BaseModel):
 @router.post("/")
 async def create_pending_refund(
     request: CreatePendingRefundRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Mark a transaction or split as expecting a refund."""
     service = PendingRefundsService(db)
@@ -53,7 +53,7 @@ async def create_pending_refund(
 @router.get("/")
 async def get_all_pending_refunds(
     status: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Get all pending refunds, optionally filtered by status."""
     service = PendingRefundsService(db)
@@ -64,7 +64,7 @@ async def get_all_pending_refunds(
 async def get_budget_adjustment(
     year: int,
     month: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Return the total amount to exclude from budget expenses for pending refunds.
 
@@ -94,7 +94,7 @@ async def get_budget_adjustment(
 @router.get("/{pending_id}")
 async def get_pending_refund(
     pending_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Get a pending refund with its links."""
     service = PendingRefundsService(db)
@@ -104,7 +104,7 @@ async def get_pending_refund(
 @router.delete("/{pending_id}")
 async def cancel_pending_refund(
     pending_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Cancel a pending refund (remove pending status)."""
     service = PendingRefundsService(db)
@@ -116,7 +116,7 @@ async def cancel_pending_refund(
 async def link_refund(
     pending_id: int,
     request: LinkRefundRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Link a refund transaction to a pending refund."""
     service = PendingRefundsService(db)
@@ -131,7 +131,7 @@ async def link_refund(
 @router.post("/{pending_id}/close")
 async def close_pending_refund(
     pending_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Close a pending refund, accepting the current partial refund amount."""
     service = PendingRefundsService(db)
@@ -141,7 +141,7 @@ async def close_pending_refund(
 @router.delete("/links/{link_id}")
 async def unlink_refund(
     link_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_database),
 ):
     """Remove a refund link (unlink transaction)."""
     service = PendingRefundsService(db)

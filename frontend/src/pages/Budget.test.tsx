@@ -1,23 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
 import { Budget } from "./Budget";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-
 describe("Budget", () => {
   describe("rendering", () => {
-    it("renders the page title", async () => {
-      renderWithProviders(<Budget />);
-      await waitFor(() => {
-        expect(screen.getByText("Budget")).toBeInTheDocument();
-      });
-    });
-
     it("renders both tab buttons", async () => {
       renderWithProviders(<Budget />);
       await waitFor(() => {

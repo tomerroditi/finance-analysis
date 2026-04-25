@@ -395,7 +395,7 @@ export function DataSources() {
                               type="number"
                               value={balanceInput}
                               onChange={(e) => setBalanceInput(e.target.value)}
-                              placeholder="Enter balance..."
+                              placeholder={t("dataSources.balancePlaceholder")}
                               className="w-36 px-3 py-1.5 rounded-lg bg-[var(--bg)] border border-[var(--surface-light)] text-white text-sm focus:outline-none focus:border-[var(--primary)]"
                               autoFocus
                               onKeyDown={(e) => {
@@ -600,7 +600,7 @@ export function DataSources() {
                           type="text"
                           inputMode="numeric"
                           autoComplete="one-time-code"
-                          placeholder="Code"
+                          placeholder={t("dataSources.enter2faCodePlaceholder")}
                           maxLength={10}
                           className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
                           value={tfaCodes[tfaKey] || ""}
@@ -839,7 +839,7 @@ export function DataSources() {
                     <input
                       type="text"
                       disabled={isViewOnly || !!editingAccount}
-                      placeholder="e.g. My Investment Account"
+                      placeholder={t("dataSources.displayNamePlaceholder")}
                       className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50"
                       value={accountName}
                       onChange={(e) => setAccountName(e.target.value)}

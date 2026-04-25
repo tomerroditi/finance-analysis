@@ -21,10 +21,6 @@ interface AppState {
     service: "all" | "credit_cards" | "banks" | "cash" | "manual_investments" | "refunds",
   ) => void;
 
-  // Global Search
-  searchOpen: boolean;
-  setSearchOpen: (open: boolean) => void;
-
   // Auto Tagging Panel (Transactions page sidebar)
   autoTaggingPanelOpen: boolean;
   toggleAutoTaggingPanel: () => void;
@@ -48,10 +44,6 @@ export const useAppStore = create<AppState>((set) => ({
   // Service filter
   selectedService: "all",
   setSelectedService: (service) => set({ selectedService: service }),
-
-  // Global Search
-  searchOpen: false,
-  setSearchOpen: (open) => set({ searchOpen: open }),
 
   // Auto Tagging Panel
   autoTaggingPanelOpen: false,

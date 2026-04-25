@@ -671,7 +671,7 @@ export function Investments() {
                 <input
                   type="number"
                   step="0.01"
-                  placeholder="e.g. 125000"
+                  placeholder={t("investments.currentMarketValuePlaceholder")}
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
                   value={balanceForm.balance}
                   onChange={(e) =>
@@ -875,7 +875,7 @@ export function Investments() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. S&P 500 Index Fund"
+                  placeholder={t("investments.investmentNamePlaceholder")}
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
                   value={newInvestment.name}
                   onChange={(e) =>

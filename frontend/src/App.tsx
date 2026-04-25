@@ -11,11 +11,11 @@ import {
   Categories,
   Investments,
   Liabilities,
+  Insurances,
   DataSources,
   EarlyRetirement,
   DataFlow,
 } from "./pages";
-import { InsurancesPrototype } from "./pages/InsurancesPrototype";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,7 +41,7 @@ function App() {
                 <Route path="categories" element={<Categories />} />
                 <Route path="investments" element={<Investments />} />
                 <Route path="liabilities" element={<Liabilities />} />
-                <Route path="insurances" element={<InsurancesPrototype />} />
+                <Route path="insurances" element={<Insurances />} />
                 <Route path="early-retirement" element={<EarlyRetirement />} />
                 <Route path="data-sources" element={<DataSources />} />
                 <Route path="data-flow" element={<DataFlow />} />

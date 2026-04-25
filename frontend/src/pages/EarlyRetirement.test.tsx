@@ -1,24 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { server } from "../mocks/server";
 import { renderWithProviders } from "../test-utils";
 import { EarlyRetirement } from "./EarlyRetirement";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-
 describe("EarlyRetirement", () => {
-  describe("rendering", () => {
-    it("renders the page title", async () => {
+  describe("current status section", () => {
+    it("renders the current financial status section", async () => {
       renderWithProviders(<EarlyRetirement />);
       await waitFor(() => {
-        expect(screen.getByText(/Early Retirement/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Current Financial Status/i),
+        ).toBeInTheDocument();
       });
     });
-  });
 
-  describe("current status section", () => {
     it("displays financial status metrics", async () => {
       renderWithProviders(<EarlyRetirement />);
       await waitFor(() => {
@@ -35,17 +30,24 @@ describe("EarlyRetirement", () => {
   });
 
   describe("retirement goals section", () => {
-    it("displays goal form with loaded data", async () => {
+    it("displays the retirement goals section header", async () => {
       renderWithProviders(<EarlyRetirement />);
       await waitFor(() => {
         expect(screen.getByText(/Retirement Goals/i)).toBeInTheDocument();
       });
     });
 
-    it("shows Israeli savings vehicle fields", async () => {
+    it("renders Israeli savings vehicle form fields", async () => {
       renderWithProviders(<EarlyRetirement />);
+      // The "Israeli Savings Vehicles" cluster on the form renders
+      // dedicated inputs for Keren Hishtalmut and Monthly Pension.
       await waitFor(() => {
-        expect(screen.getByText(/Israeli Savings Vehicles/i)).toBeInTheDocument();
+        expect(
+          screen.getByText(/Keren Hishtalmut Balance/i),
+        ).toBeInTheDocument();
+        // "Monthly Pension" appears in both the form label and the
+        // breakdown table — getAllByText asserts at least one is present.
+        expect(screen.getAllByText(/Monthly Pension/i).length).toBeGreaterThan(0);
       });
     });
   });

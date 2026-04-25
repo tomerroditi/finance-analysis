@@ -194,10 +194,10 @@ class TestTransactionNotFoundErrors:
             assert "not found" in response.json()["detail"]
 
     def test_update_nonexistent_transaction(self, test_client):
-        """PUT /api/transactions/99999 for missing transaction returns 500.
+        """PUT /api/transactions/99999 for missing transaction returns 400.
 
-        The update route catches all exceptions as 500 since it uses a
-        generic ``except Exception`` handler.
+        The update route translates ``ValueError`` into HTTP 400 with the
+        original message preserved.
         """
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
@@ -212,5 +212,5 @@ class TestTransactionNotFoundErrors:
                     "source": "cash_transactions",
                 },
             )
-            assert response.status_code == 500
+            assert response.status_code == 400
             assert "not found" in response.json()["detail"]
