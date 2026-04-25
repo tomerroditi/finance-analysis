@@ -16,6 +16,14 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
+        // Use injectManifest so we can hand-write the SW. We need a custom
+        // Workbox plugin that broadcasts `API_NETWORK_FAILED` to the page
+        // whenever an /api fetch fails (so the user sees a toast even when
+        // the SW silently serves stale cache). generateSW serializes the
+        // workbox config to JSON and can't carry inline plugin functions.
+        strategies: "injectManifest",
+        srcDir: "src",
+        filename: "sw.ts",
         registerType: "prompt",
         injectRegister: false,
         includeAssets: [
@@ -53,7 +61,7 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
-        workbox: {
+        injectManifest: {
           // App shell precaching — JS/CSS/HTML/icons go into the SW cache so
           // first paint works offline and on a flaky connection.
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
@@ -61,32 +69,6 @@ export default defineConfig(({ mode }) => {
           // Bumped so the entire app shell precaches; revisit once we
           // code-split Plotly off the dashboard route.
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-          navigateFallback: "/index.html",
-          navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi/],
-          cleanupOutdatedCaches: true,
-          // API GETs that are safe to read while offline. Mutations and the
-          // scraping status endpoint are intentionally not cached: see
-          // `runtimeCaching` exclusions below.
-          runtimeCaching: [
-            {
-              urlPattern: ({ url, request }) =>
-                request.method === "GET" &&
-                url.pathname.startsWith("/api/") &&
-                !url.pathname.startsWith("/api/scraping/status") &&
-                !url.pathname.startsWith("/api/scraping/start") &&
-                !url.pathname.startsWith("/api/backups"),
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "finance-api-get",
-                networkTimeoutSeconds: 4,
-                expiration: {
-                  maxEntries: 200,
-                  maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
-                },
-                cacheableResponse: { statuses: [0, 200] },
-              },
-            },
-          ],
         },
         devOptions: {
           // The SW is generated only on `vite build`. Keep it disabled in

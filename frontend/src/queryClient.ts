@@ -1,4 +1,4 @@
-import { QueryClient, type Query } from "@tanstack/react-query";
+import { MutationCache, QueryClient, type Query } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { createStore, get, set, del } from "idb-keyval";
 
@@ -18,13 +18,44 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   "suggestion-preview",
 ]);
 
+/**
+ * Anything credential-related is force-excluded regardless of the exact
+ * key shape — even though only metadata like "you have a Bank Hapoalim
+ * account" hits the cache (real secrets live in the OS keyring), that
+ * metadata is still PII we don't want sitting in IndexedDB on a shared
+ * or stolen device.
+ */
+function isCredentialQuery(key: readonly unknown[]): boolean {
+  return key.some(
+    (segment) =>
+      typeof segment === "string" && segment.toLowerCase().includes("credential"),
+  );
+}
+
 const DB_NAME = "finance-analysis";
 const STORE_NAME = "react-query";
 const CACHE_KEY = "tq-cache-v1";
 
 const idbStore = createStore(DB_NAME, STORE_NAME);
 
+/**
+ * Any successful mutation alters server state, so every cached query
+ * could now be stale. We invalidate the entire cache rather than relying
+ * on per-mutation `onSuccess` invalidation: a mutation in one feature
+ * frequently has knock-on effects (a new transaction shifts budgets,
+ * KPIs, sankey, net-worth, etc.) and listing every dependent key on
+ * every mutation site is fragile. Mounted queries refetch immediately;
+ * unmounted ones refetch on next mount and the persister updates the
+ * IndexedDB snapshot through its throttle.
+ */
+const mutationCache = new MutationCache({
+  onSuccess: () => {
+    queryClient.invalidateQueries();
+  },
+});
+
 export const queryClient = new QueryClient({
+  mutationCache,
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5,
@@ -50,7 +81,9 @@ export function shouldDehydrateQuery(query: Query): boolean {
   if (query.state.status !== "success") return false;
   const head = query.queryKey[0];
   if (typeof head !== "string") return false;
-  return !NON_PERSISTABLE_KEY_PREFIXES.has(head);
+  if (NON_PERSISTABLE_KEY_PREFIXES.has(head)) return false;
+  if (isCredentialQuery(query.queryKey)) return false;
+  return true;
 }
 
 /**

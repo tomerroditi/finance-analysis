@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DemoModeProvider } from "./context/DemoModeContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ServiceWorkerUpdatePrompt } from "./components/ServiceWorkerUpdatePrompt";
+import { NetworkStatusToast } from "./components/NetworkStatusToast";
 import {
   PERSIST_BUSTER,
   queryClient,
@@ -54,6 +55,7 @@ function App() {
               </Route>
             </Routes>
             <ServiceWorkerUpdatePrompt />
+            <NetworkStatusToast />
           </BrowserRouter>
           </DialogProvider>
         </DemoModeProvider>

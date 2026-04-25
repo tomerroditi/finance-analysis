@@ -935,6 +935,8 @@
     "updateAvailableTitle": "New version available",
     "updateAvailableMessage": "Reload to apply the latest improvements.",
     "reload": "Reload",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "networkFailedTitle": "Connection issue",
+    "networkFailedMessage": "Couldn't reach the server — showing cached data."
   }
 }

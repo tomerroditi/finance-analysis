@@ -935,6 +935,8 @@
     "updateAvailableTitle": "גרסה חדשה זמינה",
     "updateAvailableMessage": "טען מחדש כדי להחיל את השיפורים האחרונים.",
     "reload": "טען מחדש",
-    "dismiss": "סגור"
+    "dismiss": "סגור",
+    "networkFailedTitle": "בעיית חיבור",
+    "networkFailedMessage": "לא הצלחנו להתחבר לשרת — מוצגים נתונים מהמטמון."
   }
 }
