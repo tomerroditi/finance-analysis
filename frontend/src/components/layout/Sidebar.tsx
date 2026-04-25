@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
 import { SettingsPopup } from "./SettingsPopup";
+import { BudgetAlertsBell } from "./BudgetAlertsBell";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, key: "dashboard" },
@@ -166,6 +167,7 @@ export function Sidebar() {
 
       {/* Settings & Data Flow */}
       <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)] space-y-1">
+        <BudgetAlertsBell variant="sidebar" expanded={sidebarOpen || mobileSidebarOpen} />
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
@@ -208,7 +210,7 @@ export function Sidebar() {
         <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
           {currentPageLabel || t("sidebar.logo")}
         </span>
-        <div className="w-8" />
+        <BudgetAlertsBell variant="compact" />
       </div>
 
       {/* Desktop sidebar */}

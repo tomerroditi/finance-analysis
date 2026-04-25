@@ -90,7 +90,28 @@ export const budgetApi = {
     }),
   deleteProject: (name: string) =>
     api.delete(`/budget/projects/${encodeURIComponent(name)}`),
+  getCurrentAlerts: (threshold?: number) =>
+    api.get("/budget/alerts", {
+      params: threshold !== undefined ? { threshold } : undefined,
+    }),
 };
+
+export interface BudgetAlert {
+  rule_id: number;
+  name: string;
+  category: string;
+  tags: string[];
+  amount: number;
+  spent: number;
+  percentage: number;
+  severity: "warning" | "critical";
+}
+
+export interface BudgetAlertsResponse {
+  year: number;
+  month: number;
+  alerts: BudgetAlert[];
+}
 
 // Tagging API
 export type Operator =
