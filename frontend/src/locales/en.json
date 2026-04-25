@@ -929,5 +929,12 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "fitToScreen": "Fit to screen"
+  },
+  "pwa": {
+    "offlineReady": "App is ready to work offline.",
+    "updateAvailableTitle": "New version available",
+    "updateAvailableMessage": "Reload to apply the latest improvements.",
+    "reload": "Reload",
+    "dismiss": "Dismiss"
   }
 }
