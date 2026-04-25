@@ -52,7 +52,9 @@ export const MonthlyBudgetView: React.FC = () => {
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
-  const [copiedFromMsg, setCopiedFromMsg] = useState<string | null>(null);
+  const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
+    new Set(),
+  );
 
   const queryClient = useQueryClient();
 
@@ -78,15 +80,26 @@ export const MonthlyBudgetView: React.FC = () => {
     }
   }, [year, month, includeSplitParents, queryClient]);
 
-   
+  // When the active month's analysis reports an auto-fill, sibling months
+  // may have prefetched in parallel and cached an empty result before the
+  // fill committed. Refetch the others so navigation shows the rules
+  // without a hard refresh. The active query is excluded so its
+  // `copied_from` (and our notice) survives.
   useEffect(() => {
-    if (analysis?.copied_from) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCopiedFromMsg(analysis.copied_from);
-      const timer = setTimeout(() => setCopiedFromMsg(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [analysis?.copied_from]);
+    if (!analysis?.copied_from) return;
+    queryClient.refetchQueries({
+      queryKey: ["budgetAnalysis"],
+      predicate: (query) => {
+        const [, qYear, qMonth] = query.queryKey as [
+          string,
+          number,
+          number,
+          boolean,
+        ];
+        return qYear !== year || qMonth !== month;
+      },
+    });
+  }, [analysis?.copied_from, year, month, queryClient]);
 
   // Fetch pending refunds to know which transactions are already marked
   const { data: pendingRefunds } = useQuery({
@@ -236,19 +249,25 @@ export const MonthlyBudgetView: React.FC = () => {
         Math.abs(a.current_amount) / a.rule.amount,
     )[0];
   const daysInMonth = new Date(year, month, 0).getDate();
-  const daysLeft =
-    year === today.getFullYear() && month === today.getMonth() + 1
-      ? daysInMonth - today.getDate()
-      : daysInMonth;
+  const isCurrentMonth =
+    year === today.getFullYear() && month === today.getMonth() + 1;
+  const daysLeft = isCurrentMonth ? daysInMonth - today.getDate() : daysInMonth;
+
+  const currentMonthKey = `${year}-${month}`;
+  const copiedFromForThisMonth =
+    analysis?.copied_from && !dismissedCopyMonths.has(currentMonthKey)
+      ? analysis.copied_from
+      : null;
 
 
   return (
     <div className="space-y-4 md:space-y-8">
       {/* Month Navigation */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0 bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
-        <div className="flex items-center gap-2 md:gap-4">
+      <div className="bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="flex items-center justify-center md:justify-start gap-1 md:gap-2">
           <button
             onClick={handlePreviousMonth}
+            aria-label={t("common.previous")}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
             {i18n.language === "he" ? <ChevronRight size={24} /> : <ChevronLeft size={24} />}
@@ -261,18 +280,22 @@ export const MonthlyBudgetView: React.FC = () => {
           </h2>
           <button
             onClick={handleNextMonth}
+            aria-label={t("common.next")}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
             {i18n.language === "he" ? <ChevronLeft size={24} /> : <ChevronRight size={24} />}
           </button>
+          {!isCurrentMonth && (
+            <button
+              onClick={handleCurrentMonth}
+              title={t("budget.currentMonth")}
+              className="ms-1 md:ms-2 inline-flex items-center px-2.5 py-1 text-xs font-medium text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-full transition-colors"
+            >
+              {t("common.today")}
+            </button>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2 md:gap-3 justify-center">
-          <button
-            onClick={handleCurrentMonth}
-            className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
-          >
-            {t("budget.currentMonth")}
-          </button>
+        <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2">
           <button
             onClick={async () => {
               const ok = await confirm({
@@ -283,28 +306,35 @@ export const MonthlyBudgetView: React.FC = () => {
               if (ok) copyMutation.mutate();
             }}
             disabled={copyMutation.isPending}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
           >
-            <Copy size={20} />
-            {t("budget.replicatePreviousMonth")}
+            <Copy size={18} className="shrink-0" />
+            <span className="truncate">{t("budget.replicatePreviousMonth")}</span>
           </button>
           <button
             onClick={openAddModal}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
+            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
           >
-            <Plus size={20} />
+            <Plus size={18} className="shrink-0" />
             {t("budget.addRule")}
           </button>
         </div>
       </div>
 
-      {/* Auto-copy toast */}
-      {copiedFromMsg && (
-        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
-          <span>{t("budget.rulesCopiedFrom", { month: copiedFromMsg })}</span>
+      {/* Auto-copy notice — scoped to the month being viewed */}
+      {copiedFromForThisMonth && (
+        <div className="flex items-start justify-between gap-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
+          <span>
+            {t("budget.rulesCopiedFrom", { month: copiedFromForThisMonth })}
+          </span>
           <button
-            onClick={() => setCopiedFromMsg(null)}
-            className="ms-4 text-blue-400/60 hover:text-blue-400 transition-colors"
+            onClick={() =>
+              setDismissedCopyMonths((prev) =>
+                new Set(prev).add(currentMonthKey),
+              )
+            }
+            aria-label={t("common.dismiss")}
+            className="shrink-0 text-blue-400/60 hover:text-blue-400 transition-colors"
           >
             ✕
           </button>
