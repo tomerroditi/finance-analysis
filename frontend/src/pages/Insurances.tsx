@@ -317,25 +317,26 @@ function AccountCardFull({
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
             {t("insurance.investmentTracks")}
           </p>
-          {tracks.map((t, i) => (
+          {tracks.map((track, i) => (
             <div key={i} className="flex justify-between items-center text-xs mb-1">
-              <span className="text-[var(--text-muted)] truncate me-2">{t.name}</span>
+              <span className="text-[var(--text-muted)] truncate me-2">{track.name}</span>
               <span
-                className={`font-mono font-bold whitespace-nowrap ${t.yield_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                className={`font-mono font-bold whitespace-nowrap ${track.yield_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                dir="ltr"
               >
-                {t.yield_pct > 0 ? "+" : ""}
-                {t.yield_pct}%
+                {track.yield_pct > 0 ? "+" : ""}
+                {track.yield_pct}%
               </span>
             </div>
           ))}
           {tracks.length > 1 && (
             <div className="mt-2 flex gap-1">
-              {tracks.map((t, i) => (
+              {tracks.map((track, i) => (
                 <div
                   key={i}
                   className="h-1.5 rounded-full bg-blue-500"
                   style={{
-                    width: `${t.allocation_pct ?? 50}%`,
+                    width: `${track.allocation_pct ?? 50}%`,
                     opacity: 0.4 + i * 0.3,
                   }}
                 />
@@ -349,30 +350,46 @@ function AccountCardFull({
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.commissions")}</p>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-[var(--text-muted)]">{t("insurance.fromDeposits")}</span>
-            <span className="text-amber-400 font-mono font-bold">
+            <span className="text-amber-400 font-mono font-bold" dir="ltr">
               {fmtPct(account.commission_deposits_pct)}
             </span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-[var(--text-muted)]">{t("insurance.fromSavings")}</span>
-            <span className="text-amber-400 font-mono font-bold">
+            <span className="text-amber-400 font-mono font-bold" dir="ltr">
               {fmtPct(account.commission_savings_pct)}
             </span>
           </div>
         </div>
 
-        {/* Insurance Covers or Liquidity */}
+        {/* Deposit Summary */}
+        <div className="bg-[var(--background)]/50 rounded-xl p-3">
+          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
+          <p className="text-emerald-400 font-black text-lg" dir="ltr">{fmt(deposits.reduce((s, dep) => s + dep.amount, 0))}</p>
+          <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
+          {totalCosts > 0 && (
+            <p className="text-rose-400 text-[10px] mt-1 font-bold">
+              <span dir="ltr">{fmt(-totalCosts)}</span> {t("insurance.insuranceCostsLabel")}
+            </p>
+          )}
+        </div>
+
+        {/* Insurance Covers / Liquidity / Activity (last column — variable content) */}
         {covers.length > 0 ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
               {t("insurance.insuranceCovers")}
             </p>
-            {covers.map((c, i) => (
-              <div key={i} className="flex justify-between text-xs mb-1">
-                <span className="text-[var(--text-muted)] truncate me-2">{c.title}</span>
-                <span className="text-white font-mono font-bold">{fmt(unwrapAmount(c.sum))}</span>
-              </div>
-            ))}
+            <div className="flex flex-col gap-1.5">
+              {covers.map((c, i) => (
+                <div key={i} className="flex flex-col">
+                  <span className="text-[var(--text-muted)] text-[10px] leading-tight">{c.title}</span>
+                  <span className="text-white font-mono font-bold text-xs leading-tight" dir="ltr">
+                    {fmt(unwrapAmount(c.sum))}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : account.liquidity_date ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
@@ -394,18 +411,6 @@ function AccountCardFull({
             <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.deposits")}</p>
           </div>
         )}
-
-        {/* Deposit Summary */}
-        <div className="bg-[var(--background)]/50 rounded-xl p-3">
-          <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
-          <p className="text-emerald-400 font-black text-lg">{fmt(deposits.reduce((s, t) => s + t.amount, 0))}</p>
-          <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
-          {totalCosts > 0 && (
-            <p className="text-rose-400 text-[10px] mt-1 font-bold">
-              {fmt(-totalCosts)} {t("insurance.insuranceCostsLabel")}
-            </p>
-          )}
-        </div>
       </div>
 
       {/* Expandable Transaction Table */}
