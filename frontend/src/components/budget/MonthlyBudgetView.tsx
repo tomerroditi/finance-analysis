@@ -236,19 +236,19 @@ export const MonthlyBudgetView: React.FC = () => {
         Math.abs(a.current_amount) / a.rule.amount,
     )[0];
   const daysInMonth = new Date(year, month, 0).getDate();
-  const daysLeft =
-    year === today.getFullYear() && month === today.getMonth() + 1
-      ? daysInMonth - today.getDate()
-      : daysInMonth;
+  const isCurrentMonth =
+    year === today.getFullYear() && month === today.getMonth() + 1;
+  const daysLeft = isCurrentMonth ? daysInMonth - today.getDate() : daysInMonth;
 
 
   return (
     <div className="space-y-4 md:space-y-8">
       {/* Month Navigation */}
-      <div className="flex flex-col md:flex-row items-center justify-between gap-3 md:gap-0 bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)]">
-        <div className="flex items-center gap-2 md:gap-4">
+      <div className="bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="flex items-center justify-center md:justify-start gap-1 md:gap-2">
           <button
             onClick={handlePreviousMonth}
+            aria-label={t("common.previous")}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
             {i18n.language === "he" ? <ChevronRight size={24} /> : <ChevronLeft size={24} />}
@@ -261,18 +261,22 @@ export const MonthlyBudgetView: React.FC = () => {
           </h2>
           <button
             onClick={handleNextMonth}
+            aria-label={t("common.next")}
             className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
           >
             {i18n.language === "he" ? <ChevronLeft size={24} /> : <ChevronRight size={24} />}
           </button>
+          {!isCurrentMonth && (
+            <button
+              onClick={handleCurrentMonth}
+              title={t("budget.currentMonth")}
+              className="ms-1 md:ms-2 inline-flex items-center px-2.5 py-1 text-xs font-medium text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-full transition-colors"
+            >
+              {t("common.today")}
+            </button>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2 md:gap-3 justify-center">
-          <button
-            onClick={handleCurrentMonth}
-            className="px-3 md:px-4 py-2 text-xs md:text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
-          >
-            {t("budget.currentMonth")}
-          </button>
+        <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2">
           <button
             onClick={async () => {
               const ok = await confirm({
@@ -283,16 +287,16 @@ export const MonthlyBudgetView: React.FC = () => {
               if (ok) copyMutation.mutate();
             }}
             disabled={copyMutation.isPending}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
           >
-            <Copy size={20} />
-            {t("budget.replicatePreviousMonth")}
+            <Copy size={18} className="shrink-0" />
+            <span className="truncate">{t("budget.replicatePreviousMonth")}</span>
           </button>
           <button
             onClick={openAddModal}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
+            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
           >
-            <Plus size={20} />
+            <Plus size={18} className="shrink-0" />
             {t("budget.addRule")}
           </button>
         </div>
