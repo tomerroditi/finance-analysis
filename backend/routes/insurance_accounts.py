@@ -28,6 +28,7 @@ class InsuranceAccountResponse(BaseModel):
     policy_type: str
     pension_type: Optional[str] = None
     account_name: str
+    custom_name: Optional[str] = None
     balance: Optional[float] = None
     balance_date: Optional[str] = None
     investment_tracks: Optional[str] = None
@@ -38,6 +39,12 @@ class InsuranceAccountResponse(BaseModel):
     liquidity_date: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InsuranceAccountRename(BaseModel):
+    """Request body for renaming an insurance account."""
+
+    custom_name: Optional[str] = None
 
 
 @router.get("/", response_model=list[InsuranceAccountResponse])
@@ -53,6 +60,29 @@ async def get_insurance_accounts(
     """
     service = InsuranceAccountService(db)
     return service.get_all()
+
+
+@router.patch("/{policy_id}/rename", response_model=InsuranceAccountResponse)
+async def rename_insurance_account(
+    policy_id: str,
+    body: InsuranceAccountRename,
+    db: Session = Depends(get_database),
+):
+    """Set or clear the user-defined display name for an insurance account.
+
+    The override persists across scrapes. For ``hishtalmut`` policies, the
+    linked Investment's ``name`` is updated in lockstep so the Investments page
+    reflects the change immediately.
+
+    Parameters
+    ----------
+    policy_id : str
+        Policy identifier of the account to rename.
+    body : InsuranceAccountRename
+        ``custom_name`` is the new display name. Send ``null`` or an empty
+        string to clear the override.
+    """
+    return InsuranceAccountService(db).rename(policy_id, body.custom_name)
 
 
 @router.post("/sync-investments")

@@ -69,6 +69,7 @@ def _ensure_columns(engine, table: str, columns: dict[str, str]) -> None:
 
 
 _ensure_columns(_engine, "investments", {"insurance_policy_id": "VARCHAR"})
+_ensure_columns(_engine, "insurance_accounts", {"custom_name": "VARCHAR"})
 
 # Backfill hishtalmut investments. The frozen demo DB was built before the
 # auto-sync from insurance accounts existed, so its three hishtalmut policies

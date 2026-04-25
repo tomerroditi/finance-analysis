@@ -655,7 +655,12 @@
     "policy": "Policy",
     "updated": "Updated",
     "chartMonthly": "Monthly",
-    "chartCumulative": "Cumulative"
+    "chartCumulative": "Cumulative",
+    "renameFund": "Rename fund",
+    "renameFundHint": "Set a friendly name (e.g. \"My Pension\")",
+    "resetToScrapedName": "Reset to scraped name",
+    "save": "Save",
+    "cancel": "Cancel"
   },
   "modals": {
     "confirm": {
