@@ -64,7 +64,13 @@ export function RecentTransactionsFeed({
     queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
   }, [queryClient]);
 
-  // Tag update mutation
+  // Tag update mutation. We patch every cached transactions list synchronously
+  // so the inline editor reflects the new category/tag immediately. Refetches
+  // can be delayed or coalesced by React Query's debounced global invalidator
+  // when many queries are active, leaving the row visibly stale despite a
+  // successful API call. The patch is keyed by (source, unique_id ?? id) which
+  // matches the row's React key, so the SelectDropdown re-renders with the new
+  // value without waiting for the network round-trip.
   const tagMutation = useMutation({
     mutationFn: ({ tx, category, tag }: { tx: Transaction; category: string; tag: string }) =>
       transactionsApi.updateTag(
@@ -73,8 +79,14 @@ export function RecentTransactionsFeed({
         tag,
         tx.source || "",
       ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    onSuccess: (_data, { tx, category, tag }) => {
+      const sameRow = (t: Transaction) =>
+        t.source === tx.source &&
+        (t.unique_id ?? t.id) === (tx.unique_id ?? tx.id);
+      const patchList = (old: Transaction[] | undefined) =>
+        old?.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t)) ?? old;
+      queryClient.setQueriesData<Transaction[]>({ queryKey: ["all-transactions"] }, patchList);
+      queryClient.setQueriesData<Transaction[]>({ queryKey: ["transactions"] }, patchList);
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       invalidateAnalytics();
     },
