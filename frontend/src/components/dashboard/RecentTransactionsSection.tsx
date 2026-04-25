@@ -77,7 +77,6 @@ export function RecentTransactionsFeed({
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       invalidateAnalytics();
-      setEditingTxKey(null);
     },
   });
 
