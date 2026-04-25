@@ -1,3 +1,14 @@
+## v1.12.0 (2026-04-25)
+
+### Feat
+
+- **frontend**: clean up Monthly Budget header button layout
+
+### Fix
+
+- **frontend**: refresh sibling months after budget auto-fill
+- **frontend**: scope auto-copy notice to its month and explain why
+
 ## v1.11.0 (2026-04-25)
 
 ### Feat
