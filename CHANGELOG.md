@@ -1,3 +1,9 @@
+## v1.13.1 (2026-04-25)
+
+### Fix
+
+- **demo**: use all_tags sentinel + remove tagless transactions
+
 ## v1.13.0 (2026-04-25)
 
 ### Feat

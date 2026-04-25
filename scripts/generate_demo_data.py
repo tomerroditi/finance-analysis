@@ -96,21 +96,21 @@ def next_month(year: int, month: int):
 # ---------------------------------------------------------------------------
 CATEGORIES_DATA = {
     "Food": (["Groceries", "Restaurants", "Coffee", "Delivery"], "🍔"),
-    "Transportation": (["Gas", "Parking", "Public Transportation", "Taxi"], "🚗"),
-    "Household": (["Mortgage", "Electricity", "Water", "Internet", "Cleaning Supplies", "Home Insurance"], "🏠"),
+    "Transportation": (["Gas", "Parking", "Public Transportation", "Taxi", "Maintenance"], "🚗"),
+    "Household": (["Mortgage", "Electricity", "Water", "Internet", "Cleaning Supplies", "Home Insurance", "National Insurance", "Municipal Tax"], "🏠"),
     "Entertainment": (["Streaming", "Cinema", "Events", "Games"], "🎉"),
     "Health": (["Pharmacy", "Doctor", "Gym", "Dental"], "💊"),
     "Kids": (["Daycare", "Activities", "Clothing", "School Supplies"], "👶"),
-    "Shopping": (["Electronics", "Clothing", "Online", "Gifts"], "🛒"),
+    "Shopping": (["Electronics", "Clothing", "Online", "Gifts", "Flea Market"], "🛒"),
     "Education": (["Courses", "Books"], "🎓"),
     "Subscriptions": (["Netflix", "Spotify", "Chat-GPT"], "📱"),
     "Vacations": (["Flights", "Hotel", "Food"], "🌍"),
-    "Other": (["ATM", "Bank Commisions", "Haircut"], "🙅"),
+    "Other": (["ATM", "Bank Commisions", "Haircut", "Tip"], "🙅"),
     "Salary": (["Tech Company", "School District"], "💵"),
     "Other Income": (["Prior Wealth", "Freelance"], "💵"),
     "Investments": (["Stock Market Fund", "Savings Plan", "Corporate Bond"], "💲"),
     "Liabilities": (["Mortgage", "Car Loan"], "💳"),
-    "Credit Cards": ([], None),
+    "Credit Cards": (["Bill"], "💳"),
     "Ignore": (["Credit Card Bill", "Internal Transactions"], "🚫"),
     "Home Renovation": (["Materials", "Labor", "Furniture"], "🏠"),
     "Wedding": (["Venue", "Catering", "Photography", "Attire", "Rings", "Invitations", "Honeymoon"], "💒"),
@@ -674,7 +674,7 @@ def generate_cc_transactions(session):
                 description="CAR SERVICE - ANNUAL",
                 amount=amt,
                 category="Transportation",
-                tag=None,
+                tag="Maintenance",
                 source="credit_card_transactions",
                 type="normal",
                 status="completed",
@@ -1192,6 +1192,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
             bank_counter += 1
             desc = random.choice(["BITUACH LEUMI - NATIONAL INSURANCE", "ARNONA - MUNICIPAL TAX"])
             amt = rand_amount(-600, -300)
+            tag = "National Insurance" if "BITUACH LEUMI" in desc else "Municipal Tax"
             txn = BankTransaction(
                 id=f"demo-bank-{bank_counter:04d}",
                 date=rand_date_in_month(year, month, 10, 20),
@@ -1200,7 +1201,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
                 description=desc,
                 amount=amt,
                 category="Household",
-                tag=None,
+                tag=tag,
                 source="bank_transactions",
                 type="normal",
                 status="completed",
@@ -1300,7 +1301,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
                     description="CREDIT CARD BILL - MAX",
                     amount=bill_amount,
                     category="Credit Cards",
-                    tag=None,
+                    tag="Bill",
                     source="bank_transactions",
                     type="normal",
                     status="completed",
@@ -1321,7 +1322,7 @@ def generate_bank_transactions(session, monthly_cc_totals: dict):
                     description="CREDIT CARD BILL - VISA CAL",
                     amount=bill_amount,
                     category="Credit Cards",
-                    tag=None,
+                    tag="Bill",
                     source="bank_transactions",
                     type="normal",
                     status="completed",
@@ -1519,8 +1520,8 @@ def generate_cash_transactions(session):
 
     petty_templates = [
         ("Cash Market Purchase", "Food", "Groceries", -60, -20),
-        ("Tip", "Other", None, -50, -10),
-        ("Flea Market", "Shopping", None, -100, -30),
+        ("Tip", "Other", "Tip", -50, -10),
+        ("Flea Market", "Shopping", "Flea Market", -100, -30),
     ]
     kids_templates = [
         ("Kids Allowance", "Kids", "Activities", -50, -20),
@@ -1813,22 +1814,23 @@ def create_investment_snapshots(session, stock_fund, savings_plan, bond):
 
 def create_budget_rules(session):
     """Create monthly budgets for the last 6 months + two project budgets."""
-    # Category-level amounts cover only the residual spend within their category
-    # — i.e., the tags NOT carved out by an explicit tag-level rule below — so
-    # that the sum of all monthly rules fits inside Total Budget and leaves
-    # headroom for unbudgeted categories (Education, Subscriptions, Other) to
-    # surface in the synthetic "Other Expenses" tile. Sum: 24,600 ≤ 28,000.
     monthly_budgets = [
-        # Category-level rules
-        ("Total Budget", 28000, "Total Budget", None),
-        ("Food Budget", 1500, "Food", None),  # Coffee, Delivery
-        ("Transportation Budget", 1000, "Transportation", None),  # Parking, Public Transport, Taxi
-        ("Household Budget", 6500, "Household", None),
-        ("Entertainment Budget", 800, "Entertainment", None),
-        ("Health Budget", 600, "Health", None),
-        ("Kids Budget", 3500, "Kids", None),
-        ("Shopping Budget", 1000, "Shopping", None),  # Electronics, Clothing, Gifts
-        ("Vacations Budget", 3000, "Vacations", None),
+        # Category-level rules — "all_tags" sentinel means "every tag in the
+        # category". Storing None/empty leaves the rule matching no transactions,
+        # so they all spill into the auto-generated "Other Expenses" bucket.
+        # Amounts cover only the residual spend within each category — the tags
+        # NOT carved out by an explicit tag-level rule below — so the sum fits
+        # inside Total Budget and leaves headroom for unbudgeted categories
+        # (Education, Subscriptions, Other). Sum: 24,600 ≤ 28,000.
+        ("Total Budget", 28000, "Total Budget", "all_tags"),
+        ("Food Budget", 1500, "Food", "all_tags"),
+        ("Transportation Budget", 1000, "Transportation", "all_tags"),
+        ("Household Budget", 6500, "Household", "all_tags"),
+        ("Entertainment Budget", 800, "Entertainment", "all_tags"),
+        ("Health Budget", 600, "Health", "all_tags"),
+        ("Kids Budget", 3500, "Kids", "all_tags"),
+        ("Shopping Budget", 1000, "Shopping", "all_tags"),
+        ("Vacations Budget", 3000, "Vacations", "all_tags"),
         # Tag-level rules — carve out specific sub-budgets within categories
         ("Groceries", 2800, "Food", "Groceries"),
         ("Restaurants", 1200, "Food", "Restaurants"),
@@ -2725,7 +2727,7 @@ def generate_insurance_data(session):
                 description=description,
                 amount=amount,
                 category="Ignore",
-                tag=None,
+                tag="Internal Transactions",
                 source="insurance_transactions",
                 type="normal",
                 status="completed",
@@ -2749,7 +2751,7 @@ def generate_insurance_data(session):
             description="הפקדה",
             amount=old_kh_monthly,
             category="Ignore",
-            tag=None,
+            tag="Internal Transactions",
             source="insurance_transactions",
             type="normal",
             status="completed",

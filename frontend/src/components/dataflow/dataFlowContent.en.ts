@@ -341,23 +341,71 @@ const content: DataFlowContent = {
 
   platformFeatures: [
     {
-      title: "Internationalization (i18n)",
-      desc: "Full Hebrew + English bilingual support with automatic RTL layout switching.",
-      highlights: ["i18next + react-i18next", "Logical CSS properties (ps/pe/ms/me) for RTL", "Locale-aware date, currency, chart formatting", "All strings via t() \u2014 no hardcoded text"],
+      title: "Split Transactions",
+      desc: "One charge often covers different things \u2014 split it across categories so your reports stay accurate.",
+      highlights: [
+        "A single supermarket receipt can become Food + Household + Pharmacy",
+        "Each split has its own amount, category, and tag",
+        "The original transaction stays intact, splits flow into every chart and budget",
+      ],
     },
     {
-      title: "Responsive Design",
-      desc: "Mobile-first layout with adaptive patterns across all breakpoints.",
-      highlights: ["Sidebar \u2192 drawer overlay on mobile", "Tap-to-reveal actions (no hover on touch)", "Dynamic viewport height (dvh)", "iOS safe areas, scroll-snap, touch targets \u2265 32px"],
+      title: "Tagging & Auto-Tagging",
+      desc: "Categorize once and forget it. Custom rules quietly tag every new transaction the moment it arrives.",
+      highlights: [
+        "Build rules from description, account, amount, or any combination",
+        "Priority order \u2014 first match wins, conflicts are flagged before you save",
+        "Manual override anytime, single transaction or in bulk",
+      ],
+    },
+    {
+      title: "Monthly & Project Budgets",
+      desc: "Set spending limits by category, plus time-bounded budgets for one-off projects like a renovation or a trip.",
+      highlights: [
+        "Total monthly cap or per-category limits",
+        "Copy last month's rules forward in one click",
+        "Live progress gauges across the dashboard and budget page",
+        "Pending refunds adjust spent amounts so you don't get false 'overspent' alerts",
+      ],
+    },
+    {
+      title: "Investment Portfolio Tracking",
+      desc: "Track deposits, withdrawals, current value, profit/loss and ROI for every investment account.",
+      highlights: [
+        "Manual or fixed-rate balance snapshots over time",
+        "Auto-compounded daily growth for fixed-rate investments",
+        "Close, reopen, and edit close dates whenever life changes",
+        "Per-investment analysis modal plus a portfolio-wide overview",
+      ],
+    },
+    {
+      title: "Loans, Liabilities & Refunds",
+      desc: "Keep tabs on the money flowing the other way \u2014 debt payments, loan amortization, and pending refunds.",
+      highlights: [
+        "Full amortization schedule for every loan you track",
+        "Mark transactions as 'pending refund' so they don't pollute your budget",
+        "Link partial or full refunds when the money actually comes back",
+        "Status tracking from pending \u2192 partial \u2192 resolved \u2192 closed",
+      ],
+    },
+    {
+      title: "Bilingual & Mobile-Friendly",
+      desc: "Built for Hebrew and English speakers, on phone or desktop, online or offline.",
+      highlights: [
+        "Full Hebrew + English with automatic RTL layout switching",
+        "Mobile-first responsive design from phone to widescreen",
+        "Installable PWA that works offline with cached data",
+        "Demo mode for safe exploration without touching real finances",
+      ],
     },
   ],
 
   callouts: [
-    { title: "Amount Sign Convention (everywhere):", text: "Negative = money out (expenses, investment deposits). Positive = money in (salary, refunds, withdrawals). Applies across all tables, services, and calculations." },
-    { title: "CC Deduplication \u2014 the critical pattern:", text: "Bank CC bill payment and itemized CC purchases overlap. Aggregate KPIs (income, net worth) \u2192 bank view, exclude CC source. Category breakdowns (pie charts, budgets) \u2192 itemized view, exclude \"Credit Cards\" category." },
-    { title: "Prior Wealth bridges the gap:", text: "prior_wealth = entered_balance \u2212 sum(transactions). Injected as synthetic \"Prior Wealth\" tagged rows. Investment prior wealth lives in bank balance (money originally came from banks)." },
-    { title: "Investment Balance Resolution:", text: "Snapshot-first (manual > calculated > scraped), then transaction-sum fallback (\u2212sum(all amounts)). Closing creates a 0-balance snapshot. Fixed-rate investments auto-generate daily-compounded snapshots." },
-    { title: "Non-expense overrides:", text: "Investments, Liabilities, Income categories, Credit Cards excluded from expenses \u2014 except negative Liabilities (debt payments), which override back as real money outflows." },
+    { title: "Auto-sync from Israeli banks and credit cards.", text: "Connect your accounts once and let the app handle the rest \u2014 17 bank providers and 6 credit card providers supported, with 2FA out of the box. Credentials live in your OS keyring, never in plain text." },
+    { title: "Categories that travel with your data.", text: "Rename a category and every transaction, split, rule, and budget updates automatically. Drag-and-drop to reorder. Custom tags inside each category give you finer control without cluttering the top level." },
+    { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes with a Sankey flow chart, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
+    { title: "Try everything without risk via Demo Mode.", text: "Toggle demo mode in the header to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
+    { title: "Backups and history, just in case.", text: "Snapshot your data anytime, browse your backup list, and restore on demand. A safety backup is taken first, so even an accidental restore can be undone." },
   ],
 };
 

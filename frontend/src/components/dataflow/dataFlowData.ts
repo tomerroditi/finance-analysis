@@ -259,7 +259,7 @@ const calloutIcons = ["\u26A1", "\u26A1", "\u26A1", "\u26A1", "\u26A1"];
 /*  Platform feature icons — shared across languages                   */
 /* ------------------------------------------------------------------ */
 
-const platformFeatureIcons = ["\uD83C\uDF10", "\uD83D\uDCF1"];
+const platformFeatureIcons = ["✂️", "🏷️", "💰", "📈", "💸", "🌐"];
 
 /* ------------------------------------------------------------------ */
 /*  Builder — merges structural data with language content              */
