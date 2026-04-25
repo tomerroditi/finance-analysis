@@ -1,3 +1,9 @@
+## v1.9.0 (2026-04-25)
+
+### Feat
+
+- **frontend**: inline category/tag create-on-the-fly across remaining forms
+
 ## v1.8.1 (2026-04-25)
 
 ### Fix
