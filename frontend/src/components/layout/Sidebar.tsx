@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Workflow,
+  Bell,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -24,6 +25,9 @@ import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
 import { SettingsPopup } from "./SettingsPopup";
 import { BudgetAlertsBell } from "./BudgetAlertsBell";
+import { BudgetAlertsPopup } from "./BudgetAlertsPopup";
+import { useBudgetAlerts } from "../../hooks/useBudgetAlerts";
+import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, key: "dashboard" },
@@ -43,7 +47,22 @@ export function Sidebar() {
   useScrollLock(mobileSidebarOpen);
   const { t, i18n } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mobileAlertsOpen, setMobileAlertsOpen] = useState(false);
   const location = useLocation();
+
+  // Budget alerts visible-count for the mobile drawer tile badge
+  const { data: budgetAlertsData } = useBudgetAlerts();
+  const { isDismissed: isBudgetAlertDismissed } = useBudgetAlertDismissals(
+    budgetAlertsData?.year,
+    budgetAlertsData?.month,
+  );
+  const budgetAlertsCount = useMemo(
+    () =>
+      (budgetAlertsData?.alerts ?? []).filter(
+        (a) => !isBudgetAlertDismissed(a.rule_id),
+      ).length,
+    [budgetAlertsData?.alerts, isBudgetAlertDismissed],
+  );
 
   // Auto-hide mobile top bar on scroll down, show on scroll up
   const [topBarVisible, setTopBarVisible] = useState(true);
@@ -272,6 +291,22 @@ export function Sidebar() {
                   </NavLink>
                 );
               })}
+              {/* Budget Alerts tile */}
+              <button
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setMobileAlertsOpen(true);
+                }}
+                className="relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+              >
+                <Bell size={20} />
+                <span className="text-[11px] font-medium leading-tight">{t("budgetAlerts.title")}</span>
+                {budgetAlertsCount > 0 && (
+                  <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+                    {budgetAlertsCount > 99 ? "99+" : budgetAlertsCount}
+                  </span>
+                )}
+              </button>
               {/* Settings tile */}
               <button
                 onClick={() => setSettingsOpen(!settingsOpen)}
@@ -307,6 +342,10 @@ export function Sidebar() {
       <SettingsPopup
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+      />
+      <BudgetAlertsPopup
+        isOpen={mobileAlertsOpen}
+        onClose={() => setMobileAlertsOpen(false)}
       />
     </>
   );

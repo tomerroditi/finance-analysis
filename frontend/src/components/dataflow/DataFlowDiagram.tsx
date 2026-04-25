@@ -126,20 +126,12 @@ export function DataFlowDiagram() {
     };
   }, [drawConnections, zoom]);
 
-  useEffect(() => {
-    // Auto-fit once on mount when the intrinsic diagram doesn't fit the viewport.
-    const timer = setTimeout(() => {
-      const container = containerRef.current;
-      const zoomable = zoomableRef.current;
-      if (!container || !zoomable) return;
-      const intrinsic = zoomable.scrollWidth;
-      const target = container.clientWidth - 8;
-      if (intrinsic > 0 && intrinsic > target) {
-        setZoom(Math.max(MIN_ZOOM, roundZoom(target / intrinsic)));
-      }
-    }, 120);
-    return () => clearTimeout(timer);
-  }, []);
+  // Initial zoom is 100% (set by `useState(1)` above) so labels stay
+  // readable. The container is an `overflow-auto` viewport, so users can
+  // pan/scroll horizontally if the diagram doesn't fit. A previous
+  // implementation auto-shrank to fit on mount, which produced an illegible
+  // ~72% on typical desktop widths. The "fit" button in the zoom controls
+  // still reproduces that behavior on demand.
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

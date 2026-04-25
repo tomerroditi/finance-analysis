@@ -221,25 +221,29 @@ export function RecentTransactionsFeed({
                     >
                       <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-sm truncate">
-                            {(tx.description || "").length > 40
-                              ? (tx.description || "").slice(0, 40) + "..."
-                              : tx.description || ""}
-                          </span>
-                          <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0">
+                        {/* Description gets its own row with up to 2 lines of
+                            ellipsis so longer merchant names aren't cropped at
+                            inconsistent lengths on narrow screens. */}
+                        <span
+                          className="text-sm block break-words line-clamp-2"
+                          title={tx.description || ""}
+                        >
+                          {tx.description || ""}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span className="text-[11px] text-[var(--text-muted)]">
                             {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
                           </span>
+                          {matchedRule && (
+                            <span
+                              className="inline-flex items-center gap-0.5 px-1.5 py-px rounded-full bg-violet-500/15 text-violet-400 text-[10px]"
+                              title={`${t("tooltips.matchedRule")}: ${matchedRule.name}`}
+                            >
+                              <Wand2 size={9} />
+                              {matchedRule.name}
+                            </span>
+                          )}
                         </div>
-                        {matchedRule && (
-                          <span
-                            className="inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-px rounded-full bg-violet-500/15 text-violet-400 text-[10px]"
-                            title={`${t("tooltips.matchedRule")}: ${matchedRule.name}`}
-                          >
-                            <Wand2 size={9} />
-                            {matchedRule.name}
-                          </span>
-                        )}
                       </div>
                       {/* Action buttons — hidden on small mobile, visible on sm+ */}
                       <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[96px]">
