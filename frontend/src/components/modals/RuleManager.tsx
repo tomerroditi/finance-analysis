@@ -165,7 +165,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Coffee Shops"
+                  placeholder={t("modals.ruleManager.ruleNamePlaceholder")}
                   className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
                   value={newRule.name}
                   onChange={(e) =>
@@ -179,7 +179,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. McDonald's"
+                  placeholder={t("modals.ruleManager.containsPlaceholder")}
                   className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm outline-none focus:border-[var(--primary)]"
                   value={newRule.description_contains}
                   onChange={(e) =>

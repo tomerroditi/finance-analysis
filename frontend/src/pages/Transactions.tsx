@@ -192,7 +192,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
               type="text"
               value={newAccountName}
               onChange={(e) => setNewAccountName(e.target.value)}
-              placeholder="e.g., Wallet, Home Safe"
+              placeholder={t("transactions.envelopeNamePlaceholder")}
               className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded text-[var(--text)]"
               onKeyPress={(e) => {
                 if (e.key === "Enter") handleAddAccount();

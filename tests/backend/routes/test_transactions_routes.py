@@ -265,11 +265,27 @@ class TestTransactionsRoutesErrors:
     # -- PUT /{unique_id} error path --
 
     def test_update_transaction_internal_error(self, test_client):
-        """Verify 500 when update_transaction raises an unexpected exception."""
+        """Verify unexpected exceptions propagate out of the route (no try/except)."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
             mock_svc.update_transaction.side_effect = RuntimeError("Update crashed")
+            with pytest.raises(RuntimeError, match="Update crashed"):
+                test_client.put(
+                    "/api/transactions/1",
+                    json={
+                        "category": "Food",
+                        "tag": "Groceries",
+                        "source": "credit_card_transactions",
+                    },
+                )
+
+    def test_update_transaction_value_error(self, test_client):
+        """Verify 400 when update_transaction raises ValueError."""
+        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.update_transaction.side_effect = ValueError("Bad source")
             response = test_client.put(
                 "/api/transactions/1",
                 json={
@@ -278,8 +294,8 @@ class TestTransactionsRoutesErrors:
                     "source": "credit_card_transactions",
                 },
             )
-            assert response.status_code == 500
-            assert "Update crashed" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "Bad source" in response.json()["detail"]
 
     # -- DELETE /{unique_id} error paths --
 
@@ -313,14 +329,16 @@ class TestTransactionsRoutesErrors:
 
     # -- POST /{unique_id}/split error path --
 
-    def test_split_transaction_internal_error(self, test_client):
-        """Verify 500 when split_transaction raises an exception."""
+    def test_split_transaction_value_error(self, test_client):
+        """Verify 400 when split_transaction raises ValueError (e.g. failed commit)."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.routes.transactions.TransactionsService"
         ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.split_transaction.side_effect = RuntimeError("Split failed")
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.split_transaction.side_effect = ValueError(
+                "Failed to split transaction"
+            )
             response = test_client.post(
                 "/api/transactions/1/split",
                 json={
@@ -331,34 +349,34 @@ class TestTransactionsRoutesErrors:
                     ],
                 },
             )
-            assert response.status_code == 500
-            assert "Split failed" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "Failed to split" in response.json()["detail"]
 
     # -- DELETE /{unique_id}/split error path --
 
-    def test_revert_split_internal_error(self, test_client):
-        """Verify 500 when revert_split raises an exception."""
+    def test_revert_split_value_error(self, test_client):
+        """Verify 400 when revert_split raises ValueError (e.g. failed commit)."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.routes.transactions.TransactionsService"
         ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.revert_split.side_effect = RuntimeError("Revert failed")
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.revert_split.side_effect = ValueError("Failed to revert split")
             response = test_client.delete(
                 "/api/transactions/1/split?source=credit_card_transactions"
             )
-            assert response.status_code == 500
-            assert "Revert failed" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "Failed to revert" in response.json()["detail"]
 
     # -- POST /bulk-tag error path --
 
-    def test_bulk_tag_internal_error(self, test_client):
-        """Verify 500 when bulk_tag_transactions raises an exception."""
+    def test_bulk_tag_value_error(self, test_client):
+        """Verify 400 when bulk_tag_transactions raises ValueError."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.bulk_tag_transactions.side_effect = RuntimeError(
-                "Bulk tag failed"
+            mock_svc.bulk_tag_transactions.side_effect = ValueError(
+                "Bad input"
             )
             response = test_client.post(
                 "/api/transactions/bulk-tag",
@@ -369,8 +387,8 @@ class TestTransactionsRoutesErrors:
                     "tag": "Groceries",
                 },
             )
-            assert response.status_code == 500
-            assert "Bulk tag failed" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "Bad input" in response.json()["detail"]
 
 
 class TestTransactionsRoutesAdditional:
@@ -393,19 +411,19 @@ class TestTransactionsRoutesAdditional:
                 "credit_cards", "1", "Food", "Groceries"
             )
 
-    def test_update_transaction_tag_error(self, test_client):
-        """Verify 500 when legacy tag update raises an exception."""
+    def test_update_transaction_tag_value_error(self, test_client):
+        """Verify 400 when legacy tag update raises ValueError."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.update_tagging_by_id.side_effect = RuntimeError(
-                "Tag update failed"
+            mock_svc.update_tagging_by_id.side_effect = ValueError(
+                "Bad input"
             )
             response = test_client.put(
                 "/api/transactions/1/tag?category=Food&tag=Groceries&service=credit_cards"
             )
-            assert response.status_code == 500
-            assert "Tag update failed" in response.json()["detail"]
+            assert response.status_code == 400
+            assert "Bad input" in response.json()["detail"]
 
     # -- GET /{transaction_id} error path (already tested in main class, but
     #    we test the mock path for completeness) --
@@ -426,10 +444,10 @@ class TestTransactionsRoutesAdditional:
 
     # -- POST /{unique_id}/split returns false --
 
-    def test_split_transaction_returns_false(self, test_client):
-        """Verify 500 when split_transaction returns False (failure)."""
+    def test_split_transaction_repo_returns_false(self, test_client):
+        """Verify 400 when underlying repo returns False (service raises ValueError)."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.services.transactions_service.TransactionsRepository"
         ) as mock_cls:
             mock_repo = MagicMock()
             mock_cls.return_value = mock_repo
@@ -444,15 +462,15 @@ class TestTransactionsRoutesAdditional:
                     ],
                 },
             )
-            assert response.status_code == 500
+            assert response.status_code == 400
             assert "Failed to split" in response.json()["detail"]
 
     # -- DELETE /{unique_id}/split returns false --
 
-    def test_revert_split_returns_false(self, test_client):
-        """Verify 500 when revert_split returns False (failure)."""
+    def test_revert_split_repo_returns_false(self, test_client):
+        """Verify 400 when underlying repo returns False (service raises ValueError)."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.services.transactions_service.TransactionsRepository"
         ) as mock_cls:
             mock_repo = MagicMock()
             mock_cls.return_value = mock_repo
@@ -460,19 +478,18 @@ class TestTransactionsRoutesAdditional:
             response = test_client.delete(
                 "/api/transactions/1/split?source=credit_card_transactions"
             )
-            assert response.status_code == 500
+            assert response.status_code == 400
             assert "Failed to revert" in response.json()["detail"]
 
     # -- GET / internal error --
 
     def test_get_transactions_internal_error(self, test_client):
-        """Verify 500 when get_table raises an exception."""
+        """Verify unexpected exceptions propagate out of the GET route (no try/except)."""
         with patch(
             "backend.routes.transactions.TransactionsRepository"
         ) as mock_cls:
             mock_repo = MagicMock()
             mock_cls.return_value = mock_repo
             mock_repo.get_table.side_effect = RuntimeError("Read failed")
-            response = test_client.get("/api/transactions")
-            assert response.status_code == 500
-            assert "Read failed" in response.json()["detail"]
+            with pytest.raises(RuntimeError, match="Read failed"):
+                test_client.get("/api/transactions")

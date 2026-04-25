@@ -366,7 +366,7 @@ function RuleForm({
                             options={availableCategories.map((c) => ({ label: c, value: c }))}
                             value={category}
                             onChange={(val) => setCategory(val)}
-                            placeholder="Select..."
+                            placeholder={t("common.select")}
                             size="sm"
                             onCreateNew={onCreateCategory}
                         />
@@ -379,7 +379,7 @@ function RuleForm({
                             options={availableTags.map((t: string) => ({ label: t, value: t }))}
                             value={tag}
                             onChange={(val) => setTag(val)}
-                            placeholder="Select..."
+                            placeholder={t("common.select")}
                             disabled={!category}
                             size="sm"
                             onCreateNew={onCreateTag}
