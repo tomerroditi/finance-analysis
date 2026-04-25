@@ -34,6 +34,21 @@ interface Snapshot {
   source: string;
 }
 
+interface MonthlyTransaction {
+  month: string;
+  deposits: number;
+  withdrawals: number;
+}
+
+interface MonthRow {
+  key: string;
+  month: string;
+  date: string | null;
+  snapshot: Snapshot | null;
+  deposits: number;
+  withdrawals: number;
+}
+
 function StatCard({
   title,
   value,
@@ -253,69 +268,128 @@ export function InvestmentAnalysisModal({
                 </div>
               )}
 
-              {/* Balance Snapshots */}
-              {selectedSnapshots?.length > 0 && (
-                <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold">{t("investments.balanceSnapshots")}</h3>
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {selectedSnapshots.length} entries
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                          <th className="text-start py-2 font-bold">{t("common.date")}</th>
-                          <th className="text-end py-2 font-bold">{t("investments.balance")}</th>
-                          <th className="text-center py-2 font-bold">{t("investments.source")}</th>
-                          <th className="text-end py-2 font-bold"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedSnapshots.map((snap: Snapshot) => (
-                          <tr
-                            key={snap.id}
-                            className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
-                          >
-                            <td className="py-2 text-white font-medium">
-                              {snap.date}
-                            </td>
-                            <td className="py-2 text-end text-white font-bold">
-                              {formatCurrency(snap.balance)}
-                            </td>
-                            <td className="py-2 text-center">
-                              <span
-                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                                  snap.source === "manual"
-                                    ? "bg-blue-500/20 text-blue-400"
-                                    : snap.source === "calculated"
-                                      ? "bg-purple-500/20 text-purple-400"
-                                      : "bg-emerald-500/20 text-emerald-400"
-                                }`}
-                              >
-                                {snap.source}
-                              </span>
-                            </td>
-                            <td className="py-2 text-end">
-                              <button
-                                onClick={() =>
-                                  deleteSnapshotMutation.mutate({
-                                    snapshotId: snap.id,
-                                  })
-                                }
-                                className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </td>
+              {/* Monthly Breakdown: Snapshots + Deposits */}
+              {(() => {
+                const snapshots: Snapshot[] = selectedSnapshots ?? [];
+                const monthly: MonthlyTransaction[] =
+                  selectedAnalysis.monthly_transactions ?? [];
+
+                if (snapshots.length === 0 && monthly.length === 0) return null;
+
+                const monthMap = new Map<string, MonthRow>();
+                for (const m of monthly) {
+                  monthMap.set(m.month, {
+                    key: `m-${m.month}`,
+                    month: m.month,
+                    date: null,
+                    snapshot: null,
+                    deposits: m.deposits,
+                    withdrawals: m.withdrawals,
+                  });
+                }
+                const rows: MonthRow[] = [];
+                for (const snap of snapshots) {
+                  const month = snap.date.slice(0, 7);
+                  const monthDeposit = monthMap.get(month);
+                  rows.push({
+                    key: `s-${snap.id}`,
+                    month,
+                    date: snap.date,
+                    snapshot: snap,
+                    deposits: monthDeposit?.deposits ?? 0,
+                    withdrawals: monthDeposit?.withdrawals ?? 0,
+                  });
+                  monthMap.delete(month);
+                }
+                for (const orphan of monthMap.values()) rows.push(orphan);
+
+                rows.sort((a, b) => {
+                  const ka = a.date ?? `${a.month}-00`;
+                  const kb = b.date ?? `${b.month}-00`;
+                  return kb.localeCompare(ka);
+                });
+
+                return (
+                  <div className="bg-[var(--surface-base)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold">{t("investments.balanceSnapshots")}</h3>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {rows.length} {t("investments.entries")}
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+                            <th className="text-start py-2 font-bold">{t("common.date")}</th>
+                            <th className="text-end py-2 font-bold">{t("investments.balance")}</th>
+                            <th className="text-end py-2 font-bold">{t("investments.deposits")}</th>
+                            <th className="text-center py-2 font-bold">{t("investments.source")}</th>
+                            <th className="text-end py-2 font-bold"></th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {rows.map((row) => (
+                            <tr
+                              key={row.key}
+                              className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
+                            >
+                              <td className="py-2 text-white font-medium">
+                                {row.date ?? row.month}
+                              </td>
+                              <td className="py-2 text-end font-bold">
+                                {row.snapshot ? (
+                                  <span className="text-white">{formatCurrency(row.snapshot.balance)}</span>
+                                ) : (
+                                  <span className="text-[var(--text-muted)]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2 text-end font-bold">
+                                {row.deposits > 0 ? (
+                                  <span className="text-emerald-400">{formatCurrency(row.deposits)}</span>
+                                ) : (
+                                  <span className="text-[var(--text-muted)]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2 text-center">
+                                {row.snapshot ? (
+                                  <span
+                                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                                      row.snapshot.source === "manual"
+                                        ? "bg-blue-500/20 text-blue-400"
+                                        : row.snapshot.source === "calculated"
+                                          ? "bg-purple-500/20 text-purple-400"
+                                          : "bg-emerald-500/20 text-emerald-400"
+                                    }`}
+                                  >
+                                    {row.snapshot.source}
+                                  </span>
+                                ) : (
+                                  <span className="text-[var(--text-muted)]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2 text-end">
+                                {row.snapshot ? (
+                                  <button
+                                    onClick={() =>
+                                      deleteSnapshotMutation.mutate({
+                                        snapshotId: row.snapshot!.id,
+                                      })
+                                    }
+                                    className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </>
           ) : (
             <div className="text-center py-20 text-[var(--text-muted)]">

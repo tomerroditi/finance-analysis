@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
@@ -62,6 +62,46 @@ interface BalancePoint {
 
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
+
+function NotesTooltip({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!show) return;
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setShow(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [show]);
+
+  return (
+    <div ref={wrapRef} className="group/notes relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShow((v) => !v);
+        }}
+        className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
+      >
+        <Info size={16} />
+      </button>
+      <div
+        className={`absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white transition-opacity pointer-events-none z-10 shadow-xl border border-white/5 ${show ? "opacity-100" : "opacity-0"} md:group-hover/notes:opacity-100`}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
 
 const TYPE_KEY_MAP: Record<string, string> = {
   stocks: "stocks",
@@ -280,16 +320,7 @@ function InvestmentCard({
           >
             <Trash2 size={16} />
           </button>
-          {inv.notes && (
-            <div className="group/notes relative">
-              <div className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] cursor-help">
-                <Info size={16} />
-              </div>
-              <div className="absolute bottom-full start-0 mb-2 w-48 max-w-[calc(100vw-3rem)] p-2 rounded-lg bg-[var(--surface-light)] text-[10px] text-white opacity-100 md:opacity-0 group-hover/notes:opacity-100 transition-all pointer-events-none z-10 shadow-xl border border-white/5">
-                {inv.notes}
-              </div>
-            </div>
-          )}
+          {inv.notes && <NotesTooltip text={inv.notes} />}
         </div>
         <div className="flex gap-2">
           <button

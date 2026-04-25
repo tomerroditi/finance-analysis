@@ -145,7 +145,47 @@ class InvestmentsService:
             end_date = date.today().strftime(r"%Y-%m-%d")
 
         history = self.calculate_balance_over_time(investment_id, start_date, end_date)
-        return {"metrics": metrics, "history": history}
+        monthly_transactions = self._calculate_monthly_transactions(investment_id)
+        return {
+            "metrics": metrics,
+            "history": history,
+            "monthly_transactions": monthly_transactions,
+        }
+
+    def _calculate_monthly_transactions(
+        self, investment_id: int
+    ) -> List[Dict[str, Any]]:
+        """Aggregate investment transactions by month.
+
+        Returns a list of ``{month, deposits, withdrawals}`` entries sorted
+        chronologically. Deposits are reported as positive numbers (the
+        absolute value of negative transactions), withdrawals are positive
+        amounts.
+        """
+        inv = self.investments_repo.get_by_id(investment_id).iloc[0]
+        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        if txns.empty:
+            return []
+
+        df = txns.copy()
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        df["deposit"] = df["amount"].where(df["amount"] < 0, 0.0).abs()
+        df["withdrawal"] = df["amount"].where(df["amount"] > 0, 0.0)
+
+        grouped = (
+            df.groupby("month")[["deposit", "withdrawal"]].sum().reset_index()
+        )
+        grouped = grouped.sort_values("month")
+        return [
+            {
+                "month": row["month"],
+                "deposits": float(row["deposit"]),
+                "withdrawals": float(row["withdrawal"]),
+            }
+            for _, row in grouped.iterrows()
+            if row["deposit"] > 0 or row["withdrawal"] > 0
+        ]
 
     def create_investment(self, **kwargs) -> None:
         """
