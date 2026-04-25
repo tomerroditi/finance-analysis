@@ -21,6 +21,7 @@ import { InfoTooltip } from "../components/common/InfoTooltip";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
 import { useCategories } from "../hooks/useCategories";
+import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
 import { formatCurrency } from "../utils/numberFormatting";
 
@@ -362,6 +363,7 @@ export function Investments() {
   });
 
   const { data: categories } = useCategories();
+  const { createTag } = useCategoryTagCreate();
 
   const { data: portfolioAnalysis } = useQuery({
     queryKey: ["portfolio-analysis"],
@@ -911,6 +913,10 @@ export function Investments() {
                   }
                   placeholder={t("investments.selectTag")}
                   disabled={!newInvestment.category}
+                  onCreateNew={async (name) => {
+                    const formatted = await createTag(newInvestment.category, name);
+                    setNewInvestment({ ...newInvestment, tag: formatted });
+                  }}
                 />
               </div>
               <div>

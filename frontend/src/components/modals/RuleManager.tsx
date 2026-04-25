@@ -6,6 +6,7 @@ import { taggingApi, type TaggingRule } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useCategories } from "../../hooks/useCategories";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 
 interface RuleManagerProps {
@@ -28,6 +29,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
 
   const { data: rules, isLoading } = useTaggingRules();
   const { data: categories } = useCategories();
+  const { createCategory, createTag } = useCategoryTagCreate();
 
   const createMutation = useMutation({
     mutationFn: (rule: { name?: string; description_contains: string; category: string; tag: string }) => {
@@ -208,6 +210,10 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   }
                   placeholder={t("modals.transactionForm.selectCategory")}
                   size="sm"
+                  onCreateNew={async (name) => {
+                    const formatted = await createCategory(name);
+                    setNewRule({ ...newRule, category: formatted, tag: "" });
+                  }}
                 />
               </div>
               <div className="space-y-1.5 text-start">
@@ -223,6 +229,10 @@ export function RuleManager({ onClose }: RuleManagerProps) {
                   placeholder={t("modals.transactionForm.selectTag")}
                   disabled={!newRule.category}
                   size="sm"
+                  onCreateNew={async (name) => {
+                    const formatted = await createTag(newRule.category, name);
+                    setNewRule({ ...newRule, tag: formatted });
+                  }}
                 />
               </div>
             </div>
