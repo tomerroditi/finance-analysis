@@ -1,8 +1,9 @@
 """
 Insurance Accounts API routes.
 
-Provides a read-only endpoint for insurance account metadata
-(pension, keren hishtalmut, gemel) scraped from insurance providers.
+Provides endpoints for insurance account metadata (pension, keren hishtalmut,
+gemel) scraped from insurance providers and for syncing hishtalmut policies
+to investments.
 """
 
 from typing import Optional
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.services.insurance_account_service import InsuranceAccountService
+from backend.services.investments_service import InvestmentsService
 
 router = APIRouter()
 
@@ -51,3 +53,21 @@ async def get_insurance_accounts(
     """
     service = InsuranceAccountService(db)
     return service.get_all()
+
+
+@router.post("/sync-investments")
+async def sync_hishtalmut_investments(
+    db: Session = Depends(get_database),
+) -> dict:
+    """Backfill investments from existing hishtalmut insurance accounts.
+
+    Creates or updates Investment records (with balance snapshots) for all
+    hishtalmut policies. Idempotent — safe to re-run.
+
+    Returns
+    -------
+    dict
+        Count of hishtalmut policies processed.
+    """
+    processed = InvestmentsService(db).backfill_from_insurance_accounts()
+    return {"synced": processed}

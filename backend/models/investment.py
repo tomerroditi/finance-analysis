@@ -76,3 +76,4 @@ class Investment(Base, TimestampMixin):
     closed_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     prior_wealth_amount = Column(Float, nullable=False, default=0.0)
+    insurance_policy_id = Column(String, nullable=True, unique=True)

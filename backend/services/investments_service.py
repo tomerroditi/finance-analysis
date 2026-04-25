@@ -9,9 +9,13 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.constants.providers import Services
+from backend.models.transaction import InsuranceTransaction
+from backend.repositories.insurance_account_repository import InsuranceAccountRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -76,7 +80,7 @@ class InvestmentsService:
             record["latest_snapshot_date"] = latest["date"] if latest else None
 
             txns = self._get_all_transactions_for_investment(
-                record["category"], record["tag"]
+                record["category"], record["tag"], investment_id=record["id"]
             )
             if not txns.empty:
                 record["first_transaction_date"] = pd.to_datetime(txns["date"]).min().strftime("%Y-%m-%d")
@@ -167,6 +171,103 @@ class InvestmentsService:
         """
         self.investments_repo.update_investment(investment_id, **updates)
 
+    def sync_from_insurance(self, insurance_meta: dict) -> None:
+        """Create or update an Investment from scraped insurance account metadata.
+
+        Only processes hishtalmut policies. Creates the Investment if not found
+        by ``insurance_policy_id``, otherwise updates metadata fields. Upserts
+        a ``"scraped"`` balance snapshot if balance data is present, without
+        overwriting existing ``"manual"`` snapshots.
+
+        Parameters
+        ----------
+        insurance_meta : dict
+            Insurance account metadata with keys: ``policy_id``, ``policy_type``,
+            ``provider``, ``account_name``, ``balance``, ``balance_date``,
+            ``commission_deposits_pct``, ``commission_savings_pct``,
+            ``liquidity_date``.
+        """
+        if insurance_meta.get("policy_type") != "hishtalmut":
+            return
+
+        policy_id = insurance_meta["policy_id"]
+        provider = insurance_meta.get("provider", "unknown")
+        account_name = insurance_meta["account_name"]
+        tag = f"Keren Hishtalmut - {provider} ({policy_id})"
+        metadata_fields = {
+            "tag": tag,
+            "name": account_name,
+            "commission_deposit": insurance_meta.get("commission_deposits_pct"),
+            "commission_management": insurance_meta.get("commission_savings_pct"),
+            "liquidity_date": insurance_meta.get("liquidity_date"),
+        }
+
+        existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
+        if not existing.empty:
+            inv_id = int(existing.iloc[0]["id"])
+            self.investments_repo.update_investment(inv_id, **metadata_fields)
+        else:
+            legacy_tag = f"Keren Hishtalmut - {provider}"
+            by_tag = self.investments_repo.get_by_category_tag(
+                INVESTMENTS_CATEGORY, legacy_tag
+            )
+            if not by_tag.empty and pd.isna(by_tag.iloc[0].get("insurance_policy_id")):
+                inv_id = int(by_tag.iloc[0]["id"])
+                self.investments_repo.update_investment(
+                    inv_id, insurance_policy_id=policy_id, **metadata_fields
+                )
+            else:
+                inv_id = self.investments_repo.create_investment(
+                    category=INVESTMENTS_CATEGORY,
+                    tag=tag,
+                    type_="hishtalmut",
+                    name=account_name,
+                    interest_rate_type="variable",
+                    commission_deposit=insurance_meta.get("commission_deposits_pct"),
+                    commission_management=insurance_meta.get("commission_savings_pct"),
+                    liquidity_date=insurance_meta.get("liquidity_date"),
+                    insurance_policy_id=policy_id,
+                )
+
+        balance = insurance_meta.get("balance")
+        balance_date = insurance_meta.get("balance_date")
+        if balance is None or balance_date is None:
+            return
+
+        existing_snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
+        if not existing_snapshots.empty:
+            date_match = existing_snapshots[existing_snapshots["date"] == balance_date]
+            if not date_match.empty and date_match.iloc[0]["source"] == "manual":
+                return
+
+        self.snapshots_repo.upsert_snapshot(inv_id, balance_date, balance, source="scraped")
+
+    def backfill_from_insurance_accounts(self) -> int:
+        """Sync investments for all existing hishtalmut insurance accounts.
+
+        Idempotent: re-running does not create duplicates because
+        ``sync_from_insurance`` matches by ``insurance_policy_id``.
+
+        Returns
+        -------
+        int
+            Number of hishtalmut policies processed.
+        """
+        rows = InsuranceAccountRepository(self.db).get_by_policy_type("hishtalmut")
+        for row in rows:
+            self.sync_from_insurance({
+                "policy_type": row.policy_type,
+                "policy_id": row.policy_id,
+                "provider": row.provider,
+                "account_name": row.account_name,
+                "balance": row.balance,
+                "balance_date": row.balance_date,
+                "commission_deposits_pct": row.commission_deposits_pct,
+                "commission_savings_pct": row.commission_savings_pct,
+                "liquidity_date": row.liquidity_date,
+            })
+        return len(rows)
+
     def close_investment(self, investment_id: int, closed_date: str) -> None:
         """
         Mark an investment as closed.
@@ -185,7 +286,7 @@ class InvestmentsService:
         self.investments_repo.close_investment(investment_id, closed_date)
 
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
-        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=investment_id)
         if not txns.empty:
             txns["date_parsed"] = pd.to_datetime(txns["date"])
             last_txn_date = txns["date_parsed"].max().strftime("%Y-%m-%d")
@@ -310,7 +411,7 @@ class InvestmentsService:
         daily_rate = (1 + annual_rate) ** (1 / 365) - 1
 
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
         if transactions_df.empty:
             return
@@ -638,7 +739,7 @@ class InvestmentsService:
 
         # Fall back to transaction-based
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
         return self._calculate_balance_from_transactions(transactions_df)
 
@@ -671,10 +772,12 @@ class InvestmentsService:
 
         inv = investment.iloc[0]
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
 
-        if transactions_df.empty:
+        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+
+        if transactions_df.empty and snapshots_df.empty:
             return []
 
         # For closed investments, stop at the last transaction date
@@ -683,8 +786,6 @@ class InvestmentsService:
             last_txn_date = pd.to_datetime(transactions_df["date"]).max().date()
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
             actual_end_date = min(last_txn_date, requested_end_date).strftime("%Y-%m-%d")
-
-        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
 
         if snapshots_df.empty:
             # No snapshots — use transaction-based approach
@@ -763,10 +864,28 @@ class InvestmentsService:
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
         transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"]
+            inv["category"], inv["tag"], investment_id=investment_id
         )
 
         if transactions_df.empty:
+            # No transactions — check if there's a snapshot (e.g. insurance-synced)
+            if not inv["is_closed"]:
+                latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
+                    investment_id, date.today().strftime("%Y-%m-%d")
+                )
+                if latest is not None:
+                    balance = float(latest["balance"])
+                    return {
+                        "total_deposits": 0.0,
+                        "total_withdrawals": 0.0,
+                        "net_invested": 0.0,
+                        "current_balance": balance,
+                        "absolute_profit_loss": balance,
+                        "roi_percentage": 0.0,
+                        "total_years": 0.0,
+                        "cagr_percentage": 0.0,
+                        "first_transaction_date": None,
+                    }
             return {
                 "total_deposits": 0.0,
                 "total_withdrawals": 0.0,
@@ -866,7 +985,7 @@ class InvestmentsService:
 
         frames = []
         for _, inv in investments.iterrows():
-            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=int(inv["id"]))
             if not txns.empty:
                 frames.append(txns)
 
@@ -879,10 +998,14 @@ class InvestmentsService:
         return combined
 
     def _get_all_transactions_for_investment(
-        self, category: str, tag: str
+        self, category: str, tag: str, investment_id: Optional[int] = None
     ) -> pd.DataFrame:
         """
         Fetch all transactions for a given investment identified by category and tag.
+
+        For insurance-linked investments, also includes insurance deposit
+        transactions (with amounts negated to match the investment convention:
+        negative = deposit).
 
         Parameters
         ----------
@@ -890,13 +1013,44 @@ class InvestmentsService:
             Investment category (e.g. ``"Investments"``).
         tag : str
             Investment tag identifying the specific instrument.
+        investment_id : int, optional
+            Investment ID used to look up insurance linkage.
 
         Returns
         -------
         pd.DataFrame
             Matching transactions from the merged analysis table.
         """
-        return self.transactions_service.get_transactions_by_tag(category, tag)
+        manual_txns = self.transactions_service.get_transactions_by_tag(category, tag)
+
+        if investment_id is None:
+            return manual_txns
+
+        inv_df = self.investments_repo.get_by_id(investment_id)
+        policy_id = inv_df.iloc[0].get("insurance_policy_id")
+        if not policy_id or pd.isna(policy_id):
+            return manual_txns
+
+        stmt = select(InsuranceTransaction).where(
+            InsuranceTransaction.account_number == policy_id
+        )
+        ins_txns = pd.read_sql(stmt, self.db.bind)
+
+        if ins_txns.empty:
+            return manual_txns
+
+        # Negate amounts: insurance txns are positive (deposits received),
+        # but investment convention is negative = deposit (money out)
+        ins_txns["amount"] = -ins_txns["amount"]
+
+        if manual_txns.empty:
+            return ins_txns
+
+        # Preserve manual_txns column order so downstream code sees a stable schema
+        common_cols = [c for c in manual_txns.columns if c in ins_txns.columns]
+        return pd.concat(
+            [manual_txns[common_cols], ins_txns[common_cols]], ignore_index=True
+        )
 
     def _calculate_balance_from_transactions(
         self, transactions_df: pd.DataFrame, as_of_date: Optional[str] = None

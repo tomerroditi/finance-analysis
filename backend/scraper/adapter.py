@@ -417,6 +417,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
         from backend.services.insurance_account_service import (
             InsuranceAccountService,
         )
+        from backend.services.investments_service import InvestmentsService
 
         accounts_to_upsert = [
             account.metadata
@@ -435,6 +436,22 @@ class InsuranceScraperAdapter(ScraperAdapter):
                     "%s: %s: Saved metadata for %d insurance accounts",
                     self.provider_name, self.account_name, len(accounts_to_upsert),
                 )
+
+                inv_service = InvestmentsService(db)
+                for meta in accounts_to_upsert:
+                    if meta.get("policy_type") != "hishtalmut":
+                        continue
+                    try:
+                        inv_service.sync_from_insurance(meta)
+                        logger.info(
+                            "%s: %s: Synced hishtalmut investment for policy %s",
+                            self.provider_name, self.account_name, meta["policy_id"],
+                        )
+                    except Exception:
+                        logger.exception(
+                            "%s: %s: Failed to sync hishtalmut investment for policy %s",
+                            self.provider_name, self.account_name, meta["policy_id"],
+                        )
         except Exception as exc:
             logger.error(
                 "%s: %s: Error saving insurance metadata — %s",

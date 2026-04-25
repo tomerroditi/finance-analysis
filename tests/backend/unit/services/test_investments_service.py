@@ -3,8 +3,9 @@
 import pandas as pd
 import pytest
 
+from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
-from backend.models.transaction import ManualInvestmentTransaction
+from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
 from backend.services.investments_service import InvestmentsService
 
 
@@ -560,3 +561,277 @@ class TestInvestmentsServiceEdgeCases:
         mid_balance = balance_by_date.get("2023-07-16")
         if mid_balance is not None:
             assert 10500.0 < mid_balance < 11000.0
+
+
+class TestSyncFromInsurance:
+    """Tests for syncing investments from scraped insurance data."""
+
+    def _make_hishtalmut_meta(self, **overrides):
+        """Build a minimal hishtalmut insurance metadata dict."""
+        meta = {
+            "policy_id": "POL-HST-001",
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "קרן השתלמות כלשהי",
+            "balance": 150000.0,
+            "balance_date": "2025-06-15",
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2029-05-31",
+        }
+        meta.update(overrides)
+        return meta
+
+    def test_creates_investment_on_first_sync(self, db_session):
+        """Verify first sync creates a new Investment record with correct fields."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        inv = investments[0]
+        assert inv["insurance_policy_id"] == "POL-HST-001"
+        assert inv["type"] == "hishtalmut"
+        assert inv["category"] == "Investments"
+        assert inv["tag"] == "Keren Hishtalmut - hafenix (POL-HST-001)"
+        assert inv["name"] == "קרן השתלמות כלשהי"
+        assert inv["commission_deposit"] == 1.0
+        assert inv["commission_management"] == 0.5
+        assert inv["liquidity_date"] == "2029-05-31"
+        assert inv["interest_rate_type"] == "variable"
+
+    def test_creates_balance_snapshot_on_first_sync(self, db_session):
+        """Verify first sync creates a scraped balance snapshot."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        snapshots = service.get_balance_snapshots(investments[0]["id"])
+        assert len(snapshots) == 1
+        assert snapshots[0]["balance"] == 150000.0
+        assert snapshots[0]["date"] == "2025-06-15"
+        assert snapshots[0]["source"] == "scraped"
+
+    def test_updates_existing_investment_on_resync(self, db_session):
+        """Verify subsequent sync updates metadata without creating duplicates."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        updated_meta = self._make_hishtalmut_meta(
+            account_name="קרן השתלמות מעודכנת",
+            commission_deposits_pct=0.8,
+            commission_savings_pct=0.4,
+            liquidity_date="2030-01-01",
+            balance=160000.0,
+            balance_date="2025-07-15",
+        )
+        service.sync_from_insurance(updated_meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        inv = investments[0]
+        assert inv["name"] == "קרן השתלמות מעודכנת"
+        assert inv["commission_deposit"] == 0.8
+        assert inv["commission_management"] == 0.4
+        assert inv["liquidity_date"] == "2030-01-01"
+
+    def test_skips_pension_policies(self, db_session):
+        """Verify pension policies are ignored by sync."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta(policy_type="pension")
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 0
+
+    def test_does_not_overwrite_manual_snapshot(self, db_session):
+        """Verify scraped snapshot skips dates with existing manual snapshots."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        inv_id = service.get_all_investments()[0]["id"]
+        # Overwrite the scraped snapshot with a manual one on the same date
+        service.create_balance_snapshot(inv_id, "2025-06-15", 999999.0, source="manual")
+
+        # Re-sync with different balance on same date
+        meta["balance"] = 160000.0
+        service.sync_from_insurance(meta)
+
+        snapshots = service.get_balance_snapshots(inv_id)
+        snapshot_on_date = [s for s in snapshots if s["date"] == "2025-06-15"]
+        assert len(snapshot_on_date) == 1
+        assert snapshot_on_date[0]["balance"] == 999999.0
+        assert snapshot_on_date[0]["source"] == "manual"
+
+    def test_updates_existing_scraped_snapshot_on_same_date(self, db_session):
+        """Verify re-scraping the same date updates the scraped snapshot balance."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta()
+        service.sync_from_insurance(meta)
+
+        meta["balance"] = 155000.0
+        service.sync_from_insurance(meta)
+
+        inv_id = service.get_all_investments()[0]["id"]
+        snapshots = service.get_balance_snapshots(inv_id)
+        assert len(snapshots) == 1
+        assert snapshots[0]["balance"] == 155000.0
+
+    def test_skips_snapshot_when_no_balance(self, db_session):
+        """Verify no snapshot is created when balance data is missing."""
+        service = InvestmentsService(db_session)
+        meta = self._make_hishtalmut_meta(balance=None, balance_date=None)
+
+        service.sync_from_insurance(meta)
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        snapshots = service.get_balance_snapshots(investments[0]["id"])
+        assert len(snapshots) == 0
+
+    def test_create_path_writes_policy_id_atomically(self, db_session):
+        """Verify insurance_policy_id is set as part of the initial insert, not a follow-up update."""
+        service = InvestmentsService(db_session)
+        service.sync_from_insurance(self._make_hishtalmut_meta())
+
+        row = db_session.query(InvestmentModel).one()
+        assert row.insurance_policy_id == "POL-HST-001"
+
+    def test_links_legacy_investment_when_no_policy_id(self, db_session):
+        """Verify an existing unlinked investment with the legacy tag gets linked instead of duplicated."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix",
+            type_="hishtalmut",
+            name="Legacy Hishtalmut",
+            interest_rate_type="variable",
+        )
+
+        service.sync_from_insurance(self._make_hishtalmut_meta())
+
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        assert investments[0]["insurance_policy_id"] == "POL-HST-001"
+        assert investments[0]["tag"] == "Keren Hishtalmut - hafenix (POL-HST-001)"
+
+
+class TestBackfillFromInsuranceAccounts:
+    """Tests for the hishtalmut backfill service method."""
+
+    def _seed_insurance_account(self, db, **fields):
+        """Insert an InsuranceAccount row, filling required defaults."""
+        defaults = {
+            "provider": "hafenix",
+            "policy_id": "POL-HST-100",
+            "policy_type": "hishtalmut",
+            "account_name": "Backfill Fund",
+            "balance": 75000.0,
+            "balance_date": "2025-05-01",
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.3,
+            "liquidity_date": "2028-01-01",
+        }
+        defaults.update(fields)
+        db.add(InsuranceAccount(**defaults))
+        db.commit()
+
+    def test_backfill_processes_only_hishtalmut(self, db_session):
+        """Verify pension rows are skipped and hishtalmut rows are synced."""
+        self._seed_insurance_account(db_session, policy_id="HST-1")
+        self._seed_insurance_account(
+            db_session, policy_id="PEN-1", policy_type="pension"
+        )
+
+        service = InvestmentsService(db_session)
+        processed = service.backfill_from_insurance_accounts()
+
+        assert processed == 1
+        investments = service.get_all_investments()
+        assert len(investments) == 1
+        assert investments[0]["insurance_policy_id"] == "HST-1"
+
+    def test_backfill_is_idempotent(self, db_session):
+        """Verify re-running backfill does not create duplicates."""
+        self._seed_insurance_account(db_session, policy_id="HST-2")
+        service = InvestmentsService(db_session)
+
+        service.backfill_from_insurance_accounts()
+        service.backfill_from_insurance_accounts()
+
+        assert len(service.get_all_investments()) == 1
+
+
+class TestInsuranceLinkedTransactions:
+    """Tests for merging insurance transactions into investment calculations."""
+
+    def _seed_linked_investment(self, service, policy_id="POL-INS-1"):
+        meta = {
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "Linked Fund",
+            "balance": None,
+            "balance_date": None,
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2030-01-01",
+        }
+        service.sync_from_insurance(meta)
+        return service.get_all_investments()[0]["id"]
+
+    def test_insurance_deposits_included_in_profit_loss(self, db_session):
+        """Verify insurance deposits are negated and counted as deposits in P/L."""
+        service = InvestmentsService(db_session)
+        inv_id = self._seed_linked_investment(service, policy_id="POL-PL")
+
+        db_session.add(InsuranceTransaction(
+            id="ins-1",
+            date="2025-01-15",
+            provider="hafenix",
+            account_name="Linked Fund",
+            account_number="POL-PL",
+            description="Monthly deposit",
+            amount=1000.0,
+            source="insurance_transactions",
+        ))
+        db_session.commit()
+
+        metrics = service.calculate_profit_loss(inv_id)
+        assert metrics["total_deposits"] == 1000.0
+        assert metrics["total_withdrawals"] == 0.0
+        assert metrics["first_transaction_date"] == "2025-01-15"
+
+    def test_unlinked_investment_ignores_insurance_transactions(self, db_session):
+        """Verify insurance transactions do not leak into investments without a policy link."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Standalone",
+            type_="etf",
+            name="Standalone ETF",
+            interest_rate_type="variable",
+        )
+        inv_id = service.get_all_investments()[0]["id"]
+
+        db_session.add(InsuranceTransaction(
+            id="ins-unrelated",
+            date="2025-02-01",
+            provider="hafenix",
+            account_name="Other",
+            account_number="POL-OTHER",
+            description="Not mine",
+            amount=500.0,
+            source="insurance_transactions",
+        ))
+        db_session.commit()
+
+        metrics = service.calculate_profit_loss(inv_id)
+        assert metrics["total_deposits"] == 0.0
