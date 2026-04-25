@@ -1,3 +1,22 @@
+## v1.13.0 (2026-04-25)
+
+### Feat
+
+- **frontend**: network-failure toast, credential cache exclusion, global mutation invalidation
+- **frontend**: add PWA shell with offline-first React Query cache
+
+### Fix
+
+- **security**: override transitive serialize-javascript to ^7.0.5
+- **pwa**: restore lockfile resolved URLs (Vercel deploy fix)
+- **pwa**: move icon generator out of frontend/
+- **pwa**: revert to generateSW; surface network failures via axios interceptor
+- **pwa**: pin workbox-* runtime modules as direct deps
+
+### Perf
+
+- **frontend**: debounce global query invalidation by 200ms
+
 ## v1.12.0 (2026-04-25)
 
 ### Feat
