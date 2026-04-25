@@ -1,3 +1,9 @@
+## v1.14.0 (2026-04-25)
+
+### Feat
+
+- **dataflow**: rewrite platform feature cards and callouts as feature highlights
+
 ## v1.13.1 (2026-04-25)
 
 ### Fix
