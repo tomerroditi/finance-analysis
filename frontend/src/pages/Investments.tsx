@@ -378,7 +378,7 @@ export function Investments() {
       queryClient.invalidateQueries({ queryKey: ["investments"] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
       queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["insuranceAccounts"] });
+      queryClient.invalidateQueries({ queryKey: ["insurance-accounts"] });
       setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" });
     },
   });

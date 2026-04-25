@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Shield,
   ArrowUpRight,
@@ -11,6 +11,10 @@ import {
   Landmark,
   Lock,
   Loader2,
+  Pencil,
+  Check,
+  X,
+  RotateCcw,
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
@@ -168,32 +172,137 @@ function AccountCardFull({
   transactions: InsuranceTransaction[];
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
   const covers = parseCovers(account.insurance_covers);
   const insuranceCosts = parseCosts(account.insurance_costs);
   const txs = transactions
-    .filter((t) => t.account_number === account.policy_id)
+    .filter((tx) => tx.account_number === account.policy_id)
     .sort((a, b) => b.date.localeCompare(a.date));
-  const deposits = txs.filter((t) => t.amount > 0);
+  const deposits = txs.filter((tx) => tx.amount > 0);
   const totalCosts = insuranceCosts.reduce((s, c) => s + Math.abs(c.amount), 0);
+
+  const renameMutation = useMutation({
+    mutationFn: (customName: string | null) =>
+      insuranceAccountsApi.rename(account.policy_id, customName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["insurance-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["investments"] });
+      setIsEditingName(false);
+      setDraftName("");
+    },
+  });
+
+  const displayName = account.custom_name || account.account_name;
+
+  const startEditing = () => {
+    setDraftName(account.custom_name ?? "");
+    setIsEditingName(true);
+  };
+
+  const cancelEditing = () => {
+    setIsEditingName(false);
+    setDraftName("");
+  };
+
+  const saveName = () => {
+    const trimmed = draftName.trim();
+    renameMutation.mutate(trimmed || null);
+  };
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
       {/* Header */}
       <div className="px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
           <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
             <Shield size={22} />
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-white font-bold text-base sm:text-lg">{account.account_name}</h3>
-              {policyTypeBadge(account.policy_type, account.pension_type, t)}
-            </div>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
-              {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
-            </p>
+          <div className="min-w-0 flex-1">
+            {isEditingName ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="text"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveName();
+                      if (e.key === "Escape") cancelEditing();
+                    }}
+                    placeholder={account.account_name}
+                    disabled={renameMutation.isPending}
+                    autoFocus
+                    aria-label={t("insurance.renameFund")}
+                    className="flex-1 min-w-[160px] bg-[var(--surface-light)] text-white rounded-lg px-3 py-1.5 text-base sm:text-lg font-bold border border-[var(--surface-light)] focus:border-[var(--accent)] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveName}
+                    disabled={renameMutation.isPending}
+                    aria-label={t("insurance.save")}
+                    title={t("insurance.save")}
+                    className="w-[36px] h-[36px] flex items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
+                  >
+                    <Check size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditing}
+                    disabled={renameMutation.isPending}
+                    aria-label={t("insurance.cancel")}
+                    title={t("insurance.cancel")}
+                    className="w-[36px] h-[36px] flex items-center justify-center rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"
+                  >
+                    <X size={16} />
+                  </button>
+                  {account.custom_name && (
+                    <button
+                      type="button"
+                      onClick={() => renameMutation.mutate(null)}
+                      disabled={renameMutation.isPending}
+                      aria-label={t("insurance.resetToScrapedName")}
+                      title={t("insurance.resetToScrapedName")}
+                      className="w-[36px] h-[36px] flex items-center justify-center rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"
+                    >
+                      <RotateCcw size={14} />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-[var(--text-muted)]">
+                  {t("insurance.renameFundHint")}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-white font-bold text-base sm:text-lg break-words">
+                    {displayName}
+                  </h3>
+                  {policyTypeBadge(account.policy_type, account.pension_type, t)}
+                  <button
+                    type="button"
+                    onClick={startEditing}
+                    aria-label={t("insurance.renameFund")}
+                    title={t("insurance.renameFund")}
+                    className="shrink-0 w-[32px] h-[32px] flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
+                  {t("insurance.policy")} {account.policy_id} · {t("insurance.updated")} {fmtDate(account.balance_date)}
+                </p>
+                {account.custom_name && (
+                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5 italic truncate">
+                    {account.account_name}
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </div>
         <div className="text-start sm:text-end shrink-0 ps-[52px] sm:ps-0">
