@@ -28,8 +28,16 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
       {
         type: "sankey",
         orientation: "h",
+        // Using "perpendicular" arrangement gives Plotly room to space nodes
+        // vertically, which reduces the visual collision between right-side
+        // labels on dense flows.
+        arrangement: "perpendicular",
+        textfont: { size: 11, color: "#cbd5e1", family: "Inter, sans-serif" },
         node: {
-          pad: 15,
+          // Larger pad = more vertical gap between adjacent nodes (and their
+          // labels). Bumping from 15 -> 28 prevents the right-column labels
+          // from butting into each other.
+          pad: 28,
           thickness: 20,
           line: {
             color: "black",
@@ -65,7 +73,10 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
 
   const layout = {
     ...chartTheme,
-    margin: { t: 20, b: 20, l: 20, r: 20 },
+    // Reserve real estate for the destination labels on the right (and source
+    // labels on the left under RTL flipping). Per
+    // .claude/rules/frontend_responsive.md, keep the *other* margins tight.
+    margin: { t: 20, b: 20, l: 80, r: 140 },
     height: height,
     autosize: true,
   };

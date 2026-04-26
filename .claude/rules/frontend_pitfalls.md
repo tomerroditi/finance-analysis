@@ -92,6 +92,36 @@ formatCurrency(amount, 2)       // "₪1,234.56"
 
 **Never inline** `new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" })`. It creates duplicate logic and inconsistent formatting.
 
+**Don't append `₪` yourself.** `formatCurrency()` already includes the symbol.
+Manual concatenation (`{formatCurrency(x)}₪`) doubles the symbol on RTL builds
+and causes the inconsistent spacing (`1,234₪` here, `1,234 ₪` there) you'll
+see on legacy code. If you need the value without the symbol, route the
+number through `formatCurrency()` and add `, { signDisplay: "never", currency: undefined }`
+options — or extract a separate helper.
+
+## Delta / Change Formatting
+
+For any "change" or "delta" value (KPI card trend, period-over-period change,
+chart mini-cards), pick **one** helper and use it everywhere. Don't roll
+your own template:
+
+```tsx
+// CORRECT — single source of truth
+formatChange(-20000)    // "-₪20K"
+formatChange(6500)      // "+₪6.5K"
+formatChange(-132)      // "-₪132"   (small values still get currency)
+```
+
+Bad patterns that have shipped to prod and looked broken:
+- `${sign}₪${formatCompactCurrency(v)}` and `₪${formatCompactCurrency(v)}` on the
+  same page → `+₪6.5K` next to `₪-20K`.
+- Falling out of the abbreviator for small absolute values → one card shows
+  `+₪1.1M`, the next card shows `-482` (no currency, no abbreviation).
+- `Math.abs(pct).toFixed(1) + "%-"` instead of `${sign}${pct.toFixed(1)}%`
+  → `1.7%-` with the minus stuck on the end.
+
+If you spot any of these, route them through the central helper.
+
 ## SQLite Booleans in JSX
 
 SQLite stores booleans as `0` / `1` integers. In JSX, `{0 && <Component />}` renders the string `"0"`.

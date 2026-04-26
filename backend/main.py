@@ -165,6 +165,12 @@ app = FastAPI(
     docs_url=None if _docs_disabled else "/docs",
     redoc_url=None if _docs_disabled else "/redoc",
     openapi_url=None if _docs_disabled else "/openapi.json",
+    # Disable trailing-slash redirects. FastAPI's default 307 redirect uses an
+    # absolute Location header pointing at the backend host, which breaks the
+    # Vite dev proxy (the browser follows the absolute URL and trips CSP) and
+    # forces clients to handle redirects. With this off, frontend callers must
+    # match the route's exact slash form — see ``frontend/src/services/api.ts``.
+    redirect_slashes=False,
 )
 
 # Configure CORS. A wildcard origin (``*``) may never be combined with

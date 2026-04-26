@@ -5,7 +5,7 @@ import { TrendingDown, Calculator, Tag } from "lucide-react";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
 import { chartTheme, plotlyConfig, isTouchDevice } from "../../utils/plotlyLocale";
-import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatting";
+import { formatCurrency, formatChange, formatPercentChange } from "../../utils/numberFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 type InsightTab = "income_expenses" | "net_worth" | "cash_flow" | "category";
@@ -268,11 +268,11 @@ export function DashboardInsightsPanel({
                         <div key={label} className="bg-[var(--surface-light)] rounded-lg px-2.5 py-1.5 text-center shrink-0 whitespace-nowrap" title={`${isPositive ? "+" : ""}${formatCurrency(delta)}`}>
                           <p className="text-[var(--text-muted)] text-[9px] leading-tight">{label}</p>
                           <p dir="ltr" className={`text-xs font-bold leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                            {isPositive ? "+" : ""}{formatCompactCurrency(delta)}
+                            {formatChange(delta)}
                           </p>
                           {pct !== null && (
-                            <p className={`text-[9px] leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                              {isPositive ? "+" : ""}{pct.toFixed(1)}%
+                            <p dir="ltr" className={`text-[9px] leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                              {formatPercentChange(pct)}
                             </p>
                           )}
                         </div>

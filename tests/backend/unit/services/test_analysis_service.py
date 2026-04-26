@@ -980,6 +980,30 @@ class TestNetWorthEmptyEarlyExit:
         assert result == []
 
 
+class TestAnalysisServiceEmptyDatabaseSafety:
+    """Tests guaranteeing analysis endpoints don't crash on a fresh empty database."""
+
+    def test_get_income_expenses_over_time_empty_db(self, db_session):
+        """Verify empty database returns an empty list rather than raising KeyError."""
+        service = AnalysisService(db_session)
+        result = service.get_income_expenses_over_time()
+        assert result == []
+
+    def test_get_income_expenses_over_time_empty_db_with_flags(self, db_session):
+        """Verify empty database is handled when toggle flags are passed."""
+        service = AnalysisService(db_session)
+        result = service.get_income_expenses_over_time(
+            exclude_projects=True, exclude_liabilities=True, exclude_refunds=True
+        )
+        assert result == []
+
+    def test_get_debt_payments_over_time_empty_db(self, db_session):
+        """Verify empty database returns an empty list rather than raising KeyError."""
+        service = AnalysisService(db_session)
+        result = service.get_debt_payments_over_time()
+        assert result == []
+
+
 class TestMonthlyExpenses:
     """Tests for get_monthly_expenses aggregation and rolling averages."""
 

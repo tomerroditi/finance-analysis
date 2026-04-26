@@ -1607,6 +1607,20 @@ class TestGetMonthlyProjectSpendingSummary:
         summary = service.get_monthly_project_spending_summary(2024, 1)
         assert summary == {"projects": []}
 
+    def test_project_spending_summary_empty_db(self, db_session):
+        """Verify empty database returns empty projects without raising KeyError."""
+        service = MonthlyBudgetService(db_session)
+
+        summary = service.get_monthly_project_spending_summary(2024, 1)
+        assert summary == {"projects": []}
+
+    def test_get_monthly_project_transactions_empty_db_returns_none(self, db_session):
+        """Verify ``get_monthly_project_transactions`` short-circuits to ``None`` on empty DB."""
+        service = MonthlyBudgetService(db_session)
+
+        result = service.get_monthly_project_transactions(2024, 1)
+        assert result is None
+
 
 class TestUpdateProject:
     """Tests for update_project total rule lookup and update (lines 1004-1007)."""

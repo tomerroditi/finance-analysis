@@ -119,7 +119,7 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-xs gap-2">
                     <span className="text-[var(--text-muted)]">
                       <span dir="ltr">
                         {formatCurrency(alert.spent)} /{" "}
@@ -137,8 +137,10 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
                       </span>
                       <button
                         onClick={() => dismiss(alert.rule_id)}
-                        className="text-[var(--text-muted)] hover:text-[var(--text-default)] underline-offset-2 hover:underline transition-colors"
+                        aria-label={t("budgetAlerts.dismiss")}
+                        className="inline-flex items-center gap-1 px-2.5 py-2 rounded-md border border-[var(--surface-light)] bg-[var(--surface)] text-[var(--text-muted)] text-xs font-medium hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] active:bg-[var(--surface-light)]/80 transition-colors"
                       >
+                        <X size={12} className="shrink-0" />
                         {t("budgetAlerts.dismiss")}
                       </button>
                     </span>

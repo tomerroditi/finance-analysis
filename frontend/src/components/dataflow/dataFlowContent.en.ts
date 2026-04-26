@@ -319,7 +319,7 @@ const content: DataFlowContent = {
     "demo-mode": {
       title: "Demo Mode", tag: "Toggle",
       sections: [
-        { heading: "How It Works", items: ["Toggle in app header switches to isolated demo database", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
+        { heading: "How It Works", items: ["Toggle in Settings (sidebar) switches to isolated demo database", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
         { heading: "Scraper Redirect", text: "When demo mode is active, scraping requests are automatically redirected to dummy scrapers that generate fake data. No real financial institutions are contacted." },
         { heading: "Isolation", text: "Completely separate database \u2014 no production data is read or affected. Safe for UI testing and demos." },
       ],
@@ -404,7 +404,7 @@ const content: DataFlowContent = {
     { title: "Auto-sync from Israeli banks and credit cards.", text: "Connect your accounts once and let the app handle the rest \u2014 17 bank providers and 6 credit card providers supported, with 2FA out of the box. Credentials live in your OS keyring, never in plain text." },
     { title: "Categories that travel with your data.", text: "Rename a category and every transaction, split, rule, and budget updates automatically. Drag-and-drop to reorder. Custom tags inside each category give you finer control without cluttering the top level." },
     { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes with a Sankey flow chart, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
-    { title: "Try everything without risk via Demo Mode.", text: "Toggle demo mode in the header to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
+    { title: "Try everything without risk via Demo Mode.", text: "Open Settings from the sidebar and toggle demo mode to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
     { title: "Backups and history, just in case.", text: "Snapshot your data anytime, browse your backup list, and restore on demand. A safety backup is taken first, so even an accidental restore can be undone." },
   ],
 };

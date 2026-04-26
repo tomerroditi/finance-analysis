@@ -32,6 +32,28 @@ class TestTransactionsServiceDataRetrieval:
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
+    def test_get_data_for_analysis_empty_db_has_canonical_columns(self, db_session):
+        """Verify the empty result still exposes the canonical analysis columns.
+
+        Downstream consumers (analysis/budget services) index into columns
+        like ``date``, ``source``, and ``category``. An empty DataFrame
+        without columns triggers ``KeyError`` for those consumers, so the
+        service must always return the canonical schema.
+        """
+        service = TransactionsService(db_session)
+        result = service.get_data_for_analysis()
+
+        assert result.empty
+        for column in service.ANALYSIS_COLUMNS:
+            assert column in result.columns
+        for required in (
+            TransactionsTableFields.DATE.value,
+            TransactionsTableFields.SOURCE.value,
+            TransactionsTableFields.CATEGORY.value,
+            TransactionsTableFields.AMOUNT.value,
+        ):
+            assert required in result.columns
+
     def test_get_data_for_analysis_merges_sources(self, db_session, seed_base_transactions):
         """Verify data from CC, bank, cash, and manual_investments are merged."""
         service = TransactionsService(db_session)

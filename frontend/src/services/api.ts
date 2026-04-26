@@ -211,7 +211,7 @@ export const taggingApi = {
 
 // Credentials API
 export const credentialsApi = {
-  getAll: () => api.get("/credentials"),
+  getAll: () => api.get("/credentials/"),
   getAccounts: () => api.get("/credentials/accounts"),
   getProviders: () => api.get("/credentials/providers"),
   getFields: (provider: string) =>
@@ -221,7 +221,7 @@ export const credentialsApi = {
     provider: string;
     account_name: string;
     credentials: Record<string, string>;
-  }) => api.post("/credentials", data),
+  }) => api.post("/credentials/", data),
   getAccountDetails: (service: string, provider: string, accountName: string) =>
     api.get(
       `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(accountName)}`,
@@ -294,9 +294,9 @@ export const insuranceAccountsApi = {
 // Investments API
 export const investmentsApi = {
   getAll: (includeClosed = false) =>
-    api.get("/investments", { params: { include_closed: includeClosed } }),
+    api.get("/investments/", { params: { include_closed: includeClosed } }),
   getById: (id: number) => api.get(`/investments/${id}`),
-  create: (investment: object) => api.post("/investments", investment),
+  create: (investment: object) => api.post("/investments/", investment),
   update: (id: number, investment: object) =>
     api.put(`/investments/${id}`, investment),
   close: (id: number, closedDate: string) =>

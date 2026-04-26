@@ -20,6 +20,7 @@ import { liabilitiesApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { formatCurrency } from "../utils/numberFormatting";
+import { formatDate } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
@@ -140,11 +141,11 @@ function LiabilityCard({
         <span dir="ltr">{liability.interest_rate}% {t("liabilities.interest")}</span>
         <span>·</span>
         <span>
-          {liability.term_months} {t("liabilities.termMonths").toLowerCase()}
+          {t("liabilities.termMonthsCount", { count: liability.term_months })}
         </span>
         <span>·</span>
         <span>
-          {t("liabilities.startDate")} {liability.start_date}
+          {t("liabilities.startDate")} <span dir="ltr">{formatDate(liability.start_date)}</span>
         </span>
       </div>
 
@@ -152,12 +153,16 @@ function LiabilityCard({
       <div className="mb-5">
         <div className="flex justify-between text-xs font-bold text-[var(--text-muted)] mb-1.5">
           <span>{t("liabilities.percentPaid")}</span>
-          <span dir="ltr">{liability.percent_paid.toFixed(1)}%</span>
+          {isPaidOff ? (
+            <span className="text-emerald-400">{t("liabilities.closed")}</span>
+          ) : (
+            <span dir="ltr">{liability.percent_paid.toFixed(1)}%</span>
+          )}
         </div>
         <div className="w-full h-2.5 bg-[var(--surface-base)] rounded-full overflow-hidden border border-[var(--surface-light)]">
           <div
             className={`h-full rounded-full transition-all ${isPaidOff ? "bg-emerald-500" : "bg-rose-500"}`}
-            style={{ width: `${Math.min(liability.percent_paid, 100)}%` }}
+            style={{ width: `${isPaidOff ? 100 : Math.min(liability.percent_paid, 100)}%` }}
           />
         </div>
       </div>
@@ -177,7 +182,7 @@ function LiabilityCard({
             {t("liabilities.remainingBalance")}
           </p>
           <p className="text-base font-bold text-white mt-1" dir="ltr">
-            {formatCurrency(liability.remaining_balance)}
+            {formatCurrency(isPaidOff ? 0 : liability.remaining_balance)}
           </p>
         </div>
         <div className="text-center p-3 rounded-lg bg-[var(--surface-base)]">
@@ -760,7 +765,7 @@ export function Liabilities() {
                     <span className="text-emerald-300">
                       {t("liabilities.receiptDetected", {
                         amount: tagDetection.receipt?.amount.toLocaleString(),
-                        date: tagDetection.receipt?.date,
+                        date: tagDetection.receipt ? formatDate(tagDetection.receipt.date) : "",
                         payments: tagDetection.payments.length,
                       })}
                     </span>
@@ -1185,7 +1190,7 @@ export function Liabilities() {
                             <td className="py-2 ps-2 text-[var(--text-muted)]">
                               {row.payment_number}
                             </td>
-                            <td className="py-2 whitespace-nowrap">{row.date}</td>
+                            <td className="py-2 whitespace-nowrap" dir="ltr">{formatDate(row.date)}</td>
                             <td className="py-2 text-end whitespace-nowrap" dir="ltr">
                               {formatCurrency(row.payment)}
                             </td>
@@ -1231,7 +1236,7 @@ export function Liabilities() {
                             key={i}
                             className={`border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30 ${row.difference !== 0 ? (row.difference > 0 ? "bg-emerald-500/5" : "bg-rose-500/5") : ""}`}
                           >
-                            <td className="py-2 ps-2">{row.date}</td>
+                            <td className="py-2 ps-2" dir="ltr">{formatDate(row.date)}</td>
                             <td className="py-2 text-end" dir="ltr">
                               {formatCurrency(row.expected_payment)}
                             </td>
