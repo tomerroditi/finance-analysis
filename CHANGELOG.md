@@ -1,3 +1,18 @@
+## v1.14.3 (2026-04-26)
+
+### Fix
+
+- **dashboard**: stage inline tag edits in local state, commit only on Done
+- **dashboard**: patch tx cache directly so inline tag edits reflect immediately
+- **SelectDropdown**: skip search auto-focus on touch devices
+- **dashboard**: keep inline tag panel open after category/tag selection
+
+## v1.14.2 (2026-04-25)
+
+### Fix
+
+- **dashboard**: keep budget section visible for months with no rules
+
 ## v1.14.1 (2026-04-25)
 
 ### Fix

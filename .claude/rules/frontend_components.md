@@ -86,6 +86,66 @@ const mutation = useMutation({
 ```
 **Always add `onSuccess` invalidation** — missing it means the UI won't refresh after mutations.
 
+#### Don't fan out invalidation in mutation hot paths
+
+`queryClient.invalidateQueries()` with no args marks every cached
+query stale and refetches every active observer. The dashboard alone
+has ~12 active queries; firing that on every keystroke or every
+dropdown change saturates the mobile HTTP/1.1 connection pool, makes
+the next user interaction feel frozen, and can leave subsequent
+mutations queued behind in-flight refetches (we hit this exact bug
+in the dashboard inline tag editor — a tap on the tag dropdown after
+a category change couldn't reach the backend until the previous
+invalidation cascade drained).
+
+When a mutation's effect on the UI is local and predictable, prefer:
+
+1. A narrow `setQueryData` / `setQueriesData` patch keyed by the
+   same identifier the row uses for its React key. The visible row
+   updates synchronously, no refetch needed.
+2. `invalidateQueries({ queryKey: [<specific key>] })` for the
+   handful of derived queries that genuinely changed (analytics,
+   aggregates, etc.).
+3. Reserve `invalidateQueries()` (no args) for explicit "I just
+   imported a backup, refresh everything" flows.
+
+The shared `MutationCache.onSuccess` in `queryClient.ts` already
+runs a debounced full invalidation on every mutation. **You do not
+need to add another one.** Anything you add on top is pure overhead
+on the hot path.
+
+### Multi-field inline editors: stage locally, commit on Done
+
+Inline editors with two or more correlated fields (e.g. category +
+tag, where the tag's options depend on the chosen category) **must
+not** fire a mutation per dropdown change. Treat each editing
+session as one atomic edit:
+
+- Hold the in-flight selections in local `useState`
+  (`stagedCategory`, `stagedTag`, …) initialised from the row's
+  current values when the editor opens.
+- Bind each `SelectDropdown`'s `value` and `onChange` to the staged
+  state, not to the underlying row data. Dependent dropdowns
+  (e.g. tag options) derive from the staged value, not the row.
+- The row underneath stays visually unchanged during the session —
+  no icon flips, no label rewrites, no progress bars jumping.
+- A primary "Done" / "Save" button fires a single mutation with
+  the staged values and closes the editor. If nothing changed,
+  skip the mutation entirely.
+- Re-opening the editor on a different row, or tapping the toggle
+  again, discards the staged values.
+
+`RecentTransactionsSection.tsx` is the canonical reference. The
+prior per-selection-mutation design was responsible for: the icon
+flipping mid-edit, the editor feeling laggy on mobile, the Done
+button occasionally eating taps, and the second mutation in a
+chained edit failing to reach the backend on HTTP/1.1.
+
+Per-field auto-commit is acceptable **only** for genuinely
+single-field controls — a toggle, a debounced search input, a
+standalone slider — where there's no dependent state and no
+"halfway through" intermediate state for the user to be in.
+
 ### Currency Formatting
 Always use the shared utility:
 ```tsx

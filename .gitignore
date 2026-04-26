@@ -72,5 +72,9 @@ $RECYCLE.BIN/
 .claude/worktrees/
 .vercel
 .env*.local
+
+# Playwright artifacts (MCP screenshots, runner reports/traces)
 .playwright-mcp/
+frontend/playwright-report/
+frontend/test-results/
 .claude/settings.local.json
