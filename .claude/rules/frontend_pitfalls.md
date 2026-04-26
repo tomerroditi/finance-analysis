@@ -124,6 +124,25 @@ const mutation = useMutation({
 ```
 Missing `onSuccess` invalidation = UI doesn't refresh after the mutation.
 
+### But don't fan out — narrow keys + setQueryData patches
+The flip side: `queryClient.invalidateQueries()` with no args
+refetches every active query and saturates the mobile HTTP/1.1
+connection pool. Prefer narrow keys
+(`{ queryKey: ["specific"] }`) and synchronous `setQueriesData`
+patches for local effects. The shared `MutationCache.onSuccess`
+already runs a debounced global sweep — you don't need to add
+another one. See `frontend_components.md` →
+"Don't fan out invalidation in mutation hot paths".
+
+### Multi-field inline editors stage and commit on Done
+Editors with two or more correlated fields (category + tag,
+amount + currency, etc.) must NOT fire a mutation per dropdown
+change. Stage selections in local `useState` and commit once on
+Done. See `frontend_components.md` →
+"Multi-field inline editors: stage locally, commit on Done" for
+the canonical pattern and the list of bugs the
+per-selection-mutation design produced.
+
 ## Key Generation in Lists
 
 ### Stable, Unique Keys
