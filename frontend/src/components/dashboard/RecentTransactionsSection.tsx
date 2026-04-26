@@ -46,9 +46,36 @@ export function RecentTransactionsFeed({
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
+  const [stagedCategory, setStagedCategory] = useState<string>("");
+  const [stagedTag, setStagedTag] = useState<string>("");
   const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null);
   const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
+
+  const txKeyOf = (tx: Transaction) =>
+    `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${tx.amount}`}`;
+
+  const openEditor = (tx: Transaction) => {
+    setStagedCategory(tx.category || "");
+    setStagedTag(tx.tag || "");
+    setEditingTxKey(txKeyOf(tx));
+  };
+
+  const closeEditor = () => {
+    setEditingTxKey(null);
+    setStagedCategory("");
+    setStagedTag("");
+  };
+
+  const commitEdit = (tx: Transaction) => {
+    const currentTag = tx.tag || "";
+    const changed =
+      stagedCategory !== (tx.category || "") || stagedTag !== currentTag;
+    if (changed) {
+      tagMutation.mutate({ tx, category: stagedCategory, tag: stagedTag });
+    }
+    closeEditor();
+  };
 
   // Categories for inline tag editing
   const { data: categories } = useCategories({ enabled: !!editingTxKey });
@@ -162,15 +189,12 @@ export function RecentTransactionsFeed({
     return groups;
   }, [visible]);
 
-  const getTxKey = (tx: Transaction) =>
-    `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${tx.amount}`}`;
-
   // Precompute which tagging rule matches each visible transaction
   const ruleMatchMap = useMemo(() => {
     if (!taggingRules || !visible.length) return new Map<string, TaggingRule>();
     const map = new Map<string, TaggingRule>();
     for (const tx of visible) {
-      const key = getTxKey(tx);
+      const key = txKeyOf(tx);
       const match = findMatchingRule(taggingRules, tx);
       if (match) map.set(key, match);
     }
@@ -215,7 +239,7 @@ export function RecentTransactionsFeed({
               {group.items.map((tx) => {
                 const icon = tx.category ? categoryIcons?.[tx.category] ?? "" : "";
                 const isPositive = tx.amount >= 0;
-                const txKey = getTxKey(tx);
+                const txKey = txKeyOf(tx);
                 const isEditing = editingTxKey === txKey;
                 const matchedRule = ruleMatchMap.get(txKey);
 
@@ -257,7 +281,7 @@ export function RecentTransactionsFeed({
                         <button
                           className={`w-[32px] h-[32px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
                           title={t("tooltips.editCategoryTag")}
-                          onClick={() => setEditingTxKey(isEditing ? null : txKey)}
+                          onClick={() => (isEditing ? closeEditor() : openEditor(tx))}
                         >
                           <Tag size={13} />
                         </button>
@@ -308,7 +332,7 @@ export function RecentTransactionsFeed({
                       <div className="sm:hidden flex items-center gap-1.5 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
                         <button
                           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
-                          onClick={(e) => { e.stopPropagation(); setEditingTxKey(isEditing ? null : txKey); }}
+                          onClick={(e) => { e.stopPropagation(); if (isEditing) closeEditor(); else openEditor(tx); }}
                         >
                           <Tag size={13} className="shrink-0" />
                           {t("common.tag")}
@@ -348,7 +372,10 @@ export function RecentTransactionsFeed({
                       </div>
                     )}
 
-                    {/* Inline tag editing panel */}
+                    {/* Inline tag editing panel — selections are staged in
+                        local state and only committed when the user taps Done.
+                        This keeps the row's icon/label stable during editing
+                        and avoids firing a mutation per dropdown change. */}
                     {isEditing && categories && (
                       <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2">
@@ -356,8 +383,13 @@ export function RecentTransactionsFeed({
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
                             <SelectDropdown
                               options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
-                              value={tx.category || ""}
-                              onChange={(cat) => tagMutation.mutate({ tx, category: cat, tag: "" })}
+                              value={stagedCategory}
+                              onChange={(cat) => {
+                                setStagedCategory(cat);
+                                if (stagedTag && !(categories[cat] || []).includes(stagedTag)) {
+                                  setStagedTag("");
+                                }
+                              }}
                               placeholder={t("common.select")}
                               size="sm"
                               onCreateNew={async (name) => { await createCategory(name); }}
@@ -367,24 +399,24 @@ export function RecentTransactionsFeed({
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.tag")}</label>
                             <SelectDropdown
                               options={
-                                tx.category && categories[tx.category]
-                                  ? categories[tx.category].map((tagName: string) => ({ label: tagName, value: tagName }))
+                                stagedCategory && categories[stagedCategory]
+                                  ? categories[stagedCategory].map((tagName: string) => ({ label: tagName, value: tagName }))
                                   : []
                               }
-                              value={tx.tag || ""}
-                              onChange={(tag) => tagMutation.mutate({ tx, category: tx.category || "", tag })}
+                              value={stagedTag}
+                              onChange={setStagedTag}
                               placeholder={t("common.select")}
                               size="sm"
                               onCreateNew={
-                                tx.category
-                                  ? async (name) => { await createTag(tx.category!, name); }
+                                stagedCategory
+                                  ? async (name) => { await createTag(stagedCategory, name); }
                                   : undefined
                               }
                             />
                           </div>
                           <button
-                            className="self-end mb-0.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]/80 transition-colors"
-                            onClick={() => setEditingTxKey(null)}
+                            className="self-end mb-0.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90 transition-colors"
+                            onClick={() => commitEdit(tx)}
                           >
                             {t("dashboard.done")}
                           </button>
