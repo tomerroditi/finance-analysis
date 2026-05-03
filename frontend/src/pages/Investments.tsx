@@ -23,7 +23,7 @@ import { InvestmentAnalysisModal } from "../components/investments/InvestmentAna
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
-import { formatCurrency } from "../utils/numberFormatting";
+import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
 
 interface Investment {
   id: number;
@@ -51,15 +51,10 @@ interface AllocationItem {
   percentage: number;
   profit_loss?: number;
   roi?: number;
-  history?: BalancePoint[];
+  history?: number[];
   total_deposits?: number;
   total_withdrawals?: number;
   cagr?: number;
-}
-
-interface BalancePoint {
-  date: string;
-  balance: number;
 }
 
 
@@ -145,27 +140,27 @@ function InvestmentCard({
               <>
                 <p
                   className={`text-2xl font-black ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                  dir="ltr"
                 >
-                  {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
-                  {formatCurrency(analysisData.profit_loss ?? 0)}
+                  {formatChange(analysisData.profit_loss ?? 0, { compact: false })}
                 </p>
-                <p className="text-sm font-semibold mt-1 text-[var(--text-muted)]">
+                <p className="text-sm font-semibold mt-1 text-[var(--text-muted)]" dir="ltr">
                   {analysisData.roi != null &&
-                    `ROI: ${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%`}
+                    `ROI: ${formatPercentChange(analysisData.roi)}`}
                 </p>
               </>
             ) : (
               <>
-                <p className="text-2xl font-black text-white">
+                <p className="text-2xl font-black text-white" dir="ltr">
                   {formatCurrency(analysisData.balance)}
                 </p>
                 <p
                   className={`text-sm font-semibold mt-1 ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                  dir="ltr"
                 >
-                  {(analysisData.profit_loss ?? 0) >= 0 ? "+" : ""}
-                  {formatCurrency(analysisData.profit_loss ?? 0)}
+                  {formatChange(analysisData.profit_loss ?? 0, { compact: false })}
                   {analysisData.roi != null &&
-                    ` (${analysisData.roi >= 0 ? "+" : ""}${analysisData.roi.toFixed(1)}%)`}
+                    ` (${formatPercentChange(analysisData.roi)})`}
                 </p>
               </>
             )
@@ -179,7 +174,7 @@ function InvestmentCard({
         <div className="flex-shrink-0 ms-4">
           {(analysisData?.history?.length ?? 0) >= 2 ? (
             <Sparkline
-              data={analysisData!.history!.map(p => p.balance)}
+              data={analysisData!.history!}
               width={100}
               height={40}
               color={(analysisData!.profit_loss ?? 0) >= 0 ? "#10b981" : "#f43f5e"}
@@ -206,8 +201,8 @@ function InvestmentCard({
         </div>
         <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
           <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.cagr")}</p>
-          <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData?.cagr != null ? `${(analysisData.cagr ?? 0) >= 0 ? "+" : ""}${(analysisData.cagr ?? 0).toFixed(1)}%` : "—"}
+          <p className="text-sm font-bold text-white mt-0.5" dir="ltr">
+            {analysisData?.cagr != null ? formatPercentChange(analysisData.cagr) : "—"}
           </p>
         </div>
       </div>

@@ -50,7 +50,7 @@ function StatCard({
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
           {title}
         </p>
-        <p className="text-xl font-black mt-1 text-white">{value}</p>
+        <p className="text-xl font-black mt-1 text-white" dir="ltr">{value}</p>
       </div>
       <div className={`p-3 rounded-xl ${color}`}>
         <Icon size={20} />
@@ -60,7 +60,7 @@ function StatCard({
 }
 
 const formatPercent = (val: number) =>
-  `${val > 0 ? "+" : ""}${val.toFixed(2)}%`;
+  `${val >= 0 ? "+" : "-"}${Math.abs(val).toFixed(2)}%`;
 
 
 interface PortfolioOverviewProps {

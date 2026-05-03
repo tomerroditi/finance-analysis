@@ -467,6 +467,7 @@ function AccountCardFull({
                       <td className="px-4 sm:px-6 py-2 text-end whitespace-nowrap">
                         <span
                           className={`font-mono font-bold ${tx.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                          dir="ltr"
                         >
                           {tx.amount >= 0 ? "+" : ""}
                           {fmt(tx.amount)}
