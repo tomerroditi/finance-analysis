@@ -77,3 +77,4 @@ $RECYCLE.BIN/
 .playwright-mcp/
 frontend/playwright-report/
 frontend/test-results/
+.claude/settings.local.json

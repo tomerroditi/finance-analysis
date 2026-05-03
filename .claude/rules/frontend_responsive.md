@@ -11,6 +11,7 @@ paths:
 - **Desktop (`md:` and up):** Fixed sidebar (`hidden md:block`), collapsible between `w-64` (open) and `w-20` (icons). Main content uses `md:ms-64` / `md:ms-20` margin.
 - **Mobile (below `md:`):** Sidebar hidden. Top bar (`h-14`, `z-40`) with hamburger menu + page title. Sidebar opens as a full-screen overlay drawer (`z-50`) with backdrop.
 - **State:** `mobileSidebarOpen` in `appStore` controls the mobile drawer. Nav links call `setMobileSidebarOpen(false)` on click to auto-close.
+- **Parity with desktop:** every link/button in the desktop sidebar must also appear in the mobile drawer — including secondary entries like Budget Alerts, Settings, Data Flow. A user should never need to know that "the bell icon in the top bar opens X" to reach a feature; the mobile drawer is the canonical menu. When you add a new sidebar entry, edit BOTH the desktop sidebar and the mobile drawer in `frontend/src/components/layout/`.
 
 ### Main Content
 - Padding: `p-2 sm:p-4 md:p-8` (tighter on mobile to maximize screen real estate)
@@ -131,6 +132,7 @@ const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null
   - Action / button columns: `text-center` and `w-px` to collapse to content width.
 - **Wrap currency/numbers in `dir="ltr"`** so the shekel sign and minus stay in the right place under RTL.
 - **Use `formatCurrency()`** (never `Intl.NumberFormat` inline) so RTL/locale handling is consistent.
+- **Cell content must not bleed across column boundaries.** When the table is horizontally scrolled on mobile, content from a hidden column can leak into the visible neighbor (e.g. `erials` from a "Materials" tag bleeding past its cell). The `<td>` itself must clip its overflow — either let `whitespace-nowrap` truncate with `overflow: hidden` + `text-overflow: ellipsis`, or wrap the inner content in a sized box (`<span className="block max-w-[180px] truncate">`). A long badge or pill inside a cell that has no max-width will paint past the cell edge even though the cell itself is fixed-width.
 
 ### Tables: Mobile Column Trimming
 - **Checkbox columns:** Hide on mobile with `hidden md:table-cell` — row tap already toggles selection with visual highlight, saving ~50px of horizontal space.

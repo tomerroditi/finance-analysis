@@ -21,7 +21,7 @@ import { SankeyChart } from "../components/SankeyChart";
 import { Skeleton } from "../components/common/Skeleton";
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
-import { formatCurrency, formatCompactCurrency } from "../utils/numberFormatting";
+import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
 import { chartTheme, plotlyConfig, isTouchDevice } from "../utils/plotlyLocale";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -35,10 +35,9 @@ function MomBadge({ mom }: { mom: { delta: number; percent: number | null } | nu
   if (!mom) return null;
   const { delta, percent } = mom;
   const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
-  const sign = delta >= 0 ? "+" : "";
   return (
     <span dir="ltr" className={`text-[10px] font-semibold ${color}`}>
-      {sign}{formatCompactCurrency(delta)} {percent !== null && `(${sign}${percent.toFixed(1)}%)`}
+      {formatChange(delta)} {percent !== null && `(${formatPercentChange(percent)})`}
     </span>
   );
 }
@@ -115,7 +114,7 @@ function FinancialHealthHeader({
       {/* Net Worth */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
         <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💰 {t("dashboard.netWorth")}</p>
-        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
         </p>
         <MomBadge mom={netWorthMom} />
@@ -124,7 +123,7 @@ function FinancialHealthHeader({
       {/* Bank Balance */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
         <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">🏦 {t("dashboard.bankBalance")}</p>
-        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
         </p>
         <MomBadge mom={bankMom} />
@@ -138,7 +137,7 @@ function FinancialHealthHeader({
       {/* Investments */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
         <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">📈 {t("dashboard.investmentValue")}</p>
-        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">
+        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
         </p>
         <MomBadge mom={investmentMom} />
@@ -152,7 +151,7 @@ function FinancialHealthHeader({
       {/* Cash */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
         <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💵 {t("dashboard.cashBalance")}</p>
-        <p className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
+        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
         <MomBadge mom={cashMom} />
         {expanded && cashBalances && cashBalances.length > 0 && (
           <BreakdownList
@@ -468,11 +467,11 @@ export function Dashboard() {
                           <div key={label} className="bg-[var(--surface-light)] rounded-lg px-2.5 py-1.5 text-center shrink-0 whitespace-nowrap" title={`${isPositive ? "+" : ""}${formatCurrency(delta)}`}>
                             <p className="text-[var(--text-muted)] text-[9px] leading-tight">{label}</p>
                             <p dir="ltr" className={`text-xs font-bold leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                              {isPositive ? "+" : ""}{formatCompactCurrency(delta)}
+                              {formatChange(delta)}
                             </p>
                             {pct !== null && (
-                              <p className={`text-[9px] leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                                {isPositive ? "+" : ""}{pct.toFixed(1)}%
+                              <p dir="ltr" className={`text-[9px] leading-tight ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                                {formatPercentChange(pct)}
                               </p>
                             )}
                           </div>

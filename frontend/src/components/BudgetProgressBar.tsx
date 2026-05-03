@@ -1,6 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { formatCurrency } from "../utils/numberFormatting";
 
 interface BudgetProgressBarProps {
   current: number;
@@ -76,10 +77,10 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
 
           {/* Numbers */}
-          <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap">
-            {spent.toFixed(0)}{" "}
+          <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap" dir="ltr">
+            {formatCurrency(spent)}{" "}
             <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
-              / {total.toFixed(0)}
+              / {formatCurrency(total)}
             </span>
           </span>
 
@@ -143,10 +144,10 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
             </div>
           )}
           <div className="text-end">
-            <div className="font-bold font-mono text-sm md:text-base">
-              {spent.toFixed(2)}{" "}
+            <div className="font-bold font-mono text-sm md:text-base" dir="ltr">
+              {formatCurrency(spent)}{" "}
               <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
-                / {total.toFixed(2)}
+                / {formatCurrency(total)}
               </span>
             </div>
             {onToggleExpand && (

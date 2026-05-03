@@ -16,9 +16,11 @@ import {
   ChevronUp,
   ChevronDown,
   Settings2,
+  Pencil,
 } from "lucide-react";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
+import { TransactionEditorModal } from "./modals/TransactionEditorModal";
 import {
   transactionsApi,
   taggingApi,
@@ -178,6 +180,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const [linkingTransaction, setLinkingTransaction] =
     useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] =
+    useState<Transaction | null>(null);
+  const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
 
   // Bulk actions state
@@ -671,7 +675,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
-        <table className="w-full text-sm text-start">
+        <table className="w-full min-w-[800px] text-sm text-start table-fixed">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
               {showSelection && (
@@ -714,7 +718,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               {showActions && (
                 <th
                   className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-sm font-medium text-[var(--text-muted)]`}
-                  style={{ width: "100px" }}
+                  style={{ width: "130px" }}
                 >
                   {t("common.actions")}
                 </th>
@@ -761,20 +765,25 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("description") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium truncate max-w-[200px]`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium overflow-hidden`}
                       title={getDescription(tx)}
                     >
-                      {getDescription(tx)}
+                      <div className="truncate">{getDescription(tx)}</div>
                     </td>
                   )}
                   {visibleColumns.has("category") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-muted)]`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-muted)] overflow-hidden`}
                     >
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap">
-                        {categoryIcons?.[tx.category as string] && <span>{categoryIcons[tx.category as string]}</span>}
-                        <span>{tx.category || "-"}</span>
-                        {tx.tag && <span className="text-[var(--text-muted)]">/ {tx.tag}</span>}
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap max-w-full overflow-hidden"
+                        title={`${tx.category || "-"}${tx.tag ? ` / ${tx.tag}` : ""}`}
+                      >
+                        {categoryIcons?.[tx.category as string] && <span className="shrink-0">{categoryIcons[tx.category as string]}</span>}
+                        <span className="truncate">
+                          {tx.category || "-"}
+                          {tx.tag && <span className="text-[var(--text-muted)]"> / {tx.tag}</span>}
+                        </span>
                       </span>
                     </td>
                   )}
@@ -790,11 +799,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("account") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} truncate max-w-[150px]`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} overflow-hidden`}
                       title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
                     >
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1 truncate">
                           {tx.provider
                             ? humanizeProvider(tx.provider)
                             : tx.source?.includes("cash") ? "Cash" : "Manual"}
@@ -813,6 +822,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   {showActions && (
                     <td className={`px-4 ${compact ? "py-2" : "py-3"}`}>
                       <div className="flex items-center justify-center gap-1">
+                        <button
+                          className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
+                          title={t("tooltips.editTransaction")}
+                          aria-label={t("tooltips.editTransaction")}
+                          onClick={() => setEditingTransaction(tx)}
+                        >
+                          <Pencil size={14} />
+                        </button>
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title={t("tooltips.splitTransaction")}
@@ -984,6 +1001,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         compact={compact}
       />
 
+      {/* Spacer to keep the floating bulk-actions bar from overlapping the
+          last row / pagination control. Height roughly matches the bar's
+          height plus its bottom offset on each breakpoint. */}
+      {showBulkActions && selectedIds.size > 0 && (
+        <div aria-hidden="true" className="h-40 md:h-32" />
+      )}
+
       {/* Bulk Action Floating Bar */}
       {showBulkActions && selectedIds.size > 0 && (
         <BulkActionsBar
@@ -1024,6 +1048,30 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             amount: linkingTransaction.amount,
             description:
               linkingTransaction.description || linkingTransaction.desc || "",
+          }}
+        />
+      )}
+      {editingTransaction && (
+        <TransactionEditorModal
+          transaction={{
+            unique_id: String(
+              editingTransaction.unique_id ?? editingTransaction.id ?? "",
+            ),
+            source: editingTransaction.source,
+            description:
+              editingTransaction.description ?? editingTransaction.desc ?? "",
+            amount: editingTransaction.amount,
+            date: editingTransaction.date,
+            category: editingTransaction.category,
+            tag: editingTransaction.tag,
+            account_name: editingTransaction.account_name,
+          }}
+          onClose={() => setEditingTransaction(null)}
+          onSuccess={() => {
+            setEditingTransaction(null);
+            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            invalidateAnalytics();
+            onTransactionUpdated?.();
           }}
         />
       )}

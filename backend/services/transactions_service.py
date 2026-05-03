@@ -44,6 +44,23 @@ class TransactionsService:
     to provide transaction operations with split handling.
     """
 
+    ANALYSIS_COLUMNS: List[str] = [
+        TransactionsTableFields.ID.value,
+        TransactionsTableFields.DATE.value,
+        TransactionsTableFields.PROVIDER.value,
+        TransactionsTableFields.ACCOUNT_NAME.value,
+        TransactionsTableFields.ACCOUNT_NUMBER.value,
+        TransactionsTableFields.DESCRIPTION.value,
+        TransactionsTableFields.AMOUNT.value,
+        TransactionsTableFields.CATEGORY.value,
+        TransactionsTableFields.TAG.value,
+        TransactionsTableFields.STATUS.value,
+        TransactionsTableFields.TYPE.value,
+        TransactionsTableFields.UNIQUE_ID.value,
+        TransactionsTableFields.SOURCE.value,
+        TransactionsTableFields.SPLIT_ID.value,
+    ]
+
     def __init__(self, db: Session):
         """
         Initialize the transactions service.
@@ -263,7 +280,7 @@ class TransactionsService:
 
         dfs = [df for df in dfs if not df.empty]
         if not dfs:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=self.ANALYSIS_COLUMNS)
         return pd.concat(dfs, ignore_index=True)
 
     def _build_bank_prior_wealth_rows(self) -> pd.DataFrame:

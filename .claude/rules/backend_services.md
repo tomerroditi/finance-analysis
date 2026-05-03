@@ -94,6 +94,48 @@ def get_transactions_with_splits(self) -> pd.DataFrame:
     return transactions
 ```
 
+### Empty DataFrame Schema Guarantee (CRITICAL)
+
+A service that returns a `pd.DataFrame` MUST return one with the canonical
+columns even when there is zero data. A column-less empty DataFrame crashes
+every consumer that does `df["col"]`.
+
+**Bad — crashes consumers on a fresh DB:**
+```python
+def get_data_for_analysis(self) -> pd.DataFrame:
+    frames = [self.bank_repo.get_all(), self.cc_repo.get_all(), ...]
+    return pd.concat(frames, ignore_index=True)  # empty if all sources empty
+```
+
+**Good — every consumer can do `df["category"]` safely:**
+```python
+ANALYSIS_COLUMNS = [
+    "id", "date", "description", "amount", "category", "tag",
+    "source", "provider", "account_name", "status", ...
+]
+
+def get_data_for_analysis(self) -> pd.DataFrame:
+    frames = [self.bank_repo.get_all(), self.cc_repo.get_all(), ...]
+    if all(f.empty for f in frames):
+        return pd.DataFrame(columns=ANALYSIS_COLUMNS)
+    return pd.concat(frames, ignore_index=True)
+```
+
+**Belt-and-braces — every analytic method also early-returns on empty:**
+```python
+def get_income_expenses_over_time(self, ...) -> list:
+    df = self.transactions_service.get_data_for_analysis(...)
+    if df.empty:
+        return []
+    df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+    ...
+```
+
+**Required tests:** every analytic method must have a regression test that
+runs against an empty DB and asserts no exception. The pattern that broke
+production: a brand-new install or a logged-out demo DB has zero rows, the
+DataFrame has zero columns, and `KeyError: 'category'` 500s the dashboard.
+
 ### Validation Pattern
 ```python
 def validate_input(self, value: float) -> tuple[bool, str]:

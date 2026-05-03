@@ -840,6 +840,9 @@ class MonthlyBudgetService(BudgetService):
             include_split_parents
         )
 
+        if all_data.empty:
+            return None
+
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(

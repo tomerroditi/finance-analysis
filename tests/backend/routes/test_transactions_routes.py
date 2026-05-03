@@ -9,7 +9,7 @@ class TestTransactionsRoutes:
 
     def test_get_transactions(self, test_client, seed_base_transactions):
         """GET /api/transactions returns 200 with transaction list."""
-        response = test_client.get("/api/transactions")
+        response = test_client.get("/api/transactions/")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -17,7 +17,7 @@ class TestTransactionsRoutes:
 
     def test_get_transactions_filter_service(self, test_client, seed_base_transactions):
         """GET /api/transactions?service=credit_cards filters correctly."""
-        response = test_client.get("/api/transactions?service=credit_cards")
+        response = test_client.get("/api/transactions/?service=credit_cards")
         assert response.status_code == 200
         data = response.json()
         assert len(data) > 0
@@ -34,11 +34,11 @@ class TestTransactionsRoutes:
             "account_name": "Wallet",
             "service": "cash",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "success"
         # Verify it was created
-        get_response = test_client.get("/api/transactions?service=cash")
+        get_response = test_client.get("/api/transactions/?service=cash")
         data = get_response.json()
         assert any(t["description"] == "Test cash purchase" for t in data)
 
@@ -52,13 +52,13 @@ class TestTransactionsRoutes:
             "account_name": "Test",
             "service": "credit_cards",
         }
-        response = test_client.post("/api/transactions", json=payload)
+        response = test_client.post("/api/transactions/", json=payload)
         assert response.status_code == 400
 
     def test_update_transaction_category(self, test_client, seed_base_transactions):
         """PUT /api/transactions/{id} updates transaction category."""
         # Get a transaction first
-        get_resp = test_client.get("/api/transactions?service=credit_cards")
+        get_resp = test_client.get("/api/transactions/?service=credit_cards")
         tx = get_resp.json()[0]
         uid = tx["unique_id"]
         response = test_client.put(
@@ -75,7 +75,7 @@ class TestTransactionsRoutes:
         """PUT /api/transactions/{id} updates cash transaction account_name."""
         # Create a cash transaction first
         create_resp = test_client.post(
-            "/api/transactions",
+            "/api/transactions/",
             json={
                 "date": "2024-06-01",
                 "description": "Test account update",
@@ -87,7 +87,7 @@ class TestTransactionsRoutes:
         assert create_resp.status_code == 200
 
         # Get the transaction to find its ID
-        get_resp = test_client.get("/api/transactions?service=cash")
+        get_resp = test_client.get("/api/transactions/?service=cash")
         txs = get_resp.json()
         tx = next((t for t in txs if t.get("description") == "Test account update"), None)
         assert tx is not None
@@ -114,7 +114,7 @@ class TestTransactionsRoutes:
         """DELETE /api/transactions/{id} deletes cash transaction."""
         # Create one first
         test_client.post(
-            "/api/transactions",
+            "/api/transactions/",
             json={
                 "date": "2024-06-01",
                 "description": "To be deleted",
@@ -124,7 +124,7 @@ class TestTransactionsRoutes:
             },
         )
         # Find it
-        txns = test_client.get("/api/transactions?service=cash").json()
+        txns = test_client.get("/api/transactions/?service=cash").json()
         cash_tx = next(t for t in txns if t["description"] == "To be deleted")
         uid = cash_tx["unique_id"]
         response = test_client.delete(
@@ -136,7 +136,7 @@ class TestTransactionsRoutes:
         self, test_client, seed_base_transactions
     ):
         """DELETE /api/transactions/{id} for scraped source returns 403."""
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         uid = txns[0]["unique_id"]
         response = test_client.delete(
             f"/api/transactions/{uid}?source=credit_card_transactions"
@@ -145,7 +145,7 @@ class TestTransactionsRoutes:
 
     def test_split_transaction(self, test_client, seed_base_transactions):
         """POST /api/transactions/{id}/split creates splits."""
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         # Find one with known amount
         tx = next(t for t in txns if abs(t["amount"]) > 100)
         uid = tx["unique_id"]
@@ -164,7 +164,7 @@ class TestTransactionsRoutes:
 
     def test_bulk_tag(self, test_client, seed_untagged_transactions):
         """POST /api/transactions/bulk-tag tags multiple transactions."""
-        txns = test_client.get("/api/transactions?service=credit_cards").json()
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
         untagged = [t for t in txns if t.get("category") is None]
         if len(untagged) < 2:
             pytest.skip("Need at least 2 untagged transactions")
@@ -186,7 +186,7 @@ class TestTransactionsRoutes:
         Uses a unique_id from the credit_cards service to avoid collisions
         across tables (each table has its own autoincrement sequence).
         """
-        cc_txns = test_client.get("/api/transactions?service=credit_cards").json()
+        cc_txns = test_client.get("/api/transactions/?service=credit_cards").json()
         # Pick the last credit card transaction whose unique_id is higher
         # than the count of bank/cash records, so it only exists in one table.
         uid = max(t["unique_id"] for t in cc_txns)
@@ -492,4 +492,4 @@ class TestTransactionsRoutesAdditional:
             mock_cls.return_value = mock_repo
             mock_repo.get_table.side_effect = RuntimeError("Read failed")
             with pytest.raises(RuntimeError, match="Read failed"):
-                test_client.get("/api/transactions")
+                test_client.get("/api/transactions/")
