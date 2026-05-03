@@ -1,3 +1,16 @@
+## v1.14.4 (2026-05-03)
+
+### Fix
+
+- **frontend**: correct demo-mode location copy and clean up i18n
+- **frontend**: improve mobile drawer, sankey labels, and minor UX
+- **frontend**: wire up transaction edit modal and fix mobile cell bleed
+- **frontend**: clarify pension card layout on insurances page
+- **frontend**: centralize budget/liability number and date formatting
+- **frontend**: unify dashboard delta and currency formatting
+- **frontend**: align API path trailing slashes with backend routes
+- **backend**: guard analytics and budget services against empty database
+
 ## v1.14.3 (2026-04-26)
 
 ### Fix
