@@ -53,6 +53,22 @@
     "clearSelection": "Clear selection",
     "remove": "Remove"
   },
+  "onboarding": {
+    "welcome": "Welcome to Finance Analysis",
+    "languagePrompt": "Pick a language. You can change it any time from Settings.",
+    "pathTitle": "Pick how to start",
+    "pathPrompt": "You can switch between these later from Settings.",
+    "realPathTitle": "Use my real data",
+    "realPathDesc": "Connect a bank, credit card, or insurance account. We'll guide you through credentials in the next step.",
+    "demoPathTitle": "Explore with demo data",
+    "demoPathDesc": "Browse a fully populated dashboard built around a sample household. Nothing gets sent or scraped.",
+    "doneTitle": "All set",
+    "doneRealDesc": "Next: connect your first account in Data Sources.",
+    "doneDemoDesc": "Demo Mode is on. Look around — toggle it off in Settings when you're ready to use real data.",
+    "goToDataSources": "Go to Data Sources",
+    "goToDashboard": "Go to dashboard",
+    "skipForNow": "Skip for now"
+  },
   "sidebar": {
     "logo": "Finance",
     "dashboard": "Dashboard",
