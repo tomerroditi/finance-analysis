@@ -282,7 +282,7 @@ export function AutoTaggingPanel() {
                             ) : (rules || []).filter(r => !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase())).map((rule) => (
                                 <div key={rule.id} className="bg-[var(--surface-light)]/30 rounded-xl p-3 border border-[var(--surface-light)]">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="font-semibold text-sm truncate">{rule.name}</span>
+                                        <span className="font-semibold text-sm truncate" dir="auto">{rule.name}</span>
                                         <div className="flex items-center gap-1">
                                             <button onClick={() => applySingleMutation.mutate({ id: rule.id!, overwrite: false })} className="p-1 rounded hover:bg-emerald-500/20 text-emerald-400/60 hover:text-emerald-400 transition-colors"><Play size={14} /></button>
                                             <button onClick={() => { setEditingRule(rule); setIsModalOpen(true); }} className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"><Edit2 size={14} /></button>

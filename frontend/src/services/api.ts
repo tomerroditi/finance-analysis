@@ -612,4 +612,16 @@ export const testingApi = {
     api.get<{ demo_mode: boolean }>("/testing/demo_mode_status"),
 };
 
+export interface OnboardingStatus {
+  has_credentials: boolean;
+  has_transactions: boolean;
+  has_budgets: boolean;
+  has_investments: boolean;
+  is_first_run: boolean;
+}
+
+export const onboardingApi = {
+  getStatus: () => api.get<OnboardingStatus>("/onboarding/status"),
+};
+
 export default api;

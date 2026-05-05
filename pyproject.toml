@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "finance-analysis"
-version = "1.14.4"
+version = "1.14.5"
 description = ""
 authors = ["Author Name <tomerroditi1@gmail.com>"]
 readme = "README.md"
@@ -36,6 +36,11 @@ pytest-cov = "^7.0.0"
 # a dedicated CI job (see ci.yml), not via pytest, so it is not added to the
 # `pythonpath` test discovery.
 schemathesis = "^3.36.0"
+# Provides a PlaintextKeyring fallback so the demo-mode toggle works in
+# CI / sandbox environments without an OS keyring backend (Secret Service,
+# Mac Keychain, Windows Credential Manager). Required for the empty-DB
+# e2e gate; see frontend/e2e/onboarding-flows.spec.ts demo path.
+"keyrings.alt" = "^5.0.2"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

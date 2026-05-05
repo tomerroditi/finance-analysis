@@ -17,18 +17,19 @@ export function Sparkline({
 }: SparklineProps) {
     const id = useId();
 
-    if (data.length < 2) return null;
+    const numericData = data.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    if (numericData.length < 2) return null;
 
     const padding = 2;
     const innerWidth = width - padding * 2;
     const innerHeight = height - padding * 2;
 
-    const min = Math.min(...data);
-    const max = Math.max(...data);
+    const min = Math.min(...numericData);
+    const max = Math.max(...numericData);
     const range = max - min || 1;
 
-    const points = data.map((value, i) => ({
-        x: padding + (i / (data.length - 1)) * innerWidth,
+    const points = numericData.map((value, i) => ({
+        x: padding + (i / (numericData.length - 1)) * innerWidth,
         y: padding + innerHeight - ((value - min) / range) * innerHeight,
     }));
 

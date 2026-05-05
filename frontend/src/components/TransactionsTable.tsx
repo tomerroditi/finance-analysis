@@ -768,7 +768,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium overflow-hidden`}
                       title={getDescription(tx)}
                     >
-                      <div className="truncate">{getDescription(tx)}</div>
+                      <div className="truncate" dir="auto">{getDescription(tx)}</div>
                     </td>
                   )}
                   {visibleColumns.has("category") && (
@@ -780,7 +780,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         title={`${tx.category || "-"}${tx.tag ? ` / ${tx.tag}` : ""}`}
                       >
                         {categoryIcons?.[tx.category as string] && <span className="shrink-0">{categoryIcons[tx.category as string]}</span>}
-                        <span className="truncate">
+                        <span className="truncate" dir="auto">
                           {tx.category || "-"}
                           {tx.tag && <span className="text-[var(--text-muted)]"> / {tx.tag}</span>}
                         </span>
@@ -790,11 +790,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   {visibleColumns.has("amount") && (
                     <td
                       className={`px-4 ${compact ? "py-2" : "py-3"} text-end font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
+                      dir="ltr"
                     >
-                      {new Intl.NumberFormat("he-IL", {
-                        style: "currency",
-                        currency: "ILS",
-                      }).format(tx.amount)}
+                      {formatCurrency(tx.amount, 2)}
                     </td>
                   )}
                   {visibleColumns.has("account") && (
@@ -803,12 +801,12 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
                     >
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1 truncate">
+                        <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1 truncate" dir="auto">
                           {tx.provider
                             ? humanizeProvider(tx.provider)
                             : tx.source?.includes("cash") ? "Cash" : "Manual"}
                         </span>
-                        <span className="truncate font-medium text-[var(--text-default)]">
+                        <span className="truncate font-medium text-[var(--text-default)]" dir="auto">
                           {tx.account_name}
                           {tx.source === "credit_card_transactions" && tx.account_number && (
                             <span className="text-[var(--text-muted)] ms-1">

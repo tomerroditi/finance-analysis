@@ -16,6 +16,7 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   "rule-conflicts",
   "retirement-preview",
   "suggestion-preview",
+  "onboardingStatus",
 ]);
 
 /**

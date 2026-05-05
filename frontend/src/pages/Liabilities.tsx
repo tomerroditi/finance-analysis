@@ -19,6 +19,7 @@ import {
 import { liabilitiesApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
+import { EmptyState } from "../components/common/EmptyState";
 import { formatCurrency } from "../utils/numberFormatting";
 import { formatDate } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
@@ -667,14 +668,15 @@ export function Liabilities() {
             </div>
           </>
         ) : (
-          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-16 text-center">
-            <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
-              <Landmark size={32} />
-            </div>
-            <h2 className="text-xl font-bold mb-2">
-              {t("liabilities.noLiabilities")}
-            </h2>
-          </div>
+          <EmptyState
+            icon={Landmark}
+            title={t("liabilities.noLiabilities")}
+            description={t("liabilities.noLiabilitiesDesc")}
+            cta={{
+              label: t("liabilities.addFirstLiability"),
+              onClick: () => setIsAddOpen(true),
+            }}
+          />
         )}
       </div>
 

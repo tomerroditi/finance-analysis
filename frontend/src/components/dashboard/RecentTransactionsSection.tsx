@@ -262,11 +262,12 @@ export function RecentTransactionsFeed({
                         <span
                           className="text-sm block break-words line-clamp-2"
                           title={tx.description || ""}
+                          dir="auto"
                         >
                           {tx.description || ""}
                         </span>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          <span className="text-[11px] text-[var(--text-muted)]">
+                          <span className="text-[11px] text-[var(--text-muted)]" dir="auto">
                             {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
                           </span>
                           {matchedRule && (
@@ -325,6 +326,7 @@ export function RecentTransactionsFeed({
                         className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
                           isPositive ? "text-emerald-400" : "text-rose-400"
                         }`}
+                        dir="ltr"
                       >
                         {isPositive ? "+" : ""}
                         {formatCurrency(tx.amount)}

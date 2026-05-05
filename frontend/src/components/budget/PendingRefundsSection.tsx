@@ -104,7 +104,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
                   <span className="text-xs font-mono text-[var(--text-muted)] bg-[var(--surface-light)] px-1.5 py-0.5 rounded shrink-0" dir="ltr">
                     {item.date ? formatDate(item.date) : t("transactions.refunds.noDate")}
                   </span>
-                  <span className="font-medium text-[var(--text-primary)] truncate">
+                  <span className="font-medium text-[var(--text-primary)] truncate" dir="auto">
                     {item.description || t("budget.unknownTransaction")}
                   </span>
                 </div>
