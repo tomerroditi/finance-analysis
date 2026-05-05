@@ -87,17 +87,31 @@ Import the canonical `Transaction` type from `types/transaction.ts`, not from co
 ```tsx
 import { formatCurrency } from "../../utils/numberFormatting";
 formatCurrency(amount)          // "₪1,234"
-formatCurrency(amount, 2)       // "₪1,234.56"
+formatCurrency(amount, 2)       // "1,234.56 ₪"
 ```
 
-**Never inline** `new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" })`. It creates duplicate logic and inconsistent formatting.
+**Canonical layout is sign-magnitude-currency** (Israeli convention:
+₪ after digits, NBSP between). Helpers emit `1,003,211 ₪`, `-25K ₪`,
+`+150 ₪`. Don't roll your own `₪${x}` template — you'll get the
+shekel on the wrong side and re-introduce the inconsistency we
+already fixed twice.
 
-**Don't append `₪` yourself.** `formatCurrency()` already includes the symbol.
-Manual concatenation (`{formatCurrency(x)}₪`) doubles the symbol on RTL builds
-and causes the inconsistent spacing (`1,234₪` here, `1,234 ₪` there) you'll
-see on legacy code. If you need the value without the symbol, route the
-number through `formatCurrency()` and add `, { signDisplay: "never", currency: undefined }`
-options — or extract a separate helper.
+**Never inline** `new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" })`.
+The `he-IL` locale puts ₪ after digits without bidi isolation, the default
+locale puts it before, and either way you skip the LRI/PDI envelope the
+shared helpers add. Result: the same dashboard renders some values as
+`1,234 ₪` and others as `₪ 1,234` depending on the surrounding RTL
+context.
+
+**Don't append `₪` yourself.** `formatCurrency()` already includes the
+symbol. Manual concatenation (`{formatCurrency(x)}₪`) doubles the symbol.
+
+**Helper output is bidi-stable.** Each call returns a string wrapped in
+U+2066 (LRI) ... U+2069 (PDI), so `<span>{formatCurrency(x)}</span>`
+without `dir="ltr"` renders correctly under RTL. You only need
+`dir="ltr"` when you concatenate something around the helper output
+yourself (a literal `+`, joining two helper outputs with `" / "` text,
+date + currency on the same line, etc.).
 
 ## Delta / Change Formatting
 
@@ -107,9 +121,9 @@ your own template:
 
 ```tsx
 // CORRECT — single source of truth
-formatChange(-20000)    // "-₪20K"
-formatChange(6500)      // "+₪6.5K"
-formatChange(-132)      // "-₪132"   (small values still get currency)
+formatChange(-20000)    // "-20K ₪"
+formatChange(6500)      // "+6.5K ₪"
+formatChange(-132)      // "-132 ₪"   (small values still get currency)
 ```
 
 Bad patterns that have shipped to prod and looked broken:
@@ -152,30 +166,33 @@ always match document direction.
 ### Signed-number spans without `dir="ltr"` get reordered
 
 The well-known case: deltas like `(+28.2%)` flipping to `(28.2%+)`.
-The less obvious case: a **positive** transaction amount rendered as
-`"+" + formatCurrency(150)`. `formatCurrency` injects RLM/LRM marks for
-negatives so they're safe; positives prefix a literal `+` that has no
-direction wrapper, and under RTL the bidi algorithm reorders the `+`
-into a neighbouring run.
+The less obvious case used to be a **positive** transaction amount
+rendered as `"+" + formatCurrency(150)`: the helper output was
+bidi-safe, but the literal `+` was outside it and got reordered.
 
-Rule: every span/cell that renders a signed or numeric value gets
-`dir="ltr"`, **even when no negative case exists** in your test data.
-Cover the unsigned positive path too:
+The shared helpers in `numberFormatting.ts` now wrap output in
+U+2066 (LRI) ... U+2069 (PDI) and put NBSP between digits and ₪.
+That means a bare `<span>{formatCurrency(x)}</span>` is correct
+under RTL — no `dir="ltr"` needed.
+
+You **still** need `dir="ltr"` (or use `formatChange`, which already
+includes the sign) when you concatenate something around the helper
+output yourself:
 
 ```tsx
-// WRONG — flips under RTL
-<span className="text-end">
-  {isPositive ? "+" : ""}{formatCurrency(amount)}
-</span>
+// WRONG — literal "+" sits outside the LRI/PDI envelope and flips
+<span>{isPositive ? "+" : ""}{formatCurrency(amount)}</span>
 
-// CORRECT
-<span dir="ltr" className="text-end">
-  {isPositive ? "+" : ""}{formatCurrency(amount)}
-</span>
+// CORRECT — the literal "+" is now inside an LTR run
+<span dir="ltr">{isPositive ? "+" : ""}{formatCurrency(amount)}</span>
+
+// BETTER — let formatChange handle the sign
+<span>{formatChange(amount)}</span>
 ```
 
-This is enforced by the auditor in `audit/audit-script.js` (category
-`delta_no_dir`). Run it under RTL before merging.
+Same rule for percent deltas (`(${formatPercentChange(x)})`), date +
+currency joined on one line, two helper outputs joined with `" / "`,
+etc. — anything you build outside the helpers needs the wrapper.
 
 ## Hardcoded Relative-Time Strings
 
