@@ -92,11 +92,13 @@ test.describe("Empty database smoke", () => {
       await page.goto(route);
       await page.waitForLoadState("networkidle");
 
-      // The h1 heading should mount — proves React got past the
-      // top-level page component without throwing.
-      await expect(
-        page.getByRole("heading", { level: 1 }).first(),
-      ).toBeVisible({ timeout: 10_000 });
+      // The Layout shell mounted — Sidebar's <nav> proves React got
+      // past the top-level page component without throwing. Most
+      // pages don't render an h1 (titles live in the sidebar /
+      // top bar), so we don't assert on page-body headings.
+      await expect(page.getByRole("navigation").first()).toBeVisible({
+        timeout: 10_000,
+      });
 
       expect(errors, errors.join("\n")).toHaveLength(0);
     });

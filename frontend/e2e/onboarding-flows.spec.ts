@@ -132,9 +132,11 @@ test.describe("Onboarding flows", () => {
     expect(page.url()).toMatch(/\/$/);
     expect(page.url()).not.toContain("/onboarding");
 
-    // The dashboard's h1 should mount even on an empty DB (this is
-    // the regression guarantee of the empty-state pass).
-    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible({
+    // Layout shell mounted — Sidebar's <nav> proves we landed on the
+    // dashboard route rather than getting bounced. The Dashboard
+    // page itself has no h1 (it's KPI cards + charts), so we assert
+    // on the Layout chrome instead.
+    await expect(page.getByRole("navigation").first()).toBeVisible({
       timeout: 10_000,
     });
   });
