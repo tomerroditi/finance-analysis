@@ -225,7 +225,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                     >
                       <div className={`flex items-start justify-between gap-4 ${isSelected ? "pe-7" : ""}`}>
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-white truncate mb-0.5">
+                          <div className="font-semibold text-white truncate mb-0.5" dir="auto">
                             {txn.description || txn.desc || t("modals.linkRefund.unknownExpense")}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
@@ -286,7 +286,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                   >
                     <div className={`flex items-start justify-between gap-4 ${selectedPendingId === pending.id ? "pe-7" : ""}`}>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-white truncate mb-0.5">
+                        <div className="font-semibold text-white truncate mb-0.5" dir="auto">
                           {pending.description || t("modals.linkRefund.unknownExpense")}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
@@ -315,7 +315,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                       </div>
                     </div>
                     {pending.notes && (
-                      <p className="text-sm text-[var(--text-muted)] mt-1 truncate">
+                      <p className="text-sm text-[var(--text-muted)] mt-1 truncate" dir="auto">
                         {pending.notes}
                       </p>
                     )}

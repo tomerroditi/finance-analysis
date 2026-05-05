@@ -87,17 +87,31 @@ Import the canonical `Transaction` type from `types/transaction.ts`, not from co
 ```tsx
 import { formatCurrency } from "../../utils/numberFormatting";
 formatCurrency(amount)          // "₪1,234"
-formatCurrency(amount, 2)       // "₪1,234.56"
+formatCurrency(amount, 2)       // "1,234.56 ₪"
 ```
 
-**Never inline** `new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" })`. It creates duplicate logic and inconsistent formatting.
+**Canonical layout is sign-magnitude-currency** (Israeli convention:
+₪ after digits, NBSP between). Helpers emit `1,003,211 ₪`, `-25K ₪`,
+`+150 ₪`. Don't roll your own `₪${x}` template — you'll get the
+shekel on the wrong side and re-introduce the inconsistency we
+already fixed twice.
 
-**Don't append `₪` yourself.** `formatCurrency()` already includes the symbol.
-Manual concatenation (`{formatCurrency(x)}₪`) doubles the symbol on RTL builds
-and causes the inconsistent spacing (`1,234₪` here, `1,234 ₪` there) you'll
-see on legacy code. If you need the value without the symbol, route the
-number through `formatCurrency()` and add `, { signDisplay: "never", currency: undefined }`
-options — or extract a separate helper.
+**Never inline** `new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" })`.
+The `he-IL` locale puts ₪ after digits without bidi isolation, the default
+locale puts it before, and either way you skip the LRI/PDI envelope the
+shared helpers add. Result: the same dashboard renders some values as
+`1,234 ₪` and others as `₪ 1,234` depending on the surrounding RTL
+context.
+
+**Don't append `₪` yourself.** `formatCurrency()` already includes the
+symbol. Manual concatenation (`{formatCurrency(x)}₪`) doubles the symbol.
+
+**Helper output is bidi-stable.** Each call returns a string wrapped in
+U+2066 (LRI) ... U+2069 (PDI), so `<span>{formatCurrency(x)}</span>`
+without `dir="ltr"` renders correctly under RTL. You only need
+`dir="ltr"` when you concatenate something around the helper output
+yourself (a literal `+`, joining two helper outputs with `" / "` text,
+date + currency on the same line, etc.).
 
 ## Delta / Change Formatting
 
@@ -107,9 +121,9 @@ your own template:
 
 ```tsx
 // CORRECT — single source of truth
-formatChange(-20000)    // "-₪20K"
-formatChange(6500)      // "+₪6.5K"
-formatChange(-132)      // "-₪132"   (small values still get currency)
+formatChange(-20000)    // "-20K ₪"
+formatChange(6500)      // "+6.5K ₪"
+formatChange(-132)      // "-132 ₪"   (small values still get currency)
 ```
 
 Bad patterns that have shipped to prod and looked broken:
@@ -121,6 +135,82 @@ Bad patterns that have shipped to prod and looked broken:
   → `1.7%-` with the minus stuck on the end.
 
 If you spot any of these, route them through the central helper.
+
+## RTL Bidi: Truncated User Data and Signed Numbers
+
+Two related bugs that we keep regressing on. Both come from the same
+root cause: the document direction in Hebrew is `rtl`, and CSS / bidi
+algorithms apply that direction to content that should actually be LTR.
+
+### `truncate` on user data clips the wrong end
+
+Tailwind `truncate` is `text-overflow: ellipsis`. CSS truncates at the
+**end of the line in the document direction**. Under RTL, that's the
+visual left side. English content like `"Transportation / Gas"` then
+shows as `"...sportation / Gas"` — leading letters chopped off.
+
+```tsx
+// WRONG
+<span className="truncate">{tx.description}</span>
+
+// CORRECT — bidi auto-detects from first strong character
+<span className="truncate" dir="auto">{tx.description}</span>
+```
+
+Apply `dir="auto"` to every `truncate` / `line-clamp` element that
+holds **user data**: transaction descriptions, category / tag names,
+account names, rule names, project names, free-text notes. Do not
+apply it to chrome strings that came from `t(...)` — those should
+always match document direction.
+
+### Signed-number spans without `dir="ltr"` get reordered
+
+The well-known case: deltas like `(+28.2%)` flipping to `(28.2%+)`.
+The less obvious case used to be a **positive** transaction amount
+rendered as `"+" + formatCurrency(150)`: the helper output was
+bidi-safe, but the literal `+` was outside it and got reordered.
+
+The shared helpers in `numberFormatting.ts` now wrap output in
+U+2066 (LRI) ... U+2069 (PDI) and put NBSP between digits and ₪.
+That means a bare `<span>{formatCurrency(x)}</span>` is correct
+under RTL — no `dir="ltr"` needed.
+
+You **still** need `dir="ltr"` (or use `formatChange`, which already
+includes the sign) when you concatenate something around the helper
+output yourself:
+
+```tsx
+// WRONG — literal "+" sits outside the LRI/PDI envelope and flips
+<span>{isPositive ? "+" : ""}{formatCurrency(amount)}</span>
+
+// CORRECT — the literal "+" is now inside an LTR run
+<span dir="ltr">{isPositive ? "+" : ""}{formatCurrency(amount)}</span>
+
+// BETTER — let formatChange handle the sign
+<span>{formatChange(amount)}</span>
+```
+
+Same rule for percent deltas (`(${formatPercentChange(x)})`), date +
+currency joined on one line, two helper outputs joined with `" / "`,
+etc. — anything you build outside the helpers needs the wrapper.
+
+## Hardcoded Relative-Time Strings
+
+Don't ship strings like `` `${days}d ago` `` or `"in 3 hours"`. They
+slip into Hebrew UIs unchanged. Route them through `t(...)` with
+`{{count}}` interpolation:
+
+```json
+// en.json
+"daysAgo": "{{count}}d ago"
+
+// he.json
+"daysAgo": "לפני {{count}} ימים"
+```
+
+```tsx
+t("investments.daysAgo", { count: snapshotAgeDays })
+```
 
 ## SQLite Booleans in JSX
 

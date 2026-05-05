@@ -486,6 +486,7 @@
     "viewAnalysis": "View Analysis",
     "opened": "Opened",
     "updated": "Updated",
+    "daysAgo": "{{count}}d ago",
     "allTagsInUse": "All tags in use",
     "balance": "Balance",
     "source": "Source",

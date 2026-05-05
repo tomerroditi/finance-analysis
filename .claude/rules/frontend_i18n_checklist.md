@@ -80,6 +80,17 @@ grep -rn 'aria-label="[A-Za-z][^"]*"' frontend/src/pages/ frontend/src/component
 
 # Hardcoded confirm/alert dialogs:
 grep -rn 'window\.\(confirm\|alert\)("[A-Za-z]' frontend/src/
+
+# Hardcoded relative-time strings ("5d ago", "in 3 hours", "2h ago"):
+grep -rEn '`\$\{[^}]+\}d ago|d ago\)\b|h ago\)\b|min ago\)\b' frontend/src/
+
+# Truncate on user data without dir="auto" (heuristic):
+grep -rEn 'className="[^"]*\b(truncate|line-clamp)\b[^"]*"' frontend/src/ \
+  | grep -v 'dir="auto"' | grep -v 'dir="ltr"'
+
+# Signed-number rendering without dir="ltr" (heuristic):
+grep -rEn '\?\s*"\+"\s*:\s*""\s*}' frontend/src/ \
+  | xargs -I{} grep -l 'dir="ltr"' {} || true
 ```
 
 If anything matches and the string is user-facing, fix it before merging.

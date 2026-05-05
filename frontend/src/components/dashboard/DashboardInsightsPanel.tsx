@@ -703,7 +703,7 @@ export function DashboardInsightsPanel({
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{t("dashboard.topCategory")}</p>
-                    <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
+                    <p className="text-sm font-bold truncate" dir="auto">{topCategory?.category || "—"}</p>
                   </div>
                 </div>
                 <div className="bg-[var(--surface-light)] rounded-xl px-4 py-3 flex items-center gap-3">
@@ -728,7 +728,7 @@ export function DashboardInsightsPanel({
                     return (
                       <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                         <span className="text-base w-6 text-center shrink-0">{icon || (d.category === "Uncategorized" ? "❓" : `${i + 1}.`)}</span>
-                        <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                        <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category} dir="auto">{d.category}</span>
                         <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
@@ -758,7 +758,7 @@ export function DashboardInsightsPanel({
                       return (
                         <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                           <span className="text-base w-6 text-center shrink-0">{icon || `${i + 1}.`}</span>
-                          <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                          <span className="text-sm font-medium w-28 truncate shrink-0" title={d.category} dir="auto">{d.category}</span>
                           <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"

@@ -41,10 +41,80 @@ const isRtl = i18n.language === "he";
 ```
 
 ### Numbers/currency in Hebrew context
-Wrap numeric values with `dir="ltr"` to keep them left-to-right inside RTL text:
-```tsx
-<span dir="ltr">{formatCurrency(amount)}</span>
+
+**Israeli convention is digits-then-shekel.** `formatCurrency`,
+`formatCompactCurrency`, and `formatChange` (in
+`frontend/src/utils/numberFormatting.ts`) all emit the canonical
+**sign-magnitude-currency** layout:
+
 ```
+1,003,211 ₪
+-25K ₪
++150 ₪
+```
+
+Not `₪1,003,211`, not `₪ -25K`. If you find yourself prepending `₪`,
+use the helpers — don't roll your own.
+
+**The helpers are bidi-stable.** Each output is wrapped in U+2066 (LRI,
+Left-to-Right Isolate) ... U+2069 (PDI, Pop Directional Isolate) and
+uses NBSP between digits and ₪. That means the digits-then-shekel order
+survives any surrounding paragraph direction — you can drop a
+`formatCurrency(amount)` into a Hebrew sentence, an RTL `<td>`, or a
+plain text node and it will render correctly without an explicit
+`dir="ltr"` wrapper.
+
+**You still need `dir="ltr"` when you concatenate something around the
+helper output yourself.** E.g.:
+
+```tsx
+{/* OK — helper output is bidi-stable on its own */}
+<span>{formatCurrency(amount)}</span>
+
+{/* OK — concatenated literal "+", needs dir="ltr" for the literal */}
+<span dir="ltr">{isPositive ? "+" : ""}{formatCurrency(amount)}</span>
+
+{/* For deltas use formatChange, which already includes the sign */}
+<span>{formatChange(delta)}</span>   {/* "+35K ₪" — bidi-stable */}
+```
+
+The previous rule "every numeric span needs `dir="ltr"`" still applies
+when you build the string yourself (date + currency joined with `" / "`,
+hand-written `"+" + formatted`, etc.). It's just no longer needed for a
+bare helper call.
+
+**Don't inline `new Intl.NumberFormat()` in components.** It produces
+locale-dependent output that breaks the canonical layout — the
+`he-IL` locale puts ₪ after the digits without LRI/PDI, and the
+plain default locale puts it before. Either way you're back to the
+`1,003,211₪` / `-₪25K` inconsistency we keep getting bitten by.
+
+### Truncation of user-supplied text inside RTL — use `dir="auto"`
+
+`text-overflow: ellipsis` (Tailwind's `truncate` / `line-clamp-N`) clips
+at the **end of the line in the document direction**. Under RTL that's
+the visual left. A category badge `"Transportation / Gas"` rendered
+inside an RTL container becomes `"...sportation / Gas"` — the leading
+characters are hidden because the user reads right-to-left.
+
+Fix: every `truncate`/`line-clamp` element whose **content is user
+data** (transaction descriptions, category names, account names, rule
+names, project names, notes, etc.) must add `dir="auto"`:
+
+```tsx
+{/* WRONG — clips "Transportation / Gas" to "...sportation / Gas" in RTL */}
+<span className="truncate">{tx.category}</span>
+
+{/* CORRECT — first-strong-char detection picks LTR for English content,
+    so ellipsis goes on the right; Hebrew content stays RTL with ellipsis
+    on the left. */}
+<span className="truncate" dir="auto">{tx.category}</span>
+```
+
+Translated chrome (column headers, button labels, section titles) does
+**not** need `dir="auto"` — it always matches the document direction.
+Rule of thumb: if the string came from `t(...)` it stays untagged; if
+it came from a DB column or user input, add `dir="auto"`.
 
 ## RTL Layout Rules
 
@@ -85,6 +155,9 @@ When adding a new provider, add its display name to BOTH maps.
 1. All user-visible strings use `t("section.key")` — no hardcoded English/Hebrew
 2. Keys added to both `en.json` and `he.json`
 3. Layout uses logical CSS properties (not physical left/right)
-4. Numeric values wrapped in `dir="ltr"` spans when inside translatable text
-5. Directional icons flip based on `isRtl` check
-6. New provider/service names added to both label maps in `textFormatting.ts`
+4. Currency rendered through `formatCurrency` / `formatCompactCurrency` / `formatChange` — never inline `Intl.NumberFormat`. The helpers emit `<digits> ₪` and are LRI/PDI-isolated, so a bare `<span>{formatCurrency(...)}</span>` is safe under RTL
+5. Hand-built numeric strings (concatenation, literal `+`/`-` outside the helpers, date + currency joined manually) still need a `dir="ltr"` wrapper
+6. `truncate` / `line-clamp` on user-supplied text gets `dir="auto"`
+7. Directional icons flip based on `isRtl` check
+8. New provider/service names added to both label maps in `textFormatting.ts`
+9. Hardcoded relative-time strings (`"5d ago"`, `"in 3 hours"`) routed through `t(...)` with `{{count}}` interpolation

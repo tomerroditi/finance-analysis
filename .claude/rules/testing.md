@@ -199,4 +199,37 @@ plus `tsc -b`. The bug, by definition, was something static analysis missed.
   open across mutations when it should, and that the displayed value
   updates after each selection.
 
+## Verifying RTL & responsive — full coverage matrix
+
+A "single pass at desktop English" is **not** enough. Most of our
+production bugs (ellipsis chopping the wrong end, signed-number bidi
+flips, layout overflows) only show up under one combination of
+`(viewport, language)`. Before claiming an audit is complete, drive the
+patched flow under **all four**:
+
+|             | English (LTR)    | Hebrew (RTL)   |
+|-------------|------------------|----------------|
+| Desktop     | 1440 × 900       | 1440 × 900     |
+| Mobile      | 375 × 812        | 375 × 812      |
+
+Workflow:
+
+1. Enable Demo Mode (so test data is consistent).
+2. For each page in the app: drive the user flow at desktop EN, switch
+   to Hebrew via Settings → Language → עברית, repeat. Resize to
+   375 × 812, repeat both languages.
+3. Run `audit/audit-script.js` (the programmatic auditor) on each
+   matrix cell. It catches:
+   - SVG paths with `NaN` (broken charts)
+   - Translation-key leaks like `transactions.envelopeNamePlaceholder`
+   - Signed numbers without `dir="ltr"`
+   - Duplicate currency symbols
+   - Document-level horizontal overflow
+4. For RTL specifically, look at every element with `truncate` or
+   `line-clamp` that holds dynamic data — the auditor flags ellipsis
+   landing at the wrong end.
+
+If any of the four cells surfaces an issue that the others didn't,
+that's the bug class to add a regression test for.
+
 > When changing test structure, naming conventions, or global fixtures, update this rule file.

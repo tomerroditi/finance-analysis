@@ -294,7 +294,7 @@ function AccountCardFull({
                 </button>
               </div>
               {account.custom_name && (
-                <p className="text-[10px] text-[var(--text-muted)] mt-0.5 italic truncate">
+                <p className="text-[10px] text-[var(--text-muted)] mt-0.5 italic truncate" dir="auto">
                   {account.account_name}
                 </p>
               )}
@@ -319,7 +319,7 @@ function AccountCardFull({
           </p>
           {tracks.map((track, i) => (
             <div key={i} className="flex justify-between items-center text-xs mb-1">
-              <span className="text-[var(--text-muted)] truncate me-2">{track.name}</span>
+              <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{track.name}</span>
               <span
                 className={`font-mono font-bold whitespace-nowrap ${track.yield_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                 dir="ltr"
@@ -467,6 +467,7 @@ function AccountCardFull({
                       <td className="px-4 sm:px-6 py-2 text-end whitespace-nowrap">
                         <span
                           className={`font-mono font-bold ${tx.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                          dir="ltr"
                         >
                           {tx.amount >= 0 ? "+" : ""}
                           {fmt(tx.amount)}

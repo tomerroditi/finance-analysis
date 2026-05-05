@@ -47,8 +47,8 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
     <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
       {items.map((item) => (
         <div key={item.name} className="flex justify-between text-xs">
-          <span className="text-[var(--text-muted)] truncate me-2">{item.name}</span>
-          <span className="tabular-nums font-medium shrink-0">{formatCurrency(item.amount)}</span>
+          <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.name}</span>
+          <span className="tabular-nums font-medium shrink-0" dir="ltr">{formatCurrency(item.amount)}</span>
         </div>
       ))}
     </div>
@@ -916,7 +916,7 @@ export function Dashboard() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">{t("dashboard.topCategory")}</p>
-                      <p className="text-sm font-bold truncate">{topCategory?.category || "—"}</p>
+                      <p className="text-sm font-bold truncate" dir="auto">{topCategory?.category || "—"}</p>
                     </div>
                   </div>
                   <div className="bg-[var(--surface-light)] rounded-xl px-3 md:px-4 py-2.5 md:py-3 flex items-center gap-3">
@@ -941,7 +941,7 @@ export function Dashboard() {
                       return (
                         <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                           <span className="text-base w-6 text-center shrink-0">{icon || (d.category === "Uncategorized" ? "❓" : `${i + 1}.`)}</span>
-                          <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                          <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category} dir="auto">{d.category}</span>
                           <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500"
@@ -971,7 +971,7 @@ export function Dashboard() {
                         return (
                           <div key={d.category} className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[var(--surface-light)] transition-colors">
                             <span className="text-base w-6 text-center shrink-0">{icon || `${i + 1}.`}</span>
-                            <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category}>{d.category}</span>
+                            <span className="text-xs md:text-sm font-medium w-20 md:w-28 truncate shrink-0" title={d.category} dir="auto">{d.category}</span>
                             <div className="flex-1 h-5 bg-[var(--surface-light)] rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"

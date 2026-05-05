@@ -63,7 +63,7 @@ function BudgetRuleCards({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
                     {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
-                    <span className="text-xs font-semibold truncate">{rule.name}</span>
+                    <span className="text-xs font-semibold truncate" dir="auto">{rule.name}</span>
                   </div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
                     isUnbudgetedSpend || pct > 100

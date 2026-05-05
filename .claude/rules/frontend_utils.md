@@ -29,14 +29,16 @@ Pure helper functions — stateless, no React, no side effects.
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `numberFormatting.ts` | Currency display | `formatCurrency(value, maxDigits?)`, `formatCompactCurrency(value)` |
+| `numberFormatting.ts` | Currency display — canonical `<sign><magnitude><NBSP>₪` layout, wrapped in U+2066 (LRI) / U+2069 (PDI) so output is bidi-stable under RTL | `formatCurrency(value, maxDigits?)`, `formatCompactCurrency(value)`, `formatChange(value)`, `formatPercentChange(value)` |
 | `dateFormatting.ts` | Date display (date-fns, Hebrew locale) | `formatDate()`, `formatMonth()` |
 | `textFormatting.ts` | Provider/service labels (bilingual) | `humanizeProvider()`, `humanizeService()`, `PROVIDER_LABELS`, `PROVIDER_LABELS_HE` |
 | `taggingRuleEval.ts` | Evaluate tagging rule conditions against transactions | `findMatchingRule()`, `evalConditionTree()` |
 | `plotlyLocale.ts` | Plotly chart theme, Hebrew locale, touch detection | `chartTheme`, `plotlyConfig()`, `isTouchDevice` |
 
 **Rules:**
-- Always use `formatCurrency()` from `numberFormatting.ts` — never inline `new Intl.NumberFormat()`
+- Always use `formatCurrency()` / `formatCompactCurrency()` / `formatChange()` from `numberFormatting.ts` — never inline `new Intl.NumberFormat()`. Inline calls skip the LRI/PDI wrapper and emit ₪ on the wrong side under RTL.
+- The helpers' canonical layout is `<sign><digits><NBSP>₪` (Israeli convention: ₪ after digits). Don't append `₪` yourself or roll your own template — you'll re-introduce the inconsistent shekel-position bug.
+- The helpers' output is bidi-stable; bare `<span>{formatCurrency(x)}</span>` is safe under RTL. You only need `dir="ltr"` when concatenating literals around the helper output (a leading `+`, `" / "` joiners, date+currency on one line). See `frontend_pitfalls.md` → "RTL Bidi" for the full picture.
 - When adding a new provider, add its label to BOTH `PROVIDER_LABELS` and `PROVIDER_LABELS_HE` in `textFormatting.ts`
 
 ## Hooks (`hooks/`)
