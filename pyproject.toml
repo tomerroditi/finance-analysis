@@ -32,6 +32,10 @@ playwright = "^1.57.0"
 requests = "^2.32.5"
 ruff = "^0.9.0"
 pytest-cov = "^7.0.0"
+# Schemathesis fuzzes the FastAPI OpenAPI schema at /openapi.json — runs in
+# a dedicated CI job (see ci.yml), not via pytest, so it is not added to the
+# `pythonpath` test discovery.
+schemathesis = "^3.36.0"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
