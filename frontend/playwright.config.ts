@@ -20,7 +20,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1, // single worker — demo mode is shared state
   reporter: "html",
-  timeout: 30_000,
+  timeout: 60_000,
+  expect: {
+    // KPI / chart text rendering depends on isDemoMode flipping in the
+    // DemoModeContext, which triggers a React Query refetch with a new
+    // key. The default 5s expect timeout races that pipeline on
+    // cold-cache navigations. 15s gives the queries enough room.
+    timeout: 15_000,
+  },
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",

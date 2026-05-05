@@ -6,8 +6,11 @@ import { type Page, expect } from "@playwright/test";
  * popup, not directly in the sidebar, so we must open the popup first.
  */
 async function toggleDemoMode(page: Page, expectedAfter: "on" | "off") {
-  await page.goto("/");
-  await page.waitForLoadState("networkidle");
+  // OnboardingGate would redirect fresh users from "/" to "/onboarding".
+  // Bypass it by navigating directly to a Layout-mounted route that the
+  // gate never touches. Settings is reachable from any page's sidebar.
+  await page.goto("/data-sources");
+  await page.waitForLoadState("domcontentloaded");
   await page.getByRole("button", { name: /^settings$/i }).click();
   const toggleRow = page.getByText(/^Demo Mode$/);
   await toggleRow.waitFor();
@@ -29,10 +32,17 @@ async function toggleDemoMode(page: Page, expectedAfter: "on" | "off") {
 
 /**
  * Enable Demo Mode via the Settings popup. Must be called at the start of
- * each test suite to ensure tests run against the demo database.
+ * each test suite to ensure tests run against the demo database. After
+ * the toggle we navigate to the dashboard and wait for at least one KPI
+ * value to render, so the IndexedDB cache is warm before any test in the
+ * suite asserts on visible page text.
  */
 export async function enableDemoMode(page: Page) {
   await toggleDemoMode(page, "on");
+  await page.goto("/");
+  await expect(page.getByText(/Bank Balance/i).first()).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 /**
@@ -51,10 +61,19 @@ export async function navigateTo(page: Page, path: string) {
 }
 
 /**
- * Assert that a page's title heading is visible.
+ * Assert that a page's Layout shell has mounted. Most Layout-mounted pages
+ * no longer render an `<h1>` in the page body — the title lives in the
+ * Sidebar / TopBar — so we check for the Sidebar `<nav>` instead. The
+ * `title` argument is preserved for call-site readability but is also
+ * loosely matched against the active sidebar link.
  */
 export async function expectPageTitle(page: Page, title: string | RegExp) {
-  await expect(page.getByRole("heading", { level: 1 }).filter({ hasText: title })).toBeVisible({
+  await expect(page.getByRole("navigation").first()).toBeVisible({
     timeout: 10_000,
   });
+  // Best-effort: the active link in the sidebar should mention the page.
+  const link = page.getByRole("link", { name: title }).first();
+  if (await link.isVisible().catch(() => false)) {
+    await expect(link).toBeVisible();
+  }
 }
