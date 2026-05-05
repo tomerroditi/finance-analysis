@@ -67,7 +67,8 @@
     "doneDemoDesc": "Demo Mode is on. Look around — toggle it off in Settings when you're ready to use real data.",
     "goToDataSources": "Go to Data Sources",
     "goToDashboard": "Go to dashboard",
-    "skipForNow": "Skip for now"
+    "skipForNow": "Skip for now",
+    "stepProgressLabel": "Onboarding progress"
   },
   "sidebar": {
     "logo": "Finance",

@@ -114,6 +114,43 @@ test.describe("Onboarding flows", () => {
     expect(dir).toBe("rtl");
   });
 
+  test("Hebrew + real-data path renders the Hebrew Done-step CTA", async ({
+    page,
+  }) => {
+    // Locks down the full translation chain: an English start should
+    // not leak into the Done step after a language switch, and every
+    // Done-step key must have a real Hebrew value (not the EN
+    // fallback rendering as the key path).
+    await page.goto("/onboarding");
+    await page.getByRole("button", { name: /עברית/ }).click();
+    await page
+      .getByRole("button", { name: /להשתמש בנתונים אמיתיים/ })
+      .click();
+    await expect(
+      page.getByRole("button", { name: /מעבר למקורות נתונים/ }),
+    ).toBeVisible();
+    // The English finish CTA must not be present after the language
+    // switch.
+    await expect(
+      page.getByRole("button", { name: /Go to Data Sources/i }),
+    ).toHaveCount(0);
+  });
+
+  test("step indicator advances aria-valuenow through the wizard", async ({
+    page,
+  }) => {
+    await page.goto("/onboarding");
+    const progress = page.getByRole("progressbar");
+    await expect(progress).toHaveAttribute("aria-valuenow", "1");
+    await expect(progress).toHaveAttribute("aria-valuemax", "3");
+
+    await page.getByRole("button", { name: /^English/ }).click();
+    await expect(progress).toHaveAttribute("aria-valuenow", "2");
+
+    await page.getByRole("button", { name: /Use my real data/i }).click();
+    await expect(progress).toHaveAttribute("aria-valuenow", "3");
+  });
+
   test("OnboardingGate redirect fires at most once per session", async ({
     page,
   }) => {

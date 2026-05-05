@@ -89,10 +89,18 @@ export function Onboarding() {
 }
 
 function StepIndicator({ current }: { current: Step }) {
+  const { t } = useTranslation();
   const steps: Step[] = ["language", "path", "done"];
   const currentIdx = steps.indexOf(current);
   return (
-    <div className="flex items-center gap-2 justify-center">
+    <div
+      role="progressbar"
+      aria-label={t("onboarding.stepProgressLabel")}
+      aria-valuemin={1}
+      aria-valuemax={steps.length}
+      aria-valuenow={currentIdx + 1}
+      className="flex items-center gap-2 justify-center"
+    >
       {steps.map((s, i) => (
         <div key={s} className="flex items-center gap-2">
           <div
