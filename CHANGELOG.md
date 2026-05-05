@@ -1,3 +1,12 @@
+## v1.14.5 (2026-05-05)
+
+### Fix
+
+- **rtl**: put ₪ to the right of digits and make currency strings bidi-stable
+- **rtl**: unify shekel-sign placement across KPI cards
+- **rtl**: clip user data on the right end and stop signed-number bidi flips
+- **investments**: resolve Sparkline NaN crash and RTL bidi-flipped percent deltas
+
 ## v1.14.4 (2026-05-03)
 
 ### Fix
