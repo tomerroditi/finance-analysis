@@ -1,15 +1,17 @@
 /**
  * Format a number as Israeli Shekel currency (₪).
+ * Canonical layout: sign-currency-magnitude (e.g., "₪1,234", "-₪132").
+ * Matches `formatCompactCurrency` / `formatChange` so the main KPI value and
+ * its delta below render with the shekel sign on the same side.
  * @param value - The numeric value to format
  * @param maximumFractionDigits - Decimal places (default: 0)
  * @returns Formatted currency string (e.g., "₪1,234")
  */
 export function formatCurrency(value: number, maximumFractionDigits = 0): string {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits,
-  }).format(value || 0);
+  const v = value || 0;
+  const sign = v < 0 ? "-" : "";
+  const magnitude = Math.abs(v).toLocaleString("en-US", { maximumFractionDigits });
+  return `${sign}₪${magnitude}`;
 }
 
 /**

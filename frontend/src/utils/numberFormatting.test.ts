@@ -1,9 +1,31 @@
 import { describe, it, expect } from "vitest";
 import {
+  formatCurrency,
   formatCompactCurrency,
   formatChange,
   formatPercentChange,
 } from "./numberFormatting";
+
+describe("formatCurrency", () => {
+  it("renders positives with the shekel sign before the number", () => {
+    expect(formatCurrency(1_003_211)).toBe("₪1,003,211");
+    expect(formatCurrency(700)).toBe("₪700");
+  });
+
+  it("renders negatives with sign-shekel-magnitude (matches formatChange)", () => {
+    expect(formatCurrency(-25_000)).toBe("-₪25,000");
+    expect(formatCurrency(-1_234_567)).toBe("-₪1,234,567");
+  });
+
+  it("renders zero without a sign", () => {
+    expect(formatCurrency(0)).toBe("₪0");
+  });
+
+  it("respects maximumFractionDigits", () => {
+    expect(formatCurrency(1234.5678, 2)).toBe("₪1,234.57");
+    expect(formatCurrency(-1234.5678, 2)).toBe("-₪1,234.57");
+  });
+});
 
 describe("formatCompactCurrency", () => {
   it("renders positive millions with M suffix and currency before number", () => {
