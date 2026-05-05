@@ -215,7 +215,7 @@ function InvestmentCard({
             <span>·</span>
             <span className={snapshotAgeDays > 30 ? "text-amber-400" : ""}>
               {t("investments.updated")} {inv.latest_snapshot_date}
-              {snapshotAgeDays > 30 ? ` (${snapshotAgeDays}d ago)` : ""}
+              {snapshotAgeDays > 30 ? ` (${t("investments.daysAgo", { count: snapshotAgeDays })})` : ""}
             </span>
           </>
         )}

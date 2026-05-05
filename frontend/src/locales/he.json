@@ -486,6 +486,7 @@
     "viewAnalysis": "הצג ניתוח",
     "opened": "נפתח",
     "updated": "עודכן",
+    "daysAgo": "לפני {{count}} ימים",
     "allTagsInUse": "כל התגיות בשימוש",
     "balance": "יתרה",
     "source": "מקור",

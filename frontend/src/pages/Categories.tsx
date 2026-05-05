@@ -271,7 +271,7 @@ export function Categories() {
                       className="font-bold text-base md:text-lg bg-transparent border-b border-[var(--primary)] outline-none w-full"
                     />
                   ) : (
-                    <h3 className="font-bold text-sm md:text-base truncate text-white">
+                    <h3 className="font-bold text-sm md:text-base truncate text-white" dir="auto">
                       {category}
                     </h3>
                   )}

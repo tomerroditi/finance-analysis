@@ -98,10 +98,10 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0">
-                      <div className="font-semibold text-sm text-[var(--text-default)] truncate">
+                      <div className="font-semibold text-sm text-[var(--text-default)] truncate" dir="auto">
                         {alert.name || alert.category}
                       </div>
-                      <div className="text-xs text-[var(--text-muted)] truncate">
+                      <div className="text-xs text-[var(--text-muted)] truncate" dir="auto">
                         {alert.category}
                       </div>
                     </div>

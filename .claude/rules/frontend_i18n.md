@@ -46,6 +46,55 @@ Wrap numeric values with `dir="ltr"` to keep them left-to-right inside RTL text:
 <span dir="ltr">{formatCurrency(amount)}</span>
 ```
 
+**This applies to every signed-number node, not just deltas.** A common
+miss: a feed row or table cell renders
+`{isPositive ? "+" : ""}{formatCurrency(...)}` with no `dir`. Negatives
+still render correctly because `formatCurrency` injects the bidi marks
+itself; positives prefix a bare `+` literal that the bidi algorithm
+reorders under RTL — `+150 ₪` next to a Hebrew description ends up
+visually scrambled. **Every numeric/currency span needs `dir="ltr"`,
+including inside `<td>`/`<th>` cells, regardless of sign.** The bug we
+keep relapsing into looks like:
+
+```tsx
+{/* WRONG */}
+<span className={isPositive ? "text-emerald-400" : "text-rose-400"}>
+  {isPositive ? "+" : ""}{formatCurrency(amount)}
+</span>
+
+{/* CORRECT */}
+<span dir="ltr" className={isPositive ? "text-emerald-400" : "text-rose-400"}>
+  {isPositive ? "+" : ""}{formatCurrency(amount)}
+</span>
+```
+
+### Truncation of user-supplied text inside RTL — use `dir="auto"`
+
+`text-overflow: ellipsis` (Tailwind's `truncate` / `line-clamp-N`) clips
+at the **end of the line in the document direction**. Under RTL that's
+the visual left. A category badge `"Transportation / Gas"` rendered
+inside an RTL container becomes `"...sportation / Gas"` — the leading
+characters are hidden because the user reads right-to-left.
+
+Fix: every `truncate`/`line-clamp` element whose **content is user
+data** (transaction descriptions, category names, account names, rule
+names, project names, notes, etc.) must add `dir="auto"`:
+
+```tsx
+{/* WRONG — clips "Transportation / Gas" to "...sportation / Gas" in RTL */}
+<span className="truncate">{tx.category}</span>
+
+{/* CORRECT — first-strong-char detection picks LTR for English content,
+    so ellipsis goes on the right; Hebrew content stays RTL with ellipsis
+    on the left. */}
+<span className="truncate" dir="auto">{tx.category}</span>
+```
+
+Translated chrome (column headers, button labels, section titles) does
+**not** need `dir="auto"` — it always matches the document direction.
+Rule of thumb: if the string came from `t(...)` it stays untagged; if
+it came from a DB column or user input, add `dir="auto"`.
+
 ## RTL Layout Rules
 
 ### Prefer Tailwind CSS 4 logical properties over physical ones:
@@ -85,6 +134,8 @@ When adding a new provider, add its display name to BOTH maps.
 1. All user-visible strings use `t("section.key")` — no hardcoded English/Hebrew
 2. Keys added to both `en.json` and `he.json`
 3. Layout uses logical CSS properties (not physical left/right)
-4. Numeric values wrapped in `dir="ltr"` spans when inside translatable text
-5. Directional icons flip based on `isRtl` check
-6. New provider/service names added to both label maps in `textFormatting.ts`
+4. Numeric / signed values wrapped in `dir="ltr"` (always, even unsigned, especially inside table cells and feed rows)
+5. `truncate` / `line-clamp` on user-supplied text gets `dir="auto"`
+6. Directional icons flip based on `isRtl` check
+7. New provider/service names added to both label maps in `textFormatting.ts`
+8. Hardcoded relative-time strings (`"5d ago"`, `"in 3 hours"`) routed through `t(...)` with `{{count}}` interpolation

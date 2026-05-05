@@ -387,7 +387,7 @@ function TransactionPreview({ matches, loading, count, showHeader = true }: { ma
                                         <td className="px-4 py-2 text-[var(--text-muted)] whitespace-nowrap">
                                             {tx.date?.split("T")[0] || "—"}
                                         </td>
-                                        <td className="px-4 py-2 truncate max-w-xs" title={tx.description}>
+                                        <td className="px-4 py-2 truncate max-w-xs" title={tx.description} dir="auto">
                                             {tx.description}
                                         </td>
                                         <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>

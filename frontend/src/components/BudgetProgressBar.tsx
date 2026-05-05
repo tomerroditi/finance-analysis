@@ -63,7 +63,7 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           {/* Status dot + label */}
           <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
           {label && (
-            <span className="font-semibold text-sm text-[var(--text-default)] whitespace-nowrap truncate max-w-[40vw] md:max-w-none">
+            <span className="font-semibold text-sm text-[var(--text-default)] whitespace-nowrap truncate max-w-[40vw] md:max-w-none" dir="auto">
               {label}
             </span>
           )}
@@ -125,12 +125,12 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           )}
           <div className="min-w-0">
             {label && (
-              <div className="font-semibold text-[var(--text-default)] truncate">
+              <div className="font-semibold text-[var(--text-default)] truncate" dir="auto">
                 {label}
               </div>
             )}
             {subLabel && (
-              <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide truncate">
+              <div className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide truncate" dir="auto">
                 {subLabel}
               </div>
             )}

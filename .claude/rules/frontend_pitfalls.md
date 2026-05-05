@@ -122,6 +122,79 @@ Bad patterns that have shipped to prod and looked broken:
 
 If you spot any of these, route them through the central helper.
 
+## RTL Bidi: Truncated User Data and Signed Numbers
+
+Two related bugs that we keep regressing on. Both come from the same
+root cause: the document direction in Hebrew is `rtl`, and CSS / bidi
+algorithms apply that direction to content that should actually be LTR.
+
+### `truncate` on user data clips the wrong end
+
+Tailwind `truncate` is `text-overflow: ellipsis`. CSS truncates at the
+**end of the line in the document direction**. Under RTL, that's the
+visual left side. English content like `"Transportation / Gas"` then
+shows as `"...sportation / Gas"` — leading letters chopped off.
+
+```tsx
+// WRONG
+<span className="truncate">{tx.description}</span>
+
+// CORRECT — bidi auto-detects from first strong character
+<span className="truncate" dir="auto">{tx.description}</span>
+```
+
+Apply `dir="auto"` to every `truncate` / `line-clamp` element that
+holds **user data**: transaction descriptions, category / tag names,
+account names, rule names, project names, free-text notes. Do not
+apply it to chrome strings that came from `t(...)` — those should
+always match document direction.
+
+### Signed-number spans without `dir="ltr"` get reordered
+
+The well-known case: deltas like `(+28.2%)` flipping to `(28.2%+)`.
+The less obvious case: a **positive** transaction amount rendered as
+`"+" + formatCurrency(150)`. `formatCurrency` injects RLM/LRM marks for
+negatives so they're safe; positives prefix a literal `+` that has no
+direction wrapper, and under RTL the bidi algorithm reorders the `+`
+into a neighbouring run.
+
+Rule: every span/cell that renders a signed or numeric value gets
+`dir="ltr"`, **even when no negative case exists** in your test data.
+Cover the unsigned positive path too:
+
+```tsx
+// WRONG — flips under RTL
+<span className="text-end">
+  {isPositive ? "+" : ""}{formatCurrency(amount)}
+</span>
+
+// CORRECT
+<span dir="ltr" className="text-end">
+  {isPositive ? "+" : ""}{formatCurrency(amount)}
+</span>
+```
+
+This is enforced by the auditor in `audit/audit-script.js` (category
+`delta_no_dir`). Run it under RTL before merging.
+
+## Hardcoded Relative-Time Strings
+
+Don't ship strings like `` `${days}d ago` `` or `"in 3 hours"`. They
+slip into Hebrew UIs unchanged. Route them through `t(...)` with
+`{{count}}` interpolation:
+
+```json
+// en.json
+"daysAgo": "{{count}}d ago"
+
+// he.json
+"daysAgo": "לפני {{count}} ימים"
+```
+
+```tsx
+t("investments.daysAgo", { count: snapshotAgeDays })
+```
+
 ## SQLite Booleans in JSX
 
 SQLite stores booleans as `0` / `1` integers. In JSX, `{0 && <Component />}` renders the string `"0"`.
