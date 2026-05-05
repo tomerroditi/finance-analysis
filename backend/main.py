@@ -32,6 +32,7 @@ from backend.routes import (
     insurance_accounts,
     investments,
     liabilities,
+    onboarding,
     pending_refunds,
     retirement,
     tagging,
@@ -269,6 +270,11 @@ app.include_router(
     retirement.router,
     prefix="/api/retirement",
     tags=["Retirement"],
+)
+app.include_router(
+    onboarding.router,
+    prefix="/api/onboarding",
+    tags=["Onboarding"],
 )
 
 # Optional routes — gated for serverless where keyring is absent
