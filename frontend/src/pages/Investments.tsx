@@ -13,11 +13,13 @@ import {
   Pencil,
   Settings,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { investmentsApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
 import { InfoTooltip } from "../components/common/InfoTooltip";
+import { EmptyState } from "../components/common/EmptyState";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
 import { useCategories } from "../hooks/useCategories";
@@ -314,6 +316,7 @@ function InvestmentCard({
 export function Investments() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<number | null>(
     null,
@@ -581,15 +584,26 @@ export function Investments() {
             </div>
           </>
         ) : (
-          <div className="bg-[var(--surface)] border border-dashed border-[var(--surface-light)] rounded-3xl p-8 md:p-16 text-center">
-            <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto mb-6 text-[var(--text-muted)]">
-              <TrendingUp size={32} />
-            </div>
-            <h2 className="text-xl font-bold mb-2">{t("investments.noActiveInvestments")}</h2>
-            <p className="text-[var(--text-muted)] max-w-sm mx-auto">
-              {t("investments.noActiveInvestmentsDesc")}
-            </p>
-          </div>
+          <EmptyState
+            icon={TrendingUp}
+            title={t("investments.noActiveInvestments")}
+            description={
+              Object.keys(filteredCategories).length === 0
+                ? t("investments.noTagsAvailable")
+                : t("investments.noActiveInvestmentsDesc")
+            }
+            cta={
+              Object.keys(filteredCategories).length === 0
+                ? {
+                    label: t("sidebar.categories"),
+                    onClick: () => navigate("/categories"),
+                  }
+                : {
+                    label: t("investments.addFirstInvestment"),
+                    onClick: () => setIsAddOpen(true),
+                  }
+            }
+          />
         )}
       </div>
 
