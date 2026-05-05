@@ -73,12 +73,15 @@ export default defineConfig(({ mode }) => {
               //   /api/scraping/*    real-time scraper state
               //   /api/credentials*  PII (account metadata)
               //   /api/backups       must reflect server truth
+              //   /api/onboarding/*  setup-time signal — stale cache
+              //                      would mis-route a fresh user
               urlPattern: ({ url, request }) =>
                 request.method === "GET" &&
                 url.pathname.startsWith("/api/") &&
                 !url.pathname.startsWith("/api/scraping/") &&
                 !url.pathname.startsWith("/api/credentials") &&
-                !url.pathname.startsWith("/api/backups"),
+                !url.pathname.startsWith("/api/backups") &&
+                !url.pathname.startsWith("/api/onboarding/"),
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get",

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { OnboardingGate } from "./components/OnboardingGate";
 import { DemoModeProvider } from "./context/DemoModeContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ServiceWorkerUpdatePrompt } from "./components/ServiceWorkerUpdatePrompt";
@@ -23,6 +24,7 @@ import {
   DataSources,
   EarlyRetirement,
   DataFlow,
+  Onboarding,
 } from "./pages";
 
 function App() {
@@ -41,17 +43,20 @@ function App() {
           <DialogProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Dashboard />} />
-                <Route path="transactions" element={<Transactions />} />
-                <Route path="budget" element={<Budget />} />
-                <Route path="categories" element={<Categories />} />
-                <Route path="investments" element={<Investments />} />
-                <Route path="liabilities" element={<Liabilities />} />
-                <Route path="insurances" element={<Insurances />} />
-                <Route path="early-retirement" element={<EarlyRetirement />} />
-                <Route path="data-sources" element={<DataSources />} />
-                <Route path="data-flow" element={<DataFlow />} />
+              <Route path="/onboarding" element={<Onboarding />} />
+              <Route element={<OnboardingGate />}>
+                <Route path="/" element={<Layout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="transactions" element={<Transactions />} />
+                  <Route path="budget" element={<Budget />} />
+                  <Route path="categories" element={<Categories />} />
+                  <Route path="investments" element={<Investments />} />
+                  <Route path="liabilities" element={<Liabilities />} />
+                  <Route path="insurances" element={<Insurances />} />
+                  <Route path="early-retirement" element={<EarlyRetirement />} />
+                  <Route path="data-sources" element={<DataSources />} />
+                  <Route path="data-flow" element={<DataFlow />} />
+                </Route>
               </Route>
             </Routes>
             <ServiceWorkerUpdatePrompt />
