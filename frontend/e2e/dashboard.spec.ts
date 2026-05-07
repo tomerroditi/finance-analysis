@@ -40,13 +40,18 @@ test.describe("Dashboard", () => {
 
   test("shows budget progress section", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText(/Budget Progress/i)).toBeVisible();
+    // Header was renamed from "Budget Progress" to "BUDGET" — match either.
+    await expect(page.getByText(/^Budget Progress$|^🎯\s*BUDGET$/i).first()).toBeVisible();
   });
 
   test("inline tag editor stages edits and commits on Done", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 15_000 });
+    await page.waitForLoadState("domcontentloaded");
+    // Cold-cache navigation queues ~30 React Query requests behind the
+    // browser's HTTP/1.1 connection limit; the dashboard's slowest
+    // queries (Recent Transactions feed included) can take ~30 s to
+    // resolve. 45 s keeps the assertion robust.
+    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 45_000 });
 
     const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });
     await editButtons.first().waitFor();
