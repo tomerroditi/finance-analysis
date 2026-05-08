@@ -1,3 +1,16 @@
+## v1.15.0 (2026-05-08)
+
+### Feat
+
+- **frontend**: add 3-step onboarding wizard at /onboarding
+- **frontend**: add EmptyState component and wire it into Liabilities + Investments
+- **backend**: add /api/onboarding/status endpoint
+
+### Fix
+
+- **dataflow**: stop diagram from panning on mouse hover without click
+- **e2e**: assert on Layout sidebar nav, not page-body h1
+
 ## v1.14.5 (2026-05-05)
 
 ### Fix
