@@ -69,19 +69,14 @@ datas = [
 # control. ``collect_data_files`` picks it up.
 datas += collect_data_files("playwright")
 
-# NOTE: Chromium is **not** bundled via ``datas`` here. PyInstaller's
-# binary-processing pass on macOS chokes on Chromium's signed Mach-O
-# binaries (``process_collected_binary`` raises when it tries to rewrite
-# their install_names). Including Chromium via ``datas`` triggers that
-# pass even though we want it treated as opaque data.
-#
-# Instead, ``build/build_app.py`` performs a post-PyInstaller copy:
-# ``cp -R build/.playwright-cache/chromium-* dist/.../playwright_browsers/``.
-# At runtime, ``app_entry._setup_env`` points
-# ``PLAYWRIGHT_BROWSERS_PATH`` at ``_resource_root() / "playwright_browsers"``.
-# On macOS, ``_MEIPASS`` resolves to ``Contents/Resources/`` (where the
-# post-build copy lands); on Windows, ``_MEIPASS`` is ``_internal/``
-# (same story).
+# NOTE: Chromium is **not** bundled. The scraper (BrowserScraper.initialize)
+# launches Playwright with ``channel="chrome"`` and falls back to
+# ``channel="msedge"`` on Windows, driving the user's installed browser
+# via CDP. That avoids a ~800MB bundle add and keeps the browser
+# auto-updated against bank fingerprinting changes — both meaningful
+# wins. On the rare machine without Chrome or Edge installed, the
+# scraper raises a "please install Chrome" error which the scraping
+# route surfaces in the UI.
 
 
 # ---------------------------------------------------------------------------

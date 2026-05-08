@@ -138,15 +138,6 @@ jobs:
           pip install poetry
           poetry install --no-root --with build
 
-      - name: Cache Playwright browsers
-        # The ~150MB Chromium download dominates per-build runtime. The
-        # cache key includes poetry.lock so a Playwright bump invalidates
-        # the cache as it should.
-        uses: actions/cache@v4
-        with:
-          path: build/.playwright-cache
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('poetry.lock') }}
-
       - name: Install NSIS (Windows)
         # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
         # but doesn't make the running shell pick it up. Explicitly

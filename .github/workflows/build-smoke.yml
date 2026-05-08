@@ -56,12 +56,6 @@ jobs:
           pip install poetry
           poetry install --no-root --with build
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: build/.playwright-cache
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('poetry.lock') }}
-
       - name: Install NSIS (Windows)
         # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
         # but doesn't make the running shell pick it up. Explicitly
@@ -94,17 +88,16 @@ jobs:
             BUNDLE="dist/FinanceAnalysis"
           fi
           SIZE_KB=$(du -sk "$BUNDLE" | awk '{ print $1 }')
-          # Realistic floor for the bundle on both platforms is ~1.5 GB:
-          #   - Chromium (full chrome + headless shell): ~800 MB
+          # Realistic floor for the bundle now that Chromium is no
+          # longer bundled:
           #   - Bundled Python interpreter + ext modules: ~150 MB
           #   - numpy / pandas / pyarrow wheels: ~250 MB
           #   - frontend/dist + misc data files: ~50 MB
-          # Cap is set to 2 GB so we still catch genuine bloat (a forgotten
-          # dev dep slipping into the [build] group; PyInstaller pulling
-          # in matplotlib/IPython transitively) without flagging the
-          # baseline. Trimming Chromium variants is a separate
-          # optimization tracked in installation_and_updates.md.
-          MAX_KB=$((2 * 1024 * 1024))
+          # Total ~450 MB. Cap at 700 MB so we still catch genuine
+          # bloat (a forgotten dev dep slipping into the [build] group;
+          # PyInstaller pulling in matplotlib/IPython transitively;
+          # someone re-bundling Chromium by accident).
+          MAX_KB=$((700 * 1024))
           echo "bundle size: ${SIZE_KB}KB (cap ${MAX_KB}KB)"
           if [ "$SIZE_KB" -gt "$MAX_KB" ]; then
             echo "Bundle exceeded size cap — investigate."

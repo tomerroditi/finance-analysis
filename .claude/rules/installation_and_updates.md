@@ -79,16 +79,42 @@ client-side optimisation on top).
 `python build/build_app.py` is the single orchestrator. It:
 
 1. `cd frontend && npm ci && npm run build`.
-2. Provisions Playwright's Chromium into `build/.playwright-cache`
-   (build-local, not `~/.cache`, so the bundle is hermetic).
-3. Runs PyInstaller against `build/finance_analysis.spec`. Output:
+2. Runs PyInstaller against `build/finance_analysis.spec`. Output:
    `dist/Finance Analysis.app` on macOS, `dist/FinanceAnalysis/` on
    Windows.
-4. Wraps the result: `build/build_dmg.sh` produces the DMG on macOS,
+3. Wraps the result: `build/build_dmg.sh` produces the DMG on macOS,
    `makensis build/installer_script.nsi` produces the EXE on Windows.
 
 Local dev is unaffected — `poetry run uvicorn backend.main:app --reload`
 and `npm run dev` work as before. The build pipeline is opt-in.
+
+## Browser dependency (NOT bundled)
+
+The scraper uses Playwright but does **not** ship Playwright's bundled
+Chromium build. `BrowserScraper.initialize()` calls
+`chromium.launch(channel="chrome")` first, falling back to
+`channel="msedge"` on `BrowserType.NotInstalledError`. Both channels
+drive the user's installed browser via CDP.
+
+Why we don't bundle Chromium:
+
+- Bundle size: a Playwright-bundled Chromium adds ~800MB to the
+  artifact (chromium-NNNN + chromium_headless_shell-NNNN), pushing
+  the DMG from ~120MB to ~400MB compressed and the on-disk install
+  from ~450MB to ~1.5GB.
+- Anti-bot fingerprinting: a frozen Chromium revision looks more
+  suspicious to bank fingerprinting over time. The user's Chrome
+  auto-updates and stays current with web platform features — that
+  makes scrapes more robust, not less.
+
+User-facing implication:
+
+- **Windows users**: zero friction. Edge ships pre-installed since
+  Windows 10; the Edge fallback covers 100% of Windows installs.
+- **macOS users**: ~55% have Chrome already. Users who only have
+  Safari (Playwright can't drive Safari for automation) see a clear
+  "install Chrome from chrome.google.com" error on first scrape,
+  surfaced via the existing scraping error toast.
 
 ## Windows install (NSIS)
 
@@ -146,7 +172,7 @@ Finance Analysis.app/
 │   ├── Info.plist                    ← CFBundleVersion (read from pyproject.toml)
 │   └── Resources/
 │       ├── frontend/dist/            ← React build, served by FastAPI StaticFiles
-│       ├── playwright_browsers/      ← Bundled Chromium (~150MB)
+│       │                             ← (no playwright_browsers/ — uses system Chrome)
 │       ├── icon.icns
 │       └── uninstall.command         ← Standalone uninstaller
 ```
@@ -227,10 +253,12 @@ user account on macOS):
      gone, `cmdkey /list` no longer shows
      `finance-analysis-app/*` entries.
 
-5. **Scrape with bundled Chromium:**
+5. **Scrape using system browser:**
    - Set up a credential, kick off a scrape.
-   - Verify Playwright fires without trying to download Chromium.
-     Confirm via `%USERPROFILE%\.finance-analysis\logs\uvicorn.log`.
+   - Verify Playwright launches Edge (or Chrome if installed) and
+     drives it. The log line "scraper using channel=msedge" (or
+     "channel=chrome") in `%USERPROFILE%\.finance-analysis\logs\uvicorn.log`
+     confirms the channel.
 
 ### macOS
 
@@ -265,11 +293,15 @@ user account on macOS):
      `security find-generic-password -s finance-analysis-app` returns
      nothing.
 
-6. **Scrape with bundled Chromium:**
-   - Set up a credential, kick off a scrape.
-   - Verify Playwright fires without trying to download Chromium
-     (no network call to playwright.azureedge.net). Confirm by checking
+6. **Scrape using system browser:**
+   - With Chrome installed (the Apple Silicon default test rig), set
+     up a credential and kick off a scrape.
+   - Verify the log line "scraper using channel=chrome" in
      `~/.finance-analysis/logs/uvicorn.log`.
+   - Then test the no-browser path: temporarily move
+     `/Applications/Google Chrome.app` aside, kick off a scrape, and
+     confirm the UI surfaces "Install Google Chrome…" — the scraper
+     must not silently hang or download Chromium.
 
 7. **Drag-to-Trash regression check:**
    - Drag `Finance Analysis.app` to Trash.
@@ -317,14 +349,13 @@ build/
 │                        #   --smoke-test   — boot, hit /api/version, exit
 │                        #   --uninstall-cleanup --wipe|--keep-data
 ├── finance_analysis.spec # Single PyInstaller spec (both platforms)
-├── build_app.py         # Orchestrator: frontend → playwright → pyinstaller → DMG/NSIS
+├── build_app.py         # Orchestrator: frontend → pyinstaller → DMG/NSIS
 ├── installer_script.nsi # Slim NSIS wrapper around PyInstaller dist/
 ├── build_dmg.sh         # Slim macOS DMG wrapper around PyInstaller .app
 └── macos/
     └── uninstall.command # Standalone uninstaller (in Contents/Resources)
 
 # Generated, not checked in:
-build/.playwright-cache/  # Build-local Chromium cache
 build/.pyinstaller-work/  # PyInstaller scratch dir
 dist/                     # PyInstaller output (.app on macOS, dir on Windows)
 

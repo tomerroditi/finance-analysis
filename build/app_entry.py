@@ -20,9 +20,10 @@ Three modes, selected by argv:
   no in-INSTDIR venv to run ``python -m backend.uninstall`` from.
 
 All three modes share the same env-var setup: ``FAD_USER_DIR`` defaults
-to ``~/.finance-analysis``; ``PLAYWRIGHT_BROWSERS_PATH`` is pointed at
-the bundled Chromium copy so Playwright doesn't try to download it on
-first scrape.
+to ``~/.finance-analysis``. We do **not** set
+``PLAYWRIGHT_BROWSERS_PATH`` — the scraper uses the user's installed
+Chrome (or Edge fallback on Windows) via ``channel="chrome"``, so there
+are no Playwright-bundled binaries to point at.
 """
 
 from __future__ import annotations
@@ -76,10 +77,6 @@ def _setup_env() -> Path:
     user.mkdir(parents=True, exist_ok=True)
     (user / "logs").mkdir(parents=True, exist_ok=True)
     os.environ["FAD_USER_DIR"] = str(user)
-    # Tell Playwright to look inside the bundle for its browser.
-    bundled_pw = _resource_root() / "playwright_browsers"
-    if bundled_pw.is_dir():
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(bundled_pw)
     return user
 
 

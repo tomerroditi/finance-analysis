@@ -78,35 +78,18 @@ class TestSetupEnv:
         assert result == tmp_user_dir
         assert (tmp_user_dir / "logs").is_dir()
 
-    def test_sets_playwright_browsers_path_when_bundled(
-        self, tmp_user_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_does_not_touch_playwright_browsers_path(
+        self, tmp_user_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When a bundled ``playwright_browsers/`` dir exists, point env at it."""
-        # Stand up a fake bundled playwright dir.
-        fake_bundle = tmp_path / "fake-bundle"
-        (fake_bundle / "playwright_browsers").mkdir(parents=True)
-        monkeypatch.setattr(app_entry, "_resource_root", lambda: fake_bundle)
+        """We don't bundle Chromium, so we mustn't touch this env var.
 
-        # Make sure we don't inherit a real user's setting.
+        The scraper uses ``channel="chrome"`` which drives the user's
+        installed Chrome — Playwright doesn't read PLAYWRIGHT_BROWSERS_PATH
+        in that mode. Setting it here would mislead anyone debugging
+        via env dump.
+        """
         monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
-
         app_entry._setup_env()
-
-        assert os.environ["PLAYWRIGHT_BROWSERS_PATH"] == str(
-            fake_bundle / "playwright_browsers"
-        )
-
-    def test_does_not_set_playwright_when_not_bundled(
-        self, tmp_user_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """If there's no bundled Chromium dir, leave PLAYWRIGHT_BROWSERS_PATH alone."""
-        empty_root = tmp_path / "empty-root"
-        empty_root.mkdir()
-        monkeypatch.setattr(app_entry, "_resource_root", lambda: empty_root)
-        monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
-
-        app_entry._setup_env()
-
         assert "PLAYWRIGHT_BROWSERS_PATH" not in os.environ
 
 

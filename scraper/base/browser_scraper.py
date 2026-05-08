@@ -64,17 +64,65 @@ class BrowserScraper(BaseScraper):
     window.chrome = { runtime: {} };
     """
 
+    # Browser channels Playwright can drive against the user's installed
+    # browser (no Playwright-bundled Chromium download needed). Order
+    # matters: we prefer Chrome (best automation parity), fall back to
+    # Edge (always pre-installed on Windows since Win10). Both are
+    # Chromium-based, so the stealth scripts and CDP usage are identical.
+    _BROWSER_CHANNELS = ("chrome", "msedge")
+
     async def initialize(self) -> None:
-        """Launch Playwright browser and create a page with stealth measures."""
+        """Launch the user's installed Chrome (or Edge), with stealth.
+
+        We deliberately do NOT use Playwright's bundled Chromium build:
+        that's a ~800MB download we don't want shipping inside the
+        desktop bundle, and it goes stale against bank fingerprinting
+        (banks flag old Chromium revisions). Using the system browser
+        gives us automatic security updates and an unmodified Chrome
+        user agent, both of which make scrapes more robust.
+
+        Tries Chrome first; on ``BrowserType.NotInstalledError`` falls
+        back to Edge (always present on Windows). If neither is
+        installed (rare on Windows, common on macOS where Safari is
+        default), raises ``RuntimeError`` with a clear "install Chrome"
+        message — the scraping route surfaces it to the user via the
+        existing error toast.
+        """
         self._playwright = await async_playwright().start()
-        self.browser = await self._playwright.chromium.launch(
-            headless=not self.options.show_browser,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ],
-        )
+
+        last_exc: Optional[Exception] = None
+        for channel in self._BROWSER_CHANNELS:
+            try:
+                self.browser = await self._playwright.chromium.launch(
+                    channel=channel,
+                    headless=not self.options.show_browser,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-first-run",
+                        "--no-default-browser-check",
+                    ],
+                )
+                logger.info("scraper using channel=%s", channel)
+                break
+            except Exception as exc:
+                # Playwright raises a generic Error subclass when the
+                # channel binary isn't installed; rather than depending
+                # on its specific exception class (which has changed
+                # across versions), we match on the message and fall
+                # through to the next channel.
+                if "Chromium distribution" in str(exc) or "not found" in str(exc).lower():
+                    logger.info("channel=%s not available: %s", channel, exc)
+                    last_exc = exc
+                    continue
+                raise
+        else:
+            await self._playwright.stop()
+            raise RuntimeError(
+                "No supported browser found. Install Google Chrome from "
+                "https://www.google.com/chrome/ (or Microsoft Edge on Windows) "
+                "and try again."
+            ) from last_exc
+
         context = await self.browser.new_context(
             user_agent=self._DEFAULT_USER_AGENT,
             viewport={"width": 1024, "height": 768},
