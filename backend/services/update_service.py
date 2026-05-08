@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import logging
-import platform
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -105,51 +104,27 @@ def _parse_semver(version: str) -> tuple[int, ...]:
 
 
 def _pick_asset_url(assets: list[dict]) -> Optional[str]:
-    """Pick the OS- and arch-matching release asset download URL.
+    """Pick the OS-matching release asset download URL.
 
-    macOS ships two DMGs since v1.18 (one per architecture):
-
-        FinanceAnalysis-arm64.dmg     ← Apple Silicon
-        FinanceAnalysis-x86_64.dmg    ← Intel
-
-    so a plain ``endswith(".dmg")`` would offer Intel users the arm64 DMG
-    (or vice-versa) at random. We narrow the match by also requiring the
-    asset name to contain ``platform.machine()`` (which is normalised to
-    ``arm64`` or ``x86_64`` on macOS). If we don't find an arch-matched
-    asset, fall through to *any* DMG so a single legacy .dmg from before
-    the dual-arch split still works.
-
-    Windows is x86_64-only today; the ``.exe`` extension match suffices.
-    Linux returns None — we don't ship a Linux artifact.
+    macOS releases ship a single arm64 ``FinanceAnalysis.dmg`` (Apple
+    Silicon only — Intel Macs have been off Apple's product line since
+    2022 and GitHub's ``macos-13`` Intel runner pool was too scarce to
+    rely on). Windows ships ``FinanceAppInstaller.exe``. Linux has no
+    shipping artifact.
 
     We don't inspect ``content_type`` because GitHub returns
     ``application/octet-stream`` for all binaries.
     """
-    if sys.platform == "darwin":
-        machine = (platform.machine() or "").lower()
-        # macOS reports "arm64" for Apple Silicon and "x86_64" for Intel —
-        # match those tokens against the asset filename directly.
-        arch_token = "arm64" if machine == "arm64" else "x86_64"
-        arch_match: Optional[str] = None
-        any_dmg: Optional[str] = None
-        for asset in assets:
-            name = asset.get("name", "").lower()
-            if not name.endswith(".dmg"):
-                continue
-            url = asset.get("browser_download_url")
-            if any_dmg is None:
-                any_dmg = url
-            if arch_token in name:
-                arch_match = url
-                break
-        return arch_match or any_dmg
-
-    if sys.platform == "win32":
-        for asset in assets:
-            if asset.get("name", "").lower().endswith(".exe"):
-                return asset.get("browser_download_url")
+    suffix_by_platform = {
+        "darwin": ".dmg",
+        "win32": ".exe",
+    }
+    suffix = suffix_by_platform.get(sys.platform)
+    if suffix is None:
         return None
-
+    for asset in assets:
+        if asset.get("name", "").lower().endswith(suffix):
+            return asset.get("browser_download_url")
     return None
 
 

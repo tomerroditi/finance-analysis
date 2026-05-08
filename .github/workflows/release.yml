@@ -90,12 +90,20 @@ jobs:
   # Build the self-contained desktop bundle on each target platform.
   # PyInstaller can only produce a binary for the platform it runs on,
   # so each runner builds for its native arch:
-  #     macos-14       → arm64 .app + DMG (FinanceAnalysis-arm64.dmg)
-  #     macos-13       → x86_64 .app + DMG (FinanceAnalysis-x86_64.dmg)
+  #     macos-14       → arm64 .app + DMG (FinanceAnalysis.dmg)
   #     windows-latest → x64 directory + NSIS .exe (FinanceAppInstaller.exe)
   #
-  # Each runner uploads its artifact to the GitHub Release tagged by the
-  # bump-version step above.
+  # We do NOT build a macOS x86_64 (Intel) artifact. GitHub's hosted
+  # ``macos-13`` runner pool is scarce — Intel macOS jobs frequently
+  # queue for hours while macos-14 + windows-latest start in seconds —
+  # and the image is on a deprecation runway. Apple Silicon has been
+  # the only Mac shipping since 2022; Apple Silicon Macs cannot run
+  # x86_64 binaries via reverse-Rosetta. Dropping the Intel build
+  # makes releases faster and more predictable. If a real Intel-Mac
+  # user appears, we can add it back via a self-hosted runner.
+  #
+  # Each runner uploads its artifact to the GitHub Release tagged by
+  # the bump-version step above.
   build-and-release:
     needs: [get-version, bump-version]
     if: needs.bump-version.outputs.version != needs.get-version.outputs.version
@@ -104,9 +112,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14,       label: "macOS arm64",  artifact_glob: "build/FinanceAnalysis-arm64.dmg" }
-          - { os: macos-13,       label: "macOS x86_64", artifact_glob: "build/FinanceAnalysis-x86_64.dmg" }
-          - { os: windows-latest, label: "Windows x64",  artifact_glob: "build/FinanceAppInstaller.exe" }
+          - { os: macos-14,       label: "macOS arm64", artifact_glob: "build/FinanceAnalysis.dmg" }
+          - { os: windows-latest, label: "Windows x64", artifact_glob: "build/FinanceAppInstaller.exe" }
     runs-on: ${{ matrix.os }}
 
     steps:

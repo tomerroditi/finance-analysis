@@ -177,10 +177,16 @@ Finance Analysis.app/
 │       └── uninstall.command         ← Standalone uninstaller
 ```
 
-DMG filenames are arch-tagged: `FinanceAnalysis-arm64.dmg` and
-`FinanceAnalysis-x86_64.dmg`. The in-app update notifier
-(`backend/services/update_service.py::_pick_asset_url`) matches the
-asset to `platform.machine()` so users get the right download.
+A single arm64 `FinanceAnalysis.dmg` is shipped per release. We do
+**not** build an Intel (x86_64) DMG — GitHub's `macos-13` runner
+pool is increasingly scarce (Intel jobs queue for hours while
+`macos-14` arm64 + `windows-latest` jobs start in seconds), and the
+`macos-13` image is on a deprecation runway. Apple Silicon Macs
+have been the only Macs Apple sells since 2022, and Apple Silicon
+cannot run Intel binaries via reverse-Rosetta, so the trade is
+acceptable: drop ~15-20% of (declining) Intel-Mac coverage in
+exchange for fast, predictable releases. If a real Intel-Mac user
+shows up we can add the build back via a self-hosted runner.
 
 ### macOS launch (no setup, no rsync)
 
@@ -262,10 +268,9 @@ user account on macOS):
 
 ### macOS
 
-1. **Fresh install (arch-matching DMG):**
-   - On Apple Silicon, download `FinanceAnalysis-arm64.dmg`. On Intel,
-     download `FinanceAnalysis-x86_64.dmg`. The in-app update notifier
-     auto-picks the right one once the app is running.
+1. **Fresh install (Apple Silicon only):**
+   - Download `FinanceAnalysis.dmg` from the latest release.
+     Intel-Mac users are not supported (see release.yml for why).
    - Open the DMG, drag to Applications.
    - Launch from Launchpad. **No Terminal window.** Dashboard opens
      in the default browser within ~2s.

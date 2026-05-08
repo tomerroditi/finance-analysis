@@ -31,7 +31,6 @@ auto-updates with the user's browser. See
 from __future__ import annotations
 
 import argparse
-import os
 import platform
 import shutil
 import subprocess
@@ -115,10 +114,8 @@ def _step_pyinstaller() -> None:
 
 
 def _step_wrap_darwin() -> None:
-    """Run ``build_dmg.sh`` on macOS to produce the architecture-tagged DMG."""
-    arch = platform.machine().lower()  # "arm64" or "x86_64"
-    env = {**os.environ, "FINANCE_ANALYSIS_DMG_ARCH": arch}
-    _run(["bash", str(BUILD_DIR / "build_dmg.sh")], env=env)
+    """Run ``build_dmg.sh`` on macOS to produce ``FinanceAnalysis.dmg``."""
+    _run(["bash", str(BUILD_DIR / "build_dmg.sh")])
 
 
 def _step_wrap_windows() -> None:
