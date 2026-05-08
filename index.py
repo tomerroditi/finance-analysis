@@ -26,6 +26,12 @@ else:
         "http://localhost:5173,http://127.0.0.1:5173",
     )
 os.environ.setdefault("VERCEL", "1")
+# The Vercel deployment is a public demo: no real user data, only the
+# bundled demo fixture and an ephemeral /tmp empty DB. We need the testing
+# route mounted so the Settings → Demo Mode toggle can read and flip
+# state. Without this, ENVIRONMENT=production gates /api/testing/* off and
+# the toggle 404s on every click.
+os.environ.setdefault("ENABLE_TESTING_ROUTES", "1")
 
 from backend.config import AppConfig  # noqa: E402
 from backend.demo_setup import prepare_demo_database  # noqa: E402
