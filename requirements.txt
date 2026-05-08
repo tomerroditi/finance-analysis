@@ -5,3 +5,7 @@ numpy==1.26.4
 PyYAML==6.0.1
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+# httpx is imported at module load time by backend.services.update_service
+# (the GitHub Releases probe). Vercel installs from requirements.txt, not
+# pyproject.toml, so it must be listed here even though poetry already pins it.
+httpx>=0.28.0

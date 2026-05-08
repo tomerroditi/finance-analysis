@@ -1,3 +1,37 @@
+## v1.17.1 (2026-05-08)
+
+### Refactor
+
+- **categories**: remove redundant in-page title
+
+## v1.17.0 (2026-05-08)
+
+### Feat
+
+- **install**: in-app update notifier + cross-platform uninstall + cleaner Windows installer
+
+### Fix
+
+- **vercel**: add httpx to requirements.txt for serverless deploy
+
+## v1.16.0 (2026-05-08)
+
+### Feat
+
+- **insurance**: replace ad-hoc empty div with EmptyState component
+- **liabilities**: remove icon from empty state, add demo mode secondary
+- **investments**: remove icon from empty state, add demo mode secondary
+- **budget**: show empty state when no budget rules are configured
+- **transactions**: show onboarding empty state when no transactions exist
+- **dashboard**: show onboarding empty state when database is empty
+- **i18n**: add emptyStates translation keys (en + he)
+- **ui**: add DemoModeConfirmPopover inline confirmation component
+- **ui**: extend EmptyState with optional icon and steps prop
+
+### Fix
+
+- **ui**: disable Cancel button during demo mode enable to prevent double-close
+
 ## v1.15.2 (2026-05-08)
 
 ### Fix

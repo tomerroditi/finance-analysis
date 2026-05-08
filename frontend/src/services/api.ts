@@ -624,4 +624,39 @@ export const onboardingApi = {
   getStatus: () => api.get<OnboardingStatus>("/onboarding/status"),
 };
 
+export interface VersionInfo {
+  version: string;
+  platform: string;
+}
+
+export const versionApi = {
+  get: () => api.get<VersionInfo>("/version"),
+};
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  is_outdated: boolean;
+  asset_url: string | null;
+  html_url: string | null;
+  checked_at: string | null;
+  error: string | null;
+}
+
+export const updatesApi = {
+  check: () => api.get<UpdateInfo>("/updates/check"),
+  refresh: () => api.post<UpdateInfo>("/updates/check"),
+};
+
+export interface UninstallResult {
+  status: string;
+  keyring_entries_deleted: number;
+  user_dir_will_be_removed: boolean;
+}
+
+export const uninstallApi = {
+  uninstall: (wipe_data: boolean) =>
+    api.post<UninstallResult>("/uninstall", { wipe_data }),
+};
+
 export default api;

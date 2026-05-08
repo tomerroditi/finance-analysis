@@ -20,6 +20,7 @@ import { liabilitiesApi } from "../services/api";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
+import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { formatCurrency } from "../utils/numberFormatting";
 import { formatDate } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
@@ -285,6 +286,7 @@ export function Liabilities() {
   const queryClient = useQueryClient();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [analysisModalId, setAnalysisModalId] = useState<number | null>(null);
   const [payOffForm, setPayOffForm] = useState<{
     id: number | null;
@@ -669,13 +671,21 @@ export function Liabilities() {
           </>
         ) : (
           <EmptyState
-            icon={Landmark}
-            title={t("liabilities.noLiabilities")}
-            description={t("liabilities.noLiabilitiesDesc")}
+            title={t("emptyStates.liabilities.title")}
+            description={t("emptyStates.liabilities.description")}
             cta={{
               label: t("liabilities.addFirstLiability"),
               onClick: () => setIsAddOpen(true),
             }}
+            secondary={{
+              label: t("emptyStates.tryDemoMode"),
+              onClick: () => setShowDemoConfirm(true),
+            }}
+            footer={
+              showDemoConfirm ? (
+                <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+              ) : undefined
+            }
           />
         )}
       </div>

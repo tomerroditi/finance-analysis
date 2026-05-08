@@ -5,11 +5,12 @@ import { Categories } from "./Categories";
 
 describe("Categories", () => {
   describe("rendering", () => {
-    it("renders the page heading", async () => {
+    it("renders the new-category action", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        const h1 = document.querySelector("h1");
-        expect(h1).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /categories\.newCategory|new category/i }),
+        ).toBeInTheDocument();
       });
     });
   });

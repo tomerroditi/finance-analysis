@@ -20,6 +20,7 @@ import { Skeleton } from "../components/common/Skeleton";
 import { Sparkline } from "../components/common/Sparkline";
 import { InfoTooltip } from "../components/common/InfoTooltip";
 import { EmptyState } from "../components/common/EmptyState";
+import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
 import { useCategories } from "../hooks/useCategories";
@@ -312,6 +313,7 @@ export function Investments() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<number | null>(
     null,
@@ -580,12 +582,15 @@ export function Investments() {
           </>
         ) : (
           <EmptyState
-            icon={TrendingUp}
-            title={t("investments.noActiveInvestments")}
+            title={
+              Object.keys(filteredCategories).length === 0
+                ? t("investments.noActiveInvestments")
+                : t("emptyStates.investments.title")
+            }
             description={
               Object.keys(filteredCategories).length === 0
                 ? t("investments.noTagsAvailable")
-                : t("investments.noActiveInvestmentsDesc")
+                : t("emptyStates.investments.description")
             }
             cta={
               Object.keys(filteredCategories).length === 0
@@ -597,6 +602,19 @@ export function Investments() {
                     label: t("investments.addFirstInvestment"),
                     onClick: () => setIsAddOpen(true),
                   }
+            }
+            secondary={
+              Object.keys(filteredCategories).length > 0
+                ? {
+                    label: t("emptyStates.tryDemoMode"),
+                    onClick: () => setShowDemoConfirm(true),
+                  }
+                : undefined
+            }
+            footer={
+              showDemoConfirm ? (
+                <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+              ) : undefined
             }
           />
         )}

@@ -17,6 +17,14 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   "retirement-preview",
   "suggestion-preview",
   "onboardingStatus",
+  // Update-availability is intentionally not persisted: the source of
+  // truth is the backend's 24h disk cache. A stale IndexedDB hydration
+  // would suppress a fresh "version available" toast across reloads.
+  "updateCheck",
+  // ``versionInfo`` is read-only and tied to the running backend
+  // binary; persisting it across reloads would let an old version
+  // string survive a self-upgrade.
+  "versionInfo",
 ]);
 
 /**
