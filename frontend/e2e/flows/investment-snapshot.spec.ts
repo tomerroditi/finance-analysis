@@ -29,10 +29,23 @@ test.describe("Investment balance snapshot flow", () => {
       name: /^update balance$/i,
     });
     await expect(modalHeading).toBeVisible();
-    await page.getByRole("spinbutton").last().fill("12345");
 
-    // Footer Save button.
-    await page.getByRole("button", { name: /^save$/i }).click();
-    await expect(modalHeading).toBeHidden({ timeout: 10_000 });
+    // Fill the balance number input. Scope to input[type="number"] inside
+    // the modal overlay to avoid matching any spinbuttons from the table.
+    const balanceInput = page.locator(".modal-overlay input[type='number']");
+    await balanceInput.fill("12345");
+
+    // Wait for the API response to confirm the snapshot was saved, then
+    // assert the modal closes. Using waitForResponse surfaces backend errors
+    // immediately instead of timing out on toBeHidden.
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes("/balances") && r.request().method() === "POST",
+        { timeout: 15_000 }
+      ),
+      page.getByRole("button", { name: /^save$/i }).click(),
+    ]);
+    expect(response.status()).toBe(200);
+    await expect(modalHeading).toBeHidden({ timeout: 5_000 });
   });
 });
