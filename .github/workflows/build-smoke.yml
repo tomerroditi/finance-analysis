@@ -63,9 +63,14 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('poetry.lock') }}
 
       - name: Install NSIS (Windows)
+        # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
+        # but doesn't make the running shell pick it up. Explicitly
+        # appending to GITHUB_PATH so subsequent steps find ``makensis``.
         if: runner.os == 'Windows'
         shell: bash
-        run: choco install nsis -y --no-progress
+        run: |
+          choco install nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
 
       - name: Run end-to-end build
         shell: bash
