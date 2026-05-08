@@ -159,6 +159,35 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         conn.commit()
 
 
+def prepare_empty_database() -> None:
+    """Copy the frozen empty DB into the production DB location.
+
+    Used by the demo-off toggle on Vercel where the production DB has never
+    been initialized (the FastAPI ``lifespan`` is skipped under ``VERCEL=1``).
+    Without this the toggle would point the engine at a nonexistent SQLite
+    file with no schema and no default categories.
+
+    Safety guard: this function is a no-op if the target DB already exists.
+    Schema migration of an existing production DB is owned by ``lifespan``,
+    not by the demo-toggle endpoint, and we must never overwrite a real
+    user's data on a non-Vercel install.
+    """
+    config = AppConfig()
+    target = config.get_db_path()
+    if os.path.exists(target):
+        return
+
+    source = os.path.join(
+        os.path.dirname(__file__), "resources", "empty_data.db"
+    )
+    if os.path.exists(source):
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(source, target)
+
+    database.reset_engine()
+    sync_missing_columns(database.get_engine())
+
+
 def prepare_demo_database() -> None:
     """Copy the frozen demo DB into the demo-mode location and shift dates.
 

@@ -12,7 +12,11 @@ from pydantic import BaseModel
 from backend.config import AppConfig
 from backend import database
 from backend.database import get_db_context
-from backend.demo_setup import DEMO_REFERENCE_DATE, prepare_demo_database
+from backend.demo_setup import (
+    DEMO_REFERENCE_DATE,
+    prepare_demo_database,
+    prepare_empty_database,
+)
 from backend.services.credentials_service import CredentialsService
 from backend.services.tagging_service import CategoriesTagsService
 
@@ -68,6 +72,12 @@ async def toggle_demo_mode(
             with get_db_context() as demo_db:
                 creds_service = CredentialsService(demo_db)
                 creds_service.seed_demo_credentials()
+        else:
+            # Bring an empty production DB up to a usable state when one
+            # does not exist yet (Vercel cold start after toggle-off).
+            # No-op when the production DB already exists, so toggling demo
+            # off on a real machine never overwrites real user data.
+            prepare_empty_database()
 
     return {"status": "success", "demo_mode": config.is_demo_mode}
 
