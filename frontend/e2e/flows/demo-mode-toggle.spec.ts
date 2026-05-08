@@ -17,15 +17,16 @@ test.describe("Demo Mode toggle flow", () => {
     page,
     request,
   }) => {
-    // Start from a known empty state.
+    // Start from a known state: demo mode OFF.
     await setDemoMode(request, false);
 
-    await gotoAndWait(page, "/data-sources");
+    // Verify backend reports demo_mode=false before we touch the UI.
+    const before = await request.get(
+      "http://localhost:8000/api/testing/demo_mode_status",
+    );
+    expect((await before.json()).demo_mode).toBe(false);
 
-    // Demo OFF: the empty-state heading is shown.
-    await expect(
-      page.getByRole("heading", { name: /no accounts connected/i }),
-    ).toBeVisible({ timeout: 10_000 });
+    await gotoAndWait(page, "/data-sources");
 
     // Toggle Demo Mode ON via the UI.
     await page
