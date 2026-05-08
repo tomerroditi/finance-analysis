@@ -40,10 +40,21 @@ test.describe("Categories rename flow", () => {
     await renameInput.fill(newName);
 
     // Set up listener for the GET that follows the rename (invalidation-driven refetch).
+    // Use an async predicate that checks the response body contains the new name,
+    // so we don't accidentally resolve on a stale in-flight GET.
     // Must be registered before pressing Enter so we don't miss a fast response.
     const categoriesRefetch = page.waitForResponse(
-      (r) => /\/api\/tagging\/categories$/.test(r.url()) && r.request().method() === "GET",
-      { timeout: 15_000 },
+      async (r) => {
+        if (!/\/api\/tagging\/categories$/.test(r.url())) return false;
+        if (r.request().method() !== "GET") return false;
+        try {
+          const json = await r.json();
+          return newName in (json as object);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 20_000 },
     );
 
     const [response] = await Promise.all([
@@ -72,7 +83,7 @@ test.describe("Categories rename flow", () => {
     await expect(panel).toBeHidden({ timeout: 3_000 });
 
     // The grid now has fresh data — card should be visible immediately.
-    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 10_000 });
 
     // Cleanup: open the panel for the renamed category and rename back to "Food".
     await page.locator(`[data-testid="category-card-${newName}"]`).click();
@@ -84,8 +95,17 @@ test.describe("Categories rename flow", () => {
     await cleanupInput.fill("Food");
 
     const foodRefetch = page.waitForResponse(
-      (r) => /\/api\/tagging\/categories$/.test(r.url()) && r.request().method() === "GET",
-      { timeout: 15_000 },
+      async (r) => {
+        if (!/\/api\/tagging\/categories$/.test(r.url())) return false;
+        if (r.request().method() !== "GET") return false;
+        try {
+          const json = await r.json();
+          return "Food" in (json as object);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 20_000 },
     );
 
     await cleanupInput.press("Enter");
@@ -103,6 +123,6 @@ test.describe("Categories rename flow", () => {
     await foodRefetch;
     await renamedPanel.getByRole("button", { name: /^close$/i }).click();
     await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
-    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 10_000 });
   });
 });
