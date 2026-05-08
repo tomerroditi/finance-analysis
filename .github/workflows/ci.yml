@@ -59,8 +59,18 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    name: E2E (Playwright)
-    timeout-minutes: 20
+    name: E2E (Playwright, shard ${{ matrix.shard }}/4)
+    timeout-minutes: 15
+    strategy:
+      # Run 4 parallel shards. Wall time drops from ~7 min to ~2-3 min.
+      # Costs 4x CI minutes but PR feedback is the constraint we care
+      # about, and GitHub Actions minutes are unlimited on public repos.
+      # Bump the shard count when wall time creeps back over 5 min — but
+      # at some point the right fix is the dashboard-bundle endpoint, not
+      # more runners.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -102,23 +112,25 @@ jobs:
         env:
           CI: "true"
           PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
+          SHARD_INDEX: ${{ matrix.shard }}
         run: |
-          # OS keyring isn't available on GitHub runners — the env above
+          # OS keyring isnt available on GitHub runners — the env above
           # routes keyring access to a plaintext file backend.
           poetry --directory=.. run uvicorn backend.main:app --port 8000 \
             > /tmp/backend.log 2>&1 &
           npm run dev > /tmp/frontend.log 2>&1 &
           npx -y wait-on http://localhost:8000/openapi.json http://localhost:5173 \
             -t 60000
-          npx playwright test
+          npx playwright test --shard="$SHARD_INDEX"/4
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: frontend/playwright-report
           retention-days: 7
+
 
   api-fuzz:
     runs-on: ubuntu-latest
