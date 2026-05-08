@@ -171,6 +171,7 @@ export function DataFlowDiagram() {
     const drag = dragRef.current;
     const el = containerRef.current;
     if (!drag || !el || drag.pointerId !== e.pointerId) return;
+    if (!el.hasPointerCapture(e.pointerId)) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     if (!drag.hasDragged && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
