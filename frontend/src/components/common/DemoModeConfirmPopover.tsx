@@ -40,7 +40,8 @@ export function DemoModeConfirmPopover({
         <button
           type="button"
           onClick={onClose}
-          className="text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+          disabled={isPending}
+          className="text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors disabled:opacity-50 disabled:pointer-events-none"
         >
           {t("emptyStates.demoConfirmCancel")}
         </button>
