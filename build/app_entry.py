@@ -185,7 +185,7 @@ def _run_default_mode() -> int:
 
 
 def _run_smoke_test() -> int:
-    """Boot the bundle, issue one self-request to /api/version, exit.
+    """Boot the bundle, issue self-requests, exit.
 
     This is the load-bearing CI gate. PyInstaller's static analysis
     sometimes misses hidden imports (a new SQLAlchemy dialect, a
@@ -195,6 +195,18 @@ def _run_smoke_test() -> int:
     backend.main lifespan → uvicorn → FastAPI → routes → response —
     and exits 0 only if it all works. A failure here means the bundle
     is broken; we surface it as a CI red-x instead of shipping.
+
+    Two probes:
+        1. ``GET /api/version`` — covers the backend layers + asserts
+           the version comes from a bundled pyproject.toml (not the
+           "0.0.0" fallback that fires if the file isn't shipped).
+        2. ``GET /``            — covers the StaticFiles mount and the
+           SPA fallback handler. The bundled frontend lives at
+           ``_MEIPASS/frontend/dist/index.html`` and a request to "/"
+           must resolve to it via ``backend.main`` 's resolver. If the
+           ``datas`` entry for ``frontend/dist`` is missing (or the
+           ``_MEIPASS``-aware path resolution regresses), the probe
+           returns a 404 and the bundle is flagged broken.
     """
     user = _setup_env()
     _configure_file_logging(user)
@@ -211,6 +223,7 @@ def _run_smoke_test() -> int:
         try:
             import urllib.request
 
+            # 1. /api/version — backend lifespan + routes + version source.
             with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/api/version", timeout=5.0
             ) as resp:
@@ -220,10 +233,43 @@ def _run_smoke_test() -> int:
                     body = json.loads(resp.read().decode())
                     if not body.get("version"):
                         failures.append(f"/api/version body has no version: {body}")
+                    elif body["version"] == "0.0.0":
+                        # The fallback in backend.utils.version fires when
+                        # pyproject.toml isn't reachable at runtime. That
+                        # means our datas entry was lost or the spec lookup
+                        # path is wrong — both are bundle bugs.
+                        failures.append(
+                            "/api/version returned 0.0.0 (pyproject.toml not bundled?)"
+                        )
                     else:
                         print(
                             f"smoke-test ok: {body['version']} on {body.get('platform')}"
                         )
+
+            # 2. GET / — StaticFiles + SPA fallback. The bundled
+            # frontend/dist/index.html should come back as a real
+            # HTML document. We accept any 2xx (the SPA handler may
+            # serve via different code paths) but require an HTML body.
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/", timeout=5.0
+            ) as resp:
+                if resp.status not in (200, 304):
+                    failures.append(f"/ returned {resp.status}")
+                else:
+                    body = resp.read().decode("utf-8", errors="replace")
+                    # The Vite-built index.html always contains either a
+                    # <!doctype html> declaration or an <html> root tag.
+                    # A bare 200 with empty / JSON body would mean the
+                    # SPA fallback isn't actually serving the bundled
+                    # React app.
+                    lower = body.lower()
+                    if "<!doctype html" not in lower and "<html" not in lower:
+                        failures.append(
+                            "/ returned a 200 but the body isn't HTML "
+                            f"(first 80 chars: {body[:80]!r})"
+                        )
+                    else:
+                        print(f"smoke-test ok: / served HTML ({len(body)} bytes)")
         except Exception as exc:
             failures.append(f"probe raised: {exc}")
         finally:
