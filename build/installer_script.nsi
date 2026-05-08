@@ -1,12 +1,17 @@
 ; Finance Analysis — Windows installer.
 ;
 ; Per-user install at $LOCALAPPDATA\Programs\Finance Analysis (no admin).
-; Detects an existing install and silently uninstalls it before laying
-; down the new build (preserving ~\.finance-analysis\). Uninstaller
-; offers an opt-in "also delete my data + saved passwords" component
-; that delegates to ``python -m backend.uninstall`` so Keychain /
-; Credential Manager + the user-data dir are cleaned through a single
-; source of truth.
+; Source layout: PyInstaller has produced dist/FinanceAnalysis/, a
+; self-contained directory with FinanceAnalysis.exe + _internal/.
+; This installer drops that tree into $INSTDIR and registers the
+; standard Add/Remove Programs metadata. There is no setup.bat, no
+; .venv, no Python/Node bootstrap — the bundled exe contains everything.
+;
+; Uninstaller offers an opt-in "also delete my data + saved passwords"
+; component that delegates to FinanceAnalysis.exe --uninstall-cleanup,
+; reusing the same backend.uninstall.cleanup module the macOS
+; uninstall.command and the in-app uninstall route use. Single source
+; of truth for "what counts as Finance Analysis state on this machine".
 
 !define APP_NAME "Finance Analysis"
 !define APP_VERSION "1.17.1"
@@ -93,8 +98,11 @@ Section "Install"
 
   SetOutPath "$INSTDIR"
 
-  ; Copy all app files
-  File /r "..\dist\*.*"
+  ; Copy the PyInstaller-produced self-contained directory into $INSTDIR.
+  ; Layout under ..\dist\FinanceAnalysis\:
+  ;   FinanceAnalysis.exe
+  ;   _internal\        (Python interpreter, deps, frontend/dist, Chromium)
+  File /r "..\dist\FinanceAnalysis\*.*"
 
   ; Save install path in registry (HKCU — per-user install)
   WriteRegStr HKCU "${APP_REG_KEY}" "InstallDir" "$INSTDIR"
@@ -104,7 +112,7 @@ Section "Install"
   WriteRegStr   HKCU "${UNINST_KEY}" "DisplayName"          "${APP_NAME}"
   WriteRegStr   HKCU "${UNINST_KEY}" "DisplayVersion"       "${APP_VERSION}"
   WriteRegStr   HKCU "${UNINST_KEY}" "Publisher"            "${APP_PUBLISHER}"
-  WriteRegStr   HKCU "${UNINST_KEY}" "DisplayIcon"          "$INSTDIR\icon.ico"
+  WriteRegStr   HKCU "${UNINST_KEY}" "DisplayIcon"          "$INSTDIR\FinanceAnalysis.exe"
   WriteRegStr   HKCU "${UNINST_KEY}" "InstallLocation"      "$INSTDIR"
   WriteRegStr   HKCU "${UNINST_KEY}" "UninstallString"      '"$INSTDIR\Uninstall.exe"'
   WriteRegStr   HKCU "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
@@ -116,22 +124,15 @@ Section "Install"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  ; Run setup script (creates venv, installs Python deps, installs
-  ; scraper Node deps). Per-user install means no UAC prompts.
-  nsExec::ExecToLog '"$INSTDIR\build\setup.bat"'
-  Pop $0
-  StrCmp $0 "0" +3
-    MessageBox MB_ICONEXCLAMATION "Setup script failed with exit code $0"
-    Abort
-
-  ; EstimatedSize for Add/Remove Programs (KB).
+  ; EstimatedSize for Add/Remove Programs (KB). Computed AFTER the file
+  ; copy so the bundled Chromium / Python / dependencies are included.
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" $0
 
-  ; Create shortcuts
-  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\build\run.bat" "" "$INSTDIR\icon.ico"
+  ; Create shortcuts directly to the bundled exe — no batch wrapper.
+  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\FinanceAnalysis.exe" "" "$INSTDIR\FinanceAnalysis.exe"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\build\run.bat" "" "$INSTDIR\icon.ico"
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\FinanceAnalysis.exe" "" "$INSTDIR\FinanceAnalysis.exe"
 
 SectionEnd
 
@@ -156,21 +157,23 @@ SectionEnd
 ; (Keychain only, or Keychain + user-data per the optional section),
 ; then remove shortcuts, install dir, registry entries.
 Section "-un.Uninstall (binaries)" UninstallCore
-  ; Best-effort: stop any python/uvicorn process running out of $INSTDIR
-  ; before we try to delete the directory. ``taskkill`` returns non-zero
-  ; when no matching process is found; we ignore that with /FI.
-  nsExec::ExecToLog 'taskkill /F /FI "IMAGENAME eq uvicorn.exe"'
+  ; Best-effort: stop the bundled exe before we try to delete the
+  ; directory. ``taskkill`` returns non-zero when no matching process is
+  ; found; we ignore that and move on.
+  nsExec::ExecToLog 'taskkill /F /IM "FinanceAnalysis.exe"'
   Pop $0
 
-  ; Delegate Keychain / user-data cleanup to the Python source of truth.
-  ; This MUST run before we delete $INSTDIR (which contains the venv).
+  ; Delegate Keychain / user-data cleanup to the bundled binary's
+  ; --uninstall-cleanup mode. This is the single source of truth shared
+  ; with the macOS uninstall.command and the in-app uninstall route.
+  ; MUST run before we delete $INSTDIR (which contains the exe itself).
   ${If} ${SectionIsSelected} ${UninstallWipeData}
     DetailPrint "Removing user data and saved passwords..."
-    nsExec::ExecToLog '"$INSTDIR\.venv\Scripts\python.exe" -m backend.uninstall --wipe'
+    nsExec::ExecToLog '"$INSTDIR\FinanceAnalysis.exe" --uninstall-cleanup --wipe'
     Pop $0
   ${Else}
     DetailPrint "Removing Keychain entries (preserving data)..."
-    nsExec::ExecToLog '"$INSTDIR\.venv\Scripts\python.exe" -m backend.uninstall --keep-data'
+    nsExec::ExecToLog '"$INSTDIR\FinanceAnalysis.exe" --uninstall-cleanup --keep-data'
     Pop $0
   ${EndIf}
 
@@ -179,7 +182,7 @@ Section "-un.Uninstall (binaries)" UninstallCore
   Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
   RMDir  "$SMPROGRAMS\${APP_NAME}"
 
-  ; Remove install dir (includes the venv).
+  ; Remove install dir (the entire PyInstaller bundle directory).
   RMDir /r "$INSTDIR"
 
   ; Remove registry entries.

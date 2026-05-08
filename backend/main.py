@@ -6,6 +6,7 @@ This module sets up the FastAPI application with CORS, routes, and exception han
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -391,8 +392,28 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# Serve frontend static build in production
-_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+# Serve frontend static build in production.
+#
+# Two layouts to support:
+#   1. Dev / pip-install / Vercel  → frontend/dist sits next to backend/
+#                                    in the repo tree.
+#   2. PyInstaller-frozen bundle   → frontend/dist lives inside
+#                                    sys._MEIPASS (the temp dir the
+#                                    bootloader extracts into at launch).
+#
+# We probe the frozen path first when sys.frozen is set and fall back to
+# the source-tree path so unit tests that import ``backend.main`` from a
+# checkout still work without setting any env var.
+def _resolve_frontend_dist() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", ""))
+        bundled = meipass / "frontend" / "dist"
+        if bundled.is_dir():
+            return bundled
+    return Path(__file__).parent.parent / "frontend" / "dist"
+
+
+_frontend_dist = _resolve_frontend_dist()
 if _frontend_dist.is_dir():
     app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="static-assets")
 

@@ -42,6 +42,17 @@ schemathesis = "^3.36.0"
 # e2e gate; see frontend/e2e/onboarding-flows.spec.ts demo path.
 "keyrings.alt" = "^5.0.2"
 
+# Build-only deps for producing the self-contained desktop bundle.
+# Kept out of the regular `poetry install` so dev installs stay slim;
+# the release workflow installs this group with `--with build`.
+# `playwright` itself is already in the main deps (it's a runtime dep
+# of the scraper); only `pyinstaller` is unique to building.
+[tool.poetry.group.build]
+optional = true
+
+[tool.poetry.group.build.dependencies]
+pyinstaller = "^6.10.0"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 markers = ["sensitive: marks tests that pulls sensitive data from the internet"]

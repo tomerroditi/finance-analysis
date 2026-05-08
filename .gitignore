@@ -82,3 +82,9 @@ frontend/test-results/
 .claude/settings.local.json
 .superpowers/
 docs/superpowers/
+
+# PyInstaller build artefacts. ``build_app.py`` populates these on
+# every build; trivially regenerated.
+build/.pyinstaller-work/
+build/FinanceAnalysis-*.dmg
+build/FinanceAppInstaller.exe

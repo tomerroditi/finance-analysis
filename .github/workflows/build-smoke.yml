@@ -1,0 +1,105 @@
+name: Build smoke test
+
+# Build the desktop bundle on every PR push and run the in-bundle
+# smoke test (boot, hit /api/version, exit). Lets us iterate on the
+# PyInstaller spec without a Windows VM — push, watch the matrix,
+# read logs, fix, repeat.
+#
+# The full release workflow (release.yml) only runs on `main`, so PR
+# authors don't get build feedback there until merge. This workflow
+# fills that gap. It deliberately does not upload artifacts or push
+# anything anywhere — it's a green/red signal only.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "build/**"
+      - "backend/**"
+      - "scraper/**"
+      - "frontend/dist/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/build-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Smoke ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       label: "macOS arm64" }
+          - { os: windows-latest, label: "Windows x64" }
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Poetry + project deps + build group
+        shell: bash
+        run: |
+          pip install poetry
+          poetry install --no-root --with build
+
+      - name: Install NSIS (Windows)
+        # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
+        # but doesn't make the running shell pick it up. Explicitly
+        # appending to GITHUB_PATH so subsequent steps find ``makensis``.
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          choco install nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
+
+      - name: Run end-to-end build
+        shell: bash
+        run: poetry run python build/build_app.py
+
+      - name: Smoke-test the bundle
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test
+          else
+            "dist/FinanceAnalysis/FinanceAnalysis.exe" --smoke-test
+          fi
+
+      - name: Assert bundle size sanity
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            BUNDLE="dist/Finance Analysis.app"
+          else
+            BUNDLE="dist/FinanceAnalysis"
+          fi
+          SIZE_KB=$(du -sk "$BUNDLE" | awk '{ print $1 }')
+          # Realistic floor for the bundle now that Chromium is no
+          # longer bundled:
+          #   - Bundled Python interpreter + ext modules: ~150 MB
+          #   - numpy / pandas / pyarrow wheels: ~250 MB
+          #   - frontend/dist + misc data files: ~50 MB
+          # Total ~450 MB. Cap at 700 MB so we still catch genuine
+          # bloat (a forgotten dev dep slipping into the [build] group;
+          # PyInstaller pulling in matplotlib/IPython transitively;
+          # someone re-bundling Chromium by accident).
+          MAX_KB=$((700 * 1024))
+          echo "bundle size: ${SIZE_KB}KB (cap ${MAX_KB}KB)"
+          if [ "$SIZE_KB" -gt "$MAX_KB" ]; then
+            echo "Bundle exceeded size cap — investigate."
+            exit 1
+          fi
