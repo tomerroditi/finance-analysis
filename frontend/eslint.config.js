@@ -27,6 +27,17 @@ export default defineConfig([
           fixStyle: "inline-type-imports",
         },
       ],
+      // Allow intentionally-unused parameters when prefixed with `_`,
+      // matching TypeScript's own convention. Required for legacy
+      // signatures we need to keep for caller compatibility.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
     },
   },
 ]);
