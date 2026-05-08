@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
 import { useCashBalances } from "../hooks/useCashBalances";
@@ -10,6 +11,8 @@ import RefundsView from "../components/transactions/RefundsView";
 import { pendingRefundsApi } from "../services/api";
 import { Plus, Trash2, DollarSign, X } from "lucide-react";
 import { Skeleton } from "../components/common/Skeleton";
+import { EmptyState } from "../components/common/EmptyState";
+import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 import { formatCurrency } from "../utils/numberFormatting";
@@ -238,10 +241,12 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
 export function Transactions() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { selectedService, setSelectedService } = useAppStore();
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [filterOnlyUntagged, setFilterOnlyUntagged] = useState(false);
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
 
   const {
     data: transactions,
@@ -343,6 +348,38 @@ export function Transactions() {
               <Skeleton variant="text" lines={1} className="w-48" />
               <Skeleton variant="card" className="h-64" />
             </div>
+          ) : selectedService === "all" && (transactions?.length ?? 0) === 0 ? (
+            <EmptyState
+              title={t("emptyStates.transactions.title")}
+              description={t("emptyStates.transactions.description")}
+              steps={[
+                {
+                  title: t("emptyStates.connectStep.title"),
+                  description: t("emptyStates.connectStep.description"),
+                },
+                {
+                  title: t("emptyStates.scrapeStep.title"),
+                  description: t("emptyStates.scrapeStep.description"),
+                },
+                {
+                  title: t("emptyStates.analyseStep.title"),
+                  description: t("emptyStates.analyseStep.description"),
+                },
+              ]}
+              cta={{
+                label: t("emptyStates.connectAccounts"),
+                onClick: () => navigate("/data-sources"),
+              }}
+              secondary={{
+                label: t("emptyStates.tryDemoMode"),
+                onClick: () => setShowDemoConfirm(true),
+              }}
+              footer={
+                showDemoConfirm ? (
+                  <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+                ) : undefined
+              }
+            />
           ) : (
             <>
               {selectedService === "cash" && <CashBalancesCard queryClient={queryClient} />}
