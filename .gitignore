@@ -82,3 +82,10 @@ frontend/test-results/
 .claude/settings.local.json
 .superpowers/
 docs/superpowers/
+
+# PyInstaller build artefacts. ``build_app.py`` populates these on
+# every build; both are large (~150-300MB) and trivially regenerated.
+build/.playwright-cache/
+build/.pyinstaller-work/
+build/FinanceAnalysis-*.dmg
+build/FinanceAppInstaller.exe

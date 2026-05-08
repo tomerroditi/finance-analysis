@@ -87,11 +87,27 @@ jobs:
         with:
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
+  # Build the self-contained desktop bundle on each target platform.
+  # PyInstaller can only produce a binary for the platform it runs on,
+  # so each runner builds for its native arch:
+  #     macos-14       → arm64 .app + DMG (FinanceAnalysis-arm64.dmg)
+  #     macos-13       → x86_64 .app + DMG (FinanceAnalysis-x86_64.dmg)
+  #     windows-latest → x64 directory + NSIS .exe (FinanceAppInstaller.exe)
+  #
+  # Each runner uploads its artifact to the GitHub Release tagged by the
+  # bump-version step above.
   build-and-release:
     needs: [get-version, bump-version]
     if: needs.bump-version.outputs.version != needs.get-version.outputs.version
-    runs-on: ubuntu-latest
-    name: Build installer and create release
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       label: "macOS arm64",  artifact_glob: "build/FinanceAnalysis-arm64.dmg" }
+          - { os: macos-13,       label: "macOS x86_64", artifact_glob: "build/FinanceAnalysis-x86_64.dmg" }
+          - { os: windows-latest, label: "Windows x64",  artifact_glob: "build/FinanceAppInstaller.exe" }
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout latest code
@@ -113,81 +129,66 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
-        run: cd frontend && npm ci && npm run build
-
-      - name: Build installer dist
-        run: python build/build_installer.py
-
-      - name: Install NSIS
-        run: sudo apt-get update && sudo apt-get install -y nsis
-
-      - name: Build NSIS installer
-        run: makensis build/installer_script.nsi
-
-      - name: Verify installer exists
+      - name: Install Poetry + project deps + build group
+        # ``--with build`` pulls the optional [build] group (PyInstaller).
+        # Playwright is in main deps; ``poetry install`` picks it up.
+        # ``--no-root`` avoids treating finance-analysis as a poetry-installable.
+        shell: bash
         run: |
-          if [ ! -f build/FinanceAppInstaller.exe ]; then
-            echo "Installer not found!"
+          pip install poetry
+          poetry install --no-root --with build
+
+      - name: Cache Playwright browsers
+        # The ~150MB Chromium download dominates per-build runtime. The
+        # cache key includes poetry.lock so a Playwright bump invalidates
+        # the cache as it should.
+        uses: actions/cache@v4
+        with:
+          path: build/.playwright-cache
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('poetry.lock') }}
+
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: choco install nsis -y --no-progress
+
+      - name: Run end-to-end build
+        # build_app.py: builds frontend, ensures Chromium is in
+        # build/.playwright-cache, runs PyInstaller, then wraps with
+        # build_dmg.sh (mac) or makensis (win). Output filenames are
+        # arch-tagged on macOS so the in-app update notifier can pick
+        # the right asset.
+        shell: bash
+        run: poetry run python build/build_app.py
+
+      - name: Smoke-test the bundle
+        # Boots the bundle, hits /api/version against itself, exits 0
+        # only if the round-trip succeeds. Catches PyInstaller spec
+        # regressions (missing hidden imports, missing data files).
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test
+          else
+            "dist/FinanceAnalysis/FinanceAnalysis.exe" --smoke-test
+          fi
+
+      - name: Verify artifact exists
+        env:
+          ARTIFACT_GLOB: ${{ matrix.artifact_glob }}
+        shell: bash
+        run: |
+          if ! ls "$ARTIFACT_GLOB" >/dev/null 2>&1; then
+            echo "Expected artifact at $ARTIFACT_GLOB not found"
+            ls -la build/ || true
             exit 1
           fi
 
-      - name: Create GitHub Release
+      - name: Upload artifact to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.bump-version.outputs.version }}
           name: Release v${{ needs.bump-version.outputs.version }}
-          body_path: CHANGELOG.md
-          files: build/FinanceAppInstaller.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-macos-release:
-    needs: [get-version, bump-version]
-    if: needs.bump-version.outputs.version != needs.get-version.outputs.version
-    runs-on: macos-latest
-    name: Build macOS DMG and upload to release
-
-    steps:
-      - name: Checkout latest code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-          ref: main
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Build frontend
-        run: cd frontend && npm ci && npm run build
-
-      - name: Build installer dist
-        run: python build/build_installer.py
-
-      - name: Build DMG
-        run: bash build/build_dmg.sh
-
-      - name: Verify DMG exists
-        run: |
-          if [ ! -f build/FinanceAnalysis.dmg ]; then
-            echo "DMG not found!"
-            exit 1
-          fi
-
-      - name: Upload DMG to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.bump-version.outputs.version }}
-          files: build/FinanceAnalysis.dmg
+          files: ${{ matrix.artifact_glob }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

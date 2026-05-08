@@ -207,3 +207,93 @@ class TestUpdateServiceCaching:
         # Process now reports 1.16.0; the cached "outdated" verdict must flip.
         assert info.current == "1.16.0"
         assert info.is_outdated is False
+
+
+class TestPickAssetUrl:
+    """Tests for the OS- and arch-aware asset selector.
+
+    macOS now ships two DMGs per release (one per architecture). The
+    selector must pick the asset whose filename contains ``arm64`` or
+    ``x86_64`` matching the running machine, falling back to *any*
+    .dmg if the arch tag isn't present (e.g. for legacy single-arch
+    releases). Windows is x86_64-only and matches by extension.
+    """
+
+    @staticmethod
+    def _assets() -> list[dict]:
+        return [
+            {
+                "name": "FinanceAnalysis-arm64.dmg",
+                "browser_download_url": "https://example/arm64.dmg",
+            },
+            {
+                "name": "FinanceAnalysis-x86_64.dmg",
+                "browser_download_url": "https://example/x86_64.dmg",
+            },
+            {
+                "name": "FinanceAppInstaller.exe",
+                "browser_download_url": "https://example/installer.exe",
+            },
+        ]
+
+    def test_darwin_arm64_picks_arm64_dmg(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Apple Silicon machines get the arm64 DMG."""
+        monkeypatch.setattr(update_service.sys, "platform", "darwin")
+        monkeypatch.setattr(update_service.platform, "machine", lambda: "arm64")
+
+        url = update_service._pick_asset_url(self._assets())
+
+        assert url == "https://example/arm64.dmg"
+
+    def test_darwin_x86_64_picks_x86_64_dmg(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Intel machines get the x86_64 DMG."""
+        monkeypatch.setattr(update_service.sys, "platform", "darwin")
+        monkeypatch.setattr(update_service.platform, "machine", lambda: "x86_64")
+
+        url = update_service._pick_asset_url(self._assets())
+
+        assert url == "https://example/x86_64.dmg"
+
+    def test_darwin_unknown_arch_treated_as_x86_64(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unfamiliar arch tokens (PPC, armv7, etc.) default to x86_64.
+
+        The picker maps "anything not arm64" to ``x86_64`` because
+        x86_64 binaries can run via Rosetta on Apple Silicon, while
+        the reverse is not true. A user on an exotic / mislabelled arch
+        is more likely to succeed downloading the x86_64 build.
+        """
+        monkeypatch.setattr(update_service.sys, "platform", "darwin")
+        monkeypatch.setattr(update_service.platform, "machine", lambda: "powerpc")
+
+        url = update_service._pick_asset_url(self._assets())
+
+        assert url == "https://example/x86_64.dmg"
+
+    def test_darwin_legacy_single_dmg_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A pre-dual-arch release with one un-tagged DMG still resolves."""
+        monkeypatch.setattr(update_service.sys, "platform", "darwin")
+        monkeypatch.setattr(update_service.platform, "machine", lambda: "arm64")
+
+        legacy = [
+            {
+                "name": "FinanceAnalysis.dmg",
+                "browser_download_url": "https://example/legacy.dmg",
+            }
+        ]
+        assert update_service._pick_asset_url(legacy) == "https://example/legacy.dmg"
+
+    def test_win32_picks_exe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Windows takes the .exe regardless of arch token."""
+        monkeypatch.setattr(update_service.sys, "platform", "win32")
+
+        url = update_service._pick_asset_url(self._assets())
+
+        assert url == "https://example/installer.exe"
+
+    def test_linux_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Linux has no shipping artifact — return None."""
+        monkeypatch.setattr(update_service.sys, "platform", "linux")
+
+        assert update_service._pick_asset_url(self._assets()) is None

@@ -8,15 +8,25 @@ and macOS. Read this before touching anything in `build/`,
 ## Three flows, one cleanup module
 
 ```
-                              ┌──────────────────────────────┐
-Windows NSIS Uninstall.exe ──▶│                              │
-                              │                              │
-macOS uninstall.command   ──▶ │  backend/uninstall/cleanup.py │──▶ Keychain entries removed
-(double-clicked or in-app)    │  python -m backend.uninstall  │──▶ ~/.finance-analysis/ wiped
-                              │                              │     (only when --wipe)
-macOS POST /api/uninstall ──▶│                              │
-                              └──────────────────────────────┘
+Windows NSIS Uninstall.exe         ─┐
+   FinanceAnalysis.exe              │
+   --uninstall-cleanup --wipe|--keep-data
+                                    │
+macOS uninstall.command            ─┤  backend/uninstall/cleanup.py
+   (double-clicked, calls          │  ─────────────────────────────▶  Keychain entries removed
+    Resources/.../FinanceAnalysis  │  ── (single source of truth ──▶  ~/.finance-analysis/ wiped
+    --uninstall-cleanup ...)        │     for what counts as state)    (only when --wipe)
+                                    │
+macOS POST /api/uninstall          ─┘
+   (Settings → Uninstall, calls
+    cleanup.run() in-process)
 ```
+
+The bundled binary exposes `--uninstall-cleanup` as a CLI mode
+(`build/app_entry.py`) so NSIS and the macOS uninstall.command can
+reach `backend.uninstall.cleanup.run` without needing a venv-hosted
+Python interpreter. The in-app uninstall route imports the module
+directly.
 
 The three uninstall surfaces all delegate to **one** Python module
 (`backend/uninstall/cleanup.py`) so they agree on:
@@ -64,26 +74,45 @@ A backend file cache is shared by all open windows on the machine and
 respected by the per-window TanStack Query (its `staleTime` is just a
 client-side optimisation on top).
 
+## Build pipeline (both platforms)
+
+`python build/build_app.py` is the single orchestrator. It:
+
+1. `cd frontend && npm ci && npm run build`.
+2. Provisions Playwright's Chromium into `build/.playwright-cache`
+   (build-local, not `~/.cache`, so the bundle is hermetic).
+3. Runs PyInstaller against `build/finance_analysis.spec`. Output:
+   `dist/Finance Analysis.app` on macOS, `dist/FinanceAnalysis/` on
+   Windows.
+4. Wraps the result: `build/build_dmg.sh` produces the DMG on macOS,
+   `makensis build/installer_script.nsi` produces the EXE on Windows.
+
+Local dev is unaffected — `poetry run uvicorn backend.main:app --reload`
+and `npm run dev` work as before. The build pipeline is opt-in.
+
 ## Windows install (NSIS)
 
-`build/installer_script.nsi`:
+`build/installer_script.nsi` is now a thin wrapper around the
+PyInstaller-produced self-contained directory.
 
 - **Per-user install** at `$LOCALAPPDATA\Programs\Finance Analysis`.
-  No `RequestExecutionLevel admin`. No UAC prompts on install or
-  upgrade. The in-INSTDIR `.venv` lives somewhere we can write to
-  without ACL friction.
-- **HKCU `Uninstall` registry entry** — Add/Remove Programs sees
-  `DisplayName`, `DisplayVersion`, `Publisher`, `DisplayIcon`,
+  No `RequestExecutionLevel admin`, no UAC prompts on install or upgrade.
+- **No `setup.bat`, no `.venv`, no Python/Node bootstrap.** The
+  bundled `FinanceAnalysis.exe` ships with everything baked in.
+- **HKCU `Uninstall` registry entry** populates Add/Remove Programs
+  with `DisplayName`, `DisplayVersion`, `Publisher`, `DisplayIcon`,
   `InstallLocation`, `UninstallString`, `QuietUninstallString`,
   `URLInfoAbout`, `URLUpdateInfo`, `EstimatedSize`, `NoModify`,
-  `NoRepair`. Looks like a real app, supports `winget uninstall`.
+  `NoRepair`. Supports `winget uninstall`.
 - **`.onInit` migration logic:**
-  1. If a previous per-user install (HKCU\Software\Finance Analysis)
-     exists, run its uninstaller silently with `_?=$0` so we wait for
-     it before laying down the new files. User data preserved
-     (Uninstall.exe in default mode is "remove binaries only").
-  2. If a legacy HKLM/Program Files install exists, prompt the user
-     and migrate. Aborts on No.
+  1. Existing per-user install (HKCU\Software\Finance Analysis): run
+     its uninstaller silently with `_?=$0` so we wait for it before
+     laying down the new build. User data preserved.
+  2. Legacy HKLM/Program Files install: prompt the user, run the
+     legacy uninstaller via `ExecShellWait` (UAC fires once for the
+     legacy half), then proceed.
+- **Shortcuts** point directly at `$INSTDIR\FinanceAnalysis.exe` —
+  no `run.bat` wrapper.
 
 ### Windows uninstall
 
@@ -92,68 +121,74 @@ checkbox: **"Also delete my data and saved passwords."** Default:
 unchecked.
 
 Uninstall flow:
-1. `taskkill /F /FI "IMAGENAME eq uvicorn.exe"` — best-effort stop.
-2. `python -m backend.uninstall --wipe | --keep-data` from the
-   in-INSTDIR venv. This handles Keychain (Windows Credential Manager
-   via the `keyring` package) and the user-data dir, depending on the
-   checkbox.
-3. `RMDir /r $INSTDIR` — removes the venv and program files.
+1. `taskkill /F /IM "FinanceAnalysis.exe"` — best-effort stop.
+2. `"$INSTDIR\FinanceAnalysis.exe" --uninstall-cleanup --wipe|--keep-data`.
+   The bundled exe runs in CLI mode, delegates to
+   `backend.uninstall.cleanup.run`, prints a JSON report, exits.
+3. `RMDir /r $INSTDIR` — removes the entire bundle directory.
 4. Delete shortcuts and HKCU registry entries.
 
-The Python CLI runs **before** `RMDir /r $INSTDIR` so the venv-hosted
-interpreter is still available. The unit tests cover the cleanup
-behaviour; testing the NSIS UI itself requires a Windows VM, which is
-documented in the manual smoke-test plan below.
+The cleanup CLI runs **before** `RMDir /r $INSTDIR` so the bundled
+exe is still on disk to invoke.
 
 ## macOS install (DMG)
 
-`build/build_dmg.sh` produces a real `.app` bundle inside a
-drag-to-Applications DMG. The bundle layout:
+PyInstaller's `BUNDLE` directive in `build/finance_analysis.spec`
+produces `dist/Finance Analysis.app` — a real, self-contained
+application bundle. `build/build_dmg.sh` only injects the
+standalone `uninstall.command` and wraps the result in a DMG.
 
 ```
 Finance Analysis.app/
 ├── Contents/
-│   ├── MacOS/FinanceAnalysis        ← launcher.sh (entry point)
-│   ├── Info.plist                    ← CFBundleVersion
-│   ├── Resources/
-│   │   ├── icon.icns
-│   │   ├── uninstall.command         ← standalone uninstaller (DMG-visible)
-│   │   └── app/                      ← full source tree (rsynced on launch)
-│   │       └── build/macos/uninstall.command
+│   ├── MacOS/FinanceAnalysis        ← PyInstaller bootloader binary
+│   ├── Frameworks/                   ← Python interpreter, ext modules
+│   ├── Info.plist                    ← CFBundleVersion (read from pyproject.toml)
+│   └── Resources/
+│       ├── frontend/dist/            ← React build, served by FastAPI StaticFiles
+│       ├── playwright_browsers/      ← Bundled Chromium (~150MB)
+│       ├── icon.icns
+│       └── uninstall.command         ← Standalone uninstaller
 ```
 
-### macOS launcher (version-gated)
+DMG filenames are arch-tagged: `FinanceAnalysis-arm64.dmg` and
+`FinanceAnalysis-x86_64.dmg`. The in-app update notifier
+(`backend/services/update_service.py::_pick_asset_url`) matches the
+asset to `platform.machine()` so users get the right download.
 
-`build/macos/launcher.sh`:
+### macOS launch (no setup, no rsync)
 
-1. Reads `CFBundleVersion` from `Info.plist`.
-2. Compares to `~/.finance-analysis/app/.installed_version`.
-3. **If they match AND `.venv` + `frontend/dist` exist** → skip rsync
-   + setup, run `run.sh` directly. ~2s launch.
-4. **Otherwise** → rsync the bundle into `~/.finance-analysis/app`,
-   run `setup.sh`, write the version marker **after setup succeeds**
-   (a failed setup doesn't get cached as "done"). ~30-60s launch
-   on a cold install or build change.
-5. Always copies `uninstall.command` to `~/.finance-analysis/`
-   so the standalone uninstaller survives bundle deletion.
+The PyInstaller-built `.app` is fully self-contained, so the launch
+path is now:
 
-### macOS uninstall (three flavours)
+1. User double-clicks `Finance Analysis.app`.
+2. `Contents/MacOS/FinanceAnalysis` (PyInstaller bootloader) starts.
+3. The bootloader extracts the Python runtime to a `_MEIPASS` temp
+   dir, imports `build/app_entry.py`, and runs `main()`.
+4. `app_entry.py` configures file logging, picks a free port, starts
+   uvicorn in-process, opens the default browser, blocks on signal.
+
+No Terminal pop-up. No `setup.sh`. No `~/.finance-analysis/app/`
+sync. Logs go to `~/.finance-analysis/logs/uvicorn.log` (rotated
+2 MiB × 3). First launch is ~2s, the same as every subsequent launch.
+
+### macOS uninstall (three surfaces)
 
 1. **In-app:** Settings → Uninstall Finance Analysis. Calls
    `POST /api/uninstall`. Backend runs `cleanup.run(...)` synchronously,
    then writes a deferred shell script to `/tmp` and launches it in
-   Terminal via `osascript`. The deferred script waits 2s (so the
-   HTTP response can flush) then removes the .app + the synced
-   runtime copy + (if wiping) the user-data dir + kills uvicorn.
-2. **Standalone `Uninstall Finance Analysis.command`:** double-click in
-   `Contents/Resources/` (inside the .app) or in `~/.finance-analysis/`
-   (copied there by the launcher). Asks the keep/wipe question via
-   `read -p`, calls the same Python cleanup CLI from the synced venv,
-   then removes the .app.
+   Terminal via `osascript`. The deferred script removes the .app +
+   (if wiping) the user-data dir + kills the bundle's uvicorn process.
+2. **Standalone `Uninstall Finance Analysis.command`:** found inside
+   the bundle's `Contents/Resources/`. Right-Click → Show Package
+   Contents → drag the `.command` to Terminal, or open it from
+   inside the bundle. Asks the keep/wipe question via `read -p`,
+   calls the bundled exe's `--uninstall-cleanup` mode, then removes
+   the .app.
 3. **Drag-to-Trash:** still works, but leaves user data + Keychain
-   entries behind. We don't try to fix this — macOS doesn't support
-   "run on uninstall" hooks. Documented in the README so users know
-   to use the standalone or in-app paths if they want a clean removal.
+   entries behind. macOS doesn't support "run on uninstall" hooks.
+   Documented in the README so users know to use the in-app or
+   standalone paths for a clean removal.
 
 ## Manual smoke test plan
 
@@ -164,16 +199,17 @@ user account on macOS):
 
 1. **Fresh install:**
    - Run `FinanceAppInstaller.exe`.
-   - Verify: no UAC prompt, install dir is
-     `%LOCALAPPDATA%\Programs\Finance Analysis`.
+   - Verify: no UAC prompt, no "Python downloading…" message, install
+     dir is `%LOCALAPPDATA%\Programs\Finance Analysis`.
    - Verify Add/Remove Programs entry shows publisher, version, icon,
      About URL, and accurate size.
-   - Launch the desktop shortcut. App opens, dashboard loads.
+   - Launch the desktop shortcut. Dashboard loads in the default
+     browser within ~2s.
 
 2. **Upgrade in place:**
    - With v1.X installed, run installer for v1.X+1.
    - Verify: no UAC prompt, no "an existing version is installed"
-     prompt, no orphan venv. The HKCU registry entry should reflect
+     prompt, no orphan files. The HKCU registry entry should reflect
      the new version.
 
 3. **Uninstall (preserve data):**
@@ -191,42 +227,54 @@ user account on macOS):
      gone, `cmdkey /list` no longer shows
      `finance-analysis-app/*` entries.
 
+5. **Scrape with bundled Chromium:**
+   - Set up a credential, kick off a scrape.
+   - Verify Playwright fires without trying to download Chromium.
+     Confirm via `%USERPROFILE%\.finance-analysis\logs\uvicorn.log`.
+
 ### macOS
 
-1. **Fresh install:**
-   - Open `FinanceAnalysis.dmg`, drag to Applications.
-   - Launch from Launchpad. Terminal opens, setup.sh runs (~30-60s),
-     dashboard appears in default browser.
-   - Verify `~/.finance-analysis/app/.installed_version` equals the
-     bundle's `CFBundleVersion`.
+1. **Fresh install (arch-matching DMG):**
+   - On Apple Silicon, download `FinanceAnalysis-arm64.dmg`. On Intel,
+     download `FinanceAnalysis-x86_64.dmg`. The in-app update notifier
+     auto-picks the right one once the app is running.
+   - Open the DMG, drag to Applications.
+   - Launch from Launchpad. **No Terminal window.** Dashboard opens
+     in the default browser within ~2s.
 
 2. **Quit + relaunch:**
-   - Close the browser tab and the Terminal window.
-   - Launch again. Setup MUST be skipped — the version marker is
-     fresh, .venv exists. Launch should feel ~instant.
+   - Cmd-Q the app (or close it from the Dock).
+   - Launch again. Should be just as fast — no setup work happens.
 
 3. **Upgrade:**
-   - Replace the .app with a newer build (drag-to-Applications,
-     overwrite).
-   - Launch. Setup runs again because the version marker no longer
-     matches. Marker updates after setup succeeds.
+   - Replace the .app with a newer build (drag-to-Applications, overwrite).
+   - Launch. Same ~2s startup as a fresh install.
 
 4. **In-app uninstall (preserve data):**
    - Open Settings → Uninstall Finance Analysis.
    - Confirm without ticking "Also delete my data".
-   - Verify: .app gone from /Applications, `~/.finance-analysis/app/`
-     gone, but the user-data files (DB, credentials YAML) intact.
-   - Re-install (drag-to-Applications) and re-launch — data picks up.
+   - Verify: .app gone from /Applications, but `~/.finance-analysis/`
+     (DB, credentials YAML) intact.
+   - Re-install and re-launch — data picks up.
 
 5. **Standalone uninstall.command:**
-   - With app installed, double-click `~/.finance-analysis/uninstall.command`.
-   - Type `y` at the prompt. Verify the .app is removed AND the
-     user-data dir is gone AND `security find-generic-password -s
-     finance-analysis-app` returns nothing.
+   - With app installed, Right-Click `Finance Analysis.app` → Show
+     Package Contents → Contents/Resources → double-click `uninstall.command`.
+     Type `y` at the prompt.
+   - Verify the .app is removed AND the user-data dir is gone AND
+     `security find-generic-password -s finance-analysis-app` returns
+     nothing.
 
-6. **Drag-to-Trash regression check:**
+6. **Scrape with bundled Chromium:**
+   - Set up a credential, kick off a scrape.
+   - Verify Playwright fires without trying to download Chromium
+     (no network call to playwright.azureedge.net). Confirm by checking
+     `~/.finance-analysis/logs/uvicorn.log`.
+
+7. **Drag-to-Trash regression check:**
    - Drag `Finance Analysis.app` to Trash.
-   - User data should remain (this is the documented behaviour).
+   - User data should remain (documented behaviour — the .app's
+     uninstall hooks aren't invoked by Trash).
 
 ## Code-signing and notarization (out of scope)
 
@@ -264,16 +312,21 @@ backend/
     └── version.py       # reads pyproject.toml
 
 build/
-├── installer_script.nsi # Windows NSIS installer
-├── build_dmg.sh         # macOS DMG builder
-├── build_installer.py   # dist/ tree assembler (Python)
-├── setup.sh             # macOS post-install (deps install)
-├── setup.bat            # Windows post-install (deps install)
-├── run.sh / run.bat     # uvicorn launcher
-├── find_port.py
+├── app_entry.py         # Python entry point PyInstaller wraps; modes:
+│                        #   default        — start uvicorn, open browser
+│                        #   --smoke-test   — boot, hit /api/version, exit
+│                        #   --uninstall-cleanup --wipe|--keep-data
+├── finance_analysis.spec # Single PyInstaller spec (both platforms)
+├── build_app.py         # Orchestrator: frontend → playwright → pyinstaller → DMG/NSIS
+├── installer_script.nsi # Slim NSIS wrapper around PyInstaller dist/
+├── build_dmg.sh         # Slim macOS DMG wrapper around PyInstaller .app
 └── macos/
-    ├── launcher.sh      # CFBundleExecutable entry point
-    └── uninstall.command # standalone uninstaller
+    └── uninstall.command # Standalone uninstaller (in Contents/Resources)
+
+# Generated, not checked in:
+build/.playwright-cache/  # Build-local Chromium cache
+build/.pyinstaller-work/  # PyInstaller scratch dir
+dist/                     # PyInstaller output (.app on macOS, dir on Windows)
 
 frontend/src/
 ├── components/
