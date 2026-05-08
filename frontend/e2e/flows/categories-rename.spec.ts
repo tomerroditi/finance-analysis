@@ -39,24 +39,6 @@ test.describe("Categories rename flow", () => {
     // Fill the new name and press Enter; intercept the PUT to verify payload + status.
     await renameInput.fill(newName);
 
-    // Set up listener for the GET that follows the rename (invalidation-driven refetch).
-    // Use an async predicate that checks the response body contains the new name,
-    // so we don't accidentally resolve on a stale in-flight GET.
-    // Must be registered before pressing Enter so we don't miss a fast response.
-    const categoriesRefetch = page.waitForResponse(
-      async (r) => {
-        if (!/\/api\/tagging\/categories$/.test(r.url())) return false;
-        if (r.request().method() !== "GET") return false;
-        try {
-          const json = await r.json();
-          return newName in (json as object);
-        } catch {
-          return false;
-        }
-      },
-      { timeout: 20_000 },
-    );
-
     const [response] = await Promise.all([
       page.waitForResponse(
         (r) =>
@@ -75,15 +57,16 @@ test.describe("Categories rename flow", () => {
     // Panel heading updates immediately to the new name.
     await expect(panel.getByRole("heading", { name: new RegExp(`^${newName}$`, "i") })).toBeVisible({ timeout: 5_000 });
 
-    // Wait for the categories query to refetch with the renamed category.
-    await categoriesRefetch;
-
     // Close the panel so the grid is unobscured.
     await panel.getByRole("button", { name: /^close$/i }).click();
     await expect(panel).toBeHidden({ timeout: 3_000 });
 
-    // The grid now has fresh data — card should be visible immediately.
-    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 10_000 });
+    // Poll the DOM for the renamed card. The mutation triggers a per-key
+    // invalidation plus a 200ms-debounced global invalidation in
+    // queryClient.ts; either should refetch the categories list. A direct
+    // DOM poll is more reliable than waitForResponse with body inspection,
+    // which has timing issues when reading r.json() inside the predicate.
+    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 30_000 });
 
     // Cleanup: open the panel for the renamed category and rename back to "Food".
     await page.locator(`[data-testid="category-card-${newName}"]`).click();
@@ -94,35 +77,21 @@ test.describe("Categories rename flow", () => {
     const cleanupInput = renamedPanel.locator("input:focus");
     await cleanupInput.fill("Food");
 
-    const foodRefetch = page.waitForResponse(
-      async (r) => {
-        if (!/\/api\/tagging\/categories$/.test(r.url())) return false;
-        if (r.request().method() !== "GET") return false;
-        try {
-          const json = await r.json();
-          return "Food" in (json as object);
-        } catch {
-          return false;
-        }
-      },
-      { timeout: 20_000 },
-    );
-
-    await cleanupInput.press("Enter");
-    await page.waitForResponse(
-      (r) =>
-        /\/api\/tagging\/categories\//.test(r.url()) &&
-        r.request().method() === "PUT",
-      { timeout: 10_000 },
-    );
+    await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          /\/api\/tagging\/categories\//.test(r.url()) &&
+          r.request().method() === "PUT",
+        { timeout: 10_000 },
+      ),
+      cleanupInput.press("Enter"),
+    ]);
 
     // Panel heading updates to "Food" immediately.
     await expect(renamedPanel.getByRole("heading", { name: /^food$/i })).toBeVisible({ timeout: 5_000 });
 
-    // Wait for categories to refetch, then close and verify the grid.
-    await foodRefetch;
     await renamedPanel.getByRole("button", { name: /^close$/i }).click();
     await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
-    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 30_000 });
   });
 });
