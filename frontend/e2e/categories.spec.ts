@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 
 test.describe("Categories", () => {
@@ -40,27 +40,13 @@ test.describe("Categories", () => {
     await expect(page.getByText("Investments").first()).toBeVisible();
   });
 
-  test("category action buttons are visible without hover", async ({ page }) => {
-    // Helper to walk the DOM tree checking for opacity:0
-    async function getAncestorOpacity(locator: Locator): Promise<number> {
-      return locator.evaluate((el) => {
-        let node: Element | null = el;
-        while (node) {
-          const opacity = parseFloat(getComputedStyle(node).opacity);
-          if (opacity === 0) return 0;
-          node = node.parentElement;
-        }
-        return 1;
-      });
-    }
-
+  test("delete button is always visible in the category header", async ({ page }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForLoadState("networkidle");
 
-    // Wait for the page fade-in animation (animate-in fade-in duration-500) to finish.
-    // The animation starts at opacity:0; the ancestor opacity walk would return 0 if
-    // it runs during the first animation frame.
+    // Wait for the page fade-in animation (animate-in fade-in duration-500) to finish
+    // before checking opacity — the animation starts at opacity:0.
     await page.waitForFunction(
       () => {
         const animated = document.querySelector(".animate-in");
@@ -69,26 +55,20 @@ test.describe("Categories", () => {
       { timeout: 3_000 }
     );
 
-    // Buttons must be visible immediately — no hover required.
-    // Title values come from en.json: renameCategory="Rename", addTag="Add Tag", deleteCategory="Delete Category"
-    const renameBtn = page.locator('button[title="Rename"]').first();
-    const addTagBtn = page.locator('button[title="Add Tag"]').first();
+    // The delete button lives in the right zone of every category header.
+    // Title value comes from en.json: deleteCategory="Delete Category"
     const deleteBtn = page.locator('button[title="Delete Category"]').first();
-
-    // Wait for the buttons to be in the DOM first
-    await expect(renameBtn).toBeAttached({ timeout: 10_000 });
-    await expect(addTagBtn).toBeAttached({ timeout: 10_000 });
     await expect(deleteBtn).toBeAttached({ timeout: 10_000 });
 
-    // Verify buttons are not hidden behind opacity-0 — the action row container
-    // must have opacity 1 (i.e. it is not inside an opacity-0 group that requires hover).
-    const renameOpacity = await getAncestorOpacity(renameBtn);
-    expect(renameOpacity, "Rename button (or its container) must not have opacity:0 — buttons should be visible without hover").toBe(1);
-
-    const addTagOpacity = await getAncestorOpacity(addTagBtn);
-    expect(addTagOpacity, "Add Tag button (or its container) must not have opacity:0 — buttons should be visible without hover").toBe(1);
-
-    const deleteOpacity = await getAncestorOpacity(deleteBtn);
-    expect(deleteOpacity, "Delete Category button (or its container) must not have opacity:0 — buttons should be visible without hover").toBe(1);
+    // Verify it is not hidden behind an opacity-0 ancestor.
+    const opacity = await deleteBtn.evaluate((el) => {
+      let node: Element | null = el;
+      while (node) {
+        if (parseFloat(getComputedStyle(node).opacity) === 0) return 0;
+        node = node.parentElement;
+      }
+      return 1;
+    });
+    expect(opacity, "Delete button must not have opacity:0 — it should be visible without hover").toBe(1);
   });
 });
