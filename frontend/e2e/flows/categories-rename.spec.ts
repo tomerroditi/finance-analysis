@@ -38,6 +38,14 @@ test.describe("Categories rename flow", () => {
 
     // Fill the new name and press Enter; intercept the PUT to verify payload + status.
     await renameInput.fill(newName);
+
+    // Set up listener for the GET that follows the rename (invalidation-driven refetch).
+    // Must be registered before pressing Enter so we don't miss a fast response.
+    const categoriesRefetch = page.waitForResponse(
+      (r) => /\/api\/tagging\/categories$/.test(r.url()) && r.request().method() === "GET",
+      { timeout: 15_000 },
+    );
+
     const [response] = await Promise.all([
       page.waitForResponse(
         (r) =>
@@ -53,15 +61,18 @@ test.describe("Categories rename flow", () => {
     const body = response.request().postDataJSON() as { new_name: string };
     expect(body.new_name).toBe(newName);
 
-    // Panel heading updates immediately to the new name (before grid refetches).
+    // Panel heading updates immediately to the new name.
     await expect(panel.getByRole("heading", { name: new RegExp(`^${newName}$`, "i") })).toBeVisible({ timeout: 5_000 });
+
+    // Wait for the categories query to refetch with the renamed category.
+    await categoriesRefetch;
 
     // Close the panel so the grid is unobscured.
     await panel.getByRole("button", { name: /^close$/i }).click();
     await expect(panel).toBeHidden({ timeout: 3_000 });
 
-    // The grid card should now show the new category name.
-    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 10_000 });
+    // The grid now has fresh data — card should be visible immediately.
+    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 5_000 });
 
     // Cleanup: open the panel for the renamed category and rename back to "Food".
     await page.locator(`[data-testid="category-card-${newName}"]`).click();
@@ -71,6 +82,12 @@ test.describe("Categories rename flow", () => {
     await renamedHeading.click();
     const cleanupInput = renamedPanel.locator("input:focus");
     await cleanupInput.fill("Food");
+
+    const foodRefetch = page.waitForResponse(
+      (r) => /\/api\/tagging\/categories$/.test(r.url()) && r.request().method() === "GET",
+      { timeout: 15_000 },
+    );
+
     await cleanupInput.press("Enter");
     await page.waitForResponse(
       (r) =>
@@ -79,10 +96,13 @@ test.describe("Categories rename flow", () => {
       { timeout: 10_000 },
     );
 
-    // Panel heading updates immediately; close it before checking the grid.
+    // Panel heading updates to "Food" immediately.
     await expect(renamedPanel.getByRole("heading", { name: /^food$/i })).toBeVisible({ timeout: 5_000 });
+
+    // Wait for categories to refetch, then close and verify the grid.
+    await foodRefetch;
     await renamedPanel.getByRole("button", { name: /^close$/i }).click();
     await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
-    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 5_000 });
   });
 });
