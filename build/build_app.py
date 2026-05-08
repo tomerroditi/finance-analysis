@@ -54,10 +54,32 @@ def _run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) ->
     """Run ``cmd`` and raise ``SystemExit`` on non-zero exit.
 
     Inherits stdout/stderr so the developer sees real-time progress
-    from npm / pyinstaller / makensis. The shell is intentionally not
-    invoked — every command is a known argv list.
+    from npm / pyinstaller / makensis.
+
+    On Windows we resolve the executable through ``shutil.which`` (and
+    fall back to ``shell=True``) because Python's ``subprocess.run``
+    doesn't auto-append the ``.cmd``/``.bat`` extensions that npm and
+    other Node-installed scripts ship as. Without this, ``npm ci``
+    raises ``FileNotFoundError: [WinError 2] The system cannot find
+    the file specified`` — even though ``npm`` is on PATH, it lives at
+    ``npm.cmd`` and CreateProcess won't find it bare.
     """
     print(f"\n>> {' '.join(cmd)}  (cwd={cwd or ROOT})")
+    if sys.platform == "win32" and cmd:
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd = [resolved, *cmd[1:]]
+        else:
+            # Last-resort fallback: let cmd.exe resolve PATHEXT.
+            completed = subprocess.run(
+                " ".join(f'"{a}"' if " " in a else a for a in cmd),
+                cwd=cwd or ROOT,
+                env=env,
+                shell=True,
+            )
+            if completed.returncode != 0:
+                sys.exit(f"command failed (exit {completed.returncode}): {' '.join(cmd)}")
+            return
     completed = subprocess.run(cmd, cwd=cwd or ROOT, env=env)
     if completed.returncode != 0:
         sys.exit(f"command failed (exit {completed.returncode}): {' '.join(cmd)}")
