@@ -1,3 +1,21 @@
+## v1.18.0 (2026-05-08)
+
+### Feat
+
+- **build**: self-contained PyInstaller-bundled desktop app on macOS + Windows
+
+### Fix
+
+- **ci**: bump build-smoke bundle-size cap from 600 MB to 2 GB
+- **ci**: put NSIS on PATH after choco install on Windows
+- **build**: resolve Windows .cmd executables via shutil.which
+- **build**: make build_app.py print ASCII + force UTF-8 on Windows
+- **deps**: regenerate poetry.lock for the new [build] group
+
+### Refactor
+
+- **build**: use system Chrome/Edge instead of bundled Chromium
+
 ## v1.17.1 (2026-05-08)
 
 ### Refactor
