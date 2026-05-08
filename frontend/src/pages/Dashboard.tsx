@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   TrendingDown,
@@ -19,6 +20,8 @@ import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";
 import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactionsSection";
 import { SankeyChart } from "../components/SankeyChart";
 import { Skeleton } from "../components/common/Skeleton";
+import { EmptyState } from "../components/common/EmptyState";
+import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
@@ -174,6 +177,8 @@ function FinancialHealthHeader({
 export function Dashboard() {
   const { t } = useTranslation();
   const { isDemoMode } = useDemoMode();
+  const navigate = useNavigate();
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
   const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
@@ -384,6 +389,45 @@ export function Dashboard() {
   // ================================================================
   //  Render
   // ================================================================
+
+  const isDbEmpty =
+    !transactionsLoading && (allTransactions?.length ?? 0) === 0;
+
+  if (isDbEmpty) {
+    return (
+      <EmptyState
+        title={t("emptyStates.dashboard.title")}
+        description={t("emptyStates.dashboard.description")}
+        steps={[
+          {
+            title: t("emptyStates.connectStep.title"),
+            description: t("emptyStates.connectStep.description"),
+          },
+          {
+            title: t("emptyStates.scrapeStep.title"),
+            description: t("emptyStates.scrapeStep.description"),
+          },
+          {
+            title: t("emptyStates.analyseStep.title"),
+            description: t("emptyStates.analyseStep.description"),
+          },
+        ]}
+        cta={{
+          label: t("emptyStates.connectAccounts"),
+          onClick: () => navigate("/data-sources"),
+        }}
+        secondary={{
+          label: t("emptyStates.tryDemoMode"),
+          onClick: () => setShowDemoConfirm(true),
+        }}
+        footer={
+          showDemoConfirm ? (
+            <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+          ) : undefined
+        }
+      />
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
