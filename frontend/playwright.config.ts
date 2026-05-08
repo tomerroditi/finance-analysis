@@ -20,7 +20,19 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1, // single worker — demo mode is shared state
   reporter: "html",
-  timeout: 30_000,
+  timeout: 120_000,
+  expect: {
+    // The dashboard fires ~30 React Query requests in parallel on cold
+    // load. The browser caps HTTP/1.1 to 6 concurrent connections to one
+    // origin, so the slowest endpoints (net-worth-over-time, portfolio
+    // analysis, monthly-expenses) end up waiting 13–25s in the queue.
+    // KPI labels render only after their query resolves, so the default
+    // 5s expect timeout times out before the data lands. 45s is safe
+    // for cold-cache navigations on a saturated dev server; the right
+    // long-term fix is HTTP/2 on the backend (or batched query
+    // endpoints), not bumping the timeout further.
+    timeout: 45_000,
+  },
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",

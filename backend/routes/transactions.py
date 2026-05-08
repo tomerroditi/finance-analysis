@@ -76,11 +76,15 @@ async def get_transactions(
 ) -> list[dict[str, Any]]:
     """Get all transactions, optionally filtered by service."""
     repo = TransactionsRepository(db)
-    df = repo.get_table(
-        service=service,
-        include_split_parents=include_split_parents,
-        exclude_services=[Services.INSURANCE.value],
-    )
+    try:
+        df = repo.get_table(
+            service=service,
+            include_split_parents=include_split_parents,
+            exclude_services=[Services.INSURANCE.value],
+        )
+    except ValueError as e:
+        # Unknown / malformed `service` query param.
+        raise HTTPException(status_code=400, detail=str(e))
     return df.to_dict(orient="records")
 
 

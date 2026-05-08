@@ -335,6 +335,21 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     )
 
 
+@app.exception_handler(OverflowError)
+async def overflow_error_handler(request: Request, exc: OverflowError):
+    """Map ``OverflowError`` to ``422 Unprocessable Entity``.
+
+    SQLite INTEGER is 64-bit signed (max 2**63 - 1). When a path parameter
+    exceeds that, SQLAlchemy raises ``OverflowError`` while binding the
+    statement. Treat it as a client input problem rather than a server bug
+    so the schemathesis fuzz job stays clean.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Numeric path parameter exceeds supported range"},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Swallow unexpected exceptions with a generic 500 response.

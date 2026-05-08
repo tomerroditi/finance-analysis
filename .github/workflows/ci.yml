@@ -56,3 +56,113 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    name: E2E (Playwright, shard ${{ matrix.shard }}/4)
+    timeout-minutes: 15
+    strategy:
+      # Run 4 parallel shards. Wall time drops from ~7 min to ~2-3 min.
+      # Costs 4x CI minutes but PR feedback is the constraint we care
+      # about, and GitHub Actions minutes are unlimited on public repos.
+      # Bump the shard count when wall time creeps back over 5 min — but
+      # at some point the right fix is the dashboard-bundle endpoint, not
+      # more runners.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry and backend deps
+        run: |
+          pip install poetry
+          poetry install --no-root
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+
+      - name: Install Playwright chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start backend + run Playwright
+        working-directory: frontend
+        env:
+          CI: "true"
+          PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          # OS keyring isnt available on GitHub runners — the env above
+          # routes keyring access to a plaintext file backend.
+          poetry --directory=.. run uvicorn backend.main:app --port 8000 \
+            > /tmp/backend.log 2>&1 &
+          npm run dev > /tmp/frontend.log 2>&1 &
+          npx -y wait-on http://localhost:8000/openapi.json http://localhost:5173 \
+            -t 60000
+          npx playwright test --shard="$SHARD_INDEX"/4
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-shard-${{ matrix.shard }}
+          path: frontend/playwright-report
+          retention-days: 7
+
+
+  api-fuzz:
+    runs-on: ubuntu-latest
+    name: API fuzz (Schemathesis)
+    timeout-minutes: 15
+    # Hard gate. The baseline 5xxs the previous version of this job was
+    # tolerating have been fixed — empty-DB DataFrame schema, unknown
+    # service query param, missing-project lookups, and SQLite INTEGER
+    # overflow. Any new 5xx caught here is a regression; fix it rather
+    # than restoring continue-on-error.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry and backend deps
+        run: |
+          pip install poetry
+          poetry install --no-root
+
+      - name: Start backend
+        env:
+          PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
+        run: |
+          poetry run uvicorn backend.main:app --port 8000 \
+            > /tmp/backend.log 2>&1 &
+          npx -y wait-on http://localhost:8000/openapi.json -t 60000
+
+      - name: Run Schemathesis
+        env:
+          SCHEMATHESIS_MAX_EXAMPLES: "25"
+        run: bash scripts/run_schemathesis.sh

@@ -60,7 +60,14 @@ class AnalysisService:
             - ``net_balance_change`` – income minus expenses.
         """
         df = self.repo.get_table()
-        latest_date = df["date"].max()
+        # On a fresh / empty DB the column exists (canonical empty schema)
+        # but the max is NaT, which JSON can't serialize. Coerce to None.
+        latest_date_val = df["date"].max() if not df.empty else None
+        latest_date = (
+            None
+            if latest_date_val is None or pd.isna(latest_date_val)
+            else latest_date_val
+        )
 
         income, investments, expenses = self.get_income_investments_and_expenses(df)
         prior_wealth = self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth() + self.cash_balance_service.get_total_prior_wealth()
