@@ -17,14 +17,16 @@ test.describe("Categories add-tag flow", () => {
     const tagName = `e2e-tag-${Date.now()}`;
     await gotoAndWait(page, "/categories");
 
-    // Find the Food category card and expand it — Add Tag is now only
+    // Find the Food category card and expand it — Add Tag is only
     // available inside the expanded section, not in the header.
-    const foodHeading = page.getByRole("heading", { name: /^food$/i });
-    await expect(foodHeading).toBeVisible();
-    const foodCard = foodHeading.locator("xpath=ancestor::div[contains(@class,'rounded-2xl')][1]");
-
-    // Expand the card by clicking the heading.
-    await foodHeading.click();
+    // Click the chevron span (first span in the header): it has no onClick
+    // so the click bubbles to the header row's toggleCategory handler.
+    // Clicking the header div's center would land on the h3, which stops
+    // propagation and enters rename mode instead.
+    const foodHeader = page.locator('[data-testid="category-header-Food"]');
+    await expect(foodHeader).toBeVisible();
+    const foodCard = foodHeader.locator("xpath=ancestor::div[contains(@class,'rounded-2xl')][1]");
+    await foodHeader.locator("span").first().click();
 
     // The inline "Add Tag" button appears in the expanded tag list.
     const addTagBtn = foodCard.locator('button[title="Add Tag"]').first();
