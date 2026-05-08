@@ -1,3 +1,9 @@
+## v1.17.1 (2026-05-08)
+
+### Refactor
+
+- **categories**: remove redundant in-page title
+
 ## v1.17.0 (2026-05-08)
 
 ### Feat

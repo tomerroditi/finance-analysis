@@ -9,7 +9,7 @@
 ; source of truth.
 
 !define APP_NAME "Finance Analysis"
-!define APP_VERSION "1.17.0"
+!define APP_VERSION "1.17.1"
 !define APP_PUBLISHER "Tomer Roditi"
 !define APP_URL "https://github.com/tomerroditi/finance-analysis"
 !define OUTPUT_EXE "FinanceAppInstaller.exe"
