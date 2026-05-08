@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "../test-utils";
 import { Categories } from "./Categories";
 
@@ -26,13 +25,13 @@ describe("Categories", () => {
     });
 
     it("displays tags within categories after expanding", async () => {
-      const user = userEvent.setup();
       renderWithProviders(<Categories />);
       await waitFor(() => {
         expect(screen.getByText("Food")).toBeInTheDocument();
       });
-      // Categories collapse their tags by default; tap the row to reveal them.
-      await user.click(screen.getByText("Food"));
+      // The h3 stopsPropagation to handle inline rename, so click the outer
+      // header row (identified by data-testid) to expand the accordion.
+      fireEvent.click(screen.getByTestId("category-header-Food"));
       await waitFor(() => {
         expect(screen.getByText("Groceries")).toBeInTheDocument();
         expect(screen.getByText("Restaurants")).toBeInTheDocument();

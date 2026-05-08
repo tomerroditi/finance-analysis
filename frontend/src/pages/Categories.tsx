@@ -232,6 +232,7 @@ export function Categories() {
             >
               {/* Category Header Row */}
               <div
+                data-testid={`category-header-${category}`}
                 className="flex items-center px-3 md:px-5 py-3 md:py-4 cursor-pointer"
                 onClick={() => toggleCategory(category)}
               >
