@@ -34,7 +34,7 @@ python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && p
 cd frontend && npm install
 ```
 
-User data lives in `~/.finance-analysis/` (DB, credentials YAML, categories YAML). Auto-created on first run.
+User data lives in `~/.finance-analysis/` (SQLite DB at `data.db`). Auto-created on first run. Credentials and categories live in the DB; passwords are stored in the OS Keyring. Default categories ship bundled in `backend/resources/*.yaml` and are seeded into the DB on first run.
 
 ## Architecture
 

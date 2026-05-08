@@ -8,11 +8,12 @@ echo ==================================================
 cd /d "%~dp0"
 cd ..
 
-:: Activate environment
 call .venv\Scripts\activate.bat
 
-:: Launch FastAPI server (serves both API and frontend)
-start "" http://localhost:8765
-uvicorn backend.main:app --host 127.0.0.1 --port 8765
+for /f "delims=" %%p in ('python build\find_port.py') do set PORT=%%p
+
+echo Starting on http://localhost:%PORT%
+start "" "http://localhost:%PORT%"
+uvicorn backend.main:app --host 127.0.0.1 --port %PORT%
 
 endlocal

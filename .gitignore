@@ -7,7 +7,9 @@ __pycache__/
 *.egg-info/
 .eggs/
 dist/
-build/
+build/*.app/
+build/*.dmg
+build/*.exe
 *.log
 *.pot
 *.mo
@@ -78,3 +80,5 @@ $RECYCLE.BIN/
 frontend/playwright-report/
 frontend/test-results/
 .claude/settings.local.json
+.superpowers/
+docs/superpowers/
