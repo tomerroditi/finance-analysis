@@ -17,8 +17,14 @@ from backend.demo_setup import (
     prepare_demo_database,
     prepare_empty_database,
 )
-from backend.services.credentials_service import CredentialsService
 from backend.services.tagging_service import CategoriesTagsService
+
+# CredentialsService transitively imports `keyring`, which is desktop-only
+# and not installed in the Vercel serverless lambda. Import it lazily inside
+# the toggle handler so this route module always loads cleanly — otherwise
+# the try/except ImportError around `from backend.routes import testing` in
+# backend/main.py silently skips the entire route, and the Settings → Demo
+# Mode toggle 404s on every click.
 
 router = APIRouter()
 
@@ -62,16 +68,27 @@ async def toggle_demo_mode(
         # Reset database engine to pick up new path
         database.reset_engine()
 
-        CredentialsService.clear_cache()
+        # CredentialsService is desktop-only (transitively imports keyring,
+        # not in the Vercel serverless image). On Vercel demo credentials
+        # are not persisted to the keyring anyway, so skip the cache-clear
+        # and seeding when the import is unavailable.
+        try:
+            from backend.services.credentials_service import CredentialsService
+        except ImportError:
+            CredentialsService = None
+
+        if CredentialsService is not None:
+            CredentialsService.clear_cache()
         CategoriesTagsService.clear_cache()
 
         # If enabling demo mode, copy source DB then ensure schema is up-to-date
         if request.enabled:
             prepare_demo_database()
 
-            with get_db_context() as demo_db:
-                creds_service = CredentialsService(demo_db)
-                creds_service.seed_demo_credentials()
+            if CredentialsService is not None:
+                with get_db_context() as demo_db:
+                    creds_service = CredentialsService(demo_db)
+                    creds_service.seed_demo_credentials()
         else:
             # Bring an empty production DB up to a usable state when one
             # does not exist yet (Vercel cold start after toggle-off).
