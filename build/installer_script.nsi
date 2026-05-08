@@ -1,5 +1,5 @@
 !define APP_NAME "Finance Analysis"
-!define APP_VERSION "1.15.2"
+!define APP_VERSION "1.16.0"
 !define OUTPUT_EXE "FinanceAppInstaller.exe"
 
 OutFile "${OUTPUT_EXE}"
