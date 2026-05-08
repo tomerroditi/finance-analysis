@@ -402,7 +402,7 @@
     "confirmDeleteTag": "האם אתה בטוח שברצונך למחוק תגית זו?",
     "createNewCategory": "צור קטגוריה חדשה",
     "create": "צור",
-    "addTagTo": "הוסף תגית ל",
+    "addTagTo": "הוסף תגית ל{{category}}",
     "moveTagDescription": "העבר תגית זו לקטגוריה אחרת",
     "changeIconFor": "שנה אייקון עבור",
     "searchEmojis": "חפש אמוג'י...",

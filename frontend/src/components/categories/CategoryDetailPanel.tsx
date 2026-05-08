@@ -308,7 +308,7 @@ export function CategoryDetailPanel({
       <Modal
         isOpen={isAddTagOpen}
         onClose={() => setIsAddTagOpen(false)}
-        title={`${t("categories.addTagTo")} ${category}`}
+        title={t("categories.addTagTo", { category })}
         maxWidth="sm"
         zIndex="z-[60]"
       >
