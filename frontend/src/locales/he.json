@@ -520,6 +520,11 @@
       "other": "אחר"
     }
   },
+  "emptyStates": {
+    "demoConfirmDescription": "עובר לנתוני דוגמה — הנתונים האמיתיים שלך לא יושפעו.",
+    "demoConfirmEnable": "הפעל מצב הדגמה",
+    "demoConfirmCancel": "ביטול"
+  },
   "dataSources": {
     "title": "מקורות מידע",
     "subtitle": "נהל את החשבונות המחוברים שלך",

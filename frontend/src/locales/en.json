@@ -520,6 +520,11 @@
       "other": "Other"
     }
   },
+  "emptyStates": {
+    "demoConfirmDescription": "Switches to sample data — your real data won't be affected.",
+    "demoConfirmEnable": "Enable demo mode",
+    "demoConfirmCancel": "Cancel"
+  },
   "dataSources": {
     "title": "Data Sources",
     "subtitle": "Manage your connected accounts",
