@@ -75,13 +75,19 @@ export default defineConfig(({ mode }) => {
               //   /api/backups       must reflect server truth
               //   /api/onboarding/*  setup-time signal — stale cache
               //                      would mis-route a fresh user
+              //   /api/updates/*     cache lives on the backend; a stale
+              //                      browser cache would suppress new
+              //                      version notifications for hours
+              //   /api/uninstall     destructive, one-shot, never cached
               urlPattern: ({ url, request }) =>
                 request.method === "GET" &&
                 url.pathname.startsWith("/api/") &&
                 !url.pathname.startsWith("/api/scraping/") &&
                 !url.pathname.startsWith("/api/credentials") &&
                 !url.pathname.startsWith("/api/backups") &&
-                !url.pathname.startsWith("/api/onboarding/"),
+                !url.pathname.startsWith("/api/onboarding/") &&
+                !url.pathname.startsWith("/api/updates/") &&
+                !url.pathname.startsWith("/api/uninstall"),
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get",

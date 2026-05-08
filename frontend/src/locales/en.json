@@ -1027,5 +1027,36 @@
     "dismiss": "Dismiss",
     "networkFailedTitle": "Connection issue",
     "networkFailedMessage": "Couldn't reach the server — showing cached data."
+  },
+  "updates": {
+    "toastTitle": "Update available",
+    "toastMessage": "Finance Analysis v{{version}} is available.",
+    "download": "Download",
+    "later": "Later",
+    "dismissAriaLabel": "Dismiss update notification",
+    "aboutTitle": "About",
+    "currentVersion": "Current version",
+    "latestVersion": "Latest version",
+    "checkNow": "Check now",
+    "checking": "Checking…",
+    "upToDate": "You're up to date.",
+    "outdated": "A newer version is available.",
+    "checkFailed": "Couldn't check for updates right now.",
+    "lastCheckedAt": "Last checked {{when}}",
+    "openReleases": "Open releases page"
+  },
+  "uninstall": {
+    "sectionTitle": "Uninstall Finance Analysis",
+    "sectionBlurb": "Removes the app from this Mac. Your data and saved passwords are preserved unless you tick the box below.",
+    "wipeCheckboxLabel": "Also delete my data and saved passwords",
+    "wipeCheckboxHelp": "Transactions, categories, and Keychain entries will be permanently removed.",
+    "openButton": "Uninstall…",
+    "confirmTitle": "Uninstall Finance Analysis?",
+    "confirmKeepBody": "The app will close and be removed from /Applications. Your data will be preserved in ~/.finance-analysis/.",
+    "confirmWipeBody": "The app will close and be removed from /Applications. All data and saved passwords will be permanently deleted.",
+    "confirmCancel": "Cancel",
+    "confirmAction": "Uninstall",
+    "running": "Removing — you can close the Terminal window when it finishes.",
+    "failed": "Uninstall failed. Please try again or use the standalone uninstaller."
   }
 }

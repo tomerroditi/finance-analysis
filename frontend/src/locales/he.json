@@ -1027,5 +1027,36 @@
     "dismiss": "סגור",
     "networkFailedTitle": "בעיית חיבור",
     "networkFailedMessage": "לא הצלחנו להתחבר לשרת — מוצגים נתונים מהמטמון."
+  },
+  "updates": {
+    "toastTitle": "עדכון זמין",
+    "toastMessage": "גרסה {{version}} של Finance Analysis זמינה.",
+    "download": "הורדה",
+    "later": "אחר כך",
+    "dismissAriaLabel": "סגירת התראת עדכון",
+    "aboutTitle": "אודות",
+    "currentVersion": "גרסה נוכחית",
+    "latestVersion": "גרסה חדשה",
+    "checkNow": "בדוק עכשיו",
+    "checking": "בודק…",
+    "upToDate": "האפליקציה מעודכנת.",
+    "outdated": "קיימת גרסה חדשה.",
+    "checkFailed": "לא ניתן לבדוק עדכונים כרגע.",
+    "lastCheckedAt": "נבדק לאחרונה {{when}}",
+    "openReleases": "פתיחת עמוד הגרסאות"
+  },
+  "uninstall": {
+    "sectionTitle": "הסרת Finance Analysis",
+    "sectionBlurb": "מסיר את האפליקציה מהמק. הנתונים והסיסמאות יישמרו, אלא אם תסמן את התיבה למטה.",
+    "wipeCheckboxLabel": "מחק גם את הנתונים והסיסמאות שלי",
+    "wipeCheckboxHelp": "תנועות, קטגוריות ורשומות ב-Keychain יימחקו לצמיתות.",
+    "openButton": "הסרה…",
+    "confirmTitle": "להסיר את Finance Analysis?",
+    "confirmKeepBody": "האפליקציה תיסגר ותוסר מתיקיית /Applications. הנתונים יישמרו ב-~/.finance-analysis/.",
+    "confirmWipeBody": "האפליקציה תיסגר ותוסר מתיקיית /Applications. כל הנתונים והסיסמאות יימחקו לצמיתות.",
+    "confirmCancel": "ביטול",
+    "confirmAction": "הסר",
+    "running": "מסיר — ניתן לסגור את חלון ה-Terminal לאחר סיום הפעולה.",
+    "failed": "ההסרה נכשלה. נסה שוב או השתמש בכלי ההסרה העצמאי."
   }
 }
