@@ -1,3 +1,13 @@
+## v1.17.0 (2026-05-08)
+
+### Feat
+
+- **install**: in-app update notifier + cross-platform uninstall + cleaner Windows installer
+
+### Fix
+
+- **vercel**: add httpx to requirements.txt for serverless deploy
+
 ## v1.16.0 (2026-05-08)
 
 ### Feat
