@@ -283,4 +283,8 @@ async def get_project_details(
 ) -> dict[str, Any]:
     """Get project details including rules and transactions."""
     service = ProjectBudgetService(db)
-    return service.get_project_budget_view(name, include_split_parents)
+    try:
+        return service.get_project_budget_view(name, include_split_parents)
+    except ValueError as e:
+        # Service raises ValueError when no rules exist for the project name.
+        raise HTTPException(status_code=404, detail=str(e))

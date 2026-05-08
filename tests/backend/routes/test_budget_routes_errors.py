@@ -179,14 +179,15 @@ class TestProjectBudgetErrors:
         assert response.status_code == 422
 
     def test_get_project_details_nonexistent(self, test_client):
-        """Verify that ValueError propagates when fetching a non-existent project.
+        """Verify a missing project returns ``404 Not Found``.
 
-        The project service raises a ValueError when the project does not
-        exist. Since the route has no try/except and the test client has
-        ``raise_server_exceptions=True``, the error propagates through.
+        The project service raises ``ValueError`` when no rules exist for
+        the given category; the route catches that and surfaces it as a
+        404 with the same message in ``detail``.
         """
-        with pytest.raises(ValueError, match="not found"):
-            test_client.get("/api/budget/projects/NonExistentProject")
+        response = test_client.get("/api/budget/projects/NonExistentProject")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     def test_delete_nonexistent_project_succeeds_silently(self, test_client):
         """DELETE /api/budget/projects/NonExistent returns 200.

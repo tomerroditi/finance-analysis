@@ -19,7 +19,11 @@ from backend.models.transaction import (
     TransactionBase,
 )
 from backend.constants.providers import Services
-from backend.constants.tables import SplitTransactionsTableFields, Tables
+from backend.constants.tables import (
+    SplitTransactionsTableFields,
+    Tables,
+    TransactionsTableFields,
+)
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -605,10 +609,20 @@ class TransactionsRepository:
         Returns
         -------
         pd.DataFrame
-            Concatenated transactions; empty DataFrame if no data found.
+            Concatenated transactions. When no source has any rows, returns
+            an empty DataFrame **with the canonical transaction columns**
+            so downstream consumers can do ``df["date"]`` / ``df["unique_id"]``
+            without a ``KeyError`` on a fresh / production-mode database.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` does not match any registered source.
         """
         if service is not None:
             repo = self.get_repo_by_source(service)
+            if repo is None:
+                raise ValueError(f"Unknown service '{service}'")
             return repo.get_table()
 
         excluded_repos = {
@@ -632,7 +646,9 @@ class TransactionsRepository:
         dfs = [df for df in dfs if not df.empty]
 
         if not dfs:
-            return pd.DataFrame()
+            return pd.DataFrame(
+                columns=[f.value for f in TransactionsTableFields]
+            )
 
         return pd.concat(dfs, ignore_index=True)
 

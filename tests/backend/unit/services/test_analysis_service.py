@@ -28,11 +28,22 @@ class TestAnalysisServiceOverview:
         assert result["net_balance_change"] == 28200.0 - 9075.0
 
     def test_get_overview_empty_db(self, db_session):
-        """Verify overview raises KeyError on empty database (no columns in empty DataFrame)."""
-        service = AnalysisService(db_session)
+        """Verify overview returns zero-valued result on empty database.
 
-        with pytest.raises(KeyError):
-            service.get_overview()
+        ``_get_base_transactions`` returns an empty DataFrame with the
+        canonical transaction columns when no source has rows, so the
+        downstream ``df["date"]`` / aggregation calls work cleanly.
+        ``latest_data_date`` is coerced to ``None`` so the response is
+        JSON-serialisable.
+        """
+        service = AnalysisService(db_session)
+        result = service.get_overview()
+
+        assert result["latest_data_date"] is None
+        assert result["total_income"] == 0
+        assert result["total_expenses"] == 0
+        assert result["total_investments"] == 0
+        assert result["net_balance_change"] == 0
 
 
 class TestAnalysisServiceTimeSeries:

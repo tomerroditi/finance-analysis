@@ -71,13 +71,20 @@ class TestAnalyticsRoutes:
         assert len(data["links"]) > 0
 
     def test_get_overview_empty(self, test_client):
-        """GET /api/analytics/overview with no data raises KeyError.
+        """GET /api/analytics/overview with no data returns zero-valued totals.
 
-        The service accesses df['date'].max() without guarding against an
-        empty DataFrame, so an empty database causes an internal server error.
+        The service guards against an empty DataFrame (canonical empty
+        column schema + NaT-to-None coercion), so a fresh DB returns a
+        valid 200 response with zero metrics rather than a 500.
         """
-        with pytest.raises(KeyError):
-            test_client.get("/api/analytics/overview")
+        response = test_client.get("/api/analytics/overview")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["latest_data_date"] is None
+        assert data["total_income"] == 0
+        assert data["total_expenses"] == 0
+        assert data["total_investments"] == 0
+        assert data["net_balance_change"] == 0
 
     def test_get_sankey_empty(self, test_client):
         """GET /api/analytics/sankey with no data returns empty sankey."""

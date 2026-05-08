@@ -124,11 +124,11 @@ jobs:
     runs-on: ubuntu-latest
     name: API fuzz (Schemathesis)
     timeout-minutes: 15
-    # Schemathesis surfaces existing 5xx bugs in the OpenAPI surface. We
-    # run it on every PR to catch regressions, but do NOT block merges
-    # while the historical findings are being triaged. Promote to
-    # required once the baseline is clean.
-    continue-on-error: true
+    # Hard gate. The baseline 5xxs the previous version of this job was
+    # tolerating have been fixed — empty-DB DataFrame schema, unknown
+    # service query param, missing-project lookups, and SQLite INTEGER
+    # overflow. Any new 5xx caught here is a regression; fix it rather
+    # than restoring continue-on-error.
     steps:
       - uses: actions/checkout@v4
 
