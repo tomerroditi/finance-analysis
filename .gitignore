@@ -79,3 +79,4 @@ frontend/playwright-report/
 frontend/test-results/
 .claude/settings.local.json
 .superpowers/
+docs/superpowers/
