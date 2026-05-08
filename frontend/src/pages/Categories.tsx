@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, MoveRight, Wallet, Search,
-  ChevronDown, ChevronRight, ChevronsUpDown, Pencil,
+  ChevronDown, ChevronRight, ChevronsUpDown,
 } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
@@ -231,127 +231,97 @@ export function Categories() {
               className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden transition-all hover:shadow-md"
             >
               {/* Category Header Row */}
-              <div className="group flex items-center gap-2 md:gap-3 px-3 md:px-5 py-3 md:py-4 cursor-pointer" onClick={() => toggleCategory(category)}>
-                {/* Expand/Collapse Arrow */}
-                <span className="text-[var(--text-muted)] shrink-0 transition-transform">
-                  {isExpanded
-                    ? <ChevronDown size={16} />
-                    : isRtl ? <ChevronRight size={16} className="rotate-180" /> : <ChevronRight size={16} />
-                  }
-                </span>
+              <div
+                className="flex items-center px-3 md:px-5 py-3 md:py-4 cursor-pointer"
+                onClick={() => toggleCategory(category)}
+              >
+                {/* Left zone: chevron + icon + name */}
+                <div className="flex flex-1 items-center gap-2 md:gap-3 min-w-0">
+                  <span className="text-[var(--text-muted)] shrink-0 transition-transform">
+                    {isExpanded
+                      ? <ChevronDown size={16} />
+                      : isRtl ? <ChevronRight size={16} className="rotate-180" /> : <ChevronRight size={16} />
+                    }
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingIcon({ category, currentIcon: icon || "💰" });
+                    }}
+                    className="p-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all text-lg w-9 h-9 md:w-10 md:h-10 flex items-center justify-center border border-blue-500/20 shrink-0"
+                    title={t("categories.changeIcon")}
+                  >
+                    {icon || <Wallet size={18} />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    {editingCategory === category ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && editName.trim()) {
+                            renameCategoryMutation.mutate({ oldName: category, newName: editName });
+                          }
+                          if (e.key === "Escape") setEditingCategory(null);
+                        }}
+                        onBlur={() => setEditingCategory(null)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-bold text-base md:text-lg bg-transparent border-b border-[var(--primary)] outline-none w-full"
+                      />
+                    ) : (
+                      <h3 className="font-bold text-sm md:text-base truncate text-white" dir="auto">
+                        {category}
+                      </h3>
+                    )}
+                  </div>
+                </div>
 
-                {/* Icon */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingIcon({ category, currentIcon: icon || "💰" });
-                  }}
-                  className="p-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all text-lg w-9 h-9 md:w-10 md:h-10 flex items-center justify-center border border-blue-500/20 shrink-0"
-                  title={t("categories.changeIcon")}
-                >
-                  {icon || <Wallet size={18} />}
-                </button>
-
-                {/* Category Name */}
-                <div className="flex-1 min-w-0">
-                  {editingCategory === category ? (
-                    <input
-                      autoFocus
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && editName.trim()) {
-                          renameCategoryMutation.mutate({ oldName: category, newName: editName });
-                        }
-                        if (e.key === "Escape") setEditingCategory(null);
+                {/* Center zone: action buttons — always visible on all breakpoints */}
+                <div className="flex-1 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { if (!isProtected) { setEditingCategory(category); setEditName(category); } }}
+                      disabled={isProtected}
+                      className={`p-1.5 rounded-lg transition-colors text-base leading-none ${isProtected ? "opacity-30 cursor-not-allowed" : "hover:bg-[var(--surface-light)]"}`}
+                      title={isProtected ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => setIsAddTagOpen({ category })}
+                      className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors text-base leading-none"
+                      title={t("categories.addTag")}
+                    >
+                      ➕
+                    </button>
+                    <div className="w-px h-4 bg-[var(--surface-light)] mx-1 shrink-0" />
+                    <button
+                      onClick={async () => {
+                        if (isProtected) return;
+                        const ok = await confirm({
+                          title: t("categories.deleteCategory"),
+                          message: t("categories.confirmDeleteCategory", { name: category }),
+                          confirmLabel: t("common.delete"),
+                          isDestructive: true,
+                        });
+                        if (ok) deleteCategoryMutation.mutate(category);
                       }}
-                      onBlur={() => setEditingCategory(null)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="font-bold text-base md:text-lg bg-transparent border-b border-[var(--primary)] outline-none w-full"
-                    />
-                  ) : (
-                    <h3 className="font-bold text-sm md:text-base truncate text-white" dir="auto">
-                      {category}
-                    </h3>
-                  )}
+                      disabled={isProtected}
+                      className={`p-1.5 rounded-lg transition-colors text-base leading-none ${isProtected ? "opacity-30 cursor-not-allowed" : "hover:bg-[var(--surface-light)]"}`}
+                      title={isProtected ? t("categories.protectedCannotRename") : t("categories.deleteCategory")}
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
 
-                {/* Tag Count Badge */}
-                <span className="px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs font-bold text-[var(--text-muted)] shrink-0" dir="ltr">
-                  {tagCount}
-                </span>
-
-                {/* Action Buttons - Desktop hover reveal */}
-                <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => { if (!isProtected) { setEditingCategory(category); setEditName(category); } }}
-                    disabled={isProtected}
-                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400"}`}
-                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => setIsAddTagOpen({ category })}
-                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
-                    title={t("categories.addTag")}
-                  >
-                    <Plus size={16} />
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (isProtected) return;
-                      const ok = await confirm({
-                        title: t("categories.deleteCategory"),
-                        message: t("categories.confirmDeleteCategory", { name: category }),
-                        confirmLabel: t("common.delete"),
-                        isDestructive: true,
-                      });
-                      if (ok) deleteCategoryMutation.mutate(category);
-                    }}
-                    disabled={isProtected}
-                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
-                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.deleteCategory")}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                {/* Action Buttons - Mobile always visible */}
-                <div className="md:hidden flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => { if (!isProtected) { setEditingCategory(category); setEditName(category); } }}
-                    disabled={isProtected}
-                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400"}`}
-                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.renameCategory")}
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => setIsAddTagOpen({ category })}
-                    className="p-2 rounded-lg hover:bg-blue-500/10 text-[var(--text-muted)] hover:text-blue-400 transition-colors"
-                    title={t("categories.addTag")}
-                  >
-                    <Plus size={16} />
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (isProtected) return;
-                      const ok = await confirm({
-                        title: t("categories.deleteCategory"),
-                        message: t("categories.confirmDeleteCategory", { name: category }),
-                        confirmLabel: t("common.delete"),
-                        isDestructive: true,
-                      });
-                      if (ok) deleteCategoryMutation.mutate(category);
-                    }}
-                    disabled={isProtected}
-                    className={`p-2 rounded-lg transition-colors ${isProtected ? "text-[var(--surface-light)] cursor-not-allowed" : "hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-400"}`}
-                    title={isProtected ? t("categories.protectedCannotRename") : t("categories.deleteCategory")}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                {/* Right zone: tag count */}
+                <div className="flex-1 flex items-center justify-end">
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs font-bold text-[var(--text-muted)] shrink-0" dir="ltr">
+                    {tagCount}
+                  </span>
                 </div>
               </div>
 
