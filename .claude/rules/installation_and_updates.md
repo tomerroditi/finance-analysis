@@ -266,9 +266,21 @@ user account on macOS):
    - On Apple Silicon, download `FinanceAnalysis-arm64.dmg`. On Intel,
      download `FinanceAnalysis-x86_64.dmg`. The in-app update notifier
      auto-picks the right one once the app is running.
-   - Open the DMG, drag to Applications.
+   - Open the DMG, drag the .app to Applications.
+   - **Then double-click `Fix Gatekeeper.command`** (also inside the
+     DMG) to strip the `com.apple.quarantine` xattr. Without this
+     step, the unsigned bundle trips Gatekeeper with a misleading
+     "Finance Analysis is damaged and can't be opened" error.
+     Equivalent Terminal command:
+     `xattr -cr "/Applications/Finance Analysis.app"`.
    - Launch from Launchpad. **No Terminal window.** Dashboard opens
      in the default browser within ~2s.
+
+   **Why the Fix Gatekeeper step exists:** the .app isn't actually
+   damaged. macOS marks every browser-downloaded file with a
+   quarantine attribute, then refuses to launch unsigned apps that
+   carry it. Once we have an Apple Developer ID and notarize the
+   build, this step goes away.
 
 2. **Quit + relaunch:**
    - Cmd-Q the app (or close it from the Dock).
@@ -315,10 +327,15 @@ notarize the macOS .app (no Apple Developer ID). This means:
 
 - Windows: SmartScreen flags every new build for ~24-48h after
   publication. The user has to click "More info" → "Run anyway".
-- macOS: Gatekeeper refuses to launch on first run; the user must
-  open `Privacy & Security` and click "Open Anyway" once. We can't
-  ship auto-update until this is resolved — auto-installing an
-  unsigned binary is a UX disaster.
+- macOS: Gatekeeper presents the misleading **"Finance Analysis is
+  damaged and can't be opened"** error on first launch. Two
+  workarounds:
+  1. **`Fix Gatekeeper.command`** (shipped in the DMG): double-click
+     after dragging the .app to /Applications. Strips the quarantine
+     xattr.
+  2. **Terminal**: `xattr -cr "/Applications/Finance Analysis.app"`.
+  We can't ship auto-update until signing is resolved — auto-installing
+  an unsigned binary is a UX disaster.
 
 When we do invest in signing certs, the changes are:
 - NSIS: add a `signtool sign` post-build step in `release.yml`.

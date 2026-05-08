@@ -27,6 +27,7 @@ APP_NAME="Finance Analysis"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 ICON_PNG="$PROJECT_ROOT/frontend/public/icons/icon-512.png"
 UNINSTALL_SRC="$SCRIPT_DIR/macos/uninstall.command"
+FIX_GATEKEEPER_SRC="$SCRIPT_DIR/macos/fix-gatekeeper.command"
 
 ARCH="${FINANCE_ANALYSIS_DMG_ARCH:-$(uname -m)}"
 ARCH_LOWER=$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')
@@ -39,6 +40,10 @@ if [ ! -d "$APP_BUNDLE" ]; then
 fi
 if [ ! -f "$UNINSTALL_SRC" ]; then
     echo "ERROR: uninstall.command not found at $UNINSTALL_SRC"
+    exit 1
+fi
+if [ ! -f "$FIX_GATEKEEPER_SRC" ]; then
+    echo "ERROR: fix-gatekeeper.command not found at $FIX_GATEKEEPER_SRC"
     exit 1
 fi
 
@@ -83,6 +88,17 @@ rm -f "$DMG_PATH"
 STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
+
+# Ship the Gatekeeper-unquarantine script alongside the .app.
+# Without code signing + notarization, a freshly downloaded .app
+# trips Gatekeeper's "is damaged" error (it's not damaged — macOS
+# won't open unsigned apps that carry the com.apple.quarantine
+# xattr the browser added). The user double-clicks this script
+# after dragging the .app to /Applications to strip the xattr and
+# unblock the launch. Once we sign + notarize the bundle this
+# file should be removed.
+cp "$FIX_GATEKEEPER_SRC" "$STAGING/Fix Gatekeeper.command"
+chmod +x "$STAGING/Fix Gatekeeper.command"
 
 hdiutil create \
     -volname "$APP_NAME" \
