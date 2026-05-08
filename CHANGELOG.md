@@ -1,3 +1,9 @@
+## v1.15.1 (2026-05-08)
+
+### Fix
+
+- **api**: triage the schemathesis 5xx baseline + promote api-fuzz to a hard gate
+
 ## v1.15.0 (2026-05-08)
 
 ### Feat
