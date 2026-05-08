@@ -58,6 +58,17 @@ test.describe("Categories", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForLoadState("networkidle");
 
+    // Wait for the page fade-in animation (animate-in fade-in duration-500) to finish.
+    // The animation starts at opacity:0; the ancestor opacity walk would return 0 if
+    // it runs during the first animation frame.
+    await page.waitForFunction(
+      () => {
+        const animated = document.querySelector(".animate-in");
+        return !animated || parseFloat(getComputedStyle(animated).opacity) >= 0.99;
+      },
+      { timeout: 3_000 }
+    );
+
     // Buttons must be visible immediately — no hover required.
     // Title values come from en.json: renameCategory="Rename", addTag="Add Tag", deleteCategory="Delete Category"
     const renameBtn = page.locator('button[title="Rename"]').first();
