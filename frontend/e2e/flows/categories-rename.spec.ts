@@ -2,9 +2,9 @@ import { test, expect } from "@playwright/test";
 import { setDemoMode, gotoAndWait } from "./_helpers";
 
 /**
- * Renames the Food category via the click-to-rename inline editor,
- * verifies the PUT /api/tagging/categories/{name} endpoint is called with
- * the correct payload, and confirms the new name appears in the UI.
+ * Renames the Food category via the panel's click-to-rename heading, verifies
+ * the PUT /api/tagging/categories/{name} endpoint is called with the correct
+ * payload, and confirms the new name appears in the UI.
  * Renames back to "Food" for cleanup.
  */
 test.describe("Categories rename flow", () => {
@@ -15,17 +15,25 @@ test.describe("Categories rename flow", () => {
     await setDemoMode(request, false);
   });
 
-  test("renames a category by clicking its name and submitting", async ({ page }) => {
+  test("renames a category by opening the panel and clicking its name", async ({ page }) => {
     const newName = `e2e-cat-${Date.now()}`;
     await gotoAndWait(page, "/categories");
 
-    // Locate the Food heading.
-    const foodHeading = page.getByRole("heading", { name: /^food$/i });
-    await expect(foodHeading).toBeVisible();
+    // Click the Food card to open the detail panel.
+    const foodCard = page.locator('[data-testid="category-card-Food"]');
+    await expect(foodCard).toBeVisible();
+    await foodCard.click();
 
-    // Clicking the name opens the inline rename input (h3 replaced by autoFocus input).
-    await foodHeading.click();
-    const renameInput = page.locator("input:focus");
+    // Wait for the panel to appear.
+    const panel = page.locator('[data-testid="category-panel"]');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // Click the category name h2 to enter inline rename mode.
+    const panelHeading = panel.getByRole("heading", { name: /^food$/i });
+    await expect(panelHeading).toBeVisible();
+    await panelHeading.click();
+
+    const renameInput = panel.locator("input:focus");
     await expect(renameInput).toBeVisible({ timeout: 3_000 });
 
     // Fill the new name and press Enter; intercept the PUT to verify payload + status.
@@ -42,18 +50,19 @@ test.describe("Categories rename flow", () => {
 
     expect(response.status(), "PUT /api/tagging/categories/{name} should return 200").toBe(200);
 
-    // Verify the payload sent the correct new_name.
     const body = response.request().postDataJSON() as { new_name: string };
     expect(body.new_name).toBe(newName);
 
-    // The new name should be visible in the UI.
-    await expect(page.getByRole("heading", { name: newName })).toBeVisible({
-      timeout: 5_000,
-    });
+    // The grid card should now show the new category name.
+    await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 10_000 });
 
-    // Cleanup: rename back to "Food".
-    await page.getByRole("heading", { name: newName }).click();
-    const cleanupInput = page.locator("input:focus");
+    // Cleanup: open the panel for the renamed category and rename back to "Food".
+    await page.locator(`[data-testid="category-card-${newName}"]`).click();
+    const renamedPanel = page.locator('[data-testid="category-panel"]');
+    await expect(renamedPanel).toBeVisible({ timeout: 5_000 });
+    const renamedHeading = renamedPanel.getByRole("heading", { name: new RegExp(`^${newName}$`, "i") });
+    await renamedHeading.click();
+    const cleanupInput = renamedPanel.locator("input:focus");
     await cleanupInput.fill("Food");
     await cleanupInput.press("Enter");
     await page.waitForResponse(
@@ -62,8 +71,6 @@ test.describe("Categories rename flow", () => {
         r.request().method() === "PUT",
       { timeout: 10_000 },
     );
-    await expect(page.getByRole("heading", { name: /^food$/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 10_000 });
   });
 });
