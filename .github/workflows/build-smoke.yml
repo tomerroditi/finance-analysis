@@ -94,7 +94,17 @@ jobs:
             BUNDLE="dist/FinanceAnalysis"
           fi
           SIZE_KB=$(du -sk "$BUNDLE" | awk '{ print $1 }')
-          MAX_KB=$((600 * 1024))
+          # Realistic floor for the bundle on both platforms is ~1.5 GB:
+          #   - Chromium (full chrome + headless shell): ~800 MB
+          #   - Bundled Python interpreter + ext modules: ~150 MB
+          #   - numpy / pandas / pyarrow wheels: ~250 MB
+          #   - frontend/dist + misc data files: ~50 MB
+          # Cap is set to 2 GB so we still catch genuine bloat (a forgotten
+          # dev dep slipping into the [build] group; PyInstaller pulling
+          # in matplotlib/IPython transitively) without flagging the
+          # baseline. Trimming Chromium variants is a separate
+          # optimization tracked in installation_and_updates.md.
+          MAX_KB=$((2 * 1024 * 1024))
           echo "bundle size: ${SIZE_KB}KB (cap ${MAX_KB}KB)"
           if [ "$SIZE_KB" -gt "$MAX_KB" ]; then
             echo "Bundle exceeded size cap — investigate."
