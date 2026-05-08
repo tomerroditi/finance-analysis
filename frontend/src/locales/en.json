@@ -520,6 +520,53 @@
       "other": "Other"
     }
   },
+  "emptyStates": {
+    "connectStep": {
+      "title": "Connect",
+      "description": "Add your bank or credit card accounts"
+    },
+    "scrapeStep": {
+      "title": "Scrape",
+      "description": "Import your transactions"
+    },
+    "analyseStep": {
+      "title": "Analyse",
+      "description": "See your full financial picture"
+    },
+    "dashboard": {
+      "title": "No data yet",
+      "description": "Connect your accounts to see your full financial picture."
+    },
+    "transactions": {
+      "title": "No transactions yet",
+      "description": "Connect your accounts to start importing your transactions."
+    },
+    "transactionsFiltered": {
+      "title": "No transactions found",
+      "description": "Try adjusting your filters."
+    },
+    "budget": {
+      "title": "No budgets configured",
+      "description": "Add a budget to start tracking your monthly spending."
+    },
+    "investments": {
+      "title": "No active investments",
+      "description": "Create your first investment to start tracking your portfolio."
+    },
+    "liabilities": {
+      "title": "No liabilities tracked",
+      "description": "Add a loan or debt to monitor what you owe."
+    },
+    "insurance": {
+      "title": "No insurance data yet",
+      "description": "Connect your insurance accounts to get started."
+    },
+    "connectAccounts": "Connect accounts",
+    "tryDemoMode": "Try demo mode",
+    "demoConfirmDescription": "Switches to sample data — your real data won't be affected.",
+    "demoConfirmEnable": "Enable demo mode",
+    "demoConfirmCancel": "Cancel"
+  },
   "dataSources": {
     "title": "Data Sources",
     "subtitle": "Manage your connected accounts",

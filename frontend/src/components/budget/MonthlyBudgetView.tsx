@@ -12,6 +12,8 @@ import {
 import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi, type PendingRefund, type RefundLink } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
+import { EmptyState } from "../common/EmptyState";
+import { DemoModeConfirmPopover } from "../common/DemoModeConfirmPopover";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
@@ -52,6 +54,7 @@ export const MonthlyBudgetView: React.FC = () => {
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
     new Set(),
   );
@@ -415,6 +418,25 @@ export const MonthlyBudgetView: React.FC = () => {
       )}
 
       {/* Budget Rules */}
+      {budgetRules.length === 0 && (
+        <EmptyState
+          title={t("emptyStates.budget.title")}
+          description={t("emptyStates.budget.description")}
+          cta={{
+            label: t("budget.addRule"),
+            onClick: () => setIsRuleModalOpen(true),
+          }}
+          secondary={{
+            label: t("emptyStates.tryDemoMode"),
+            onClick: () => setShowDemoConfirm(true),
+          }}
+          footer={
+            showDemoConfirm ? (
+              <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+            ) : undefined
+          }
+        />
+      )}
       <div className="space-y-4">
         {rules.map((item: BudgetAnalysisItem) => {
           const isTotalBudget = item.rule.name === "Total Budget";

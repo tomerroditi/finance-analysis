@@ -520,6 +520,53 @@
       "other": "אחר"
     }
   },
+  "emptyStates": {
+    "connectStep": {
+      "title": "חיבור",
+      "description": "הוסף את חשבון הבנק או כרטיס האשראי שלך"
+    },
+    "scrapeStep": {
+      "title": "סריקה",
+      "description": "ייבא את העסקאות שלך"
+    },
+    "analyseStep": {
+      "title": "ניתוח",
+      "description": "ראה את התמונה הפיננסית המלאה שלך"
+    },
+    "dashboard": {
+      "title": "אין נתונים עדיין",
+      "description": "חבר את חשבונותיך כדי לראות את התמונה הפיננסית המלאה שלך."
+    },
+    "transactions": {
+      "title": "אין עסקאות עדיין",
+      "description": "חבר את חשבונותיך כדי להתחיל לייבא עסקאות."
+    },
+    "transactionsFiltered": {
+      "title": "לא נמצאו עסקאות",
+      "description": "נסה לשנות את הסינון."
+    },
+    "budget": {
+      "title": "לא הוגדרו תקציבים",
+      "description": "הוסף תקציב כדי להתחיל לעקוב אחרי ההוצאות החודשיות שלך."
+    },
+    "investments": {
+      "title": "אין השקעות פעילות",
+      "description": "צור את ההשקעה הראשונה שלך כדי להתחיל לעקוב אחרי תיק ההשקעות שלך."
+    },
+    "liabilities": {
+      "title": "לא עוקבים אחרי התחייבויות",
+      "description": "הוסף הלוואה או חוב כדי לעקוב אחרי מה שאתה חייב."
+    },
+    "insurance": {
+      "title": "אין נתוני ביטוח עדיין",
+      "description": "חבר את חשבונות הביטוח שלך כדי להתחיל."
+    },
+    "connectAccounts": "חבר חשבונות",
+    "tryDemoMode": "נסה מצב הדגמה",
+    "demoConfirmDescription": "עובר לנתוני דוגמה — הנתונים האמיתיים שלך לא יושפעו.",
+    "demoConfirmEnable": "הפעל מצב הדגמה",
+    "demoConfirmCancel": "ביטול"
+  },
   "dataSources": {
     "title": "מקורות מידע",
     "subtitle": "נהל את החשבונות המחוברים שלך",

@@ -75,4 +75,30 @@ describe("EmptyState", () => {
     );
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
+
+  it("renders without an icon when icon prop is omitted", () => {
+    renderWithProviders(<EmptyState title="No data" />);
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    // No SVG icon wrapper present
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("renders step cards with arrows when steps prop is provided", () => {
+    renderWithProviders(
+      <EmptyState
+        title="No data"
+        steps={[
+          { title: "Connect", description: "Add your accounts" },
+          { title: "Scrape", description: "Import transactions" },
+          { title: "Analyse", description: "See your picture" },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Connect")).toBeInTheDocument();
+    expect(screen.getByText("Add your accounts")).toBeInTheDocument();
+    expect(screen.getByText("Scrape")).toBeInTheDocument();
+    expect(screen.getByText("Analyse")).toBeInTheDocument();
+    // Two arrows between three steps
+    expect(screen.getAllByText("→")).toHaveLength(2);
+  });
 });
