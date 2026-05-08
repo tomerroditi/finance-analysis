@@ -110,12 +110,12 @@ export function CategoryDetailPanel({
   return (
     <>
       <div
-        className="modal-overlay fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 flex items-center justify-center md:items-stretch md:justify-end"
+        className="modal-overlay fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 flex items-center justify-center"
         onClick={onClose}
       >
         <div
           data-testid="category-panel"
-          className="relative bg-[var(--surface)] border border-[var(--surface-light)] md:border-e-0 md:border-y-0 md:border-s shadow-2xl flex flex-col max-h-[90vh] md:max-h-none md:h-full w-full max-w-[calc(100vw-2rem)] sm:max-w-md md:w-[420px] rounded-2xl md:rounded-none md:rounded-s-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+          className="relative bg-[var(--surface)] border border-[var(--surface-light)] shadow-2xl flex flex-col max-h-[90vh] w-full max-w-[calc(100vw-2rem)] sm:max-w-md rounded-2xl overflow-hidden animate-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Panel header */}
