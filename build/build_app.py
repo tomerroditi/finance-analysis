@@ -36,6 +36,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Force UTF-8 on Windows so prints with non-ASCII chars (or pyinstaller
+# log lines that pass through us) don't trip the default cp1252
+# codec — that crashes the build job with UnicodeEncodeError on a
+# stray "->" rendered as U+2192.
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
 ROOT = Path(__file__).resolve().parent.parent
 BUILD_DIR = ROOT / "build"
 DIST_DIR = ROOT / "dist"
@@ -49,7 +57,7 @@ def _run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) ->
     from npm / pyinstaller / makensis. The shell is intentionally not
     invoked — every command is a known argv list.
     """
-    print(f"\n→ {' '.join(cmd)}  (cwd={cwd or ROOT})")
+    print(f"\n>> {' '.join(cmd)}  (cwd={cwd or ROOT})")
     completed = subprocess.run(cmd, cwd=cwd or ROOT, env=env)
     if completed.returncode != 0:
         sys.exit(f"command failed (exit {completed.returncode}): {' '.join(cmd)}")
@@ -199,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    print(f"build_app.py — platform={sys.platform} arch={platform.machine()}")
+    print(f"build_app.py - platform={sys.platform} arch={platform.machine()}")
 
     if not args.no_frontend:
         _step_frontend()
@@ -215,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"no wrapping step defined for {sys.platform}; skipping")
 
-    print("\n✓ build complete")
+    print("\n[OK] build complete")
     return 0
 
 
