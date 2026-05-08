@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Shield,
   ArrowUpRight,
   Heart,
   Percent,
@@ -20,6 +20,8 @@ import Plot from "react-plotly.js";
 import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
+import { EmptyState } from "../components/common/EmptyState";
+import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -488,6 +490,8 @@ function AccountCardFull({
 // ─── Main Page ───────────────────────────────────────────────────────────
 export function Insurances() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
     queryKey: ["insurance-accounts"],
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
@@ -514,11 +518,23 @@ export function Insurances() {
 
   if (accounts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 text-[var(--text-muted)] gap-4">
-        <Shield size={48} className="opacity-30" />
-        <p className="text-lg">{t("insurance.noAccountsFound")}</p>
-        <p className="text-sm">{t("insurance.scrapeToGetStarted")}</p>
-      </div>
+      <EmptyState
+        title={t("emptyStates.insurance.title")}
+        description={t("emptyStates.insurance.description")}
+        cta={{
+          label: t("emptyStates.connectAccounts"),
+          onClick: () => navigate("/data-sources"),
+        }}
+        secondary={{
+          label: t("emptyStates.tryDemoMode"),
+          onClick: () => setShowDemoConfirm(true),
+        }}
+        footer={
+          showDemoConfirm ? (
+            <DemoModeConfirmPopover onClose={() => setShowDemoConfirm(false)} />
+          ) : undefined
+        }
+      />
     );
   }
 
