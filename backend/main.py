@@ -305,18 +305,12 @@ try:
 except ImportError:
     pass
 
-# Testing routes expose demo-mode toggling and DB reset helpers. They must
-# never be reachable in production: ``ENABLE_TESTING_ROUTES=1`` or a non-
-# production ``ENVIRONMENT`` is required to mount them.
-_enable_testing_routes = (
-    os.getenv("ENABLE_TESTING_ROUTES") == "1" or _environment != "production"
-)
-if _enable_testing_routes:
-    try:
-        from backend.routes import testing
-        app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
-    except ImportError:
-        pass
+# Testing routes expose the demo-mode toggle and status endpoint — both are
+# user-facing features, not backdoors. Always mounted; harmless on desktop
+# installs (the toggle is obvious and reversible, and prepare_empty_database
+# has a safety guard against overwriting existing local DBs).
+from backend.routes import testing
+app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
 
 
 @app.exception_handler(EntityNotFoundException)
