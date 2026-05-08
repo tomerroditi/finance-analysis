@@ -1,3 +1,9 @@
+## v1.15.2 (2026-05-08)
+
+### Fix
+
+- **release**: produce a real macOS .app bundle inside the DMG and pick a free port at launch
+
 ## v1.15.1 (2026-05-08)
 
 ### Fix
