@@ -254,7 +254,7 @@ export function Categories() {
                   >
                     {icon || <Wallet size={18} />}
                   </button>
-                  <div className="flex-1 min-w-0">
+                  <div className="shrink min-w-0 overflow-hidden">
                     {editingCategory === category ? (
                       <input
                         autoFocus
