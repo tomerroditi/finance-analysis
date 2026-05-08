@@ -8,41 +8,55 @@ describe("Categories", () => {
     it("renders the page heading", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        // Title renders as "Categories" (translated) or "categories.title" (key fallback)
         const h1 = document.querySelector("h1");
         expect(h1).toBeInTheDocument();
       });
     });
   });
 
-  describe("category list", () => {
-    it("displays categories from the API", async () => {
+  describe("category grid", () => {
+    it("displays category cards from the API", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        expect(screen.getByText("Food")).toBeInTheDocument();
-        expect(screen.getByText("Transport")).toBeInTheDocument();
+        expect(screen.getByTestId("category-card-Food")).toBeInTheDocument();
+        expect(screen.getByTestId("category-card-Transport")).toBeInTheDocument();
       });
     });
 
-    it("displays tags within categories after expanding", async () => {
+    it("displays tags inside the detail panel when a card is clicked", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        expect(screen.getByText("Food")).toBeInTheDocument();
+        expect(screen.getByTestId("category-card-Food")).toBeInTheDocument();
       });
-      // The h3 stopsPropagation to handle inline rename, so click the outer
-      // header row (identified by data-testid) to expand the accordion.
-      fireEvent.click(screen.getByTestId("category-header-Food"));
+      fireEvent.click(screen.getByTestId("category-card-Food"));
       await waitFor(() => {
         expect(screen.getByText("Groceries")).toBeInTheDocument();
         expect(screen.getByText("Restaurants")).toBeInTheDocument();
       });
     });
 
-    it("displays protected categories", async () => {
+    it("closes the detail panel when backdrop is clicked", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        expect(screen.getByText("Salary")).toBeInTheDocument();
-        expect(screen.getByText("Investments")).toBeInTheDocument();
+        expect(screen.getByTestId("category-card-Food")).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByTestId("category-card-Food"));
+      await waitFor(() => {
+        expect(screen.getByTestId("category-panel")).toBeInTheDocument();
+      });
+      const panel = screen.getByTestId("category-panel");
+      const backdrop = panel.parentElement!;
+      fireEvent.click(backdrop);
+      await waitFor(() => {
+        expect(screen.queryByTestId("category-panel")).not.toBeInTheDocument();
+      });
+    });
+
+    it("displays protected categories as cards", async () => {
+      renderWithProviders(<Categories />);
+      await waitFor(() => {
+        expect(screen.getByTestId("category-card-Salary")).toBeInTheDocument();
+        expect(screen.getByTestId("category-card-Investments")).toBeInTheDocument();
       });
     });
   });
