@@ -9,7 +9,9 @@ describe("Categories", () => {
     it("renders the new-category action", async () => {
       renderWithProviders(<Categories />);
       await waitFor(() => {
-        expect(screen.getByText("categories.newCategory")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /categories\.newCategory|new category/i }),
+        ).toBeInTheDocument();
       });
     });
   });
