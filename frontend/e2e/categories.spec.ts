@@ -40,25 +40,23 @@ test.describe("Categories", () => {
     await expect(page.getByText("Investments").first()).toBeVisible();
   });
 
-  test("delete button is always visible in the category header", async ({ page }) => {
+  test("delete button is visible inside the category detail panel", async ({ page }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForLoadState("networkidle");
 
-    // Wait for the page fade-in animation (animate-in fade-in duration-500) to finish
-    // before checking opacity — the animation starts at opacity:0.
-    await page.waitForFunction(
-      () => {
-        const animated = document.querySelector(".animate-in");
-        return !animated || parseFloat(getComputedStyle(animated).opacity) >= 0.99;
-      },
-      { timeout: 3_000 }
-    );
+    // Click the Food card (non-protected) to open the detail panel.
+    const foodCard = page.locator('[data-testid="category-card-Food"]');
+    await expect(foodCard).toBeVisible({ timeout: 10_000 });
+    await foodCard.click();
 
-    // The delete button lives in the right zone of every category header.
-    // Title value comes from en.json: deleteCategory="Delete Category"
-    const deleteBtn = page.locator('button[title="Delete Category"]').first();
-    await expect(deleteBtn).toBeAttached({ timeout: 10_000 });
+    const panel = page.locator('[data-testid="category-panel"]');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // The delete button lives in the panel's danger zone, always visible (no hover needed).
+    // Label comes from en.json: deleteCategory="Delete Category"
+    const deleteBtn = panel.getByRole("button", { name: /delete category/i });
+    await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
 
     // Verify it is not hidden behind an opacity-0 ancestor.
     const opacity = await deleteBtn.evaluate((el) => {
@@ -70,5 +68,9 @@ test.describe("Categories", () => {
       return 1;
     });
     expect(opacity, "Delete button must not have opacity:0 — it should be visible without hover").toBe(1);
+
+    // Close the panel.
+    await panel.getByRole("button", { name: /^close$/i }).click();
+    await expect(panel).toBeHidden({ timeout: 3_000 });
   });
 });

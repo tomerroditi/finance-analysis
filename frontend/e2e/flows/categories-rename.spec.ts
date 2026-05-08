@@ -53,6 +53,13 @@ test.describe("Categories rename flow", () => {
     const body = response.request().postDataJSON() as { new_name: string };
     expect(body.new_name).toBe(newName);
 
+    // Panel heading updates immediately to the new name (before grid refetches).
+    await expect(panel.getByRole("heading", { name: new RegExp(`^${newName}$`, "i") })).toBeVisible({ timeout: 5_000 });
+
+    // Close the panel so the grid is unobscured.
+    await panel.getByRole("button", { name: /^close$/i }).click();
+    await expect(panel).toBeHidden({ timeout: 3_000 });
+
     // The grid card should now show the new category name.
     await expect(page.getByTestId(`category-card-${newName}`)).toBeVisible({ timeout: 10_000 });
 
@@ -71,6 +78,11 @@ test.describe("Categories rename flow", () => {
         r.request().method() === "PUT",
       { timeout: 10_000 },
     );
+
+    // Panel heading updates immediately; close it before checking the grid.
+    await expect(renamedPanel.getByRole("heading", { name: /^food$/i })).toBeVisible({ timeout: 5_000 });
+    await renamedPanel.getByRole("button", { name: /^close$/i }).click();
+    await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
     await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 10_000 });
   });
 });
