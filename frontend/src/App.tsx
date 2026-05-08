@@ -7,6 +7,7 @@ import { DemoModeProvider } from "./context/DemoModeContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ServiceWorkerUpdatePrompt } from "./components/ServiceWorkerUpdatePrompt";
 import { NetworkStatusToast } from "./components/NetworkStatusToast";
+import { UpdateAvailableToast } from "./components/UpdateAvailableToast";
 import {
   PERSIST_BUSTER,
   queryClient,
@@ -61,6 +62,7 @@ function App() {
             </Routes>
             <ServiceWorkerUpdatePrompt />
             <NetworkStatusToast />
+            <UpdateAvailableToast />
           </BrowserRouter>
           </DialogProvider>
         </DemoModeProvider>

@@ -38,7 +38,10 @@ from backend.routes import (
     tagging,
     tagging_rules,
     transactions,
+    updates,
+    version as version_route,
 )
+from backend.utils.version import get_app_version
 
 load_dotenv()
 
@@ -161,7 +164,7 @@ _docs_disabled = _environment == "production" or os.getenv("DISABLE_DOCS") == "1
 app = FastAPI(
     title="Finance Analysis API",
     description="API for personal finance tracking and analysis",
-    version="1.0.0",
+    version=get_app_version(),
     lifespan=lifespan,
     docs_url=None if _docs_disabled else "/docs",
     redoc_url=None if _docs_disabled else "/redoc",
@@ -276,6 +279,18 @@ app.include_router(
     prefix="/api/onboarding",
     tags=["Onboarding"],
 )
+app.include_router(version_route.router, prefix="/api/version", tags=["Version"])
+app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])
+
+# In-app uninstall is macOS-only. The route file itself is platform-aware
+# and 400s on non-darwin, but we register it everywhere so the OpenAPI
+# schema is stable across platforms.
+try:
+    from backend.routes import uninstall as uninstall_route
+
+    app.include_router(uninstall_route.router, prefix="/api/uninstall", tags=["Uninstall"])
+except ImportError:
+    pass
 
 # Optional routes — gated for serverless where keyring is absent
 try:

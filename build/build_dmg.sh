@@ -8,6 +8,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DIST_DIR="$PROJECT_ROOT/dist"
 ICON_PNG="$PROJECT_ROOT/frontend/public/icons/icon-512.png"
 LAUNCHER_SRC="$SCRIPT_DIR/macos/launcher.sh"
+UNINSTALL_SRC="$SCRIPT_DIR/macos/uninstall.command"
 
 APP_NAME="Finance Analysis"
 APP_BUNDLE="$SCRIPT_DIR/$APP_NAME.app"
@@ -24,6 +25,10 @@ if [ ! -f "$ICON_PNG" ]; then
 fi
 if [ ! -f "$LAUNCHER_SRC" ]; then
     echo "ERROR: launcher script not found at $LAUNCHER_SRC"
+    exit 1
+fi
+if [ ! -f "$UNINSTALL_SRC" ]; then
+    echo "ERROR: uninstall.command not found at $UNINSTALL_SRC"
     exit 1
 fi
 
@@ -44,6 +49,17 @@ cp "$LAUNCHER_SRC" "$APP_BUNDLE/Contents/MacOS/FinanceAnalysis"
 chmod +x "$APP_BUNDLE/Contents/MacOS/FinanceAnalysis"
 
 ditto "$DIST_DIR" "$APP_BUNDLE/Contents/Resources/app"
+
+# Ship the standalone uninstaller in two places:
+#   1. As a Resource so it's discoverable inside the bundle.
+#   2. Inside the bundled `app` tree, so the launcher can copy it to
+#      ~/.finance-analysis/ on first run (where it survives the bundle
+#      being deleted later).
+cp "$UNINSTALL_SRC" "$APP_BUNDLE/Contents/Resources/uninstall.command"
+chmod +x "$APP_BUNDLE/Contents/Resources/uninstall.command"
+mkdir -p "$APP_BUNDLE/Contents/Resources/app/build/macos"
+cp "$UNINSTALL_SRC" "$APP_BUNDLE/Contents/Resources/app/build/macos/uninstall.command"
+chmod +x "$APP_BUNDLE/Contents/Resources/app/build/macos/uninstall.command"
 
 echo "Generating .icns icon from $ICON_PNG..."
 ICONSET_PARENT=$(mktemp -d)

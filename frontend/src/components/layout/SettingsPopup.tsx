@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { backupApi } from "../../services/api";
+import { AboutPanel } from "../settings/AboutPanel";
+import { UninstallSection } from "../settings/UninstallSection";
 
 interface SettingsPopupProps {
   isOpen: boolean;
@@ -212,6 +214,12 @@ export function SettingsPopup({
             </div>
           )}
         </div>
+
+        {/* About / Updates */}
+        <AboutPanel />
+
+        {/* macOS-only Uninstall section (hidden on Windows/Linux) */}
+        <UninstallSection />
       </div>
     </div>
   );
