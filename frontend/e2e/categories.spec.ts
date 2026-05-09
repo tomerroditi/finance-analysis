@@ -39,4 +39,38 @@ test.describe("Categories", () => {
     await expect(page.getByText("Salary").first()).toBeVisible();
     await expect(page.getByText("Investments").first()).toBeVisible();
   });
+
+  test("delete button is visible inside the category detail panel", async ({ page }) => {
+    await navigateTo(page, "/categories");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForLoadState("networkidle");
+
+    // Click the Food card (non-protected) to open the detail panel.
+    const foodCard = page.locator('[data-testid="category-card-Food"]');
+    await expect(foodCard).toBeVisible({ timeout: 10_000 });
+    await foodCard.click();
+
+    const panel = page.locator('[data-testid="category-panel"]');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // The delete button lives in the panel's danger zone, always visible (no hover needed).
+    // Label comes from en.json: deleteCategory="Delete Category"
+    const deleteBtn = panel.getByRole("button", { name: /delete category/i });
+    await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
+
+    // Verify it is not hidden behind an opacity-0 ancestor.
+    const opacity = await deleteBtn.evaluate((el) => {
+      let node: Element | null = el;
+      while (node) {
+        if (parseFloat(getComputedStyle(node).opacity) === 0) return 0;
+        node = node.parentElement;
+      }
+      return 1;
+    });
+    expect(opacity, "Delete button must not have opacity:0 — it should be visible without hover").toBe(1);
+
+    // Close the panel.
+    await panel.getByRole("button", { name: /^close$/i }).click();
+    await expect(panel).toBeHidden({ timeout: 3_000 });
+  });
 });
