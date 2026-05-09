@@ -77,6 +77,20 @@ fi
 # 3. Build the DMG.
 echo "Building $DMG_NAME..."
 rm -f "$DMG_PATH"
+
+# Defensive cleanup: detach any stale "Finance Analysis" volumes
+# from previous builds before calling hdiutil create. Without this,
+# ``hdiutil create`` fails with "Resource busy" when an earlier run
+# (in CI on a warm runner, or in local-dev iteration) left a
+# /Volumes/Finance\ Analysis mount behind. Iterates over every
+# disk image whose mount-point matches our volume name, ignoring
+# missing mounts (set -e is already on, hence ``|| true``).
+for vol in "/Volumes/$APP_NAME" "/Volumes/$APP_NAME "*; do
+    if [ -d "$vol" ]; then
+        hdiutil detach -force "$vol" >/dev/null 2>&1 || true
+    fi
+done
+
 STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
