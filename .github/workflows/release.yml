@@ -86,10 +86,31 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Set up Python 3.12
+      # Set up Python. On macOS we deliberately avoid actions/setup-python
+      # because its prebuilt Python is compiled with an older SDK
+      # (LC_BUILD_VERSION sdk=12.x). PyInstaller embeds that Python
+      # framework into the .app, and macOS 26 (Tahoe) AMFI silently
+      # blocks the resulting binary at _dyld_start — the user sees
+      # "Finance Analysis is damaged and can't be opened" with no
+      # bypass option, even after stripping the quarantine xattr.
+      # Homebrew Python ships a binary built with a current SDK that
+      # Tahoe accepts. Windows is unaffected and keeps using
+      # actions/setup-python.
+      - name: Set up Python 3.12 (Windows)
+        if: runner.os == 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Set up Python 3.12 (macOS via Homebrew)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install python@3.12
+          BREW_PREFIX="$(brew --prefix python@3.12)"
+          echo "Using Python from: $BREW_PREFIX"
+          "$BREW_PREFIX/bin/python3.12" --version
+          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -102,10 +123,17 @@ jobs:
         # ``--with build`` pulls the optional [build] group (PyInstaller).
         # Playwright is in main deps; ``poetry install`` picks it up.
         # ``--no-root`` avoids treating finance-analysis as a poetry-installable.
+        # On macOS we explicitly point poetry at the Homebrew Python so the
+        # bundled Python framework that PyInstaller embeds is the
+        # newer-SDK build (see "Set up Python 3.12 (macOS via Homebrew)").
         shell: bash
         run: |
           pip install poetry
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            poetry env use python3.12
+          fi
           poetry install --no-root --with build
+          poetry run python -c "import sys, sysconfig; print(sys.executable); print(sysconfig.get_platform())"
 
       - name: Install NSIS (Windows)
         # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``

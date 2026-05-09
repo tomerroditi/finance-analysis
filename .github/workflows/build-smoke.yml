@@ -38,10 +38,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      # Set up Python. On macOS we deliberately avoid actions/setup-python
+      # because its prebuilt Python is compiled with an older SDK that
+      # macOS 26 (Tahoe) AMFI silently blocks at _dyld_start. See the
+      # matching block in release.yml for the full explanation.
+      - name: Set up Python 3.12 (Windows)
+        if: runner.os == 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Set up Python 3.12 (macOS via Homebrew)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install python@3.12
+          BREW_PREFIX="$(brew --prefix python@3.12)"
+          echo "Using Python from: $BREW_PREFIX"
+          "$BREW_PREFIX/bin/python3.12" --version
+          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -54,6 +69,9 @@ jobs:
         shell: bash
         run: |
           pip install poetry
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            poetry env use python3.12
+          fi
           poetry install --no-root --with build
 
       - name: Install NSIS (Windows)
