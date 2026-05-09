@@ -49,14 +49,21 @@ for semver bumps based on commit messages:
 The bump commit `bump: version X.Y.Z → A.B.C [skip ci]` is excluded from CI
 re-runs by the `if: !startsWith(... 'bump:')` check on the `ci-checks` job.
 
-## Don't push directly to `main`
+## Branch & PR workflow
 
-- Open a PR. Let `ci.yml` run.
+Feature branches must target **`dev`**, not `main`.
+
+- Open a PR against `dev`. Let `ci.yml` run (pytest + lint + build + vitest).
 - Merge with a conventional-commit subject.
-- `release.yml` picks it up, bumps, builds, releases.
+- When `dev` is ready to ship, open a `dev → main` PR. That merge triggers
+  `release.yml`: CI re-runs, commitizen bumps the version, and the installer
+  + DMG are built and attached to the GitHub release.
+
+Never open a feature PR directly to `main`. The only PRs that should target
+`main` are `dev → main` release merges.
 
 If a release fails partway (e.g. NSIS step), do not retry by force-pushing.
-Push a `fix:` commit so commitizen bumps cleanly.
+Push a `fix:` commit to `dev`, then re-open the `dev → main` PR.
 
 ## Local pre-flight
 
