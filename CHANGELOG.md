@@ -1,3 +1,26 @@
+## v1.19.0 (2026-05-09)
+
+### Feat
+
+- **categories**: use centered dialog layout on all screen sizes
+- **categories**: replace accordion with responsive grid + detail panel
+- **categories**: add CategoryDetailPanel side-sheet/dialog component
+- **categories**: click-to-rename name, remove header buttons, delete in right zone
+- **categories**: 3-zone card layout with always-visible action buttons
+
+### Fix
+
+- **e2e**: gate grid card assertion on categories GET response
+- **e2e**: update categories specs for new grid/panel design
+- **categories**: add item name interpolation to confirm dialog locale strings
+- **categories**: use interpolation for addTagTo modal title
+- **categories**: shrink name wrapper so rename click target matches text width
+- **categories**: add data-testid to header row, fix unit test for expand
+
+### Refactor
+
+- **categories**: extract constants, add zIndex prop to IconPickerModal
+
 ## v1.18.0 (2026-05-08)
 
 ### Feat
