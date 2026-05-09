@@ -230,13 +230,20 @@ user account on macOS):
 ### Windows
 
 1. **Fresh install:**
-   - Run `FinanceAppInstaller.exe`.
+   - Double-click `FinanceAppInstaller.exe`.
+   - **SmartScreen warning** ("Windows protected your PC") — click
+     **More info → Run anyway**. This is unavoidable until we sign
+     the installer with an Authenticode cert; see "Code-signing"
+     below.
    - Verify: no UAC prompt, no "Python downloading…" message, install
      dir is `%LOCALAPPDATA%\Programs\Finance Analysis`.
-   - Verify Add/Remove Programs entry shows publisher, version, icon,
-     About URL, and accurate size.
-   - Launch the desktop shortcut. Dashboard loads in the default
-     browser within ~2s.
+   - Verify Add/Remove Programs entry shows publisher, version, the
+     Finance Analysis icon (NOT the generic NSIS uninstaller icon —
+     this is what `UninstallIcon` in the NSI sets), About URL, and
+     accurate size.
+   - Launch the desktop shortcut. The shortcut should also show the
+     Finance Analysis icon. Dashboard loads in the default browser
+     within ~2s.
 
 2. **Upgrade in place:**
    - With v1.X installed, run installer for v1.X+1.
@@ -318,12 +325,28 @@ user account on macOS):
 We don't sign the Windows installer (no Authenticode cert) or
 notarize the macOS .app (no Apple Developer ID). This means:
 
-- Windows: SmartScreen flags every new build for ~24-48h after
-  publication. The user has to click "More info" → "Run anyway".
-- macOS: Gatekeeper refuses to launch on first run; the user must
-  open `Privacy & Security` and click "Open Anyway" once. We can't
-  ship auto-update until this is resolved — auto-installing an
-  unsigned binary is a UX disaster.
+- **Windows: SmartScreen warning** — "Windows protected your PC.
+  Microsoft Defender SmartScreen prevented an unrecognized app from
+  starting." This appears for every new unsigned build for ~24-48h
+  after publication, then SmartScreen's reputation system stops
+  flagging it. The user clicks **More info → Run anyway**.
+
+  *Why no fix-smartscreen.bat:* SmartScreen reads NTFS's "Mark of the
+  Web" Alternate Data Stream that Edge / Chrome attach to downloaded
+  files — the Windows analog of macOS's quarantine xattr. The
+  PowerShell `Unblock-File` cmdlet removes the marker, but a
+  `.bat` / `.ps1` we shipped to do it would itself be MOTW-blocked by
+  SmartScreen. Chicken-and-egg. The realistic path is the click-through.
+
+- **macOS: Gatekeeper "is damaged"** error — same root cause (the
+  `com.apple.quarantine` xattr), different (more aggressive) UI.
+  We ship `Fix Gatekeeper.command` inside the DMG that runs
+  `xattr -cr "/Applications/Finance Analysis.app"` to strip the
+  attribute. User flow: drag .app to /Applications → double-click
+  Fix Gatekeeper.command → re-launch the app.
+
+We can't ship auto-update until signing is resolved — auto-installing
+an unsigned binary is a UX disaster on either platform.
 
 When we do invest in signing certs, the changes are:
 - NSIS: add a `signtool sign` post-build step in `release.yml`.

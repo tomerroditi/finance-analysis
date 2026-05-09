@@ -37,7 +37,13 @@ Unicode true
 Name "${APP_NAME} ${APP_VERSION}"
 BrandingText "Installer for ${APP_NAME}"
 
+; ``Icon`` is the icon shown for FinanceAppInstaller.exe itself in
+; Explorer + the installer window's title bar. ``UninstallIcon`` is
+; the icon for Uninstall.exe (Add/Remove Programs reads this when
+; rendering its own list of "uninstall this app" entries — without
+; it, the entry shows the generic NSIS uninstaller icon).
 Icon "..\icon.ico"
+UninstallIcon "..\icon.ico"
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"

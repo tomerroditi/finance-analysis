@@ -26,6 +26,7 @@ APP_NAME="Finance Analysis"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 ICON_PNG="$PROJECT_ROOT/frontend/public/icons/icon-512.png"
 UNINSTALL_SRC="$SCRIPT_DIR/macos/uninstall.command"
+FIX_GATEKEEPER_SRC="$SCRIPT_DIR/macos/fix-gatekeeper.command"
 
 DMG_NAME="FinanceAnalysis.dmg"
 DMG_PATH="$SCRIPT_DIR/$DMG_NAME"
@@ -36,6 +37,10 @@ if [ ! -d "$APP_BUNDLE" ]; then
 fi
 if [ ! -f "$UNINSTALL_SRC" ]; then
     echo "ERROR: uninstall.command not found at $UNINSTALL_SRC"
+    exit 1
+fi
+if [ ! -f "$FIX_GATEKEEPER_SRC" ]; then
+    echo "ERROR: fix-gatekeeper.command not found at $FIX_GATEKEEPER_SRC"
     exit 1
 fi
 
@@ -50,28 +55,14 @@ mkdir -p "$RESOURCES"
 cp "$UNINSTALL_SRC" "$RESOURCES/uninstall.command"
 chmod +x "$RESOURCES/uninstall.command"
 
-# 2. Icon: PyInstaller's BUNDLE accepts an .icns path; if we provided
-#    one (build/icon.icns) the bundle already has Resources/icon.icns.
-#    Otherwise, generate one from the 512 PNG. Most local dev runs
-#    will already have an .icns; CI will fall through to the generator.
+# 2. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
+#    .app's Info.plist (CFBundleIconFile points at icon.icns) BECAUSE
+#    build_app.py::_step_icns generated it before PyInstaller ran.
+#    Nothing to do here; the icon is already inside the bundle and
+#    Finder will pick it up correctly.
 if [ ! -f "$RESOURCES/icon.icns" ]; then
-    if [ ! -f "$ICON_PNG" ]; then
-        echo "ERROR: icon source not found at $ICON_PNG"
-        exit 1
-    fi
-    echo "Generating .icns icon from $ICON_PNG..."
-    ICONSET_PARENT=$(mktemp -d)
-    ICONSET="$ICONSET_PARENT/icon.iconset"
-    mkdir -p "$ICONSET"
-    for SIZE in 16 32 64 128 256 512; do
-        sips -z "$SIZE" "$SIZE" "$ICON_PNG" --out "$ICONSET/icon_${SIZE}x${SIZE}.png" >/dev/null
-    done
-    for SIZE in 16 32 128 256 512; do
-        DOUBLE=$((SIZE * 2))
-        sips -z "$DOUBLE" "$DOUBLE" "$ICON_PNG" --out "$ICONSET/icon_${SIZE}x${SIZE}@2x.png" >/dev/null
-    done
-    iconutil -c icns "$ICONSET" -o "$RESOURCES/icon.icns"
-    rm -rf "$ICONSET_PARENT"
+    echo "ERROR: $RESOURCES/icon.icns missing after PyInstaller — _step_icns didn't run."
+    exit 1
 fi
 
 # 3. Build the DMG.
@@ -94,6 +85,13 @@ done
 STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
+
+# Ship the Gatekeeper-unquarantine script alongside the .app so the
+# user has a one-click fix for the unsigned-binary "is damaged" error.
+# Without code signing + notarization this is the only viable path —
+# drop, install, double-click "Fix Gatekeeper.command", launch.
+cp "$FIX_GATEKEEPER_SRC" "$STAGING/Fix Gatekeeper.command"
+chmod +x "$STAGING/Fix Gatekeeper.command"
 
 hdiutil create \
     -volname "$APP_NAME" \
