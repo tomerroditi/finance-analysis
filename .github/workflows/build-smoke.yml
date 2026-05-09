@@ -71,12 +71,35 @@ jobs:
         run: poetry run python build/build_app.py
 
       - name: Smoke-test the bundle
+        # Boot the bundle, hit /api/version + / + /assets/*.js +
+        # /api/onboarding/status. See build/app_entry.py::_run_smoke_test
+        # for what each probe catches. Exits 1 on any probe failure.
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
             "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test
           else
             "dist/FinanceAnalysis/FinanceAnalysis.exe" --smoke-test
+          fi
+
+      - name: Exercise --uninstall-cleanup CLI
+        # The Windows NSIS uninstaller invokes the bundled exe in
+        # ``--uninstall-cleanup --keep-data | --wipe`` mode to delete
+        # Keychain / Credential Manager entries before removing the
+        # install dir (see installer_script.nsi). If app_entry's CLI
+        # dispatch regresses, the uninstall flow silently leaves
+        # secrets behind and we'd never notice from a user-facing
+        # test. Run it here against a tmp ``FAD_USER_DIR`` so the CI
+        # runner's env stays clean.
+        shell: bash
+        env:
+          FAD_USER_DIR: ${{ runner.temp }}/finance-analysis-smoke-uninstall
+        run: |
+          mkdir -p "$FAD_USER_DIR"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --uninstall-cleanup --keep-data
+          else
+            "dist/FinanceAnalysis/FinanceAnalysis.exe" --uninstall-cleanup --keep-data
           fi
 
       - name: Assert bundle size sanity
