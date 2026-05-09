@@ -1,23 +1,22 @@
 #!/bin/bash
-# Wrap the PyInstaller-produced "Finance Analysis.app" in an architecture-tagged DMG.
+# Wrap the PyInstaller-produced "Finance Analysis.app" in a DMG.
 #
 # This script no longer assembles the .app from a launcher script.
 # PyInstaller's BUNDLE step (in finance_analysis.spec) does that and
-# produces a self-contained .app at dist/Finance Analysis.app, including
-# the Python interpreter, all deps, frontend/dist, and bundled Chromium.
+# produces a self-contained .app at dist/Finance Analysis.app.
 #
 # Our remaining responsibilities:
 #   1. Inject build/macos/uninstall.command as a Resource so users have a
 #      standalone uninstaller alongside Settings → Uninstall.
-#   2. Generate icon.icns from the project's 512px PNG (only if the spec
+#   2. Inject build/macos/fix-gatekeeper.command into the DMG root so
+#      users can clear the macOS quarantine xattr after dragging.
+#   3. Generate icon.icns from the project's 512px PNG (only if the spec
 #      didn't already supply one — keeps a single source of truth for
 #      the icon at frontend/public/icons/icon-512.png).
-#   3. hdiutil-wrap into FinanceAnalysis-<arch>.dmg with the
-#      drag-to-Applications symlink.
+#   4. hdiutil-wrap into FinanceAnalysis.dmg with the drag-to-Applications
+#      symlink.
 #
-# Architecture tag comes from $FINANCE_ANALYSIS_DMG_ARCH (set by
-# build_app.py from platform.machine()) or, if unset, from `uname -m`.
-# We ship two DMGs per macOS release: arm64 + x86_64.
+# Single arm64 build only — see release.yml for why we don't ship x86_64.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -28,9 +27,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 ICON_PNG="$PROJECT_ROOT/frontend/public/icons/icon-512.png"
 UNINSTALL_SRC="$SCRIPT_DIR/macos/uninstall.command"
 
-ARCH="${FINANCE_ANALYSIS_DMG_ARCH:-$(uname -m)}"
-ARCH_LOWER=$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')
-DMG_NAME="FinanceAnalysis-${ARCH_LOWER}.dmg"
+DMG_NAME="FinanceAnalysis.dmg"
 DMG_PATH="$SCRIPT_DIR/$DMG_NAME"
 
 if [ ! -d "$APP_BUNDLE" ]; then
@@ -80,6 +77,20 @@ fi
 # 3. Build the DMG.
 echo "Building $DMG_NAME..."
 rm -f "$DMG_PATH"
+
+# Defensive cleanup: detach any stale "Finance Analysis" volumes
+# from previous builds before calling hdiutil create. Without this,
+# ``hdiutil create`` fails with "Resource busy" when an earlier run
+# (in CI on a warm runner, or in local-dev iteration) left a
+# /Volumes/Finance\ Analysis mount behind. Iterates over every
+# disk image whose mount-point matches our volume name, ignoring
+# missing mounts (set -e is already on, hence ``|| true``).
+for vol in "/Volumes/$APP_NAME" "/Volumes/$APP_NAME "*; do
+    if [ -d "$vol" ]; then
+        hdiutil detach -force "$vol" >/dev/null 2>&1 || true
+    fi
+done
+
 STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
