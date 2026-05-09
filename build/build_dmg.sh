@@ -55,16 +55,27 @@ mkdir -p "$RESOURCES"
 cp "$UNINSTALL_SRC" "$RESOURCES/uninstall.command"
 chmod +x "$RESOURCES/uninstall.command"
 
-# 2. Re-sign the bundle with an ad-hoc signature.
+# 2. Re-sign the bundle's outer seal with an ad-hoc signature.
 #    PyInstaller signs the bundle at the end of its build step. Adding
 #    uninstall.command to Contents/Resources above breaks that sealed
-#    signature (the code directory hash no longer matches the on-disk
-#    files). Without re-signing, Gatekeeper shows "Finance Analysis is
-#    damaged and can't be opened" even after the user strips the
-#    quarantine xattr with Fix Gatekeeper.command, because macOS
-#    validates the seal independently of quarantine status.
+#    signature (the code directory's resource list no longer matches
+#    the on-disk files). Without re-signing, Gatekeeper shows
+#    "Finance Analysis is damaged and can't be opened" even after the
+#    user strips the quarantine xattr with Fix Gatekeeper.command,
+#    because macOS validates the seal independently of quarantine status.
+#
+#    We deliberately do NOT pass ``--deep``. PyInstaller already signed
+#    every nested binary (~hundreds of dylibs, frameworks, .so files),
+#    and those inner signatures are still valid — only the outer bundle
+#    seal is stale. Adding ``--deep`` re-signs every nested item, which
+#    on the macos-14 CI runner takes ~10s AND triggers macOS background
+#    validation (syspolicyd / amfid) that holds file locks long enough
+#    to make the immediately-following ``hdiutil create`` fail with
+#    "Resource busy". The non-deep re-sign takes ~0.2s and has no such
+#    side effect; ``codesign --verify --deep`` against the result still
+#    passes because the inner signatures were never invalidated.
 echo "Re-signing bundle after resource injection..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+codesign --force --sign - "$APP_BUNDLE"
 
 # 3. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
 #    .app's Info.plist (CFBundleIconFile points at icon.icns) BECAUSE
