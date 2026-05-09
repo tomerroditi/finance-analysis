@@ -67,6 +67,12 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - No direct DB access outside repositories
 - Commits: Conventional Commits (Commitizen)
 
+## Branch & PR Workflow
+
+- **PRs default to `dev`**, not `main`. Feature branches merge into `dev`.
+- `dev` accumulates changes; when ready, `dev` is merged into `main` via a PR that triggers the full CI/CD pipeline (installer builds, DMG, release).
+- Never open a PR directly to `main` for feature work — only `dev → main` merges go there.
+
 ## API
 
 - Base URL: `http://localhost:8000`
