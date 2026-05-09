@@ -1,3 +1,9 @@
+## v1.19.7 (2026-05-09)
+
+### Fix
+
+- **macos**: make Gatekeeper-fix script auto-launch the app
+
 ## v1.19.6 (2026-05-09)
 
 ### Fix
