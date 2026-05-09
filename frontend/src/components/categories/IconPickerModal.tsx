@@ -10,9 +10,10 @@ interface IconPickerModalProps {
   category: string;
   currentIcon: string;
   onSave: (icon: string) => void;
+  zIndex?: "z-50" | "z-[60]";
 }
 
-export function IconPickerModal({ isOpen, onClose, category, currentIcon, onSave }: IconPickerModalProps) {
+export function IconPickerModal({ isOpen, onClose, category, currentIcon, onSave, zIndex }: IconPickerModalProps) {
   const { t } = useTranslation();
   const [tempIcon, setTempIcon] = useState(currentIcon);
   const [emojiSearch, setEmojiSearch] = useState("");
@@ -28,6 +29,7 @@ export function IconPickerModal({ isOpen, onClose, category, currentIcon, onSave
       onClose={onClose}
       title={`${t("categories.changeIconFor")} ${category}`}
       maxWidth="md"
+      zIndex={zIndex}
     >
       <div className="p-4 md:p-6 space-y-4 md:space-y-6 overflow-y-auto">
         <div className="relative">
