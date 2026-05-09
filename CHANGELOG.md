@@ -1,3 +1,9 @@
+## v1.19.5 (2026-05-09)
+
+### Fix
+
+- **build**: drop --deep from re-sign step to fix hdiutil "Resource busy"
+
 ## v1.19.4 (2026-05-09)
 
 ### Fix
