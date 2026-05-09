@@ -1,3 +1,9 @@
+## v1.19.3 (2026-05-09)
+
+### Fix
+
+- **dmg**: switch DMG format from UDBZ (bzip2) to UDZO (zlib)
+
 ## v1.19.2 (2026-05-09)
 
 ### Fix
