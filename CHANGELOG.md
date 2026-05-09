@@ -1,3 +1,9 @@
+## v1.19.4 (2026-05-09)
+
+### Fix
+
+- **build**: actually add missing codesign re-sign step to build_dmg.sh
+
 ## v1.19.3 (2026-05-09)
 
 ### Fix
