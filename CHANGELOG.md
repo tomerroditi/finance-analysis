@@ -1,3 +1,9 @@
+## v1.19.1 (2026-05-09)
+
+### Fix
+
+- **ci**: detach stale "Finance Analysis" volumes before hdiutil create
+
 ## v1.19.0 (2026-05-09)
 
 ### Feat
