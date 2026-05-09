@@ -1,3 +1,9 @@
+## v1.19.2 (2026-05-09)
+
+### Fix
+
+- **build**: tighten icon plumbing on both platforms + restore macOS fixes
+
 ## v1.19.1 (2026-05-09)
 
 ### Fix
