@@ -1,35 +1,39 @@
 #!/bin/bash
-# Fix the macOS Gatekeeper "damaged and can't be opened" error.
+# Fix Gatekeeper "is damaged" error after downloading Finance Analysis from GitHub.
 #
-# The error is misleading: the app isn't damaged. macOS adds a
-# ``com.apple.quarantine`` extended attribute to anything downloaded
-# via a browser, and refuses to launch unsigned + unnotarized apps
-# carrying that attribute. Stripping the xattr lets the app launch.
+# macOS attaches a com.apple.quarantine extended attribute to files
+# downloaded from the internet. For unsigned apps, Gatekeeper treats
+# this as "damaged" and refuses to open them. This script removes the
+# quarantine attribute so the app can launch normally.
 #
-# Once code-signing + notarization are in place this script can be
-# deleted — Gatekeeper will trust the signature directly.
-set -u
+# Usage:
+#   1. Drag "Finance Analysis.app" from this DMG to /Applications.
+#   2. Double-click this file — Terminal opens and runs the fix.
+#   3. Re-launch Finance Analysis from Launchpad or /Applications.
+set -euo pipefail
 
-APP_NAME="Finance Analysis"
-APP_BUNDLE="/Applications/${APP_NAME}.app"
+APP="/Applications/Finance Analysis.app"
 
 echo "=================================================="
-echo "     ${APP_NAME} — Fix macOS Gatekeeper"
+echo "  Finance Analysis — Fix Gatekeeper"
 echo "=================================================="
 echo
 
-if [ ! -d "$APP_BUNDLE" ]; then
-    echo "ERROR: ${APP_BUNDLE} not found."
-    echo "Drag ${APP_NAME}.app into /Applications first, then run this script."
+if [ ! -d "$APP" ]; then
+    echo "ERROR: Finance Analysis.app not found in /Applications."
+    echo
+    echo "Please drag Finance Analysis.app from this DMG to your"
+    echo "/Applications folder first, then run this script again."
     echo
     echo "Press any key to close this window."
     read -n 1 -s
     exit 1
 fi
 
-echo "Removing quarantine attribute from ${APP_BUNDLE}..."
-xattr -cr "$APP_BUNDLE"
-
+echo "Removing macOS quarantine flag from Finance Analysis.app..."
+xattr -cr "$APP"
+echo "Done."
 echo
-echo "Done. ${APP_NAME} should launch normally now."
-echo "You can close this Terminal window."
+echo "You can now launch Finance Analysis from Launchpad or /Applications."
+echo "Press any key to close this window."
+read -n 1 -s

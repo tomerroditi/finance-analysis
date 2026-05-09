@@ -8,12 +8,15 @@
 # Our remaining responsibilities:
 #   1. Inject build/macos/uninstall.command as a Resource so users have a
 #      standalone uninstaller alongside Settings → Uninstall.
-#   2. Inject build/macos/fix-gatekeeper.command into the DMG root so
+#   2. Re-sign the bundle after step 1 (adding files post-PyInstaller
+#      breaks the sealed code signature, which causes Gatekeeper to show
+#      "is damaged" even after the user strips the quarantine xattr).
+#   3. Inject build/macos/fix-gatekeeper.command into the DMG root so
 #      users can clear the macOS quarantine xattr after dragging.
-#   3. Generate icon.icns from the project's 512px PNG (only if the spec
+#   4. Generate icon.icns from the project's 512px PNG (only if the spec
 #      didn't already supply one — keeps a single source of truth for
 #      the icon at frontend/public/icons/icon-512.png).
-#   4. hdiutil-wrap into FinanceAnalysis.dmg with the drag-to-Applications
+#   5. hdiutil-wrap into FinanceAnalysis.dmg with the drag-to-Applications
 #      symlink.
 #
 # Single arm64 build only — see release.yml for why we don't ship x86_64.
@@ -55,7 +58,18 @@ mkdir -p "$RESOURCES"
 cp "$UNINSTALL_SRC" "$RESOURCES/uninstall.command"
 chmod +x "$RESOURCES/uninstall.command"
 
-# 2. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
+# 2. Re-sign the bundle with an ad-hoc signature.
+#    PyInstaller signs the bundle at the end of its build step. Adding
+#    uninstall.command to Contents/Resources above breaks that sealed
+#    signature (the code directory hash no longer matches the on-disk
+#    files). Without re-signing, Gatekeeper shows "Finance Analysis is
+#    damaged and can't be opened" even after the user strips the
+#    quarantine xattr with Fix Gatekeeper.command, because macOS
+#    validates the seal independently of quarantine status.
+echo "Re-signing bundle after resource injection..."
+codesign --force --deep --sign - "$APP_BUNDLE"
+
+# 3. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
 #    .app's Info.plist (CFBundleIconFile points at icon.icns) BECAUSE
 #    build_app.py::_step_icns generated it before PyInstaller ran.
 #    Nothing to do here; the icon is already inside the bundle and
@@ -65,7 +79,7 @@ if [ ! -f "$RESOURCES/icon.icns" ]; then
     exit 1
 fi
 
-# 3. Build the DMG.
+# 4. Build the DMG.
 echo "Building $DMG_NAME..."
 rm -f "$DMG_PATH"
 
@@ -85,7 +99,6 @@ done
 STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
-
 # Ship the Gatekeeper-unquarantine script alongside the .app so the
 # user has a one-click fix for the unsigned-binary "is damaged" error.
 # Without code signing + notarization this is the only viable path —
