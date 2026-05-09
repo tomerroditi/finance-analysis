@@ -55,7 +55,18 @@ mkdir -p "$RESOURCES"
 cp "$UNINSTALL_SRC" "$RESOURCES/uninstall.command"
 chmod +x "$RESOURCES/uninstall.command"
 
-# 2. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
+# 2. Re-sign the bundle with an ad-hoc signature.
+#    PyInstaller signs the bundle at the end of its build step. Adding
+#    uninstall.command to Contents/Resources above breaks that sealed
+#    signature (the code directory hash no longer matches the on-disk
+#    files). Without re-signing, Gatekeeper shows "Finance Analysis is
+#    damaged and can't be opened" even after the user strips the
+#    quarantine xattr with Fix Gatekeeper.command, because macOS
+#    validates the seal independently of quarantine status.
+echo "Re-signing bundle after resource injection..."
+codesign --force --deep --sign - "$APP_BUNDLE"
+
+# 3. Icon: PyInstaller's BUNDLE step embedded build/icon.icns into the
 #    .app's Info.plist (CFBundleIconFile points at icon.icns) BECAUSE
 #    build_app.py::_step_icns generated it before PyInstaller ran.
 #    Nothing to do here; the icon is already inside the bundle and
