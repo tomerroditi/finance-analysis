@@ -2,7 +2,6 @@ name: CI
 
 on:
   pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 concurrency:
@@ -69,6 +68,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     name: E2E (Playwright, shard ${{ matrix.shard }}/4)
+    if: github.base_ref == 'main'
     timeout-minutes: 15
     strategy:
       # Run 4 parallel shards. Wall time drops from ~7 min to ~2-3 min.
@@ -153,6 +153,7 @@ jobs:
   api-fuzz:
     runs-on: ubuntu-latest
     name: API fuzz (Schemathesis)
+    if: github.base_ref == 'main'
     timeout-minutes: 15
     # Hard gate. The baseline 5xxs the previous version of this job was
     # tolerating have been fixed — empty-DB DataFrame schema, unknown
