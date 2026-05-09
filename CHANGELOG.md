@@ -1,3 +1,9 @@
+## v1.19.6 (2026-05-09)
+
+### Fix
+
+- **build**: use Homebrew Python on macOS so binary works on Tahoe
+
 ## v1.19.5 (2026-05-09)
 
 ### Fix
