@@ -99,8 +99,14 @@ hdiutil create \
     -volname "$APP_NAME" \
     -srcfolder "$STAGING" \
     -ov \
-    -format UDBZ \
+    -format UDZO \
     "$DMG_PATH"
+# UDZO (zlib) is Apple's default DMG format and what almost every
+# modern macOS distribution uses. We previously used UDBZ (bzip2),
+# which yields ~5% smaller files at significant cost: it's slower
+# to mount on the user's Mac and triggers extra inspection passes
+# in Chrome's macOS download path that visibly throttle downloads
+# past ~70 MB. UDZO sidesteps all of that.
 
 rm -rf "$STAGING"
 
