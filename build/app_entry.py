@@ -196,17 +196,23 @@ def _run_smoke_test() -> int:
     and exits 0 only if it all works. A failure here means the bundle
     is broken; we surface it as a CI red-x instead of shipping.
 
-    Two probes:
-        1. ``GET /api/version`` — covers the backend layers + asserts
-           the version comes from a bundled pyproject.toml (not the
-           "0.0.0" fallback that fires if the file isn't shipped).
-        2. ``GET /``            — covers the StaticFiles mount and the
-           SPA fallback handler. The bundled frontend lives at
-           ``_MEIPASS/frontend/dist/index.html`` and a request to "/"
-           must resolve to it via ``backend.main`` 's resolver. If the
-           ``datas`` entry for ``frontend/dist`` is missing (or the
-           ``_MEIPASS``-aware path resolution regresses), the probe
-           returns a 404 and the bundle is flagged broken.
+    Four probes covering the layers a user actually hits on first launch:
+        1. ``GET /api/version``           — backend lifespan + routes;
+           asserts the version comes from the bundled pyproject.toml
+           (not the "0.0.0" fallback that fires if the file isn't shipped).
+        2. ``GET /``                      — StaticFiles mount + SPA fallback.
+           The bundled frontend lives at ``_MEIPASS/frontend/dist/index.html``.
+        3. ``GET /assets/<bundle>.js``    — confirms the StaticFiles
+           ``/assets`` mount actually serves the JS bundle Vite produced.
+           Without this, a regression in the static-mount wiring would
+           let "/" return HTML but every JS asset 404 — the dashboard
+           would silently fail to load. Probe extracts the script src
+           from the index.html body, then fetches it.
+        4. ``GET /api/onboarding/status`` — exercises a route that
+           actually hits the service + repository + DB (alembic schema
+           created by the lifespan). A failure here means the bundle
+           launches but the DB layer is broken — much more useful than
+           catching "the bundle won't even start."
     """
     user = _setup_env()
     _configure_file_logging(user)
@@ -248,28 +254,97 @@ def _run_smoke_test() -> int:
 
             # 2. GET / — StaticFiles + SPA fallback. The bundled
             # frontend/dist/index.html should come back as a real
-            # HTML document. We accept any 2xx (the SPA handler may
-            # serve via different code paths) but require an HTML body.
+            # HTML document.
+            index_body = ""
             with urllib.request.urlopen(
                 f"http://127.0.0.1:{port}/", timeout=5.0
             ) as resp:
                 if resp.status not in (200, 304):
                     failures.append(f"/ returned {resp.status}")
                 else:
-                    body = resp.read().decode("utf-8", errors="replace")
+                    index_body = resp.read().decode("utf-8", errors="replace")
                     # The Vite-built index.html always contains either a
                     # <!doctype html> declaration or an <html> root tag.
-                    # A bare 200 with empty / JSON body would mean the
-                    # SPA fallback isn't actually serving the bundled
-                    # React app.
-                    lower = body.lower()
+                    lower = index_body.lower()
                     if "<!doctype html" not in lower and "<html" not in lower:
                         failures.append(
                             "/ returned a 200 but the body isn't HTML "
-                            f"(first 80 chars: {body[:80]!r})"
+                            f"(first 80 chars: {index_body[:80]!r})"
                         )
                     else:
-                        print(f"smoke-test ok: / served HTML ({len(body)} bytes)")
+                        print(f"smoke-test ok: / served HTML ({len(index_body)} bytes)")
+
+            # 3. /assets/<bundle>.js — extract the script src from the
+            # index.html and fetch it. Confirms that StaticFiles actually
+            # serves the JS bundle Vite produced under /assets, not just
+            # the HTML shell. A regression in the assets mount would
+            # leave the dashboard silently broken.
+            if index_body:
+                import re
+
+                # Vite's index.html has exactly one entrypoint script tag,
+                # something like: <script type="module" crossorigin src="/assets/index-aB12.js"></script>
+                # Match the first /assets/...js src.
+                match = re.search(
+                    r'<script\b[^>]*\ssrc=["\'](?P<src>/assets/[^"\']+\.js)["\']',
+                    index_body,
+                )
+                if match is None:
+                    failures.append(
+                        "/ returned HTML but no /assets/*.js script tag — "
+                        "the index.html shape changed or the bundle is broken"
+                    )
+                else:
+                    asset_src = match.group("src")
+                    try:
+                        with urllib.request.urlopen(
+                            f"http://127.0.0.1:{port}{asset_src}", timeout=5.0
+                        ) as asset_resp:
+                            if asset_resp.status not in (200, 304):
+                                failures.append(
+                                    f"{asset_src} returned {asset_resp.status}"
+                                )
+                            else:
+                                asset_bytes = asset_resp.read()
+                                if len(asset_bytes) < 1024:
+                                    failures.append(
+                                        f"{asset_src} suspiciously small "
+                                        f"({len(asset_bytes)} bytes)"
+                                    )
+                                else:
+                                    print(
+                                        f"smoke-test ok: {asset_src} served "
+                                        f"({len(asset_bytes)} bytes)"
+                                    )
+                    except Exception as exc:
+                        failures.append(f"asset fetch raised: {exc}")
+
+            # 4. /api/onboarding/status — a real backend roundtrip
+            # through route → service → repository → DB. The lifespan
+            # creates the schema; this confirms the DB layer is wired
+            # correctly inside the frozen bundle. The endpoint returns
+            # five booleans on a fresh DB (all true except is_first_run).
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/onboarding/status", timeout=5.0
+            ) as resp:
+                if resp.status != 200:
+                    failures.append(f"/api/onboarding/status returned {resp.status}")
+                else:
+                    body = json.loads(resp.read().decode())
+                    expected_keys = {
+                        "has_credentials",
+                        "has_transactions",
+                        "has_budgets",
+                        "has_investments",
+                        "is_first_run",
+                    }
+                    missing = expected_keys - set(body.keys())
+                    if missing:
+                        failures.append(
+                            f"/api/onboarding/status missing keys: {missing}; got {body}"
+                        )
+                    else:
+                        print(f"smoke-test ok: /api/onboarding/status returned {body}")
         except Exception as exc:
             failures.append(f"probe raised: {exc}")
         finally:
