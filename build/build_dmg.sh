@@ -108,12 +108,15 @@ STAGING=$(mktemp -d)
 cp -R "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-# Ship the Gatekeeper-unquarantine script alongside the .app so the
-# user has a one-click fix for the unsigned-binary "is damaged" error.
-# Without code signing + notarization this is the only viable path —
-# drop, install, double-click "Fix Gatekeeper.command", launch.
-cp "$FIX_GATEKEEPER_SRC" "$STAGING/Fix Gatekeeper.command"
-chmod +x "$STAGING/Fix Gatekeeper.command"
+# Ship the setup-and-launch script alongside the .app. Without code
+# signing + notarization, the user cannot just double-click the .app
+# (macOS will show "is damaged"). They need to drag the app to
+# /Applications and then double-click this script, which strips the
+# quarantine xattr and launches the app for them. The numeric prefix
+# makes the script sort first in Finder so it's the obvious next step
+# after the drag-to-Applications gesture.
+cp "$FIX_GATEKEEPER_SRC" "$STAGING/1. Run This After Dragging.command"
+chmod +x "$STAGING/1. Run This After Dragging.command"
 
 hdiutil create \
     -volname "$APP_NAME" \
