@@ -40,8 +40,10 @@ test.describe("Dashboard", () => {
 
   test("shows budget progress section", async ({ page }) => {
     await page.goto("/");
-    // Header was renamed from "Budget Progress" to "BUDGET" — match either.
-    await expect(page.getByText(/^Budget Progress$|^🎯\s*BUDGET$/i).first()).toBeVisible();
+    // The section's "Budget" header is too generic to locate uniquely (the
+    // sidebar nav link has the same text). Assert on the segmented control
+    // inside the section instead — those labels live only in BudgetSection.
+    await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
   });
 
   test("inline tag editor stages edits and commits on Done", async ({ page }) => {
