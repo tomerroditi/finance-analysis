@@ -9,6 +9,7 @@ from backend.models.base import Base, TimestampMixin
 from backend.models.cash_balance import CashBalance
 from backend.models.category import Category
 from backend.models.credential import Credential
+from backend.models.imported_account import ImportedAccount
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.budget import BudgetRule
 from backend.models.investment import Investment
@@ -44,6 +45,7 @@ __all__ = [
     "Category",
     "Credential",
     "BudgetRule",
+    "ImportedAccount",
     "InsuranceAccount",
     "Investment",
     "InvestmentBalanceSnapshot",
