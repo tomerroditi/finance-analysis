@@ -182,6 +182,7 @@ class TestScrapingServiceStart:
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
 
         mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
         mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
         mock_history_repo.record_scrape_start.return_value = 15
 
@@ -202,6 +203,46 @@ class TestScrapingServiceStart:
         expected_key = "banks - leumi - MyAcc"
         assert expected_key in ss._tfa_scrapers_waiting
         assert ss._tfa_scrapers_waiting[expected_key] is mock_adapter
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_start_scraping_2fa_starts_in_progress(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """2FA-capable scrapes start in IN_PROGRESS (status flips lazily later).
+
+        The adapter's _otp_callback transitions the status to WAITING_FOR_2FA
+        only when the scraper actually awaits the OTP — so the UI doesn't
+        show a 2FA prompt for providers like Hapoalim that don't always need
+        one.
+        """
+        mock_is_2fa.return_value = True
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+        mock_history_repo.record_scrape_start.return_value = 20
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            service.start_scraping_single("banks", "hapoalim", "MyAcc")
+
+        mock_history_repo.record_scrape_start.assert_called_once()
+        # 5th positional arg of record_scrape_start is the initial status
+        call_args = mock_history_repo.record_scrape_start.call_args
+        assert call_args[0][4] == "in_progress"
 
 
 class TestScrapingService2FA:

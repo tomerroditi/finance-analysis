@@ -2,6 +2,8 @@
 
 import asyncio
 import datetime
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 from backend.scraper import ScraperAdapter
 
@@ -68,3 +70,73 @@ class TestAdapter2FA:
 
         code = asyncio.run(run())
         assert code == "654321"
+
+    def test_otp_callback_flips_status_to_waiting_for_2fa(self):
+        """The status is flipped to WAITING_FOR_2FA when the scraper awaits an OTP.
+
+        This is the "lazy 2FA prompt" behavior — the UI only sees
+        WAITING_FOR_2FA once the scraper actually needs the code, not at
+        the start of the scrape. Without this, providers like Hapoalim
+        (which only sometimes need 2FA) would show a spurious 2FA prompt
+        on every run.
+        """
+        adapter = ScraperAdapter(
+            "banks", "hapoalim", DUMMY_ACCOUNT,
+            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        )
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        async def run():
+            async def set_code():
+                await asyncio.sleep(0.05)
+                adapter.set_otp_code("12345")
+
+            asyncio.create_task(set_code())
+            return await adapter._otp_callback()
+
+        with patch(
+            "backend.scraper.adapter.get_db_context",
+            side_effect=fake_db_context,
+        ), patch(
+            "backend.scraper.adapter.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            code = asyncio.run(run())
+
+        assert code == "12345"
+        mock_history_repo.update_status.assert_called_once_with(
+            DUMMY_PROCESS_ID, "waiting_for_2fa"
+        )
+
+    def test_otp_callback_survives_status_update_failure(self):
+        """OTP flow continues even if the WAITING_FOR_2FA status flip fails.
+
+        The status update is best-effort UI signaling; a transient DB error
+        shouldn't crash the OTP flow or the rest of the scrape.
+        """
+        adapter = ScraperAdapter(
+            "banks", "hapoalim", DUMMY_ACCOUNT,
+            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        )
+
+        async def run():
+            async def set_code():
+                await asyncio.sleep(0.05)
+                adapter.set_otp_code("99999")
+
+            asyncio.create_task(set_code())
+            return await adapter._otp_callback()
+
+        with patch(
+            "backend.scraper.adapter.get_db_context",
+            side_effect=RuntimeError("DB locked"),
+        ):
+            code = asyncio.run(run())
+
+        assert code == "99999"
