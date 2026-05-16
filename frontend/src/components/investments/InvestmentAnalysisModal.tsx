@@ -136,7 +136,15 @@ export function InvestmentAnalysisModal({
   const deleteSnapshotMutation = useMutation({
     mutationFn: ({ snapshotId }: { snapshotId: number }) =>
       investmentsApi.deleteBalanceSnapshot(investmentId, snapshotId),
-    onSuccess: invalidateAll,
+    onSuccess: (_, { snapshotId }) => {
+      // Synchronous patch so the row disappears immediately. The global
+      // MutationCache.onSuccess in queryClient.ts handles refreshing the
+      // heavier portfolio/analysis queries after a 200 ms debounce.
+      queryClient.setQueryData<Snapshot[]>(
+        ["investment-snapshots", investmentId],
+        (old) => old?.filter((s) => s.id !== snapshotId),
+      );
+    },
   });
 
   const updateSnapshotMutation = useMutation({
