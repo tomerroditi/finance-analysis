@@ -25,13 +25,21 @@ import {
   CheckCircle2,
   Clock,
   Shield,
+  Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   credentialsApi,
   bankBalancesApi,
   scrapingApi,
+  importedAccountsApi,
 } from "../services/api";
 import type { BankBalance } from "../services/api";
+import type { ImportedAccount } from "../types/importedAccount";
+import { ImportFileButton } from "../components/dataSources/ImportFileButton";
+import { ImportAccountWizard } from "../components/dataSources/ImportAccountWizard";
+import { UploadFileDropzone } from "../components/dataSources/UploadFileDropzone";
+import { Modal } from "../components/common/Modal";
 
 import { useDemoMode } from "../context/DemoModeContext";
 import { useConfirm, useNotify } from "../context/DialogContext";
@@ -103,6 +111,39 @@ export function DataSources() {
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["credentials-accounts", isDemoMode],
     queryFn: () => credentialsApi.getAccounts().then((res) => res.data),
+  });
+
+  const { data: importedAccounts } = useQuery({
+    queryKey: ["imported-accounts", isDemoMode],
+    queryFn: () => importedAccountsApi.getAll().then((res) => res.data),
+  });
+
+  const deleteImportedMutation = useMutation({
+    mutationFn: (id: number) => importedAccountsApi.delete(id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["imported-accounts"] }),
+  });
+
+  const [editMappingFor, setEditMappingFor] = useState<ImportedAccount | null>(null);
+  const [uploadingTo, setUploadingTo] = useState<ImportedAccount | null>(null);
+
+  const uploadMutation = useMutation({
+    mutationFn: async ({ id, file }: { id: number; file: File }) => {
+      const resp = await importedAccountsApi.upload(id, file);
+      return resp.data;
+    },
+    onSuccess: (summary) => {
+      queryClient.invalidateQueries({ queryKey: ["imported-accounts"] });
+      notify.success(
+        t("dataSources.import.importSummary", {
+          inserted: summary.inserted,
+          duplicates: summary.skipped_duplicates,
+          invalid: summary.dropped_invalid,
+        }),
+      );
+      setUploadingTo(null);
+    },
+    onError: () => notify.error(t("dataSources.import.importFailed")),
   });
 
   const { data: providers } = useQuery({
@@ -304,6 +345,7 @@ export function DataSources() {
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
             {isAnyScraping ? t("dataSources.scraping") : t("dataSources.scrapeAll")}
           </button>
+          <ImportFileButton />
           <button
             onClick={() => setIsAddOpen(true)}
             className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
@@ -313,7 +355,7 @@ export function DataSources() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {accounts?.length === 0 ? (
+        {(accounts?.length ?? 0) === 0 && (importedAccounts?.length ?? 0) === 0 ? (
           <div className="bg-[var(--surface)] rounded-2xl border border-dashed border-[var(--surface-light)] p-6 md:p-12 text-center">
             <div className="mx-auto w-16 h-16 bg-[var(--surface-light)] rounded-2xl flex items-center justify-center text-[var(--text-muted)] mb-4">
               <Globe size={32} />
@@ -331,9 +373,89 @@ export function DataSources() {
           </div>
         ) : (
           (() => {
-            const bankAccounts = accounts?.filter((a: CredentialAccount) => a.service === "banks") ?? [];
-            const creditCardAccounts = accounts?.filter((a: CredentialAccount) => a.service === "credit_cards") ?? [];
-            const insuranceAccounts = accounts?.filter((a: CredentialAccount) => a.service === "insurances") ?? [];
+            type MergedAccount =
+              | { origin: "scraped"; row: CredentialAccount }
+              | { origin: "imported"; row: ImportedAccount };
+
+            const scraped: MergedAccount[] = (accounts ?? []).map(
+              (row: CredentialAccount) => ({ origin: "scraped" as const, row }),
+            );
+            const imported: MergedAccount[] = (importedAccounts ?? []).map(
+              (row) => ({ origin: "imported" as const, row }),
+            );
+            const merged: MergedAccount[] = [...scraped, ...imported];
+
+            const bySvc = (svc: string) =>
+              merged.filter((m) => m.row.service === svc);
+
+            const bankItems = bySvc("banks");
+            const ccItems = bySvc("credit_cards");
+            const cashItems = bySvc("cash");
+            const insItems = bySvc("insurances");
+
+            const renderImportedCard = (acc: ImportedAccount, idx: number) => (
+              <div
+                key={`imp-${acc.id}-${idx}`}
+                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-3 md:p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
+                  <div className="flex items-center gap-3 md:gap-5">
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-400">
+                      <FileSpreadsheet size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h3 className="font-bold text-lg text-white capitalize">
+                          {acc.account_name}
+                        </h3>
+                        <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                          {t("dataSources.import.importedBadge")}
+                        </span>
+                      </div>
+                      <p className="text-sm text-[var(--text-muted)] font-medium">
+                        {acc.provider}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setUploadingTo(acc)}
+                      className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all"
+                      aria-label={t("dataSources.import.uploadButton")}
+                      title={t("dataSources.import.uploadButton")}
+                    >
+                      <Upload size={20} />
+                    </button>
+                    <button
+                      onClick={() => setEditMappingFor(acc)}
+                      className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all"
+                      aria-label={t("dataSources.import.editMappingButton")}
+                      title={t("dataSources.import.editMappingButton")}
+                    >
+                      <Edit2 size={20} />
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("dataSources.import.deleteConfirmTitle"),
+                          message: t("dataSources.import.deleteConfirmMessage", {
+                            name: acc.account_name,
+                          }),
+                          confirmLabel: t("dataSources.disconnectAccount"),
+                          isDestructive: true,
+                        });
+                        if (ok) deleteImportedMutation.mutate(acc.id);
+                      }}
+                      className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+                      aria-label={t("dataSources.import.deleteConfirmTitle")}
+                      title={t("dataSources.import.deleteConfirmTitle")}
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
 
             const renderAccountCard = (acc: CredentialAccount, idx: number) => {
               const scraper = getScraperForAccount(acc);
@@ -654,30 +776,43 @@ export function DataSources() {
               );
             };
 
+            const renderItem = (item: MergedAccount, idx: number) =>
+              item.origin === "scraped"
+                ? renderAccountCard(item.row, idx)
+                : renderImportedCard(item.row, idx);
+
             return (
               <div className="space-y-4">
-                {bankAccounts.length > 0 && (
+                {bankItems.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">
                       {t("dataSources.bankAccounts")}
                     </h3>
-                    {bankAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
+                    {bankItems.map(renderItem)}
                   </>
                 )}
-                {creditCardAccounts.length > 0 && (
+                {ccItems.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
                       {t("dataSources.creditCards")}
                     </h3>
-                    {creditCardAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
+                    {ccItems.map(renderItem)}
                   </>
                 )}
-                {insuranceAccounts.length > 0 && (
+                {cashItems.length > 0 && (
+                  <>
+                    <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
+                      {t("dataSources.cash")}
+                    </h3>
+                    {cashItems.map(renderItem)}
+                  </>
+                )}
+                {insItems.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mt-6 mb-2">
                       {t("dataSources.insurance")}
                     </h3>
-                    {insuranceAccounts.map((acc: CredentialAccount, idx: number) => renderAccountCard(acc, idx))}
+                    {insItems.map(renderItem)}
                   </>
                 )}
               </div>
@@ -929,6 +1064,34 @@ export function DataSources() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Upload to existing imported account */}
+      {uploadingTo && (
+        <Modal
+          isOpen={!!uploadingTo}
+          onClose={() => setUploadingTo(null)}
+          title={t("dataSources.import.uploadButton")}
+          maxWidth="lg"
+        >
+          <div className="p-4 md:p-6">
+            <UploadFileDropzone
+              onFile={(file) =>
+                uploadMutation.mutate({ id: uploadingTo.id, file })
+              }
+            />
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit mapping */}
+      {editMappingFor && (
+        <ImportAccountWizard
+          mode="edit-mapping"
+          isOpen={!!editMappingFor}
+          onClose={() => setEditMappingFor(null)}
+          account={editMappingFor}
+        />
       )}
     </div>
   );

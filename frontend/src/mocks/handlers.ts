@@ -228,6 +228,24 @@ export const mockCredentials = [
   },
 ];
 
+export const mockImportedAccounts = [
+  {
+    id: 99,
+    service: "banks",
+    provider: "Hapoalim Manual",
+    account_name: "Imported Checking",
+    mapping: {
+      skip_rows: 0,
+      date: { column: "Date", format: "auto" },
+      description: { column: "Description" },
+      amount: { mode: "single", column: "Amount", sign_convention: "positive_is_income" },
+      category: { column: null },
+      tag: { column: null },
+      account_number: { column: null },
+    },
+  },
+];
+
 export const mockRetirementGoal = {
   id: 1,
   current_age: 35,
@@ -634,6 +652,23 @@ export const handlers = [
         last_scrape_date: "2026-03-15",
       },
     ]),
+  ),
+
+  // ── Imported Accounts API ──
+  http.get("/api/imported-accounts/", () =>
+    HttpResponse.json(mockImportedAccounts),
+  ),
+  http.post("/api/imported-accounts/", () =>
+    HttpResponse.json(mockImportedAccounts[0]),
+  ),
+  http.put("/api/imported-accounts/:id", () =>
+    HttpResponse.json(mockImportedAccounts[0]),
+  ),
+  http.delete("/api/imported-accounts/:id", () =>
+    HttpResponse.json({ status: "ok" }),
+  ),
+  http.post("/api/imported-accounts/:id/upload", () =>
+    HttpResponse.json({ inserted: 5, skipped_duplicates: 0, dropped_invalid: 0 }),
   ),
 
   // ── Pending Refunds API ──
