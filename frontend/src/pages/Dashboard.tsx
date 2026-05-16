@@ -597,6 +597,7 @@ export function Dashboard() {
                           autosize: true,
                           xaxis: { ...chartTheme.xaxis, type: "date" },
                           yaxis: {
+                            ...chartTheme.yaxis,
                             title: {
                               text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
                               font: { color: "#94a3b8" },
@@ -806,7 +807,8 @@ export function Dashboard() {
                         x: 0.5,
                         xanchor: "center",
                       },
-                      yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
+                      xaxis: { ...chartTheme.xaxis },
+                      yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
                       margin: { ...chartTheme.margin, l: 80, r: 20 },
                     }}
                     style={{ width: "100%", height: "100%" }}
@@ -847,11 +849,12 @@ export function Dashboard() {
                           height: Math.max(400, incomeBySourceData.length * 25),
                           hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: {
+                            ...chartTheme.xaxis,
                             range: [0, maxStack * 1.05],
                             fixedrange: true,
                             showspikes: false,
                           },
-                          yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                          yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
                             orientation: "h",
                             y: -0.15,
@@ -905,8 +908,8 @@ export function Dashboard() {
                           autosize: true,
                           height: Math.max(400, expensesByCategoryOverTime.length * 25),
                           hovermode: isTouchDevice ? "closest" : "y unified",
-                          xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
-                          yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                          xaxis: { ...chartTheme.xaxis, range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
+                          yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
                             orientation: "h",
                             y: -0.15,
