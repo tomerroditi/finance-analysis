@@ -9,6 +9,7 @@ from backend.services.file_import_parser import (
     ColumnMapping,
     FieldMapping,
     parse_file,
+    parse_file_with_summary,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "imports"
@@ -120,3 +121,95 @@ class TestParseFileValidation:
         mapping.date.format = None
         with pytest.raises(ValueError, match="date.format is required"):
             parse_file(raw, filename="simple_signed.csv", mapping=mapping)
+
+
+class TestSplitMode:
+    """Debit/credit split amount mode."""
+
+    def test_hapoalim_style(self):
+        """CP1255 file with banner rows, Hebrew headers, debit/credit columns."""
+        raw = (FIXTURES / "hapoalim_style.csv").read_bytes()
+        mapping = ColumnMapping(
+            skip_rows=2,
+            date=FieldMapping(column="תאריך", format="dd/mm/yyyy"),
+            description=FieldMapping(column="תיאור"),
+            amount=AmountMapping(
+                mode="split",
+                debit_column="חובה",
+                credit_column="זכות",
+            ),
+        )
+        df, dropped = parse_file_with_summary(
+            raw, filename="hapoalim_style.csv", mapping=mapping
+        )
+        assert dropped == 0
+        assert len(df) == 3
+        # Coffee: debit 12.50 → amount = 0 - 12.50 = -12.50
+        assert df.iloc[0]["amount"] == -12.50
+        # Salary: credit 8500 → amount = 8500 - 0 = 8500.00
+        assert df.iloc[1]["amount"] == 8500.00
+        # Gym: debit 180 → -180.00
+        assert df.iloc[2]["amount"] == -180.00
+        # Dates converted to ISO
+        assert df.iloc[0]["date"] == "2026-03-01"
+
+
+class TestDateFormats:
+    """Non-ISO date formats and auto-detect."""
+
+    def test_dd_mm_yyyy(self):
+        """01/03/2026 reads as 1 March, not 3 January."""
+        raw = (FIXTURES / "dd_mm_yyyy.csv").read_bytes()
+        mapping = _signed_mapping()
+        mapping.date.format = "dd/mm/yyyy"
+        df, dropped = parse_file_with_summary(
+            raw, filename="dd_mm_yyyy.csv", mapping=mapping
+        )
+        # 3 input rows; 1 has a non-numeric amount → dropped.
+        assert dropped == 1
+        assert len(df) == 2
+        assert df.iloc[0]["date"] == "2026-03-01"
+
+    def test_auto_detect(self):
+        """`format='auto'` detects DD/MM from the sample rows."""
+        raw = (FIXTURES / "dd_mm_yyyy.csv").read_bytes()
+        mapping = _signed_mapping()
+        mapping.date.format = "auto"
+        df, dropped = parse_file_with_summary(
+            raw, filename="dd_mm_yyyy.csv", mapping=mapping
+        )
+        assert dropped == 1
+        assert df.iloc[0]["date"] == "2026-03-01"
+
+    def test_excel_serial(self):
+        """Excel serial dates (e.g., 45731 = 2025-03-15) parse correctly."""
+        import pandas as pd_local
+        df_xl = pd_local.DataFrame({
+            "date": [45731, 45733],
+            "description": ["A", "B"],
+            "amount": [-1, -2],
+        })
+        path = FIXTURES / "excel_serial.xlsx"
+        df_xl.to_excel(path, index=False)
+        raw = path.read_bytes()
+        mapping = _signed_mapping()
+        mapping.date.format = "excel_serial"
+        df, dropped = parse_file_with_summary(raw, filename=str(path), mapping=mapping)
+        assert dropped == 0
+        # 1899-12-30 + 45731 days = 2025-03-15
+        assert df.iloc[0]["date"] == "2025-03-15"
+
+
+class TestRowValidation:
+    """Drop-invalid behaviour."""
+
+    def test_drops_unparseable_amount(self):
+        """Non-numeric amount rows are silently dropped and counted."""
+        raw = (FIXTURES / "dd_mm_yyyy.csv").read_bytes()
+        mapping = _signed_mapping()
+        mapping.date.format = "dd/mm/yyyy"
+        df, dropped = parse_file_with_summary(
+            raw, filename="dd_mm_yyyy.csv", mapping=mapping
+        )
+        assert dropped == 1
+        assert "foo" not in df["description"].values

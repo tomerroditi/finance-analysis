@@ -108,6 +108,40 @@ def parse_file(
     return out
 
 
+def parse_file_with_summary(
+    raw: bytes,
+    filename: str,
+    mapping: ColumnMapping,
+) -> tuple[pd.DataFrame, int]:
+    """Like ``parse_file`` but also drops invalid rows and counts them.
+
+    Returns
+    -------
+    tuple
+        ``(canonical_df_with_only_valid_rows, dropped_invalid_count)``.
+    """
+    raw_df = _read_raw(raw, filename, skip_rows=mapping.skip_rows)
+    _check_columns_exist(raw_df, mapping)
+
+    parsed = pd.DataFrame()
+    parsed["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
+    parsed["description"] = raw_df[mapping.description.column].astype(str)
+    parsed["amount"] = _compute_amount(raw_df, mapping.amount)
+
+    if mapping.category and mapping.category.column:
+        parsed["category"] = raw_df[mapping.category.column].astype(str)
+    if mapping.tag and mapping.tag.column:
+        parsed["tag"] = raw_df[mapping.tag.column].astype(str)
+    if mapping.account_number and mapping.account_number.column:
+        parsed["account_number"] = raw_df[mapping.account_number.column].astype(str)
+
+    # A row is invalid if date didn't parse or amount didn't parse to a number.
+    invalid_mask = parsed["date"].isna() | parsed["amount"].isna()
+    dropped = int(invalid_mask.sum())
+    cleaned = parsed.loc[~invalid_mask].reset_index(drop=True)
+    return cleaned, dropped
+
+
 # ---------- internals ----------
 
 def _read_raw(raw: bytes, filename: str, *, skip_rows: int) -> pd.DataFrame:
@@ -146,31 +180,65 @@ def _check_columns_exist(df: pd.DataFrame, mapping: ColumnMapping) -> None:
         raise ValueError(f"Mapping references missing column(s): {missing}")
 
 
+_DATE_FORMATS: dict[str, str] = {
+    "iso": "%Y-%m-%d",
+    "dd/mm/yyyy": "%d/%m/%Y",
+    "mm/dd/yyyy": "%m/%d/%Y",
+    "dd-mm-yyyy": "%d-%m-%Y",
+    "dd.mm.yyyy": "%d.%m.%Y",
+}
+
+
 def _parse_dates(series: pd.Series, fmt: Optional[str]) -> pd.Series:
-    """Parse a date series to ``YYYY-MM-DD`` strings.
-
-    Task 4 only handles the ``"iso"`` format. Task 5 adds the other
-    formats + ``"auto"`` detection.
-
-    Note: unparseable values become ``NaT``, which ``strftime`` then
-    yields as float ``nan`` in the returned Series (mixed string/nan
-    dtype). Task 5 (``parse_file_with_summary``) detects and drops
-    those rows as invalid.
-    """
+    """Parse a date series to ``YYYY-MM-DD`` strings (or NaT for invalid)."""
     if fmt is None:
         raise ValueError("date.format is required")
-    if fmt == "iso":
-        parsed = pd.to_datetime(series, format="%Y-%m-%d", errors="coerce")
-    else:
-        raise NotImplementedError(f"Date format {fmt!r} not implemented yet")
+    if fmt == "auto":
+        chosen = _autodetect_format(series)
+        return _apply_format(series, chosen)
+    if fmt == "excel_serial":
+        numeric = pd.to_numeric(series, errors="coerce")
+        parsed = pd.to_datetime(numeric, unit="D", origin="1899-12-30", errors="coerce")
+        return parsed.dt.strftime("%Y-%m-%d")
+    if fmt in _DATE_FORMATS:
+        return _apply_format(series, _DATE_FORMATS[fmt])
+    raise ValueError(f"Unknown date format: {fmt!r}")
+
+
+def _apply_format(series: pd.Series, fmt: str) -> pd.Series:
+    """Apply a strptime-style format and emit ISO strings."""
+    parsed = pd.to_datetime(series, format=fmt, errors="coerce")
     return parsed.dt.strftime("%Y-%m-%d")
 
 
+def _autodetect_format(series: pd.Series) -> str:
+    """Pick the format that parses the highest fraction of sample values."""
+    sample = series.dropna().astype(str).head(20)
+    if len(sample) == 0:
+        return _DATE_FORMATS["iso"]
+    best_fmt = _DATE_FORMATS["iso"]
+    best_ok = -1
+    for fmt in _DATE_FORMATS.values():
+        parsed = pd.to_datetime(sample, format=fmt, errors="coerce")
+        ok = parsed.notna().sum()
+        if ok > best_ok:
+            best_ok = ok
+            best_fmt = fmt
+    return best_fmt
+
+
 def _compute_amount(df: pd.DataFrame, amount: AmountMapping) -> pd.Series:
-    """Compute the canonical signed amount per row."""
+    """Compute the canonical signed amount per row.
+
+    - ``single`` mode: read the column, optionally flip the sign.
+    - ``split`` mode: ``amount = credit - debit``; empty cells treated as 0.
+    """
     if amount.mode == "single":
         series = pd.to_numeric(df[amount.column], errors="coerce")
         if amount.sign_convention == "positive_is_expense":
             series = -series
         return series
-    raise NotImplementedError("split mode lands in Task 5")
+    # split mode
+    debit = pd.to_numeric(df[amount.debit_column], errors="coerce").fillna(0)
+    credit = pd.to_numeric(df[amount.credit_column], errors="coerce").fillna(0)
+    return credit - debit
