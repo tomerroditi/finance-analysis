@@ -153,6 +153,32 @@ class TestSplitMode:
         # Dates converted to ISO
         assert df.iloc[0]["date"] == "2026-03-01"
 
+    def test_split_mode_drops_all_empty_rows(self, tmp_path):
+        """Rows with neither debit nor credit are dropped by parse_file_with_summary."""
+        path = tmp_path / "split_with_empties.csv"
+        path.write_text(
+            "date,description,debit,credit\n"
+            "2026-03-01,Coffee,12.50,\n"
+            "2026-03-02,Separator row,,\n"     # empty debit AND empty credit → drop
+            "2026-03-03,Salary,,8500\n"
+        )
+        mapping = ColumnMapping(
+            skip_rows=0,
+            date=FieldMapping(column="date", format="iso"),
+            description=FieldMapping(column="description"),
+            amount=AmountMapping(
+                mode="split",
+                debit_column="debit",
+                credit_column="credit",
+            ),
+        )
+        df, dropped = parse_file_with_summary(
+            path.read_bytes(), filename="split_with_empties.csv", mapping=mapping
+        )
+        assert dropped == 1
+        assert len(df) == 2
+        assert "Separator row" not in df["description"].values
+
 
 class TestDateFormats:
     """Non-ISO date formats and auto-detect."""
@@ -181,7 +207,7 @@ class TestDateFormats:
         assert dropped == 1
         assert df.iloc[0]["date"] == "2026-03-01"
 
-    def test_excel_serial(self):
+    def test_excel_serial(self, tmp_path):
         """Excel serial dates (e.g., 45731 = 2025-03-15) parse correctly."""
         import pandas as pd_local
         df_xl = pd_local.DataFrame({
@@ -189,7 +215,7 @@ class TestDateFormats:
             "description": ["A", "B"],
             "amount": [-1, -2],
         })
-        path = FIXTURES / "excel_serial.xlsx"
+        path = tmp_path / "excel_serial.xlsx"
         df_xl.to_excel(path, index=False)
         raw = path.read_bytes()
         mapping = _signed_mapping()

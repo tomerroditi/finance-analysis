@@ -92,20 +92,7 @@ def parse_file(
     """
     raw_df = _read_raw(raw, filename, skip_rows=mapping.skip_rows)
     _check_columns_exist(raw_df, mapping)
-
-    out = pd.DataFrame()
-    out["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
-    out["description"] = raw_df[mapping.description.column].astype(str)
-    out["amount"] = _compute_amount(raw_df, mapping.amount)
-
-    if mapping.category and mapping.category.column:
-        out["category"] = raw_df[mapping.category.column].astype(str)
-    if mapping.tag and mapping.tag.column:
-        out["tag"] = raw_df[mapping.tag.column].astype(str)
-    if mapping.account_number and mapping.account_number.column:
-        out["account_number"] = raw_df[mapping.account_number.column].astype(str)
-
-    return out
+    return _build_canonical_df(raw_df, mapping)
 
 
 def parse_file_with_summary(
@@ -122,19 +109,7 @@ def parse_file_with_summary(
     """
     raw_df = _read_raw(raw, filename, skip_rows=mapping.skip_rows)
     _check_columns_exist(raw_df, mapping)
-
-    parsed = pd.DataFrame()
-    parsed["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
-    parsed["description"] = raw_df[mapping.description.column].astype(str)
-    parsed["amount"] = _compute_amount(raw_df, mapping.amount)
-
-    if mapping.category and mapping.category.column:
-        parsed["category"] = raw_df[mapping.category.column].astype(str)
-    if mapping.tag and mapping.tag.column:
-        parsed["tag"] = raw_df[mapping.tag.column].astype(str)
-    if mapping.account_number and mapping.account_number.column:
-        parsed["account_number"] = raw_df[mapping.account_number.column].astype(str)
-
+    parsed = _build_canonical_df(raw_df, mapping)
     # A row is invalid if date didn't parse or amount didn't parse to a number.
     invalid_mask = parsed["date"].isna() | parsed["amount"].isna()
     dropped = int(invalid_mask.sum())
@@ -143,6 +118,25 @@ def parse_file_with_summary(
 
 
 # ---------- internals ----------
+
+def _build_canonical_df(raw_df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
+    """Apply the mapping to ``raw_df`` and return the canonical DataFrame.
+
+    Shared by ``parse_file`` and ``parse_file_with_summary`` so the two
+    entry points can't drift out of sync.
+    """
+    out = pd.DataFrame()
+    out["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
+    out["description"] = raw_df[mapping.description.column].astype(str)
+    out["amount"] = _compute_amount(raw_df, mapping.amount)
+    if mapping.category and mapping.category.column:
+        out["category"] = raw_df[mapping.category.column].astype(str)
+    if mapping.tag and mapping.tag.column:
+        out["tag"] = raw_df[mapping.tag.column].astype(str)
+    if mapping.account_number and mapping.account_number.column:
+        out["account_number"] = raw_df[mapping.account_number.column].astype(str)
+    return out
+
 
 def _read_raw(raw: bytes, filename: str, *, skip_rows: int) -> pd.DataFrame:
     """Decode raw bytes into a header-aware DataFrame."""
@@ -212,7 +206,12 @@ def _apply_format(series: pd.Series, fmt: str) -> pd.Series:
 
 
 def _autodetect_format(series: pd.Series) -> str:
-    """Pick the format that parses the highest fraction of sample values."""
+    """Pick the format that parses the highest fraction of sample values.
+
+    On a tie (e.g. ambiguous ``01/02/2026`` parses under both DD/MM and
+    MM/DD), the format declared earlier in ``_DATE_FORMATS`` wins —
+    that's why ``dd/mm/yyyy`` precedes ``mm/dd/yyyy`` (Israeli default).
+    """
     sample = series.dropna().astype(str).head(20)
     if len(sample) == 0:
         return _DATE_FORMATS["iso"]
@@ -231,14 +230,18 @@ def _compute_amount(df: pd.DataFrame, amount: AmountMapping) -> pd.Series:
     """Compute the canonical signed amount per row.
 
     - ``single`` mode: read the column, optionally flip the sign.
-    - ``split`` mode: ``amount = credit - debit``; empty cells treated as 0.
+    - ``split`` mode: ``amount = credit - debit``; rows with both cells
+      empty become NaN so the row-validation step can drop them.
     """
     if amount.mode == "single":
         series = pd.to_numeric(df[amount.column], errors="coerce")
         if amount.sign_convention == "positive_is_expense":
             series = -series
         return series
-    # split mode
-    debit = pd.to_numeric(df[amount.debit_column], errors="coerce").fillna(0)
-    credit = pd.to_numeric(df[amount.credit_column], errors="coerce").fillna(0)
-    return credit - debit
+    # split mode: amount = credit - debit. Rows with neither debit nor
+    # credit (e.g. blank separator rows in bank exports) become NaN so
+    # parse_file_with_summary drops them.
+    debit_raw = pd.to_numeric(df[amount.debit_column], errors="coerce")
+    credit_raw = pd.to_numeric(df[amount.credit_column], errors="coerce")
+    both_missing = debit_raw.isna() & credit_raw.isna()
+    return (credit_raw.fillna(0) - debit_raw.fillna(0)).mask(both_missing)
