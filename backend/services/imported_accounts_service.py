@@ -281,6 +281,37 @@ class ImportedAccountsService:
             "dropped_invalid": dropped,
         }
 
+    def preview(
+        self,
+        raw: bytes,
+        filename: str,
+        mapping: dict,
+    ) -> dict:
+        """Parse a file with a mapping and return the first 5 mapped rows.
+
+        Used by the column-mapping wizard's live preview — runs the parser
+        in-memory, no DB writes.
+
+        Returns
+        -------
+        dict
+            ``{"rows": [...], "dropped_invalid": K, "raw_headers": [...]}``.
+            ``rows`` contains up to 5 records as dicts.
+        """
+        from backend.services.file_import_parser import _read_raw  # local import
+
+        try:
+            raw_df = _read_raw(raw, filename, skip_rows=mapping.get("skip_rows", 0))
+        except Exception as e:
+            raise ValueError(f"Could not parse file: {e}") from e
+        headers = list(raw_df.columns)
+
+        parsed_df, dropped = parse_file_with_summary(
+            raw, filename=filename, mapping=_dict_to_mapping(mapping)
+        )
+        rows = parsed_df.head(5).to_dict(orient="records")
+        return {"rows": rows, "dropped_invalid": dropped, "raw_headers": headers}
+
     def _existing_hashes_for_account(
         self,
         service: str,

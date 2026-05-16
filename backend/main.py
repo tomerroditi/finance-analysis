@@ -30,6 +30,7 @@ from backend.routes import (
     bank_balances,
     budget,
     cash_balances,
+    imported_accounts as imported_accounts_route,
     insurance_accounts,
     investments,
     liabilities,
@@ -264,6 +265,11 @@ app.include_router(
 )
 app.include_router(
     cash_balances.router, prefix="/api/cash-balances", tags=["Cash Balances"]
+)
+app.include_router(
+    imported_accounts_route.router,
+    prefix="/api/imported-accounts",
+    tags=["ImportedAccounts"],
 )
 app.include_router(
     insurance_accounts.router,
