@@ -9,8 +9,7 @@ from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
-
-_tfa_scrapers_waiting: Dict[str, ScraperAdapter] = {}
+from backend.scraper.adapter import _tfa_scrapers_waiting
 
 
 class ScrapingService:

@@ -30,6 +30,16 @@ from backend.services.tagging_service import CategoriesTagsService
 
 logger = logging.getLogger(__name__)
 
+# Module-level registry of adapters whose scrapers may end up awaiting an OTP.
+# Lives here (next to ``ScraperAdapter``) rather than in ``scraping_service``
+# so the adapter can clean itself up on completion without importing
+# ``scraping_service`` — which would create a cycle, since ``scraping_service``
+# imports from ``backend.scraper`` (and that loads this module).
+#
+# Keyed by ``"{service} - {provider} - {account}"`` to match the lookup the
+# 2FA POST route uses; the value is the live adapter instance.
+_tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
+
 
 def _import_scraper_module(name: str):
     """Import a module from the root ``scraper`` package.
@@ -191,20 +201,10 @@ class ScraperAdapter:
 
         Belt-and-braces cleanup: ``submit_2fa_code`` already pops the entry
         when the user provides the OTP, but if the scraper never awaited
-        2FA (Hapoalim happy path) the entry would otherwise leak. Lazy
-        import to avoid a circular dependency between
-        ``backend.scraper.adapter`` and ``backend.services.scraping_service``.
+        2FA (Hapoalim happy path) the entry would otherwise leak.
         """
-        try:
-            from backend.services.scraping_service import _tfa_scrapers_waiting
-
-            name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
-            _tfa_scrapers_waiting.pop(name, None)
-        except Exception as exc:
-            logger.debug(
-                "%s: %s: Failed to unregister from 2FA registry — %s",
-                self.provider_name, self.account_name, exc,
-            )
+        name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
+        _tfa_scrapers_waiting.pop(name, None)
 
     def set_otp_code(self, code: str) -> None:
         """Set OTP code and signal the waiting coroutine.
