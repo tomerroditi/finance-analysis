@@ -1,14 +1,15 @@
 name: Build smoke test
 
-# Build the desktop bundle on every PR push and run the in-bundle
-# smoke test (boot, hit /api/version, exit). Lets us iterate on the
-# PyInstaller spec without a Windows VM — push, watch the matrix,
-# read logs, fix, repeat.
+# Build the Windows desktop bundle on every PR push and run the in-bundle
+# smoke test (boot, hit /api/version, exit). Catches PyInstaller spec
+# regressions on PRs without waiting for the release pipeline.
 #
-# The full release workflow (release.yml) only runs on `main`, so PR
-# authors don't get build feedback there until merge. This workflow
-# fills that gap. It deliberately does not upload artifacts or push
-# anything anywhere — it's a green/red signal only.
+# **macOS is NOT built here.** See release.yml for why — macOS Tahoe
+# blocks every unsigned download path, so we don't ship a macOS
+# artifact. macOS users build from source locally.
+#
+# This workflow deliberately does not upload artifacts or push
+# anywhere — it's a green/red signal only.
 
 on:
   pull_request:
@@ -25,38 +26,17 @@ on:
 
 jobs:
   smoke:
-    name: Smoke ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: macos-14,       label: "macOS arm64" }
-          - { os: windows-latest, label: "Windows x64" }
-    runs-on: ${{ matrix.os }}
+    name: Smoke Windows x64
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Set up Python. On macOS we deliberately avoid actions/setup-python
-      # because its prebuilt Python is compiled with an older SDK that
-      # macOS 26 (Tahoe) AMFI silently blocks at _dyld_start. See the
-      # matching block in release.yml for the full explanation.
-      - name: Set up Python 3.12 (Windows)
-        if: runner.os == 'Windows'
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Set up Python 3.12 (macOS via Homebrew)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew install python@3.12
-          BREW_PREFIX="$(brew --prefix python@3.12)"
-          echo "Using Python from: $BREW_PREFIX"
-          "$BREW_PREFIX/bin/python3.12" --version
-          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -69,16 +49,12 @@ jobs:
         shell: bash
         run: |
           pip install poetry
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            poetry env use python3.12
-          fi
           poetry install --no-root --with build
 
-      - name: Install NSIS (Windows)
+      - name: Install NSIS
         # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
         # but doesn't make the running shell pick it up. Explicitly
         # appending to GITHUB_PATH so subsequent steps find ``makensis``.
-        if: runner.os == 'Windows'
         shell: bash
         run: |
           choco install nsis -y --no-progress
@@ -93,42 +69,28 @@ jobs:
         # /api/onboarding/status. See build/app_entry.py::_run_smoke_test
         # for what each probe catches. Exits 1 on any probe failure.
         shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test
-          else
-            "dist/FinanceAnalysis/FinanceAnalysis.exe" --smoke-test
-          fi
+        run: "dist/FinanceAnalysis/FinanceAnalysis.exe --smoke-test"
 
       - name: Exercise --uninstall-cleanup CLI
         # The Windows NSIS uninstaller invokes the bundled exe in
         # ``--uninstall-cleanup --keep-data | --wipe`` mode to delete
-        # Keychain / Credential Manager entries before removing the
-        # install dir (see installer_script.nsi). If app_entry's CLI
-        # dispatch regresses, the uninstall flow silently leaves
-        # secrets behind and we'd never notice from a user-facing
-        # test. Run it here against a tmp ``FAD_USER_DIR`` so the CI
-        # runner's env stays clean.
+        # Credential Manager entries before removing the install dir
+        # (see installer_script.nsi). If app_entry's CLI dispatch
+        # regresses, the uninstall flow silently leaves secrets behind
+        # and we'd never notice from a user-facing test. Run it here
+        # against a tmp ``FAD_USER_DIR`` so the CI runner's env stays
+        # clean.
         shell: bash
         env:
           FAD_USER_DIR: ${{ runner.temp }}/finance-analysis-smoke-uninstall
         run: |
           mkdir -p "$FAD_USER_DIR"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --uninstall-cleanup --keep-data
-          else
-            "dist/FinanceAnalysis/FinanceAnalysis.exe" --uninstall-cleanup --keep-data
-          fi
+          "dist/FinanceAnalysis/FinanceAnalysis.exe" --uninstall-cleanup --keep-data
 
       - name: Assert bundle size sanity
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            BUNDLE="dist/Finance Analysis.app"
-          else
-            BUNDLE="dist/FinanceAnalysis"
-          fi
-          SIZE_KB=$(du -sk "$BUNDLE" | awk '{ print $1 }')
+          SIZE_KB=$(du -sk "dist/FinanceAnalysis" | awk '{ print $1 }')
           # Realistic floor for the bundle now that Chromium is no
           # longer bundled:
           #   - Bundled Python interpreter + ext modules: ~150 MB

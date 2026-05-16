@@ -1,38 +1,54 @@
 # Installation, Updates, and Uninstallation
 
-How the desktop app is installed, upgraded, and removed on Windows
-and macOS. Read this before touching anything in `build/`,
-`backend/uninstall/`, `backend/services/update_service.py`, or the
-`/api/updates` and `/api/uninstall` routes.
+How the desktop app is installed, upgraded, and removed. Read this
+before touching anything in `build/`, `backend/uninstall/`,
+`backend/services/update_service.py`, or the `/api/updates` and
+`/api/uninstall` routes.
 
-## Three flows, one cleanup module
+## Platforms
+
+- **Windows:** CI builds `FinanceAppInstaller.exe` and attaches it
+  to every GitHub release. Users download + double-click.
+- **macOS:** **no CI artifact.** macOS Tahoe (26.x) blocks every
+  unsigned download path — `.app`, `.pkg`, and `.command` all hit a
+  dead-end "cannot verify" dialog with no Open button (Apple removed
+  the bypass in macOS 15+). The only paths that work end-to-end are
+  Apple Developer ID + notarization ($99/yr) or a Terminal one-liner.
+  Until the project invests in signing, **macOS users build from
+  source locally**; see the README → "Packaged .app for macOS"
+  section. The build/ code still produces a working `.app` and `.dmg`
+  for local use; only the CI distribution + downloaded-app flow is
+  retired. Don't re-enable a macOS matrix entry in release.yml without
+  also setting up notarization.
+
+## Two uninstall flows, one cleanup module
 
 ```
 Windows NSIS Uninstall.exe         ─┐
    FinanceAnalysis.exe              │
    --uninstall-cleanup --wipe|--keep-data
+                                    │  backend/uninstall/cleanup.py
+                                    │  ─────────────────────────────▶  Credential Manager / Keychain wiped
+macOS POST /api/uninstall          ─┤  ── (single source of truth ──▶  ~/.finance-analysis/ wiped
+   (Settings → Uninstall, calls    │     for what counts as state)    (only when --wipe)
+    cleanup.run() in-process)       │
                                     │
-macOS uninstall.command            ─┤  backend/uninstall/cleanup.py
-   (double-clicked, calls          │  ─────────────────────────────▶  Keychain entries removed
-    Resources/.../FinanceAnalysis  │  ── (single source of truth ──▶  ~/.finance-analysis/ wiped
-    --uninstall-cleanup ...)        │     for what counts as state)    (only when --wipe)
-                                    │
-macOS POST /api/uninstall          ─┘
-   (Settings → Uninstall, calls
-    cleanup.run() in-process)
+macOS uninstall.command            ─┘
+   (inside .app bundle, run from
+    Terminal: bash <path>)
 ```
 
-The bundled binary exposes `--uninstall-cleanup` as a CLI mode
-(`build/app_entry.py`) so NSIS and the macOS uninstall.command can
-reach `backend.uninstall.cleanup.run` without needing a venv-hosted
-Python interpreter. The in-app uninstall route imports the module
-directly.
+The bundled Windows binary exposes `--uninstall-cleanup` as a CLI
+mode (`build/app_entry.py`) so NSIS can reach
+`backend.uninstall.cleanup.run` without a venv-hosted Python
+interpreter. The macOS in-app uninstall route imports the module
+directly (no shell-out needed).
 
-The three uninstall surfaces all delegate to **one** Python module
+All uninstall surfaces delegate to **one** Python module
 (`backend/uninstall/cleanup.py`) so they agree on:
 
-- The Keychain service names (`finance-analysis-app`,
-  `finance-analysis-app-demo`).
+- The Keychain / Credential Manager service names
+  (`finance-analysis-app`, `finance-analysis-app-demo`).
 - The user-data directory (`~/.finance-analysis/`).
 - The credential field names (`password`, `secret`, `otp_key`,
   `otpLongTermToken`).
@@ -55,16 +71,22 @@ list in.
 │ UpdateService                                                   │
 │   - GitHub releases probe (httpx, 5s timeout)                   │
 │   - on-disk cache: ~/.finance-analysis/.update_cache.json (24h) │
-│   - asset_url is OS-aware (.dmg darwin, .exe win32)             │
+│   - asset_url is OS-aware (.exe on win32; None on darwin/linux  │
+│     since there's no downloadable artifact for them)            │
 │   - any failure → UpdateInfo(error="unavailable") (never raises)│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Toast (`UpdateAvailableToast.tsx`):** appears 5s after mount; per-version
-dismissal in localStorage; never appears in `npm run dev`.
+dismissal in localStorage; never appears in `npm run dev`. When
+`asset_url` is null (macOS / Linux), the Download button links to
+`html_url` (the release page) instead of a direct file download. The
+macOS user lands on the release page, reads the "build from source"
+note in the release body, and pulls + rebuilds.
 
 **About panel (`AboutPanel.tsx`):** lives in Settings; shows current vs
 latest, "Check now" button (POSTs `/api/updates/check`, force-refresh).
+Same fallback as the toast for null `asset_url`.
 
 **Why the cache lives on the backend, not in the browser:** the PWA
 persists React Query results to IndexedDB. If the cache also lived
@@ -74,19 +96,27 @@ A backend file cache is shared by all open windows on the machine and
 respected by the per-window TanStack Query (its `staleTime` is just a
 client-side optimisation on top).
 
-## Build pipeline (both platforms)
+## Build pipeline
 
-`python build/build_app.py` is the single orchestrator. It:
+`python build/build_app.py` is the single orchestrator. It works on
+both platforms locally:
 
 1. `cd frontend && npm ci && npm run build`.
 2. Runs PyInstaller against `build/finance_analysis.spec`. Output:
    `dist/Finance Analysis.app` on macOS, `dist/FinanceAnalysis/` on
    Windows.
-3. Wraps the result: `build/build_dmg.sh` produces the DMG on macOS,
-   `makensis build/installer_script.nsi` produces the EXE on Windows.
+3. Wraps the result: `build/build_dmg.sh` produces the DMG on macOS
+   (local use only — not published anywhere), `makensis
+   build/installer_script.nsi` produces the EXE on Windows.
+
+CI runs steps 1-3 on `windows-latest` only and uploads the resulting
+`FinanceAppInstaller.exe` to the GitHub release. macOS local builds
+work the same way — `python build/build_app.py` on a Mac produces a
+`dist/Finance Analysis.app` + `build/FinanceAnalysis.dmg`, both
+launchable directly because nothing applied the quarantine xattr.
 
 Local dev is unaffected — `poetry run uvicorn backend.main:app --reload`
-and `npm run dev` work as before. The build pipeline is opt-in.
+and `npm run dev` work as before. The packaged-bundle build is opt-in.
 
 ## Browser dependency (NOT bundled)
 
@@ -100,8 +130,8 @@ Why we don't bundle Chromium:
 
 - Bundle size: a Playwright-bundled Chromium adds ~800MB to the
   artifact (chromium-NNNN + chromium_headless_shell-NNNN), pushing
-  the DMG from ~120MB to ~400MB compressed and the on-disk install
-  from ~450MB to ~1.5GB.
+  the installer from ~80MB to ~400MB compressed and the on-disk
+  install from ~450MB to ~1.5GB.
 - Anti-bot fingerprinting: a frozen Chromium revision looks more
   suspicious to bank fingerprinting over time. The user's Chrome
   auto-updates and stays current with web platform features — that
@@ -118,7 +148,7 @@ User-facing implication:
 
 ## Windows install (NSIS)
 
-`build/installer_script.nsi` is now a thin wrapper around the
+`build/installer_script.nsi` is a thin wrapper around the
 PyInstaller-produced self-contained directory.
 
 - **Per-user install** at `$LOCALAPPDATA\Programs\Finance Analysis`.
@@ -157,12 +187,30 @@ Uninstall flow:
 The cleanup CLI runs **before** `RMDir /r $INSTDIR` so the bundled
 exe is still on disk to invoke.
 
-## macOS install (DMG)
+## macOS install (build from source)
 
-PyInstaller's `BUNDLE` directive in `build/finance_analysis.spec`
-produces `dist/Finance Analysis.app` — a real, self-contained
-application bundle. `build/build_dmg.sh` only injects the
-standalone `uninstall.command` and wraps the result in a DMG.
+There is no shipped `.dmg` or `.pkg`. To install:
+
+```bash
+git clone https://github.com/tomerroditi/finance-analysis.git
+cd finance-analysis
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install poetry && poetry install --no-root --with build
+cd frontend && npm install && cd ..
+
+# Produce dist/Finance Analysis.app (skip the DMG wrap step)
+python build/build_app.py --no-wrap
+
+mv "dist/Finance Analysis.app" /Applications/
+```
+
+The resulting `.app` has no `com.apple.quarantine` xattr (because it
+was built locally, not downloaded), so Gatekeeper allows the ad-hoc
+PyInstaller signature to launch with no warnings. Double-click from
+Launchpad / Finder works.
+
+Bundle layout (PyInstaller's `BUNDLE` output, unchanged from when we
+shipped the DMG):
 
 ```
 Finance Analysis.app/
@@ -177,21 +225,7 @@ Finance Analysis.app/
 │       └── uninstall.command         ← Standalone uninstaller
 ```
 
-A single arm64 `FinanceAnalysis.dmg` is shipped per release. We do
-**not** build an Intel (x86_64) DMG — GitHub's `macos-13` runner
-pool is increasingly scarce (Intel jobs queue for hours while
-`macos-14` arm64 + `windows-latest` jobs start in seconds), and the
-`macos-13` image is on a deprecation runway. Apple Silicon Macs
-have been the only Macs Apple sells since 2022, and Apple Silicon
-cannot run Intel binaries via reverse-Rosetta, so the trade is
-acceptable: drop ~15-20% of (declining) Intel-Mac coverage in
-exchange for fast, predictable releases. If a real Intel-Mac user
-shows up we can add the build back via a self-hosted runner.
-
-### macOS launch (no setup, no rsync)
-
-The PyInstaller-built `.app` is fully self-contained, so the launch
-path is now:
+### macOS launch
 
 1. User double-clicks `Finance Analysis.app`.
 2. `Contents/MacOS/FinanceAnalysis` (PyInstaller bootloader) starts.
@@ -200,32 +234,51 @@ path is now:
 4. `app_entry.py` configures file logging, picks a free port, starts
    uvicorn in-process, opens the default browser, blocks on signal.
 
-No Terminal pop-up. No `setup.sh`. No `~/.finance-analysis/app/`
-sync. Logs go to `~/.finance-analysis/logs/uvicorn.log` (rotated
-2 MiB × 3). First launch is ~2s, the same as every subsequent launch.
+No Terminal pop-up. No `setup.sh`. Logs go to
+`~/.finance-analysis/logs/uvicorn.log` (rotated 2 MiB × 3). First
+launch is ~2s, the same as every subsequent launch.
 
-### macOS uninstall (three surfaces)
+### macOS upgrade
+
+Rebuild from a fresh git pull:
+
+```bash
+cd ~/finance-analysis && git pull
+source .venv/bin/activate
+poetry install --no-root --with build
+cd frontend && npm install && cd ..
+python build/build_app.py --no-wrap
+rm -rf "/Applications/Finance Analysis.app"
+mv "dist/Finance Analysis.app" /Applications/
+```
+
+The in-app update notifier (Toast + About panel) detects new releases
+the same way it does on Windows; on macOS the "Download" button
+points at the GitHub release page (no `.exe` to direct-link), where
+the release body re-states the rebuild command.
+
+### macOS uninstall
 
 1. **In-app:** Settings → Uninstall Finance Analysis. Calls
    `POST /api/uninstall`. Backend runs `cleanup.run(...)` synchronously,
    then writes a deferred shell script to `/tmp` and launches it in
    Terminal via `osascript`. The deferred script removes the .app +
    (if wiping) the user-data dir + kills the bundle's uvicorn process.
-2. **Standalone `Uninstall Finance Analysis.command`:** found inside
-   the bundle's `Contents/Resources/`. Right-Click → Show Package
-   Contents → drag the `.command` to Terminal, or open it from
-   inside the bundle. Asks the keep/wipe question via `read -p`,
-   calls the bundled exe's `--uninstall-cleanup` mode, then removes
-   the .app.
+2. **Standalone `uninstall.command`** inside the bundle's
+   `Contents/Resources/`. Right-click `Finance Analysis.app` → Show
+   Package Contents → drag the `.command` into a Terminal window
+   (don't double-click — even your own locally-built `.command`
+   wouldn't get blocked since it has no quarantine xattr, but the
+   in-app flow is cleaner anyway). Asks the keep/wipe question via
+   `read -p`, deletes the `.app` and (if wiping) the user-data dir.
 3. **Drag-to-Trash:** still works, but leaves user data + Keychain
    entries behind. macOS doesn't support "run on uninstall" hooks.
-   Documented in the README so users know to use the in-app or
-   standalone paths for a clean removal.
+   Documented in the README so users know to use the in-app path for
+   a clean removal.
 
 ## Manual smoke test plan
 
-Cutting a release? Run through this matrix on a clean VM (or fresh
-user account on macOS):
+Cutting a release? Run through this matrix:
 
 ### Windows
 
@@ -273,52 +326,47 @@ user account on macOS):
      "channel=chrome") in `%USERPROFILE%\.finance-analysis\logs\uvicorn.log`
      confirms the channel.
 
-### macOS
+### macOS (Apple Silicon)
 
-1. **Fresh install (Apple Silicon only):**
-   - Download `FinanceAnalysis.dmg` from the latest release.
-     Intel-Mac users are not supported (see release.yml for why).
-   - Open the DMG, drag to Applications.
-   - Launch from Launchpad. **No Terminal window.** Dashboard opens
-     in the default browser within ~2s.
+We don't ship a downloaded artifact, but the source-build path
+needs the same coverage to make sure each release still produces a
+working bundle locally.
 
-2. **Quit + relaunch:**
-   - Cmd-Q the app (or close it from the Dock).
-   - Launch again. Should be just as fast — no setup work happens.
+1. **Fresh build + install:**
+   - `git pull && poetry install --no-root --with build && (cd frontend && npm install)`.
+   - `python build/build_app.py --no-wrap` — verify the build
+     completes and `dist/Finance Analysis.app` exists.
+   - `mv "dist/Finance Analysis.app" /Applications/` — drag-replace
+     any existing version.
+   - Launch from Launchpad. **No "is damaged" / "cannot verify"
+     dialog.** Dashboard opens in the default browser within ~2s.
 
-3. **Upgrade:**
-   - Replace the .app with a newer build (drag-to-Applications, overwrite).
-   - Launch. Same ~2s startup as a fresh install.
+2. **Smoke-test the binary directly:**
+   - `"/Applications/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test`.
+   - Verify all four probes (`/api/version`, `/`, `/assets/*.js`,
+     `/api/onboarding/status`) print `smoke-test ok:`.
 
-4. **In-app uninstall (preserve data):**
+3. **In-app uninstall (preserve data):**
    - Open Settings → Uninstall Finance Analysis.
    - Confirm without ticking "Also delete my data".
-   - Verify: .app gone from /Applications, but `~/.finance-analysis/`
-     (DB, credentials YAML) intact.
-   - Re-install and re-launch — data picks up.
+   - Verify: `.app` gone from /Applications, but
+     `~/.finance-analysis/` (DB, credentials YAML) intact.
+   - Rebuild and re-launch — data picks up.
 
-5. **Standalone uninstall.command:**
-   - With app installed, Right-Click `Finance Analysis.app` → Show
-     Package Contents → Contents/Resources → double-click `uninstall.command`.
-     Type `y` at the prompt.
-   - Verify the .app is removed AND the user-data dir is gone AND
+4. **In-app uninstall (wipe data):**
+   - Repeat (3) with "Also delete my data" ticked.
+   - Verify: `.app` gone AND `~/.finance-analysis/` gone AND
      `security find-generic-password -s finance-analysis-app` returns
      nothing.
 
-6. **Scrape using system browser:**
-   - With Chrome installed (the Apple Silicon default test rig), set
-     up a credential and kick off a scrape.
+5. **Scrape using system browser:**
+   - With Chrome installed, set up a credential and kick off a scrape.
    - Verify the log line "scraper using channel=chrome" in
      `~/.finance-analysis/logs/uvicorn.log`.
    - Then test the no-browser path: temporarily move
      `/Applications/Google Chrome.app` aside, kick off a scrape, and
      confirm the UI surfaces "Install Google Chrome…" — the scraper
      must not silently hang or download Chromium.
-
-7. **Drag-to-Trash regression check:**
-   - Drag `Finance Analysis.app` to Trash.
-   - User data should remain (documented behaviour — the .app's
-     uninstall hooks aren't invoked by Trash).
 
 ## Code-signing and notarization (out of scope)
 
@@ -338,19 +386,32 @@ notarize the macOS .app (no Apple Developer ID). This means:
   `.bat` / `.ps1` we shipped to do it would itself be MOTW-blocked by
   SmartScreen. Chicken-and-egg. The realistic path is the click-through.
 
-- **macOS: Gatekeeper "is damaged"** error — same root cause (the
-  `com.apple.quarantine` xattr), different (more aggressive) UI.
-  We ship `Fix Gatekeeper.command` inside the DMG that runs
-  `xattr -cr "/Applications/Finance Analysis.app"` to strip the
-  attribute. User flow: drag .app to /Applications → double-click
-  Fix Gatekeeper.command → re-launch the app.
+- **macOS: every download path is blocked on Tahoe.** This is why we
+  stopped shipping a `.dmg`. The full diagnosis:
+  - Unsigned `.app` + quarantine xattr → "is damaged" dialog with no
+    bypass button (macOS 15+).
+  - `.command` shell script + quarantine → "cannot verify developer"
+    dialog with no Open button.
+  - `.pkg` installer + quarantine → "Apple could not verify… free of
+    malware" dialog with no Open button.
+  - Right-click → Open: shows the same dead-end dialog as
+    double-click on macOS 15+ (Apple removed the bypass from the
+    context-menu path too).
+  - System Settings → Privacy & Security → "Open Anyway": works, but
+    is too many steps for a "casual install" UX.
+  - Terminal `xattr -cr <path> && open <path>`: works, but is a
+    command-line workflow.
 
-We can't ship auto-update until signing is resolved — auto-installing
-an unsigned binary is a UX disaster on either platform.
+  The only real fix is Apple Developer ID + notarization. Until then,
+  macOS users build from source (see "macOS install" above), which
+  produces a bundle without the quarantine xattr in the first place.
 
 When we do invest in signing certs, the changes are:
+
 - NSIS: add a `signtool sign` post-build step in `release.yml`.
-- macOS: extend `build_dmg.sh` with `codesign` + `notarytool submit`.
+- macOS: extend `build_dmg.sh` with `codesign` + `notarytool submit`,
+  then re-add the `macos-15` (or newer) entry to the release.yml
+  build matrix.
 - Re-evaluate the auto-update story (the in-app toast can become an
   in-app "downloading… restarting…").
 
@@ -380,8 +441,17 @@ build/
 ├── build_app.py         # Orchestrator: frontend → pyinstaller → DMG/NSIS
 ├── installer_script.nsi # Slim NSIS wrapper around PyInstaller dist/
 ├── build_dmg.sh         # Slim macOS DMG wrapper around PyInstaller .app
+│                        # (local use only — not invoked by CI; macOS
+│                        #  users typically run build_app.py --no-wrap
+│                        #  and skip the DMG step entirely)
 └── macos/
-    └── uninstall.command # Standalone uninstaller (in Contents/Resources)
+    ├── uninstall.command       # Standalone uninstaller (inside .app's Resources)
+    └── fix-gatekeeper.command  # Was placed in the DMG root to strip
+                                # quarantine. Kept in the repo for the
+                                # local-DMG flow (some macOS users still
+                                # build the DMG locally and share it
+                                # between their own machines), but
+                                # never reaches a public download.
 
 # Generated, not checked in:
 build/.pyinstaller-work/  # PyInstaller scratch dir

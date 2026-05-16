@@ -7,7 +7,8 @@ Covers:
     - ``force=True`` bypasses the cache.
     - HTTP non-200 collapses to ``error="unavailable"``.
     - Network exception collapses to ``error="unavailable"``.
-    - Asset URL is OS-aware (.dmg on darwin, .exe on win32, fallback otherwise).
+    - Asset URL is OS-aware (.exe on win32, None on darwin/linux since
+      we no longer ship a downloadable macOS artifact).
     - Semver compare: outdated, up-to-date, and dev (0.0.0) base case.
 """
 
@@ -212,14 +213,21 @@ class TestUpdateServiceCaching:
 class TestPickAssetUrl:
     """Tests for the OS-matching asset selector.
 
-    macOS releases ship one arm64 ``FinanceAnalysis.dmg`` (Apple
-    Silicon only — see release.yml for why we don't build Intel).
-    Windows ships ``FinanceAppInstaller.exe``. Linux has no
-    artifact.
+    Only Windows ships a downloadable artifact
+    (``FinanceAppInstaller.exe``). macOS and Linux fall through to
+    ``None`` so the in-app update toast falls back to the release-page
+    link. macOS used to ship ``FinanceAnalysis.dmg`` but Tahoe blocks
+    every unsigned download path, so macOS users build from source
+    instead.
     """
 
     @staticmethod
     def _assets() -> list[dict]:
+        # Releases now ship only the .exe. We still include a .dmg here
+        # to confirm the selector ignores it for non-Windows callers —
+        # historical releases (v1.20 and earlier) had both assets, and
+        # this guard makes sure no platform regresses to picking the
+        # macOS asset for users we don't want to send there.
         return [
             {
                 "name": "FinanceAnalysis.dmg",
@@ -231,15 +239,6 @@ class TestPickAssetUrl:
             },
         ]
 
-    def test_darwin_picks_dmg(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """macOS users get the .dmg."""
-        monkeypatch.setattr(update_service.sys, "platform", "darwin")
-
-        assert (
-            update_service._pick_asset_url(self._assets())
-            == "https://example/finance.dmg"
-        )
-
     def test_win32_picks_exe(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Windows users get the .exe."""
         monkeypatch.setattr(update_service.sys, "platform", "win32")
@@ -249,36 +248,23 @@ class TestPickAssetUrl:
             == "https://example/installer.exe"
         )
 
+    def test_darwin_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """macOS no longer ships a downloadable artifact — return None.
+
+        Even when a legacy ``.dmg`` asset is still present on an older
+        release, we don't surface it as an in-app download. Tahoe blocks
+        every unsigned download path (.app/.pkg/.command all hit a
+        dead-end "cannot verify" dialog), so sending users to a .dmg
+        gives them a broken download experience. Falling through to
+        ``None`` makes the update toast link to the release page
+        instead, where the README explains the source build flow.
+        """
+        monkeypatch.setattr(update_service.sys, "platform", "darwin")
+
+        assert update_service._pick_asset_url(self._assets()) is None
+
     def test_linux_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Linux has no shipping artifact — return None."""
         monkeypatch.setattr(update_service.sys, "platform", "linux")
 
         assert update_service._pick_asset_url(self._assets()) is None
-
-    def test_arch_tagged_legacy_dmg_still_resolves(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A v1.18-era release with arch-suffixed DMGs still works.
-
-        Old releases shipped ``FinanceAnalysis-arm64.dmg`` and
-        ``FinanceAnalysis-x86_64.dmg``. After the Intel build was
-        dropped we kept only the unsuffixed ``.dmg`` for new releases,
-        but if the user is running an old binary that's checking a
-        legacy release tag, the picker should still grab whichever
-        ``.dmg`` it sees first rather than returning None.
-        """
-        monkeypatch.setattr(update_service.sys, "platform", "darwin")
-        legacy = [
-            {
-                "name": "FinanceAnalysis-arm64.dmg",
-                "browser_download_url": "https://example/arm64.dmg",
-            },
-            {
-                "name": "FinanceAnalysis-x86_64.dmg",
-                "browser_download_url": "https://example/x86_64.dmg",
-            },
-        ]
-
-        assert (
-            update_service._pick_asset_url(legacy) == "https://example/arm64.dmg"
-        )

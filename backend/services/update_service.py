@@ -16,9 +16,11 @@ Design choices:
   malformed JSON) collapses to ``UpdateInfo(error="unavailable")`` so
   the frontend can fall back to "couldn't check" copy without trying
   to interpret HTTP status codes.
-- **Asset selection is OS-aware.** macOS users get a direct ``.dmg``
-  link, Windows users get a direct ``.exe`` link. Linux falls through
-  to ``html_url`` since we don't ship a Linux artifact.
+- **Asset selection is OS-aware.** Windows users get a direct ``.exe``
+  link. macOS and Linux fall through to ``html_url`` (the release page)
+  since we don't ship downloadable artifacts for those platforms —
+  macOS users build from source (Tahoe blocks every unsigned download
+  path), Linux has no shipping artifact.
 """
 
 from __future__ import annotations
@@ -106,17 +108,17 @@ def _parse_semver(version: str) -> tuple[int, ...]:
 def _pick_asset_url(assets: list[dict]) -> Optional[str]:
     """Pick the OS-matching release asset download URL.
 
-    macOS releases ship a single arm64 ``FinanceAnalysis.dmg`` (Apple
-    Silicon only — Intel Macs have been off Apple's product line since
-    2022 and GitHub's ``macos-13`` Intel runner pool was too scarce to
-    rely on). Windows ships ``FinanceAppInstaller.exe``. Linux has no
-    shipping artifact.
+    Only Windows ships a downloadable artifact (``FinanceAppInstaller.exe``).
+    macOS no longer ships a release artifact — Apple's Tahoe Gatekeeper
+    blocks every unsigned download path (.app/.pkg/.command all hit the
+    dead-end "cannot verify" dialog), so macOS users build from source.
+    Returns ``None`` for macOS / Linux; the in-app update toast falls
+    back to linking to the release page itself.
 
     We don't inspect ``content_type`` because GitHub returns
     ``application/octet-stream`` for all binaries.
     """
     suffix_by_platform = {
-        "darwin": ".dmg",
         "win32": ".exe",
     }
     suffix = suffix_by_platform.get(sys.platform)

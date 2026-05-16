@@ -49,34 +49,23 @@ jobs:
         with:
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-  # Build the self-contained desktop bundle on each target platform.
-  # PyInstaller can only produce a binary for the platform it runs on,
-  # so each runner builds for its native arch:
-  #     macos-14       → arm64 .app + DMG (FinanceAnalysis.dmg)
-  #     windows-latest → x64 directory + NSIS .exe (FinanceAppInstaller.exe)
+  # Build the self-contained Windows installer and attach it to the
+  # GitHub Release tagged by the bump-version step above.
   #
-  # We do NOT build a macOS x86_64 (Intel) artifact. GitHub's hosted
-  # ``macos-13`` runner pool is scarce — Intel macOS jobs frequently
-  # queue for hours while macos-14 + windows-latest start in seconds —
-  # and the image is on a deprecation runway. Apple Silicon has been
-  # the only Mac shipping since 2022; Apple Silicon Macs cannot run
-  # x86_64 binaries via reverse-Rosetta. Dropping the Intel build
-  # makes releases faster and more predictable. If a real Intel-Mac
-  # user appears, we can add it back via a self-hosted runner.
-  #
-  # Each runner uploads its artifact to the GitHub Release tagged by
-  # the bump-version step above.
+  # **macOS is NOT built here.** On macOS Tahoe (26.x) Apple removed
+  # every easy bypass for unsigned apps: the "is damaged" / "cannot
+  # verify" dialog has no Open button anymore (only Done), the
+  # right-click → Open shortcut shows the same dead-end dialog, and
+  # the same restriction applies to .pkg installers and .command
+  # scripts. The only paths that work are (a) Apple Developer ID +
+  # notarization or (b) a Terminal one-liner. Neither belongs in a
+  # CI artifact, so the macOS download flow is gone. macOS users
+  # build from source (see README → "Build from source (macOS)").
   build-and-release:
     needs: [get-version, bump-version]
     if: needs.bump-version.outputs.version != needs.get-version.outputs.version
-    name: Build ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: macos-14,       label: "macOS arm64", artifact_glob: "build/FinanceAnalysis.dmg" }
-          - { os: windows-latest, label: "Windows x64", artifact_glob: "build/FinanceAppInstaller.exe" }
-    runs-on: ${{ matrix.os }}
+    name: Build Windows x64
+    runs-on: windows-latest
 
     steps:
       - name: Checkout latest code
@@ -86,31 +75,10 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      # Set up Python. On macOS we deliberately avoid actions/setup-python
-      # because its prebuilt Python is compiled with an older SDK
-      # (LC_BUILD_VERSION sdk=12.x). PyInstaller embeds that Python
-      # framework into the .app, and macOS 26 (Tahoe) AMFI silently
-      # blocks the resulting binary at _dyld_start — the user sees
-      # "Finance Analysis is damaged and can't be opened" with no
-      # bypass option, even after stripping the quarantine xattr.
-      # Homebrew Python ships a binary built with a current SDK that
-      # Tahoe accepts. Windows is unaffected and keeps using
-      # actions/setup-python.
-      - name: Set up Python 3.12 (Windows)
-        if: runner.os == 'Windows'
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Set up Python 3.12 (macOS via Homebrew)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew install python@3.12
-          BREW_PREFIX="$(brew --prefix python@3.12)"
-          echo "Using Python from: $BREW_PREFIX"
-          "$BREW_PREFIX/bin/python3.12" --version
-          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -123,34 +91,24 @@ jobs:
         # ``--with build`` pulls the optional [build] group (PyInstaller).
         # Playwright is in main deps; ``poetry install`` picks it up.
         # ``--no-root`` avoids treating finance-analysis as a poetry-installable.
-        # On macOS we explicitly point poetry at the Homebrew Python so the
-        # bundled Python framework that PyInstaller embeds is the
-        # newer-SDK build (see "Set up Python 3.12 (macOS via Homebrew)").
         shell: bash
         run: |
           pip install poetry
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            poetry env use python3.12
-          fi
           poetry install --no-root --with build
-          poetry run python -c "import sys, sysconfig; print(sys.executable); print(sysconfig.get_platform())"
 
-      - name: Install NSIS (Windows)
+      - name: Install NSIS
         # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
         # but doesn't make the running shell pick it up. Explicitly
         # appending to GITHUB_PATH so subsequent steps find ``makensis``.
-        if: runner.os == 'Windows'
         shell: bash
         run: |
           choco install nsis -y --no-progress
           echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
 
       - name: Run end-to-end build
-        # build_app.py: builds frontend, ensures Chromium is in
-        # build/.playwright-cache, runs PyInstaller, then wraps with
-        # build_dmg.sh (mac) or makensis (win). Output filenames are
-        # arch-tagged on macOS so the in-app update notifier can pick
-        # the right asset.
+        # build_app.py builds the frontend, runs PyInstaller, then
+        # wraps the output with makensis. Final artifact:
+        # build/FinanceAppInstaller.exe.
         shell: bash
         run: poetry run python build/build_app.py
 
@@ -159,20 +117,13 @@ jobs:
         # only if the round-trip succeeds. Catches PyInstaller spec
         # regressions (missing hidden imports, missing data files).
         shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            "dist/Finance Analysis.app/Contents/MacOS/FinanceAnalysis" --smoke-test
-          else
-            "dist/FinanceAnalysis/FinanceAnalysis.exe" --smoke-test
-          fi
+        run: "dist/FinanceAnalysis/FinanceAnalysis.exe --smoke-test"
 
       - name: Verify artifact exists
-        env:
-          ARTIFACT_GLOB: ${{ matrix.artifact_glob }}
         shell: bash
         run: |
-          if ! ls "$ARTIFACT_GLOB" >/dev/null 2>&1; then
-            echo "Expected artifact at $ARTIFACT_GLOB not found"
+          if ! ls "build/FinanceAppInstaller.exe" >/dev/null 2>&1; then
+            echo "Expected artifact at build/FinanceAppInstaller.exe not found"
             ls -la build/ || true
             exit 1
           fi
@@ -182,6 +133,6 @@ jobs:
         with:
           tag_name: v${{ needs.bump-version.outputs.version }}
           name: Release v${{ needs.bump-version.outputs.version }}
-          files: ${{ matrix.artifact_glob }}
+          files: build/FinanceAppInstaller.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

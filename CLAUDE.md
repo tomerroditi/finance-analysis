@@ -70,7 +70,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 ## Branch & PR Workflow
 
 - **PRs default to `dev`**, not `main`. Feature branches merge into `dev`.
-- `dev` accumulates changes; when ready, `dev` is merged into `main` via a PR that triggers the full CI/CD pipeline (installer builds, DMG, release).
+- `dev` accumulates changes; when ready, `dev` is merged into `main` via a PR that triggers the full CI/CD pipeline (Windows installer build + GitHub release). macOS bundles are no longer built in CI — see `.claude/rules/installation_and_updates.md`.
 - Never open a PR directly to `main` for feature work — only `dev → main` merges go there.
 
 ## API
