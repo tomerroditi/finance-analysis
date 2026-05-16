@@ -269,7 +269,7 @@ app.include_router(
 app.include_router(
     imported_accounts_route.router,
     prefix="/api/imported-accounts",
-    tags=["ImportedAccounts"],
+    tags=["Imported Accounts"],
 )
 app.include_router(
     insurance_accounts.router,

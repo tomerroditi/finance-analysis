@@ -114,3 +114,45 @@ class TestImportedAccountsRoutes:
         assert resp.headers["content-type"].startswith("text/csv")
         body = resp.content.decode("utf-8")
         assert body.startswith("date,description,amount,category,tag")
+
+    def test_update_mapping_not_found_returns_404(self, test_client: TestClient):
+        """Updating a nonexistent account returns 404."""
+        resp = test_client.put(
+            "/api/imported-accounts/999",
+            json={"mapping": VALID_MAPPING},
+        )
+        assert resp.status_code == 404
+
+    def test_delete_not_found_returns_404(self, test_client: TestClient):
+        """Deleting a nonexistent account returns 404."""
+        resp = test_client.delete("/api/imported-accounts/999")
+        assert resp.status_code == 404
+
+    def test_upload_not_found_returns_400(self, test_client: TestClient):
+        """Uploading to a nonexistent account returns 400."""
+        resp = test_client.post(
+            "/api/imported-accounts/999/upload",
+            files={"file": ("test.csv", CSV, "text/csv")},
+        )
+        assert resp.status_code == 400
+        assert "not found" in resp.json()["detail"]
+
+    def test_preview_with_invalid_json_mapping_returns_400(self, test_client: TestClient):
+        """POST /preview with non-JSON mapping returns 400."""
+        resp = test_client.post(
+            "/api/imported-accounts/preview",
+            files={"file": ("test.csv", CSV, "text/csv")},
+            data={"mapping": "not-json"},
+        )
+        assert resp.status_code == 400
+        assert "not valid JSON" in resp.json()["detail"]
+
+    def test_create_with_invalid_service_returns_422(self, test_client: TestClient):
+        """POST / with an unknown service value returns 422 (Pydantic validation)."""
+        resp = test_client.post("/api/imported-accounts/", json={
+            "service": "bogus",
+            "provider": "X",
+            "account_name": "Y",
+            "mapping": VALID_MAPPING,
+        })
+        assert resp.status_code == 422

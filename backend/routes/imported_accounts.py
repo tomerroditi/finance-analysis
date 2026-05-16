@@ -1,7 +1,7 @@
 """API routes for file-import data sources."""
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 class CreateRequest(BaseModel):
-    service: str
+    service: Literal["banks", "credit_cards", "cash"]
     provider: str
     account_name: str
     mapping: dict[str, Any]
