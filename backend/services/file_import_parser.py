@@ -151,8 +151,15 @@ def _parse_dates(series: pd.Series, fmt: Optional[str]) -> pd.Series:
 
     Task 4 only handles the ``"iso"`` format. Task 5 adds the other
     formats + ``"auto"`` detection.
+
+    Note: unparseable values become ``NaT``, which ``strftime`` then
+    yields as float ``nan`` in the returned Series (mixed string/nan
+    dtype). Task 5 (``parse_file_with_summary``) detects and drops
+    those rows as invalid.
     """
-    if fmt == "iso" or fmt is None:
+    if fmt is None:
+        raise ValueError("date.format is required")
+    if fmt == "iso":
         parsed = pd.to_datetime(series, format="%Y-%m-%d", errors="coerce")
     else:
         raise NotImplementedError(f"Date format {fmt!r} not implemented yet")

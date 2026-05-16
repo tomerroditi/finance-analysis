@@ -101,6 +101,7 @@ class TestParseFileValidation:
     """Error cases for parse_file."""
 
     def test_unknown_extension_raises(self):
+        """Unknown file extensions raise ValueError."""
         with pytest.raises(ValueError, match="Unsupported file type"):
             parse_file(b"x,y\n1,2\n", filename="foo.txt", mapping=_signed_mapping())
 
@@ -110,4 +111,12 @@ class TestParseFileValidation:
         mapping = _signed_mapping()
         mapping.description.column = "doesnotexist"
         with pytest.raises(ValueError, match="doesnotexist"):
+            parse_file(raw, filename="simple_signed.csv", mapping=mapping)
+
+    def test_missing_date_format_raises(self):
+        """date.format=None raises ValueError so callers don't get silent ISO parsing."""
+        raw = (FIXTURES / "simple_signed.csv").read_bytes()
+        mapping = _signed_mapping()
+        mapping.date.format = None
+        with pytest.raises(ValueError, match="date.format is required"):
             parse_file(raw, filename="simple_signed.csv", mapping=mapping)
