@@ -30,14 +30,9 @@ from backend.services.tagging_service import CategoriesTagsService
 
 logger = logging.getLogger(__name__)
 
-# Module-level registry of adapters whose scrapers may end up awaiting an OTP.
-# Lives here (next to ``ScraperAdapter``) rather than in ``scraping_service``
-# so the adapter can clean itself up on completion without importing
-# ``scraping_service`` — which would create a cycle, since ``scraping_service``
-# imports from ``backend.scraper`` (and that loads this module).
-#
-# Keyed by ``"{service} - {provider} - {account}"`` to match the lookup the
-# 2FA POST route uses; the value is the live adapter instance.
+# Live adapters whose scrapers may end up awaiting an OTP. Keyed by
+# ``"{service} - {provider} - {account}"`` — the same string the
+# ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.
 _tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
 
 
