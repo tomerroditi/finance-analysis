@@ -622,6 +622,8 @@
     "bankAccountDesc": "חבר את חשבון הבנק שלך",
     "creditCard": "כרטיס אשראי",
     "creditCardDesc": "חבר את כרטיס האשראי שלך",
+    "cash": "מזומן",
+    "cashDesc": "עקוב אחר מעטפות מזומן",
     "insurance": "ביטוח",
     "insuranceDesc": "חבר את הביטוח שלך",
     "selectProvider": "בחר ספק",

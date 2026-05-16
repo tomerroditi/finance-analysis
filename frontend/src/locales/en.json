@@ -622,6 +622,8 @@
     "bankAccountDesc": "Connect your bank account",
     "creditCard": "Credit Card",
     "creditCardDesc": "Connect your credit card",
+    "cash": "Cash",
+    "cashDesc": "Track cash envelopes",
     "insurance": "Insurance",
     "insuranceDesc": "Connect your insurance",
     "selectProvider": "Select Provider",
