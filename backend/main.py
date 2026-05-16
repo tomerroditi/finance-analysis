@@ -68,6 +68,28 @@ async def lifespan(app: FastAPI):
     print("Starting Finance Analysis API...")
     Base.metadata.create_all(bind=get_engine())
 
+    # Apply pending Alembic migrations. ``create_all`` only creates missing
+    # tables — it never adds columns to existing ones — so without this every
+    # schema change after the initial install silently fails to land and the
+    # ORM raises "no such column" on first query. The Alembic env wires the
+    # URL to ``get_database_url()`` so this runs against the same DB the app
+    # uses, and every migration is idempotent (each inspects the schema before
+    # altering), so it's safe on fresh installs too.
+    from alembic import command
+    from alembic.config import Config
+
+    if getattr(sys, "frozen", False):
+        alembic_ini = Path(getattr(sys, "_MEIPASS", "")) / "alembic.ini"
+    else:
+        alembic_ini = Path(__file__).resolve().parent.parent / "alembic.ini"
+
+    if alembic_ini.is_file():
+        command.upgrade(Config(str(alembic_ini)), "head")
+    else:
+        logger.warning(
+            "alembic.ini not found at %s — skipping migrations", alembic_ini
+        )
+
     # Seed categories and migrate credentials
     with get_db_context() as db:
         config = AppConfig()
