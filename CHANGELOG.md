@@ -1,3 +1,13 @@
+## v1.20.0 (2026-05-16)
+
+### Feat
+
+- **scraper**: handle Hapoalim's conditional SMS-OTP and defer 2FA status flip
+
+### Refactor
+
+- **scraper**: move _tfa_scrapers_waiting to adapter.py
+
 ## v1.19.7 (2026-05-09)
 
 ### Fix
