@@ -1,4 +1,10 @@
 import axios from "axios";
+import type {
+  ColumnMapping,
+  ImportedAccount,
+  ImportSummary,
+  PreviewResponse,
+} from "../types/importedAccount";
 
 const api = axios.create({
   baseURL: "/api",
@@ -657,6 +663,31 @@ export interface UninstallResult {
 export const uninstallApi = {
   uninstall: (wipe_data: boolean) =>
     api.post<UninstallResult>("/uninstall", { wipe_data }),
+};
+
+export const importedAccountsApi = {
+  getAll: () => api.get<ImportedAccount[]>("/imported-accounts/"),
+  create: (data: {
+    service: string;
+    provider: string;
+    account_name: string;
+    mapping: ColumnMapping;
+  }) => api.post<ImportedAccount>("/imported-accounts/", data),
+  updateMapping: (id: number, mapping: ColumnMapping) =>
+    api.put<ImportedAccount>(`/imported-accounts/${id}`, { mapping }),
+  delete: (id: number) => api.delete(`/imported-accounts/${id}`),
+  upload: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<ImportSummary>(`/imported-accounts/${id}/upload`, fd);
+  },
+  preview: (file: File, mapping: ColumnMapping) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mapping", JSON.stringify(mapping));
+    return api.post<PreviewResponse>("/imported-accounts/preview", fd);
+  },
+  templateUrl: () => "/api/imported-accounts/template",
 };
 
 export default api;
