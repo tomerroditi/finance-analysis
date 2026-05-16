@@ -803,6 +803,48 @@ class InvestmentsService:
         )
         return self._calculate_balance_from_transactions(transactions_df)
 
+    def get_total_value_at_date(self, target_date: str) -> float:
+        """Sum snapshot-resolved balances for every investment as of a date.
+
+        Per investment, applies the same resolution as
+        ``calculate_current_balance``: latest snapshot on or before
+        ``target_date`` if present, otherwise the transaction-based
+        ``-sum(amounts up to target_date)``. Closed investments are
+        included — they auto-receive a 0-balance snapshot at close, so
+        the snapshot-first logic naturally returns 0 for dates after
+        the close, and their pre-close value for dates before.
+
+        Parameters
+        ----------
+        target_date : str
+            Cut-off date in ``YYYY-MM-DD`` format (inclusive).
+
+        Returns
+        -------
+        float
+            Total portfolio value as of ``target_date``.
+        """
+        investments = self.investments_repo.get_all_investments(include_closed=True)
+        if investments.empty:
+            return 0.0
+
+        total = 0.0
+        for _, inv in investments.iterrows():
+            inv_id = int(inv["id"])
+            snapshot = self.snapshots_repo.get_latest_snapshot_on_or_before(
+                inv_id, target_date
+            )
+            if snapshot is not None:
+                total += float(snapshot["balance"])
+                continue
+            txns = self._get_all_transactions_for_investment(
+                inv["category"], inv["tag"], investment_id=inv_id
+            )
+            total += self._calculate_balance_from_transactions(
+                txns, as_of_date=target_date
+            )
+        return total
+
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
