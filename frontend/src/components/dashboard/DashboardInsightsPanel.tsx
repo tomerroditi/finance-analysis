@@ -352,6 +352,7 @@ export function DashboardInsightsPanel({
                         ...chartTheme,
                         autosize: true,
                         yaxis: {
+                          ...chartTheme.yaxis,
                           title: {
                             text: t("dashboard.amountILS"),
                             font: { color: "#94a3b8" },
@@ -547,7 +548,8 @@ export function DashboardInsightsPanel({
                       x: 0.5,
                       xanchor: "center",
                     },
-                    yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
+                    xaxis: { ...chartTheme.xaxis },
+                    yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
                     margin: { ...chartTheme.margin, l: 80, r: 20 },
                   }}
                   style={{ width: "100%", height: "100%" }}
@@ -589,11 +591,12 @@ export function DashboardInsightsPanel({
                         hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
                         xaxis: {
+                          ...chartTheme.xaxis,
                           range: [0, maxStack * 1.05],
                           fixedrange: true,
                           showspikes: false,
                         },
-                        yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                        yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                         legend: {
                           orientation: "h",
                           y: -0.15,
@@ -648,8 +651,8 @@ export function DashboardInsightsPanel({
                         height: Math.max(400, expensesByCategoryOverTime.length * 25),
                         hovermode: isTouchDevice ? "closest" : "y unified",
                         hoverlabel: { bgcolor: "#1e293b", bordercolor: "#334155", font: { color: "#e2e8f0" } },
-                        xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
-                        yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                        xaxis: { ...chartTheme.xaxis, range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
+                        yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                         legend: {
                           orientation: "h",
                           y: -0.15,

@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Plot from "react-plotly.js";
-import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { EmptyState } from "../components/common/EmptyState";
@@ -621,10 +621,10 @@ export function Insurances() {
               ...chartTheme,
               height: 280,
               margin: { t: 20, b: 40, l: 50, r: 50 },
-              xaxis: { color: "#94a3b8", gridcolor: "#334155", tickfont: { size: 10 } },
+              xaxis: { color: "#94a3b8", gridcolor: CHART_GRID_COLOR, tickfont: { size: 10 } },
               yaxis: {
                 color: "#94a3b8",
-                gridcolor: "#334155",
+                gridcolor: CHART_GRID_COLOR,
                 tickfont: { size: 10 },
                 title: { text: t("insurance.chartMonthly"), font: { size: 10, color: "#94a3b8" } },
               },

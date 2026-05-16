@@ -76,12 +76,12 @@ export function RetirementIncomeChart({ data }: Props) {
         margin: { ...chartTheme.margin, l: 80 },
         barmode: "stack" as const,
         xaxis: {
+          ...chartTheme.xaxis,
           title: { text: t("earlyRetirement.charts.age") },
-          gridcolor: "rgba(148, 163, 184, 0.1)",
           dtick: 5,
         },
         yaxis: {
-          gridcolor: "rgba(148, 163, 184, 0.1)",
+          ...chartTheme.yaxis,
           tickformat: ",.0f",
           automargin: true,
         },
