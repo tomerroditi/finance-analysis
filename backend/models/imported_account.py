@@ -6,7 +6,7 @@ via uploaded CSV/XLSX files instead of via scraping. The saved
 subsequent uploads reuse it.
 """
 
-from sqlalchemy import Column, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Integer, JSON, String, UniqueConstraint
 
 from backend.constants.tables import Tables
 from backend.models.base import Base, TimestampMixin
@@ -43,4 +43,4 @@ class ImportedAccount(Base, TimestampMixin):
     service = Column(String, nullable=False)
     provider = Column(String, nullable=False)
     account_name = Column(String, nullable=False)
-    mapping_json = Column(String, nullable=False)
+    mapping_json = Column(JSON, nullable=False)
