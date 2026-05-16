@@ -158,11 +158,12 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 - **Output:** Splits into `expenses` (net negative categories) and `refunds` (net positive categories)
 
 ### `get_net_worth_over_time()`
-- **Purpose:** Net worth trend with bank balance and investment value lines
+- **Purpose:** Net worth trend with bank balance, investment value, and cash lines
 - **CC handling:** `exclude_services=["credit_card_transactions"]`
-- **Prior wealth:** All prior wealth starts in `bank_balance`; investment movements shift value between the two lines
-- **Investments:** `-sum(all investment transactions to date)` — same formula as overview KPI, applied cumulatively per month
-- **Formula:** See "Why Investment Prior Wealth Lives in Bank Balance" above
+- **Cash isolation:** Cash transactions are split out of the bank-side cumulative — `bank_balance` is reconstructed from bank + manual-investment transactions only. Cash sits exclusively in the `cash` line. (Before this split, cash spending leaked into `bank_balance` and net worth missed the cash entirely.)
+- **Prior wealth:** Bank/investment prior wealth seeds `bank_balance`; investment movements shift value between the bank and investment lines via the inv_prior offset. Cash prior wealth seeds `cash`.
+- **Investments:** snapshot-resolved per investment per month-end via `InvestmentsService.get_total_value_at_date` (snapshot-first, transaction-based fallback when no snapshot exists). Closed investments naturally contribute 0 after their auto-created close snapshot, and their historical pre-close value before. Market gains/losses recorded as snapshots flow through into both `investment_value` and `net_worth`.
+- **Formula:** `net_worth = bank_balance + investment_value + cash` for each month. See "Why Investment Prior Wealth Lives in Bank Balance" above for the bank↔investment offset.
 
 ### `get_sankey_data()`
 - **Purpose:** Cash flow diagram (sources → Total Income → destinations)

@@ -1,7 +1,9 @@
 """Tests for AnalysisService functionality."""
 
+import pandas as pd
 import pytest
 
+from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
@@ -184,16 +186,50 @@ class TestAnalysisServiceNetWorthOverTime:
         months = [r["month"] for r in result]
         assert months == ["2023-12", "2024-01", "2024-02", "2024-03"]
 
-    def test_get_net_worth_over_time_net_worth_equals_bank_plus_investments(
+    def test_get_net_worth_over_time_net_worth_equals_bank_plus_investments_plus_cash(
         self, db_session, seed_base_transactions
     ):
-        """Verify net_worth = bank_balance + investment_value for each month."""
+        """Verify net_worth = bank_balance + investment_value + cash for each month."""
         service = AnalysisService(db_session)
         result = service.get_net_worth_over_time()
 
         for entry in result:
             assert entry["net_worth"] == pytest.approx(
-                entry["bank_balance"] + entry["investment_value"]
+                entry["bank_balance"] + entry["investment_value"] + entry["cash"]
+            )
+
+    def test_get_net_worth_over_time_cash_does_not_leak_into_bank_balance(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify bank_balance reflects only bank-side flows, not cash spending.
+
+        seed_base_transactions has no investments and no bank-balance prior
+        wealth seeded, so prior_wealth_total is 0 and bank_balance at any
+        month-end must equal the cumulative sum of *bank-only* transactions
+        up to that month-end. Cash transactions belong in the cash line, not
+        bundled into bank_balance.
+        """
+        from backend.repositories.transactions_repository import TransactionsRepository
+
+        repo = TransactionsRepository(db_session)
+        bank_only = repo.get_cashflow_transactions()
+        bank_only["date_parsed"] = pd.to_datetime(bank_only["date"])
+        bank_only = bank_only[bank_only["source"] != Tables.CASH.value]
+
+        service = AnalysisService(db_session)
+        result = service.get_net_worth_over_time()
+
+        for entry in result[1:]:  # skip anchor
+            month_end = (
+                pd.to_datetime(entry["month"] + "-01") + pd.offsets.MonthEnd(0)
+            )
+            expected = float(
+                bank_only.loc[bank_only["date_parsed"] <= month_end, "amount"].sum()
+            )
+            assert entry["bank_balance"] == pytest.approx(expected), (
+                f"bank_balance for {entry['month']} should be {expected} "
+                f"(bank+inv cumulative only) but was {entry['bank_balance']} — "
+                f"cash leaked in"
             )
 
 

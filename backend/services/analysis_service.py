@@ -621,11 +621,13 @@ class AnalysisService:
 
     def get_net_worth_over_time(self) -> list[dict]:
         """
-        Get monthly net worth (bank balance + investment value) over time.
+        Get monthly net worth (bank balance + investment value + cash) over time.
 
         Bank balance is reconstructed as ``prior_wealth + cumulative bank transactions``.
-        Investment value is ``cumulative investment transactions``
-        (negative investment amounts are deposits, so balance is negated sum).
+        Investment value is the snapshot-resolved portfolio value at each
+        month end (snapshot-first per investment, transaction-based fallback
+        when no snapshot exists). This means market gains/losses recorded
+        as snapshots flow through into both ``investment_value`` and ``net_worth``.
         Cash balance is reconstructed as ``cash_prior_wealth + cumulative cash transactions``.
         An anchor data point one month before the earliest transaction shows
         the pure prior-wealth baseline.
@@ -637,9 +639,9 @@ class AnalysisService:
 
             - ``month`` – period in ``YYYY-MM`` format.
             - ``bank_balance`` – reconstructed bank balance at month end.
-            - ``investment_value`` – reconstructed investment value at month end.
+            - ``investment_value`` – snapshot-resolved investment value at month end.
             - ``cash`` – reconstructed cash balance at month end.
-            - ``net_worth`` – ``bank_balance + investment_value``.
+            - ``net_worth`` – ``bank_balance + investment_value + cash``.
         """
         bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
         investment_prior_wealth = self.investments_service.get_total_prior_wealth()
@@ -656,14 +658,14 @@ class AnalysisService:
         df["month"] = df["date_parsed"].dt.strftime("%Y-%m")
         months = sorted(df["month"].unique())
 
-        # --- Cash transactions: separate from main df for cash balance line ---
+        # --- Split cash off from bank-side cashflow ---
+        # bank_df: bank + manual-investment transactions. Manual investment
+        # deposits/withdrawals stay here because their offset is wired into
+        # investment_prior_wealth, so they correctly drain/refill bank as
+        # they happen. Cash lives only in the cash line.
         cash_mask = df["source"] == Tables.CASH.value
         cash_df = df[cash_mask]
-
-        # --- Investment transactions: fetch once, filter per month in-memory ---
-        inv_df = self.investments_service.get_all_investment_transactions_combined(include_closed=True)
-        if not inv_df.empty:
-            inv_df["date_parsed"] = pd.to_datetime(inv_df["date"])
+        bank_df = df[~cash_mask]
 
         # --- Prior-wealth anchor point (1 month before earliest data) ---
         anchor_month = (pd.to_datetime(months[0] + "-01") - pd.DateOffset(months=1)).strftime("%Y-%m")
@@ -673,20 +675,18 @@ class AnalysisService:
             "bank_balance": round(prior_wealth_total, 2),
             "investment_value": 0.0,
             "cash": round(cash_prior_wealth, 2),
-            "net_worth": round(prior_wealth_total, 2),
+            "net_worth": round(prior_wealth_total + cash_prior_wealth, 2),
         }]
 
         for month in months:
             month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
+            month_end_str = month_end.strftime("%Y-%m-%d")
 
             bank_balance = prior_wealth_total + float(
-                df.loc[df["date_parsed"] <= month_end, "amount"].sum()
+                bank_df.loc[bank_df["date_parsed"] <= month_end, "amount"].sum()
             )
 
-            inv_to_date = (
-                -float(inv_df.loc[inv_df["date_parsed"] <= month_end, "amount"].sum())
-                if not inv_df.empty else 0.0
-            )
+            inv_value = self.investments_service.get_total_value_at_date(month_end_str)
 
             cash_balance = cash_prior_wealth + float(
                 cash_df.loc[cash_df["date_parsed"] <= month_end, "amount"].sum()
@@ -695,9 +695,9 @@ class AnalysisService:
             result.append({
                 "month": month,
                 "bank_balance": round(bank_balance, 2),
-                "investment_value": round(inv_to_date, 2),
+                "investment_value": round(inv_value, 2),
                 "cash": round(cash_balance, 2),
-                "net_worth": round(bank_balance + inv_to_date, 2),
+                "net_worth": round(bank_balance + inv_value + cash_balance, 2),
             })
 
         return result

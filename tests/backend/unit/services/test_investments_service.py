@@ -124,7 +124,7 @@ class TestInvestmentsServiceCalculations:
         assert metrics["first_transaction_date"] == "2023-01-10"
 
     def test_calculate_balance_over_time(self, db_session, seed_investments):
-        """Verify daily balance series returns correct balances at key dates."""
+        """Verify balance series returns correct balances at key dates."""
         service = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]
 
