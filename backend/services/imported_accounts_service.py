@@ -1,15 +1,18 @@
 """Service for file-import data source CRUD and import execution.
 
-This module currently exposes the CRUD surface. The import-execution
-path (parse → dedup → tag → insert) lands in a follow-on task.
+This module exposes both the CRUD surface for file-import data sources
+and the import-execution pipeline (parse → dedup → auto-tag → insert,
+with cash-balance recalc as a side effect).
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from sqlalchemy import delete
+import pandas as pd
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import (
@@ -21,6 +24,14 @@ from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.imported_accounts_repository import (
     ImportedAccountsRepository,
 )
+from backend.services.cash_balance_service import CashBalanceService
+from backend.services.file_import_parser import (
+    AmountMapping,
+    ColumnMapping,
+    FieldMapping,
+    parse_file_with_summary,
+)
+from backend.services.tagging_rules_service import TaggingRulesService
 
 
 ServiceType = Literal["banks", "credit_cards", "cash"]
@@ -144,6 +155,143 @@ class ImportedAccountsService:
         )
         return self.repo.delete(account_id)
 
+    # ---------- Import execution ----------
+
+    def import_file(
+        self,
+        account_id: int,
+        raw: bytes,
+        filename: str,
+    ) -> dict[str, int]:
+        """Parse, dedup, auto-tag, and insert rows from a file upload.
+
+        Parameters
+        ----------
+        account_id : int
+            ID of the imported account this upload belongs to.
+        raw : bytes
+            Raw uploaded file bytes.
+        filename : str
+            Original filename (used to pick CSV vs XLSX reader).
+
+        Returns
+        -------
+        dict
+            ``{"inserted": N, "skipped_duplicates": M, "dropped_invalid": K}``.
+
+        Raises
+        ------
+        ValueError
+            If the account does not exist, or parsing fails fundamentally.
+        """
+        record = self.repo.get_by_id(account_id)
+        if record is None:
+            raise ValueError(f"Imported account {account_id} not found")
+        mapping = _dict_to_mapping(record.mapping_json)
+
+        parsed_df, dropped = parse_file_with_summary(
+            raw, filename=filename, mapping=mapping
+        )
+        if parsed_df.empty:
+            return {
+                "inserted": 0,
+                "skipped_duplicates": 0,
+                "dropped_invalid": dropped,
+            }
+
+        existing_hashes = self._existing_hashes_for_account(
+            service=record.service,
+            provider=record.provider,
+            account_name=record.account_name,
+            min_date=parsed_df["date"].min(),
+            max_date=parsed_df["date"].max(),
+        )
+        parsed_df["_hash"] = parsed_df.apply(_row_hash, axis=1)
+        new_rows = parsed_df[~parsed_df["_hash"].isin(existing_hashes)].copy()
+        skipped = len(parsed_df) - len(new_rows)
+        if new_rows.empty:
+            return {
+                "inserted": 0,
+                "skipped_duplicates": skipped,
+                "dropped_invalid": dropped,
+            }
+
+        model = _TX_MODEL_BY_SERVICE[record.service]
+        source = model.__tablename__
+        inserted = 0
+        for _, row in new_rows.iterrows():
+            category = row.get("category") if "category" in new_rows.columns else None
+            tag = row.get("tag") if "tag" in new_rows.columns else None
+            account_number = (
+                row.get("account_number")
+                if "account_number" in new_rows.columns
+                else None
+            )
+            tx = model(
+                id=row["_hash"],
+                date=row["date"],
+                provider=record.provider,
+                account_name=record.account_name,
+                account_number=account_number,
+                description=row["description"],
+                amount=float(row["amount"]),
+                category=category if category else None,
+                tag=tag if tag else None,
+                source=source,
+                type="normal",
+                status="completed",
+            )
+            self.db.add(tx)
+            inserted += 1
+        self.db.commit()
+
+        # Auto-tag the newly inserted rows. TaggingRulesService.apply_rules
+        # operates on already-persisted bank / credit-card transactions and
+        # only touches rows where category is NULL (overwrite=False), so
+        # explicitly-categorized rows from the file are not overwritten.
+        # Cash rows are not covered by the rules engine in this codebase,
+        # which matches existing behavior for manually-entered cash.
+        if record.service in ("banks", "credit_cards"):
+            try:
+                TaggingRulesService(self.db).apply_rules(overwrite=False)
+            except Exception:
+                # Auto-tagging is best-effort; never fail the import on it.
+                self.db.rollback()
+
+        if record.service == "cash":
+            CashBalanceService(self.db).recalculate_current_balance(
+                record.account_name
+            )
+
+        return {
+            "inserted": inserted,
+            "skipped_duplicates": skipped,
+            "dropped_invalid": dropped,
+        }
+
+    def _existing_hashes_for_account(
+        self,
+        service: str,
+        provider: str,
+        account_name: str,
+        min_date: str,
+        max_date: str,
+    ) -> set[str]:
+        """Hash existing transactions for this account within a date range."""
+        model = _TX_MODEL_BY_SERVICE[service]
+        stmt = select(
+            model.date, model.description, model.amount
+        ).where(
+            model.provider == provider,
+            model.account_name == account_name,
+            model.date >= min_date,
+            model.date <= max_date,
+        )
+        out: set[str] = set()
+        for row in self.db.execute(stmt):
+            out.add(_hash_triple(row.date, row.description, row.amount))
+        return out
+
     # ---------- helpers ----------
 
     def _credential_collision(
@@ -169,3 +317,52 @@ class ImportedAccountsService:
             ):
                 return True
         return False
+
+
+# ---------- module-level helpers ----------
+
+
+def _row_hash(row: pd.Series) -> str:
+    """Content hash for dedup: (date, description, amount)."""
+    return _hash_triple(row["date"], row["description"], row["amount"])
+
+
+def _hash_triple(date: str, description: str, amount: float) -> str:
+    """Stable content hash used for dedup."""
+    blob = f"{date}|{description}|{amount:.4f}".encode("utf-8")
+    return hashlib.sha1(blob, usedforsecurity=False).hexdigest()
+
+
+def _dict_to_mapping(d: dict) -> ColumnMapping:
+    """Inflate a JSON mapping dict into a ColumnMapping dataclass."""
+
+    def field(spec: dict | None) -> FieldMapping | None:
+        if not spec or not spec.get("column"):
+            return None
+        return FieldMapping(column=spec["column"], format=spec.get("format"))
+
+    amt = d["amount"]
+    if amt["mode"] == "single":
+        amount = AmountMapping(
+            mode="single",
+            column=amt["column"],
+            sign_convention=amt.get("sign_convention", "positive_is_income"),
+        )
+    else:
+        amount = AmountMapping(
+            mode="split",
+            debit_column=amt["debit_column"],
+            credit_column=amt["credit_column"],
+        )
+
+    return ColumnMapping(
+        skip_rows=d.get("skip_rows", 0),
+        date=FieldMapping(
+            column=d["date"]["column"], format=d["date"].get("format")
+        ),
+        description=FieldMapping(column=d["description"]["column"]),
+        amount=amount,
+        category=field(d.get("category")),
+        tag=field(d.get("tag")),
+        account_number=field(d.get("account_number")),
+    )
