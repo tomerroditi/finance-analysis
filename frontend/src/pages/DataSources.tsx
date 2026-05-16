@@ -36,6 +36,7 @@ import type { BankBalance } from "../services/api";
 import { useDemoMode } from "../context/DemoModeContext";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
+import { ProviderLogo } from "../components/common/ProviderLogo";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 import { formatShortDate } from "../utils/dateFormatting";
@@ -350,14 +351,13 @@ export function DataSources() {
               >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
                 <div className="flex items-center gap-3 md:gap-5">
-                  <div
-                    className={`p-3.5 rounded-2xl ${acc.service === "banks" ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"}`}
-                  >
-                    {acc.service === "banks" ? (
-                      <Landmark size={24} />
-                    ) : (
-                      <CreditCard size={24} />
-                    )}
+                  <div className="w-14 h-14 shrink-0 rounded-2xl bg-white flex items-center justify-center p-2 text-gray-700">
+                    <ProviderLogo
+                      provider={acc.provider}
+                      service={acc.service}
+                      size={40}
+                      alt={humanizeProvider(acc.provider)}
+                    />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
@@ -797,7 +797,7 @@ export function DataSources() {
                 <p className="text-[var(--text-muted)] font-medium mb-6">
                   {t("dataSources.selectProvider")}
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pe-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[340px] overflow-y-auto pe-2">
                   {providers &&
                     providers[selectedService]?.map((p: string) => (
                       <button
@@ -806,9 +806,19 @@ export function DataSources() {
                           setSelectedProvider(p);
                           fetchFieldsMutation.mutate(p);
                         }}
-                        className="p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all font-bold text-center text-sm"
+                        className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all flex flex-col items-center gap-2"
                       >
-                        {humanizeProvider(p)}
+                        <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center p-1.5 text-gray-700">
+                          <ProviderLogo
+                            provider={p}
+                            service={selectedService}
+                            size={36}
+                            alt={humanizeProvider(p)}
+                          />
+                        </div>
+                        <span className="font-bold text-xs text-center">
+                          {humanizeProvider(p)}
+                        </span>
                       </button>
                     ))}
                 </div>
