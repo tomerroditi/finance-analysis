@@ -1,3 +1,9 @@
+## v1.21.0 (2026-05-16)
+
+### Feat
+
+- **data-sources**: show provider logos on account cards and connect modal
+
 ## v1.20.1 (2026-05-16)
 
 ### Fix
