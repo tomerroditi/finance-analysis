@@ -126,3 +126,29 @@ class TestImportExecution:
         service = ImportedAccountsService(db_session)
         with pytest.raises(ValueError, match="not found"):
             service.import_file(account_id=999, raw=CSV_BYTES, filename="x.csv")
+
+    def test_blank_optional_column_cells_become_none(self, db_session: Session):
+        """If the user maps an optional column but some rows have blank cells,
+        those cells must persist as None — not the string ``'nan'`` or ``'None'``.
+        """
+        from backend.models.transaction import BankTransaction
+
+        csv = (
+            b"date,description,amount,category\n"
+            b"2026-03-01,Coffee shop,-12.50,Food\n"
+            b"2026-03-03,Mystery,-30.00,\n"
+        )
+        mapping_with_cat = {
+            **MAPPING,
+            "category": {"column": "category"},
+        }
+        service = ImportedAccountsService(db_session)
+        dto = service.create("banks", "Hapoalim", "Checking", mapping_with_cat)
+
+        service.import_file(account_id=dto.id, raw=csv, filename="test.csv")
+
+        rows = db_session.query(BankTransaction).filter_by(account_name="Checking").order_by(BankTransaction.date).all()
+        assert len(rows) == 2
+        assert rows[0].category == "Food"
+        # Critical: blank cell must be None, NOT the string "nan" or "None".
+        assert rows[1].category is None

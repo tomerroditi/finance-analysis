@@ -8,6 +8,7 @@ with cash-balance recalc as a side effect).
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -32,6 +33,9 @@ from backend.services.file_import_parser import (
     parse_file_with_summary,
 )
 from backend.services.tagging_rules_service import TaggingRulesService
+
+
+logger = logging.getLogger(__name__)
 
 
 ServiceType = Literal["banks", "credit_cards", "cash"]
@@ -251,12 +255,20 @@ class ImportedAccountsService:
         # explicitly-categorized rows from the file are not overwritten.
         # Cash rows are not covered by the rules engine in this codebase,
         # which matches existing behavior for manually-entered cash.
+        #
+        # Auto-tagging is best-effort; never fail the import on it.
+        # Rows already committed above will remain untagged on error;
+        # the failure is logged so users have a breadcrumb when they
+        # see uncategorized rows post-import.
         if record.service in ("banks", "credit_cards"):
             try:
                 TaggingRulesService(self.db).apply_rules(overwrite=False)
             except Exception:
-                # Auto-tagging is best-effort; never fail the import on it.
                 self.db.rollback()
+                logger.exception(
+                    "Auto-tagging after import failed for account %s/%s/%s",
+                    record.service, record.provider, record.account_name,
+                )
 
         if record.service == "cash":
             CashBalanceService(self.db).recalculate_current_balance(

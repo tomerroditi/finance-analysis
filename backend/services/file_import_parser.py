@@ -127,15 +127,36 @@ def _build_canonical_df(raw_df: pd.DataFrame, mapping: ColumnMapping) -> pd.Data
     """
     out = pd.DataFrame()
     out["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
-    out["description"] = raw_df[mapping.description.column].astype(str)
+    out["description"] = _to_str_or_empty(raw_df[mapping.description.column])
     out["amount"] = _compute_amount(raw_df, mapping.amount)
     if mapping.category and mapping.category.column:
-        out["category"] = raw_df[mapping.category.column].astype(str)
+        out["category"] = _to_str_or_none(raw_df[mapping.category.column])
     if mapping.tag and mapping.tag.column:
-        out["tag"] = raw_df[mapping.tag.column].astype(str)
+        out["tag"] = _to_str_or_none(raw_df[mapping.tag.column])
     if mapping.account_number and mapping.account_number.column:
-        out["account_number"] = raw_df[mapping.account_number.column].astype(str)
+        out["account_number"] = _to_str_or_none(raw_df[mapping.account_number.column])
     return out
+
+
+def _to_str_or_empty(series: pd.Series) -> pd.Series:
+    """Convert a series to strings; blank/NaN/None cells become ``""``.
+
+    Used for ``description`` where ``None`` would break downstream
+    consumers expecting a string but where blank rows survive validation.
+    """
+    return series.where(pd.notna(series), "").astype(str).replace(
+        {"nan": "", "None": ""}
+    )
+
+
+def _to_str_or_none(series: pd.Series) -> pd.Series:
+    """Convert a series to strings; blank/NaN/None cells become ``None``.
+
+    Used for optional columns (``category``, ``tag``, ``account_number``)
+    where downstream callers treat ``None`` as "not set".
+    """
+    out = series.where(pd.notna(series), None).astype(object)
+    return out.map(lambda v: None if v is None or (isinstance(v, str) and v.strip() == "") else str(v))
 
 
 def _read_raw(raw: bytes, filename: str, *, skip_rows: int) -> pd.DataFrame:
