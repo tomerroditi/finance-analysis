@@ -1,17 +1,18 @@
 import json
 import logging
+import random
 import re
 import uuid
 from datetime import date, datetime, timedelta
 
-from scraper.base import BrowserScraper, LoginOptions
+from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     fetch_get_within_page,
-    wait_for_redirect,
     wait_until,
+    wait_until_element_found,
 )
 
 logger = logging.getLogger(__name__)
@@ -347,36 +348,197 @@ def _get_possible_login_results() -> dict[LoginResult, list]:
     }
 
 
+LOGIN_URL = f"{BASE_URL}/cgi-bin/poalwwwc?reqName=getLogonPage"
+
+# OTP modal selectors. Hapoalim renders an Angular ``auth-otp-login`` modal on
+# the SAME URL as the login form when 2FA is needed (new-device check), so
+# detection must be DOM-based, not URL-based. The five digit inputs carry
+# ``data-testid="separated-{0..4}"`` and the submit button is the only
+# ``type="submit"`` inside ``auth-otp-login``.
+OTP_MODAL_SELECTOR = "auth-otp-login"
+OTP_FIRST_INPUT_SELECTOR = 'auth-otp-login input[data-testid="separated-0"]'
+OTP_SUBMIT_SELECTOR = 'auth-otp-login button[type="submit"]'
+OTP_LENGTH = 5
+
+# Substrings the live page transitions to once the bank has resolved the login
+# attempt. We pass these into a single ``wait_for_function`` that races against
+# the OTP modal showing up, so we exit the wait as soon as *either* path fires.
+_SUCCESS_URL_SUBSTRINGS = [
+    "/portalserver/HomePage",
+    "/ng-portals-bt/rb/he/homepage",
+    "/ng-portals/rb/he/homepage",
+]
+_ERROR_URL_SUBSTRINGS = [
+    "errorcode=1.6",  # invalid password
+    "/MCP/START",  # password expired
+    "/ABOUTTOEXPIRE/START",  # password expiring soon
+]
+
+
 class HapoalimScraper(BrowserScraper):
     """Scraper for Bank Hapoalim (https://www.bankhapoalim.co.il).
 
     Uses browser automation to log in, then fetches transaction data
-    via the bank's internal REST API endpoints.
+    via the bank's internal REST API endpoints. The login flow handles
+    Hapoalim's *conditional* SMS-OTP challenge: the bank only asks for
+    a one-time code when it doesn't recognise the device, so the
+    scraper detects the OTP modal at runtime instead of always
+    expecting it.
     """
 
-    def get_login_options(self, credentials: dict) -> LoginOptions:
-        """Return Hapoalim-specific login configuration.
+    async def login(self) -> LoginResult:
+        """Log in to Hapoalim, handling the SMS-OTP challenge if it appears.
 
-        Parameters
-        ----------
-        credentials : dict
-            Must contain 'userCode' and 'password' keys.
+        Flow:
+
+        1. Navigate to the login page and fill ``userCode`` + ``password``
+           with human-like timing (Hapoalim fingerprints bots).
+        2. Click the submit button, then race-wait for either:
+
+           - a URL match against a known SUCCESS / INVALID_PASSWORD /
+             CHANGE_PASSWORD pattern, OR
+           - the ``auth-otp-login`` modal being injected into the DOM
+             (only happens when the bank doesn't trust the device).
+
+        3. If the OTP modal appeared, request the code from the user
+           (the adapter flips the scraping status to WAITING_FOR_2FA at
+           this point), type it into the five separated inputs, submit
+           the modal, then re-check the URL against the result patterns.
 
         Returns
         -------
-        LoginOptions
-            Login configuration for the generic login flow.
+        LoginResult
+            SUCCESS / INVALID_PASSWORD / CHANGE_PASSWORD / UNKNOWN_ERROR.
         """
-        return LoginOptions(
-            login_url=f"{BASE_URL}/cgi-bin/poalwwwc?reqName=getLogonPage",
-            fields=[
-                {"selector": "#userCode", "value": credentials["userCode"]},
-                {"selector": "#password", "value": credentials["password"]},
+        try:
+            possible_results = _get_possible_login_results()
+
+            self._emit_progress("navigating to login page")
+            await self.navigate_to(LOGIN_URL)
+            await wait_until_element_found(self.page, ".login-btn")
+
+            await self._human_delay(0.5, 1.0)
+            await self._human_mouse_move()
+            await self._human_delay(0.3, 0.7)
+
+            self._emit_progress("filling login credentials")
+            await self.page.click("#userCode")
+            await self._human_delay(0.1, 0.3)
+            await self._type_like_human("#userCode", self.credentials["userCode"])
+            await self._human_delay(0.3, 0.8)
+
+            await self.page.click("#password")
+            await self._human_delay(0.1, 0.3)
+            await self._type_like_human("#password", self.credentials["password"])
+            await self._human_delay(0.5, 1.0)
+
+            self._emit_progress("submitting login form")
+            await self.page.click(".login-btn")
+
+            post_state = await self._wait_for_post_login_state()
+
+            if post_state == "needs_otp":
+                otp_result = await self._handle_otp_challenge()
+                if otp_result != LoginResult.SUCCESS:
+                    return otp_result
+
+            return await self._detect_login_result(possible_results)
+
+        except Exception as exc:
+            logger.error("Hapoalim login failed: %s", exc)
+            return LoginResult.UNKNOWN_ERROR
+
+    async def _wait_for_post_login_state(self) -> str:
+        """Race-wait for the post-submit state.
+
+        Returns
+        -------
+        str
+            ``"needs_otp"`` if the auth-otp-login modal appears,
+            ``"resolved"`` if the URL transitions to a known result pattern.
+        """
+        js_fn = """([successSubs, errorSubs, otpSelector]) => {
+            const url = window.location.href.toLowerCase();
+            const lower = (s) => s.toLowerCase();
+            if (successSubs.some(s => url.includes(lower(s)))) return 'resolved';
+            if (errorSubs.some(s => url.includes(lower(s)))) return 'resolved';
+            if (document.querySelector(otpSelector)) return 'needs_otp';
+            return false;
+        }"""
+        handle = await self.page.wait_for_function(
+            js_fn,
+            arg=[
+                _SUCCESS_URL_SUBSTRINGS,
+                _ERROR_URL_SUBSTRINGS,
+                OTP_MODAL_SELECTOR,
             ],
-            submit_button_selector=".login-btn",
-            post_action=lambda: wait_for_redirect(self.page),
-            possible_results=_get_possible_login_results(),
+            timeout=self.options.default_timeout,
         )
+        return await handle.json_value()
+
+    async def _handle_otp_challenge(self) -> LoginResult:
+        """Request OTP from the user and submit it via the modal.
+
+        Returns
+        -------
+        LoginResult
+            SUCCESS if the modal was successfully submitted and the page
+            navigated to a homepage URL; UNKNOWN_ERROR on cancellation or
+            invalid input.
+        """
+        if self.on_otp_request is None:
+            logger.error(
+                "Hapoalim 2FA modal appeared but no on_otp_request callback "
+                "is configured — provider is misregistered"
+            )
+            return LoginResult.UNKNOWN_ERROR
+
+        self._emit_progress("waiting for OTP code")
+        otp_code = await self.on_otp_request()
+
+        if otp_code == "cancel":
+            return LoginResult.UNKNOWN_ERROR
+
+        digits = (otp_code or "").strip()
+        if len(digits) != OTP_LENGTH or not digits.isdigit():
+            logger.error(
+                "Hapoalim OTP must be %d digits, got %r",
+                OTP_LENGTH, otp_code,
+            )
+            return LoginResult.UNKNOWN_ERROR
+
+        self._emit_progress("submitting OTP code")
+        # Focus the first separated input; the Angular component auto-advances
+        # focus to the next input on each keystroke, so we can just type the
+        # digits through the keyboard API.
+        await self.page.click(OTP_FIRST_INPUT_SELECTOR)
+        await self._human_delay(0.2, 0.4)
+        for digit in digits:
+            await self.page.keyboard.type(digit, delay=random.randint(50, 150))
+            await self._human_delay(0.05, 0.15)
+
+        await self._human_delay(0.3, 0.7)
+
+        await self.page.wait_for_selector(
+            f"{OTP_SUBMIT_SELECTOR}:not([disabled])", timeout=10000
+        )
+        await self.page.click(OTP_SUBMIT_SELECTOR)
+
+        self._emit_progress("waiting for login to complete")
+        try:
+            await self.page.wait_for_function(
+                """([successSubs]) => {
+                    const url = window.location.href.toLowerCase();
+                    return successSubs.some(s => url.includes(s.toLowerCase()));
+                }""",
+                arg=[_SUCCESS_URL_SUBSTRINGS],
+                timeout=self.options.default_timeout,
+            )
+        except Exception as exc:
+            logger.error("Hapoalim post-OTP navigation failed: %s", exc)
+            return LoginResult.UNKNOWN_ERROR
+
+        return LoginResult.SUCCESS
 
     async def fetch_data(self) -> list[AccountResult]:
         """Fetch account data and transactions from Bank Hapoalim.

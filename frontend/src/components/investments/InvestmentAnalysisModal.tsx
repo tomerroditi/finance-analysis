@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import { investmentsApi } from "../../services/api";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
@@ -271,7 +271,7 @@ export function InvestmentAnalysisModal({
                     layout={{
                       ...chartTheme,
                       xaxis: { showgrid: false },
-                      yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
+                      yaxis: { ...chartTheme.yaxis, gridcolor: CHART_GRID_COLOR },
                     }}
                     style={{ width: "100%", height: "100%" }}
                     config={plotlyConfig()}

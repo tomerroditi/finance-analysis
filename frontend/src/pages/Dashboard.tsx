@@ -116,7 +116,7 @@ function FinancialHealthHeader({
     >
       {/* Net Worth */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💰 {t("dashboard.netWorth")}</p>
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.netWorth")}</p>
         <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
         </p>
@@ -125,7 +125,7 @@ function FinancialHealthHeader({
 
       {/* Bank Balance */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">🏦 {t("dashboard.bankBalance")}</p>
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.bankBalance")}</p>
         <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
         </p>
@@ -139,7 +139,7 @@ function FinancialHealthHeader({
 
       {/* Investments */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">📈 {t("dashboard.investmentValue")}</p>
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.investmentValue")}</p>
         <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
           {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
         </p>
@@ -153,7 +153,7 @@ function FinancialHealthHeader({
 
       {/* Cash */}
       <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">💵 {t("dashboard.cashBalance")}</p>
+        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.cashBalance")}</p>
         <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
         <MomBadge mom={cashMom} />
         {expanded && cashBalances && cashBalances.length > 0 && (
@@ -458,10 +458,10 @@ export function Dashboard() {
         <div className="px-3 md:px-6 pt-4 md:pt-5 pb-0">
           <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1 overflow-x-auto scrollbar-auto-hide">
             {([
-              { key: "income_expenses" as const, label: `⚖️ ${t("dashboard.incomeAndExpenses")}` },
-              { key: "net_worth" as const, label: `📈 ${t("dashboard.netWorth")}` },
-              { key: "cash_flow" as const, label: `🌊 ${t("dashboard.cashFlow")}` },
-              { key: "category" as const, label: `🍕 ${t("dashboard.categories")}` },
+              { key: "income_expenses" as const, label: t("dashboard.incomeAndExpenses") },
+              { key: "net_worth" as const, label: t("dashboard.netWorth") },
+              { key: "cash_flow" as const, label: t("dashboard.cashFlow") },
+              { key: "category" as const, label: t("dashboard.categories") },
             ]).map(({ key, label }) => (
               <button
                 key={key}
@@ -597,6 +597,7 @@ export function Dashboard() {
                           autosize: true,
                           xaxis: { ...chartTheme.xaxis, type: "date" },
                           yaxis: {
+                            ...chartTheme.yaxis,
                             title: {
                               text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
                               font: { color: "#94a3b8" },
@@ -752,9 +753,9 @@ export function Dashboard() {
                 </div>
                 <div className="flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
                   {([
-                    { key: "overview" as const, label: `📊 ${t("dashboard.totals")}` },
-                    { key: "by_source" as const, label: `💼 ${t("dashboard.incomeBreakdown")}` },
-                    { key: "by_category" as const, label: `🍕 ${t("dashboard.expensesBreakdown")}` },
+                    { key: "overview" as const, label: t("dashboard.totals") },
+                    { key: "by_source" as const, label: t("dashboard.incomeBreakdown") },
+                    { key: "by_category" as const, label: t("dashboard.expensesBreakdown") },
                   ]).map(({ key, label }) => (
                     <button
                       key={key}
@@ -806,7 +807,8 @@ export function Dashboard() {
                         x: 0.5,
                         xanchor: "center",
                       },
-                      yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
+                      xaxis: { ...chartTheme.xaxis },
+                      yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  " },
                       margin: { ...chartTheme.margin, l: 80, r: 20 },
                     }}
                     style={{ width: "100%", height: "100%" }}
@@ -847,11 +849,12 @@ export function Dashboard() {
                           height: Math.max(400, incomeBySourceData.length * 25),
                           hovermode: isTouchDevice ? "closest" : "y unified",
                           xaxis: {
+                            ...chartTheme.xaxis,
                             range: [0, maxStack * 1.05],
                             fixedrange: true,
                             showspikes: false,
                           },
-                          yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                          yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
                             orientation: "h",
                             y: -0.15,
@@ -905,8 +908,8 @@ export function Dashboard() {
                           autosize: true,
                           height: Math.max(400, expensesByCategoryOverTime.length * 25),
                           hovermode: isTouchDevice ? "closest" : "y unified",
-                          xaxis: { range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
-                          yaxis: { automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
+                          xaxis: { ...chartTheme.xaxis, range: [0, maxStackTotal * 1.05], fixedrange: true, showspikes: false },
+                          yaxis: { ...chartTheme.yaxis, automargin: true, type: "category", dtick: 1, ticksuffix: "  ", showspikes: false },
                           legend: {
                             orientation: "h",
                             y: -0.15,

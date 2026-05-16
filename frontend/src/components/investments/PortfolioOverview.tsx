@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Wallet, DollarSign, Percent } from "lucide-react";
 import Plot from "react-plotly.js";
 import { investmentsApi } from "../../services/api";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 interface AllocationItem {
@@ -150,7 +150,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
                 layout={{
                   ...chartTheme,
                   xaxis: { showgrid: false },
-                  yaxis: { gridcolor: "rgba(255,255,255,0.05)" },
+                  yaxis: { ...chartTheme.yaxis, gridcolor: CHART_GRID_COLOR },
                   showlegend: true,
                   legend: { orientation: "h", y: -0.12, font: { size: 10 } },
                 }}

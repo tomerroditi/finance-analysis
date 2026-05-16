@@ -22,9 +22,13 @@ class TestIs2FARequired:
         """Verify onezero bank provider requires 2FA."""
         assert is_2fa_required("banks", "onezero") is True
 
-    def test_hapoalim_no_2fa(self):
-        """Verify hapoalim bank provider does not require 2FA."""
-        assert is_2fa_required("banks", "hapoalim") is False
+    def test_hapoalim_requires_2fa(self):
+        """Hapoalim is 2FA-capable: the bank sometimes asks for an SMS code.
+
+        The scraper resolves dynamically whether 2FA is needed for a given
+        run; the registry just needs to know an OTP *may* be requested.
+        """
+        assert is_2fa_required("banks", "hapoalim") is True
 
     def test_max_no_2fa(self):
         """Verify max credit card provider does not require 2FA."""

@@ -30,6 +30,11 @@ from backend.services.tagging_service import CategoriesTagsService
 
 logger = logging.getLogger(__name__)
 
+# Live adapters whose scrapers may end up awaiting an OTP. Keyed by
+# ``"{service} - {provider} - {account}"`` — the same string the
+# ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.
+_tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
+
 
 def _import_scraper_module(name: str):
     """Import a module from the root ``scraper`` package.
@@ -178,12 +183,23 @@ class ScraperAdapter:
             )
         finally:
             self._record_scraping_attempt(self.process_id)
+            self._unregister_from_2fa_waiting()
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
             "[%s] %s: %s: Scraping finished",
             ts, self.provider_name, self.account_name,
         )
+
+    def _unregister_from_2fa_waiting(self) -> None:
+        """Pop this adapter from the 2FA-waiting registry if still present.
+
+        Belt-and-braces cleanup: ``submit_2fa_code`` already pops the entry
+        when the user provides the OTP, but if the scraper never awaited
+        2FA (Hapoalim happy path) the entry would otherwise leak.
+        """
+        name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
+        _tfa_scrapers_waiting.pop(name, None)
 
     def set_otp_code(self, code: str) -> None:
         """Set OTP code and signal the waiting coroutine.
@@ -238,17 +254,43 @@ class ScraperAdapter:
     async def _otp_callback(self) -> str:
         """Async callback passed to the scraper for OTP requests.
 
-        Clears the event, waits for ``set_otp_code`` to fire, and returns
-        the code (or ``"cancel"``).
+        Flips the scraping-history status to WAITING_FOR_2FA (so the UI's
+        polling loop shows the OTP prompt), clears the event, waits for
+        ``set_otp_code`` to fire, and returns the code (or ``"cancel"``).
+
+        The status flip happens lazily — only when the scraper actually
+        awaits an OTP — so providers that *may* request 2FA (like Hapoalim
+        from a trusted device) don't show a stale "Waiting for 2FA" state
+        when no code is actually needed.
 
         Returns
         -------
         str
             The OTP code entered by the user.
         """
+        self._mark_waiting_for_2fa()
         self._otp_event.clear()
         await self._otp_event.wait()
         return self._otp_code
+
+    def _mark_waiting_for_2fa(self) -> None:
+        """Update the scraping-history status to WAITING_FOR_2FA.
+
+        Wrapped in a try/except so a transient DB failure can't crash the
+        OTP flow — the scrape can still complete and report its final
+        status; only the intermediate UI hint would be lost.
+        """
+        try:
+            with get_db_context() as db:
+                history_repo = ScrapingHistoryRepository(db)
+                history_repo.update_status(
+                    self.process_id, history_repo.WAITING_FOR_2FA
+                )
+        except Exception as exc:
+            logger.warning(
+                "%s: %s: Failed to mark waiting_for_2fa — %s",
+                self.provider_name, self.account_name, exc,
+            )
 
     # ------------------------------------------------------------------
     # Data conversion

@@ -28,6 +28,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     "hapoalim": ProviderConfig(
         name="Hapoalim",
         required_fields=["userCode", "password"],
+        requires_2fa=True,
     ),
     "leumi": ProviderConfig(
         name="Leumi",

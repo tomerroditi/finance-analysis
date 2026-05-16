@@ -1,113 +1,87 @@
+<div align="center">
+
 # Finance Analysis
 
-Personal finance dashboard for Israeli households. Scrapes bank, credit-card,
-and insurance/pension data, classifies transactions, and surfaces budgets,
-projects, investments, and retirement projections in a single bilingual
-(Hebrew/English) UI.
+**The personal finance dashboard built for Israeli households.**
 
-> Detailed architecture and conventions live in [`CLAUDE.md`](./CLAUDE.md) and
-> the `.claude/rules/` directory. This README is the quick-start.
+<p>
+  <img alt="Auto-scraping" src="https://img.shields.io/badge/Auto--scraping_(18_providers)-5B21B6?style=flat-square" />
+  <img alt="Auto-tagging" src="https://img.shields.io/badge/Auto--tagging-1E3A8A?style=flat-square" />
+  <img alt="Monthly budgets" src="https://img.shields.io/badge/Monthly_budgets-1E3A8A?style=flat-square" />
+  <img alt="Project budgets" src="https://img.shields.io/badge/Project_budgets-1E3A8A?style=flat-square" />
+  <img alt="Investment tracking" src="https://img.shields.io/badge/Investment_tracking-166534?style=flat-square" />
+  <img alt="FIRE calculator" src="https://img.shields.io/badge/FIRE_calculator-166534?style=flat-square" />
+  <img alt="Liabilities" src="https://img.shields.io/badge/Liabilities-1E3A8A?style=flat-square" />
+  <img alt="Split transactions" src="https://img.shields.io/badge/Split_transactions-1E3A8A?style=flat-square" />
+  <img alt="Refund tracking" src="https://img.shields.io/badge/Refund_tracking-1E3A8A?style=flat-square" />
+  <img alt="Hebrew / English" src="https://img.shields.io/badge/Hebrew_%2F_English-92400E?style=flat-square" />
+</p>
 
-## Stack
+<a href="https://github.com/tomerroditi/finance-analysis/releases/latest/download/FinanceAnalysis.dmg">
+  <img alt="Download for macOS" src="https://img.shields.io/badge/⬇_Download_for_macOS-238636?style=for-the-badge" />
+</a>
+&nbsp;
+<a href="https://github.com/tomerroditi/finance-analysis/releases/latest/download/FinanceAppInstaller.exe">
+  <img alt="Download for Windows" src="https://img.shields.io/badge/⬇_Download_for_Windows-21262D?style=for-the-badge&labelColor=30363d" />
+</a>
 
-- **Backend** — FastAPI (Python 3.12) + SQLAlchemy 2 + SQLite + Pandas
-- **Scraper** — pure-Python framework (Playwright + httpx) under `scraper/`
-- **Frontend** — React 19 + Vite + TypeScript + Tailwind CSS 4
-- **State** — TanStack Query (server data) + Zustand (UI state)
-- **Tests** — `pytest` (backend), `vitest` + `@testing-library/react` (frontend),
-  Playwright (e2e)
-- **Packaging** — Poetry for Python, npm for frontend; NSIS / DMG installers
-  built by `release.yml`
+<p>or <a href="#build-from-source">build from source ↓</a></p>
 
-## Quick start
+<p>🌐 <strong><a href="https://finance-analysis-fawn.vercel.app">Live demo → finance-analysis-fawn.vercel.app</a></strong></p>
+
+</div>
+
+---
+
+![Finance Analysis Dashboard](docs/screenshots/dashboard.png)
+
+<p align="center"><em>Dashboard — net worth, budget overview, and recent transactions at a glance</em></p>
+
+<br>
+
+| Budget | Investments |
+|--------|-------------|
+| ![Budget](docs/screenshots/budget.png) | ![Investments](docs/screenshots/investments.png) |
+
+---
+
+## Build from source
 
 ```bash
-# 1) Backend deps
+# 1. Backend
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install poetry && poetry install --no-root
 
-# 2) Frontend deps
+# 2. Frontend
 cd frontend && npm install && cd ..
 
-# 3) Run both servers
-poetry run uvicorn backend.main:app --reload       # http://localhost:8000
-cd frontend && npm run dev                          # http://localhost:5173
+# 3. Run
+poetry run uvicorn backend.main:app --reload   # http://localhost:8000
+cd frontend && npm run dev                      # http://localhost:5173
 ```
 
-The first run creates `~/.finance-analysis/` (SQLite DB, credentials YAML,
-categories YAML). Passwords are stored in the OS keychain — never in YAML or
-code.
+> **Try demo mode first.** Toggle it in the sidebar to explore all features with sample data — the "Cohen family" — without connecting real accounts.
 
-API docs at http://localhost:8000/docs (disabled in production).
+---
 
-## Common commands
+## Stack
 
-```bash
-# Backend
-poetry run pytest                                  # full test suite
-poetry run pytest tests/backend/unit               # just unit tests
-poetry run pytest -k "test_budget"                 # by keyword
+| Layer | Tech |
+|-------|------|
+| Backend | FastAPI + SQLAlchemy + SQLite + Pandas |
+| Frontend | React 19 + Vite + TypeScript + Tailwind CSS 4 |
+| Scraper | Playwright + httpx (18 Israeli providers) |
+| State | TanStack Query + Zustand |
+| Tests | pytest + vitest + Playwright e2e |
+| Packaging | NSIS installer (Windows) · DMG (macOS) |
 
-# Frontend (from frontend/)
-npm run dev                                        # dev server
-npm run build                                      # tsc -b && vite build
-npm run lint                                       # ESLint
-npm test                                           # vitest run
-npm run test:e2e                                   # Playwright
-
-# Both servers (one shell)
-python .claude/scripts/with_server.py -- <command>
-
-# Scaffold a new feature (route + service + repo)
-python .claude/scripts/scaffold_feature.py <name>
-
-# Run a scraper provider in isolation
-python -m scraper --list
-python -m scraper <provider> --show-browser
-```
-
-## Demo mode
-
-The header has a Demo Mode toggle. It swaps the active SQLite DB for a
-pre-built fixture (the "Cohen family" — see the `demo-data-generation`
-skill) so you can poke at every screen without touching real data.
-**Disable Demo Mode before scraping or editing real records.**
-
-## Architecture in one paragraph
-
-```
-Routes (FastAPI)
-  -> Services (business logic)
-  -> Repositories (only layer with DB / file access)
-  -> SQLite + YAML
-```
-
-Routes are thin: they parse Pydantic models, call services, and translate
-domain exceptions to HTTP status codes. Services own all calculations,
-deduplication, and validation. Repositories are the only place that touches
-SQLAlchemy or YAML. See `.claude/rules/backend_*.md` for the detailed rules.
-
-The frontend mirrors that split: pages compose feature components, components
-fetch data through hooks (TanStack Query) and shared utils, and `services/api.ts`
-is the single axios client. See `.claude/rules/frontend_*.md`.
-
-## Goals & roadmap
-
-- [x] Automated scraping for Israeli banks, credit cards, and insurance/pension
-- [x] Rule-based auto-tagging with priority + JSON conditions
-- [x] Monthly + project budgets with refunds and split-transaction support
-- [x] Investments with manual/calculated/scraped balance snapshots
-- [x] Liabilities with auto-generated payment schedules
-- [x] Retirement / FIRE calculator
-- [x] Bilingual UI (Hebrew + English) with full RTL support
-- [ ] See [`docs/next-features.md`](./docs/next-features.md) for the planned
-      next big rocks (forecasting, CSV import, mobile-first refresh, …).
+---
 
 ## Contributing
 
-- Conventional Commits via Commitizen — `cz commit` is your friend.
-- Open a PR; `.github/workflows/ci.yml` runs backend tests + frontend lint,
-  build, and vitest. PRs must be green before merge.
-- Read the relevant `.claude/rules/*.md` file before changing a layer for the
-  first time. The rules encode hard-won conventions that aren't obvious from
-  the code alone.
+- Conventional Commits via Commitizen — `cz commit` is your friend
+- PRs target `dev`, not `main`
+- CI runs pytest + lint + build + vitest on every PR
+- Read `.claude/rules/` before changing an architecture layer for the first time
+
+Detailed architecture, conventions, and gotchas live in [`CLAUDE.md`](./CLAUDE.md) and `.claude/rules/`.

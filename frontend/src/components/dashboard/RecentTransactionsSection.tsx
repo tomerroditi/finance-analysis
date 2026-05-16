@@ -216,7 +216,7 @@ export function RecentTransactionsFeed({
     <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          🧾 {t("dashboard.recentTransactions")}
+          {t("dashboard.recentTransactions")}
         </p>
         <Link
           to="/transactions"
