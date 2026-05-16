@@ -306,10 +306,18 @@ class ImportedAccountsService:
             raise ValueError(f"Could not parse file: {e}") from e
         headers = list(raw_df.columns)
 
-        parsed_df, dropped = parse_file_with_summary(
-            raw, filename=filename, mapping=_dict_to_mapping(mapping)
-        )
-        rows = parsed_df.head(5).to_dict(orient="records")
+        # The wizard calls /preview on every mapping change, starting from an
+        # empty mapping. Mapping-driven parsing fails until columns are
+        # picked, but the UI still needs `raw_headers` to populate the column
+        # dropdowns. Return headers + empty rows on parser errors so the
+        # wizard never gets stuck without headers.
+        try:
+            parsed_df, dropped = parse_file_with_summary(
+                raw, filename=filename, mapping=_dict_to_mapping(mapping)
+            )
+            rows = parsed_df.head(5).to_dict(orient="records")
+        except Exception:
+            rows, dropped = [], 0
         return {"rows": rows, "dropped_invalid": dropped, "raw_headers": headers}
 
     def _existing_hashes_for_account(

@@ -679,13 +679,19 @@ export const importedAccountsApi = {
   upload: (id: number, file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return api.post<ImportSummary>(`/imported-accounts/${id}/upload`, fd);
+    // Force-clear the default JSON Content-Type so axios fills in the proper
+    // multipart boundary header instead of falsely advertising JSON.
+    return api.post<ImportSummary>(`/imported-accounts/${id}/upload`, fd, {
+      headers: { "Content-Type": undefined },
+    });
   },
   preview: (file: File, mapping: ColumnMapping) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("mapping", JSON.stringify(mapping));
-    return api.post<PreviewResponse>("/imported-accounts/preview", fd);
+    return api.post<PreviewResponse>("/imported-accounts/preview", fd, {
+      headers: { "Content-Type": undefined },
+    });
   },
   templateUrl: () => "/api/imported-accounts/template",
 };
