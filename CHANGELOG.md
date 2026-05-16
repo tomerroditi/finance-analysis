@@ -1,3 +1,15 @@
+## v1.21.1 (2026-05-16)
+
+### Fix
+
+- **analytics**: include investment gains and cash in net worth, isolate cash from bank
+- **startup**: run alembic upgrade head on lifespan boot
+
+### Perf
+
+- **investments**: sample balance-over-time at meaningful dates, not daily
+- **investments**: patch snapshot cache on delete instead of refetching
+
 ## v1.21.0 (2026-05-16)
 
 ### Feat
