@@ -128,15 +128,15 @@ class ScrapingService:
         creds = self.credentials_repo.get_credentials(service, provider, account)
         requires_2fa = is_2fa_required(service, provider)
 
+        # Always start IN_PROGRESS — even for 2FA-capable providers. The
+        # adapter's _otp_callback flips status to WAITING_FOR_2FA only when
+        # the scraper actually awaits the OTP, so the UI never shows a 2FA
+        # prompt for providers that didn't end up needing one (e.g. Hapoalim
+        # from a trusted device, OneZero with a stored long-term token).
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            status = (
-                history_repo.WAITING_FOR_2FA
-                if requires_2fa
-                else history_repo.IN_PROGRESS
-            )
             process_id = history_repo.record_scrape_start(
-                service, provider, account, start_date, status
+                service, provider, account, start_date, history_repo.IN_PROGRESS
             )
 
         adapter = create_adapter(
@@ -144,6 +144,11 @@ class ScrapingService:
         )
         asyncio.create_task(adapter.run())
 
+        # Park the adapter so submit_2fa_code can resolve it later. We register
+        # eagerly (rather than when the scraper actually awaits OTP) because
+        # the user can submit the code immediately after receiving the SMS,
+        # before the scraper has reached `await on_otp_request()`. The
+        # adapter's run() cleans this entry up on completion.
         if requires_2fa:
             name = f"{service} - {provider} - {account}"
             _tfa_scrapers_waiting[name] = adapter
