@@ -806,7 +806,14 @@ class InvestmentsService:
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
-        """Calculate balance at daily intervals between two dates for charting.
+        """Calculate balance over time at the dates that actually move the line.
+
+        Samples at month-starts plus the meaningful inflection points
+        (start, end, snapshot dates, transaction dates). Daily resolution
+        was wasteful: snapshots are monthly to begin with, the chart cannot
+        display higher resolution than its pixel width, and both downstream
+        callers (``get_portfolio_overview`` and ``get_portfolio_balance_history``)
+        immediately decimate the output.
 
         When balance snapshots exist, interpolates linearly between snapshot
         points. Falls back to the transaction-based approach for dates before
@@ -824,7 +831,7 @@ class InvestmentsService:
         Returns
         -------
         list[dict]
-            List of ``{"date": str, "balance": float}`` dicts, one per day.
+            List of ``{"date": str, "balance": float}`` dicts, sorted by date.
         """
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
@@ -847,25 +854,39 @@ class InvestmentsService:
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
             actual_end_date = min(last_txn_date, requested_end_date).strftime("%Y-%m-%d")
 
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(actual_end_date)
+        sample_dates = pd.DatetimeIndex([start_ts, end_ts]).union(
+            pd.date_range(start=start_ts, end=end_ts, freq="MS")
+        )
+        if not transactions_df.empty:
+            txn_dates = pd.to_datetime(transactions_df["date"])
+            sample_dates = sample_dates.union(
+                txn_dates[(txn_dates >= start_ts) & (txn_dates <= end_ts)]
+            )
+        if not snapshots_df.empty:
+            snap_dates = pd.to_datetime(snapshots_df["date"])
+            sample_dates = sample_dates.union(
+                snap_dates[(snap_dates >= start_ts) & (snap_dates <= end_ts)]
+            )
+
         if snapshots_df.empty:
-            # No snapshots — use transaction-based approach
-            dates = pd.date_range(start=start_date, end=actual_end_date, freq="D")
-            balances = []
-            for d in dates:
-                balance = self._calculate_balance_from_transactions(
-                    transactions_df, as_of_date=d.strftime("%Y-%m-%d")
-                )
-                balances.append({"date": d.strftime("%Y-%m-%d"), "balance": balance})
+            balances = [
+                {
+                    "date": d.strftime("%Y-%m-%d"),
+                    "balance": self._calculate_balance_from_transactions(
+                        transactions_df, as_of_date=d.strftime("%Y-%m-%d")
+                    ),
+                }
+                for d in sample_dates
+            ]
         else:
-            # Snapshot-aware: interpolate between snapshots
             snapshots_df = snapshots_df.copy()
             snapshots_df["date"] = pd.to_datetime(snapshots_df["date"])
             snapshots_df = snapshots_df.sort_values("date")
 
-            dates = pd.date_range(start=start_date, end=actual_end_date, freq="D")
             balances = []
-
-            for d in dates:
+            for d in sample_dates:
                 d_str = d.strftime("%Y-%m-%d")
                 before = snapshots_df[snapshots_df["date"] <= d]
                 after = snapshots_df[snapshots_df["date"] >= d]
