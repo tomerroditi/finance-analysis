@@ -1,3 +1,9 @@
+## v1.20.1 (2026-05-16)
+
+### Fix
+
+- **build**: stop shipping a macOS DMG, document source build instead
+
 ## v1.20.0 (2026-05-16)
 
 ### Feat
