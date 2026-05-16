@@ -300,7 +300,7 @@ export function BudgetSpendingGauge({
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          🎯 {t("budget.title")}
+          {t("budget.title")}
         </p>
         {segmentedControlEl}
       </div>
