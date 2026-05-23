@@ -191,8 +191,10 @@ test.describe("Transactions", () => {
       await checkboxes.nth(i).check();
     }
 
-    // Open the bulk Category dropdown.
-    await page.getByRole("button", { name: "Category" }).click();
+    // Open the bulk Category dropdown. Use exact match — otherwise the per-row
+    // eraser buttons (aria-label="Clear category and tag") also match the
+    // substring "Category" and Playwright's strict mode fails on 9+ matches.
+    await page.getByRole("button", { name: "Category", exact: true }).click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
 
