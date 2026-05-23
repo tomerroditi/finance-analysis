@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Languages, Sparkles, Check, ArrowRight, Database, Wand2 } from "lucide-react";
+import { Languages, Sparkles, Check, ArrowLeft, ArrowRight, Database, Wand2 } from "lucide-react";
 import { useDemoMode } from "../context/DemoModeContext";
 
 type Step = "language" | "path" | "done";
@@ -231,6 +231,8 @@ function PathButton({
   disabled: boolean;
   onClick: () => void;
 }) {
+  const { i18n } = useTranslation();
+  const Arrow = i18n.language === "he" ? ArrowLeft : ArrowRight;
   return (
     <button
       type="button"
@@ -245,7 +247,7 @@ function PathButton({
         <div className="font-bold mb-1">{title}</div>
         <div className="text-sm text-[var(--text-muted)]">{description}</div>
       </div>
-      <ArrowRight
+      <Arrow
         size={18}
         className="text-[var(--text-muted)] mt-3 transition-transform group-hover:translate-x-1 rtl:group-hover:-translate-x-1"
       />

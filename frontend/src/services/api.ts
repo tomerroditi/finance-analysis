@@ -60,14 +60,14 @@ export const transactionsApi = {
     amount?: number;
   }) => api.post("/transactions/bulk-tag", data),
   split: (
-    id: number,
+    uniqueId: string | number,
     data: {
       source: string;
       splits: { amount: number; category: string; tag: string }[];
     },
-  ) => api.post(`/transactions/${id}/split`, data),
-  revertSplit: (id: number, source: string) =>
-    api.delete(`/transactions/${id}/split`, { params: { source } }),
+  ) => api.post(`/transactions/${encodeURIComponent(String(uniqueId))}/split`, data),
+  revertSplit: (uniqueId: string | number, source: string) =>
+    api.delete(`/transactions/${encodeURIComponent(String(uniqueId))}/split`, { params: { source } }),
 };
 
 // Budget API
@@ -202,10 +202,10 @@ export const taggingApi = {
       tag,
       rule_id: ruleId
     }),
-  previewRule: (conditions: ConditionNode, limit = 100) =>
+  previewRule: (conditions: ConditionNode, limit?: number) =>
     api.post<{ matches: Record<string, unknown>[]; count: number }>("/tagging-rules/rules/preview", {
       conditions,
-      limit
+      ...(limit !== undefined ? { limit } : {})
     }),
 };
 

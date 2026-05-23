@@ -34,4 +34,31 @@ test.describe("Auto-tagging rule flow", () => {
       page.getByRole("button", { name: /add rule|new rule/i }).first(),
     ).toBeVisible({ timeout: 5_000 });
   });
+
+  test("new rule defaults the conditions group to OR", async ({ page }) => {
+    await gotoAndWait(page, "/transactions");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole("button", { name: /auto tagging/i }).click();
+    await page.getByRole("button", { name: /new rule/i }).first().click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Top-level conditions group should default to "OR (Any match)".
+    await expect(
+      dialog.getByRole("button", { name: /OR \(Any match\)/i }).first(),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Adding a nested group should also default to OR (consistency).
+    await dialog.getByRole("button", { name: /^\+ Group$|^Group$/ }).first().click();
+    await expect(
+      dialog.getByRole("button", { name: /OR \(Any match\)/i }),
+    ).toHaveCount(2, { timeout: 5_000 });
+
+    // Close without saving.
+    await dialog.getByRole("button", { name: /^cancel$/i }).click();
+  });
 });

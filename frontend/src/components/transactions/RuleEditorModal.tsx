@@ -20,7 +20,7 @@ interface RuleEditorModalProps {
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
-    type: "AND",
+    type: "OR",
     subconditions: [
         { type: "CONDITION", field: "description", operator: "contains", value: "" }
     ]
@@ -61,7 +61,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         ? (categories[category] || []).filter(t => !takenTags.has(`${category}::${t}`))
         : [];
 
-    const name = tag ? `Auto: ${category} - ${tag}` : "";
+    const name = tag ? `${category} - ${tag}` : "";
 
     // Initialize form when editing
      
@@ -97,7 +97,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     // Preview query
     const { data: preview, isLoading: previewLoading } = useQuery({
         queryKey: ["rule-preview", debouncedConditions],
-        queryFn: () => taggingApi.previewRule(debouncedConditions, 50).then(res => res.data),
+        queryFn: () => taggingApi.previewRule(debouncedConditions).then(res => res.data),
         enabled: isOpen && hasValidCondition(debouncedConditions),
         staleTime: 5000,
     });
