@@ -220,6 +220,9 @@
       "tags": "תגיות",
       "recategorize": "הגדר קטגוריה ותגית"
     },
+    "actions": {
+      "clearCategoryTag": "נקה קטגוריה ותגית"
+    },
     "pagination": {
       "showing": "מציג",
       "of": "מתוך",

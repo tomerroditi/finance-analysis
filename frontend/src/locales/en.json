@@ -220,6 +220,9 @@
       "tags": "Tags",
       "recategorize": "Set category & tag"
     },
+    "actions": {
+      "clearCategoryTag": "Clear category and tag"
+    },
     "pagination": {
       "showing": "Showing",
       "of": "of",
