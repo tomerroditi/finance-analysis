@@ -216,7 +216,7 @@ async def validate_rule_conflicts(
 
 class RulePreview(BaseModel):
     conditions: Dict[str, Any]
-    limit: int = 100
+    limit: Optional[int] = None
 
 
 @router.post("/rules/preview")
@@ -230,8 +230,9 @@ async def preview_rule_matches(
     Parameters
     ----------
     preview : RulePreview
-        ``conditions`` dict defining match criteria and ``limit`` (default 100)
-        capping the number of returned matches.
+        ``conditions`` dict defining match criteria and optional ``limit``
+        capping the number of returned matches. When ``limit`` is omitted or
+        ``null``, all matches are returned.
 
     Returns
     -------

@@ -202,10 +202,10 @@ export const taggingApi = {
       tag,
       rule_id: ruleId
     }),
-  previewRule: (conditions: ConditionNode, limit = 100) =>
+  previewRule: (conditions: ConditionNode, limit?: number) =>
     api.post<{ matches: Record<string, unknown>[]; count: number }>("/tagging-rules/rules/preview", {
       conditions,
-      limit
+      ...(limit !== undefined ? { limit } : {})
     }),
 };
 

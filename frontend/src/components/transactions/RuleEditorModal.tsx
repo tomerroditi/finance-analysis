@@ -97,7 +97,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
     // Preview query
     const { data: preview, isLoading: previewLoading } = useQuery({
         queryKey: ["rule-preview", debouncedConditions],
-        queryFn: () => taggingApi.previewRule(debouncedConditions, 50).then(res => res.data),
+        queryFn: () => taggingApi.previewRule(debouncedConditions).then(res => res.data),
         enabled: isOpen && hasValidCondition(debouncedConditions),
         staleTime: 5000,
     });
