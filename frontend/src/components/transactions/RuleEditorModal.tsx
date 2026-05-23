@@ -20,7 +20,7 @@ interface RuleEditorModalProps {
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
-    type: "AND",
+    type: "OR",
     subconditions: [
         { type: "CONDITION", field: "description", operator: "contains", value: "" }
     ]
