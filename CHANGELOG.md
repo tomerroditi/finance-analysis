@@ -1,3 +1,17 @@
+## v1.23.0 (2026-05-23)
+
+### Feat
+
+- **i18n**: bulk clear + confirmation modal strings (en + he)
+- **transactions**: bulk clear category/tag with confirmation modal
+- **i18n**: clear category/tag tooltip strings (en + he)
+- **transactions**: per-row remove category/tag icon
+
+### Fix
+
+- **i18n**: consolidate per-row eraser aria-label under transactions.bulk key
+- **test**: use undefined instead of null for missing category/tag in TransactionsTable test
+
 ## v1.22.0 (2026-05-23)
 
 ### Feat
