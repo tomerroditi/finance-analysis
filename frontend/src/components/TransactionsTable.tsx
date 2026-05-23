@@ -695,7 +695,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
               )}
               {visibleColumns.has("description") && (
-                <SortableHeader label={t("transactions.table.description")} sortKey="desc" />
+                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" />
               )}
               {visibleColumns.has("category") && (
                 <SortableHeader
@@ -709,7 +709,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader
                   label={t("transactions.table.amount")}
                   sortKey="amount"
-                  align="right"
+                  align="center"
                   width="120px"
                 />
               )}
@@ -766,7 +766,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("description") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-default)] font-medium overflow-hidden`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-[var(--text-default)] font-medium overflow-hidden`}
                       title={getDescription(tx)}
                     >
                       <div className="truncate" dir="auto">{getDescription(tx)}</div>
@@ -790,7 +790,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("amount") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-end font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-center font-bold whitespace-nowrap ${tx.amount > 0 ? "text-emerald-500" : "text-red-500"}`}
                       dir="ltr"
                     >
                       {formatCurrency(tx.amount, 2)}
