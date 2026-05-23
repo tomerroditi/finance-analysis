@@ -221,9 +221,6 @@
       "recategorize": "הגדר קטגוריה ותגית",
       "clearCategoryTag": "נקה קטגוריה ותגית"
     },
-    "actions": {
-      "clearCategoryTag": "נקה קטגוריה ותגית"
-    },
     "clearConfirm": {
       "title": "נקה קטגוריה ותגית",
       "message": "האם לנקות את הקטגוריה והתגית מ-{{count}} עסקאות?",

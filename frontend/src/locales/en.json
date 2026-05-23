@@ -221,9 +221,6 @@
       "recategorize": "Set category & tag",
       "clearCategoryTag": "Clear category and tag"
     },
-    "actions": {
-      "clearCategoryTag": "Clear category and tag"
-    },
     "clearConfirm": {
       "title": "Clear category and tag",
       "message": "Clear the category and tag from {{count}} transactions?",

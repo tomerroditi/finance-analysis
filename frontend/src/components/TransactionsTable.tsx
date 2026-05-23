@@ -895,8 +895,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                             }}
                             className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-50"
                             disabled={clearCategoryTagMutation.isPending}
-                            title={t("transactions.actions.clearCategoryTag")}
-                            aria-label={t("transactions.actions.clearCategoryTag")}
+                            title={t("transactions.bulk.clearCategoryTag")}
+                            aria-label={t("transactions.bulk.clearCategoryTag")}
                           >
                             <Eraser size={14} />
                           </button>
