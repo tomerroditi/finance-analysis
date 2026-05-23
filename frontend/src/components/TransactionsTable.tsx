@@ -791,6 +791,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               return (
                 <tr
                   key={id || idx}
+                  data-testid={`transaction-row-${id || idx}`}
                   className={`hover:bg-[var(--surface-light)]/50 transition-colors ${isSelected ? "bg-[var(--primary)]/5" : ""} ${showSelection ? "cursor-pointer" : ""}`}
                   onClick={(e) => {
                     if (!showSelection) return;
