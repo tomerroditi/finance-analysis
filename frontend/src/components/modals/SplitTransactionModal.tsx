@@ -10,7 +10,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { useNotify } from "../../context/DialogContext";
 
 interface SplitTransactionModalProps {
-  transaction: { id?: number; unique_id?: string; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
+  transaction: { id?: string | number; unique_id?: string | number; amount: number; source?: string; description?: string; desc?: string; category?: string; tag?: string };
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -72,7 +72,7 @@ export function SplitTransactionModal({
     if (!isValid) return;
 
     try {
-      await transactionsApi.split(transaction.id ?? 0, {
+      await transactionsApi.split(transaction.unique_id ?? transaction.id ?? 0, {
         source: transaction.source || "",
         splits: splits.map((s) => ({
           amount: s.amount,

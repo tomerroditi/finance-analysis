@@ -106,7 +106,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                             <Plus size={10} /> {t("ruleBuilder.condition")}
                         </button>
                         <button
-                            onClick={() => addSubCondition("AND")}
+                            onClick={() => addSubCondition("OR")}
                             className="flex items-center gap-1 px-2 py-1.5 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
                             <Plus size={10} /> {t("ruleBuilder.group")}
@@ -156,8 +156,21 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
 
     // Single Condition View
     const fieldDef = FIELDS.find(f => f.value === value.field) || FIELDS[0];
-    const inputType = fieldDef.type === "number" ? "number" : "text";
+    const isNumberField = fieldDef.type === "number";
     const operators = OPERATORS[fieldDef.type] || OPERATORS.text;
+
+    // Controlled type="number" inputs silently drop a lone "-" between keystrokes
+    // (browsers omit it from e.target.value), making it impossible to type negative
+    // numbers. Use type="text" with inputMode="decimal" for the mobile keypad, and
+    // keep the raw string for partial input ("", "-", "12.", "-12.0") so the user
+    // can finish typing — convert to Number only once the string round-trips.
+    const parseNumericInput = (raw: string): string | number => {
+        if (raw === "" || raw === "-") return raw;
+        const num = Number(raw);
+        if (isNaN(num)) return raw;
+        if (String(num) !== raw) return raw;
+        return num;
+    };
 
     return (
         <div className="grid grid-cols-[auto_1fr_auto] sm:flex sm:items-center gap-2 p-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
@@ -186,36 +199,36 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
             {value.operator === "between" ? (
                 <div className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 flex items-center gap-1 sm:flex-1">
                     <input
-                        type="number"
+                        type="text"
                         inputMode="decimal"
                         placeholder={t("ruleBuilder.min")}
                         value={Array.isArray(value.value) ? value.value[0] : ""}
                         onChange={(e) => onChange({
                             ...value,
-                            value: [Number(e.target.value), Array.isArray(value.value) ? value.value[1] : 0]
+                            value: [parseNumericInput(e.target.value), Array.isArray(value.value) ? value.value[1] : 0]
                         })}
                         className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                     />
                     <span className="text-xs text-[var(--text-muted)]">-</span>
                     <input
-                        type="number"
+                        type="text"
                         inputMode="decimal"
                         placeholder={t("ruleBuilder.max")}
                         value={Array.isArray(value.value) ? value.value[1] : ""}
                         onChange={(e) => onChange({
                             ...value,
-                            value: [Array.isArray(value.value) ? value.value[0] : 0, Number(e.target.value)]
+                            value: [Array.isArray(value.value) ? value.value[0] : 0, parseNumericInput(e.target.value)]
                         })}
                         className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                     />
                 </div>
             ) : (
                 <input
-                    type={inputType}
-                    inputMode={inputType === "number" ? "decimal" : undefined}
+                    type="text"
+                    inputMode={isNumberField ? "decimal" : undefined}
                     placeholder={t("ruleBuilder.value")}
                     value={value.value != null && typeof value.value !== "boolean" && !Array.isArray(value.value) ? value.value : ""}
-                    onChange={(e) => onChange({ ...value, value: inputType === 'number' ? Number(e.target.value) : e.target.value })}
+                    onChange={(e) => onChange({ ...value, value: isNumberField ? parseNumericInput(e.target.value) : e.target.value })}
                     className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 sm:flex-1 sm:min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
                 />
             )}

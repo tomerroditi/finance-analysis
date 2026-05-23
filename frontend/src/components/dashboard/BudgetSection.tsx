@@ -108,7 +108,8 @@ export function BudgetSpendingGauge({
 }: {
   categoryIcons: Record<string, string> | undefined;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isRtl = i18n.language === "he";
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -321,18 +322,20 @@ export function BudgetSpendingGauge({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handlePreviousMonth}
+                    aria-label={t("common.previous")}
                     className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
                   >
-                    <ChevronLeft size={16} />
+                    {isRtl ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
                   </button>
                   <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] w-36 text-center">
                     {monthName}
                   </p>
                   <button
                     onClick={handleNextMonth}
+                    aria-label={t("common.next")}
                     className="p-1 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
                   >
-                    <ChevronRight size={16} />
+                    {isRtl ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
                   </button>
                 </div>
                 {isCurrentMonth && (

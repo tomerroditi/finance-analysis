@@ -304,11 +304,12 @@ class TaggingRulesService:
         return self._apply_single_rule(rule_dict, overwrite=overwrite)
 
     def preview_rule(
-        self, conditions: Dict[str, Any], limit: int = 100
+        self, conditions: Dict[str, Any], limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Preview which transactions would match given conditions without modifying them.
-        Returns list of matching transactions with key fields.
+        Returns list of matching transactions with key fields. When ``limit`` is None,
+        all matches are returned.
         """
         conditions = self._normalize_conditions(conditions)
         tables = self._get_tables_names_for_conditions(conditions)
@@ -321,7 +322,9 @@ class TaggingRulesService:
                 model.id, model.unique_id, model.date, model.description,
                 model.amount, model.category, model.tag, model.account_name,
                 model.provider,
-            ).where(filter_expr).limit(limit)
+            ).where(filter_expr)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             df = pd.read_sql(stmt, self.db.bind)
             if not df.empty:
                 df["source"] = table
@@ -331,7 +334,9 @@ class TaggingRulesService:
             return []
 
         combined = pd.concat(results, ignore_index=True)
-        combined = combined.sort_values("date", ascending=False).head(limit)
+        combined = combined.sort_values("date", ascending=False)
+        if limit is not None:
+            combined = combined.head(limit)
         return combined.to_dict(orient="records")
 
     def validate_rule_integrity(self, conditions: Dict[str, Any]):

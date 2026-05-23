@@ -632,6 +632,18 @@ class TestPreviewRule:
 
         assert len(results) == 1
 
+    def test_preview_no_limit_returns_all_matches(self, service, seed_preview_data):
+        """Verify preview returns all matches when limit is None."""
+        conditions = {
+            "type": "CONDITION",
+            "field": "amount",
+            "operator": "lt",
+            "value": 0,
+        }
+        results = service.preview_rule(conditions, limit=None)
+
+        assert len(results) == 3
+
     def test_preview_includes_source_column(self, service, seed_preview_data):
         """Verify preview results include the source table name."""
         conditions = {
