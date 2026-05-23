@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test-utils";
 import { TransactionsTable } from "./TransactionsTable";
 import type { Transaction } from "../types/transaction";
+import { server } from "../mocks/server";
 
 const makeTx = (overrides: Partial<Transaction> = {}): Transaction => ({
   id: 1,
@@ -176,6 +178,60 @@ describe("TransactionsTable", () => {
     it("shows add button when onAddTransaction is provided with showFilter", () => {
       renderTable({ showFilter: true, onAddTransaction: vi.fn() });
       expect(screen.getByText("Add Transaction")).toBeInTheDocument();
+    });
+  });
+
+  describe("clear category/tag", () => {
+    it("renders the eraser button when a row has a category", () => {
+      const tx = makeTx({ category: "Food", tag: "Groceries" });
+      renderWithProviders(
+        <TransactionsTable transactions={[tx]} showActions />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Clear category and tag" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides the eraser button when a row has neither category nor tag", () => {
+      const tx = makeTx({ category: undefined, tag: undefined });
+      renderWithProviders(
+        <TransactionsTable transactions={[tx]} showActions />,
+      );
+      expect(
+        screen.queryByRole("button", { name: "Clear category and tag" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("calls PUT /api/transactions/:id with empty strings on per-row click", async () => {
+      const capturedBody = vi.fn();
+      server.use(
+        http.put("/api/transactions/:id", async ({ request }) => {
+          const body = await request.json();
+          capturedBody(body);
+          return HttpResponse.json({ status: "ok" });
+        }),
+      );
+
+      const tx = makeTx({
+        unique_id: "42",
+        source: "bank_transactions",
+        category: "Food",
+        tag: "Groceries",
+      });
+      renderWithProviders(
+        <TransactionsTable transactions={[tx]} showActions />,
+      );
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Clear category and tag" }),
+      );
+
+      await waitFor(() => expect(capturedBody).toHaveBeenCalledOnce());
+      expect(capturedBody).toHaveBeenCalledWith({
+        source: "bank_transactions",
+        category: "",
+        tag: "",
+      });
     });
   });
 });

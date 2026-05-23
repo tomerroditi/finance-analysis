@@ -1543,3 +1543,137 @@ class TestGetTableForAnalysisSplitExpansion:
         result = service.get_table_for_analysis("credit_cards")
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+class TestClearCategoryAndTag:
+    """Locks in that empty-string category/tag values clear the fields.
+
+    The service normalises empty strings to None at
+    ``_normalize_empty_string``. Routes that wrap this service strip
+    ``None`` values via Pydantic ``exclude_none=True``, so the frontend
+    must send ``""`` to clear. These tests pin that contract so a future
+    refactor cannot silently break the per-row / bulk clear actions.
+    """
+
+    def _insert_bank_tx_with_tags(self, db_session) -> BankTransaction:
+        """Insert a BankTransaction with category='Food' and tag='Groceries'."""
+        tx = BankTransaction(
+            id="clear_tag_test_1",
+            date="2024-05-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Tagged transaction",
+            amount=-100.0,
+            category="Food",
+            tag="Groceries",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(tx)
+        db_session.commit()
+        db_session.refresh(tx)
+        return tx
+
+    def test_update_transaction_clears_category_and_tag_via_empty_string(self, db_session):
+        """Empty strings on both fields wipe category and tag to None."""
+        service = TransactionsService(db_session)
+        tx = self._insert_bank_tx_with_tags(db_session)
+
+        updated = service.update_transaction(
+            tx.unique_id,
+            "bank_transactions",
+            {"category": "", "tag": ""},
+        )
+        assert updated is True
+        refreshed = service.transactions_repository.get_transaction_by_id(
+            tx.unique_id
+        )
+        assert pd.isna(refreshed.category)
+        assert pd.isna(refreshed.tag)
+
+    def test_update_transaction_clears_only_tag_when_only_tag_is_empty(self, db_session):
+        """Clearing only the tag preserves the category."""
+        service = TransactionsService(db_session)
+        tx = self._insert_bank_tx_with_tags(db_session)
+        original_category = tx.category
+
+        updated = service.update_transaction(
+            tx.unique_id,
+            "bank_transactions",
+            {"tag": ""},
+        )
+        assert updated is True
+        refreshed = service.transactions_repository.get_transaction_by_id(
+            tx.unique_id
+        )
+        assert refreshed.category == original_category
+        assert pd.isna(refreshed.tag)
+
+    def _insert_bank_tx_with_id(self, db_session, tx_id: str) -> BankTransaction:
+        """Insert a BankTransaction with category='Food' and tag='Groceries' using the given id."""
+        tx = BankTransaction(
+            id=tx_id,
+            date="2024-05-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Tagged transaction",
+            amount=-100.0,
+            category="Food",
+            tag="Groceries",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(tx)
+        db_session.commit()
+        db_session.refresh(tx)
+        return tx
+
+    def test_bulk_tag_transactions_clears_category_and_tag_via_empty_string(self, db_session):
+        """Bulk-tag with empty strings clears category and tag on all listed IDs.
+
+        ``bulk_tag_transactions`` calls ``update_transaction`` per ID. If
+        we passed ``None`` it would be filtered out by the
+        ``if updates.get('category') is not None`` guard; empty string
+        passes the guard and gets normalised to None.
+        """
+        tx1 = self._insert_bank_tx_with_id(db_session, "bulk_clear_1")
+        tx2 = self._insert_bank_tx_with_id(db_session, "bulk_clear_2")
+
+        service = TransactionsService(db_session)
+        ids = [tx1.unique_id, tx2.unique_id]
+        service.bulk_tag_transactions(
+            ids,
+            "bank_transactions",
+            category="",
+            tag="",
+        )
+        for tx in [tx1, tx2]:
+            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id)
+            assert pd.isna(refreshed.category)
+            assert pd.isna(refreshed.tag)
+
+    def test_bulk_tag_transactions_with_none_does_not_clear(self, db_session):
+        """Regression guard: passing None to the bulk endpoint must NOT clear.
+
+        This documents the asymmetry that motivates sending ``""`` from the
+        frontend. If this test ever starts failing (i.e. None DOES clear),
+        the frontend implementation needs to be revisited — sending None
+        from the UI would suddenly become destructive.
+        """
+        tx1 = self._insert_bank_tx_with_id(db_session, "bulk_none_1")
+        tx2 = self._insert_bank_tx_with_id(db_session, "bulk_none_2")
+
+        service = TransactionsService(db_session)
+        original_categories = [tx1.category, tx2.category]
+        ids = [tx1.unique_id, tx2.unique_id]
+        service.bulk_tag_transactions(
+            ids,
+            "bank_transactions",
+            category=None,
+            tag=None,
+        )
+        for tx, original_cat in zip([tx1, tx2], original_categories):
+            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id)
+            assert refreshed.category == original_cat  # unchanged

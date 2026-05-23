@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Settings2,
   Pencil,
+  Eraser,
 } from "lucide-react";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
@@ -258,6 +259,37 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     },
   });
 
+  const clearCategoryTagMutation = useMutation({
+    mutationFn: ({ uniqueId, source }: { uniqueId: string; source: string }) =>
+      transactionsApi.update(uniqueId, { source, category: "", tag: "" }),
+    // No per-mutation onSuccess: the global MutationCache.onSuccess in
+    // queryClient.ts already runs a debounced invalidateQueries 200ms after
+    // success. Per frontend_components.md ("Don't fan out invalidation in
+    // mutation hot paths"), do not add another.
+  });
+
+  const bulkClearMutation = useMutation({
+    mutationFn: async (groupsBySource: Record<string, (string | number)[]>) => {
+      // Fire one bulkTag request per source group; let all settle so a
+      // single failing source doesn't abort the others.
+      const results = await Promise.allSettled(
+        Object.entries(groupsBySource).map(([source, ids]) =>
+          transactionsApi.bulkTag({
+            transaction_ids: ids,
+            source,
+            category: "",
+            tag: "",
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`${failed.length} of ${results.length} clear requests failed`);
+      }
+    },
+    // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
+  });
+
   // Reset page when transactions or filter changes
   useEffect(() => {
     setCurrentPage(1);
@@ -471,6 +503,29 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     } catch {
       notify.error(t("transactions.bulkDeletePartialFailure"));
     }
+  };
+
+  const handleBulkClearCategoryTag = async () => {
+    const ok = await confirm({
+      title: t("transactions.clearConfirm.title"),
+      message: t("transactions.clearConfirm.message", { count: selectedIds.size }),
+      confirmLabel: t("transactions.clearConfirm.confirm"),
+      isDestructive: true,
+    });
+    if (!ok) return;
+    const selectedTxs = transactions.filter((tx) =>
+      selectedIds.has(getTransactionId(tx)),
+    );
+    const groupsBySource = selectedTxs.reduce(
+      (acc: Record<string, (string | number)[]>, tx) => {
+        const source = tx.source || "unknown";
+        if (!acc[source]) acc[source] = [];
+        acc[source].push(tx.unique_id || tx.id || 0);
+        return acc;
+      },
+      {},
+    );
+    bulkClearMutation.mutate(groupsBySource);
   };
 
   // Sort icon component
@@ -737,6 +792,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               return (
                 <tr
                   key={id || idx}
+                  data-testid={`transaction-row-${id || idx}`}
                   className={`hover:bg-[var(--surface-light)]/50 transition-colors ${isSelected ? "bg-[var(--primary)]/5" : ""} ${showSelection ? "cursor-pointer" : ""}`}
                   onClick={(e) => {
                     if (!showSelection) return;
@@ -829,6 +885,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Pencil size={14} />
                         </button>
+                        {(tx.category || tx.tag) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearCategoryTagMutation.mutate({
+                                uniqueId: String(tx.unique_id ?? tx.id),
+                                source: tx.source || "",
+                              });
+                            }}
+                            className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-50"
+                            disabled={clearCategoryTagMutation.isPending}
+                            title={t("transactions.bulk.clearCategoryTag")}
+                            aria-label={t("transactions.bulk.clearCategoryTag")}
+                          >
+                            <Eraser size={14} />
+                          </button>
+                        )}
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title={t("tooltips.splitTransaction")}
@@ -1021,6 +1094,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           cashBalances={cashBalances}
           onApply={handleBulkApply}
           onBulkDelete={handleBulkDelete}
+          onClearCategoryTag={handleBulkClearCategoryTag}
           onClearSelection={() => setSelectedIds(new Set())}
           onCreateCategory={createCategory}
           onCreateTag={createTag}

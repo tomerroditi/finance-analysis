@@ -218,7 +218,13 @@
       "expense": "הוצאה",
       "income": "הכנסה",
       "tags": "תגיות",
-      "recategorize": "הגדר קטגוריה ותגית"
+      "recategorize": "הגדר קטגוריה ותגית",
+      "clearCategoryTag": "נקה קטגוריה ותגית"
+    },
+    "clearConfirm": {
+      "title": "נקה קטגוריה ותגית",
+      "message": "האם לנקות את הקטגוריה והתגית מ-{{count}} עסקאות?",
+      "confirm": "נקה"
     },
     "pagination": {
       "showing": "מציג",

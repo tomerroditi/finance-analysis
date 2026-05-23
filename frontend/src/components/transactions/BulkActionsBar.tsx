@@ -1,4 +1,4 @@
-import { CheckCircle2, Trash2, X } from "lucide-react";
+import { CheckCircle2, Eraser, Trash2, X } from "lucide-react";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useTranslation } from "react-i18next";
 
@@ -23,6 +23,7 @@ interface BulkActionsBarProps {
   cashBalances: { account_name: string }[];
   onApply: () => void;
   onBulkDelete: () => void;
+  onClearCategoryTag: () => void;
   onClearSelection: () => void;
   onCreateCategory: (name: string) => Promise<string>;
   onCreateTag: (category: string, name: string) => Promise<string>;
@@ -42,6 +43,7 @@ export function BulkActionsBar({
   cashBalances,
   onApply,
   onBulkDelete,
+  onClearCategoryTag,
   onClearSelection,
   onCreateCategory,
   onCreateTag,
@@ -159,6 +161,14 @@ export function BulkActionsBar({
           title={t("tooltips.applyChanges")}
         >
           <CheckCircle2 size={20} />
+        </button>
+        <button
+          className="p-1.5 rounded-lg bg-[var(--surface-light)]/40 hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
+          onClick={onClearCategoryTag}
+          title={t("transactions.bulk.clearCategoryTag")}
+          aria-label={t("transactions.bulk.clearCategoryTag")}
+        >
+          <Eraser size={20} />
         </button>
         {showDelete && (
           <button

@@ -218,7 +218,13 @@
       "expense": "Expense",
       "income": "Income",
       "tags": "Tags",
-      "recategorize": "Set category & tag"
+      "recategorize": "Set category & tag",
+      "clearCategoryTag": "Clear category and tag"
+    },
+    "clearConfirm": {
+      "title": "Clear category and tag",
+      "message": "Clear the category and tag from {{count}} transactions?",
+      "confirm": "Clear"
     },
     "pagination": {
       "showing": "Showing",
