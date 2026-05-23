@@ -71,8 +71,18 @@ export function SplitTransactionModal({
     e.preventDefault();
     if (!isValid) return;
 
+    const uniqueId = transaction.unique_id;
+    if (uniqueId === undefined || uniqueId === null || uniqueId === "" || uniqueId === 0) {
+      console.error(
+        "SplitTransactionModal: transaction.unique_id missing — refusing to fall back to external id, which would create orphan splits.",
+        transaction,
+      );
+      notify.error(t("transactions.failedSplit"));
+      return;
+    }
+
     try {
-      await transactionsApi.split(transaction.unique_id ?? transaction.id ?? 0, {
+      await transactionsApi.split(uniqueId, {
         source: transaction.source || "",
         splits: splits.map((s) => ({
           amount: s.amount,

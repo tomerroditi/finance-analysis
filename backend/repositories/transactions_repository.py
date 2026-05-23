@@ -846,9 +846,14 @@ class TransactionsRepository:
         """
         try:
             repo = self.get_repo_by_source(source)
-            repo.update_transaction_by_unique_id(
+            parent_updated = repo.update_transaction_by_unique_id(
                 str(unique_id), {"type": "split_parent"}
             )
+            if not parent_updated:
+                self.db.rollback()
+                raise ValueError(
+                    f"Cannot split: no {source} row with unique_id={unique_id}"
+                )
 
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             for split in splits:
@@ -860,6 +865,8 @@ class TransactionsRepository:
                     tag=split["tag"],
                 )
             return True
+        except ValueError:
+            raise
         except Exception:
             self.db.rollback()
             return False

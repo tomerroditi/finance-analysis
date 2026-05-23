@@ -241,3 +241,38 @@ class TestSplitTransactionsPipeline:
         # Verify all amounts are distinct
         amounts = sorted(children["amount"].tolist())
         assert amounts == [-1500.0, -1000.0, -500.0]
+
+    def test_split_raises_when_parent_unique_id_does_not_exist(
+        self, db_session: Session, seed_base_transactions: list
+    ):
+        """Splitting a non-existent parent must raise ValueError and not create orphan splits.
+
+        Regression test for the silent-orphan-creation bug: previously,
+        update_transaction_by_unique_id returned False (no rowcount), the
+        return value was ignored, and add_split() created orphan rows that
+        no parent could ever resolve to.
+        """
+        import pytest
+
+        repo = TransactionsRepository(db_session)
+        split_repo = SplitTransactionsRepository(db_session)
+
+        bogus_unique_id = 999_999_999
+        splits = [
+            {"amount": -100.0, "category": "Food", "tag": "Groceries"},
+            {"amount": -50.0, "category": "Home", "tag": "Cleaning"},
+        ]
+
+        with pytest.raises(ValueError, match="Cannot split"):
+            repo.split_transaction(
+                bogus_unique_id, "credit_card_transactions", splits
+            )
+
+        # No orphan rows must have been written.
+        orphans = split_repo.get_splits_for_transaction(
+            bogus_unique_id, "credit_card_transactions"
+        )
+        assert orphans.empty, (
+            "split_transaction must roll back when parent doesn't exist; "
+            "orphan rows should not appear in split_transactions."
+        )
