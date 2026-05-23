@@ -33,6 +33,10 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Only scroll the highlighted item into view when keyboard nav moved it —
+  // mouse hover already implies the item is visible, and scrolling on hover
+  // creates a feedback loop (items shift under the cursor → new mouseenter).
+  const scrollOnNextHighlight = useRef(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
   const [isCreating, setIsCreating] = useState(false);
   const [createValue, setCreateValue] = useState("");
@@ -113,8 +117,13 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     setHighlightIndex(-1);
   }, [search]);
 
-  // Scroll highlighted item into view
+  // Scroll highlighted item into view — only for keyboard nav (Arrow keys).
+  // Mouse hover sets highlightIndex too, but scrolling then creates a feedback
+  // loop: the listbox scrolls, items shift under the cursor, a new mouseenter
+  // fires on the now-hovered item, and the list keeps walking to the bottom.
   useEffect(() => {
+    if (!scrollOnNextHighlight.current) return;
+    scrollOnNextHighlight.current = false;
     if (highlightIndex < 0 || !listRef.current) return;
     const items = listRef.current.children;
     if (items[highlightIndex]) {
@@ -129,12 +138,14 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
+          scrollOnNextHighlight.current = true;
           setHighlightIndex((prev) =>
             prev < filteredOptions.length - 1 ? prev + 1 : 0,
           );
           break;
         case "ArrowUp":
           e.preventDefault();
+          scrollOnNextHighlight.current = true;
           setHighlightIndex((prev) =>
             prev > 0 ? prev - 1 : filteredOptions.length - 1,
           );
