@@ -81,18 +81,21 @@ class TestTransactionValidationErrors:
         )
         assert response.status_code == 422
 
-    def test_split_transaction_empty_splits_succeeds(self, test_client):
-        """POST /api/transactions/{id}/split with empty splits list returns 200.
+    def test_split_transaction_nonexistent_id_returns_400(self, test_client):
+        """POST /api/transactions/{id}/split for a non-existent unique_id returns 400.
 
-        An empty splits array passes Pydantic validation and the repository
-        layer processes it without error, returning success. This documents
-        the current behavior where no validation rejects empty splits.
+        Previously the repository silently accepted splits for a unique_id
+        that didn't exist in the source table, creating orphan rows in
+        ``split_transactions`` that no parent could resolve to. The repo
+        now raises ``ValueError`` when the parent isn't found, which the
+        route maps to HTTP 400.
         """
         response = test_client.post(
             "/api/transactions/1/split",
             json={"source": "credit_card_transactions", "splits": []},
         )
-        assert response.status_code == 200
+        assert response.status_code == 400
+        assert "Cannot split" in response.json()["detail"]
 
     def test_split_transaction_missing_source(self, test_client):
         """POST /api/transactions/{id}/split without source returns 422."""
