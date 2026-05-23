@@ -31,7 +31,9 @@ export function Pagination({
   onRowsPerPageChange,
   compact = false,
 }: PaginationProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isRtl = i18n.language === "he";
+  const iconSize = compact ? 16 : 20;
 
   if (totalPages <= 0) return null;
 
@@ -82,14 +84,14 @@ export function Pagination({
           disabled={currentPage === 1}
           className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
         >
-          <ChevronsLeft size={compact ? 16 : 20} />
+          {isRtl ? <ChevronsRight size={iconSize} /> : <ChevronsLeft size={iconSize} />}
         </button>
         <button
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           disabled={currentPage === 1}
           className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
         >
-          <ChevronLeft size={compact ? 16 : 20} />
+          {isRtl ? <ChevronRight size={iconSize} /> : <ChevronLeft size={iconSize} />}
         </button>
         <span className="px-4 text-sm whitespace-nowrap">
           {t("transactions.pagination.page")} <span className="text-white font-medium">{currentPage}</span>{" "}
@@ -101,14 +103,14 @@ export function Pagination({
           disabled={currentPage === totalPages || totalPages === 0}
           className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
         >
-          <ChevronRight size={compact ? 16 : 20} />
+          {isRtl ? <ChevronLeft size={iconSize} /> : <ChevronRight size={iconSize} />}
         </button>
         <button
           onClick={() => onPageChange(totalPages)}
           disabled={currentPage === totalPages || totalPages === 0}
           className="p-1 rounded hover:bg-[var(--surface-light)] text-[var(--text-muted)] disabled:opacity-30 transition-colors"
         >
-          <ChevronsRight size={compact ? 16 : 20} />
+          {isRtl ? <ChevronsLeft size={iconSize} /> : <ChevronsRight size={iconSize} />}
         </button>
       </div>
     </div>

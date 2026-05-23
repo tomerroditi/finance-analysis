@@ -8,6 +8,7 @@ import {
   Globe,
   Landmark,
   CreditCard,
+  ChevronLeft,
   ChevronRight,
   X,
   AlertCircle,
@@ -72,7 +73,8 @@ interface CredentialAccount {
 }
 
 export function DataSources() {
-  const { t } = useTranslation();
+  const { t, i18n: i18nInstance } = useTranslation();
+  const isRtl = i18nInstance.language === "he";
   const { isDemoMode } = useDemoMode();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -743,7 +745,7 @@ export function DataSources() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="text-[var(--text-muted)]" />
+                  {isRtl ? <ChevronLeft className="text-[var(--text-muted)]" /> : <ChevronRight className="text-[var(--text-muted)]" />}
                 </button>
                 <button
                   onClick={() => {
@@ -765,7 +767,7 @@ export function DataSources() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="text-[var(--text-muted)]" />
+                  {isRtl ? <ChevronLeft className="text-[var(--text-muted)]" /> : <ChevronRight className="text-[var(--text-muted)]" />}
                 </button>
                 <button
                   onClick={() => {
@@ -787,7 +789,7 @@ export function DataSources() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="text-[var(--text-muted)]" />
+                  {isRtl ? <ChevronLeft className="text-[var(--text-muted)]" /> : <ChevronRight className="text-[var(--text-muted)]" />}
                 </button>
               </div>
             )}
