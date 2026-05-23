@@ -713,7 +713,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 />
               )}
               {visibleColumns.has("account") && (
-                <SortableHeader label={t("transactions.table.account")} sortKey="account" width="180px" />
+                <SortableHeader label={t("transactions.table.account")} sortKey="account" align="center" width="180px" />
               )}
               {showActions && (
                 <th
@@ -797,10 +797,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("account") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} overflow-hidden`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} overflow-hidden text-center`}
                       title={`${tx.provider ? humanizeProvider(tx.provider) : "Manual"} - ${tx.account_name}${tx.source === "credit_card_transactions" && tx.account_number ? ` (${tx.account_number.slice(-4)})` : ""}`}
                     >
-                      <div className="flex flex-col min-w-0">
+                      <div className="flex flex-col items-center min-w-0">
                         <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-tight leading-none mb-1 truncate" dir="auto">
                           {tx.provider
                             ? humanizeProvider(tx.provider)
