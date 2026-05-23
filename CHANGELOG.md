@@ -1,3 +1,17 @@
+## v1.22.0 (2026-05-23)
+
+### Feat
+
+- **transactions**: default auto-tagging rule conditions to OR
+
+### Fix
+
+- **SelectDropdown**: stop list from jumping while hovering options
+- **tagging-rules**: show all matching transactions in rule editor
+- **rules**: allow typing negative amounts in auto-tagging rule editor
+- **i18n**: flip horizontal chevron and arrow icons in RTL
+- **transactions**: split modal sends unique_id, not source-institution id
+
 ## v1.21.1 (2026-05-16)
 
 ### Fix
