@@ -1543,3 +1543,69 @@ class TestGetTableForAnalysisSplitExpansion:
         result = service.get_table_for_analysis("credit_cards")
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+class TestClearCategoryAndTag:
+    """Locks in that empty-string category/tag values clear the fields.
+
+    The service normalises empty strings to None at
+    ``_normalize_empty_string``. Routes that wrap this service strip
+    ``None`` values via Pydantic ``exclude_none=True``, so the frontend
+    must send ``""`` to clear. These tests pin that contract so a future
+    refactor cannot silently break the per-row / bulk clear actions.
+    """
+
+    def _insert_bank_tx_with_tags(self, db_session) -> BankTransaction:
+        """Insert a BankTransaction with category='Food' and tag='Groceries'."""
+        tx = BankTransaction(
+            id="clear_tag_test_1",
+            date="2024-05-01",
+            provider="hapoalim",
+            account_name="Checking",
+            description="Tagged transaction",
+            amount=-100.0,
+            category="Food",
+            tag="Groceries",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(tx)
+        db_session.commit()
+        db_session.refresh(tx)
+        return tx
+
+    def test_update_transaction_clears_category_and_tag_via_empty_string(self, db_session):
+        """Empty strings on both fields wipe category and tag to None."""
+        service = TransactionsService(db_session)
+        tx = self._insert_bank_tx_with_tags(db_session)
+
+        updated = service.update_transaction(
+            tx.unique_id,
+            "bank_transactions",
+            {"category": "", "tag": ""},
+        )
+        assert updated is True
+        refreshed = service.transactions_repository.get_transaction_by_id(
+            tx.unique_id
+        )
+        assert pd.isna(refreshed.category)
+        assert pd.isna(refreshed.tag)
+
+    def test_update_transaction_clears_only_tag_when_only_tag_is_empty(self, db_session):
+        """Clearing only the tag preserves the category."""
+        service = TransactionsService(db_session)
+        tx = self._insert_bank_tx_with_tags(db_session)
+        original_category = tx.category
+
+        updated = service.update_transaction(
+            tx.unique_id,
+            "bank_transactions",
+            {"tag": ""},
+        )
+        assert updated is True
+        refreshed = service.transactions_repository.get_transaction_by_id(
+            tx.unique_id
+        )
+        assert refreshed.category == original_category
+        assert pd.isna(refreshed.tag)
