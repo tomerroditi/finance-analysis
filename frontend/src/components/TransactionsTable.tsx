@@ -692,7 +692,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 </th>
               )}
               {visibleColumns.has("date") && (
-                <SortableHeader label={t("transactions.table.date")} sortKey="date" width="120px" />
+                <SortableHeader label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
               )}
               {visibleColumns.has("description") && (
                 <SortableHeader label={t("transactions.table.description")} sortKey="desc" />
@@ -701,6 +701,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader
                   label={t("transactions.table.category")}
                   sortKey="category"
+                  align="center"
                   width="180px"
                 />
               )}
@@ -758,7 +759,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("date") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-[var(--text-muted)]`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} whitespace-nowrap text-center text-[var(--text-muted)]`}
                     >
                       {formatDate(tx.date)}
                     </td>
@@ -773,7 +774,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   )}
                   {visibleColumns.has("category") && (
                     <td
-                      className={`px-4 ${compact ? "py-2" : "py-3"} text-[var(--text-muted)] overflow-hidden`}
+                      className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-[var(--text-muted)] overflow-hidden`}
                     >
                       <span
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap max-w-full overflow-hidden"
