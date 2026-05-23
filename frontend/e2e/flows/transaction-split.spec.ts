@@ -50,11 +50,25 @@ test.describe("Transaction split flow", () => {
     }
 
     // The split totals balance, so the dialog header marker reads
-    // "Balanced" and the Save button enables. We don't actually submit:
-    // splitting a CC-bill transaction has special-case server validation
-    // that varies by demo dataset and isn't the unit being tested here.
+    // "Balanced" and the Save button enables.
     await expect(dialog.getByText(/^balanced$/i)).toBeVisible();
     const saveBtn = dialog.getByRole("button", { name: /^split transaction$/i });
     await expect(saveBtn).toBeEnabled();
+
+    // Submit and confirm the backend accepted the request. The route is
+    // /api/transactions/{unique_id}/split, and {unique_id} must be the
+    // integer DB primary key — not the source-institution `id` column.
+    // A regression that passes the wrong field returns 422 here.
+    const splitResponse = page.waitForResponse(
+      (res) =>
+        /\/api\/transactions\/\d+\/split$/.test(res.url()) &&
+        res.request().method() === "POST",
+    );
+    await saveBtn.click();
+    const response = await splitResponse;
+    expect(response.status()).toBe(200);
+
+    // Dialog closes on success.
+    await expect(dialog).toBeHidden();
   });
 });
