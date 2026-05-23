@@ -193,7 +193,7 @@ describe("TransactionsTable", () => {
     });
 
     it("hides the eraser button when a row has neither category nor tag", () => {
-      const tx = makeTx({ category: null, tag: null });
+      const tx = makeTx({ category: undefined, tag: undefined });
       renderWithProviders(
         <TransactionsTable transactions={[tx]} showActions />,
       );
