@@ -29,10 +29,25 @@ python -m scraper <provider> --show-browser             # Run scraper with visib
 
 ## Environment Setup (New Clone / Worktree)
 
+`npm run backend` auto-bootstraps the Python venv via `.claude/scripts/bootstrap_venv.sh` if `.venv/` is missing — the first backend start in a fresh worktree takes ~90s, subsequent starts are instant. Frontend deps still install manually:
+
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root
 cd frontend && npm install
 ```
+
+To bootstrap the backend explicitly (without starting it), run the script directly:
+
+```bash
+./.claude/scripts/bootstrap_venv.sh
+```
+
+Manual equivalent if you'd rather see each step:
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root
+```
+
+**Why the auto-bootstrap exists:** Git worktrees only contain source files — they don't inherit the parent's `.venv/`, and a missing venv breaks `npm run backend` with a cryptic `sh: .venv/bin/activate: No such file or directory`. The bootstrap script is idempotent (exits silently when `.venv/bin/uvicorn` already exists), so the hot path stays fast.
 
 User data lives in `~/.finance-analysis/` (SQLite DB at `data.db`). Auto-created on first run. Credentials and categories live in the DB; passwords are stored in the OS Keyring. Default categories ship bundled in `backend/resources/*.yaml` and are seeded into the DB on first run.
 
