@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Settings2,
   Pencil,
+  Eraser,
 } from "lucide-react";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
@@ -256,6 +257,15 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       invalidateAnalytics();
       onTransactionUpdated?.();
     },
+  });
+
+  const clearCategoryTagMutation = useMutation({
+    mutationFn: ({ uniqueId, source }: { uniqueId: string; source: string }) =>
+      transactionsApi.update(uniqueId, { source, category: "", tag: "" }),
+    // No per-mutation onSuccess: the global MutationCache.onSuccess in
+    // queryClient.ts already runs a debounced invalidateQueries 200ms after
+    // success. Per frontend_components.md ("Don't fan out invalidation in
+    // mutation hot paths"), do not add another.
   });
 
   // Reset page when transactions or filter changes
@@ -828,6 +838,23 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Pencil size={14} />
                         </button>
+                        {(tx.category || tx.tag) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearCategoryTagMutation.mutate({
+                                uniqueId: String(tx.unique_id ?? tx.id),
+                                source: tx.source || "",
+                              });
+                            }}
+                            className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-50"
+                            disabled={clearCategoryTagMutation.isPending}
+                            title={t("transactions.actions.clearCategoryTag")}
+                            aria-label={t("transactions.actions.clearCategoryTag")}
+                          >
+                            <Eraser size={14} />
+                          </button>
+                        )}
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title={t("tooltips.splitTransaction")}
