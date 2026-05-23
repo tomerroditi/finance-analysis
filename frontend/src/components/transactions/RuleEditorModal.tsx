@@ -61,7 +61,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         ? (categories[category] || []).filter(t => !takenTags.has(`${category}::${t}`))
         : [];
 
-    const name = tag ? `Auto: ${category} - ${tag}` : "";
+    const name = tag ? `${category} - ${tag}` : "";
 
     // Initialize form when editing
      
