@@ -21,7 +21,8 @@ import { useAppStore } from "../../stores/appStore";
 import { useConfirm } from "../../context/DialogContext";
 
 export function AutoTaggingPanel() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const isRtl = i18n.language === "he";
     const { autoTaggingPanelOpen, toggleAutoTaggingPanel } = useAppStore();
     const queryClient = useQueryClient();
     const confirm = useConfirm();
@@ -122,7 +123,7 @@ export function AutoTaggingPanel() {
                                 className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                                 title="Collapse panel"
                             >
-                                <ChevronRight size={18} />
+                                {isRtl ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                             </button>
                         </div>
 
@@ -229,7 +230,9 @@ export function AutoTaggingPanel() {
                         className="w-12 h-full flex flex-col items-center justify-center gap-3 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl hover:border-[var(--primary)]/30 transition-colors cursor-pointer group"
                         title="Expand Auto Tagging panel"
                     >
-                        <ChevronLeft size={18} className="text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-colors" />
+                        {isRtl
+                            ? <ChevronRight size={18} className="text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-colors" />
+                            : <ChevronLeft size={18} className="text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-colors" />}
                         <ShieldCheck size={20} className="text-[var(--primary)]" />
                         <span className="text-xs font-bold text-[var(--text-muted)] [writing-mode:vertical-lr] rotate-180 tracking-wider uppercase">
                             {t("transactions.autoTagging.title")}
@@ -263,7 +266,7 @@ export function AutoTaggingPanel() {
                                 onClick={toggleAutoTaggingPanel}
                                 className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                             >
-                                <ChevronRight size={18} />
+                                {isRtl ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                             </button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
