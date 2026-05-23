@@ -268,6 +268,28 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     // mutation hot paths"), do not add another.
   });
 
+  const bulkClearMutation = useMutation({
+    mutationFn: async (groupsBySource: Record<string, (string | number)[]>) => {
+      // Fire one bulkTag request per source group; let all settle so a
+      // single failing source doesn't abort the others.
+      const results = await Promise.allSettled(
+        Object.entries(groupsBySource).map(([source, ids]) =>
+          transactionsApi.bulkTag({
+            transaction_ids: ids,
+            source,
+            category: "",
+            tag: "",
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        throw new Error(`${failed.length} of ${results.length} clear requests failed`);
+      }
+    },
+    // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
+  });
+
   // Reset page when transactions or filter changes
   useEffect(() => {
     setCurrentPage(1);
@@ -481,6 +503,29 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     } catch {
       notify.error(t("transactions.bulkDeletePartialFailure"));
     }
+  };
+
+  const handleBulkClearCategoryTag = async () => {
+    const ok = await confirm({
+      title: t("transactions.clearConfirm.title"),
+      message: t("transactions.clearConfirm.message", { count: selectedIds.size }),
+      confirmLabel: t("transactions.clearConfirm.confirm"),
+      isDestructive: true,
+    });
+    if (!ok) return;
+    const selectedTxs = transactions.filter((tx) =>
+      selectedIds.has(getTransactionId(tx)),
+    );
+    const groupsBySource = selectedTxs.reduce(
+      (acc: Record<string, (string | number)[]>, tx) => {
+        const source = tx.source || "unknown";
+        if (!acc[source]) acc[source] = [];
+        acc[source].push(tx.unique_id || tx.id || 0);
+        return acc;
+      },
+      {},
+    );
+    bulkClearMutation.mutate(groupsBySource);
   };
 
   // Sort icon component
@@ -1047,6 +1092,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           cashBalances={cashBalances}
           onApply={handleBulkApply}
           onBulkDelete={handleBulkDelete}
+          onClearCategoryTag={handleBulkClearCategoryTag}
           onClearSelection={() => setSelectedIds(new Set())}
           onCreateCategory={createCategory}
           onCreateTag={createTag}
