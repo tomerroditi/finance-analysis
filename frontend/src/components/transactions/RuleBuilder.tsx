@@ -106,7 +106,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                             <Plus size={10} /> {t("ruleBuilder.condition")}
                         </button>
                         <button
-                            onClick={() => addSubCondition("AND")}
+                            onClick={() => addSubCondition("OR")}
                             className="flex items-center gap-1 px-2 py-1.5 rounded bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[10px] font-bold border border-[var(--surface-light)]"
                         >
                             <Plus size={10} /> {t("ruleBuilder.group")}
