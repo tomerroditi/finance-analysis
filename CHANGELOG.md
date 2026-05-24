@@ -1,3 +1,9 @@
+## v1.23.2 (2026-05-24)
+
+### Fix
+
+- **setup**: auto-bootstrap .venv on first `npm run backend` in a worktree
+
 ## v1.23.1 (2026-05-24)
 
 ### Fix
