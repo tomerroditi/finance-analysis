@@ -1,6 +1,10 @@
 import { type Page, type APIRequestContext, expect, request } from "@playwright/test";
 
-const API_BASE = "http://localhost:8000/api";
+// Default backend URL. Allow override via PW_BACKEND_URL so the suite can
+// run against a worktree-isolated backend on a non-default port.
+export const API_BASE = process.env.PW_BACKEND_URL
+  ? `${process.env.PW_BACKEND_URL.replace(/\/$/, "")}/api`
+  : "http://localhost:8000/api";
 
 /**
  * Toggle Demo Mode via the testing API. Faster and more reliable than

@@ -58,6 +58,7 @@ class Tables(Enum):
     REFUND_LINKS = "refund_links"
     BANK_BALANCES = "bank_balances"
     CASH_BALANCES = "cash_balances"
+    IMPORTED_ACCOUNTS = "imported_accounts"
     CATEGORIES = "categories"
     CREDENTIALS = "credentials"
     INSURANCE = "insurance_transactions"

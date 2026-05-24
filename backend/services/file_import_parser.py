@@ -1,0 +1,268 @@
+"""Pure file-to-DataFrame parser for the file-import feature.
+
+Given raw bytes + a column mapping, returns a canonical DataFrame with
+columns ``date``, ``description``, ``amount`` (and optional ``category``,
+``tag``, ``account_number``). No I/O, no DB. Tested in isolation.
+"""
+
+from __future__ import annotations
+
+import io
+from dataclasses import dataclass
+from typing import Literal, Optional
+
+import pandas as pd
+
+
+@dataclass
+class FieldMapping:
+    """One file → canonical column mapping."""
+
+    column: str
+    format: Optional[str] = None  # only used by date mapping
+
+
+@dataclass
+class AmountMapping:
+    """Amount field mapping. Supports single-column and split modes.
+
+    Attributes
+    ----------
+    mode : {"single", "split"}
+        ``"single"``: read ``column`` and apply ``sign_convention``.
+        ``"split"``: compute ``amount = credit - debit``.
+    column : str | None
+        Required for single mode.
+    sign_convention : {"positive_is_income", "positive_is_expense"} | None
+        Required for single mode. ``positive_is_expense`` flips the sign.
+    debit_column, credit_column : str | None
+        Required for split mode.
+    """
+
+    mode: Literal["single", "split"]
+    column: Optional[str] = None
+    sign_convention: Optional[
+        Literal["positive_is_income", "positive_is_expense"]
+    ] = None
+    debit_column: Optional[str] = None
+    credit_column: Optional[str] = None
+
+
+@dataclass
+class ColumnMapping:
+    """Full column mapping for one imported account."""
+
+    date: FieldMapping
+    description: FieldMapping
+    amount: AmountMapping
+    skip_rows: int = 0
+    category: Optional[FieldMapping] = None
+    tag: Optional[FieldMapping] = None
+    account_number: Optional[FieldMapping] = None
+
+
+def parse_file(
+    raw: bytes,
+    filename: str,
+    mapping: ColumnMapping,
+) -> pd.DataFrame:
+    """Parse ``raw`` bytes into a canonical transaction DataFrame.
+
+    Parameters
+    ----------
+    raw : bytes
+        Raw file bytes from the multipart upload.
+    filename : str
+        Original filename — its extension picks the reader (``.csv`` vs
+        ``.xlsx``).
+    mapping : ColumnMapping
+        User-defined column mapping (see ``ColumnMapping`` docstring).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: ``date`` (str, YYYY-MM-DD), ``description`` (str),
+        ``amount`` (float), and any optional columns the mapping enabled.
+
+    Raises
+    ------
+    ValueError
+        If the file type is unsupported, the file can't be decoded, or
+        the mapping references a column the file doesn't have.
+    """
+    raw_df = _read_raw(raw, filename, skip_rows=mapping.skip_rows)
+    _check_columns_exist(raw_df, mapping)
+    return _build_canonical_df(raw_df, mapping)
+
+
+def parse_file_with_summary(
+    raw: bytes,
+    filename: str,
+    mapping: ColumnMapping,
+) -> tuple[pd.DataFrame, int]:
+    """Like ``parse_file`` but also drops invalid rows and counts them.
+
+    Returns
+    -------
+    tuple
+        ``(canonical_df_with_only_valid_rows, dropped_invalid_count)``.
+    """
+    raw_df = _read_raw(raw, filename, skip_rows=mapping.skip_rows)
+    _check_columns_exist(raw_df, mapping)
+    parsed = _build_canonical_df(raw_df, mapping)
+    # A row is invalid if date didn't parse or amount didn't parse to a number.
+    invalid_mask = parsed["date"].isna() | parsed["amount"].isna()
+    dropped = int(invalid_mask.sum())
+    cleaned = parsed.loc[~invalid_mask].reset_index(drop=True)
+    return cleaned, dropped
+
+
+# ---------- internals ----------
+
+def _build_canonical_df(raw_df: pd.DataFrame, mapping: ColumnMapping) -> pd.DataFrame:
+    """Apply the mapping to ``raw_df`` and return the canonical DataFrame.
+
+    Shared by ``parse_file`` and ``parse_file_with_summary`` so the two
+    entry points can't drift out of sync.
+    """
+    out = pd.DataFrame()
+    out["date"] = _parse_dates(raw_df[mapping.date.column], mapping.date.format)
+    out["description"] = _to_str_or_empty(raw_df[mapping.description.column])
+    out["amount"] = _compute_amount(raw_df, mapping.amount)
+    if mapping.category and mapping.category.column:
+        out["category"] = _to_str_or_none(raw_df[mapping.category.column])
+    if mapping.tag and mapping.tag.column:
+        out["tag"] = _to_str_or_none(raw_df[mapping.tag.column])
+    if mapping.account_number and mapping.account_number.column:
+        out["account_number"] = _to_str_or_none(raw_df[mapping.account_number.column])
+    return out
+
+
+def _to_str_or_empty(series: pd.Series) -> pd.Series:
+    """Convert a series to strings; blank/NaN/None cells become ``""``.
+
+    Used for ``description`` where ``None`` would break downstream
+    consumers expecting a string but where blank rows survive validation.
+    """
+    return series.where(pd.notna(series), "").astype(str).replace(
+        {"nan": "", "None": ""}
+    )
+
+
+def _to_str_or_none(series: pd.Series) -> pd.Series:
+    """Convert a series to strings; blank/NaN/None cells become ``None``.
+
+    Used for optional columns (``category``, ``tag``, ``account_number``)
+    where downstream callers treat ``None`` as "not set".
+    """
+    out = series.where(pd.notna(series), None).astype(object)
+    return out.map(lambda v: None if v is None or (isinstance(v, str) and v.strip() == "") else str(v))
+
+
+def _read_raw(raw: bytes, filename: str, *, skip_rows: int) -> pd.DataFrame:
+    """Decode raw bytes into a header-aware DataFrame."""
+    ext = filename.lower().rsplit(".", 1)[-1]
+    if ext == "csv":
+        return _read_csv(raw, skip_rows=skip_rows)
+    if ext == "xlsx":
+        return pd.read_excel(io.BytesIO(raw), skiprows=skip_rows, engine="openpyxl")
+    raise ValueError(f"Unsupported file type: .{ext}")
+
+
+def _read_csv(raw: bytes, *, skip_rows: int) -> pd.DataFrame:
+    """Try UTF-8, fall back to Windows-1255 for Hebrew exports."""
+    for encoding in ("utf-8", "cp1255"):
+        try:
+            return pd.read_csv(io.BytesIO(raw), skiprows=skip_rows, encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Could not decode CSV as UTF-8 or Windows-1255")
+
+
+def _check_columns_exist(df: pd.DataFrame, mapping: ColumnMapping) -> None:
+    """Raise if any mapped column is missing from the file's header."""
+    required = [mapping.date.column, mapping.description.column]
+    if mapping.amount.mode == "single":
+        required.append(mapping.amount.column)
+    else:
+        required.append(mapping.amount.debit_column)
+        required.append(mapping.amount.credit_column)
+    for opt in (mapping.category, mapping.tag, mapping.account_number):
+        if opt and opt.column:
+            required.append(opt.column)
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Mapping references missing column(s): {missing}")
+
+
+_DATE_FORMATS: dict[str, str] = {
+    "iso": "%Y-%m-%d",
+    "dd/mm/yyyy": "%d/%m/%Y",
+    "mm/dd/yyyy": "%m/%d/%Y",
+    "dd-mm-yyyy": "%d-%m-%Y",
+    "dd.mm.yyyy": "%d.%m.%Y",
+}
+
+
+def _parse_dates(series: pd.Series, fmt: Optional[str]) -> pd.Series:
+    """Parse a date series to ``YYYY-MM-DD`` strings (or NaT for invalid)."""
+    if fmt is None:
+        raise ValueError("date.format is required")
+    if fmt == "auto":
+        chosen = _autodetect_format(series)
+        return _apply_format(series, chosen)
+    if fmt == "excel_serial":
+        numeric = pd.to_numeric(series, errors="coerce")
+        parsed = pd.to_datetime(numeric, unit="D", origin="1899-12-30", errors="coerce")
+        return parsed.dt.strftime("%Y-%m-%d")
+    if fmt in _DATE_FORMATS:
+        return _apply_format(series, _DATE_FORMATS[fmt])
+    raise ValueError(f"Unknown date format: {fmt!r}")
+
+
+def _apply_format(series: pd.Series, fmt: str) -> pd.Series:
+    """Apply a strptime-style format and emit ISO strings."""
+    parsed = pd.to_datetime(series, format=fmt, errors="coerce")
+    return parsed.dt.strftime("%Y-%m-%d")
+
+
+def _autodetect_format(series: pd.Series) -> str:
+    """Pick the format that parses the highest fraction of sample values.
+
+    On a tie (e.g. ambiguous ``01/02/2026`` parses under both DD/MM and
+    MM/DD), the format declared earlier in ``_DATE_FORMATS`` wins —
+    that's why ``dd/mm/yyyy`` precedes ``mm/dd/yyyy`` (Israeli default).
+    """
+    sample = series.dropna().astype(str).head(20)
+    if len(sample) == 0:
+        return _DATE_FORMATS["iso"]
+    best_fmt = _DATE_FORMATS["iso"]
+    best_ok = -1
+    for fmt in _DATE_FORMATS.values():
+        parsed = pd.to_datetime(sample, format=fmt, errors="coerce")
+        ok = parsed.notna().sum()
+        if ok > best_ok:
+            best_ok = ok
+            best_fmt = fmt
+    return best_fmt
+
+
+def _compute_amount(df: pd.DataFrame, amount: AmountMapping) -> pd.Series:
+    """Compute the canonical signed amount per row.
+
+    - ``single`` mode: read the column, optionally flip the sign.
+    - ``split`` mode: ``amount = credit - debit``; rows with both cells
+      empty become NaN so the row-validation step can drop them.
+    """
+    if amount.mode == "single":
+        series = pd.to_numeric(df[amount.column], errors="coerce")
+        if amount.sign_convention == "positive_is_expense":
+            series = -series
+        return series
+    # split mode: amount = credit - debit. Rows with neither debit nor
+    # credit (e.g. blank separator rows in bank exports) become NaN so
+    # parse_file_with_summary drops them.
+    debit_raw = pd.to_numeric(df[amount.debit_column], errors="coerce")
+    credit_raw = pd.to_numeric(df[amount.credit_column], errors="coerce")
+    both_missing = debit_raw.isna() & credit_raw.isna()
+    return (credit_raw.fillna(0) - debit_raw.fillna(0)).mask(both_missing)

@@ -1,0 +1,7 @@
+Bank Statement Export
+Generated 2026-03-15
+Account: 12345
+
+date,description,amount
+2026-03-01,Coffee shop,-12.50
+2026-03-03,Salary,8500.00
