@@ -1,3 +1,9 @@
+## v1.23.1 (2026-05-24)
+
+### Fix
+
+- **splits**: scope split lookup to source table
+
 ## v1.23.0 (2026-05-23)
 
 ### Feat
