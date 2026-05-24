@@ -938,8 +938,16 @@ class TransactionsService:
                 df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
             )
 
+        _service_to_source_table = {
+            Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
+            Services.BANK.value: Tables.BANK.value,
+            Services.CASH.value: Tables.CASH.value,
+            Services.MANUAL_INVESTMENTS.value: Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+        }
+        source_table = _service_to_source_table.get(service, "")
         split_df = split_df[
-            split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
+            (split_df[SplitTransactionsTableFields.SOURCE.value] == source_table)
+            & split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
                 df[TransactionsTableFields.UNIQUE_ID.value]
             )
         ]

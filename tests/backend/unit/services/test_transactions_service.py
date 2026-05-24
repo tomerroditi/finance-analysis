@@ -1544,6 +1544,73 @@ class TestGetTableForAnalysisSplitExpansion:
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
+    def test_splits_from_other_service_not_applied_when_unique_ids_collide(
+        self, db_session
+    ):
+        """Splits for a bank transaction must not attach to a CC transaction that shares the same unique_id.
+
+        Regression test: unique_id is an autoincrement per-table integer so
+        the same value can exist in both bank_transactions and
+        credit_card_transactions.  A bank split (source='bank_transactions')
+        whose transaction_id equals the unique_id of an unrelated CC row must
+        not appear in the CC analysis output.
+        """
+        from backend.models.transaction import CreditCardTransaction, SplitTransaction
+
+        # Add a CC transaction — its unique_id will be auto-assigned (e.g. 1).
+        cc_tx = CreditCardTransaction(
+            id="EXT-CC-1",
+            date="2025-08-31",
+            provider="isracard",
+            account_name="Main Card",
+            description="FLUGHAFEN BERLIN BRA",
+            amount=-15.53,
+            category="USA",
+            tag="other",
+            source="credit_card_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(cc_tx)
+        db_session.flush()
+        cc_unique_id = cc_tx.unique_id
+
+        # Add a bank transaction that coincidentally has the same unique_id
+        # (simulated via SplitTransaction referencing cc_unique_id but with
+        # source='bank_transactions').
+        split = SplitTransaction(
+            transaction_id=cc_unique_id,
+            source="bank_transactions",
+            amount=1000.0,
+            category="Bachelorette Party",
+            tag="DJ",
+        )
+        db_session.add(split)
+        db_session.commit()
+
+        service = TransactionsService(db_session)
+        result = service.get_table_for_analysis("credit_cards")
+
+        # The FLUGHAFEN row must appear unchanged (not masked as split_parent).
+        desc_col = TransactionsTableFields.DESCRIPTION.value
+        cat_col = TransactionsTableFields.CATEGORY.value
+        flughafen_rows = result[result[desc_col] == "FLUGHAFEN BERLIN BRA"]
+        assert len(flughafen_rows) == 1, (
+            "FLUGHAFEN row must appear exactly once; bank split incorrectly "
+            "masked or duplicated it."
+        )
+        assert flughafen_rows.iloc[0][cat_col] == "USA", (
+            "FLUGHAFEN row must retain its original category, not the bank "
+            "split's category."
+        )
+
+        # No Bachelorette Party row should appear in the CC result.
+        bach_rows = result[result[cat_col] == "Bachelorette Party"]
+        assert bach_rows.empty, (
+            "Bank split must not leak into CC analysis output even when "
+            "unique_ids collide across tables."
+        )
+
 
 class TestClearCategoryAndTag:
     """Locks in that empty-string category/tag values clear the fields.
