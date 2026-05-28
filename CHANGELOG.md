@@ -1,3 +1,12 @@
+## v1.23.3 (2026-05-28)
+
+### Fix
+
+- **security**: bump pyarrow 17.0.0 -> 23.0.1 (PYSEC-2026-113)
+- **security**: bump pyarrow 15.0.2 -> 17.0.0 (PYSEC-2024-161)
+- **security**: bump vulnerable Python transitive deps
+- **security**: patch axios CVEs, transitive deps, and harden uninstall shell-out
+
 ## v1.23.2 (2026-05-24)
 
 ### Fix
