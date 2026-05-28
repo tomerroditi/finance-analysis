@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -129,11 +130,20 @@ def _launch_in_terminal(script_path: Path) -> None:
     ``osascript`` is the supported cross-architecture way to ask
     Terminal to open a new window with a command. The window stays
     open after the script exits so the user can read the summary.
+
+    The path is escaped for both the AppleScript string literal and the
+    shell ``bash`` invocation. ``mkstemp`` only produces safe paths today,
+    but quoting here keeps a hostile/unexpected path from breaking out of
+    the ``do script "..."`` literal into arbitrary command execution.
     """
+    # Shell-quote for the bash invocation, then escape the result for the
+    # AppleScript double-quoted string literal (\ and ").
+    sh_quoted = shlex.quote(str(script_path))
+    sh_quoted_for_as = sh_quoted.replace("\\", "\\\\").replace('"', '\\"')
     apple_script = (
         'tell application "Terminal"\n'
         "    activate\n"
-        f'    do script "bash {script_path}"\n'
+        f'    do script "bash {sh_quoted_for_as}"\n'
         "end tell"
     )
     subprocess.Popen(["osascript", "-e", apple_script])
