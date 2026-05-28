@@ -287,6 +287,21 @@ class TestBulkUpdateTagging:
         assert updated.category == "Food"
         assert updated.tag == "Groceries"
 
+    def test_bulk_update_tagging_invalid_source_raises(self, db_session):
+        """Verify an unrecognized source raises a clean ValueError.
+
+        Regression: ``get_repo_by_source`` returns ``None`` for unknown
+        sources, so bulk_update_tagging must guard against it instead of
+        dereferencing ``None`` (which produced an opaque AttributeError/500).
+        """
+        repo = TransactionsRepository(db_session)
+        with pytest.raises(ValueError):
+            repo.bulk_update_tagging(
+                [{"source": "not_a_real_source", "unique_id": 1}],
+                category="Food",
+                tag="Groceries",
+            )
+
 
 class TestGetDateFromTable:
     """Tests for get_latest_date_from_table and get_earliest_date_from_table."""

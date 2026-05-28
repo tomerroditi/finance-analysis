@@ -409,7 +409,7 @@ export const MonthlyBudgetView: React.FC = () => {
             </p>
             <p className="text-xl font-bold mt-1">{daysLeft}</p>
             <p className="text-xs text-[var(--text-muted)]">
-              {t("budget.inMonth", { month: new Date(year, month - 1).toLocaleString("en", {
+              {t("budget.inMonth", { month: new Date(year, month - 1).toLocaleString(i18n.language === "he" ? "he-IL" : "en-US", {
                 month: "long",
               }) })}
             </p>

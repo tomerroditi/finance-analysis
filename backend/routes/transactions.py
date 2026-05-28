@@ -208,6 +208,16 @@ async def bulk_tag_transactions(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/latest-date")
+async def get_latest_data_date(
+    db: Session = Depends(get_database),
+) -> dict[str, str | None]:
+    """Get the latest transaction date across all tables."""
+    service = TransactionsService(db)
+    latest = service.get_latest_data_date()
+    return {"latest_date": latest.isoformat() if latest else None}
+
+
 @router.get("/{transaction_id}")
 async def get_transaction(
     transaction_id: int, db: Session = Depends(get_database)
@@ -252,13 +262,3 @@ async def update_transaction_tag(
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/latest-date")
-async def get_latest_data_date(
-    db: Session = Depends(get_database),
-) -> dict[str, str | None]:
-    """Get the latest transaction date across all tables."""
-    service = TransactionsService(db)
-    latest = service.get_latest_data_date()
-    return {"latest_date": latest.isoformat() if latest else None}

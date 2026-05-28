@@ -228,7 +228,16 @@ class BudgetService:
             return False, "Amount must be a positive number"
 
         if pd.isnull(year) and pd.isnull(month):
-            rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
+            # When editing an existing rule we look it up to know its current
+            # tags/amount; when creating (id_ is None) there is no existing row,
+            # so fall back to the incoming tags and a zero current amount.
+            if id_ is not None:
+                rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
+                rule_tags = rule[TAGS]
+                existing_amount = rule[AMOUNT]
+            else:
+                rule_tags = tags
+                existing_amount = 0
             budget_rules = budget_rules.loc[
                 (budget_rules[YEAR].isnull())
                 & (budget_rules[MONTH].isnull())
@@ -237,7 +246,7 @@ class BudgetService:
             total_rules_amount = budget_rules.loc[
                 ~budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT
             ].sum()
-            if rule[TAGS] == [ALL_TAGS]:
+            if rule_tags == [ALL_TAGS]:
                 if amount < total_rules_amount:
                     return (
                         False,
@@ -247,7 +256,7 @@ class BudgetService:
                 total_budget = budget_rules.loc[
                     budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT
                 ].values[0]
-                new_total_rules_amount = total_rules_amount - rule[AMOUNT] + amount
+                new_total_rules_amount = total_rules_amount - existing_amount + amount
                 if new_total_rules_amount > total_budget:
                     return False, "The total budget is exceeded"
             return True, ""
