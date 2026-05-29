@@ -13,8 +13,6 @@ interface BudgetRuleRowProps {
   onToggleExpand: () => void;
   actions?: React.ReactNode;
   children?: React.ReactNode;
-  /** Visually de-emphasize (e.g. the "Other Expenses" pseudo-rule). */
-  dimmed?: boolean;
 }
 
 /**
@@ -33,7 +31,6 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
   onToggleExpand,
   actions,
   children,
-  dimmed = false,
 }) => {
   const { t } = useTranslation();
   const spent = Math.abs(current);
@@ -59,11 +56,7 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
       : null;
 
   return (
-    <div
-      className={`w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group ${
-        dimmed ? "opacity-60" : ""
-      }`}
-    >
+    <div className="w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
       <div
         className="px-3 md:px-4 pt-2.5 pb-2 cursor-pointer"
         onClick={onToggleExpand}

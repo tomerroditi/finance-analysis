@@ -389,7 +389,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               label={item.rule.name}
               current={item.current_amount}
               total={item.rule.amount}
-              dimmed={item.rule.name === "Other Expenses"}
               isExpanded={expandedRuleId === String(item.rule.id)}
               onToggleExpand={() => toggleExpand(String(item.rule.id))}
               actions={
