@@ -62,4 +62,82 @@ test.describe("Budget", () => {
       await page.waitForTimeout(500);
     }
   });
+
+  test("budget-vs-actual trend chart toggles", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const trend = page.getByRole("button", { name: /Budget vs Actual/i });
+    await expect(trend).toBeVisible();
+
+    // Toggle collapse/expand — should not throw and stays on the page.
+    await trend.click();
+    await page.waitForTimeout(300);
+    await trend.click();
+    await page.waitForTimeout(300);
+    await expect(trend).toBeVisible();
+  });
+
+  test("'View all projects' jumps to the Projects tab", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const viewAll = page.getByRole("button", { name: /View all projects/i });
+    if (await viewAll.isVisible().catch(() => false)) {
+      await viewAll.click();
+      await page.waitForTimeout(400);
+      // Projects tab content: the project selector label appears.
+      await expect(page.getByText(/Select Project/i).first()).toBeVisible();
+    }
+  });
+
+  test("alerts banner, when present, can be dismissed", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const dismissAll = page.getByRole("button", { name: /Dismiss all/i });
+    if (await dismissAll.isVisible().catch(() => false)) {
+      await dismissAll.click();
+      await page.waitForTimeout(300);
+      await expect(dismissAll).toHaveCount(0);
+    }
+  });
+
+  test("Total Budget card collapses the rule list and shows month transactions", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const totalBudget = page.getByRole("button", { name: /^\s*Total Budget\s*$/ });
+    if (!(await totalBudget.first().isVisible().catch(() => false))) return;
+
+    // Collapsing hides the per-rule rows; expanding shows them again.
+    await totalBudget.first().click();
+    await page.waitForTimeout(400);
+    await totalBudget.first().click();
+    await page.waitForTimeout(400);
+
+    // "View month transactions" reveals a transactions table under the card.
+    const viewMonth = page.getByRole("button", { name: /View month transactions/i });
+    if (await viewMonth.first().isVisible().catch(() => false)) {
+      await viewMonth.first().click();
+      await page.waitForTimeout(500);
+      await expect(
+        page.getByRole("button", { name: /Hide Transactions/i }).first(),
+      ).toBeVisible();
+    }
+  });
+
+  test("Pending Refunds section collapses from its header", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const header = page.getByRole("button", { name: /Pending Refunds/i });
+    if (await header.first().isVisible().catch(() => false)) {
+      await header.first().click();
+      await page.waitForTimeout(300);
+      await header.first().click();
+      await page.waitForTimeout(300);
+      await expect(header.first()).toBeVisible();
+    }
+  });
 });

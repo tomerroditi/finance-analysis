@@ -101,6 +101,10 @@ export const budgetApi = {
     api.get("/budget/alerts", {
       params: threshold !== undefined ? { threshold } : undefined,
     }),
+  getMonthAlerts: (year: number, month: number, threshold?: number) =>
+    api.get(`/budget/alerts/${year}/${month}`, {
+      params: threshold !== undefined ? { threshold } : undefined,
+    }),
 };
 
 export interface BudgetAlert {

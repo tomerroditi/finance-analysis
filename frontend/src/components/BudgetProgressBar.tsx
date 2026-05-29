@@ -13,6 +13,9 @@ interface BudgetProgressBarProps {
   children?: React.ReactNode;
   actions?: React.ReactNode;
   compact?: boolean;
+  /** Override the expand/collapse text button (defaults to view/hide transactions). */
+  expandLabel?: string;
+  collapseLabel?: string;
 }
 
 export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
@@ -25,6 +28,8 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
   children,
   actions,
   compact = false,
+  expandLabel,
+  collapseLabel,
 }) => {
   const { t } = useTranslation();
   // Current is usually negative (expenses), convert to positive for display
@@ -137,12 +142,6 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-4 shrink-0">
-          {/* Actions - inline on desktop only */}
-          {actions && (
-            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
-              {actions}
-            </div>
-          )}
           <div className="text-end">
             <div className="font-bold font-mono text-sm md:text-base" dir="ltr">
               {formatCurrency(spent)}{" "}
@@ -155,25 +154,26 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
                 onClick={onToggleExpand}
                 className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] mt-1 transition-colors"
               >
-                {isExpanded ? t("budget.hideTransactions") : t("budget.viewTransactions")}
+                {isExpanded
+                  ? (collapseLabel ?? t("budget.hideTransactions"))
+                  : (expandLabel ?? t("budget.viewTransactions"))}
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Actions row - mobile only */}
-      {actions && (
-        <div className="md:hidden flex items-center gap-1 mb-3">
-          {actions}
+      {/* Progress bar + actions on one line to save vertical space */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
+          <div
+            className={`h-2.5 rounded-full ${colorClass} transition-all duration-500 ease-out`}
+            style={{ width: `${percent}%` }}
+          ></div>
         </div>
-      )}
-
-      <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
-        <div
-          className={`h-2.5 rounded-full ${colorClass} transition-all duration-500 ease-out`}
-          style={{ width: `${percent}%` }}
-        ></div>
+        {actions && (
+          <div className="flex items-center gap-1 shrink-0">{actions}</div>
+        )}
       </div>
 
       {isExpanded && children}

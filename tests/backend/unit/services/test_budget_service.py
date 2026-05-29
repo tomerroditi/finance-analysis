@@ -1575,6 +1575,46 @@ class TestGetMonthlyAnalysisAutoFill:
         assert "February 2026" in analysis["copied_from"]
         assert analysis["rules"] is not None
 
+    def test_monthly_analysis_auto_fills_future_month(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify get_monthly_analysis auto-fills a future month from prior rules."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2026)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 2, 2026)
+
+        fake_today = date_cls(2026, 3, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            # A month later than "today" should still auto-fill from prior rules.
+            analysis = service.get_monthly_analysis(2026, 5)
+
+        assert analysis["copied_from"] is not None
+        assert analysis["rules"] is not None
+
+    def test_monthly_analysis_does_not_fill_past_month(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify get_monthly_analysis leaves empty past months untouched."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2026)
+
+        fake_today = date_cls(2026, 3, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            # January 2026 is before today and has no rules — must stay empty.
+            analysis = service.get_monthly_analysis(2026, 1)
+
+        assert analysis["copied_from"] is None
+
 
 class TestGetFilteredExpensesDateConversion:
     """Tests for get_filtered_expenses date conversion (line 657)."""
