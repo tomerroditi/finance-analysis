@@ -9,7 +9,7 @@ export const Budget: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"monthly" | "projects">("monthly");
 
   const tabClass = (tab: "monthly" | "projects") =>
-    `sm:flex-1 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 md:px-6 py-2.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
+    `flex-1 whitespace-nowrap flex items-center justify-center gap-2 px-3 md:px-6 py-2.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
       activeTab === tab
         ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
         : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -18,7 +18,7 @@ export const Budget: React.FC = () => {
   return (
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
       <div className="mb-6">
-        <div className="flex overflow-x-auto scrollbar-auto-hide gap-1 bg-[var(--surface-light)] p-1 rounded-xl sm:inline-flex">
+        <div className="flex w-full gap-1 bg-[var(--surface-light)] p-1 rounded-xl">
           <button onClick={() => setActiveTab("monthly")} className={tabClass("monthly")}>
             <Calendar size={18} />
             {t("budget.monthlyBudget")}

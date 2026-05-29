@@ -348,6 +348,8 @@
     "project": "פרויקט",
     "viewTransactions": "הצג תנועות",
     "hideTransactions": "הסתר תנועות",
+    "showBudgets": "הצג תקציבים",
+    "hideBudgets": "הסתר תקציבים",
     "selectProject": "בחר פרויקט",
     "noProjects": "אין פרויקטים",
     "newProject": "פרויקט חדש",

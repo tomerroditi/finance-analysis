@@ -348,6 +348,8 @@
     "project": "Project",
     "viewTransactions": "View Transactions",
     "hideTransactions": "Hide Transactions",
+    "showBudgets": "Show budgets",
+    "hideBudgets": "Hide budgets",
     "selectProject": "Select Project",
     "noProjects": "No projects",
     "newProject": "New Project",

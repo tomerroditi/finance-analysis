@@ -13,6 +13,9 @@ interface BudgetProgressBarProps {
   children?: React.ReactNode;
   actions?: React.ReactNode;
   compact?: boolean;
+  /** Override the expand/collapse text button (defaults to view/hide transactions). */
+  expandLabel?: string;
+  collapseLabel?: string;
 }
 
 export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
@@ -25,6 +28,8 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
   children,
   actions,
   compact = false,
+  expandLabel,
+  collapseLabel,
 }) => {
   const { t } = useTranslation();
   // Current is usually negative (expenses), convert to positive for display
@@ -155,7 +160,9 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
                 onClick={onToggleExpand}
                 className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] mt-1 transition-colors"
               >
-                {isExpanded ? t("budget.hideTransactions") : t("budget.viewTransactions")}
+                {isExpanded
+                  ? (collapseLabel ?? t("budget.hideTransactions"))
+                  : (expandLabel ?? t("budget.viewTransactions"))}
               </button>
             )}
           </div>

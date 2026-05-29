@@ -55,6 +55,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+  const [rulesCollapsed, setRulesCollapsed] = useState(false);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
@@ -322,77 +323,53 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       )}
 
-      <div className="space-y-3">
-        {rules.map((item: BudgetAnalysisItem) => {
-          const isTotalBudget = item.rule.name === "Total Budget";
-          const isOtherExpenses = item.rule.name === "Other Expenses";
-          const actions = (
-            <>
-              {item.allow_edit && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingRule(item.rule);
-                    setIsRuleModalOpen(true);
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                  title={t("budget.editRule")}
-                >
-                  <PenSquare size={16} />
-                </button>
-              )}
-              {item.allow_delete && (
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const ok = await confirm({
-                      title: t("budget.deleteRule"),
-                      message: t("budget.confirmDeleteRule"),
-                      confirmLabel: t("common.delete"),
-                      isDestructive: true,
-                    });
-                    if (ok) deleteMutation.mutate(item.rule.id);
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                  title={t("budget.deleteRule")}
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </>
+      {rules.length > 0 &&
+        (() => {
+          const totalItem = rules.find(
+            (i: BudgetAnalysisItem) => i.rule.name === "Total Budget",
           );
-          const hasActions = item.allow_edit || item.allow_delete;
-          const txList = (
-            <TransactionCollapsibleList
-              transactions={item.data}
-              isOpen={expandedRuleId === String(item.rule.id)}
-              showActions
-              onTransactionUpdated={invalidateBudget}
-              pendingRefundsMap={pendingRefundsMap}
-              refundLinksMap={refundLinksMap}
-              showSplitParentsFilter
-              includeSplitParents={includeSplitParents}
-              onIncludeSplitParentsChange={setIncludeSplitParents}
-            />
+          const childItems = rules.filter(
+            (i: BudgetAnalysisItem) => i.rule.name !== "Total Budget",
           );
 
-          if (isTotalBudget) {
-            return (
-              <BudgetProgressBar
-                key={item.rule.id}
-                label={item.rule.name}
-                current={item.current_amount}
-                total={item.rule.amount}
-                onToggleExpand={() => toggleExpand(String(item.rule.id))}
-                isExpanded={expandedRuleId === String(item.rule.id)}
-                actions={hasActions ? actions : undefined}
-              >
-                {txList}
-              </BudgetProgressBar>
-            );
-          }
+          const buildActions = (item: BudgetAnalysisItem) =>
+            item.allow_edit || item.allow_delete ? (
+              <>
+                {item.allow_edit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingRule(item.rule);
+                      setIsRuleModalOpen(true);
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
+                    title={t("budget.editRule")}
+                  >
+                    <PenSquare size={16} />
+                  </button>
+                )}
+                {item.allow_delete && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const ok = await confirm({
+                        title: t("budget.deleteRule"),
+                        message: t("budget.confirmDeleteRule"),
+                        confirmLabel: t("common.delete"),
+                        isDestructive: true,
+                      });
+                      if (ok) deleteMutation.mutate(item.rule.id);
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
+                    title={t("budget.deleteRule")}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </>
+            ) : undefined;
 
-          return (
+          const renderRow = (item: BudgetAnalysisItem) => (
             <BudgetRuleRow
               key={item.rule.id}
               label={item.rule.name}
@@ -401,16 +378,47 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               }
               current={item.current_amount}
               total={item.rule.amount}
-              dimmed={isOtherExpenses}
+              dimmed={item.rule.name === "Other Expenses"}
               isExpanded={expandedRuleId === String(item.rule.id)}
               onToggleExpand={() => toggleExpand(String(item.rule.id))}
-              actions={hasActions ? actions : undefined}
+              actions={buildActions(item)}
             >
-              {txList}
+              <TransactionCollapsibleList
+                transactions={item.data}
+                isOpen={expandedRuleId === String(item.rule.id)}
+                showActions
+                onTransactionUpdated={invalidateBudget}
+                pendingRefundsMap={pendingRefundsMap}
+                refundLinksMap={refundLinksMap}
+                showSplitParentsFilter
+                includeSplitParents={includeSplitParents}
+                onIncludeSplitParentsChange={setIncludeSplitParents}
+              />
             </BudgetRuleRow>
           );
-        })}
-      </div>
+
+          if (!totalItem) {
+            return <div className="space-y-3">{childItems.map(renderRow)}</div>;
+          }
+
+          // Total Budget is the container card: collapsing it hides the
+          // per-rule breakdown; each rule row still expands its own
+          // transactions independently.
+          return (
+            <BudgetProgressBar
+              label={totalItem.rule.name}
+              current={totalItem.current_amount}
+              total={totalItem.rule.amount}
+              isExpanded={!rulesCollapsed}
+              onToggleExpand={() => setRulesCollapsed((v) => !v)}
+              expandLabel={t("budget.showBudgets")}
+              collapseLabel={t("budget.hideBudgets")}
+              actions={buildActions(totalItem)}
+            >
+              <div className="space-y-3 mt-3">{childItems.map(renderRow)}</div>
+            </BudgetProgressBar>
+          );
+        })()}
 
       {analysis?.pending_refunds && (
         <PendingRefundsSection pendingRefunds={analysis.pending_refunds} />
