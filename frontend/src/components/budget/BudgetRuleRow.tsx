@@ -88,23 +88,21 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
             )}
           </div>
 
-          <div className="flex flex-col items-end shrink-0">
-            <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap" dir="ltr">
-              {formatCurrency(spent)}{" "}
-              <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
-                / {formatCurrency(total)}
-              </span>
+          <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap shrink-0" dir="ltr">
+            {formatCurrency(spent)}{" "}
+            <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
+              / {formatCurrency(total)}
             </span>
-            {hint && (
-              <span
-                className={`text-[10px] md:text-xs whitespace-nowrap ${
-                  over ? "text-rose-400" : "text-[var(--text-muted)]"
-                }`}
-              >
-                {hint}
-              </span>
-            )}
-          </div>
+          </span>
+          {hint && (
+            <span
+              className={`text-[10px] md:text-xs whitespace-nowrap shrink-0 ${
+                over ? "text-rose-400" : "text-[var(--text-muted)]"
+              }`}
+            >
+              {hint}
+            </span>
+          )}
 
           <span className="text-[var(--text-muted)] shrink-0">
             {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

@@ -387,9 +387,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             <BudgetRuleRow
               key={item.rule.id}
               label={item.rule.name}
-              subLabel={
-                item.rule.category !== item.rule.name ? item.rule.category : undefined
-              }
               current={item.current_amount}
               total={item.rule.amount}
               dimmed={item.rule.name === "Other Expenses"}
