@@ -221,14 +221,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const budgetRules = rules.filter(
     (item: BudgetAnalysisItem) => item.rule.name !== "Total Budget",
   );
-  const totalSpent = budgetRules.reduce(
-    (sum: number, item: BudgetAnalysisItem) => sum + Math.abs(item.current_amount || 0),
-    0,
-  );
-  const totalBudget = budgetRules.reduce(
-    (sum: number, item: BudgetAnalysisItem) => sum + (item.rule.amount || 0),
-    0,
-  );
   const onTrackCount = budgetRules.filter(
     (item: BudgetAnalysisItem) =>
       Math.abs(item.current_amount || 0) <= (item.rule.amount || 0),
@@ -292,8 +284,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       {budgetRules.length > 0 && (
         <>
           <BudgetSummaryStrip
-            totalSpent={totalSpent}
-            totalBudget={totalBudget}
             onTrackCount={onTrackCount}
             overCount={overCount}
             biggestOverspend={biggestOverspend}
@@ -422,6 +412,17 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             : nearT
               ? "bg-amber-500"
               : "bg-emerald-500";
+          const remainingT = totalT - spentT;
+          const totalHint =
+            totalT > 0
+              ? overT
+                ? t("budget.overByAmount", {
+                    amount: formatCurrency(Math.abs(remainingT)),
+                  })
+                : t("budget.remainingAmount", {
+                    amount: formatCurrency(remainingT),
+                  })
+              : null;
           const totalActions = buildActions(totalItem);
 
           return (
@@ -471,14 +472,25 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                 />
               </div>
 
-              <button
-                onClick={() => setShowTotalTransactions((v) => !v)}
-                className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] mt-2 transition-colors"
-              >
-                {showTotalTransactions
-                  ? t("budget.hideTransactions")
-                  : t("budget.viewMonthTransactions")}
-              </button>
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <button
+                  onClick={() => setShowTotalTransactions((v) => !v)}
+                  className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
+                >
+                  {showTotalTransactions
+                    ? t("budget.hideTransactions")
+                    : t("budget.viewMonthTransactions")}
+                </button>
+                {totalHint && (
+                  <span
+                    className={`text-xs whitespace-nowrap shrink-0 ${
+                      overT ? "text-rose-400" : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {totalHint}
+                  </span>
+                )}
+              </div>
 
               {showTotalTransactions && (
                 <TransactionCollapsibleList
