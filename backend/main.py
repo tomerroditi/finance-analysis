@@ -36,6 +36,7 @@ from backend.routes import (
     onboarding,
     pending_refunds,
     retirement,
+    savings_goals,
     tagging,
     tagging_rules,
     transactions,
@@ -296,6 +297,11 @@ app.include_router(
     retirement.router,
     prefix="/api/retirement",
     tags=["Retirement"],
+)
+app.include_router(
+    savings_goals.router,
+    prefix="/api/savings-goals",
+    tags=["Savings Goals"],
 )
 app.include_router(
     onboarding.router,

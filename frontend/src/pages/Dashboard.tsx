@@ -21,6 +21,8 @@ import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactio
 import { CashFlowForecastSection } from "../components/dashboard/CashFlowForecastCard";
 import { InsightsStrip } from "../components/dashboard/InsightsStrip";
 import { RecurringSection } from "../components/dashboard/RecurringSection";
+import { GoalsSection } from "../components/dashboard/GoalsSection";
+import { SpendingHeatmap } from "../components/dashboard/SpendingHeatmap";
 import { SankeyChart } from "../components/SankeyChart";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
@@ -463,6 +465,12 @@ export function Dashboard() {
 
       {/* Section 3.5: Subscriptions & recurring charges */}
       <RecurringSection />
+
+      {/* Section 3.6: Savings goals + spending heatmap */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
+        <GoalsSection />
+        <SpendingHeatmap transactions={allTransactions} />
+      </div>
 
       {/* Section 4: Tabbed Insights */}
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">

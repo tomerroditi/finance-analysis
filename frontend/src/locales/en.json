@@ -216,6 +216,26 @@
         "quarterly": "Quarterly",
         "annual": "Annual"
       }
+    },
+    "goals": {
+      "title": "Savings Goals",
+      "add": "Add goal",
+      "empty": "No savings goals yet — add one to track your progress",
+      "addTitle": "New savings goal",
+      "editTitle": "Edit savings goal",
+      "nameLabel": "Goal name",
+      "namePlaceholder": "e.g. Vacation, Emergency fund",
+      "targetLabel": "Target amount",
+      "savedLabel": "Saved so far",
+      "dateLabel": "Target date (optional)",
+      "achieved": "Achieved 🎉",
+      "remaining": "{{amount}} to go",
+      "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
+      "confirmDelete": "Delete the goal \"{{name}}\"?"
+    },
+    "heatmap": {
+      "title": "Spending Calendar",
+      "monthTotal": "This month"
     }
   },
   "transactions": {

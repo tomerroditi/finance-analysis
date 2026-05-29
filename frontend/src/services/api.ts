@@ -639,6 +639,36 @@ export const retirementApi = {
     ),
 };
 
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string | null;
+  notes: string | null;
+  remaining: number;
+  progress_pct: number;
+  is_achieved: boolean;
+  months_remaining: number | null;
+  monthly_needed: number | null;
+}
+
+export interface SavingsGoalInput {
+  name: string;
+  target_amount: number;
+  current_amount?: number;
+  target_date?: string | null;
+  notes?: string | null;
+}
+
+export const savingsGoalsApi = {
+  getAll: () => api.get<SavingsGoal[]>("/savings-goals/"),
+  create: (data: SavingsGoalInput) => api.post<SavingsGoal>("/savings-goals/", data),
+  update: (id: number, data: Partial<SavingsGoalInput>) =>
+    api.put<SavingsGoal>(`/savings-goals/${id}`, data),
+  delete: (id: number) => api.delete(`/savings-goals/${id}`),
+};
+
 export const backupApi = {
   list: () =>
     api.get<
