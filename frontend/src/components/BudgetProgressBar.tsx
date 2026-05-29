@@ -142,12 +142,6 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-4 shrink-0">
-          {/* Actions - inline on desktop only */}
-          {actions && (
-            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
-              {actions}
-            </div>
-          )}
           <div className="text-end">
             <div className="font-bold font-mono text-sm md:text-base" dir="ltr">
               {formatCurrency(spent)}{" "}
@@ -169,18 +163,17 @@ export const BudgetProgressBar: React.FC<BudgetProgressBarProps> = ({
         </div>
       </div>
 
-      {/* Actions row - mobile only */}
-      {actions && (
-        <div className="md:hidden flex items-center gap-1 mb-3">
-          {actions}
+      {/* Progress bar + actions on one line to save vertical space */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
+          <div
+            className={`h-2.5 rounded-full ${colorClass} transition-all duration-500 ease-out`}
+            style={{ width: `${percent}%` }}
+          ></div>
         </div>
-      )}
-
-      <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
-        <div
-          className={`h-2.5 rounded-full ${colorClass} transition-all duration-500 ease-out`}
-          style={{ width: `${percent}%` }}
-        ></div>
+        {actions && (
+          <div className="flex items-center gap-1 shrink-0">{actions}</div>
+        )}
       </div>
 
       {isExpanded && children}

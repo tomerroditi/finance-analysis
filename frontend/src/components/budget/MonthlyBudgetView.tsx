@@ -444,32 +444,27 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                     {totalItem.rule.name}
                   </span>
                 </button>
-                <div className="flex items-center gap-2 md:gap-4 shrink-0">
-                  {totalActions && (
-                    <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
-                      {totalActions}
-                    </div>
-                  )}
-                  <div className="font-bold font-mono text-sm md:text-base" dir="ltr">
-                    {formatCurrency(spentT)}{" "}
-                    <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
-                      / {formatCurrency(totalT)}
-                    </span>
-                  </div>
+                <div className="font-bold font-mono text-sm md:text-base shrink-0" dir="ltr">
+                  {formatCurrency(spentT)}{" "}
+                  <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+                    / {formatCurrency(totalT)}
+                  </span>
                 </div>
               </div>
 
-              {totalActions && (
-                <div className="md:hidden flex items-center gap-1 mt-2">
-                  {totalActions}
+              {/* Progress bar + actions on one line to save vertical space */}
+              <div className="flex items-center gap-2 mt-3">
+                <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full ${barColorT} transition-all duration-500 ease-out`}
+                    style={{ width: `${percentT}%` }}
+                  />
                 </div>
-              )}
-
-              <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden mt-3">
-                <div
-                  className={`h-2.5 rounded-full ${barColorT} transition-all duration-500 ease-out`}
-                  style={{ width: `${percentT}%` }}
-                />
+                {totalActions && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {totalActions}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2 mt-2">

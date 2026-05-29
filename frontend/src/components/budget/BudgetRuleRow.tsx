@@ -88,12 +88,6 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
             )}
           </div>
 
-          {actions && (
-            <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-1 shrink-0">
-              {actions}
-            </div>
-          )}
-
           <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap shrink-0" dir="ltr">
             {formatCurrency(spent)}{" "}
             <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
@@ -106,7 +100,7 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
           </span>
         </div>
 
-        {/* Line 2: progress bar + hint */}
+        {/* Line 2: progress bar + hint + actions (inline, no extra row) */}
         <div className="flex items-center gap-2 mt-2">
           <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
             <div
@@ -123,15 +117,11 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
               {hint}
             </span>
           )}
+          {actions && (
+            <div className="flex items-center gap-1 shrink-0">{actions}</div>
+          )}
         </div>
       </div>
-
-      {/* Actions row — mobile only */}
-      {actions && (
-        <div className="md:hidden flex items-center gap-1 px-3 pb-2 ps-5">
-          {actions}
-        </div>
-      )}
 
       {isExpanded && children}
     </div>
