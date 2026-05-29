@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Plot from "react-plotly.js";
 import { investmentsApi } from "../../services/api";
-import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, gradientFill } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
@@ -271,15 +271,12 @@ export function InvestmentAnalysisModal({
                         ),
                         type: "scatter",
                         mode: "lines",
-                        fill: "tozeroy",
-                        line: { color: "#3b82f6", width: 3 },
-                        fillcolor: "rgba(59, 130, 246, 0.1)",
+                        line: { color: "#3b82f6", width: 3, shape: "spline" },
+                        ...gradientFill("#3b82f6"),
                       },
                     ]}
                     layout={{
                       ...chartTheme,
-                      xaxis: { showgrid: false },
-                      yaxis: { ...chartTheme.yaxis, gridcolor: CHART_GRID_COLOR },
                     }}
                     style={{ width: "100%", height: "100%" }}
                     config={plotlyConfig()}
