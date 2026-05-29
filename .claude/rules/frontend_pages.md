@@ -41,7 +41,6 @@ When a page grows beyond ~500 lines, extract self-contained sections into `compo
 ```
 Dashboard.tsx (~1000 lines) delegates to:
   ├── components/dashboard/BudgetSection.tsx (~400 lines)
-  ├── components/dashboard/RecentTransactionsSection.tsx (~470 lines)
-  └── components/dashboard/DashboardInsightsPanel.tsx
+  └── components/dashboard/RecentTransactionsSection.tsx (~470 lines)
 ```
 The page file becomes an orchestrator that wires sections together with shared state and data.

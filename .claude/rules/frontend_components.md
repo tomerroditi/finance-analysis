@@ -15,7 +15,7 @@ Components contain **ALL UI implementation logic** for the React application. Th
 ```
 frontend/src/components/
 ├── common/              # Reusable generic UI primitives (Modal, MultiSelect, SelectDropdown, Skeleton, etc.)
-├── dashboard/           # Dashboard-specific sections (BudgetSection, RecentTransactionsSection, DashboardInsightsPanel)
+├── dashboard/           # Dashboard-specific sections (BudgetSection, RecentTransactionsSection)
 ├── transactions/        # Transaction page sub-components (FilterPanel, Pagination, BulkActionsBar, RuleBuilder, etc.)
 ├── budget/              # Budget page sub-components (MonthlyBudgetView, ProjectBudgetView, TransactionCollapsibleList)
 ├── investments/         # Investment page sub-components
