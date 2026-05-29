@@ -4,6 +4,7 @@ import { PenSquare } from "lucide-react";
 import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleRow } from "./BudgetRuleRow";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import { ProjectSpendChart } from "./ProjectSpendChart";
 import type { PendingRefund } from "../../services/api";
 import type { Transaction } from "../../types/transaction";
 
@@ -81,8 +82,28 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
     );
   }, [projectDetails, projectTotalRule]);
 
+  // Deduped union of every transaction belonging to the project, used to plot
+  // per-month spend regardless of how the project's rules are shaped.
+  const allTransactions = useMemo(() => {
+    const seen = new Set<string | number>();
+    const out: Transaction[] = [];
+    for (const rule of projectDetails.rules) {
+      for (const tx of rule.data) {
+        const key = tx.unique_id ?? tx.id;
+        if (key !== undefined) {
+          if (seen.has(key)) continue;
+          seen.add(key);
+        }
+        out.push(tx);
+      }
+    }
+    return out;
+  }, [projectDetails]);
+
   return (
     <div className="space-y-3">
+      <ProjectSpendChart transactions={allTransactions} />
+
       {projectDetails.rules.map((item) => {
         const isTotalRule = isAllTagsRule(item.rule);
         const subLabel = Array.isArray(item.rule.tags)

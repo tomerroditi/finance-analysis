@@ -374,6 +374,9 @@
     "addRule": "הוסף כלל",
     "remainingAmount": "נותרו {{amount}}",
     "overByAmount": "חריגה של {{amount}}",
+    "spendOverTime": "הוצאות לאורך זמן",
+    "spendOverTimeSubtitle": "הוצאה לכל חודש",
+    "spendOverTimeEmpty": "אין הוצאות שנרשמו עדיין",
     "projectsThisMonth": "פרויקטים החודש",
     "viewAllProjects": "הצג את כל הפרויקטים",
     "trend": {

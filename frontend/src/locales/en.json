@@ -374,6 +374,9 @@
     "addRule": "Add Rule",
     "remainingAmount": "{{amount}} remaining",
     "overByAmount": "{{amount}} over",
+    "spendOverTime": "Spend Over Time",
+    "spendOverTimeSubtitle": "Spent per month",
+    "spendOverTimeEmpty": "No spending recorded yet",
     "projectsThisMonth": "Projects This Month",
     "viewAllProjects": "View all projects",
     "trend": {
