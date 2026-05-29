@@ -1,3 +1,10 @@
+## v1.23.4 (2026-05-29)
+
+### Fix
+
+- **frontend**: i18n leftover strings + restrict service-field operators
+- repository-wide bug sweep across backend, scraper, and frontend
+
 ## v1.23.3 (2026-05-28)
 
 ### Fix

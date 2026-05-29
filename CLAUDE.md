@@ -104,7 +104,10 @@ flow with the Playwright MCP before marking the fix resolved, and add an e2e
 spec under `frontend/e2e/`. Type-checking and reasoning miss the bugs UI
 patches usually contain (focus traps, click-outside handlers, keyboard-induced
 reposition, query invalidation remounting). Full procedure in
-`.claude/rules/testing.md` → "Verifying UI patches with Playwright".
+`.claude/rules/testing.md` → "Verifying UI patches with Playwright" (includes
+how to run e2e via `with_server.py` and the Claude-Code-on-the-web Chromium
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` override needed when `npx playwright
+install` can't fetch a browser).
 
 ## Scraper Framework
 

@@ -186,6 +186,53 @@ invalidations remounting components mid-interaction).
    helpers in `frontend/e2e/helpers.ts`. Run it once locally
    (`cd frontend && npx playwright test e2e/<file>.spec.ts`).
 
+### Running e2e specs (start both servers + sandbox browser override)
+
+Specs need the **backend AND frontend dev servers** up. Don't start them
+by hand — use the orchestrator, which boots both, waits for readiness,
+runs your command, and tears them down:
+
+```bash
+# from repo root
+python .claude/scripts/with_server.py -- bash -c \
+  "cd frontend && npx playwright test <file>.spec.ts --reporter=line"
+```
+
+**Sandbox browser-version gotcha (Claude Code on the web):** this
+environment ships a Playwright Chromium build that lags the
+`@playwright/test` version in `package.json`, so a bare
+`npx playwright test` dies with *"Executable doesn't exist at
+/opt/pw-browsers/chromium_headless_shell-<NNNN>/..."* and **`npx
+playwright install` does not work here** (no network for the browser
+CDN). Point Playwright at the chromium that *is* installed — the config
+already forwards `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` into
+`launchOptions.executablePath`:
+
+```bash
+# discover the installed full-chrome binary (NOT headless_shell, which is absent)
+ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | tail -1
+
+python .claude/scripts/with_server.py -- bash -c \
+  "cd frontend && PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/opt/pw-browsers/chromium-<NNNN>/chrome-linux/chrome \
+   npx playwright test <file>.spec.ts --reporter=line"
+```
+
+CI and developer machines run `npx playwright install` and need none of
+this; the env var is harmless when unset. **Verified green is the only
+"verified"** — if the browser failed to launch, the spec did not run, no
+matter what the exit summary scrolls past.
+
+**Authoring gotchas that cost a debugging loop here:**
+- The **Auto Tagging "New Rule" / "Apply Rules" buttons live inside a
+  collapsed side panel** — click `getByRole("button", { name: /^Auto
+  Tagging$/ })` to open it *before* the buttons exist. See
+  `rule-editor-preview.spec.ts` for the pattern.
+- Helper is `navigateTo(page, path)` (not `gotoPage`); demo toggles are
+  `enableDemoMode` / `disableDemoMode` from `frontend/e2e/helpers.ts`.
+- Specs go **directly in `frontend/e2e/`**, not a `specs/` subdir.
+- The rule editor renders mobile + desktop layout variants at once;
+  filter option/button locators with `.filter({ visible: true })`.
+
 **Never** mark a UI patch resolved on the strength of a one-line code change
 plus `tsc -b`. The bug, by definition, was something static analysis missed.
 

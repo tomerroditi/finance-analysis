@@ -984,8 +984,18 @@ class OneZeroScraper(ApiScraper):
             client=self.client,
         )
 
+        # The GET_CUSTOMER query returns a singular `customer` object, but be
+        # tolerant of an API that returns a list of customers.
+        customer_data = result.get("customer")
+        if isinstance(customer_data, list):
+            customers = customer_data
+        elif customer_data:
+            customers = [customer_data]
+        else:
+            customers = []
+
         portfolios: list[dict] = []
-        for customer in result["customer"]:
+        for customer in customers:
             customer_portfolios = customer.get("portfolios") or []
             portfolios.extend(customer_portfolios)
 

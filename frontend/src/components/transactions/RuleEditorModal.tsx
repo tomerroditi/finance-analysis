@@ -11,6 +11,7 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -113,7 +114,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to create rule");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.createRuleFailed"));
         }
     });
 
@@ -128,14 +129,14 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to update rule");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.updateRuleFailed"));
         }
     });
 
     const handleSave = () => {
         setError(null);
         if (!category || !tag) {
-            setError("Category and tag are required");
+            setError(t("transactions.autoTagging.categoryTagRequired"));
             return;
         }
 
@@ -313,10 +314,6 @@ interface PreviewTransaction {
 
 function TransactionPreview({ matches, loading, count, showHeader = true }: { matches: PreviewTransaction[]; loading: boolean; count: number; showHeader?: boolean }) {
     const { t } = useTranslation();
-    const formatAmount = (amount: number) => {
-        const formatted = Math.abs(amount).toLocaleString("he-IL", { style: "currency", currency: "ILS" });
-        return amount < 0 ? `-${formatted}` : formatted;
-    };
 
     return (
         <div className="h-full flex flex-col bg-[var(--surface)]">
@@ -351,7 +348,7 @@ function TransactionPreview({ matches, loading, count, showHeader = true }: { ma
                                             {tx.date?.split("T")[0] || "—"}
                                         </span>
                                         <span className={`text-sm font-mono font-semibold whitespace-nowrap ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`} dir="ltr">
-                                            {formatAmount(tx.amount ?? 0)}
+                                            {formatCurrency(tx.amount ?? 0, 2)}
                                         </span>
                                     </div>
                                     <div className="text-sm break-words" title={tx.description}>
@@ -391,7 +388,7 @@ function TransactionPreview({ matches, loading, count, showHeader = true }: { ma
                                             {tx.description}
                                         </td>
                                         <td className={`px-4 py-2 text-end whitespace-nowrap font-mono ${(tx.amount ?? 0) < 0 ? "text-red-400" : "text-green-400"}`}>
-                                            <span dir="ltr">{formatAmount(tx.amount ?? 0)}</span>
+                                            <span dir="ltr">{formatCurrency(tx.amount ?? 0, 2)}</span>
                                         </td>
                                         <td className="px-4 py-2">
                                             {tx.category ? (
