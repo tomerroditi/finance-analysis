@@ -155,6 +155,11 @@ export const chartTheme: Partial<Plotly.Layout> = {
     namelength: -1,
   },
   hovermode: isTouchDevice ? "closest" : "x unified",
+  // On touch devices Plotly's default `dragmode: "zoom"` hijacks a single-finger
+  // gesture to draw a zoom box, so dragging over a chart zooms it instead of
+  // scrolling the page. Disabling drag lets the touch fall through to page
+  // scroll; tapping still shows the hover tooltip. Desktop keeps drag-to-zoom.
+  dragmode: isTouchDevice ? false : "zoom",
   legend: { orientation: "h", y: -0.18, x: 0.5, xanchor: "center", font: { size: 11 }, itemwidth: 30 },
   xaxis: {
     showspikes: false,
@@ -185,6 +190,8 @@ export function plotlyConfig(
     locale: i18n.language,
     locales: { he: heLocale },
     doubleClick: "reset+autosize",
+    // Keep pinch / wheel from zooming the chart instead of scrolling the page.
+    scrollZoom: false,
     ...extra,
   };
 }
