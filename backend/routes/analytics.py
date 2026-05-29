@@ -172,6 +172,25 @@ async def get_monthly_expenses(
     return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
 
 
+@router.get("/cash-flow-forecast")
+async def get_cash_flow_forecast(
+    db: Session = Depends(get_database),
+):
+    """Return the current-month cash-flow forecast.
+
+    Combines month-to-date actuals with trend-based projection to estimate
+    the month-end bank balance and the "safe to spend" figure.
+
+    Returns
+    -------
+    dict
+        Forecast metrics plus a ``daily`` trajectory for charting. See
+        ``AnalysisService.get_cash_flow_forecast``.
+    """
+    service = AnalysisService(db)
+    return service.get_cash_flow_forecast()
+
+
 @router.get("/net-worth-over-time")
 async def get_net_worth_over_time(
     db: Session = Depends(get_database),

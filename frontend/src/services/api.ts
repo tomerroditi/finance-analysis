@@ -398,7 +398,29 @@ export const analyticsApi = {
     }>("/analytics/monthly-expenses", {
       params: { exclude_pending_refunds: excludePendingRefunds, include_projects: includeProjects },
     }),
+  getCashFlowForecast: () =>
+    api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
 };
+
+export interface CashFlowForecast {
+  month: string;
+  days_in_month: number;
+  day_of_month: number;
+  days_remaining: number;
+  actual_income: number;
+  actual_expenses: number;
+  expected_income: number;
+  expected_expenses: number;
+  projected_net: number;
+  current_bank_balance: number;
+  projected_end_balance: number;
+  safe_to_spend: number;
+  safe_to_spend_daily: number;
+  avg_monthly_income: number;
+  avg_monthly_expenses: number;
+  committed_remaining: number;
+  daily: { date: string; actual_balance: number | null; projected_balance: number | null }[];
+}
 
 // Bank Balances API
 export interface BankBalance {

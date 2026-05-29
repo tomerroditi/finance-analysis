@@ -173,7 +173,21 @@
     "incomeBreakdown": "Income Breakdown",
     "expensesBreakdown": "Expenses Breakdown",
     "noIncomeSourceData": "No income source data available.",
-    "topCategory": "Top Category"
+    "topCategory": "Top Category",
+    "forecast": {
+      "title": "This Month",
+      "daysLeft": "{{count}} days left",
+      "safeToSpend": "Safe to spend",
+      "perDay": "{{amount}} / day",
+      "projectedEndBalance": "Projected end balance",
+      "fromBalance": "from {{amount}} now",
+      "monthProgress": "Month progress",
+      "actual": "Actual",
+      "projected": "Projected",
+      "expectedIncome": "Expected income",
+      "expectedExpenses": "Expected expenses",
+      "projectedNet": "Projected net"
+    }
   },
   "transactions": {
     "title": "Transactions",

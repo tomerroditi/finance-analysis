@@ -702,6 +702,154 @@ class AnalysisService:
 
         return result
 
+    def get_cash_flow_forecast(self) -> dict:
+        """Forecast the current month's cash flow from trend + month-to-date actuals.
+
+        Projects where the month will end by combining what has already
+        happened this month (income received, expenses spent) with a
+        trend-based estimate of the remaining days. The expense trend is the
+        rolling 3-month average (falling back to 6/12-month when sparse); the
+        income trend is the average of the last 3 complete months. The
+        projection never dips below money already spent.
+
+        This is the data behind the dashboard "This Month" hero — the
+        month-end balance projection and the "safe to spend" figure that
+        Israeli budgeting apps (RiseUp et al.) lead with.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``month`` – current month in ``YYYY-MM`` format.
+            - ``days_in_month`` / ``day_of_month`` / ``days_remaining`` – ints.
+            - ``actual_income`` / ``actual_expenses`` – month-to-date totals
+              (non-negative; expenses are the absolute value of outflows).
+            - ``expected_income`` / ``expected_expenses`` – projected
+              full-month totals.
+            - ``projected_net`` – ``expected_income - expected_expenses``.
+            - ``current_bank_balance`` – sum of tracked bank balances now.
+            - ``projected_end_balance`` – bank balance projected to month end.
+            - ``safe_to_spend`` – money left to spend this month before
+              exceeding expected income (non-negative).
+            - ``safe_to_spend_daily`` – ``safe_to_spend`` spread over the
+              remaining days.
+            - ``avg_monthly_income`` / ``avg_monthly_expenses`` – the trend
+              baselines used.
+            - ``committed_remaining`` – known upcoming recurring charges still
+              due this month (0 until recurring detection is wired in).
+            - ``daily`` – per-day list of ``{date, actual_balance,
+              projected_balance}`` for the trajectory chart (one is null
+              depending on whether the day is past or future).
+        """
+        today = pd.Timestamp.today().normalize()
+        month_str = today.strftime("%Y-%m")
+        month_start = today.replace(day=1)
+        days_in_month = int(today.days_in_month)
+        day_of_month = int(today.day)
+        days_remaining = days_in_month - day_of_month
+
+        # --- Trend baselines (complete months only) ---
+        monthly_exp = self.get_monthly_expenses(exclude_pending_refunds=True)
+        avg_monthly_expenses = monthly_exp.get("avg_3_months", 0.0) or 0.0
+        if avg_monthly_expenses <= 0:
+            avg_monthly_expenses = (
+                monthly_exp.get("avg_6_months", 0.0)
+                or monthly_exp.get("avg_12_months", 0.0)
+                or 0.0
+            )
+
+        ie_over_time = self.get_income_expenses_over_time()
+        complete_months = [m for m in ie_over_time if m["month"] < month_str]
+        recent = complete_months[-3:] if len(complete_months) >= 3 else complete_months
+        avg_monthly_income = (
+            sum(m["income"] for m in recent) / len(recent) if recent else 0.0
+        )
+
+        # --- Month-to-date actuals (non-CC cashflow) ---
+        df = self.repo.get_cashflow_transactions()
+        actual_income = 0.0
+        actual_expenses = 0.0
+        per_day_net: dict[int, float] = {}
+        if not df.empty:
+            df = df.copy()
+            df["date_parsed"] = pd.to_datetime(df["date"])
+            mtd = df[(df["date_parsed"] >= month_start) & (df["date_parsed"] <= today)]
+            if not mtd.empty:
+                actual_income, _, actual_expenses = self.get_income_investments_and_expenses(mtd)
+                per_day_net = (
+                    mtd.groupby(mtd["date_parsed"].dt.day)["amount"].sum().to_dict()
+                )
+
+        # --- Current bank balance ---
+        balances = self.bank_balance_service.get_all_balances()
+        current_bank_balance = float(sum(b["balance"] for b in balances)) if balances else 0.0
+
+        # --- Projection ---
+        trend_daily_expense = avg_monthly_expenses / days_in_month if days_in_month else 0.0
+        projected_remaining_expenses = max(0.0, trend_daily_expense * days_remaining)
+        expected_expenses = actual_expenses + projected_remaining_expenses
+        expected_income = max(actual_income, avg_monthly_income)
+        projected_remaining_income = max(0.0, expected_income - actual_income)
+        projected_net = expected_income - expected_expenses
+        projected_end_balance = (
+            current_bank_balance + projected_remaining_income - projected_remaining_expenses
+        )
+        safe_to_spend = max(0.0, expected_income - actual_expenses)
+        safe_to_spend_daily = (
+            safe_to_spend / days_remaining if days_remaining > 0 else safe_to_spend
+        )
+
+        # --- Daily trajectory for the chart ---
+        month_start_balance = current_bank_balance - (actual_income - actual_expenses)
+        remaining_daily_net = (
+            (projected_remaining_income - projected_remaining_expenses) / days_remaining
+            if days_remaining > 0
+            else 0.0
+        )
+        daily = []
+        cumulative = 0.0
+        last_actual_balance = month_start_balance
+        for d in range(1, days_in_month + 1):
+            date_str = month_start.replace(day=d).strftime("%Y-%m-%d")
+            if d <= day_of_month:
+                cumulative += float(per_day_net.get(d, 0.0))
+                bal = month_start_balance + cumulative
+                last_actual_balance = bal
+                daily.append({
+                    "date": date_str,
+                    "actual_balance": round(bal, 2),
+                    # anchor the projected line to today so the two segments join
+                    "projected_balance": round(bal, 2) if d == day_of_month else None,
+                })
+            else:
+                proj = last_actual_balance + remaining_daily_net * (d - day_of_month)
+                daily.append({
+                    "date": date_str,
+                    "actual_balance": None,
+                    "projected_balance": round(proj, 2),
+                })
+
+        return {
+            "month": month_str,
+            "days_in_month": days_in_month,
+            "day_of_month": day_of_month,
+            "days_remaining": days_remaining,
+            "actual_income": round(actual_income, 2),
+            "actual_expenses": round(actual_expenses, 2),
+            "expected_income": round(expected_income, 2),
+            "expected_expenses": round(expected_expenses, 2),
+            "projected_net": round(projected_net, 2),
+            "current_bank_balance": round(current_bank_balance, 2),
+            "projected_end_balance": round(projected_end_balance, 2),
+            "safe_to_spend": round(safe_to_spend, 2),
+            "safe_to_spend_daily": round(safe_to_spend_daily, 2),
+            "avg_monthly_income": round(avg_monthly_income, 2),
+            "avg_monthly_expenses": round(avg_monthly_expenses, 2),
+            "committed_remaining": 0.0,
+            "daily": daily,
+        }
+
     def get_monthly_expenses(
         self,
         exclude_pending_refunds: bool = True,

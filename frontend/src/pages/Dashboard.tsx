@@ -18,6 +18,7 @@ import {
 } from "../services/api";
 import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";
 import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactionsSection";
+import { CashFlowForecastSection } from "../components/dashboard/CashFlowForecastCard";
 import { SankeyChart } from "../components/SankeyChart";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
@@ -439,6 +440,9 @@ export function Dashboard() {
         portfolioAllocation={portfolioData?.allocation}
         isLoading={netWorthLoading}
       />
+
+      {/* Section 1.5: This Month — cash-flow forecast hero */}
+      <CashFlowForecastSection />
 
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">

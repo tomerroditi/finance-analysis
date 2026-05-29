@@ -173,7 +173,21 @@
     "incomeBreakdown": "פירוט הכנסות",
     "expensesBreakdown": "פירוט הוצאות",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
-    "topCategory": "קטגוריה מובילה"
+    "topCategory": "קטגוריה מובילה",
+    "forecast": {
+      "title": "החודש",
+      "daysLeft": "נותרו {{count}} ימים",
+      "safeToSpend": "זמין להוצאה",
+      "perDay": "{{amount}} ליום",
+      "projectedEndBalance": "יתרה צפויה בסוף החודש",
+      "fromBalance": "מתוך {{amount}} כעת",
+      "monthProgress": "התקדמות החודש",
+      "actual": "בפועל",
+      "projected": "תחזית",
+      "expectedIncome": "הכנסה צפויה",
+      "expectedExpenses": "הוצאה צפויה",
+      "projectedNet": "מאזן צפוי"
+    }
   },
   "transactions": {
     "title": "תנועות",
