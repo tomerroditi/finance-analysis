@@ -400,7 +400,37 @@ export const analyticsApi = {
     }),
   getCashFlowForecast: () =>
     api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
+  getRecurring: () => api.get<RecurringSummary>("/analytics/recurring"),
+  getInsights: () => api.get<Insight[]>("/analytics/insights"),
 };
+
+export interface RecurringItem {
+  label: string;
+  normalized: string;
+  amount: number;
+  last_amount: number;
+  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  period_days: number;
+  monthly_equivalent: number;
+  occurrences: number;
+  category: string | null;
+  first_date: string;
+  last_date: string;
+  next_expected_date: string;
+  status: "active" | "new" | "price_changed" | "ended";
+  price_change: number;
+}
+
+export interface RecurringSummary {
+  items: RecurringItem[];
+  total_monthly: number;
+}
+
+export interface Insight {
+  code: string;
+  severity: "positive" | "info" | "warning";
+  data: Record<string, string | number>;
+}
 
 export interface CashFlowForecast {
   month: string;

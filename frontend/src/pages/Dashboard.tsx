@@ -19,6 +19,8 @@ import {
 import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";
 import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactionsSection";
 import { CashFlowForecastSection } from "../components/dashboard/CashFlowForecastCard";
+import { InsightsStrip } from "../components/dashboard/InsightsStrip";
+import { RecurringSection } from "../components/dashboard/RecurringSection";
 import { SankeyChart } from "../components/SankeyChart";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
@@ -444,6 +446,9 @@ export function Dashboard() {
       {/* Section 1.5: This Month — cash-flow forecast hero */}
       <CashFlowForecastSection />
 
+      {/* Section 1.6: Insight cards */}
+      <InsightsStrip />
+
       {/* Section 2 & 3: Spending Gauge + Recent Transactions — side by side on large screens */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
         <BudgetSpendingGauge
@@ -455,6 +460,9 @@ export function Dashboard() {
           isLoading={transactionsLoading}
         />
       </div>
+
+      {/* Section 3.5: Subscriptions & recurring charges */}
+      <RecurringSection />
 
       {/* Section 4: Tabbed Insights */}
       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">

@@ -187,6 +187,35 @@
       "expectedIncome": "Expected income",
       "expectedExpenses": "Expected expenses",
       "projectedNet": "Projected net"
+    },
+    "insights": {
+      "title": "Insights",
+      "categorySpike": "You've spent {{percent}}% more on {{category}} than usual ({{amount}})",
+      "overspendPace": "On pace to overspend by {{amount}} this month",
+      "onTrack": "On track to save {{amount}} this month",
+      "newRecurring": "New recurring charge: {{label}} — {{amount}} {{cadence}}",
+      "priceIncrease": "{{label}} went up by {{delta}}",
+      "priceDecrease": "{{label}} went down by {{delta}}",
+      "largeTransaction": "Large charge this month: {{label}} ({{amount}})"
+    },
+    "recurring": {
+      "title": "Subscriptions & Recurring",
+      "totalMonthly": "Monthly total",
+      "perMonth": "{{amount}} / mo",
+      "next": "Next: {{date}}",
+      "empty": "No recurring charges detected yet",
+      "status": {
+        "active": "Active",
+        "new": "New",
+        "price_changed": "Price changed",
+        "ended": "Ended"
+      },
+      "cadence": {
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
+        "annual": "Annual"
+      }
     }
   },
   "transactions": {
