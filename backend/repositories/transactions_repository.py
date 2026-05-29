@@ -901,7 +901,7 @@ class TransactionsRepository:
             self.db.rollback()
             return False
 
-    def get_repo_by_source(self, source: str) -> ServiceRepository:
+    def get_repo_by_source(self, source: str) -> ServiceRepository | None:
         """Look up the sub-repository for a given source/service name.
 
         Parameters
@@ -912,18 +912,14 @@ class TransactionsRepository:
 
         Returns
         -------
-        ServiceRepository
-            The matching sub-repository instance.
-
-        Raises
-        ------
-        ValueError
-            If ``source`` is not a recognized key in the repo_map.
+        ServiceRepository or None
+            The matching sub-repository instance, or ``None`` if ``source`` is
+            not a recognized key in the repo_map. Callers that require a valid
+            source must check for ``None`` (see ``get_table``); callers that
+            tolerate unknown entries (e.g. ``exclude_services`` filtering) rely
+            on the ``None`` return to skip them.
         """
-        try:
-            return self.repo_map.get(source)
-        except Exception:
-            raise ValueError(f"Invalid source: '{source}'")
+        return self.repo_map.get(source)
 
     def bulk_update_tagging(
         self, transactions: list[dict], category: Optional[str], tag: Optional[str]
@@ -942,6 +938,8 @@ class TransactionsRepository:
         """
         for tx in transactions:
             repo = self.get_repo_by_source(tx["source"])
+            if repo is None:
+                raise ValueError(f"Invalid source: '{tx['source']}'")
             repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:

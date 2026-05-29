@@ -922,6 +922,57 @@ class TestBudgetServiceValidation:
         assert valid is True
         assert msg == ""
 
+    def test_validate_create_project_total_rule_no_id(self, db_session):
+        """Verify creating a project total rule (id_=None, no month/year) doesn't crash.
+
+        Regression: the project branch previously looked up the existing rule
+        row via ``budget_rules[ID] == None`` (always empty) and then indexed
+        ``rule[TAGS]``/``rule[AMOUNT]`` on the empty result, raising KeyError.
+        """
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name=TOTAL_BUDGET,
+            category="Renovation",
+            tags=[ALL_TAGS],
+            amount=5000.0,
+            year=None,
+            month=None,
+            id_=None,
+        )
+        assert valid is True
+        assert msg == ""
+
+    def test_validate_create_project_tag_rule_no_id(self, db_session):
+        """Verify creating a project tag sub-rule (id_=None) validates against the project total."""
+        service = BudgetService(db_session)
+
+        # An existing project total rule (month/year NULL).
+        service.add_rule(
+            name=TOTAL_BUDGET,
+            amount=5000.0,
+            category="Renovation",
+            tags=[ALL_TAGS],
+            month=None,
+            year=None,
+        )
+
+        rules = service.get_all_rules()
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=rules,
+            name="Renovation Materials",
+            category="Renovation",
+            tags=["Materials"],
+            amount=1000.0,
+            year=None,
+            month=None,
+            id_=None,
+        )
+        assert valid is True
+        assert msg == ""
+
 
 class TestMonthlyBudgetServiceExtended:
     """Extended tests for MonthlyBudgetService."""

@@ -716,7 +716,10 @@ class TaggingRulesService:
         ):
             cc_month_data = cc_data[cc_data["month"] == bank_month]
             for cc_tag in cc_tags:
-                provider, account_name, account_number = cc_tag.split(" - ")
+                parts = cc_tag.rsplit(" - ", 2)
+                if len(parts) != 3:
+                    continue
+                provider, account_name, account_number = parts
                 cc_tag_month_data_amount = cc_month_data[
                     (cc_month_data[TransactionsTableFields.PROVIDER.value] == provider)
                     & (
@@ -724,9 +727,9 @@ class TaggingRulesService:
                         == account_name
                     )
                     & (
-                        cc_month_data[
-                            TransactionsTableFields.ACCOUNT_NUMBER.value
-                        ].str.endswith(account_number)
+                        cc_month_data[TransactionsTableFields.ACCOUNT_NUMBER.value]
+                        .astype("string")
+                        .str.endswith(account_number, na=False)
                     )
                 ][TransactionsTableFields.AMOUNT.value].sum()
 
@@ -741,10 +744,6 @@ class TaggingRulesService:
                         <= cc_tag_month_data_amount + 0.01
                     )
                 ]
-                if cc_tag_month_data_amount != 0:
-                    print(
-                        f"month: {bank_month}, tag: {cc_tag}, amount: {cc_tag_month_data_amount}"
-                    )
                 if len(bank_tag_month_data_amount) == 1:
                     unique_id = bank_tag_month_data_amount.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value

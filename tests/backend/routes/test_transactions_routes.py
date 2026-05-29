@@ -206,17 +206,20 @@ class TestTransactionsRoutes:
         assert response.status_code == 404
 
     def test_get_latest_date(self, test_client, seed_base_transactions):
-        """GET /api/transactions/latest-date returns latest transaction date.
+        """GET /api/transactions/latest-date returns the latest transaction date.
 
-        Note: The route is defined after the /{transaction_id} path param
-        route, so FastAPI attempts to parse 'latest-date' as an int first.
-        This results in a 422 validation error. This test documents the
-        current behaviour; the route ordering would need to be fixed for
-        this endpoint to be reachable.
+        The literal ``/latest-date`` route is registered before the
+        ``/{transaction_id}`` path-param route so it is not shadowed (FastAPI
+        matches in registration order with ``redirect_slashes=False``).
         """
         response = test_client.get("/api/transactions/latest-date")
-        # Currently returns 422 because /{transaction_id:int} matches first
-        assert response.status_code == 422
+        assert response.status_code == 200
+        body = response.json()
+        assert "latest_date" in body
+        # get_latest_data_date returns the *minimum* of each table's latest
+        # date (so all sources have data up to at least this point); for the
+        # seeded data that is 2024-03-10.
+        assert body["latest_date"].startswith("2024-03-10")
 
 
 class TestTransactionsRoutesErrors:

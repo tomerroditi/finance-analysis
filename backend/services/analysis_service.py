@@ -397,7 +397,7 @@ class AnalysisService:
         df = self.repo.get_itemized_transactions()
 
         if df.empty:
-            return []
+            return {"expenses": [], "refunds": []}
 
         exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY, *IncomeCategories._value2member_map_.keys()]
         expense_mask = ~df["category"].isin(exclude_categories)

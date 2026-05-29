@@ -59,10 +59,14 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
 
     try:
         src_conn = sqlite3.connect(str(src))
-        dst_conn = sqlite3.connect(str(dest))
-        src_conn.backup(dst_conn)
-        dst_conn.close()
-        src_conn.close()
+        try:
+            dst_conn = sqlite3.connect(str(dest))
+            try:
+                src_conn.backup(dst_conn)
+            finally:
+                dst_conn.close()
+        finally:
+            src_conn.close()
         try:
             os.chmod(dest, 0o600)
         except OSError:
@@ -169,10 +173,14 @@ def restore_backup(filename: str) -> None:
 
     # Restore: copy backup over the active database
     src_conn = sqlite3.connect(str(backup_path))
-    dst_conn = sqlite3.connect(str(db_path))
-    src_conn.backup(dst_conn)
-    dst_conn.close()
-    src_conn.close()
+    try:
+        dst_conn = sqlite3.connect(str(db_path))
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
 
     try:
         os.chmod(db_path, 0o600)

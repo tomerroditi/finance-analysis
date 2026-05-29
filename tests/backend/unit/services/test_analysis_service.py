@@ -281,12 +281,16 @@ class TestAnalysisServiceCategories:
         assert "Liabilities" not in all_categories
 
     def test_get_expenses_by_category_empty(self, db_session):
-        """Verify empty result for no data."""
+        """Verify empty data returns the canonical dict shape, not a bare list.
+
+        Consumers (route + frontend) access ``.expenses``/``.refunds`` on the
+        result, so an empty DB must still return that structure rather than
+        ``[]`` (which broke the dashboard on a fresh install).
+        """
         service = AnalysisService(db_session)
         result = service.get_expenses_by_category()
 
-        # When empty, service returns []
-        assert result == []
+        assert result == {"expenses": [], "refunds": []}
 
 
 class TestAnalysisServiceIncomeExpenses:
