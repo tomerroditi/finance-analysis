@@ -21,7 +21,7 @@ const FIELDS = [
     { value: "amount", labelKey: "amount", type: "number" },
     { value: "provider", labelKey: "provider", type: "text" },
     { value: "account_name", labelKey: "accountName", type: "text" },
-    { value: "service", labelKey: "service", type: "text" },
+    { value: "service", labelKey: "service", type: "service" },
 ];
 
 const OPERATORS: Record<string, { value: string; labelKey: string }[]> = {
@@ -39,6 +39,12 @@ const OPERATORS: Record<string, { value: string; labelKey: string }[]> = {
         { value: "lte", labelKey: "lessOrEqual" },
         { value: "between", labelKey: "between" },
     ],
+    // The backend only acts on the `service` field when the operator is
+    // `equals` (see tagging_rules_service.py `_collect_services`), so don't
+    // offer operators the rule engine silently ignores.
+    service: [
+        { value: "equals", labelKey: "equals" },
+    ],
 };
 
 export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilderProps) {
@@ -46,9 +52,14 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
     const isGroup = value.type === "AND" || value.type === "OR";
 
     const handleFieldChange = (field: string) => {
-        // Reset operator and value when field type changes
+        // Reset operator and value when field type changes. Number and service
+        // fields default to `equals` (service only supports equals); text
+        // fields default to `contains`.
         const fieldDef = FIELDS.find(f => f.value === field);
-        const defaultOp = fieldDef?.type === "number" ? "equals" : "contains";
+        const defaultOp =
+            fieldDef?.type === "number" || fieldDef?.type === "service"
+                ? "equals"
+                : "contains";
         onChange({ ...value, field, operator: defaultOp as Operator, value: "" });
     };
 

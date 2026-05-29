@@ -114,7 +114,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to create rule");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.createRuleFailed"));
         }
     });
 
@@ -129,14 +129,14 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to update rule");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.updateRuleFailed"));
         }
     });
 
     const handleSave = () => {
         setError(null);
         if (!category || !tag) {
-            setError("Category and tag are required");
+            setError(t("transactions.autoTagging.categoryTagRequired"));
             return;
         }
 

@@ -39,3 +39,30 @@ describe("evalCondition text operators", () => {
     expect(evalCondition(cond("equals", "netflix"), tx("Netflix"))).toBe(false);
   });
 });
+
+describe("evalCondition service field", () => {
+  function serviceNode(operator: string, value: string): ConditionNode {
+    return {
+      type: "CONDITION",
+      field: "service",
+      operator: operator as ConditionNode["operator"],
+      value,
+    };
+  }
+
+  function txSource(source: string): Transaction {
+    return { source } as Transaction;
+  }
+
+  // The backend only honors the `service` field with the `equals` operator
+  // (tagging_rules_service.py `_collect_services`). The UI restricts the
+  // service field to `equals`, and the eval mirrors that.
+  it("matches on equals against the transaction source", () => {
+    expect(evalCondition(serviceNode("equals", "credit card"), txSource("credit_card_transactions"))).toBe(true);
+  });
+
+  it("ignores operators other than equals", () => {
+    expect(evalCondition(serviceNode("contains", "credit"), txSource("credit_card_transactions"))).toBe(false);
+    expect(evalCondition(serviceNode("starts_with", "credit"), txSource("credit_card_transactions"))).toBe(false);
+  });
+});
