@@ -34,6 +34,14 @@ class RecurringService:
     ]
     # A median interval is accepted as a cadence when within this relative band.
     _CADENCE_TOLERANCE = 0.35
+    # Gaps between occurrences must be regular: std/median below this. Filters
+    # out frequent but irregular shopping (groceries, cafes).
+    _MAX_INTERVAL_CV = 0.5
+    # A subscription charges roughly the same amount each time. At least
+    # ``_MIN_AMOUNT_CONSISTENCY`` of the charges must fall within
+    # ``_AMOUNT_BAND`` of the median amount (robust to one legitimate price step).
+    _AMOUNT_BAND = 0.20
+    _MIN_AMOUNT_CONSISTENCY = 0.6
     # Relative amount change that counts as a price change.
     _PRICE_CHANGE_THRESHOLD = 0.10
 
@@ -150,13 +158,32 @@ class RecurringService:
 
             diffs = dates.diff().dropna().dt.days
             median_interval = float(diffs.median())
+            if median_interval <= 0:
+                continue
+
+            # Regular cadence: the gaps themselves must be consistent, not just
+            # their median. A merchant visited at random intervals (groceries)
+            # has a high spread and is rejected here.
+            interval_cv = float(diffs.std(ddof=0)) / median_interval
+            if interval_cv > self._MAX_INTERVAL_CV:
+                continue
+
             cadence = self._match_cadence(median_interval)
             if cadence is None:
                 continue
             cadence_name, period_days = cadence
 
+            # Stable price: most charges must cluster near the median amount.
+            # Variable-amount spend (a basket of groceries, one-off vendors with
+            # wildly different invoices) is rejected here.
             amounts = group["amount"].abs()
             amount = float(amounts.median())
+            if amount <= 0:
+                continue
+            within_band = float((amounts.sub(amount).abs() <= amount * self._AMOUNT_BAND).mean())
+            if within_band < self._MIN_AMOUNT_CONSISTENCY:
+                continue
+
             last_amount = float(abs(group.iloc[-1]["amount"]))
             first_date = dates.iloc[0]
             last_date = dates.iloc[-1]

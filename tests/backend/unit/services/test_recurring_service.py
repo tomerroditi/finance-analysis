@@ -81,6 +81,28 @@ class TestRecurringDetection:
         assert item["status"] == "price_changed"
         assert item["price_change"] > 0
 
+    def test_ignores_variable_amount_merchant(self, db_session):
+        """A merchant billed monthly but with wildly varying amounts (a grocery
+        store, not a subscription) is rejected by the amount-stability gate."""
+        amounts = [-50.0, -400.0, -80.0, -350.0, -120.0, -300.0]
+        for n, amt in enumerate(amounts):
+            _add_charge(db_session, "MEGA MARKET", amt, _months_ago(n), category="Food")
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+    def test_ignores_irregular_cadence_merchant(self, db_session):
+        """A merchant with a stable amount but irregular gaps (whose median
+        still lands near a cadence) is rejected by the interval-regularity gate."""
+        base = pd.Timestamp.today().normalize() - pd.DateOffset(months=8)
+        # Gaps of 5, 55, 5, 55 days → median 30 (looks monthly) but very spread.
+        for off in [0, 5, 60, 65, 120]:
+            d = (base + pd.Timedelta(days=off)).strftime("%Y-%m-%d")
+            _add_charge(db_session, "CORNER SHOP", -100.0, d, category="Food")
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
     def test_excludes_non_expense_categories(self, db_session):
         """Recurring salary/income-style rows are never treated as subscriptions."""
         for n in range(5):
