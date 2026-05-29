@@ -81,43 +81,37 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
         <div className="px-3 pb-3 space-y-2 animate-in fade-in duration-200">
           {visibleAlerts.map((alert: BudgetAlert) => {
             const isCritical = alert.severity === "critical";
-            const barColor = isCritical ? "bg-rose-500" : "bg-amber-500";
             const pctColor = isCritical ? "text-rose-400" : "text-amber-400";
-            const percent = Math.min(alert.percentage * 100, 100);
+            const dotColor = isCritical ? "bg-rose-500" : "bg-amber-500";
             return (
               <div
                 key={alert.rule_id}
-                className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] p-3"
+                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] px-3 py-2"
               >
-                <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
                   <span
                     className="font-semibold text-sm text-[var(--text-default)] truncate"
                     dir="auto"
                   >
                     {alert.name || alert.category}
                   </span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`font-bold font-mono text-xs ${pctColor}`} dir="ltr">
-                      {(alert.percentage * 100).toFixed(0)}%
-                    </span>
-                    <button
-                      onClick={() => dismiss(alert.rule_id)}
-                      aria-label={t("budgetAlerts.dismiss")}
-                      className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
                 </div>
-                <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden mb-1.5">
-                  <div
-                    className={`h-2 rounded-full ${barColor} transition-all duration-500 ease-out`}
-                    style={{ width: `${percent}%` }}
-                  />
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-[var(--text-muted)]" dir="ltr">
+                    {formatCurrency(alert.spent)} / {formatCurrency(alert.amount)}
+                  </span>
+                  <span className={`font-bold font-mono text-sm ${pctColor}`} dir="ltr">
+                    {(alert.percentage * 100).toFixed(0)}%
+                  </span>
+                  <button
+                    onClick={() => dismiss(alert.rule_id)}
+                    aria-label={t("budgetAlerts.dismiss")}
+                    className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-                <span className="text-xs text-[var(--text-muted)]" dir="ltr">
-                  {formatCurrency(alert.spent)} / {formatCurrency(alert.amount)}
-                </span>
               </div>
             );
           })}
