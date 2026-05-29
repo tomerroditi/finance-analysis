@@ -1,5 +1,5 @@
 import Plot from "react-plotly.js";
-import { chartTheme, plotlyConfig } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, CHART_COLORS, CHART_SURFACE_COLOR } from "../utils/plotlyLocale";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -40,26 +40,11 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
           pad: 28,
           thickness: 20,
           line: {
-            color: "black",
-            width: 0.5,
+            color: CHART_SURFACE_COLOR,
+            width: 1,
           },
           label: data.node_labels,
-          color: data.node_labels.map((_, i) => {
-            // Simple color cycling
-            const colors = [
-              "#3b82f6",
-              "#10b981",
-              "#f59e0b",
-              "#ef4444",
-              "#8b5cf6",
-              "#ec4899",
-              "#6366f1",
-              "#14b8a6",
-              "#f97316",
-              "#06b6d4",
-            ];
-            return colors[i % colors.length];
-          }),
+          color: data.node_labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
         },
         link: {
           source: data.links.map((l) => l.source),

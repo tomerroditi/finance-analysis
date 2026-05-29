@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
 import Plot from "react-plotly.js";
-import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../utils/plotlyLocale";
 import {
   Plus,
   Landmark,
@@ -565,17 +565,9 @@ export function Liabilities() {
                       type: "scatter" as const,
                       mode: "lines" as const,
                       line: {
-                        color: [
-                          "#3b82f6",
-                          "#10b981",
-                          "#f59e0b",
-                          "#ef4444",
-                          "#8b5cf6",
-                          "#06b6d4",
-                          "#ec4899",
-                        ][i % 7],
+                        color: CHART_COLORS[i % CHART_COLORS.length],
                         width: 2,
-                        shape: "hv" as const,
+                        shape: "spline" as const,
                       },
                     }),
                   ),
@@ -587,15 +579,13 @@ export function Liabilities() {
                           name: t("liabilities.totalDebt"),
                           type: "scatter" as const,
                           mode: "lines" as const,
-                          line: { color: "#ffffff", width: 3, shape: "hv" as const },
+                          line: { color: "#ffffff", width: 3, shape: "spline" as const },
                         },
                       ]
                     : []),
                 ]}
                 layout={{
                   ...chartTheme,
-                  xaxis: { showgrid: false },
-                  yaxis: { ...chartTheme.yaxis, gridcolor: CHART_GRID_COLOR },
                   showlegend: true,
                   legend: { orientation: "h", y: -0.12, font: { size: 10 } },
                 }}
@@ -619,16 +609,13 @@ export function Liabilities() {
                     ),
                     labels: activeLiabilities.map((l: Liability) => l.name),
                     type: "pie",
-                    hole: 0.5,
-                    marker: {
-                      colors: [
-                        "#3b82f6",
-                        "#10b981",
-                        "#f59e0b",
-                        "#ef4444",
-                        "#8b5cf6",
-                      ],
-                    },
+                    hole: 0.62,
+                    sort: true,
+                    direction: "clockwise",
+                    textinfo: "percent",
+                    textposition: "inside",
+                    insidetextorientation: "horizontal",
+                    marker: donutMarker(),
                   },
                 ]}
                 layout={{
@@ -636,6 +623,15 @@ export function Liabilities() {
                   margin: { t: 0, b: 0, l: 0, r: 0 },
                   showlegend: true,
                   legend: { orientation: "h" },
+                  annotations: [
+                    {
+                      text: formatCurrency(totalDebt),
+                      showarrow: false,
+                      font: { size: 16, color: "#f8fafc", family: "Inter, sans-serif" },
+                      x: 0.5,
+                      y: 0.5,
+                    },
+                  ],
                 }}
                 style={{ width: "100%", height: "100%" }}
                 config={plotlyConfig()}

@@ -1,6 +1,6 @@
 import Plot from "react-plotly.js";
 import { useTranslation } from "react-i18next";
-import { plotlyConfig, chartTheme, isTouchDevice } from "../../utils/plotlyLocale";
+import { plotlyConfig, chartTheme, isTouchDevice, barMarker } from "../../utils/plotlyLocale";
 
 interface DataPoint {
   age: number;
@@ -28,35 +28,35 @@ export function RetirementIncomeChart({ data }: Props) {
       y: data.map((d) => d.salary_savings),
       name: t("earlyRetirement.income.salarySavings"),
       type: "bar" as const,
-      marker: { color: "#06b6d4" },
+      marker: barMarker("#06b6d4"),
     },
     {
       x: ages,
       y: data.map((d) => d.portfolio_withdrawal),
       name: t("earlyRetirement.income.portfolioWithdrawal"),
       type: "bar" as const,
-      marker: { color: "#3b82f6" },
+      marker: barMarker("#3b82f6"),
     },
     {
       x: ages,
       y: data.map((d) => d.pension),
       name: t("earlyRetirement.income.pension"),
       type: "bar" as const,
-      marker: { color: "#10b981" },
+      marker: barMarker("#10b981"),
     },
     {
       x: ages,
       y: data.map((d) => d.bituach_leumi),
       name: t("earlyRetirement.income.bituachLeumi"),
       type: "bar" as const,
-      marker: { color: "#a855f7" },
+      marker: barMarker("#a855f7"),
     },
     {
       x: ages,
       y: data.map((d) => d.passive_income),
       name: t("earlyRetirement.income.passiveIncome"),
       type: "bar" as const,
-      marker: { color: "#f59e0b" },
+      marker: barMarker("#f59e0b"),
     },
     {
       x: ages,
