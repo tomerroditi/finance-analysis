@@ -110,9 +110,7 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
             />
             {hint && (
               <span
-                className={`absolute inset-y-0 end-2 flex items-center text-[10px] font-medium whitespace-nowrap ${
-                  over ? "text-white" : "text-[var(--text-default)]/80"
-                }`}
+                className="absolute inset-y-0 end-2 flex items-center text-[10px] font-medium whitespace-nowrap text-white"
                 dir="ltr"
               >
                 {hint}
