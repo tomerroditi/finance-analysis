@@ -361,6 +361,28 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               </>
             ) : undefined;
 
+          // "Other Expenses" is a synthetic catch-all rule that can't be
+          // edited or deleted — show disabled buttons so the row keeps the
+          // same trailing width (and the bars stay aligned with real rules).
+          const disabledActions = (
+            <>
+              <button
+                disabled
+                title={t("budget.editRule")}
+                className="p-1.5 text-[var(--text-muted)] opacity-40 cursor-not-allowed"
+              >
+                <PenSquare size={16} />
+              </button>
+              <button
+                disabled
+                title={t("budget.deleteRule")}
+                className="p-1.5 text-[var(--text-muted)] opacity-40 cursor-not-allowed"
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          );
+
           const renderRow = (item: BudgetAnalysisItem) => (
             <BudgetRuleRow
               key={item.rule.id}
@@ -373,7 +395,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               dimmed={item.rule.name === "Other Expenses"}
               isExpanded={expandedRuleId === String(item.rule.id)}
               onToggleExpand={() => toggleExpand(String(item.rule.id))}
-              actions={buildActions(item)}
+              actions={
+                item.rule.name === "Other Expenses"
+                  ? disabledActions
+                  : buildActions(item)
+              }
             >
               <TransactionCollapsibleList
                 transactions={item.data}

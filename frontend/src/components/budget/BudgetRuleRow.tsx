@@ -88,19 +88,30 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
             )}
           </div>
 
-          <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap shrink-0" dir="ltr">
-            {formatCurrency(spent)}{" "}
-            <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
-              / {formatCurrency(total)}
+          <div className="flex flex-col items-end shrink-0">
+            <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap" dir="ltr">
+              {formatCurrency(spent)}{" "}
+              <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
+                / {formatCurrency(total)}
+              </span>
             </span>
-          </span>
+            {hint && (
+              <span
+                className={`text-[10px] md:text-xs whitespace-nowrap ${
+                  over ? "text-rose-400" : "text-[var(--text-muted)]"
+                }`}
+              >
+                {hint}
+              </span>
+            )}
+          </div>
 
           <span className="text-[var(--text-muted)] shrink-0">
             {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </span>
         </div>
 
-        {/* Line 2: progress bar + hint + actions (inline, no extra row) */}
+        {/* Line 2: progress bar (equal length across rows) + actions */}
         <div className="flex items-center gap-2 mt-2">
           <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
             <div
@@ -108,15 +119,6 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
               style={{ width: `${percent}%` }}
             />
           </div>
-          {hint && (
-            <span
-              className={`text-[10px] md:text-xs whitespace-nowrap shrink-0 ${
-                over ? "text-rose-400" : "text-[var(--text-muted)]"
-              }`}
-            >
-              {hint}
-            </span>
-          )}
           {actions && (
             <div className="flex items-center gap-1 shrink-0">{actions}</div>
           )}
