@@ -1,3 +1,14 @@
+## v1.25.0 (2026-05-29)
+
+### Feat
+
+- **budget**: single spent gauge + prominent collapsed pending refunds
+- **budget**: collapsible refunds, month-transactions view, title-click collapse, project drilldown
+- **budget**: full-width tabs + collapse rule cards into the Total Budget card
+- **budget**: auto-fill future months, drop Replicate button, restyle month header
+- **budget**: add per-month spend chart to the project budget tab
+- **budget**: redesign budget page for scannability, insights, and mobile
+
 ## v1.24.0 (2026-05-29)
 
 ### Feat

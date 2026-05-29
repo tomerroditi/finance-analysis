@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { RefreshCw, Link2, X, Lock } from "lucide-react";
+import { RefreshCw, Link2, X, Lock, ChevronDown, ChevronUp } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -26,6 +26,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const { items, total_expected } = pendingRefunds;
   const [linkingRefund, setLinkingRefund] = useState<PendingRefund | null>(null);
   const [mobileActionsId, setMobileActionsId] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
 
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
@@ -68,25 +69,41 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-amber-500/30 overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 flex items-center justify-between bg-amber-500/5 border-b border-amber-500/20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+      {/* Header — click to collapse/expand */}
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        aria-expanded={!collapsed}
+        className="w-full px-4 md:px-5 py-4 flex items-center justify-between gap-3 bg-amber-500/5 border-b border-amber-500/20 text-start"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
             <RefreshCw className="w-5 h-5 text-amber-400" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="font-semibold text-white">{t("budget.pendingRefunds")}</h3>
-            <p className="text-sm text-amber-400">
-              {t("budget.expectedBack", { amount: formatCurrency(total_expected) })}
+            <p className="text-xs text-[var(--text-muted)]">
+              {t("budget.pendingCount", { count: items.length })}
             </p>
           </div>
         </div>
-        <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-sm font-medium">
-          {t("budget.pendingCount", { count: items.length })}
-        </span>
-      </div>
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          <div className="text-end">
+            <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              {t("budget.expectedBack")}
+            </p>
+            <p className="text-base md:text-lg font-bold text-amber-400" dir="ltr">
+              {formatCurrency(total_expected)}
+            </p>
+          </div>
+          <span className="text-amber-400/70">
+            {collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+          </span>
+        </div>
+      </button>
 
       {/* Items list */}
+      {!collapsed && (
+      <>
       <div className="divide-y divide-[var(--surface-light)]">
         {items.map((item) => (
           <div key={item.id}>
@@ -207,6 +224,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
       <div className="px-5 py-3 bg-amber-500/5 border-t border-amber-500/20 text-xs text-[var(--text-muted)]">
         {t("budget.pendingRefundsFooter")}
       </div>
+      </>
+      )}
 
       {linkingRefund && (
         <LinkRefundModal
