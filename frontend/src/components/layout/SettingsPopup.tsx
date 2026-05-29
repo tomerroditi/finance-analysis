@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { backupApi } from "../../services/api";
 import { AboutPanel } from "../settings/AboutPanel";
@@ -30,6 +31,12 @@ export function SettingsPopup({
   const { t, i18n } = useTranslation();
   const popupRef = useRef<HTMLDivElement>(null);
   const { isDemoMode, toggleDemoMode } = useDemoMode();
+  const {
+    enabled: alertsEnabled,
+    threshold: alertsThreshold,
+    setEnabled: setAlertsEnabled,
+    setThreshold: setAlertsThreshold,
+  } = useBudgetAlertSettings();
   const confirm = useConfirm();
   const notify = useNotify();
   const [backups, setBackups] = useState<BackupEntry[]>([]);
@@ -156,6 +163,60 @@ export function SettingsPopup({
               />
             </div>
           </div>
+        </div>
+
+        {/* Budget Alerts */}
+        <div className="space-y-3">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setAlertsEnabled(!alertsEnabled)}
+          >
+            <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider cursor-pointer">
+              {t("settings.budgetAlertsEnabled")}
+            </label>
+            <div
+              className={`w-9 h-5 rounded-full relative transition-colors ${
+                alertsEnabled ? "bg-[var(--primary)]" : "bg-[var(--surface-light)]"
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
+                  alertsEnabled
+                    ? "inset-inline-start-[calc(100%-18px)]"
+                    : "inset-inline-start-0.5"
+                }`}
+              />
+            </div>
+          </div>
+          {alertsEnabled && (
+            <>
+              <label className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-light)] p-3">
+                <span className="text-sm text-[var(--text-default)]">
+                  {t("settings.budgetAlertsThreshold")}
+                </span>
+                <span className="flex items-center gap-1" dir="ltr">
+                  <input
+                    type="number"
+                    min={50}
+                    max={100}
+                    step={5}
+                    value={Math.round(alertsThreshold * 100)}
+                    onChange={(e) => {
+                      const pct = Number(e.target.value);
+                      if (Number.isFinite(pct)) {
+                        setAlertsThreshold(Math.min(100, Math.max(0, pct)) / 100);
+                      }
+                    }}
+                    className="w-16 bg-[var(--surface)] border border-[var(--surface-light)] rounded-md px-2 py-1 text-white text-sm outline-none text-end"
+                  />
+                  <span className="text-sm text-[var(--text-muted)]">%</span>
+                </span>
+              </label>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                {t("settings.budgetAlertsThresholdHelp")}
+              </p>
+            </>
+          )}
         </div>
 
         {/* Database Backup */}
