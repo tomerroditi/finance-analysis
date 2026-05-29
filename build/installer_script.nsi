@@ -14,7 +14,7 @@
 ; of truth for "what counts as Finance Analysis state on this machine".
 
 !define APP_NAME "Finance Analysis"
-!define APP_VERSION "1.23.3"
+!define APP_VERSION "1.23.4"
 !define APP_PUBLISHER "Tomer Roditi"
 !define APP_URL "https://github.com/tomerroditi/finance-analysis"
 !define OUTPUT_EXE "FinanceAppInstaller.exe"
