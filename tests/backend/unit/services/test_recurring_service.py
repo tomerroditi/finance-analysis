@@ -103,6 +103,42 @@ class TestRecurringDetection:
 
         assert RecurringService(db_session).get_recurring()["items"] == []
 
+    def test_same_day_refund_nets_the_charge(self, db_session):
+        """A same-day partial refund reduces the detected charge magnitude."""
+        for n in range(5):
+            _add_charge(db_session, "NETFLIX.COM", -50.0, _months_ago(n))
+        # Latest month also gets a same-day, same-merchant +15 refund → nets to -35.
+        _add_charge(db_session, "NETFLIX.COM", 15.0, _months_ago(0))
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring()["items"][0]
+        assert item["last_amount"] == 35.0  # 50 charge − 15 same-day refund
+
+    def test_fully_refunded_day_drops_occurrence(self, db_session):
+        """A fully-refunded charge day is not counted as a recurring hit."""
+        for n in range(3):
+            _add_charge(db_session, "GYM CLUB", -30.0, _months_ago(n))
+        # Fully refund the middle month on the same day, same merchant → nets to 0.
+        _add_charge(db_session, "GYM CLUB", 30.0, _months_ago(1))
+        db_session.commit()
+
+        # Only 2 net-charge days remain → below the 3-occurrence threshold.
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+    def test_excludes_project_budget_categories(self, db_session):
+        """Transactions in a project-budget category are not treated as recurring."""
+        from backend.models.budget import BudgetRule
+
+        db_session.add(
+            BudgetRule(name="Home Renovation", category="Home Renovation", amount=50000)
+        )
+        for n in range(4):
+            _add_charge(db_session, "PAINTER", -2500.0, _months_ago(n), category="Home Renovation")
+        db_session.commit()
+
+        labels = [i["label"] for i in RecurringService(db_session).get_recurring()["items"]]
+        assert "PAINTER" not in labels
+
     def test_excludes_non_expense_categories(self, db_session):
         """Recurring salary/income-style rows are never treated as subscriptions."""
         for n in range(5):

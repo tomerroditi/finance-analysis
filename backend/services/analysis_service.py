@@ -730,14 +730,15 @@ class AnalysisService:
             - ``projected_net`` – ``expected_income - expected_expenses``.
             - ``current_bank_balance`` – sum of tracked bank balances now.
             - ``projected_end_balance`` – bank balance projected to month end.
-            - ``safe_to_spend`` – money left to spend this month before
-              exceeding expected income (non-negative).
+            - ``safe_to_spend`` – money left to spend freely this month:
+              ``expected_income - actual_expenses - committed_remaining``
+              (non-negative).
             - ``safe_to_spend_daily`` – ``safe_to_spend`` spread over the
               remaining days.
             - ``avg_monthly_income`` / ``avg_monthly_expenses`` – the trend
               baselines used.
-            - ``committed_remaining`` – known upcoming recurring charges still
-              due this month (0 until recurring detection is wired in).
+            - ``committed_remaining`` – detected recurring charges whose next
+              due date falls in the remainder of this month.
             - ``daily`` – per-day list of ``{date, actual_balance,
               projected_balance}`` for the trajectory chart (one is null
               depending on whether the day is past or future).
@@ -795,7 +796,24 @@ class AnalysisService:
         projected_end_balance = (
             current_bank_balance + projected_remaining_income - projected_remaining_expenses
         )
-        safe_to_spend = max(0.0, expected_income - actual_expenses)
+
+        # --- Known upcoming recurring charges still due this month ---
+        # Detected subscriptions/bills whose next expected charge falls in the
+        # remainder of the month. Subtracted from "safe to spend" so the figure
+        # reflects money still earmarked for committed bills, not just income
+        # minus what's been spent so far.
+        from backend.services.recurring_service import RecurringService
+
+        month_end = today + pd.offsets.MonthEnd(0)
+        committed_remaining = 0.0
+        for item in RecurringService(self.db).get_recurring()["items"]:
+            if item["status"] == "ended":
+                continue
+            next_due = pd.Timestamp(item["next_expected_date"])
+            if today < next_due <= month_end:
+                committed_remaining += item["amount"]
+
+        safe_to_spend = max(0.0, expected_income - actual_expenses - committed_remaining)
         safe_to_spend_daily = (
             safe_to_spend / days_remaining if days_remaining > 0 else safe_to_spend
         )
@@ -846,7 +864,7 @@ class AnalysisService:
             "safe_to_spend_daily": round(safe_to_spend_daily, 2),
             "avg_monthly_income": round(avg_monthly_income, 2),
             "avg_monthly_expenses": round(avg_monthly_expenses, 2),
-            "committed_remaining": 0.0,
+            "committed_remaining": round(committed_remaining, 2),
             "daily": daily,
         }
 

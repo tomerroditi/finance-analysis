@@ -136,8 +136,13 @@ class RecurringService:
             LIABILITIES_CATEGORY,
             *IncomeCategories._value2member_map_.keys(),
         ]
-        df = df[~df["category"].isin(exclude)]
-        df = df[df["amount"] < 0].copy()
+        # Time-boxed project budgets (renovation, wedding…) are one-off arcs,
+        # not ongoing commitments — keep them out of "recurring".
+        from backend.services.budget_service import ProjectBudgetService
+
+        exclude += ProjectBudgetService(self.db).get_all_projects_names()
+
+        df = df[~df["category"].isin(exclude)].copy()
         if df.empty:
             return empty
 
@@ -151,10 +156,18 @@ class RecurringService:
         items: list[dict] = []
 
         for norm, group in df.groupby("norm"):
-            group = group.sort_values("date_parsed")
-            dates = group["date_parsed"].drop_duplicates().reset_index(drop=True)
-            if len(dates) < 3:
+            # Net same-day charges and refunds: sum signed amounts per day, then
+            # keep only net-outflow days as charge occurrences. A same-day (or
+            # same-statement-day) refund shrinks the charge; a fully-refunded day
+            # drops out entirely instead of masquerading as a recurring hit.
+            daily_net = group.groupby("date_parsed")["amount"].sum().sort_index()
+            charges = daily_net[daily_net < 0]
+            if len(charges) < 3:
                 continue
+
+            dates = charges.index.to_series().reset_index(drop=True)
+            # Net charge magnitudes (positive), aligned to date order.
+            amounts = pd.Series(-charges.to_numpy())
 
             diffs = dates.diff().dropna().dt.days
             median_interval = float(diffs.median())
@@ -173,10 +186,9 @@ class RecurringService:
                 continue
             cadence_name, period_days = cadence
 
-            # Stable price: most charges must cluster near the median amount.
+            # Stable price: most charges must cluster near the median net amount.
             # Variable-amount spend (a basket of groceries, one-off vendors with
             # wildly different invoices) is rejected here.
-            amounts = group["amount"].abs()
             amount = float(amounts.median())
             if amount <= 0:
                 continue
@@ -184,7 +196,7 @@ class RecurringService:
             if within_band < self._MIN_AMOUNT_CONSISTENCY:
                 continue
 
-            last_amount = float(abs(group.iloc[-1]["amount"]))
+            last_amount = float(amounts.iloc[-1])
             first_date = dates.iloc[0]
             last_date = dates.iloc[-1]
             next_expected = last_date + pd.Timedelta(days=period_days)
@@ -224,7 +236,7 @@ class RecurringService:
                 "cadence": cadence_name,
                 "period_days": period_days,
                 "monthly_equivalent": round(monthly_equivalent, 2),
-                "occurrences": int(len(group)),
+                "occurrences": int(len(charges)),
                 "category": category,
                 "first_date": first_date.strftime("%Y-%m-%d"),
                 "last_date": last_date.strftime("%Y-%m-%d"),
