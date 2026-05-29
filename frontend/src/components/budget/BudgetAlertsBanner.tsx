@@ -8,6 +8,7 @@ import {
   type BudgetAlertsResponse,
 } from "../../services/api";
 import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
+import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 interface BudgetAlertsBannerProps {
@@ -27,15 +28,18 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
 }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
+  const { enabled, threshold } = useBudgetAlertSettings();
   const { isDismissed, dismiss, dismissAll } = useBudgetAlertDismissals(
     year,
     month,
   );
 
   const { data } = useQuery<BudgetAlertsResponse>({
-    queryKey: ["budgetAlerts", year, month],
-    queryFn: () => budgetApi.getMonthAlerts(year, month).then((res) => res.data),
+    queryKey: ["budgetAlerts", year, month, threshold],
+    queryFn: () =>
+      budgetApi.getMonthAlerts(year, month, threshold).then((res) => res.data),
     placeholderData: keepPreviousData,
+    enabled,
   });
 
   const visibleAlerts = useMemo(
@@ -46,7 +50,7 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
     [data?.alerts, isDismissed],
   );
 
-  if (visibleAlerts.length === 0) return null;
+  if (!enabled || visibleAlerts.length === 0) return null;
 
   const hasCritical = visibleAlerts.some((a) => a.severity === "critical");
   const accent = hasCritical
