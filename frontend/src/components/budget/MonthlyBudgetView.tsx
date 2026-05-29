@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { PenSquare, Trash2 } from "lucide-react";
+import { PenSquare, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi, type PendingRefund, type RefundLink } from "../../services/api";
+import { formatCurrency } from "../../utils/numberFormatting";
 import { Skeleton } from "../common/Skeleton";
 import { EmptyState } from "../common/EmptyState";
 import { DemoModeConfirmPopover } from "../common/DemoModeConfirmPopover";
-import { BudgetProgressBar } from "../BudgetProgressBar";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import type { Transaction } from "../../types/transaction";
@@ -38,6 +38,7 @@ interface BudgetAnalysisItem {
 interface ProjectSpendingItem {
   category: string;
   spent: number;
+  transactions: Transaction[];
 }
 
 interface MonthlyBudgetViewProps {
@@ -56,6 +57,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [rulesCollapsed, setRulesCollapsed] = useState(false);
+  const [showTotalTransactions, setShowTotalTransactions] = useState(false);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
@@ -401,22 +403,101 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             return <div className="space-y-3">{childItems.map(renderRow)}</div>;
           }
 
-          // Total Budget is the container card: collapsing it hides the
-          // per-rule breakdown; each rule row still expands its own
-          // transactions independently.
+          // Total Budget is the container card. Clicking its title/header
+          // collapses or expands the per-rule breakdown; a separate "view
+          // month transactions" toggle reveals every transaction for the
+          // month. Each rule row still expands its own transactions too.
+          const spentT = Math.abs(totalItem.current_amount);
+          const totalT = totalItem.rule.amount;
+          const percentT =
+            totalT > 0
+              ? Math.min((spentT / totalT) * 100, 100)
+              : spentT > 0
+                ? 100
+                : 0;
+          const overT = spentT > totalT && totalT > 0;
+          const nearT = !overT && totalT > 0 && spentT > totalT * 0.9;
+          const barColorT = overT
+            ? "bg-rose-500"
+            : nearT
+              ? "bg-amber-500"
+              : "bg-emerald-500";
+          const totalActions = buildActions(totalItem);
+
           return (
-            <BudgetProgressBar
-              label={totalItem.rule.name}
-              current={totalItem.current_amount}
-              total={totalItem.rule.amount}
-              isExpanded={!rulesCollapsed}
-              onToggleExpand={() => setRulesCollapsed((v) => !v)}
-              expandLabel={t("budget.showBudgets")}
-              collapseLabel={t("budget.hideBudgets")}
-              actions={buildActions(totalItem)}
-            >
-              <div className="space-y-3 mt-3">{childItems.map(renderRow)}</div>
-            </BudgetProgressBar>
+            <div className="w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm p-3 md:p-4 group">
+              <div className="flex flex-wrap justify-between items-center gap-2">
+                <button
+                  onClick={() => setRulesCollapsed((v) => !v)}
+                  aria-expanded={!rulesCollapsed}
+                  className="flex items-center gap-2 md:gap-3 min-w-0 text-start"
+                >
+                  <span className="text-[var(--text-muted)] shrink-0">
+                    {rulesCollapsed ? (
+                      <ChevronDown size={20} />
+                    ) : (
+                      <ChevronUp size={20} />
+                    )}
+                  </span>
+                  <span className="font-semibold text-[var(--text-default)] truncate">
+                    {totalItem.rule.name}
+                  </span>
+                </button>
+                <div className="flex items-center gap-2 md:gap-4 shrink-0">
+                  {totalActions && (
+                    <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity items-center gap-2">
+                      {totalActions}
+                    </div>
+                  )}
+                  <div className="font-bold font-mono text-sm md:text-base" dir="ltr">
+                    {formatCurrency(spentT)}{" "}
+                    <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+                      / {formatCurrency(totalT)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {totalActions && (
+                <div className="md:hidden flex items-center gap-1 mt-2">
+                  {totalActions}
+                </div>
+              )}
+
+              <div className="w-full bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden mt-3">
+                <div
+                  className={`h-2.5 rounded-full ${barColorT} transition-all duration-500 ease-out`}
+                  style={{ width: `${percentT}%` }}
+                />
+              </div>
+
+              <button
+                onClick={() => setShowTotalTransactions((v) => !v)}
+                className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] mt-2 transition-colors"
+              >
+                {showTotalTransactions
+                  ? t("budget.hideTransactions")
+                  : t("budget.viewMonthTransactions")}
+              </button>
+
+              {showTotalTransactions && (
+                <TransactionCollapsibleList
+                  transactions={totalItem.data}
+                  isOpen
+                  showActions
+                  onTransactionUpdated={invalidateBudget}
+                  pendingRefundsMap={pendingRefundsMap}
+                  refundLinksMap={refundLinksMap}
+                  showSplitParentsFilter
+                  includeSplitParents={includeSplitParents}
+                  onIncludeSplitParentsChange={setIncludeSplitParents}
+                />
+              )}
+
+              {!rulesCollapsed && (
+                <div className="space-y-3 mt-3">{childItems.map(renderRow)}</div>
+              )}
+            </div>
           );
         })()}
 
@@ -428,6 +509,10 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         <ProjectsThisMonthSummary
           projects={project_spending.projects as ProjectSpendingItem[]}
           onViewAll={onViewProjects}
+          expandedRuleId={expandedRuleId}
+          toggleExpand={toggleExpand}
+          pendingRefundsMap={pendingRefundsMap}
+          onTransactionUpdated={invalidateBudget}
         />
       )}
 
