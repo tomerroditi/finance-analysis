@@ -475,13 +475,23 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                 </div>
               </div>
 
-              {/* Progress bar + actions on one line to save vertical space */}
+              {/* Progress bar (with remaining/over written inside) + actions */}
               <div className="flex items-center gap-2 mt-3">
-                <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2.5 overflow-hidden">
+                <div className="relative flex-1 bg-[var(--surface-light)] rounded-full h-5 overflow-hidden">
                   <div
-                    className={`h-2.5 rounded-full ${barColorT} transition-all duration-500 ease-out`}
+                    className={`absolute inset-y-0 start-0 rounded-full ${barColorT} transition-all duration-500 ease-out`}
                     style={{ width: `${percentT}%` }}
                   />
+                  {totalHint && (
+                    <span
+                      className={`absolute inset-y-0 end-2 flex items-center text-[10px] font-medium whitespace-nowrap ${
+                        overT ? "text-white" : "text-[var(--text-default)]/80"
+                      }`}
+                      dir="ltr"
+                    >
+                      {totalHint}
+                    </span>
+                  )}
                 </div>
                 {totalActions && (
                   <div className="flex items-center gap-1 shrink-0">
@@ -490,25 +500,14 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-2 mt-2">
-                <button
-                  onClick={() => setShowTotalTransactions((v) => !v)}
-                  className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
-                >
-                  {showTotalTransactions
-                    ? t("budget.hideTransactions")
-                    : t("budget.viewMonthTransactions")}
-                </button>
-                {totalHint && (
-                  <span
-                    className={`text-xs whitespace-nowrap shrink-0 ${
-                      overT ? "text-rose-400" : "text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {totalHint}
-                  </span>
-                )}
-              </div>
+              <button
+                onClick={() => setShowTotalTransactions((v) => !v)}
+                className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors mt-2"
+              >
+                {showTotalTransactions
+                  ? t("budget.hideTransactions")
+                  : t("budget.viewMonthTransactions")}
+              </button>
 
               {showTotalTransactions && (
                 <TransactionCollapsibleList

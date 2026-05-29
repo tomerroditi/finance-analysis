@@ -94,28 +94,30 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
               / {formatCurrency(total)}
             </span>
           </span>
-          {hint && (
-            <span
-              className={`text-[10px] md:text-xs whitespace-nowrap shrink-0 ${
-                over ? "text-rose-400" : "text-[var(--text-muted)]"
-              }`}
-            >
-              {hint}
-            </span>
-          )}
 
           <span className="text-[var(--text-muted)] shrink-0">
             {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </span>
         </div>
 
-        {/* Line 2: progress bar (equal length across rows) + actions */}
+        {/* Line 2: progress bar (equal length) with the remaining/over amount
+            written inside, + actions */}
         <div className="flex items-center gap-2 mt-2">
-          <div className="flex-1 bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+          <div className="relative flex-1 bg-[var(--surface-light)] rounded-full h-5 overflow-hidden">
             <div
-              className={`h-2 rounded-full ${barColor} transition-all duration-500 ease-out`}
+              className={`absolute inset-y-0 start-0 rounded-full ${barColor} transition-all duration-500 ease-out`}
               style={{ width: `${percent}%` }}
             />
+            {hint && (
+              <span
+                className={`absolute inset-y-0 end-2 flex items-center text-[10px] font-medium whitespace-nowrap ${
+                  over ? "text-white" : "text-[var(--text-default)]/80"
+                }`}
+                dir="ltr"
+              >
+                {hint}
+              </span>
+            )}
           </div>
           {actions && (
             <div className="flex items-center gap-1 shrink-0">{actions}</div>
