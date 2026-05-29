@@ -594,8 +594,11 @@ class MonthlyBudgetService(BudgetService):
         copied_from = None
         today = date.today()
 
-        # Auto-fill empty months only when viewing the current calendar month
-        if year == today.year and month == today.month:
+        # Auto-fill empty months from the latest prior month with rules, for the
+        # current month or any future month being viewed. Past months are left
+        # untouched so historical budgets are never rewritten. This replaces the
+        # old manual "Replicate previous month" action.
+        if (year, month) >= (today.year, today.month):
             budget_rules = self.get_all_rules()
             current_rules = self.get_month_rules(year, month, budget_rules)
             if current_rules.empty:

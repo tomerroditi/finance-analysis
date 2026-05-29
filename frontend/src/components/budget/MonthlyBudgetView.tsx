@@ -145,11 +145,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     onSuccess: invalidateBudget,
   });
 
-  const copyMutation = useMutation({
-    mutationFn: () => budgetApi.copyRules(year, month),
-    onSuccess: invalidateBudget,
-  });
-
   const handlePreviousMonth = () => {
     if (month === 1) {
       setMonth(12);
@@ -181,15 +176,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     }
     setEditingRule(null);
     setIsRuleModalOpen(false);
-  };
-
-  const handleReplicate = async () => {
-    const ok = await confirm({
-      title: t("budget.replicatePreviousMonth"),
-      message: t("budget.confirmCopyRules"),
-      confirmLabel: t("common.confirm"),
-    });
-    if (ok) copyMutation.mutate();
   };
 
   const openAddModal = () => {
@@ -277,11 +263,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       <MonthHeader
         monthLabel={monthLabel}
         isCurrentMonth={isCurrentMonth}
-        replicatePending={copyMutation.isPending}
         onPrev={handlePreviousMonth}
         onNext={handleNextMonth}
         onToday={handleCurrentMonth}
-        onReplicate={handleReplicate}
         onAddRule={openAddModal}
       />
 
