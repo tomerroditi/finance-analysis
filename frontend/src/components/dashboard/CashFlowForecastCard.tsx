@@ -6,7 +6,7 @@ import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { formatCurrency } from "../../utils/numberFormatting";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, gradientFill, CHART_COLORS } from "../../utils/plotlyLocale";
 
 /**
  * "This Month" cash-flow forecast hero.
@@ -123,9 +123,8 @@ export function CashFlowForecastSection() {
                   name: t("dashboard.forecast.actual"),
                   type: "scatter",
                   mode: "lines",
-                  line: { color: "#3b82f6", width: 2.5 },
-                  fill: "tozeroy",
-                  fillcolor: "rgba(59,130,246,0.12)",
+                  line: { color: CHART_COLORS[0], width: 3, shape: "spline" },
+                  ...gradientFill(CHART_COLORS[0]),
                 },
                 {
                   x: projectedDays.map((d) => d.date),
@@ -133,7 +132,7 @@ export function CashFlowForecastSection() {
                   name: t("dashboard.forecast.projected"),
                   type: "scatter",
                   mode: "lines",
-                  line: { color: netPositive ? "#10b981" : "#f43f5e", width: 2, dash: "dash" },
+                  line: { color: netPositive ? "#10b981" : "#f43f5e", width: 2, dash: "dash", shape: "spline" },
                 },
               ]}
               layout={{
@@ -141,8 +140,8 @@ export function CashFlowForecastSection() {
                 autosize: true,
                 showlegend: false,
                 margin: { l: 50, r: 12, t: 8, b: 24 },
-                xaxis: { ...chartTheme.xaxis, type: "date", showgrid: false, tickformat: "%d" },
-                yaxis: { ...chartTheme.yaxis, automargin: true, zeroline: true, zerolinecolor: "#475569" },
+                xaxis: { ...chartTheme.xaxis, type: "date", tickformat: "%d" },
+                yaxis: { ...chartTheme.yaxis, automargin: true },
               }}
               style={{ width: "100%", height: "100%" }}
               config={plotlyConfig()}
