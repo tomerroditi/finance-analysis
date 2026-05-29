@@ -30,7 +30,7 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
-import { chartTheme, plotlyConfig, isTouchDevice } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, isTouchDevice, barMarker, CHART_COLORS } from "../utils/plotlyLocale";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 
@@ -338,27 +338,24 @@ export function Dashboard() {
           y: netWorthData.map((d) => d.bank_balance),
           name: t("dashboard.bankBalance"),
           type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#f59e0b", width: 2 },
-          marker: { size: 4, color: "#f59e0b" },
+          mode: "lines",
+          line: { color: "#f59e0b", width: 2.5, shape: "spline" },
         },
         {
           x: netWorthData.map((d) => d.month),
           y: netWorthData.map((d) => d.investment_value),
           name: t("dashboard.investmentValue"),
           type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#6366f1", width: 2 },
-          marker: { size: 4, color: "#6366f1" },
+          mode: "lines",
+          line: { color: "#6366f1", width: 2.5, shape: "spline" },
         },
         {
           x: netWorthData.map((d) => d.month),
           y: netWorthData.map((d) => d.net_worth),
           name: t("dashboard.netWorth"),
           type: "scatter",
-          mode: "lines+markers",
-          line: { color: "#ef4444", width: 3 },
-          marker: { size: 5, color: "#ef4444" },
+          mode: "lines",
+          line: { color: "#10b981", width: 3, shape: "spline" },
         },
       ];
     }
@@ -372,20 +369,19 @@ export function Dashboard() {
         y: netWorthDeltas.map((d) => d[config.deltaKey]),
         name: t("dashboard.monthlyChange"),
         type: "bar",
-        marker: {
-          color: netWorthDeltas.map((d) =>
+        marker: barMarker(
+          netWorthDeltas.map((d) =>
             d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444",
           ),
-        },
+        ),
       },
       {
         x: netWorthDeltas.map((d) => d.month),
         y: netWorthDeltas.map((d) => d[config.dataKey]),
         name: config.label,
         type: "scatter",
-        mode: "lines+markers",
-        line: { color: config.color, width: 3 },
-        marker: { size: 8, color: config.color },
+        mode: "lines",
+        line: { color: config.color, width: 3, shape: "spline" },
         yaxis: "y2",
       },
     ];
@@ -585,9 +581,8 @@ export function Dashboard() {
                                 return acc;
                               }, []),
                               type: "scatter" as const,
-                              mode: "lines+markers" as const,
-                              line: { color: colors[i % colors.length], width: 2 },
-                              marker: { size: 5, color: colors[i % colors.length] },
+                              mode: "lines" as const,
+                              line: { color: colors[i % colors.length], width: 2, shape: "spline" as const },
                               name: tag,
                               stackgroup: "debt",
                             }))}
@@ -801,7 +796,7 @@ export function Dashboard() {
                         name: t("dashboard.income"),
                         type: "bar",
                         orientation: "h",
-                        marker: { color: "#059669" },
+                        marker: barMarker("#10b981"),
                       },
                       {
                         y: incomeOutcome?.map((d: { month: string }) => d.month) || [],
@@ -809,11 +804,11 @@ export function Dashboard() {
                         name: t("dashboard.expenses"),
                         type: "bar",
                         orientation: "h",
-                        marker: {
-                          color: incomeOutcome?.map((d: { expenses: number }) =>
+                        marker: barMarker(
+                          incomeOutcome?.map((d: { expenses: number }) =>
                             d.expenses >= 0 ? "#f43f5e" : "#fda4af"
                           ) || "#f43f5e",
-                        },
+                        ),
                       },
                     ]}
                     layout={{
@@ -844,10 +839,7 @@ export function Dashboard() {
                         incomeBySourceData.flatMap((d) => Object.keys(d.sources)),
                       ),
                     );
-                    const colors = [
-                      "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6",
-                      "#06b6d4", "#ec4899", "#14b8a6", "#f97316",
-                    ];
+                    const colors = CHART_COLORS;
                     const maxStack = Math.max(...incomeBySourceData.map((d) => Object.values(d.sources).reduce((s, v) => s + v, 0)));
                     return (
                       <Plot
@@ -859,7 +851,7 @@ export function Dashboard() {
                           name: source,
                           type: "bar" as const,
                           orientation: "h" as const,
-                          marker: { color: colors[i % colors.length], line: { width: 0 } },
+                          marker: barMarker(colors[i % colors.length]),
                           hovertemplate: "%{data.name}: %{x:,.0f}<extra></extra>",
                         }))}
                         layout={{
@@ -919,7 +911,7 @@ export function Dashboard() {
                           name: cat,
                           type: "bar" as const,
                           orientation: "h" as const,
-                          marker: { color: colors[i % colors.length], line: { width: 0 } },
+                          marker: barMarker(colors[i % colors.length]),
                           hovertemplate: "%{data.name}: %{x:,.0f}<extra></extra>",
                         }))}
                         layout={{

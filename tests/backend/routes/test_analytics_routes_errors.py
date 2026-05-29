@@ -81,15 +81,16 @@ class TestAnalyticsRoutesErrors:
                 test_client.get("/api/analytics/monthly-expenses")
 
     def test_get_expenses_by_category_empty_returns_empty(self, test_client):
-        """Verify by-category endpoint returns empty list with no data.
+        """Verify by-category endpoint returns the canonical dict shape with no data.
 
-        When the database has no transactions, the service returns an
-        empty list rather than the usual dict structure.
+        On an empty DB the endpoint must still return
+        ``{"expenses": [], "refunds": []}`` so the frontend can safely read
+        ``.expenses``/``.refunds`` (previously it returned a bare ``[]``).
         """
         response = test_client.get("/api/analytics/by-category")
         assert response.status_code == 200
         data = response.json()
-        assert data == []
+        assert data == {"expenses": [], "refunds": []}
 
     def test_get_net_balance_over_time_empty(self, test_client):
         """Verify net-balance-over-time returns empty list with no data."""

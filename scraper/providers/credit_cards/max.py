@@ -282,9 +282,9 @@ def _map_transaction(raw: dict) -> Transaction:
         ),
         date=txn_date_str,
         processed_date=processed_date_str,
-        original_amount=-raw.get("originalAmount", 0),
+        original_amount=-float(raw.get("originalAmount", 0) or 0),
         original_currency=raw.get("originalCurrency", SHEKEL_CURRENCY),
-        charged_amount=-float(raw.get("actualPaymentAmount", 0)),
+        charged_amount=-float(raw.get("actualPaymentAmount", 0) or 0),
         charged_currency=_get_charged_currency(raw.get("paymentCurrency")),
         description=raw.get("merchantName", "").strip(),
         memo=_get_memo(

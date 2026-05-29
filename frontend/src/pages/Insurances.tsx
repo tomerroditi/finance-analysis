@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Plot from "react-plotly.js";
-import { chartTheme, plotlyConfig, CHART_GRID_COLOR } from "../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, barMarker, donutMarker } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { EmptyState } from "../components/common/EmptyState";
@@ -605,7 +605,7 @@ export function Insurances() {
                 x: months.map((m) => m + "-01"),
                 y: monthlyValues,
                 name: t("insurance.chartMonthly"),
-                marker: { color: "#10b981", opacity: 0.7 },
+                marker: barMarker("#10b981", { opacity: 0.85 }),
               },
               {
                 type: "scatter",
@@ -613,7 +613,7 @@ export function Insurances() {
                 y: cumulativeValues,
                 name: t("insurance.chartCumulative"),
                 yaxis: "y2",
-                line: { color: "#3b82f6", width: 2 },
+                line: { color: "#3b82f6", width: 2.5, shape: "spline" },
                 mode: "lines",
               },
             ]}
@@ -621,19 +621,21 @@ export function Insurances() {
               ...chartTheme,
               height: 280,
               margin: { t: 20, b: 40, l: 50, r: 50 },
-              xaxis: { color: "#94a3b8", gridcolor: CHART_GRID_COLOR, tickfont: { size: 10 } },
+              xaxis: { ...chartTheme.xaxis, tickfont: { size: 10, color: "#64748b" } },
               yaxis: {
-                color: "#94a3b8",
-                gridcolor: CHART_GRID_COLOR,
-                tickfont: { size: 10 },
+                ...chartTheme.yaxis,
+                tickfont: { size: 10, color: "#64748b" },
                 title: { text: t("insurance.chartMonthly"), font: { size: 10, color: "#94a3b8" } },
               },
               yaxis2: {
                 color: "#94a3b8",
                 overlaying: "y",
                 side: "right",
-                gridcolor: "transparent",
-                tickfont: { size: 10 },
+                showgrid: false,
+                zeroline: false,
+                showline: false,
+                ticks: "",
+                tickfont: { size: 10, color: "#64748b" },
                 title: { text: t("insurance.chartCumulative"), font: { size: 10, color: "#94a3b8" } },
               },
               legend: { font: { color: "#94a3b8", size: 10 }, x: 0, y: 1.15, orientation: "h" },
@@ -656,8 +658,10 @@ export function Insurances() {
                   type: "pie",
                   values: trackSums,
                   labels: trackNames,
-                  hole: 0.5,
-                  marker: { colors: ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"] },
+                  hole: 0.62,
+                  sort: true,
+                  direction: "clockwise",
+                  marker: donutMarker(),
                   textinfo: "label+percent",
                   textfont: { color: "#f8fafc", size: 10 },
                   textposition: "outside",
@@ -673,7 +677,7 @@ export function Insurances() {
                   {
                     text: fmt(totalBalance),
                     showarrow: false,
-                    font: { size: 16, color: "#f8fafc", family: "system-ui" },
+                    font: { size: 16, color: "#f8fafc", family: "Inter, sans-serif" },
                     x: 0.5,
                     y: 0.5,
                   },

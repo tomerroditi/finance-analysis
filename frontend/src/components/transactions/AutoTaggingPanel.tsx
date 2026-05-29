@@ -58,12 +58,12 @@ export function AutoTaggingPanel() {
         mutationFn: () => taggingApi.applyRules(),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: ["transactions"] });
-            setSuccess(`Applied rules! ${res.data.tagged_count} tagged.`);
+            setSuccess(t("transactions.autoTagging.appliedRules", { count: res.data.tagged_count }));
             setTimeout(() => setSuccess(null), 3000);
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to apply rules");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.applyRulesFailed"));
         }
     });
 
@@ -71,12 +71,12 @@ export function AutoTaggingPanel() {
         mutationFn: ({ id, overwrite }: { id: number, overwrite: boolean }) => taggingApi.applyRule(id, overwrite),
         onSuccess: (res) => {
             queryClient.invalidateQueries({ queryKey: ["transactions"] });
-            setSuccess(`Applied rule! ${res.data.tagged_count} tagged.`);
+            setSuccess(t("transactions.autoTagging.appliedRule", { count: res.data.tagged_count }));
             setTimeout(() => setSuccess(null), 3000);
         },
         onError: (err: unknown) => {
             const axiosErr = err as { response?: { data?: { detail?: string } } };
-            setError(axiosErr.response?.data?.detail || "Failed to apply rule");
+            setError(axiosErr.response?.data?.detail || t("transactions.autoTagging.applyRuleFailed"));
         }
     });
 
@@ -101,7 +101,7 @@ export function AutoTaggingPanel() {
     };
 
     const handleModalSaved = () => {
-        setSuccess("Rule saved successfully");
+        setSuccess(t("transactions.autoTagging.ruleSaved"));
         setTimeout(() => setSuccess(null), 3000);
     };
 
@@ -121,7 +121,7 @@ export function AutoTaggingPanel() {
                             <button
                                 onClick={toggleAutoTaggingPanel}
                                 className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
-                                title="Collapse panel"
+                                title={t("transactions.autoTagging.collapsePanel")}
                             >
                                 {isRtl ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                             </button>
@@ -189,7 +189,7 @@ export function AutoTaggingPanel() {
                                                     <button
                                                         onClick={() => applySingleMutation.mutate({ id: rule.id, overwrite: false })}
                                                         className="p-2 hover:bg-emerald-500/10 text-emerald-400 rounded"
-                                                        title="Apply Rule"
+                                                        title={t("transactions.autoTagging.applyRuleTitle")}
                                                     >
                                                         <Play size={16} />
                                                     </button>
@@ -228,7 +228,7 @@ export function AutoTaggingPanel() {
                     <button
                         onClick={toggleAutoTaggingPanel}
                         className="w-12 h-full flex flex-col items-center justify-center gap-3 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl hover:border-[var(--primary)]/30 transition-colors cursor-pointer group"
-                        title="Expand Auto Tagging panel"
+                        title={t("transactions.autoTagging.expandPanel")}
                     >
                         {isRtl
                             ? <ChevronRight size={18} className="text-[var(--text-muted)] group-hover:text-[var(--primary)] transition-colors" />

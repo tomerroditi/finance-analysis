@@ -35,13 +35,18 @@ export function evalCondition(node: ConditionNode, tx: Transaction): boolean {
     return false;
   }
 
-  // Text operators (case-sensitive, matching backend LIKE behaviour)
+  // Text operators. The backend uses SQL LIKE for contains/starts_with/
+  // ends_with, which is case-insensitive for ASCII in SQLite, so we lowercase
+  // both sides to match. `equals` maps to a case-sensitive `column == value`
+  // on the backend, so it stays an exact comparison.
   const sv = String(fv);
   const tv = String(value);
-  if (operator === "contains") return sv.includes(tv);
+  const svLower = sv.toLowerCase();
+  const tvLower = tv.toLowerCase();
+  if (operator === "contains") return svLower.includes(tvLower);
   if (operator === "equals") return sv === tv;
-  if (operator === "starts_with") return sv.startsWith(tv);
-  if (operator === "ends_with") return sv.endsWith(tv);
+  if (operator === "starts_with") return svLower.startsWith(tvLower);
+  if (operator === "ends_with") return svLower.endsWith(tvLower);
   return false;
 }
 

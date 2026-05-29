@@ -1,3 +1,20 @@
+## v1.24.0 (2026-05-29)
+
+### Feat
+
+- **charts**: modern "soft gradient" styling for Plotly figures
+
+### Refactor
+
+- remove dead DashboardInsightsPanel component
+
+## v1.23.4 (2026-05-29)
+
+### Fix
+
+- **frontend**: i18n leftover strings + restrict service-field operators
+- repository-wide bug sweep across backend, scraper, and frontend
+
 ## v1.23.3 (2026-05-28)
 
 ### Fix
