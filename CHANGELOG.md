@@ -1,3 +1,9 @@
+## v1.26.0 (2026-05-29)
+
+### Feat
+
+- **budget**: settings to control budget-alert threshold and disable alerts
+
 ## v1.25.0 (2026-05-29)
 
 ### Feat
