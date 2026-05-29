@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import Plot from "react-plotly.js";
 import { ChevronDown, ChevronUp, TrendingUp } from "lucide-react";
 import i18n from "../../i18n";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, barMarker } from "../../utils/plotlyLocale";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 
 interface BudgetTrendChartProps {
@@ -72,14 +72,14 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
                     y: data.map((d) => d.budget),
                     type: "bar" as const,
                     name: t("budget.trend.budget"),
-                    marker: { color: "rgba(148, 163, 184, 0.35)" },
+                    marker: barMarker("rgba(148, 163, 184, 0.35)"),
                   },
                   {
                     x: labels,
                     y: data.map((d) => d.actual),
                     type: "bar" as const,
                     name: t("budget.trend.actual"),
-                    marker: { color: actualColors },
+                    marker: barMarker(actualColors),
                   },
                 ]}
                 layout={{

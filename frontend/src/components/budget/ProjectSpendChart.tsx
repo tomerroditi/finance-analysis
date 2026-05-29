@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import Plot from "react-plotly.js";
 import { BarChart3 } from "lucide-react";
 import i18n from "../../i18n";
-import { chartTheme, plotlyConfig } from "../../utils/plotlyLocale";
+import { chartTheme, plotlyConfig, barMarker, CHART_COLORS } from "../../utils/plotlyLocale";
 import type { Transaction } from "../../types/transaction";
 
 interface ProjectSpendChartProps {
@@ -66,7 +66,7 @@ export const ProjectSpendChart: React.FC<ProjectSpendChartProps> = ({
                   x: points.map((p) => p.label),
                   y: points.map((p) => p.amount),
                   type: "bar" as const,
-                  marker: { color: "#3b82f6" },
+                  marker: barMarker(CHART_COLORS[0]),
                 },
               ]}
               layout={{
