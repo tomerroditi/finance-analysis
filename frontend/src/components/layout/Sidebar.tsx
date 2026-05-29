@@ -27,6 +27,7 @@ import { SettingsPopup } from "./SettingsPopup";
 import { BudgetAlertsBell } from "./BudgetAlertsBell";
 import { BudgetAlertsPopup } from "./BudgetAlertsPopup";
 import { useBudgetAlerts } from "../../hooks/useBudgetAlerts";
+import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
 
 const navItems = [
@@ -51,6 +52,7 @@ export function Sidebar() {
   const location = useLocation();
 
   // Budget alerts visible-count for the mobile drawer tile badge
+  const { enabled: budgetAlertsEnabled } = useBudgetAlertSettings();
   const { data: budgetAlertsData } = useBudgetAlerts();
   const { isDismissed: isBudgetAlertDismissed } = useBudgetAlertDismissals(
     budgetAlertsData?.year,
@@ -186,7 +188,9 @@ export function Sidebar() {
 
       {/* Settings & Data Flow */}
       <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)] space-y-1">
-        <BudgetAlertsBell variant="sidebar" expanded={sidebarOpen || mobileSidebarOpen} />
+        {budgetAlertsEnabled && (
+          <BudgetAlertsBell variant="sidebar" expanded={sidebarOpen || mobileSidebarOpen} />
+        )}
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
@@ -229,7 +233,7 @@ export function Sidebar() {
         <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
           {currentPageLabel || t("sidebar.logo")}
         </span>
-        <BudgetAlertsBell variant="compact" />
+        {budgetAlertsEnabled ? <BudgetAlertsBell variant="compact" /> : <span className="w-8" />}
       </div>
 
       {/* Desktop sidebar */}
@@ -292,21 +296,23 @@ export function Sidebar() {
                 );
               })}
               {/* Budget Alerts tile */}
-              <button
-                onClick={() => {
-                  setMobileSidebarOpen(false);
-                  setMobileAlertsOpen(true);
-                }}
-                className="relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
-              >
-                <Bell size={20} />
-                <span className="text-[11px] font-medium leading-tight">{t("budgetAlerts.title")}</span>
-                {budgetAlertsCount > 0 && (
-                  <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
-                    {budgetAlertsCount > 99 ? "99+" : budgetAlertsCount}
-                  </span>
-                )}
-              </button>
+              {budgetAlertsEnabled && (
+                <button
+                  onClick={() => {
+                    setMobileSidebarOpen(false);
+                    setMobileAlertsOpen(true);
+                  }}
+                  className="relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
+                >
+                  <Bell size={20} />
+                  <span className="text-[11px] font-medium leading-tight">{t("budgetAlerts.title")}</span>
+                  {budgetAlertsCount > 0 && (
+                    <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+                      {budgetAlertsCount > 99 ? "99+" : budgetAlertsCount}
+                    </span>
+                  )}
+                </button>
+              )}
               {/* Settings tile */}
               <button
                 onClick={() => setSettingsOpen(!settingsOpen)}

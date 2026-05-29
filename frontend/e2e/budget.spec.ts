@@ -140,4 +140,21 @@ test.describe("Budget", () => {
       await expect(header.first()).toBeVisible();
     }
   });
+
+  test("budget alerts can be disabled from settings", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    // Open Settings and toggle Budget Alerts off (the settings control is a
+    // <label>; the mobile drawer tile uses a <span>, so scope to the label).
+    await page.getByRole("button", { name: "Settings" }).first().click();
+    const toggleRow = page.locator("label", { hasText: "Budget Alerts" }).first();
+    await expect(toggleRow).toBeVisible();
+    await toggleRow.click();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
+
+    // The in-page alerts banner must be gone once alerts are disabled.
+    await expect(page.getByText(/budgets need attention/i)).toHaveCount(0);
+  });
 });
