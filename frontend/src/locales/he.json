@@ -19,6 +19,7 @@
     "no": "לא",
     "back": "חזור",
     "next": "הבא",
+    "previous": "הקודם",
     "dismiss": "סגור",
     "all": "הכל",
     "total": "סה\"כ",
@@ -341,7 +342,7 @@
     "biggestOverspend": "החריגה הגדולה ביותר",
     "allGood": "הכל בסדר!",
     "daysLeft": "ימים נותרו",
-    "inMonth": "ב",
+    "inMonth": "ב{{month}}",
     "confirmDeleteRule": "האם אתה בטוח שברצונך למחוק כלל תקציב זה?",
     "projectSpending": "הוצאות פרויקט",
     "project": "פרויקט",
@@ -370,7 +371,20 @@
     "confirmCancelRefund": "לבטל ציפייה להחזר זה?",
     "failedCancelRefund": "ביטול החזר נכשל",
     "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר",
-    "addRule": "הוסף כלל"
+    "addRule": "הוסף כלל",
+    "remainingAmount": "נותרו {{amount}}",
+    "overByAmount": "חריגה של {{amount}}",
+    "projectsThisMonth": "פרויקטים החודש",
+    "viewAllProjects": "הצג את כל הפרויקטים",
+    "trend": {
+      "title": "תקציב מול ביצוע",
+      "subtitle": "{{count}} חודשים אחרונים",
+      "budget": "תקציב",
+      "actual": "ביצוע",
+      "show": "הצג מגמה",
+      "hide": "הסתר מגמה",
+      "empty": "אין מספיק היסטוריה עדיין"
+    }
   },
   "budgetAlerts": {
     "title": "התראות תקציב",
@@ -380,7 +394,8 @@
     "severityCritical": "חריגה",
     "dismiss": "הסר",
     "dismissAll": "הסר הכל",
-    "openBudget": "פתח תקציב"
+    "openBudget": "פתח תקציב",
+    "summary": "{{count}} תקציבים דורשים תשומת לב"
   },
   "categories": {
     "title": "קטגוריות",

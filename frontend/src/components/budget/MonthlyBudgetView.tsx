@@ -1,14 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  PenSquare,
-  Trash2,
-  Copy,
-} from "lucide-react";
+import { PenSquare, Trash2 } from "lucide-react";
 import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi, type PendingRefund, type RefundLink } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
@@ -19,9 +12,13 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
-import { formatCurrency } from "../../utils/numberFormatting";
-import { useMemo } from "react";
 import { useConfirm } from "../../context/DialogContext";
+import { MonthHeader } from "./MonthHeader";
+import { BudgetAlertsBanner } from "./BudgetAlertsBanner";
+import { BudgetSummaryStrip } from "./BudgetSummaryStrip";
+import { BudgetTrendChart } from "./BudgetTrendChart";
+import { BudgetRuleRow } from "./BudgetRuleRow";
+import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
 
 interface BudgetRule {
   id: number;
@@ -41,10 +38,15 @@ interface BudgetAnalysisItem {
 interface ProjectSpendingItem {
   category: string;
   spent: number;
-  transactions: Transaction[];
 }
 
-export const MonthlyBudgetView: React.FC = () => {
+interface MonthlyBudgetViewProps {
+  onViewProjects: () => void;
+}
+
+export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
+  onViewProjects,
+}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const today = new Date();
@@ -86,81 +88,66 @@ export const MonthlyBudgetView: React.FC = () => {
   // When the active month's analysis reports an auto-fill, sibling months
   // may have prefetched in parallel and cached an empty result before the
   // fill committed. Refetch the others so navigation shows the rules
-  // without a hard refresh. The active query is excluded so its
-  // `copied_from` (and our notice) survives.
+  // without a hard refresh.
   useEffect(() => {
     if (!analysis?.copied_from) return;
     queryClient.refetchQueries({
       queryKey: ["budgetAnalysis"],
       predicate: (query) => {
-        const [, qYear, qMonth] = query.queryKey as [
-          string,
-          number,
-          number,
-          boolean,
-        ];
+        const [, qYear, qMonth] = query.queryKey as [string, number, number, boolean];
         return qYear !== year || qMonth !== month;
       },
     });
   }, [analysis?.copied_from, year, month, queryClient]);
 
-  // Fetch pending refunds to know which transactions are already marked
+  // Pending refunds — for transaction badges/links across rule lists.
   const { data: pendingRefunds } = useQuery({
     queryKey: ["pendingRefunds", "all"],
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
-  // Create a map of pending refunds by source ID for quick lookup
   const pendingRefundsMap = useMemo(() => {
     const map = new Map<string, PendingRefund>();
-    if (!pendingRefunds) return map;
-
-    pendingRefunds.forEach((pr: PendingRefund) => {
-      const key = `${pr.source_table}_${pr.source_id}`;
-      map.set(key, pr);
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      map.set(`${pr.source_table}_${pr.source_id}`, pr);
     });
     return map;
   }, [pendingRefunds]);
 
-  // Map of linked refunds: transaction_key -> link_id
   const refundLinksMap = useMemo(() => {
     const map = new Map<string, number>();
-    if (!pendingRefunds) return map;
-
-    pendingRefunds.forEach((pr: PendingRefund) => {
-      if (pr.links) {
-        pr.links.forEach((link: RefundLink) => {
-          const key = `${link.refund_source}_${link.refund_transaction_id}`;
-          map.set(key, link.id);
-        });
-      }
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      pr.links?.forEach((link: RefundLink) => {
+        map.set(`${link.refund_source}_${link.refund_transaction_id}`, link.id);
+      });
     });
     return map;
   }, [pendingRefunds]);
+
+  const invalidateBudget = () => {
+    queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+    queryClient.invalidateQueries({ queryKey: ["budgetAlerts"] });
+  };
 
   const createMutation = useMutation({
     mutationFn: budgetApi.createRule,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
+    onSuccess: invalidateBudget,
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
+    onSuccess: invalidateBudget,
   });
 
   const deleteMutation = useMutation({
     mutationFn: budgetApi.deleteRule,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
+    onSuccess: invalidateBudget,
   });
 
   const copyMutation = useMutation({
     mutationFn: () => budgetApi.copyRules(year, month),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] }),
+    onSuccess: invalidateBudget,
   });
 
   const handlePreviousMonth = () => {
@@ -196,34 +183,52 @@ export const MonthlyBudgetView: React.FC = () => {
     setIsRuleModalOpen(false);
   };
 
+  const handleReplicate = async () => {
+    const ok = await confirm({
+      title: t("budget.replicatePreviousMonth"),
+      message: t("budget.confirmCopyRules"),
+      confirmLabel: t("common.confirm"),
+    });
+    if (ok) copyMutation.mutate();
+  };
+
   const openAddModal = () => {
     setEditingRule(null);
     setIsRuleModalOpen(true);
   };
 
-  const toggleExpand = (id: string) => {
+  const toggleExpand = (id: string) =>
     setExpandedRuleId((prev) => (prev === id ? null : id));
-  };
+
+  const locale = i18n.language === "he" ? "he-IL" : "en-US";
+  const monthLabel = new Date(year, month - 1).toLocaleString(locale, {
+    month: "long",
+    year: "numeric",
+  });
+  const monthShortLabel = new Date(year, month - 1).toLocaleString(locale, {
+    month: "long",
+  });
+  const isCurrentMonth =
+    year === today.getFullYear() && month === today.getMonth() + 1;
 
   if (isLoading)
     return (
-      <div className="space-y-4 md:space-y-6 p-4 md:p-8">
+      <div className="space-y-4 md:space-y-6">
         <Skeleton variant="card" className="h-16" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Skeleton variant="card" className="h-24" />
-          <Skeleton variant="card" className="h-24" />
-          <Skeleton variant="card" className="h-24" />
-          <Skeleton variant="card" className="h-24" />
+        <Skeleton variant="card" className="h-28" />
+        <div className="grid grid-cols-3 gap-3">
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
+          <Skeleton variant="card" className="h-20" />
         </div>
-        <Skeleton variant="card" className="h-20" />
-        <Skeleton variant="card" className="h-20" />
-        <Skeleton variant="card" className="h-20" />
+        <Skeleton variant="card" className="h-16" />
+        <Skeleton variant="card" className="h-16" />
       </div>
     );
 
   const { rules = [], project_spending } = analysis || {};
 
-  // Summary calculations (skip Total Budget which is always first if present)
+  // Summary calculations (exclude the Total Budget anchor row)
   const budgetRules = rules.filter(
     (item: BudgetAnalysisItem) => item.rule.name !== "Total Budget",
   );
@@ -240,20 +245,25 @@ export const MonthlyBudgetView: React.FC = () => {
       Math.abs(item.current_amount || 0) <= (item.rule.amount || 0),
   ).length;
   const overCount = budgetRules.length - onTrackCount;
-  const biggestOverspend = budgetRules
+  const biggestOverspendItem = budgetRules
     .filter(
       (item: BudgetAnalysisItem) =>
-        item.rule.amount > 0 &&
-        Math.abs(item.current_amount || 0) > item.rule.amount,
+        item.rule.amount > 0 && Math.abs(item.current_amount || 0) > item.rule.amount,
     )
     .sort(
       (a: BudgetAnalysisItem, b: BudgetAnalysisItem) =>
         Math.abs(b.current_amount) / b.rule.amount -
         Math.abs(a.current_amount) / a.rule.amount,
     )[0];
+  const biggestOverspend = biggestOverspendItem
+    ? {
+        name: biggestOverspendItem.rule.name,
+        percentage:
+          Math.abs(biggestOverspendItem.current_amount) /
+          biggestOverspendItem.rule.amount,
+      }
+    : undefined;
   const daysInMonth = new Date(year, month, 0).getDate();
-  const isCurrentMonth =
-    year === today.getFullYear() && month === today.getMonth() + 1;
   const daysLeft = isCurrentMonth ? daysInMonth - today.getDate() : daysInMonth;
 
   const currentMonthKey = `${year}-${month}`;
@@ -262,80 +272,25 @@ export const MonthlyBudgetView: React.FC = () => {
       ? analysis.copied_from
       : null;
 
-
   return (
-    <div className="space-y-4 md:space-y-8">
-      {/* Month Navigation */}
-      <div className="bg-[var(--surface)] p-4 rounded-2xl shadow-sm border border-[var(--surface-light)] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="flex items-center justify-center md:justify-start gap-1 md:gap-2">
-          <button
-            onClick={handlePreviousMonth}
-            aria-label={t("common.previous")}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
-          >
-            {i18n.language === "he" ? <ChevronRight size={24} /> : <ChevronLeft size={24} />}
-          </button>
-          <h2 className="text-lg md:text-2xl font-bold w-36 md:w-48 text-center bg-gradient-to-r from-[var(--primary)] to-blue-600 bg-clip-text text-transparent">
-            {new Date(year, month - 1).toLocaleString(i18n.language === "he" ? "he-IL" : "en-US", {
-              month: "long",
-              year: "numeric",
-            })}
-          </h2>
-          <button
-            onClick={handleNextMonth}
-            aria-label={t("common.next")}
-            className="p-2 hover:bg-[var(--surface-light)] rounded-full text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
-          >
-            {i18n.language === "he" ? <ChevronLeft size={24} /> : <ChevronRight size={24} />}
-          </button>
-          {!isCurrentMonth && (
-            <button
-              onClick={handleCurrentMonth}
-              title={t("budget.currentMonth")}
-              className="ms-1 md:ms-2 inline-flex items-center px-2.5 py-1 text-xs font-medium text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-full transition-colors"
-            >
-              {t("common.today")}
-            </button>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2 md:flex md:items-center md:gap-2">
-          <button
-            onClick={async () => {
-              const ok = await confirm({
-                title: t("budget.replicatePreviousMonth"),
-                message: t("budget.confirmCopyRules"),
-                confirmLabel: t("common.confirm"),
-              });
-              if (ok) copyMutation.mutate();
-            }}
-            disabled={copyMutation.isPending}
-            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-default)] rounded-lg hover:bg-[var(--surface-light)] transition-colors shadow-sm font-medium disabled:opacity-50"
-          >
-            <Copy size={18} className="shrink-0" />
-            <span className="truncate md:hidden">{t("budget.replicatePreviousMonthShort")}</span>
-            <span className="truncate hidden md:inline">{t("budget.replicatePreviousMonth")}</span>
-          </button>
-          <button
-            onClick={openAddModal}
-            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-lg shadow-[var(--primary)]/20 font-medium"
-          >
-            <Plus size={18} className="shrink-0" />
-            {t("budget.addRule")}
-          </button>
-        </div>
-      </div>
+    <div className="space-y-4 md:space-y-6">
+      <MonthHeader
+        monthLabel={monthLabel}
+        isCurrentMonth={isCurrentMonth}
+        replicatePending={copyMutation.isPending}
+        onPrev={handlePreviousMonth}
+        onNext={handleNextMonth}
+        onToday={handleCurrentMonth}
+        onReplicate={handleReplicate}
+        onAddRule={openAddModal}
+      />
 
-      {/* Auto-copy notice — scoped to the month being viewed */}
       {copiedFromForThisMonth && (
         <div className="flex items-start justify-between gap-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
-          <span>
-            {t("budget.rulesCopiedFrom", { month: copiedFromForThisMonth })}
-          </span>
+          <span>{t("budget.rulesCopiedFrom", { month: copiedFromForThisMonth })}</span>
           <button
             onClick={() =>
-              setDismissedCopyMonths((prev) =>
-                new Set(prev).add(currentMonthKey),
-              )
+              setDismissedCopyMonths((prev) => new Set(prev).add(currentMonthKey))
             }
             aria-label={t("common.dismiss")}
             className="shrink-0 text-blue-400/60 hover:text-blue-400 transition-colors"
@@ -345,87 +300,32 @@ export const MonthlyBudgetView: React.FC = () => {
         </div>
       )}
 
-      {/* Summary Header Strip */}
+      <BudgetAlertsBanner year={year} month={month} />
+
       {budgetRules.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
-            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              {t("budget.totalSpent")}
-            </p>
-            <p className="text-xl font-bold mt-1">
-              {formatCurrency(totalSpent)}
-            </p>
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("budget.ofBudget", { amount: formatCurrency(totalBudget) })}
-            </p>
-          </div>
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
-            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              {t("budget.budgetHealth")}
-            </p>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-xl font-bold text-emerald-400">
-                {onTrackCount}
-              </span>
-              <span className="text-xs text-[var(--text-muted)]">{t("budget.onTrackLabel")}</span>
-              {overCount > 0 && (
-                <>
-                  <span className="text-xs text-[var(--text-muted)]">·</span>
-                  <span className="text-xl font-bold text-rose-400">
-                    {overCount}
-                  </span>
-                  <span className="text-xs text-[var(--text-muted)]">{t("budget.overBudgetLabel")}</span>
-                </>
-              )}
-            </div>
-          </div>
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
-            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              {t("budget.biggestOverspend")}
-            </p>
-            {biggestOverspend ? (
-              <>
-                <p className="text-lg font-bold mt-1 text-rose-400">
-                  {biggestOverspend.rule.name}
-                </p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {Math.round(
-                    (Math.abs(biggestOverspend.current_amount) /
-                      biggestOverspend.rule.amount) *
-                      100,
-                  )}
-                  %
-                </p>
-              </>
-            ) : (
-              <p className="text-lg font-bold mt-1 text-emerald-400">
-                {t("budget.allGood")}
-              </p>
-            )}
-          </div>
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)]">
-            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
-              {t("budget.daysLeft")}
-            </p>
-            <p className="text-xl font-bold mt-1">{daysLeft}</p>
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("budget.inMonth", { month: new Date(year, month - 1).toLocaleString("en", {
-                month: "long",
-              }) })}
-            </p>
-          </div>
-        </div>
+        <>
+          <BudgetSummaryStrip
+            totalSpent={totalSpent}
+            totalBudget={totalBudget}
+            onTrackCount={onTrackCount}
+            overCount={overCount}
+            biggestOverspend={biggestOverspend}
+            daysLeft={daysLeft}
+            monthLabel={monthShortLabel}
+          />
+          <BudgetTrendChart
+            year={year}
+            month={month}
+            includeSplitParents={includeSplitParents}
+          />
+        </>
       )}
 
-      {/* Budget Rules */}
       {budgetRules.length === 0 && (
         <EmptyState
           title={t("emptyStates.budget.title")}
           description={t("emptyStates.budget.description")}
-          cta={{
-            label: t("budget.addRule"),
-            onClick: () => setIsRuleModalOpen(true),
-          }}
+          cta={{ label: t("budget.addRule"), onClick: () => setIsRuleModalOpen(true) }}
           secondary={{
             label: t("emptyStates.tryDemoMode"),
             onClick: () => setShowDemoConfirm(true),
@@ -437,134 +337,108 @@ export const MonthlyBudgetView: React.FC = () => {
           }
         />
       )}
-      <div className="space-y-4">
+
+      <div className="space-y-3">
         {rules.map((item: BudgetAnalysisItem) => {
           const isTotalBudget = item.rule.name === "Total Budget";
           const isOtherExpenses = item.rule.name === "Other Expenses";
+          const actions = (
+            <>
+              {item.allow_edit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingRule(item.rule);
+                    setIsRuleModalOpen(true);
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
+                  title={t("budget.editRule")}
+                >
+                  <PenSquare size={16} />
+                </button>
+              )}
+              {item.allow_delete && (
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const ok = await confirm({
+                      title: t("budget.deleteRule"),
+                      message: t("budget.confirmDeleteRule"),
+                      confirmLabel: t("common.delete"),
+                      isDestructive: true,
+                    });
+                    if (ok) deleteMutation.mutate(item.rule.id);
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
+                  title={t("budget.deleteRule")}
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </>
+          );
+          const hasActions = item.allow_edit || item.allow_delete;
+          const txList = (
+            <TransactionCollapsibleList
+              transactions={item.data}
+              isOpen={expandedRuleId === String(item.rule.id)}
+              showActions
+              onTransactionUpdated={invalidateBudget}
+              pendingRefundsMap={pendingRefundsMap}
+              refundLinksMap={refundLinksMap}
+              showSplitParentsFilter
+              includeSplitParents={includeSplitParents}
+              onIncludeSplitParentsChange={setIncludeSplitParents}
+            />
+          );
 
-          return (
-            <div
-              key={item.rule.id}
-              className={isOtherExpenses ? "opacity-60" : ""}
-            >
+          if (isTotalBudget) {
+            return (
               <BudgetProgressBar
+                key={item.rule.id}
                 label={item.rule.name}
-                subLabel={
-                  item.rule.category !== item.rule.name
-                    ? item.rule.category
-                    : undefined
-                }
                 current={item.current_amount}
                 total={item.rule.amount}
-                compact={!isTotalBudget}
                 onToggleExpand={() => toggleExpand(String(item.rule.id))}
                 isExpanded={expandedRuleId === String(item.rule.id)}
-                actions={
-                  <>
-                    {item.allow_edit && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingRule(item.rule);
-                          setIsRuleModalOpen(true);
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                        title={t("budget.editRule")}
-                      >
-                        <PenSquare size={16} />
-                      </button>
-                    )}
-                    {item.allow_delete && (
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const ok = await confirm({
-                            title: t("budget.deleteRule"),
-                            message: t("budget.confirmDeleteRule"),
-                            confirmLabel: t("common.delete"),
-                            isDestructive: true,
-                          });
-                          if (ok) deleteMutation.mutate(item.rule.id);
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                        title={t("budget.deleteRule")}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </>
-                }
+                actions={hasActions ? actions : undefined}
               >
-                <TransactionCollapsibleList
-                  transactions={item.data}
-                  isOpen={expandedRuleId === String(item.rule.id)}
-                  showActions
-                  onTransactionUpdated={() =>
-                    queryClient.invalidateQueries({
-                      queryKey: ["budgetAnalysis"],
-                    })
-                  }
-                  pendingRefundsMap={pendingRefundsMap}
-                  refundLinksMap={refundLinksMap}
-                  showSplitParentsFilter
-                  includeSplitParents={includeSplitParents}
-                  onIncludeSplitParentsChange={setIncludeSplitParents}
-                />
+                {txList}
               </BudgetProgressBar>
-            </div>
+            );
+          }
+
+          return (
+            <BudgetRuleRow
+              key={item.rule.id}
+              label={item.rule.name}
+              subLabel={
+                item.rule.category !== item.rule.name ? item.rule.category : undefined
+              }
+              current={item.current_amount}
+              total={item.rule.amount}
+              dimmed={isOtherExpenses}
+              isExpanded={expandedRuleId === String(item.rule.id)}
+              onToggleExpand={() => toggleExpand(String(item.rule.id))}
+              actions={hasActions ? actions : undefined}
+            >
+              {txList}
+            </BudgetRuleRow>
           );
         })}
       </div>
 
-      {/* Pending Refunds Section */}
       {analysis?.pending_refunds && (
         <PendingRefundsSection pendingRefunds={analysis.pending_refunds} />
       )}
 
-      {/* Project Spending Summary (Moved to bottom) */}
-      {project_spending &&
-        project_spending.projects &&
-        project_spending.projects.length > 0 && (
-          <div className="pt-4 md:pt-8 border-t border-[var(--surface-light)]">
-            <h3 className="text-lg font-bold text-[var(--text-muted)] mb-4 uppercase tracking-wider text-xs">
-              {t("budget.projectSpending")}
-            </h3>
-            <div className="space-y-4">
-              {project_spending.projects.map((project: ProjectSpendingItem) => (
-                <BudgetProgressBar
-                  key={project.category}
-                  label={project.category}
-                  subLabel={t("budget.project")}
-                  current={project.spent}
-                  total={project.spent}
-                  onToggleExpand={() =>
-                    toggleExpand(`project_spending_${project.category}`)
-                  }
-                  isExpanded={
-                    expandedRuleId === `project_spending_${project.category}`
-                  }
-                >
-                  <TransactionCollapsibleList
-                    transactions={project.transactions}
-                    isOpen={
-                      expandedRuleId === `project_spending_${project.category}`
-                    }
-                    showActions
-                    onTransactionUpdated={() =>
-                      queryClient.invalidateQueries({
-                        queryKey: ["budgetAnalysis"],
-                      })
-                    }
-                    pendingRefundsMap={pendingRefundsMap}
-                    refundLinksMap={refundLinksMap}
-                  />
-                </BudgetProgressBar>
-              ))}
-            </div>
-          </div>
-        )}
+      {project_spending?.projects?.length > 0 && (
+        <ProjectsThisMonthSummary
+          projects={project_spending.projects as ProjectSpendingItem[]}
+          onViewAll={onViewProjects}
+        />
+      )}
 
-      {/* Modals */}
       <BudgetRuleModal
         isOpen={isRuleModalOpen}
         onClose={() => {

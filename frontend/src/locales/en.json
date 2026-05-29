@@ -19,6 +19,7 @@
     "no": "No",
     "back": "Back",
     "next": "Next",
+    "previous": "Previous",
     "dismiss": "Dismiss",
     "all": "All",
     "total": "Total",
@@ -341,7 +342,7 @@
     "biggestOverspend": "Biggest Overspend",
     "allGood": "All good!",
     "daysLeft": "Days Left",
-    "inMonth": "in",
+    "inMonth": "in {{month}}",
     "confirmDeleteRule": "Are you sure you want to delete this budget rule?",
     "projectSpending": "Project Spending",
     "project": "Project",
@@ -370,7 +371,20 @@
     "confirmCancelRefund": "Cancel this refund expectation?",
     "failedCancelRefund": "Failed to cancel refund",
     "pendingRefundsFooter": "These are expenses you marked as expecting a refund",
-    "addRule": "Add Rule"
+    "addRule": "Add Rule",
+    "remainingAmount": "{{amount}} remaining",
+    "overByAmount": "{{amount}} over",
+    "projectsThisMonth": "Projects This Month",
+    "viewAllProjects": "View all projects",
+    "trend": {
+      "title": "Budget vs Actual",
+      "subtitle": "Last {{count}} months",
+      "budget": "Budget",
+      "actual": "Actual",
+      "show": "Show trend",
+      "hide": "Hide trend",
+      "empty": "Not enough history yet"
+    }
   },
   "budgetAlerts": {
     "title": "Budget Alerts",
@@ -380,7 +394,8 @@
     "severityCritical": "Over Budget",
     "dismiss": "Dismiss",
     "dismissAll": "Dismiss all",
-    "openBudget": "Open Budget"
+    "openBudget": "Open Budget",
+    "summary": "{{count}} budgets need attention"
   },
   "categories": {
     "title": "Categories",

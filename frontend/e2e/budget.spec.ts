@@ -62,4 +62,44 @@ test.describe("Budget", () => {
       await page.waitForTimeout(500);
     }
   });
+
+  test("budget-vs-actual trend chart toggles", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const trend = page.getByRole("button", { name: /Budget vs Actual/i });
+    await expect(trend).toBeVisible();
+
+    // Toggle collapse/expand — should not throw and stays on the page.
+    await trend.click();
+    await page.waitForTimeout(300);
+    await trend.click();
+    await page.waitForTimeout(300);
+    await expect(trend).toBeVisible();
+  });
+
+  test("'View all projects' jumps to the Projects tab", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const viewAll = page.getByRole("button", { name: /View all projects/i });
+    if (await viewAll.isVisible().catch(() => false)) {
+      await viewAll.click();
+      await page.waitForTimeout(400);
+      // Projects tab content: the project selector label appears.
+      await expect(page.getByText(/Select Project/i).first()).toBeVisible();
+    }
+  });
+
+  test("alerts banner, when present, can be dismissed", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const dismissAll = page.getByRole("button", { name: /Dismiss all/i });
+    if (await dismissAll.isVisible().catch(() => false)) {
+      await dismissAll.click();
+      await page.waitForTimeout(300);
+      await expect(dismissAll).toHaveCount(0);
+    }
+  });
 });
