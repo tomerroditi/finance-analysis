@@ -77,4 +77,44 @@ test.describe("Dashboard layout customization", () => {
     // Net Worth KPI lives in the pinned header and is never in the card set.
     await expect(page.getByText(/Net Worth/i).first()).toBeVisible({ timeout: 45_000 });
   });
+
+  test("dragging a card reorders and persists", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
+
+    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page.getByRole("button", { name: /^Dashboard$/ }).click();
+
+    // Drag the first card ("This Month (forecast)") down past the second one.
+    const handles = page.locator('[aria-label="This Month (forecast)"]');
+    const firstHandle = handles.first();
+    await expect(firstHandle).toBeVisible();
+    const box = await firstHandle.boundingBox();
+    if (!box) throw new Error("no drag handle box");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    // Move in steps so @dnd-kit's pointer sensor activates and animates.
+    await page.mouse.move(box.x + box.width / 2, box.y + 80, { steps: 8 });
+    await page.mouse.move(box.x + box.width / 2, box.y + 140, { steps: 8 });
+    await page.mouse.up();
+
+    // The persisted order should no longer start with "forecast".
+    const order = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("fa.dashboard.layout");
+      return raw ? (JSON.parse(raw).order as string[]) : [];
+    });
+    expect(order[0]).not.toBe("forecast");
+    expect(order).toContain("forecast");
+  });
+
+  test("X button closes the settings popup", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
+    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    // The popup heading is visible.
+    await expect(page.getByRole("heading", { name: /^Settings$/ })).toBeVisible();
+    await page.getByRole("button", { name: /^Close$/ }).click();
+    await expect(page.getByRole("heading", { name: /^Settings$/ })).toHaveCount(0);
+  });
 });

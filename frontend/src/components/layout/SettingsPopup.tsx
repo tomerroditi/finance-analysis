@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
@@ -110,6 +111,20 @@ export function SettingsPopup({
         ref={popupRef}
         className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
       >
+        {/* Header — title + close */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-[var(--text-default)]">
+            {t("settings.title")}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="p-2 -me-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
         {/* Tab bar */}
         <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1 mb-5">
           {([
