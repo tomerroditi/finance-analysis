@@ -1,3 +1,14 @@
+## v1.27.0 (2026-05-30)
+
+### Feat
+
+- use Plotly native zoom mode on touch + persist the zoom
+- double-tap-then-drag to zoom charts on touch
+
+### Fix
+
+- stop charts hijacking single-finger scroll as zoom on touch
+
 ## v1.26.0 (2026-05-29)
 
 ### Feat
