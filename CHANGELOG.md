@@ -1,3 +1,12 @@
+## v1.27.1 (2026-05-30)
+
+### Fix
+
+- **transactions**: always render eraser button, disabled when untagged
+- **transactions**: use 150px description column width
+- **transactions**: use 200px description column width instead of 300px
+- **transactions**: widen description column so it shows more than ~3 chars
+
 ## v1.27.0 (2026-05-30)
 
 ### Feat
