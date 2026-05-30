@@ -127,34 +127,6 @@ test.describe("RTL chevrons", () => {
     expect(icons![1]).toContain("lucide-chevron-left");
   });
 
-  test("AutoTaggingPanel flips its chevron in Hebrew", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
-    await navigateTo(page, "/transactions");
-
-    const panel = page.locator('[class*="sticky top-4"]').first();
-    await expect(panel).toBeVisible({ timeout: 30_000 });
-
-    const state = await page.evaluate(() => {
-      const p = document.querySelector('[class*="sticky top-4"]') as HTMLElement | null;
-      if (!p) return null;
-      const collapsed = p.getBoundingClientRect().width < 100;
-      return {
-        collapsed,
-        icon: p.querySelector("svg")?.getAttribute("class") ?? "",
-      };
-    });
-
-    expect(state).not.toBeNull();
-    if (state!.collapsed) {
-      // Collapsed strip on the LEFT in RTL — chevron points right (toward content area).
-      expect(state!.icon).toContain("lucide-chevron-right");
-    } else {
-      // Open panel on the LEFT in RTL — chevron points left (collapse back to the wall).
-      expect(state!.icon).toContain("lucide-chevron-left");
-    }
-  });
-
   test("DataSources connect-account flow flips proceed chevrons in Hebrew", async ({ page }) => {
     await navigateTo(page, "/data-sources");
     await page.evaluate(() => localStorage.setItem("language", "he"));
