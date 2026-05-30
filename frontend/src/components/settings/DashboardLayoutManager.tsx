@@ -21,6 +21,7 @@ import { GripVertical, Eye, EyeOff, RotateCcw } from "lucide-react";
 import {
   useDashboardLayout,
   DASHBOARD_CARDS,
+  isBetaCard,
   type DashboardCardId,
 } from "../../hooks/useDashboardLayout";
 
@@ -28,15 +29,28 @@ const LABEL_KEYS: Record<DashboardCardId, string> = Object.fromEntries(
   DASHBOARD_CARDS.map((c) => [c.id, c.labelKey]),
 ) as Record<DashboardCardId, string>;
 
+/** Small "Beta" pill for experimental cards. */
+function BetaBadge({ label }: { label: string }) {
+  return (
+    <span className="shrink-0 rounded-full bg-amber-500/15 text-amber-400 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5">
+      {label}
+    </span>
+  );
+}
+
 /** One sortable row in the visible-cards list. */
 function SortableCardRow({
   id,
   label,
+  beta,
+  betaLabel,
   onHide,
   hideLabel,
 }: {
   id: DashboardCardId;
   label: string;
+  beta: boolean;
+  betaLabel: string;
   onHide: () => void;
   hideLabel: string;
 }) {
@@ -74,9 +88,10 @@ function SortableCardRow({
       }`}
     >
       <GripVertical size={16} className="text-[var(--text-muted)] shrink-0" />
-      <span className="flex-1 text-sm text-[var(--text-default)] truncate" dir="auto">
+      <span className="min-w-0 flex-1 text-sm text-[var(--text-default)] truncate" dir="auto">
         {label}
       </span>
+      {beta && <BetaBadge label={betaLabel} />}
       <button
         type="button"
         // Don't let a press on the eye button begin a drag; keep it clickable.
@@ -162,6 +177,8 @@ export function DashboardLayoutManager() {
                     key={id}
                     id={id}
                     label={t(LABEL_KEYS[id])}
+                    beta={isBetaCard(id)}
+                    betaLabel={t("settings.beta")}
                     hideLabel={t("settings.dashboardHideCard")}
                     onHide={() => toggleHidden(id)}
                   />
@@ -185,9 +202,10 @@ export function DashboardLayoutManager() {
                 className="flex items-center gap-2 rounded-lg border border-dashed border-[var(--surface-light)] px-3 py-2.5 opacity-70"
               >
                 <EyeOff size={16} className="text-[var(--text-muted)] shrink-0" />
-                <span className="flex-1 text-sm text-[var(--text-muted)] truncate" dir="auto">
+                <span className="min-w-0 flex-1 text-sm text-[var(--text-muted)] truncate" dir="auto">
                   {t(LABEL_KEYS[id])}
                 </span>
+                {isBetaCard(id) && <BetaBadge label={t("settings.beta")} />}
                 <button
                   type="button"
                   onClick={() => toggleHidden(id)}

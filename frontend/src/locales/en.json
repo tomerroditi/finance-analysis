@@ -112,7 +112,8 @@
     "dashboardHiddenCards": "Hidden cards",
     "dashboardNoVisibleCards": "All cards are hidden",
     "dashboardHideCard": "Hide card",
-    "dashboardShowCard": "Show card"
+    "dashboardShowCard": "Show card",
+    "beta": "Beta"
   },
   "dashboard": {
     "title": "Dashboard",

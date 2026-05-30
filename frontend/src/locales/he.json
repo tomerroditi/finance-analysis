@@ -112,7 +112,8 @@
     "dashboardHiddenCards": "כרטיסים מוסתרים",
     "dashboardNoVisibleCards": "כל הכרטיסים מוסתרים",
     "dashboardHideCard": "הסתרת כרטיס",
-    "dashboardShowCard": "הצגת כרטיס"
+    "dashboardShowCard": "הצגת כרטיס",
+    "beta": "בטא"
   },
   "dashboard": {
     "title": "לוח בקרה",
