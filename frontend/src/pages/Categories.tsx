@@ -85,7 +85,7 @@ export function Categories() {
 
       {/* Category Grid */}
       {filteredEntries.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
           {filteredEntries.map(([category, tags]) => {
             const icon = icons?.[category];
             return (
@@ -93,19 +93,19 @@ export function Categories() {
                 key={category}
                 data-testid={`category-card-${category}`}
                 onClick={() => setSelectedCategory(category)}
-                className="flex flex-col items-center gap-2 p-4 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--surface-light)]/30 transition-all text-center group"
+                className="flex flex-col items-center gap-1.5 sm:gap-2 p-2 sm:p-4 bg-[var(--surface)] rounded-xl sm:rounded-2xl border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--surface-light)]/30 transition-all text-center group"
               >
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20 text-2xl shrink-0">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg sm:rounded-xl bg-blue-500/10 border border-blue-500/20 text-lg sm:text-2xl shrink-0">
                   {icon ? (
                     <span>{icon}</span>
                   ) : (
-                    <Wallet size={22} className="text-blue-400" />
+                    <Wallet className="text-blue-400 w-[18px] h-[18px] sm:w-[22px] sm:h-[22px]" />
                   )}
                 </div>
-                <h3 className="font-bold text-sm truncate w-full" dir="auto">
+                <h3 className="font-bold text-xs sm:text-sm truncate w-full" dir="auto">
                   {category}
                 </h3>
-                <span className="text-xs text-[var(--text-muted)]" dir="ltr">
+                <span className="text-[10px] sm:text-xs text-[var(--text-muted)]" dir="ltr">
                   {t("categories.tagsCount", { count: tags.length })}
                 </span>
               </button>
