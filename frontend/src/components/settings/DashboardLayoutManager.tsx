@@ -58,27 +58,22 @@ function SortableCardRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 bg-[var(--surface-light)] ${
+      {...attributes}
+      {...listeners}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 bg-[var(--surface-light)] touch-none select-none cursor-grab active:cursor-grabbing ${
         isDragging
           ? "border-[var(--primary)] shadow-lg z-10 relative opacity-95"
           : "border-[var(--surface-light)]"
       }`}
     >
-      {/* Drag handle — only the handle starts a drag, so the hide button stays clickable */}
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        className="touch-none cursor-grab active:cursor-grabbing text-[var(--text-muted)] hover:text-[var(--text-default)] shrink-0"
-        aria-label={label}
-      >
-        <GripVertical size={16} />
-      </button>
+      <GripVertical size={16} className="text-[var(--text-muted)] shrink-0" />
       <span className="flex-1 text-sm text-[var(--text-default)] truncate" dir="auto">
         {label}
       </span>
       <button
         type="button"
+        // Don't let a press on the eye button begin a drag; keep it clickable.
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={onHide}
         aria-label={hideLabel}
         className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface)] transition-colors"

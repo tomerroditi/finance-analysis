@@ -86,17 +86,19 @@ test.describe("Dashboard layout customization", () => {
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Drag the first card ("This Month (forecast)") down past the second one.
-    const handles = page.locator('[aria-label="This Month (forecast)"]');
-    const firstHandle = handles.first();
-    await expect(firstHandle).toBeVisible();
-    const box = await firstHandle.boundingBox();
+    // The whole row is the drag handle; grab it by its label text.
+    const firstRow = page
+      .getByText("This Month (forecast)", { exact: true })
+      .locator("xpath=..");
+    await expect(firstRow).toBeVisible();
+    const box = await firstRow.boundingBox();
     if (!box) throw new Error("no drag handle box");
 
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
     await page.mouse.down();
     // Move in steps so @dnd-kit's pointer sensor activates and animates.
-    await page.mouse.move(box.x + box.width / 2, box.y + 80, { steps: 8 });
-    await page.mouse.move(box.x + box.width / 2, box.y + 140, { steps: 8 });
+    await page.mouse.move(box.x + 20, box.y + 80, { steps: 8 });
+    await page.mouse.move(box.x + 20, box.y + 140, { steps: 8 });
     await page.mouse.up();
 
     // The persisted order should no longer start with "forecast".
