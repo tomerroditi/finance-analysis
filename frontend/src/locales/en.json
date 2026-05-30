@@ -902,6 +902,9 @@
     "selectDateRange": "Select Date Range",
     "customRange": "Custom Range"
   },
+  "charts": {
+    "zoomHint": "Drag to zoom · double-tap to reset · tap away to exit"
+  },
   "tooltips": {
     "editCategoryTag": "Edit category / tag",
     "editTransaction": "Edit transaction",
