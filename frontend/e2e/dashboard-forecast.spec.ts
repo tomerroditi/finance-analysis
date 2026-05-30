@@ -5,6 +5,9 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * E2E coverage for the Israeli-finance-app feature additions:
  * the "This Month" cash-flow forecast hero, insight cards,
  * subscriptions/recurring panel, savings goals, and the spending heatmap.
+ *
+ * These cards are beta and hidden by default, so each test seeds a layout
+ * with every card visible before navigating.
  */
 test.describe("Dashboard — forecast, recurring, goals", () => {
   test.beforeAll(async ({ browser }) => {
@@ -17,6 +20,30 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     const page = await browser.newPage();
     await disableDemoMode(page);
     await page.close();
+  });
+
+  // Seed a layout (v2, so no migration) with all cards visible so the beta
+  // forecast / insights / recurring / goals sections render.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "fa.dashboard.layout",
+        JSON.stringify({
+          v: 2,
+          order: [
+            "forecast",
+            "insights",
+            "budget",
+            "recent",
+            "recurring",
+            "goals",
+            "heatmap",
+            "charts",
+          ],
+          hidden: [],
+        }),
+      );
+    });
   });
 
   test("shows the This Month cash-flow forecast hero", async ({ page }) => {
