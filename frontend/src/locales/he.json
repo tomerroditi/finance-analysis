@@ -103,7 +103,16 @@
     "backupCreated": "גיבוי נוצר בהצלחה",
     "backupRestored": "גיבוי שוחזר בהצלחה. מרענן...",
     "backupFailed": "הגיבוי נכשל",
-    "restoreFailed": "השחזור נכשל"
+    "restoreFailed": "השחזור נכשל",
+    "tabGeneral": "כללי",
+    "tabDashboard": "לוח מחוונים",
+    "dashboardLayoutHelp": "גררו כדי לסדר את הכרטיסים מחדש. כרטיסים מוסתרים יוסרו מלוח המחוונים.",
+    "dashboardLayoutReset": "איפוס",
+    "dashboardVisibleCards": "כרטיסים מוצגים",
+    "dashboardHiddenCards": "כרטיסים מוסתרים",
+    "dashboardNoVisibleCards": "כל הכרטיסים מוסתרים",
+    "dashboardHideCard": "הסתרת כרטיס",
+    "dashboardShowCard": "הצגת כרטיס"
   },
   "dashboard": {
     "title": "לוח בקרה",
@@ -240,6 +249,16 @@
     "heatmap": {
       "title": "לוח הוצאות",
       "monthTotal": "החודש"
+    },
+    "cards": {
+      "forecast": "החודש (תחזית)",
+      "insights": "תובנות",
+      "budget": "ניצול תקציב",
+      "recent": "תנועות אחרונות",
+      "recurring": "מנויים וחיובים חוזרים",
+      "goals": "יעדי חיסכון",
+      "heatmap": "לוח הוצאות",
+      "charts": "גרפים וניתוחים"
     }
   },
   "transactions": {
