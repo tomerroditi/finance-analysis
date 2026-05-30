@@ -177,6 +177,37 @@ test.describe("Transactions", () => {
     ).toHaveCount(0);
   });
 
+  test("description column is wide enough to show more than a few characters", async ({ page }) => {
+    // Regression: the table is `table-fixed` and every column except the
+    // description had an explicit pixel width. With the old `min-w-[800px]`
+    // the fixed columns consumed almost the whole table, collapsing the
+    // description column to ~20px (≈3 characters). It now has a 300px width
+    // and the table min-width was raised so it can never collapse.
+    await navigateTo(page, "/transactions");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState("networkidle");
+
+    // Locate the description column header and measure its rendered width.
+    const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();
+    await expect(descHeader).toBeVisible();
+    const headerBox = await descHeader.boundingBox();
+    expect(headerBox).not.toBeNull();
+    // 300px floor (flexes wider on a roomy viewport) — comfortably more than
+    // the ~20px / 3-char collapse the bug produced.
+    expect(headerBox!.width).toBeGreaterThan(200);
+
+    // Sanity-check a body cell in the same column matches the header width,
+    // so the data cell isn't independently squeezed.
+    const firstRow = page.locator("table tbody tr").first();
+    const descCell = firstRow.locator("td").nth(await descHeader.evaluate((th) => {
+      // Column index of the description header among its sibling <th> cells.
+      return Array.from(th.parentElement!.children).indexOf(th);
+    }));
+    const cellBox = await descCell.boundingBox();
+    expect(cellBox).not.toBeNull();
+    expect(cellBox!.width).toBeGreaterThan(200);
+  });
+
   test("bulk-edit category dropdown does not scroll when hovering visible options", async ({ page }) => {
     // Regression: hovering options used to call scrollIntoView on every
     // mouseenter, which fed back on itself — items shifted under the cursor,
