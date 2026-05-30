@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Wand2, Eye } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Transaction } from "../../types/transaction";
@@ -105,12 +106,20 @@ export function RuleQuickAction({
     return (
         <>
             {button}
-            <RuleEditorModal
-                isOpen={open}
-                onClose={() => setOpen(false)}
-                editingRule={editingRule}
-                prefill={prefill}
-            />
+            {/* Portal to <body>: the bulk actions bar uses backdrop-blur
+                (a backdrop-filter), which would otherwise make it the
+                containing block for the editor's `fixed inset-0` and shrink
+                the full-screen modal down to the bar's footprint. */}
+            {open &&
+                createPortal(
+                    <RuleEditorModal
+                        isOpen
+                        onClose={() => setOpen(false)}
+                        editingRule={editingRule}
+                        prefill={prefill}
+                    />,
+                    document.body,
+                )}
         </>
     );
 }

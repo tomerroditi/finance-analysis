@@ -68,6 +68,12 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
     const modal = page.locator(".modal-overlay").last();
     await expect(modal).toBeVisible();
 
+    // The editor must open full-screen, not shrink to the bulk bar's footprint.
+    // (Regression guard: rendering it inside the backdrop-blurred bar trapped
+    // its `fixed inset-0` to the bar; it now portals to <body>.)
+    const dialogBox = await modal.getByRole("dialog").boundingBox();
+    expect(dialogBox?.height ?? 0).toBeGreaterThan(500);
+
     if (/Add Rule/.test(label)) {
       // "Add Rule" pre-fills a description-contains condition from the
       // selected transaction (cleaned of noise like .com / dashes / digits).
