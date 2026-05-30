@@ -730,7 +730,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
-        <table className="w-full min-w-[1080px] text-sm text-start table-fixed">
+        <table className="w-full min-w-[980px] text-sm text-start table-fixed">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
               {showSelection && (
@@ -750,7 +750,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
               )}
               {visibleColumns.has("description") && (
-                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" width="300px" />
+                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" width="200px" />
               )}
               {visibleColumns.has("category") && (
                 <SortableHeader
