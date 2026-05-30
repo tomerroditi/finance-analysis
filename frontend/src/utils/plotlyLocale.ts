@@ -145,6 +145,11 @@ export function donutMarker(
 export const chartTheme: Partial<Plotly.Layout> = {
   paper_bgcolor: "rgba(0,0,0,0)",
   plot_bgcolor: "rgba(0,0,0,0)",
+  // Keep user-driven zoom/pan across re-renders. react-plotly re-runs
+  // Plotly.react on every parent render (e.g. React Query refetch); without a
+  // constant uirevision that would reset a zoom the user made on touch back to
+  // autorange. The value just has to stay constant — see utils/chartTouchZoom.ts.
+  uirevision: "persist",
   font: { color: "#94a3b8", family: "Inter, sans-serif", size: 12 },
   colorway: CHART_COLORS,
   margin: { t: 24, b: 36, l: 48, r: 16 },

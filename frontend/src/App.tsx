@@ -32,9 +32,10 @@ import {
 } from "./pages";
 
 function App() {
-  // On touch devices, enable double-tap-then-drag zoom on every Plotly chart.
-  // Charts disable Plotly's own drag (so a plain swipe scrolls the page); this
-  // restores figure zoom behind an explicit gesture. No-op on desktop.
+  // On touch devices, let a double-tap put a Plotly chart into native zoom mode
+  // (drag a rectangle to zoom). Charts disable Plotly's own drag by default so a
+  // plain swipe scrolls the page; this restores zoom behind an explicit gesture.
+  // No-op on desktop.
   useEffect(() => {
     if (!isTouchDevice) return;
     return installChartTouchZoom();
