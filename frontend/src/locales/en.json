@@ -274,6 +274,14 @@
       "confirmDeleteRule": "Delete rule?",
       "confirmDeleteNamedRule": "Delete rule \"{{name}}\"?"
     },
+    "ruleAction": {
+      "add": "Add Rule",
+      "view": "View Rule",
+      "addTooltip": "Create an auto-tagging rule from this transaction",
+      "viewTooltip": "View the auto-tagging rule matching this selection",
+      "mixedTooltip": "Some selected transactions match a rule and some don't — select a uniform set to add a rule",
+      "multipleTooltip": "The selection matches multiple rules — manage them on the Categories page"
+    },
     "addCash": "Add Cash Transaction",
     "addInvestment": "Add Investment Transaction",
     "noCashAccounts": "No cash accounts yet",
@@ -418,6 +426,11 @@
   "categories": {
     "title": "Categories",
     "subtitle": "Manage your categories and tags",
+    "rules": {
+      "title": "Auto-Tagging Rules",
+      "subtitle": "Automatically categorize transactions as they come in",
+      "count": "{{count}} rules"
+    },
     "addCategory": "Add Category",
     "addTag": "Add Tag",
     "editCategory": "Edit Category",

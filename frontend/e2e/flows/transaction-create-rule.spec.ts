@@ -2,10 +2,11 @@ import { test, expect } from "@playwright/test";
 import { setDemoMode, gotoAndWait } from "./_helpers";
 
 /**
- * Opens the Auto Tagging panel from the Transactions page and verifies
- * the rule list / rule editor is reachable. Creating a rule end-to-end
- * is brittle (depends on demo categories) so this asserts the Auto
- * Tagging entry point works, which is the high-value regression to catch.
+ * Auto-tagging rule management lives on the Categories page (opened via the
+ * "Auto-Tagging Rules" launcher, which presents a full-screen manager). These
+ * tests assert the manager entry point works and the rule editor opens — the
+ * high-value regression to catch. Creating a rule end-to-end is brittle
+ * (depends on demo categories), so we stop at the editor.
  */
 test.describe("Auto-tagging rule flow", () => {
   test.beforeAll(async ({ request }) => {
@@ -15,36 +16,39 @@ test.describe("Auto-tagging rule flow", () => {
     await setDemoMode(request, false);
   });
 
-  test("opens the Auto Tagging panel and shows existing rules", async ({ page }) => {
-    await gotoAndWait(page, "/transactions");
-    await expect(page.locator("table tbody tr").first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Click the floating Auto Tagging FAB / button.
-    await page.getByRole("button", { name: /auto tagging/i }).click();
-
-    // The panel slides out and shows its "Auto Tagging" heading + rule rows.
+  test("opens the Auto-Tagging Rules manager and shows existing rules", async ({ page }) => {
+    await gotoAndWait(page, "/categories");
     await expect(
-      page.getByRole("heading", { name: /^auto tagging$/i }),
-    ).toBeVisible({ timeout: 5_000 });
+      page.getByRole("button", { name: /auto-tagging rules/i }),
+    ).toBeVisible({ timeout: 15_000 });
 
-    // Demo data ships 11 tagging rules — at least one should render.
+    // Open the full-screen rules manager.
+    await page.getByRole("button", { name: /auto-tagging rules/i }).click();
+
+    // The manager dialog shows the New Rule / Apply Rules controls.
+    const manager = page.locator(
+      '[role="dialog"][aria-labelledby="rules-manager-title"]',
+    );
+    await expect(manager).toBeVisible({ timeout: 5_000 });
     await expect(
-      page.getByRole("button", { name: /add rule|new rule/i }).first(),
+      manager.getByRole("button", { name: /^new rule$/i }).first(),
     ).toBeVisible({ timeout: 5_000 });
   });
 
   test("new rule defaults the conditions group to OR", async ({ page }) => {
-    await gotoAndWait(page, "/transactions");
-    await expect(page.locator("table tbody tr").first()).toBeVisible({
-      timeout: 15_000,
-    });
+    await gotoAndWait(page, "/categories");
+    await expect(
+      page.getByRole("button", { name: /auto-tagging rules/i }),
+    ).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("button", { name: /auto tagging/i }).click();
-    await page.getByRole("button", { name: /new rule/i }).first().click();
+    await page.getByRole("button", { name: /auto-tagging rules/i }).click();
+    const manager = page.locator(
+      '[role="dialog"][aria-labelledby="rules-manager-title"]',
+    );
+    await expect(manager).toBeVisible({ timeout: 5_000 });
+    await manager.getByRole("button", { name: /^new rule$/i }).first().click();
 
-    const dialog = page.getByRole("dialog");
+    const dialog = page.getByRole("dialog").last();
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
     // Top-level conditions group should default to "OR (Any match)".

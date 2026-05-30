@@ -1,6 +1,8 @@
 import { CheckCircle2, Eraser, Trash2, X } from "lucide-react";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useTranslation } from "react-i18next";
+import type { Transaction } from "../../types/transaction";
+import { RuleQuickAction } from "./RuleQuickAction";
 
 export interface BulkEditData {
   date: string;
@@ -21,6 +23,7 @@ interface BulkActionsBarProps {
   allSelectedAreCash: boolean;
   categories: Record<string, string[]> | undefined;
   cashBalances: { account_name: string }[];
+  selectedTransactions: Transaction[];
   onApply: () => void;
   onBulkDelete: () => void;
   onClearCategoryTag: () => void;
@@ -41,6 +44,7 @@ export function BulkActionsBar({
   allSelectedAreCash,
   categories,
   cashBalances,
+  selectedTransactions,
   onApply,
   onBulkDelete,
   onClearCategoryTag,
@@ -153,6 +157,13 @@ export function BulkActionsBar({
           />
         </div>
         <div className="w-px h-6 bg-[var(--surface-light)]" />
+        {/* Auto-tagging rule quick action (Add / View rule) */}
+        <RuleQuickAction
+          transactions={selectedTransactions}
+          stagedCategory={bulkEditData.category}
+          stagedTag={bulkEditData.tag}
+          variant="bar"
+        />
         {/* Actions */}
         <button
           className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"

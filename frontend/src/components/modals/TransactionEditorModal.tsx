@@ -7,9 +7,10 @@ import { useCategories } from "../../hooks/useCategories";
 import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
 import { useNotify } from "../../context/DialogContext";
+import { RuleQuickAction } from "../transactions/RuleQuickAction";
 
 interface TransactionEditorModalProps {
-  transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string };
+  transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string; provider?: string };
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -200,7 +201,28 @@ export function TransactionEditorModal({
             </div>
           </div>
 
-          <div className="flex gap-3 mt-8">
+          <div className="flex justify-center mt-6">
+            <RuleQuickAction
+              transactions={[
+                {
+                  unique_id: transaction.unique_id,
+                  source: transaction.source,
+                  description: formData.description,
+                  amount: formData.amount,
+                  date: formData.date,
+                  category: transaction.category,
+                  tag: transaction.tag,
+                  provider: transaction.provider,
+                  account_name: formData.account_name,
+                },
+              ]}
+              stagedCategory={formData.category}
+              stagedTag={formData.tag}
+              variant="inline"
+            />
+          </div>
+
+          <div className="flex gap-3 mt-6">
             <button
               type="button"
               onClick={onClose}

@@ -9,7 +9,6 @@ describe("appStore", () => {
       selectedYear: new Date().getFullYear(),
       selectedMonth: new Date().getMonth() + 1,
       selectedService: "all",
-      autoTaggingPanelOpen: true,
     });
   });
 
@@ -53,17 +52,6 @@ describe("appStore", () => {
     it("sets service filter", () => {
       useAppStore.getState().setSelectedService("credit_cards");
       expect(useAppStore.getState().selectedService).toBe("credit_cards");
-    });
-  });
-
-  describe("auto tagging panel", () => {
-    it("starts open", () => {
-      expect(useAppStore.getState().autoTaggingPanelOpen).toBe(true);
-    });
-
-    it("toggles", () => {
-      useAppStore.getState().toggleAutoTaggingPanel();
-      expect(useAppStore.getState().autoTaggingPanelOpen).toBe(false);
     });
   });
 });
