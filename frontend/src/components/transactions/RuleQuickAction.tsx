@@ -65,19 +65,22 @@ export function RuleQuickAction({
             </button>
         );
     } else if (state.kind === "add") {
-        // One OR branch per distinct merchant keyword in the selection. Falls
-        // back to a single empty condition when nothing usable was derived so
-        // the editor still opens with a builder row.
-        const subconditions: ConditionNode[] =
+        // One OR branch per distinct merchant keyword in the selection. When no
+        // usable keyword could be derived we seed no condition at all (leaving
+        // `conditions` undefined) so the editor opens with its default empty
+        // builder rather than a `contains ""` rule that would match everything.
+        const conditions: ConditionNode | undefined =
             state.seedKeywords.length > 0
-                ? state.seedKeywords.map((value) => ({
-                      type: "CONDITION" as const,
-                      field: "description",
-                      operator: "contains" as const,
-                      value,
-                  }))
-                : [{ type: "CONDITION", field: "description", operator: "contains", value: "" }];
-        const conditions: ConditionNode = { type: "OR", subconditions };
+                ? {
+                      type: "OR",
+                      subconditions: state.seedKeywords.map((value) => ({
+                          type: "CONDITION" as const,
+                          field: "description",
+                          operator: "contains" as const,
+                          value,
+                      })),
+                  }
+                : undefined;
         prefill = {
             category: stagedCategory || undefined,
             tag: stagedTag || undefined,

@@ -81,12 +81,27 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
 
     if (/Add Rule/.test(label)) {
       // "Add Rule" pre-fills a description-contains condition from the
-      // selected transaction (cleaned of noise like .com / dashes / digits).
+      // selected transaction. The seeded keyword is a VERBATIM substring of the
+      // description (merchant prefix up to the first generic word / number), so
+      // the rule must actually match at least the transaction it came from —
+      // the previous cleaner mutated the text and matched nothing.
       const valueInput = modal
         .locator('input[placeholder="Value"]:visible')
         .first();
       await expect(valueInput).toBeVisible();
       await expect(valueInput).not.toHaveValue("");
+
+      // The editor's live preview must report a non-zero match count.
+      await page.waitForResponse(
+        (res) =>
+          res.url().includes("/api/tagging-rules/rules/preview") &&
+          res.request().method() === "POST",
+      );
+      const matchesLabel = modal.getByText(/\d+\s*matches/).first();
+      await expect(matchesLabel).toBeVisible();
+      const labelText = await matchesLabel.textContent();
+      const matchCount = parseInt(labelText?.match(/(\d+)/)?.[1] ?? "0", 10);
+      expect(matchCount).toBeGreaterThan(0);
     }
   });
 

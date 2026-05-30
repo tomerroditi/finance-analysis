@@ -12,10 +12,13 @@ import { deriveRuleKeyword } from "../utils/ruleKeyword";
  *
  * - `none`     — no rule-applicable transactions in the selection; hide the button.
  * - `add`      — none of the selected transactions match any rule; offer to create
- *                one. `seedKeywords` holds the distinct cleaned description
- *                keywords across the selection (one per merchant), which the
- *                quick action turns into an OR of `description contains`
- *                conditions. A single transaction yields one keyword.
+ *                one. `seedKeywords` holds the distinct merchant-prefix keywords
+ *                derived from the selection (one per merchant), each a verbatim
+ *                substring of its description, which the quick action turns into
+ *                an OR of `description contains` conditions. A single transaction
+ *                yields one keyword. May be empty when no usable prefix could be
+ *                derived (e.g. descriptions that lead with generic words /
+ *                numbers) — the editor then opens with no seeded condition.
  * - `view`     — every selected transaction matches the exact same single rule;
  *                offer to open it.
  * - `disabled` — the selection is ambiguous (some match and some don't, or
