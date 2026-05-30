@@ -118,8 +118,8 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
 
     // Select three demo transactions from DISTINCT merchants that match no
     // existing rule (see scripts/generate_demo_data.py rule-free untagged
-    // entries). Each distinct merchant prefix becomes its own OR branch, so
-    // this drives the Add-Rule path deterministically.
+    // entries). Each distinct description becomes its own OR branch, so this
+    // drives the Add-Rule path deterministically.
     //
     // The default page shows 10 date-sorted rows, so these specific rows may
     // not all be on page 1. Use the table search to surface each merchant in
@@ -150,7 +150,7 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
     await expect(modal).toBeVisible();
 
     // The seeded rule is an OR with one `description contains` branch per
-    // distinct merchant keyword — three distinct merchants -> three filled
+    // distinct description — three distinct merchants -> three filled
     // Value inputs.
     const valueInputs = modal.locator('input[placeholder="Value"]:visible');
     const filled = await valueInputs.evaluateAll((els) =>
@@ -159,18 +159,17 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
         .filter((v) => v !== ""),
     );
     expect(filled.length).toBe(3);
-    // Each seeded value is the cleaned merchant prefix (verbatim, no trailing
-    // reference number).
+    // Each seeded value is the FULL transaction description, verbatim.
     expect(filled).toEqual(
       expect.arrayContaining([
-        "CASTRO FASHION TLV",
-        "FOX HOME RAANANA",
-        "STEIMATZKY BOOKS",
+        "CASTRO FASHION TLV 8842",
+        "FOX HOME RAANANA 1290",
+        "STEIMATZKY BOOKS 553",
       ]),
     );
 
-    // And the OR rule actually matches transactions (verbatim-substring
-    // invariant) — the live preview must be non-zero.
+    // And the OR rule actually matches transactions (description is trivially a
+    // substring of itself) — the live preview must be non-zero.
     await page.waitForResponse(
       (res) =>
         res.url().includes("/api/tagging-rules/rules/preview") &&

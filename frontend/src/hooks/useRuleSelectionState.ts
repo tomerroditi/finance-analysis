@@ -3,7 +3,6 @@ import type { Transaction } from "../types/transaction";
 import type { TaggingRule } from "../services/api";
 import { useTaggingRules } from "./useTaggingRules";
 import { findMatchingRules } from "../utils/taggingRuleEval";
-import { deriveRuleKeyword } from "../utils/ruleKeyword";
 
 /**
  * Result of evaluating a selection of transactions against the auto-tagging
@@ -12,13 +11,13 @@ import { deriveRuleKeyword } from "../utils/ruleKeyword";
  *
  * - `none`     — no rule-applicable transactions in the selection; hide the button.
  * - `add`      — none of the selected transactions match any rule; offer to create
- *                one. `seedKeywords` holds the distinct merchant-prefix keywords
- *                derived from the selection (one per merchant), each a verbatim
- *                substring of its description, which the quick action turns into
- *                an OR of `description contains` conditions. A single transaction
- *                yields one keyword. May be empty when no usable prefix could be
- *                derived (e.g. descriptions that lead with generic words /
- *                numbers) — the editor then opens with no seeded condition.
+ *                one. `seedKeywords` holds the distinct transaction descriptions
+ *                (verbatim, trimmed, deduped) across the selection, which the
+ *                quick action turns into an OR of `description contains`
+ *                conditions — one branch per distinct description. A single
+ *                transaction yields one condition. May be empty when every
+ *                selected transaction has a blank description, in which case the
+ *                editor opens with no seeded condition.
  * - `view`     — every selected transaction matches the exact same single rule;
  *                offer to open it.
  * - `disabled` — the selection is ambiguous (some match and some don't, or
@@ -59,16 +58,17 @@ export function useRuleSelectionState(
     }
 
     if (matchedIds.size === 0) {
-      // Distinct cleaned keywords across the selection, in first-seen order.
-      // Multiple transactions from the same merchant collapse to one keyword;
-      // each distinct keyword becomes an OR branch in the new rule.
+      // Seed `contains <description>` verbatim — the description is trivially a
+      // substring of itself, so the rule always matches at least the source
+      // transaction. Distinct descriptions across the selection are deduped,
+      // in first-seen order, and each becomes an OR branch in the new rule.
       const seedKeywords: string[] = [];
       const seen = new Set<string>();
       for (const tx of applicable) {
-        const keyword = deriveRuleKeyword(tx.description ?? tx.desc ?? "");
-        if (keyword && !seen.has(keyword)) {
-          seen.add(keyword);
-          seedKeywords.push(keyword);
+        const description = (tx.description ?? tx.desc ?? "").trim();
+        if (description && !seen.has(description)) {
+          seen.add(description);
+          seedKeywords.push(description);
         }
       }
       return { kind: "add", seedKeywords };
