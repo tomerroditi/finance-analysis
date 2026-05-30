@@ -152,6 +152,35 @@ Regenerate and commit the `.db` along with script edits whenever you:
 - Find a missing use case while auditing the data flow page (e.g., a new KPI that needs seed data)
 - Fix a realism bug (wrong percentages, wrong category names, etc.)
 - Add support for a new table (scaffold fixture rows alongside the schema change)
+- **Write or fix a UI/e2e test whose scenario the existing demo data can't
+  exercise.** Demo Mode backs the Playwright e2e suite, so a test is only as
+  good as the rows it can find. If the data forces a test to `test.skip(...)`
+  or fall back to "whatever happens to sort first", that's a coverage gap —
+  extend the generator so the scenario is deterministic, don't weaken the test.
+
+### Extending demo data for a test scenario
+
+When an e2e/UI test needs data the dataset lacks:
+
+1. **Find the closest existing generator** (`generate_untagged_transactions`,
+   `generate_cc_transactions`, etc.) and add rows there, keeping them in
+   character with the Cohen-family story — realistic merchant names, amounts,
+   and recent-month dates so they surface in the UI.
+2. **Make the new rows unambiguous for the test.** Give them properties no
+   other row shares (a distinctive merchant prefix, a category nothing else
+   uses) so the test can target them by stable text rather than by position.
+   Example: the 3 trailing *rule-free* untagged CC rows (`CASTRO FASHION`,
+   `FOX HOME`, `STEIMATZKY BOOKS`) exist purely so the auto-tagging "Add Rule"
+   quick-action e2e can drive the create-rule (not view-rule) path and assert
+   OR-chaining across distinct merchants — the original 8 untagged rows all
+   matched a seeded rule, so they only ever exercised the "View Rule" path.
+3. **Mind pagination.** The transactions table shows ~10 date-sorted rows per
+   page, so a test should locate new rows via the in-table search filter, not
+   assume they land on page 1.
+4. **Update the count in the generator's docstring** (e.g. "Generate N untagged
+   CC transactions") and re-run the checks below.
+5. Keep additions **seeded/deterministic** — no unseeded randomness (see "When
+   NOT to touch this script").
 
 ## When NOT to touch this script
 

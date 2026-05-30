@@ -1076,7 +1076,12 @@ def generate_cc_transactions(session):
 
 
 def generate_untagged_transactions(session, monthly_cc_totals: dict):
-    """Generate 8 untagged CC transactions in recent months.
+    """Generate 11 untagged CC transactions in recent months.
+
+    The first 8 use merchants that match an existing tagging rule (so the
+    "auto-tag would catch this" / "View Rule" flows can be demoed); the last 3
+    are deliberately rule-free with clean merchant prefixes so the "Add Rule"
+    quick action (and its OR-chaining across a multi-select) can be exercised.
 
     Also updates *monthly_cc_totals* so that CC bill amounts remain consistent.
     """
@@ -1094,6 +1099,16 @@ def generate_untagged_transactions(session, monthly_cc_totals: dict):
         ("AMAZON.COM ORDER", "visa cal", "Online Shopping", rand_amount(-350, -100), recent_month_2),
         ("GAN YELADIM", "max", "Family Card", -2800.0, recent_month_1),
         ("HOLMES PLACE MEMBERSHIP", "max", "Family Card", -249.0, recent_month_2),
+        # Rule-free untagged entries: descriptions match NONE of the seeded
+        # tagging rules, so the "Add Rule" quick action surfaces (not "View
+        # Rule"). Distinct merchants with a clean prefix followed by a varying
+        # reference number, so deriveRuleKeyword yields distinct, verbatim
+        # substring keywords ("CASTRO FASHION TLV", "FOX HOME RAANANA",
+        # "STEIMATZKY BOOKS") — exercises OR-chaining when several are selected
+        # together. See the auto-tagging quick-action e2e spec.
+        ("CASTRO FASHION TLV 8842", "max", "Family Card", rand_amount(-400, -150), recent_month_1),
+        ("FOX HOME RAANANA 1290", "max", "Family Card", rand_amount(-250, -90), recent_month_1),
+        ("STEIMATZKY BOOKS 553", "visa cal", "Online Shopping", rand_amount(-180, -60), recent_month_1),
     ]
 
     untagged_txns = []

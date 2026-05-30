@@ -112,42 +112,76 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
     await page.getByRole("button", { name: /Credit Card/i }).click();
     await page.waitForLoadState("networkidle");
 
-    const rows = page.locator("table tbody tr");
-    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    const rowCount = await rows.count();
-    test.skip(rowCount < 3, "needs at least 3 transactions to test OR-chaining");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({
+      timeout: 10_000,
+    });
 
-    // Select several transactions; distinct merchants yield distinct keywords.
-    const toSelect = Math.min(rowCount, 6);
-    for (let i = 0; i < toSelect; i++) {
-      await rows.nth(i).locator('input[type="checkbox"]').check();
+    // Select three demo transactions from DISTINCT merchants that match no
+    // existing rule (see scripts/generate_demo_data.py rule-free untagged
+    // entries). Each distinct merchant prefix becomes its own OR branch, so
+    // this drives the Add-Rule path deterministically.
+    //
+    // The default page shows 10 date-sorted rows, so these specific rows may
+    // not all be on page 1. Use the table search to surface each merchant in
+    // turn and tick it — selection persists across filter changes (only the
+    // page index resets).
+    const search = page.getByRole("textbox", { name: /search/i }).first();
+    const merchants = ["CASTRO FASHION", "FOX HOME", "STEIMATZKY BOOKS"];
+    for (const merchant of merchants) {
+      await search.fill(merchant);
+      const row = page
+        .locator("table tbody tr")
+        .filter({ hasText: merchant })
+        .first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await row.locator('input[type="checkbox"]').check();
     }
+    await search.fill("");
 
     const bulkBar = page
       .locator("div.fixed.bottom-4, div.fixed.md\\:bottom-8")
       .last();
-    const ruleButton = bulkBar.getByRole("button", { name: /Add Rule|View Rule/ });
+    const ruleButton = bulkBar.getByRole("button", { name: /^Add Rule$/ });
     await expect(ruleButton).toBeVisible({ timeout: 5_000 });
-
-    // Only meaningful when the selection has no existing rules (Add Rule path).
-    test.skip(
-      await ruleButton.isDisabled(),
-      "ambiguous selection — not the Add Rule path",
-    );
-    const label = (await ruleButton.textContent())?.trim() ?? "";
-    test.skip(!/Add Rule/.test(label), "selection already matches a rule");
+    await expect(ruleButton).toBeEnabled();
 
     await ruleButton.click();
     const modal = page.locator(".modal-overlay").last();
     await expect(modal).toBeVisible();
 
     // The seeded rule is an OR with one `description contains` branch per
-    // distinct merchant keyword. With multiple distinct merchants selected,
-    // there should be more than one Value input pre-filled.
+    // distinct merchant keyword — three distinct merchants -> three filled
+    // Value inputs.
     const valueInputs = modal.locator('input[placeholder="Value"]:visible');
     const filled = await valueInputs.evaluateAll((els) =>
-      els.filter((el) => (el as HTMLInputElement).value.trim() !== "").length,
+      els
+        .map((el) => (el as HTMLInputElement).value.trim())
+        .filter((v) => v !== ""),
     );
-    expect(filled).toBeGreaterThan(1);
+    expect(filled.length).toBe(3);
+    // Each seeded value is the cleaned merchant prefix (verbatim, no trailing
+    // reference number).
+    expect(filled).toEqual(
+      expect.arrayContaining([
+        "CASTRO FASHION TLV",
+        "FOX HOME RAANANA",
+        "STEIMATZKY BOOKS",
+      ]),
+    );
+
+    // And the OR rule actually matches transactions (verbatim-substring
+    // invariant) — the live preview must be non-zero.
+    await page.waitForResponse(
+      (res) =>
+        res.url().includes("/api/tagging-rules/rules/preview") &&
+        res.request().method() === "POST",
+    );
+    const matchesLabel = modal.getByText(/\d+\s*matches/).first();
+    await expect(matchesLabel).toBeVisible();
+    const matchCount = parseInt(
+      (await matchesLabel.textContent())?.match(/(\d+)/)?.[1] ?? "0",
+      10,
+    );
+    expect(matchCount).toBeGreaterThan(0);
   });
 });
