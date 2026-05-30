@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { isTouchDevice } from "./utils/plotlyLocale";
+import { installChartTouchZoom } from "./utils/chartTouchZoom";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OnboardingGate } from "./components/OnboardingGate";
@@ -29,6 +32,15 @@ import {
 } from "./pages";
 
 function App() {
+  // On touch devices, let a double-tap put a Plotly chart into native zoom mode
+  // (drag a rectangle to zoom). Charts disable Plotly's own drag by default so a
+  // plain swipe scrolls the page; this restores zoom behind an explicit gesture.
+  // No-op on desktop.
+  useEffect(() => {
+    if (!isTouchDevice) return;
+    return installChartTouchZoom();
+  }, []);
+
   return (
     <PersistQueryClientProvider
       client={queryClient}

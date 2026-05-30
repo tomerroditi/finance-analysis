@@ -145,6 +145,11 @@ export function donutMarker(
 export const chartTheme: Partial<Plotly.Layout> = {
   paper_bgcolor: "rgba(0,0,0,0)",
   plot_bgcolor: "rgba(0,0,0,0)",
+  // Keep user-driven zoom/pan across re-renders. react-plotly re-runs
+  // Plotly.react on every parent render (e.g. React Query refetch); without a
+  // constant uirevision that would reset a zoom the user made on touch back to
+  // autorange. The value just has to stay constant — see utils/chartTouchZoom.ts.
+  uirevision: "persist",
   font: { color: "#94a3b8", family: "Inter, sans-serif", size: 12 },
   colorway: CHART_COLORS,
   margin: { t: 24, b: 36, l: 48, r: 16 },
@@ -155,6 +160,13 @@ export const chartTheme: Partial<Plotly.Layout> = {
     namelength: -1,
   },
   hovermode: isTouchDevice ? "closest" : "x unified",
+  // On touch devices Plotly's default `dragmode: "zoom"` hijacks a single-finger
+  // swipe to draw a zoom box, so dragging over a chart zooms it instead of
+  // scrolling the page. Disabling drag lets a plain swipe fall through to page
+  // scroll; figure zoom is instead offered behind an explicit double-tap-then-
+  // drag gesture (utils/chartTouchZoom.ts). Tapping still shows the hover
+  // tooltip. Desktop keeps drag-to-zoom.
+  dragmode: isTouchDevice ? false : "zoom",
   legend: { orientation: "h", y: -0.18, x: 0.5, xanchor: "center", font: { size: 11 }, itemwidth: 30 },
   xaxis: {
     showspikes: false,
@@ -185,6 +197,8 @@ export function plotlyConfig(
     locale: i18n.language,
     locales: { he: heLocale },
     doubleClick: "reset+autosize",
+    // Keep pinch / wheel from zooming the chart instead of scrolling the page.
+    scrollZoom: false,
     ...extra,
   };
 }

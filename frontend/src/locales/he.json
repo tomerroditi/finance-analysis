@@ -965,6 +965,9 @@
     "selectDateRange": "בחר טווח תאריכים",
     "customRange": "טווח מותאם"
   },
+  "charts": {
+    "zoomHint": "גררו כדי להתקרב · הקשה כפולה לאיפוס · הקישו בחוץ ליציאה"
+  },
   "tooltips": {
     "editCategoryTag": "ערוך קטגוריה / תגית",
     "editTransaction": "ערוך תנועה",
