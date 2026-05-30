@@ -428,7 +428,8 @@
     "subtitle": "Manage your categories and tags",
     "rules": {
       "title": "Auto-Tagging Rules",
-      "subtitle": "Automatically categorize transactions as they come in"
+      "subtitle": "Automatically categorize transactions as they come in",
+      "count": "{{count}} rules"
     },
     "addCategory": "Add Category",
     "addTag": "Add Tag",

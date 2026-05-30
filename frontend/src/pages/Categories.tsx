@@ -123,7 +123,7 @@ export function Categories() {
       )}
 
       {/* Auto-Tagging Rules */}
-      <div className="pt-2 border-t border-[var(--surface-light)]">
+      <div className="pt-2">
         <RulesSection />
       </div>
 

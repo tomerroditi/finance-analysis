@@ -8,8 +8,9 @@ import {
     Trash2,
     AlertTriangle,
     Search,
-    ChevronDown,
-    ChevronUp,
+    X,
+    ChevronRight,
+    ChevronLeft,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { taggingApi } from "../../services/api";
@@ -17,23 +18,63 @@ import type { TaggingRule } from "../../services/api";
 import { RuleEditorModal } from "../transactions/RuleEditorModal";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useConfirm } from "../../context/DialogContext";
+import { useScrollLock } from "../../hooks/useScrollLock";
 
 /**
- * Auto-tagging rules management, shown as a section on the Categories page.
- * Lists every rule with per-rule apply / edit / delete actions, a search box,
- * and "New Rule" / "Apply Rules" controls. Rule creation / editing reuses
- * {@link RuleEditorModal}.
+ * Categories-page entry point for auto-tagging rules: a launcher card that opens
+ * a full-screen {@link RulesManagerModal}. The full list / search / actions live
+ * in the modal so they get room to breathe instead of a cramped inline section.
  */
 export function RulesSection() {
+    const { t, i18n } = useTranslation();
+    const isRtl = i18n.language === "he";
+    const [isOpen, setIsOpen] = useState(false);
+    const { data: rules } = useTaggingRules();
+    const count = rules?.length ?? 0;
+
+    return (
+        <>
+            <button
+                onClick={() => setIsOpen(true)}
+                className="w-full flex items-center gap-3 p-4 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--surface-light)]/30 transition-all text-start"
+            >
+                <div className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--primary)]/10 border border-[var(--primary)]/20 shrink-0">
+                    <ShieldCheck className="text-[var(--primary)]" size={22} />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <h2 className="font-bold text-base md:text-lg truncate">{t("categories.rules.title")}</h2>
+                    <p className="text-xs text-[var(--text-muted)] truncate">{t("categories.rules.subtitle")}</p>
+                </div>
+                <span className="text-xs text-[var(--text-muted)] shrink-0" dir="ltr">
+                    {t("categories.rules.count", { count })}
+                </span>
+                {isRtl ? (
+                    <ChevronLeft size={18} className="text-[var(--text-muted)] shrink-0" />
+                ) : (
+                    <ChevronRight size={18} className="text-[var(--text-muted)] shrink-0" />
+                )}
+            </button>
+
+            <RulesManagerModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+        </>
+    );
+}
+
+/**
+ * Full-screen modal that lists every auto-tagging rule with per-rule apply /
+ * edit / delete actions, a search box, and "New Rule" / "Apply Rules" controls.
+ * Rule creation / editing reuses {@link RuleEditorModal} on top.
+ */
+function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const confirm = useConfirm();
+    useScrollLock(isOpen);
 
-    const [collapsed, setCollapsed] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [editingRule, setEditingRule] = useState<TaggingRule | null>(null);
 
     const { data: rules, isLoading: rulesLoading } = useTaggingRules();
@@ -96,53 +137,62 @@ export function RulesSection() {
 
     const openCreate = () => {
         setEditingRule(null);
-        setIsModalOpen(true);
+        setIsEditorOpen(true);
     };
 
     const openEdit = (rule: TaggingRule) => {
         setEditingRule(rule);
-        setIsModalOpen(true);
+        setIsEditorOpen(true);
     };
 
-    return (
-        <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden">
-            {/* Header */}
-            <div className="p-4 flex items-center justify-between gap-3 border-b border-[var(--surface-light)] bg-[var(--surface-light)]/10">
-                <button
-                    onClick={() => setCollapsed((v) => !v)}
-                    className="flex items-center gap-2 min-w-0 text-start"
-                    aria-expanded={!collapsed}
-                >
-                    <ShieldCheck className="text-[var(--primary)] shrink-0" size={20} />
-                    <div className="min-w-0">
-                        <h2 className="font-bold text-base md:text-lg truncate">{t("categories.rules.title")}</h2>
-                        <p className="text-xs text-[var(--text-muted)] truncate">{t("categories.rules.subtitle")}</p>
-                    </div>
-                    {collapsed ? (
-                        <ChevronDown size={18} className="text-[var(--text-muted)] shrink-0" />
-                    ) : (
-                        <ChevronUp size={18} className="text-[var(--text-muted)] shrink-0" />
-                    )}
-                </button>
-                <div className="flex items-center gap-2 shrink-0">
-                    <button
-                        onClick={openCreate}
-                        className="px-3 py-2 flex items-center justify-center gap-2 bg-[var(--primary)]/10 text-[var(--primary)] rounded-xl border border-[var(--primary)]/20 hover:bg-[var(--primary)]/20 font-bold transition-all text-sm"
-                    >
-                        <Plus size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.newRule")}</span>
-                    </button>
-                    <button
-                        onClick={() => applyMutation.mutate()}
-                        disabled={applyMutation.isPending}
-                        className="px-3 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50 text-sm"
-                    >
-                        <Play size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.applyRules")}</span>
-                    </button>
-                </div>
-            </div>
+    if (!isOpen) return null;
 
-            {!collapsed && (
-                <div className="p-4 space-y-4">
+    return (
+        <div className="modal-overlay fixed inset-0 z-50 flex items-stretch sm:items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+            {/* Modal */}
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="rules-manager-title"
+                className="relative w-full h-dvh sm:w-[95vw] sm:h-[90vh] bg-[var(--surface-base)] sm:rounded-2xl shadow-2xl sm:border sm:border-[var(--surface-light)] flex flex-col overflow-hidden"
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between gap-3 px-4 md:px-6 py-3 md:py-4 border-b border-[var(--surface-light)] bg-[var(--surface)]">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <ShieldCheck className="text-[var(--primary)] shrink-0" size={20} />
+                        <h2 id="rules-manager-title" className="text-lg md:text-xl font-bold truncate">
+                            {t("categories.rules.title")}
+                        </h2>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={openCreate}
+                            className="px-3 py-2 flex items-center justify-center gap-2 bg-[var(--primary)]/10 text-[var(--primary)] rounded-xl border border-[var(--primary)]/20 hover:bg-[var(--primary)]/20 font-bold transition-all text-sm"
+                        >
+                            <Plus size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.newRule")}</span>
+                        </button>
+                        <button
+                            onClick={() => applyMutation.mutate()}
+                            disabled={applyMutation.isPending}
+                            className="px-3 py-2 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 hover:bg-emerald-500/20 font-bold transition-all disabled:opacity-50 text-sm"
+                        >
+                            <Play size={16} /> <span className="hidden sm:inline">{t("transactions.autoTagging.applyRules")}</span>
+                        </button>
+                        <button
+                            onClick={onClose}
+                            aria-label={t("common.close")}
+                            className="p-2 hover:bg-[var(--surface-light)] rounded-lg transition-colors"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
                     {/* Search */}
                     <div className="relative">
                         <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -150,7 +200,7 @@ export function RulesSection() {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder={t("transactions.autoTagging.searchRules")}
-                            className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl py-2 ps-9 pe-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
+                            className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl py-2 ps-9 pe-4 text-sm outline-none focus:border-[var(--primary)] transition-colors placeholder:text-[var(--text-muted)]"
                         />
                     </div>
 
@@ -175,11 +225,11 @@ export function RulesSection() {
                             {searchQuery ? t("transactions.autoTagging.noMatchingRules") : t("transactions.autoTagging.noRules")}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                             {filteredRules?.map((rule) => (
                                 <div
                                     key={rule.id}
-                                    className="group p-3 bg-[var(--surface-base)] rounded-xl border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all"
+                                    className="group p-3 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all"
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-2">
                                         <h4 className="font-bold text-sm truncate" dir="auto">{rule.name}</h4>
@@ -222,14 +272,14 @@ export function RulesSection() {
                         </div>
                     )}
                 </div>
-            )}
 
-            <RuleEditorModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                editingRule={editingRule}
-                onSaved={() => flash(t("transactions.autoTagging.ruleSaved"))}
-            />
+                <RuleEditorModal
+                    isOpen={isEditorOpen}
+                    onClose={() => setIsEditorOpen(false)}
+                    editingRule={editingRule}
+                    onSaved={() => flash(t("transactions.autoTagging.ruleSaved"))}
+                />
+            </div>
         </div>
     );
 }

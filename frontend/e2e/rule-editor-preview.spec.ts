@@ -15,12 +15,13 @@ test.describe("Rule editor matching transactions preview", () => {
   });
 
   test("matching transactions table is not capped at 50", async ({ page }) => {
-    // Auto-tagging rules now live in the Auto-Tagging Rules section on the
-    // Categories page (moved off the Transactions side panel).
+    // Auto-tagging rules now live in a full-screen manager opened from the
+    // Auto-Tagging Rules launcher on the Categories page.
     await navigateTo(page, "/categories");
     await page.waitForLoadState("networkidle");
 
-    // Click the "New Rule" button in the rules section header.
+    // Open the rules manager, then click "New Rule".
+    await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();
     await page.getByRole("button", { name: /^New Rule$/ }).click();
 
     // Wait for the editor modal to render and pick the visible Value input
