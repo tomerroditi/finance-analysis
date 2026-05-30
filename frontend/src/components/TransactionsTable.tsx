@@ -885,23 +885,26 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Pencil size={14} />
                         </button>
-                        {(tx.category || tx.tag) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearCategoryTagMutation.mutate({
-                                uniqueId: String(tx.unique_id ?? tx.id),
-                                source: tx.source || "",
-                              });
-                            }}
-                            className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-50"
-                            disabled={clearCategoryTagMutation.isPending}
-                            title={t("transactions.bulk.clearCategoryTag")}
-                            aria-label={t("transactions.bulk.clearCategoryTag")}
-                          >
-                            <Eraser size={14} />
-                          </button>
-                        )}
+                        {(() => {
+                          const hasTagging = !!(tx.category || tx.tag);
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearCategoryTagMutation.mutate({
+                                  uniqueId: String(tx.unique_id ?? tx.id),
+                                  source: tx.source || "",
+                                });
+                              }}
+                              className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed"
+                              disabled={clearCategoryTagMutation.isPending || !hasTagging}
+                              title={t("transactions.bulk.clearCategoryTag")}
+                              aria-label={t("transactions.bulk.clearCategoryTag")}
+                            >
+                              <Eraser size={14} />
+                            </button>
+                          );
+                        })()}
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title={t("tooltips.splitTransaction")}
