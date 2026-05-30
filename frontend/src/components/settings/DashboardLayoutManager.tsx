@@ -52,6 +52,13 @@ function SortableCardRow({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    // @dnd-kit spreads role="button" onto the row, which makes the global
+    // `[role="button"] { touch-action: manipulation }` rule (index.css) win
+    // over Tailwind's `touch-none`. That lets the browser claim pan gestures
+    // on touch / trackpad so the PointerSensor never sees the move → dragging
+    // silently dies. An inline style beats the stylesheet regardless of
+    // specificity, so force it here.
+    touchAction: "none",
   };
 
   return (

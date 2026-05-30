@@ -110,6 +110,24 @@ test.describe("Dashboard layout customization", () => {
     expect(order).toContain("forecast");
   });
 
+  test("draggable rows have touch-action: none (regression guard)", async ({ page }) => {
+    // @dnd-kit spreads role="button" onto each row; the global
+    // `[role="button"] { touch-action: manipulation }` rule would otherwise
+    // win the cascade and break dragging on touch/trackpad. The inline
+    // `touch-action: none` must override it. This guards that exact bug, which
+    // a synthetic-mouse drag test cannot catch.
+    await page.goto("/");
+    await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
+    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page.getByRole("button", { name: /^Dashboard$/ }).click();
+
+    const touchAction = await page
+      .getByText("This Month (forecast)", { exact: true })
+      .locator("xpath=..")
+      .evaluate((el) => getComputedStyle(el).touchAction);
+    expect(touchAction).toBe("none");
+  });
+
   test("X button closes the settings popup", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
