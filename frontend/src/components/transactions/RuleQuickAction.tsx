@@ -65,12 +65,19 @@ export function RuleQuickAction({
             </button>
         );
     } else if (state.kind === "add") {
-        const conditions: ConditionNode = {
-            type: "OR",
-            subconditions: [
-                { type: "CONDITION", field: "description", operator: "contains", value: state.seedKeyword },
-            ],
-        };
+        // One OR branch per distinct merchant keyword in the selection. Falls
+        // back to a single empty condition when nothing usable was derived so
+        // the editor still opens with a builder row.
+        const subconditions: ConditionNode[] =
+            state.seedKeywords.length > 0
+                ? state.seedKeywords.map((value) => ({
+                      type: "CONDITION" as const,
+                      field: "description",
+                      operator: "contains" as const,
+                      value,
+                  }))
+                : [{ type: "CONDITION", field: "description", operator: "contains", value: "" }];
+        const conditions: ConditionNode = { type: "OR", subconditions };
         prefill = {
             category: stagedCategory || undefined,
             tag: stagedTag || undefined,

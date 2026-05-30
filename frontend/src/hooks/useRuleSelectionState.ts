@@ -12,7 +12,10 @@ import { deriveRuleKeyword } from "../utils/ruleKeyword";
  *
  * - `none`     — no rule-applicable transactions in the selection; hide the button.
  * - `add`      — none of the selected transactions match any rule; offer to create
- *                one, seeded from the first transaction's description.
+ *                one. `seedKeywords` holds the distinct cleaned description
+ *                keywords across the selection (one per merchant), which the
+ *                quick action turns into an OR of `description contains`
+ *                conditions. A single transaction yields one keyword.
  * - `view`     — every selected transaction matches the exact same single rule;
  *                offer to open it.
  * - `disabled` — the selection is ambiguous (some match and some don't, or
@@ -21,7 +24,7 @@ import { deriveRuleKeyword } from "../utils/ruleKeyword";
  */
 export type RuleSelectionState =
   | { kind: "none" }
-  | { kind: "add"; seedKeyword: string }
+  | { kind: "add"; seedKeywords: string[] }
   | { kind: "view"; rule: TaggingRule }
   | { kind: "disabled"; reason: "mixed" | "multiple" };
 
@@ -53,8 +56,19 @@ export function useRuleSelectionState(
     }
 
     if (matchedIds.size === 0) {
-      const seed = applicable[0].description ?? applicable[0].desc ?? "";
-      return { kind: "add", seedKeyword: deriveRuleKeyword(seed) };
+      // Distinct cleaned keywords across the selection, in first-seen order.
+      // Multiple transactions from the same merchant collapse to one keyword;
+      // each distinct keyword becomes an OR branch in the new rule.
+      const seedKeywords: string[] = [];
+      const seen = new Set<string>();
+      for (const tx of applicable) {
+        const keyword = deriveRuleKeyword(tx.description ?? tx.desc ?? "");
+        if (keyword && !seen.has(keyword)) {
+          seen.add(keyword);
+          seedKeywords.push(keyword);
+        }
+      }
+      return { kind: "add", seedKeywords };
     }
 
     if (matchedIds.size === 1 && !anyUnmatched && !anyMultiple) {

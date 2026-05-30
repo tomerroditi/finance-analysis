@@ -89,4 +89,50 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
       await expect(valueInput).not.toHaveValue("");
     }
   });
+
+  test("Add Rule from a multi-merchant selection OR-chains description conditions", async ({ page }) => {
+    await navigateTo(page, "/transactions");
+
+    // Restrict to credit-card transactions so the selection is rule-applicable.
+    await page.getByRole("button", { name: /Credit Card/i }).click();
+    await page.waitForLoadState("networkidle");
+
+    const rows = page.locator("table tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+    const rowCount = await rows.count();
+    test.skip(rowCount < 3, "needs at least 3 transactions to test OR-chaining");
+
+    // Select several transactions; distinct merchants yield distinct keywords.
+    const toSelect = Math.min(rowCount, 6);
+    for (let i = 0; i < toSelect; i++) {
+      await rows.nth(i).locator('input[type="checkbox"]').check();
+    }
+
+    const bulkBar = page
+      .locator("div.fixed.bottom-4, div.fixed.md\\:bottom-8")
+      .last();
+    const ruleButton = bulkBar.getByRole("button", { name: /Add Rule|View Rule/ });
+    await expect(ruleButton).toBeVisible({ timeout: 5_000 });
+
+    // Only meaningful when the selection has no existing rules (Add Rule path).
+    test.skip(
+      await ruleButton.isDisabled(),
+      "ambiguous selection — not the Add Rule path",
+    );
+    const label = (await ruleButton.textContent())?.trim() ?? "";
+    test.skip(!/Add Rule/.test(label), "selection already matches a rule");
+
+    await ruleButton.click();
+    const modal = page.locator(".modal-overlay").last();
+    await expect(modal).toBeVisible();
+
+    // The seeded rule is an OR with one `description contains` branch per
+    // distinct merchant keyword. With multiple distinct merchants selected,
+    // there should be more than one Value input pre-filled.
+    const valueInputs = modal.locator('input[placeholder="Value"]:visible');
+    const filled = await valueInputs.evaluateAll((els) =>
+      els.filter((el) => (el as HTMLInputElement).value.trim() !== "").length,
+    );
+    expect(filled).toBeGreaterThan(1);
+  });
 });
