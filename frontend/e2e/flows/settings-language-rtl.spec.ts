@@ -21,7 +21,11 @@ test.describe("Settings language toggle flow", () => {
 
     // The Settings button label flips between languages, so target the
     // lucide-settings icon's parent button — language-agnostic selector.
-    const settingsButton = page.locator("button:has(svg.lucide-settings)").first();
+    // Two such buttons exist (sidebar + mobile top bar); pick the visible one.
+    const settingsButton = page
+      .locator("button:has(svg.lucide-settings)")
+      .filter({ visible: true })
+      .first();
 
     await settingsButton.click();
     await page.getByText("עברית").click();
