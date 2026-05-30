@@ -79,9 +79,11 @@ test.describe("Transactions", () => {
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
     await page.waitForLoadState("networkidle");
 
-    // Find the first row that has the eraser button (i.e., has a category or tag).
+    // The eraser button renders on every row but is disabled for rows with no
+    // category/tag (so the action column stays aligned). Find the first
+    // *enabled* eraser — that's a row with a category or tag.
     const clearButton = page
-      .getByRole("button", { name: /clear category and tag/i })
+      .locator('table tbody button[aria-label="Clear category and tag"]:enabled')
       .first();
     await expect(clearButton).toBeVisible({ timeout: 10_000 });
 
@@ -99,13 +101,13 @@ test.describe("Transactions", () => {
     // Wait for the network to settle so the re-render completes.
     await page.waitForLoadState("networkidle");
 
-    // Re-locate the same row by its stable data-testid. The button must now be
-    // absent — the category and tag were cleared, so the conditional render
-    // `{(tx.category || tx.tag) && <button ...>}` no longer renders it.
+    // Re-locate the same row by its stable data-testid. The eraser is still
+    // present (kept for alignment) but now disabled — the category and tag
+    // were cleared, so `disabled={... || !hasTagging}` evaluates true.
     const updatedRow = page.locator(`[data-testid="${rowTestId}"]`);
     await expect(
-      updatedRow.getByRole("button", { name: /clear category and tag/i }),
-    ).toHaveCount(0);
+      updatedRow.locator('button[aria-label="Clear category and tag"]'),
+    ).toBeDisabled();
   });
 
   test("bulk eraser clears category and tag from selected transactions", async ({ page }) => {
@@ -116,11 +118,12 @@ test.describe("Transactions", () => {
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
     await page.waitForLoadState("networkidle");
 
-    // Find rows that have a per-row eraser button — these are the rows with
-    // a category or tag assigned. We need at least two such rows.
+    // Find rows whose per-row eraser is *enabled* — these are the rows with
+    // a category or tag assigned (the button renders on every row but is
+    // disabled when untagged). We need at least two such rows.
     const candidateRows = page
       .locator("table tbody tr")
-      .filter({ has: page.getByRole("button", { name: /clear category and tag/i }) });
+      .filter({ has: page.locator('button[aria-label="Clear category and tag"]:enabled') });
 
     const firstRow = candidateRows.nth(0);
     const secondRow = candidateRows.nth(1);
@@ -162,19 +165,66 @@ test.describe("Transactions", () => {
     // Wait for the network to settle so the re-render completes.
     await page.waitForLoadState("networkidle");
 
-    // Both rows now have no per-row eraser button — the category and tag have
-    // been cleared, so the conditional render `{(tx.category || tx.tag) && …}`
-    // no longer renders the button.
+    // Both rows now have a disabled per-row eraser — the category and tag have
+    // been cleared, so the button stays (for alignment) but `disabled` is true.
     await expect(
-      page.locator(`[data-testid="${firstRowId}"]`).getByRole("button", {
-        name: /clear category and tag/i,
-      }),
-    ).toHaveCount(0);
+      page
+        .locator(`[data-testid="${firstRowId}"]`)
+        .locator('button[aria-label="Clear category and tag"]'),
+    ).toBeDisabled();
     await expect(
-      page.locator(`[data-testid="${secondRowId}"]`).getByRole("button", {
-        name: /clear category and tag/i,
-      }),
-    ).toHaveCount(0);
+      page
+        .locator(`[data-testid="${secondRowId}"]`)
+        .locator('button[aria-label="Clear category and tag"]'),
+    ).toBeDisabled();
+  });
+
+  test("eraser button renders on every row (disabled when untagged) for aligned actions", async ({ page }) => {
+    await navigateTo(page, "/transactions");
+
+    const rows = page.locator("table tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState("networkidle");
+
+    // Every transaction row renders exactly one eraser button so the action
+    // column lines up regardless of whether the row is tagged. (The
+    // disabled-when-untagged behavior is verified deterministically in the
+    // per-row eraser test, which clears a row and asserts the button is then
+    // disabled rather than removed.)
+    const rowCount = await rows.count();
+    const erasers = page.locator('table tbody button[aria-label="Clear category and tag"]');
+    await expect(erasers).toHaveCount(rowCount);
+  });
+
+  test("description column is wide enough to show more than a few characters", async ({ page }) => {
+    // Regression: the table is `table-fixed` and every column except the
+    // description had an explicit pixel width. With the old `min-w-[800px]`
+    // the fixed columns consumed almost the whole table, collapsing the
+    // description column to ~20px (≈3 characters). It now has a 150px width
+    // and the table min-width was raised so it can never collapse.
+    await navigateTo(page, "/transactions");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState("networkidle");
+
+    // Locate the description column header and measure its rendered width.
+    const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();
+    await expect(descHeader).toBeVisible();
+    const headerBox = await descHeader.boundingBox();
+    expect(headerBox).not.toBeNull();
+    // 150px floor (flexes wider on a roomy viewport) — comfortably more than
+    // the ~20px / 3-char collapse the bug produced.
+    expect(headerBox!.width).toBeGreaterThan(110);
+
+    // Sanity-check a body cell in the same column matches the header width,
+    // so the data cell isn't independently squeezed.
+    const firstRow = page.locator("table tbody tr").first();
+    const descCell = firstRow.locator("td").nth(await descHeader.evaluate((th) => {
+      // Column index of the description header among its sibling <th> cells.
+      return Array.from(th.parentElement!.children).indexOf(th);
+    }));
+    const cellBox = await descCell.boundingBox();
+    expect(cellBox).not.toBeNull();
+    expect(cellBox!.width).toBeGreaterThan(110);
   });
 
   test("bulk-edit category dropdown does not scroll when hovering visible options", async ({ page }) => {

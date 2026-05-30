@@ -730,7 +730,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
-        <table className="w-full min-w-[800px] text-sm text-start table-fixed">
+        <table className="w-full min-w-[930px] text-sm text-start table-fixed">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
               {showSelection && (
@@ -750,7 +750,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
               )}
               {visibleColumns.has("description") && (
-                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" />
+                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" width="150px" />
               )}
               {visibleColumns.has("category") && (
                 <SortableHeader
@@ -885,23 +885,26 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Pencil size={14} />
                         </button>
-                        {(tx.category || tx.tag) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearCategoryTagMutation.mutate({
-                                uniqueId: String(tx.unique_id ?? tx.id),
-                                source: tx.source || "",
-                              });
-                            }}
-                            className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-50"
-                            disabled={clearCategoryTagMutation.isPending}
-                            title={t("transactions.bulk.clearCategoryTag")}
-                            aria-label={t("transactions.bulk.clearCategoryTag")}
-                          >
-                            <Eraser size={14} />
-                          </button>
-                        )}
+                        {(() => {
+                          const hasTagging = !!(tx.category || tx.tag);
+                          return (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearCategoryTagMutation.mutate({
+                                  uniqueId: String(tx.unique_id ?? tx.id),
+                                  source: tx.source || "",
+                                });
+                              }}
+                              className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed"
+                              disabled={clearCategoryTagMutation.isPending || !hasTagging}
+                              title={t("transactions.bulk.clearCategoryTag")}
+                              aria-label={t("transactions.bulk.clearCategoryTag")}
+                            >
+                              <Eraser size={14} />
+                            </button>
+                          );
+                        })()}
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"
                           title={t("tooltips.splitTransaction")}

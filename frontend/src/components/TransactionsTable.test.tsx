@@ -182,24 +182,26 @@ describe("TransactionsTable", () => {
   });
 
   describe("clear category/tag", () => {
-    it("renders the eraser button when a row has a category", () => {
+    it("renders the eraser button enabled when a row has a category", () => {
       const tx = makeTx({ category: "Food", tag: "Groceries" });
       renderWithProviders(
         <TransactionsTable transactions={[tx]} showActions />,
       );
       expect(
         screen.getByRole("button", { name: "Clear category and tag" }),
-      ).toBeInTheDocument();
+      ).toBeEnabled();
     });
 
-    it("hides the eraser button when a row has neither category nor tag", () => {
+    it("renders the eraser button disabled when a row has neither category nor tag", () => {
       const tx = makeTx({ category: undefined, tag: undefined });
       renderWithProviders(
         <TransactionsTable transactions={[tx]} showActions />,
       );
+      // The button stays in the DOM (kept for action-column alignment) but is
+      // disabled since there is nothing to clear.
       expect(
-        screen.queryByRole("button", { name: "Clear category and tag" }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("button", { name: "Clear category and tag" }),
+      ).toBeDisabled();
     });
 
     it("calls PUT /api/transactions/:id with empty strings on per-row click", async () => {
