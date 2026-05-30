@@ -29,12 +29,17 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
 
     // The launcher card opens the full-screen rules manager.
     await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /Auto-Tagging Rules/i }),
-    ).toBeVisible({ timeout: 10_000 });
+    const manager = page.locator(
+      '[role="dialog"][aria-labelledby="rules-manager-title"]',
+    );
+    await expect(manager).toBeVisible({ timeout: 10_000 });
+
+    // It opens full-screen, not as a cramped inline section.
+    const managerBox = await manager.boundingBox();
+    expect(managerBox?.height ?? 0).toBeGreaterThan(500);
 
     // The "New Rule" button in the manager opens the rule editor.
-    await page.getByRole("button", { name: /^New Rule$/ }).click();
+    await manager.getByRole("button", { name: /^New Rule$/ }).click();
     const modal = page.locator(".modal-overlay").last();
     await expect(modal).toBeVisible();
   });
