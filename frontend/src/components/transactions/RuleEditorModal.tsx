@@ -18,6 +18,12 @@ interface RuleEditorModalProps {
     onClose: () => void;
     editingRule?: TaggingRule | null;
     onSaved?: () => void;
+    /**
+     * Initial values for a NEW rule (ignored when `editingRule` is set). Used by
+     * the "Add Rule" quick action to seed the category/tag and a
+     * description-based condition derived from the transaction being marked.
+     */
+    prefill?: { category?: string; tag?: string; conditions?: ConditionNode };
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
@@ -27,7 +33,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
     ]
 };
 
-export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleEditorModalProps) {
+export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill }: RuleEditorModalProps) {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     useScrollLock(isOpen);
@@ -68,24 +74,24 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved }: RuleE
      
     useEffect(() => {
         if (editingRule) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCategory(editingRule.category);
-             
             setTag(editingRule.tag);
-             
             setConditions(editingRule.conditions);
         } else {
-             
-            setCategory("");
-             
-            setTag("");
-             
-            setConditions(EMPTY_CONDITIONS);
+
+            setCategory(prefill?.category ?? "");
+
+            setTag(prefill?.tag ?? "");
+
+            setConditions(prefill?.conditions ?? EMPTY_CONDITIONS);
         }
 
         setError(null);
 
         setMobileTab("rule");
+        // `prefill` is intentionally read only when the modal (re)opens so user
+        // edits aren't clobbered by parent re-renders that recreate the object.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editingRule, isOpen]);
 
     // Debounced conditions for preview

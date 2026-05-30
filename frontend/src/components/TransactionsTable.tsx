@@ -420,6 +420,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       .every((tx) => tx.source?.includes("cash") || tx.source?.includes("manual_investment"));
   }, [transactions, selectedIds]);
 
+  const selectedTransactions = useMemo(
+    () => transactions.filter((tx) => selectedIds.has(getTransactionId(tx))),
+    [transactions, selectedIds],
+  );
+
   const handleDelete = (tx: Transaction) => {
     setDeletingTransaction(tx);
   };
@@ -1092,6 +1097,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           allSelectedAreCash={allSelectedAreCash}
           categories={categories}
           cashBalances={cashBalances}
+          selectedTransactions={selectedTransactions}
           onApply={handleBulkApply}
           onBulkDelete={handleBulkDelete}
           onClearCategoryTag={handleBulkClearCategoryTag}
@@ -1138,6 +1144,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             category: editingTransaction.category,
             tag: editingTransaction.tag,
             account_name: editingTransaction.account_name,
+            provider: editingTransaction.provider,
           }}
           onClose={() => setEditingTransaction(null)}
           onSuccess={() => {

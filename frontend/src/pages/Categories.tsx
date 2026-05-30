@@ -7,6 +7,7 @@ import { Skeleton } from "../components/common/Skeleton";
 import { Modal } from "../components/common/Modal";
 import { useCategories } from "../hooks/useCategories";
 import { CategoryDetailPanel } from "../components/categories/CategoryDetailPanel";
+import { RulesSection } from "../components/categories/RulesSection";
 
 export function Categories() {
   const { t } = useTranslation();
@@ -120,6 +121,11 @@ export function Categories() {
           </div>
         )
       )}
+
+      {/* Auto-Tagging Rules */}
+      <div className="pt-2 border-t border-[var(--surface-light)]">
+        <RulesSection />
+      </div>
 
       {/* Detail Panel */}
       {selectedCategory && (

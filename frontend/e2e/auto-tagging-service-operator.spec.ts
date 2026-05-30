@@ -12,9 +12,8 @@ import { navigateTo, enableDemoMode, disableDemoMode } from "./helpers";
  *     through i18n with a {{count}} interpolation. We assert the apply-rules
  *     flow surfaces a localized success toast with no raw translation-key leak.
  *
- * The "New Rule" / "Apply Rules" buttons live inside the Auto Tagging side
- * panel, which is collapsed by default — open it first (same pattern as
- * rule-editor-preview.spec.ts). The rule editor renders the condition form in
+ * The "New Rule" / "Apply Rules" buttons live in the Auto-Tagging Rules
+ * section on the Categories page. The rule editor renders the condition form in
  * two layout variants (mobile + desktop), so option locators are filtered to
  * the visible one.
  */
@@ -33,11 +32,10 @@ test.describe("Auto-tagging: service operator restriction + apply toast", () => 
   });
 
   test("service field exposes only the Equals operator", async ({ page }) => {
-    await navigateTo(page, "/transactions");
+    await navigateTo(page, "/categories");
     await page.waitForLoadState("networkidle");
 
-    // Open the Auto Tagging panel, then open the rule editor.
-    await page.getByRole("button", { name: /^Auto Tagging$/ }).click();
+    // Open the rule editor from the Auto-Tagging Rules section.
     await page.getByRole("button", { name: /^New Rule$/ }).click();
 
     const modal = page.locator(".modal-overlay").last();
@@ -70,11 +68,10 @@ test.describe("Auto-tagging: service operator restriction + apply toast", () => 
   });
 
   test("applying all rules surfaces a localized success toast", async ({ page }) => {
-    await navigateTo(page, "/transactions");
+    await navigateTo(page, "/categories");
     await page.waitForLoadState("networkidle");
 
-    // Open the Auto Tagging panel, then apply all rules.
-    await page.getByRole("button", { name: /^Auto Tagging$/ }).click();
+    // Apply all rules from the Auto-Tagging Rules section.
     await page.getByRole("button", { name: /^Apply Rules$/ }).click();
 
     // The success toast goes through i18n: "Applied rules! N tagged." It must

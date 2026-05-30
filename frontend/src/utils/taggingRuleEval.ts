@@ -67,3 +67,11 @@ export function findMatchingRule(
 ): TaggingRule | undefined {
   return rules.find((r) => evalConditionTree(r.conditions, tx));
 }
+
+/** Find every tagging rule whose conditions match a transaction. */
+export function findMatchingRules(
+  rules: TaggingRule[],
+  tx: Transaction,
+): TaggingRule[] {
+  return rules.filter((r) => evalConditionTree(r.conditions, tx));
+}

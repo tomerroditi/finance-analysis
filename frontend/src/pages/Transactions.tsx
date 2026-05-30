@@ -6,7 +6,6 @@ import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink }
 import { useCashBalances } from "../hooks/useCashBalances";
 import { useAppStore } from "../stores/appStore";
 import { TransactionsTable } from "../components/TransactionsTable";
-import { AutoTaggingPanel } from "../components/transactions/AutoTaggingPanel";
 import RefundsView from "../components/transactions/RefundsView";
 import { pendingRefundsApi } from "../services/api";
 import { Plus, Trash2, DollarSign, X } from "lucide-react";
@@ -315,8 +314,8 @@ export function Transactions() {
   ] as const;
 
   return (
-    <div className="flex relative">
-      <div className="space-y-4 md:space-y-6 min-w-0 flex-1 transition-all duration-300">
+    <div className="relative">
+      <div className="space-y-4 md:space-y-6 min-w-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 md:gap-4 overflow-x-auto scrollbar-auto-hide pb-1">
             <div className="flex gap-1.5 md:gap-2 items-center">
@@ -422,8 +421,6 @@ export function Transactions() {
           )}
         </div>
       </div>
-
-      <AutoTaggingPanel />
 
       <TransactionFormModal
         isOpen={isCreateModalOpen}
