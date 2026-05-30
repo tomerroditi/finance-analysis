@@ -1,3 +1,21 @@
+## v1.28.0 (2026-05-30)
+
+### Feat
+
+- OR-chain description conditions when adding a rule from multiple transactions
+- open auto-tagging rules in a full-screen modal from Categories
+- move auto-tagging rules to Categories page with add/view-rule quick action
+
+### Fix
+
+- derive rule keywords as verbatim substrings so contains rules match
+- open auto-tagging rules editor/manager full-screen via portal
+- render rule editor full-screen when opened from the bulk actions bar
+
+### Refactor
+
+- seed auto-tag rules with the full description verbatim
+
 ## v1.27.1 (2026-05-30)
 
 ### Fix
