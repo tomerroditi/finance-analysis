@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { backupApi } from "../../services/api";
 import { AboutPanel } from "../settings/AboutPanel";
 import { UninstallSection } from "../settings/UninstallSection";
+import { DashboardLayoutManager } from "../settings/DashboardLayoutManager";
 
 interface SettingsPopupProps {
   isOpen: boolean;
@@ -42,6 +44,7 @@ export function SettingsPopup({
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [creating, setCreating] = useState(false);
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
+  const [tab, setTab] = useState<"general" | "dashboard">("general");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -106,8 +109,46 @@ export function SettingsPopup({
     >
       <div
         ref={popupRef}
-        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
       >
+        {/* Header — title + close */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-[var(--text-default)]">
+            {t("settings.title")}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="p-2 -me-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex bg-[var(--surface-light)] p-1 rounded-xl gap-1 mb-5">
+          {([
+            { key: "general" as const, label: t("settings.tabGeneral") },
+            { key: "dashboard" as const, label: t("settings.tabDashboard") },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex-1 text-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                tab === key
+                  ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "dashboard" && <DashboardLayoutManager />}
+
+        {tab === "general" && (
+        <div className="space-y-5">
         {/* Language Toggle */}
         <div>
           <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2 block">
@@ -281,6 +322,8 @@ export function SettingsPopup({
 
         {/* macOS-only Uninstall section (hidden on Windows/Linux) */}
         <UninstallSection />
+        </div>
+        )}
       </div>
     </div>
   );

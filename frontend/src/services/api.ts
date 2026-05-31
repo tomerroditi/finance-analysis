@@ -402,7 +402,59 @@ export const analyticsApi = {
     }>("/analytics/monthly-expenses", {
       params: { exclude_pending_refunds: excludePendingRefunds, include_projects: includeProjects },
     }),
+  getCashFlowForecast: () =>
+    api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
+  getRecurring: () => api.get<RecurringSummary>("/analytics/recurring"),
+  getInsights: () => api.get<Insight[]>("/analytics/insights"),
 };
+
+export interface RecurringItem {
+  label: string;
+  normalized: string;
+  amount: number;
+  last_amount: number;
+  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  period_days: number;
+  monthly_equivalent: number;
+  occurrences: number;
+  category: string | null;
+  first_date: string;
+  last_date: string;
+  next_expected_date: string;
+  status: "active" | "new" | "price_changed" | "ended";
+  price_change: number;
+}
+
+export interface RecurringSummary {
+  items: RecurringItem[];
+  total_monthly: number;
+}
+
+export interface Insight {
+  code: string;
+  severity: "positive" | "info" | "warning";
+  data: Record<string, string | number>;
+}
+
+export interface CashFlowForecast {
+  month: string;
+  days_in_month: number;
+  day_of_month: number;
+  days_remaining: number;
+  actual_income: number;
+  actual_expenses: number;
+  expected_income: number;
+  expected_expenses: number;
+  projected_net: number;
+  current_bank_balance: number;
+  projected_end_balance: number;
+  safe_to_spend: number;
+  safe_to_spend_daily: number;
+  avg_monthly_income: number;
+  avg_monthly_expenses: number;
+  committed_remaining: number;
+  daily: { date: string; actual_balance: number | null; projected_balance: number | null }[];
+}
 
 // Bank Balances API
 export interface BankBalance {
@@ -589,6 +641,36 @@ export const retirementApi = {
     api.get<{ field: string; value: number; unit: string }>(
       `/retirement/solve/${encodeURIComponent(field)}`,
     ),
+};
+
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string | null;
+  notes: string | null;
+  remaining: number;
+  progress_pct: number;
+  is_achieved: boolean;
+  months_remaining: number | null;
+  monthly_needed: number | null;
+}
+
+export interface SavingsGoalInput {
+  name: string;
+  target_amount: number;
+  current_amount?: number;
+  target_date?: string | null;
+  notes?: string | null;
+}
+
+export const savingsGoalsApi = {
+  getAll: () => api.get<SavingsGoal[]>("/savings-goals/"),
+  create: (data: SavingsGoalInput) => api.post<SavingsGoal>("/savings-goals/", data),
+  update: (id: number, data: Partial<SavingsGoalInput>) =>
+    api.put<SavingsGoal>(`/savings-goals/${id}`, data),
+  delete: (id: number) => api.delete(`/savings-goals/${id}`),
 };
 
 export const backupApi = {

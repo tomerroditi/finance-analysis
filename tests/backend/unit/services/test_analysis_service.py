@@ -1116,3 +1116,87 @@ class TestMonthlyExpenses:
         assert isinstance(result["avg_3_months"], float)
         assert isinstance(result["avg_6_months"], float)
         assert isinstance(result["avg_12_months"], float)
+
+
+class TestCashFlowForecast:
+    """Tests for AnalysisService.get_cash_flow_forecast."""
+
+    def test_forecast_empty_db(self, db_session):
+        """Verify forecast returns a zero-valued, well-shaped result on empty DB."""
+        service = AnalysisService(db_session)
+        result = service.get_cash_flow_forecast()
+
+        assert result["actual_income"] == 0
+        assert result["actual_expenses"] == 0
+        assert result["expected_income"] == 0
+        assert result["expected_expenses"] == 0
+        assert result["safe_to_spend"] == 0
+        assert result["current_bank_balance"] == 0
+        # daily trajectory always spans the full month
+        assert len(result["daily"]) == result["days_in_month"]
+
+    def test_forecast_shape_with_data(self, db_session, seed_base_transactions):
+        """Verify forecast exposes all documented keys and a full daily series."""
+        service = AnalysisService(db_session)
+        result = service.get_cash_flow_forecast()
+
+        for key in (
+            "month", "days_in_month", "day_of_month", "days_remaining",
+            "actual_income", "actual_expenses", "expected_income",
+            "expected_expenses", "projected_net", "current_bank_balance",
+            "projected_end_balance", "safe_to_spend", "safe_to_spend_daily",
+            "avg_monthly_income", "avg_monthly_expenses", "committed_remaining",
+            "daily",
+        ):
+            assert key in result
+
+        assert result["days_in_month"] == len(result["daily"])
+        # safe_to_spend is never negative
+        assert result["safe_to_spend"] >= 0
+        # exactly the elapsed days carry an actual balance, the rest projected
+        actual = [d for d in result["daily"] if d["actual_balance"] is not None]
+        assert len(actual) == result["day_of_month"]
+
+    def test_forecast_projects_end_balance_from_current(self, db_session):
+        """Verify projected end balance equals current balance when no activity."""
+        service = AnalysisService(db_session)
+        result = service.get_cash_flow_forecast()
+
+        # No transactions, no trend → end balance stays at current balance.
+        assert result["projected_end_balance"] == result["current_bank_balance"]
+
+    def test_forecast_subtracts_upcoming_recurring(self, db_session):
+        """A subscription due later this month feeds committed_remaining and
+        keeps safe_to_spend at or below income-minus-spent."""
+        import pytest
+        from backend.models.transaction import CreditCardTransaction
+
+        today = pd.Timestamp.today().normalize()
+        month_end = today + pd.offsets.MonthEnd(0)
+        if today >= month_end:
+            pytest.skip("run on the last day of the month — no remaining days")
+
+        # Place 4 monthly charges so the next expected charge lands tomorrow,
+        # inside the remaining days of the current month.
+        next_due = today + pd.Timedelta(days=1)
+        for k in range(1, 5):
+            d = (next_due - pd.Timedelta(days=30 * k)).strftime("%Y-%m-%d")
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"sub-{k}",
+                    date=d,
+                    provider="visa",
+                    account_name="card",
+                    description="NETFLIX.COM",
+                    amount=-45.0,
+                    category="Streaming",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        assert result["committed_remaining"] >= 45.0
+        assert result["safe_to_spend"] <= max(
+            0.0, result["expected_income"] - result["actual_expenses"]
+        )

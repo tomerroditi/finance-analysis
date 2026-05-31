@@ -28,9 +28,11 @@ test.describe("Demo Mode toggle flow", () => {
 
     await gotoAndWait(page, "/data-sources");
 
-    // Toggle Demo Mode ON via the UI.
+    // Toggle Demo Mode ON via the UI. Two settings buttons exist (sidebar +
+    // mobile top bar); click the one visible at the current viewport.
     await page
       .locator("button:has(svg.lucide-settings)")
+      .filter({ visible: true })
       .first()
       .click();
     const toggleRow = page.getByText(/^Demo Mode$/);

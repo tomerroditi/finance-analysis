@@ -103,7 +103,17 @@
     "backupCreated": "גיבוי נוצר בהצלחה",
     "backupRestored": "גיבוי שוחזר בהצלחה. מרענן...",
     "backupFailed": "הגיבוי נכשל",
-    "restoreFailed": "השחזור נכשל"
+    "restoreFailed": "השחזור נכשל",
+    "tabGeneral": "כללי",
+    "tabDashboard": "לוח מחוונים",
+    "dashboardLayoutHelp": "גררו כדי לסדר את הכרטיסים מחדש. כרטיסים מוסתרים יוסרו מלוח המחוונים.",
+    "dashboardLayoutReset": "איפוס",
+    "dashboardVisibleCards": "כרטיסים מוצגים",
+    "dashboardHiddenCards": "כרטיסים מוסתרים",
+    "dashboardNoVisibleCards": "כל הכרטיסים מוסתרים",
+    "dashboardHideCard": "הסתרת כרטיס",
+    "dashboardShowCard": "הצגת כרטיס",
+    "beta": "בטא"
   },
   "dashboard": {
     "title": "לוח בקרה",
@@ -177,7 +187,80 @@
     "incomeBreakdown": "פירוט הכנסות",
     "expensesBreakdown": "פירוט הוצאות",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
-    "topCategory": "קטגוריה מובילה"
+    "topCategory": "קטגוריה מובילה",
+    "forecast": {
+      "title": "החודש",
+      "daysLeft": "נותרו {{count}} ימים",
+      "safeToSpend": "זמין להוצאה",
+      "perDay": "{{amount}} ליום",
+      "projectedEndBalance": "יתרה צפויה בסוף החודש",
+      "fromBalance": "מתוך {{amount}} כעת",
+      "monthProgress": "התקדמות החודש",
+      "actual": "בפועל",
+      "projected": "תחזית",
+      "expectedIncome": "הכנסה צפויה",
+      "expectedExpenses": "הוצאה צפויה",
+      "projectedNet": "מאזן צפוי"
+    },
+    "insights": {
+      "title": "תובנות",
+      "categorySpike": "הוצאת {{percent}}% יותר על {{category}} מהרגיל ({{amount}})",
+      "overspendPace": "בקצב הנוכחי תחרוג מהתקציב ב-{{amount}} החודש",
+      "onTrack": "בדרך לחסוך {{amount}} החודש",
+      "newRecurring": "חיוב חוזר חדש: {{label}} — {{amount}} {{cadence}}",
+      "priceIncrease": "{{label}} התייקר ב-{{delta}}",
+      "priceDecrease": "{{label}} הוזל ב-{{delta}}",
+      "largeTransaction": "חיוב גדול החודש: {{label}} ({{amount}})"
+    },
+    "recurring": {
+      "title": "מנויים וחיובים חוזרים",
+      "totalMonthly": "סה\"כ חודשי",
+      "perMonth": "{{amount}} לחודש",
+      "next": "הבא: {{date}}",
+      "empty": "לא זוהו חיובים חוזרים עדיין",
+      "status": {
+        "active": "פעיל",
+        "new": "חדש",
+        "price_changed": "השתנה מחיר",
+        "ended": "הסתיים"
+      },
+      "cadence": {
+        "weekly": "שבועי",
+        "monthly": "חודשי",
+        "quarterly": "רבעוני",
+        "annual": "שנתי"
+      }
+    },
+    "goals": {
+      "title": "יעדי חיסכון",
+      "add": "הוספת יעד",
+      "empty": "אין יעדי חיסכון עדיין — הוסיפו אחד כדי לעקוב אחר ההתקדמות",
+      "addTitle": "יעד חיסכון חדש",
+      "editTitle": "עריכת יעד חיסכון",
+      "nameLabel": "שם היעד",
+      "namePlaceholder": "לדוגמה: חופשה, קרן חירום",
+      "targetLabel": "סכום יעד",
+      "savedLabel": "נחסך עד כה",
+      "dateLabel": "תאריך יעד (לא חובה)",
+      "achieved": "הושג 🎉",
+      "remaining": "נותרו {{amount}}",
+      "monthlyNeeded": "{{amount}} לחודש למשך {{count}} חודשים",
+      "confirmDelete": "למחוק את היעד \"{{name}}\"?"
+    },
+    "heatmap": {
+      "title": "לוח הוצאות",
+      "monthTotal": "החודש"
+    },
+    "cards": {
+      "forecast": "החודש (תחזית)",
+      "insights": "תובנות",
+      "budget": "ניצול תקציב",
+      "recent": "תנועות אחרונות",
+      "recurring": "מנויים וחיובים חוזרים",
+      "goals": "יעדי חיסכון",
+      "heatmap": "לוח הוצאות",
+      "charts": "גרפים וניתוחים"
+    }
   },
   "transactions": {
     "title": "תנועות",

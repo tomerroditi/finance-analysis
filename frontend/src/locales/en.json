@@ -103,7 +103,17 @@
     "backupCreated": "Backup created successfully",
     "backupRestored": "Backup restored successfully. Refreshing...",
     "backupFailed": "Backup failed",
-    "restoreFailed": "Restore failed"
+    "restoreFailed": "Restore failed",
+    "tabGeneral": "General",
+    "tabDashboard": "Dashboard",
+    "dashboardLayoutHelp": "Drag to reorder cards. Hidden cards are removed from the dashboard.",
+    "dashboardLayoutReset": "Reset",
+    "dashboardVisibleCards": "Visible cards",
+    "dashboardHiddenCards": "Hidden cards",
+    "dashboardNoVisibleCards": "All cards are hidden",
+    "dashboardHideCard": "Hide card",
+    "dashboardShowCard": "Show card",
+    "beta": "Beta"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -177,7 +187,80 @@
     "incomeBreakdown": "Income Breakdown",
     "expensesBreakdown": "Expenses Breakdown",
     "noIncomeSourceData": "No income source data available.",
-    "topCategory": "Top Category"
+    "topCategory": "Top Category",
+    "forecast": {
+      "title": "This Month",
+      "daysLeft": "{{count}} days left",
+      "safeToSpend": "Safe to spend",
+      "perDay": "{{amount}} / day",
+      "projectedEndBalance": "Projected end balance",
+      "fromBalance": "from {{amount}} now",
+      "monthProgress": "Month progress",
+      "actual": "Actual",
+      "projected": "Projected",
+      "expectedIncome": "Expected income",
+      "expectedExpenses": "Expected expenses",
+      "projectedNet": "Projected net"
+    },
+    "insights": {
+      "title": "Insights",
+      "categorySpike": "You've spent {{percent}}% more on {{category}} than usual ({{amount}})",
+      "overspendPace": "On pace to overspend by {{amount}} this month",
+      "onTrack": "On track to save {{amount}} this month",
+      "newRecurring": "New recurring charge: {{label}} — {{amount}} {{cadence}}",
+      "priceIncrease": "{{label}} went up by {{delta}}",
+      "priceDecrease": "{{label}} went down by {{delta}}",
+      "largeTransaction": "Large charge this month: {{label}} ({{amount}})"
+    },
+    "recurring": {
+      "title": "Subscriptions & Recurring",
+      "totalMonthly": "Monthly total",
+      "perMonth": "{{amount}} / mo",
+      "next": "Next: {{date}}",
+      "empty": "No recurring charges detected yet",
+      "status": {
+        "active": "Active",
+        "new": "New",
+        "price_changed": "Price changed",
+        "ended": "Ended"
+      },
+      "cadence": {
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
+        "annual": "Annual"
+      }
+    },
+    "goals": {
+      "title": "Savings Goals",
+      "add": "Add goal",
+      "empty": "No savings goals yet — add one to track your progress",
+      "addTitle": "New savings goal",
+      "editTitle": "Edit savings goal",
+      "nameLabel": "Goal name",
+      "namePlaceholder": "e.g. Vacation, Emergency fund",
+      "targetLabel": "Target amount",
+      "savedLabel": "Saved so far",
+      "dateLabel": "Target date (optional)",
+      "achieved": "Achieved 🎉",
+      "remaining": "{{amount}} to go",
+      "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
+      "confirmDelete": "Delete the goal \"{{name}}\"?"
+    },
+    "heatmap": {
+      "title": "Spending Calendar",
+      "monthTotal": "This month"
+    },
+    "cards": {
+      "forecast": "This Month (forecast)",
+      "insights": "Insights",
+      "budget": "Budget spending",
+      "recent": "Recent transactions",
+      "recurring": "Subscriptions & recurring",
+      "goals": "Savings goals",
+      "heatmap": "Spending calendar",
+      "charts": "Charts & analytics"
+    }
   },
   "transactions": {
     "title": "Transactions",

@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.services.analysis_service import AnalysisService
+from backend.services.recurring_service import RecurringService
+from backend.services.insights_service import InsightsService
 
 
 router = APIRouter()
@@ -170,6 +172,57 @@ async def get_monthly_expenses(
     """
     service = AnalysisService(db)
     return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
+
+
+@router.get("/recurring")
+async def get_recurring(
+    db: Session = Depends(get_database),
+):
+    """Return detected recurring charges (subscriptions, bills).
+
+    Returns
+    -------
+    dict
+        ``{items: list[dict], total_monthly: float}``. See
+        ``RecurringService.get_recurring``.
+    """
+    service = RecurringService(db)
+    return service.get_recurring()
+
+
+@router.get("/insights")
+async def get_insights(
+    db: Session = Depends(get_database),
+):
+    """Return rule-based financial insight cards.
+
+    Returns
+    -------
+    list[dict]
+        Insight cards as ``{code, severity, data}``. See
+        ``InsightsService.get_insights``.
+    """
+    service = InsightsService(db)
+    return service.get_insights()
+
+
+@router.get("/cash-flow-forecast")
+async def get_cash_flow_forecast(
+    db: Session = Depends(get_database),
+):
+    """Return the current-month cash-flow forecast.
+
+    Combines month-to-date actuals with trend-based projection to estimate
+    the month-end bank balance and the "safe to spend" figure.
+
+    Returns
+    -------
+    dict
+        Forecast metrics plus a ``daily`` trajectory for charting. See
+        ``AnalysisService.get_cash_flow_forecast``.
+    """
+    service = AnalysisService(db)
+    return service.get_cash_flow_forecast()
 
 
 @router.get("/net-worth-over-time")

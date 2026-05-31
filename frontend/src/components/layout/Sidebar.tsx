@@ -233,7 +233,16 @@ export function Sidebar() {
         <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
           {currentPageLabel || t("sidebar.logo")}
         </span>
-        {budgetAlertsEnabled ? <BudgetAlertsBell variant="compact" /> : <span className="w-8" />}
+        <div className="flex items-center gap-0.5">
+          {budgetAlertsEnabled && <BudgetAlertsBell variant="compact" />}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t("settings.title")}
+            className="p-1.5 -me-1.5 rounded-lg text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+          >
+            <SettingsIcon size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Desktop sidebar */}
