@@ -1,3 +1,21 @@
+## v1.29.0 (2026-05-31)
+
+### Feat
+
+- **dashboard**: ship new cards as beta — hidden by default + Beta badge
+- **dashboard**: smooth @dnd-kit sortable layout editor + settings close button
+- **dashboard**: user-customizable card order + visibility
+- net same-merchant refunds in recurring + subtract upcoming bills from safe-to-spend
+- add savings goals and spending heatmap to the dashboard
+- add recurring-charge detection and insight cards
+- add current-month cash-flow forecast and 'safe to spend' dashboard hero
+
+### Fix
+
+- **dashboard**: force touch-action:none so cards actually drag on touch/trackpad
+- **dashboard**: make the whole card row draggable in the layout editor
+- cut recurring-charge false positives with stability + regularity gates
+
 ## v1.28.0 (2026-05-30)
 
 ### Feat
