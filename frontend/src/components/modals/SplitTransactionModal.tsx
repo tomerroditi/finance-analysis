@@ -16,10 +16,15 @@ interface SplitTransactionModalProps {
 }
 
 interface SplitItem {
+  id: number;
   amount: number;
   category: string;
   tag: string;
 }
+
+let nextSplitId = 0;
+/** Generate a stable, unique id for a split row so React keys survive add/remove/reorder. */
+const makeSplitId = () => ++nextSplitId;
 
 export function SplitTransactionModal({
   transaction,
@@ -31,11 +36,12 @@ export function SplitTransactionModal({
   const originalAmount = Number(transaction.amount);
   const [splits, setSplits] = useState<SplitItem[]>([
     {
+      id: makeSplitId(),
       amount: originalAmount / 2,
       category: transaction.category || "",
       tag: transaction.tag || "",
     },
-    { amount: originalAmount / 2, category: "", tag: "" },
+    { id: makeSplitId(), amount: originalAmount / 2, category: "", tag: "" },
   ]);
 
   const { createCategory, createTag } = useCategoryTagCreate();
@@ -52,7 +58,7 @@ export function SplitTransactionModal({
     splits.every((s) => s.category && s.amount !== 0);
 
   const addSplit = () => {
-    setSplits([...splits, { amount: 0, category: "", tag: "" }]);
+    setSplits([...splits, { id: makeSplitId(), amount: 0, category: "", tag: "" }]);
   };
 
   const removeSplit = (index: number) => {
@@ -113,7 +119,7 @@ export function SplitTransactionModal({
           <div className="space-y-4">
             {splits.map((split, index) => (
               <div
-                key={index}
+                key={split.id}
                 className="flex flex-col sm:flex-row gap-4 sm:items-end bg-[var(--surface-base)]/50 p-4 rounded-xl border border-[var(--surface-light)]"
               >
                 <div className="flex-1 space-y-2">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Info } from "lucide-react";
 
 interface InfoTooltipProps {
@@ -22,6 +23,7 @@ export function InfoTooltip({
   width = 200,
   placement = "top",
 }: InfoTooltipProps) {
+  const { t } = useTranslation();
   const [show, setShow] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
 
@@ -52,7 +54,7 @@ export function InfoTooltip({
           setShow((v) => !v);
         }}
         className="text-[var(--text-muted)] hover:text-white transition-colors inline-flex items-center"
-        aria-label="More info"
+        aria-label={t("common.moreInfo")}
       >
         <Info size={iconSize} />
       </button>
