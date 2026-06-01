@@ -123,14 +123,35 @@ class BrowserScraper(BaseScraper):
                 "and try again."
             ) from last_exc
 
-        context = await self.browser.new_context(
-            user_agent=self._DEFAULT_USER_AGENT,
-            viewport={"width": 1024, "height": 768},
-            locale="he-IL",
-        )
-        await context.add_init_script(self._STEALTH_INIT_SCRIPT)
-        self.page = await context.new_page()
-        self.page.set_default_timeout(self.options.default_timeout)
+        try:
+            context = await self.browser.new_context(
+                user_agent=self._DEFAULT_USER_AGENT,
+                viewport={"width": 1024, "height": 768},
+                locale="he-IL",
+            )
+            await context.add_init_script(self._STEALTH_INIT_SCRIPT)
+            self.page = await context.new_page()
+            self.page.set_default_timeout(self.options.default_timeout)
+        except Exception:
+            # Post-launch setup failed: the browser (and playwright) are
+            # already running, and a context may have been created. Tear
+            # everything down so we don't leak a live browser process /
+            # playwright driver, then re-raise for the caller to handle.
+            try:
+                await self.browser.close()
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to close browser during initialize cleanup: %s",
+                    cleanup_exc,
+                )
+            try:
+                await self._playwright.stop()
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to stop playwright during initialize cleanup: %s",
+                    cleanup_exc,
+                )
+            raise
 
     async def login(self) -> LoginResult:
         """Execute the generic login flow.
@@ -209,12 +230,12 @@ class BrowserScraper(BaseScraper):
 
         try:
             await self.browser.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to close browser during terminate: %s", exc)
         try:
             await self._playwright.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to stop playwright during terminate: %s", exc)
 
     def get_login_options(self, credentials: dict) -> LoginOptions:
         """Return provider-specific login configuration.
