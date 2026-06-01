@@ -32,11 +32,11 @@ Status legend: ⬜ not started · 🔧 in progress · ✅ done (committed) · �
 
 | ID | Status | Area | Location | Issue | Fix |
 |----|--------|------|----------|-------|-----|
-| B4 | ⬜ | repo | `backend/repositories/investment_snapshots_repository.py:57` | Non-atomic check-then-write upsert; NullPool race on `(investment_id,date)`. | UPDATE then INSERT-if-rowcount-0 in one txn; rely on unique constraint. |
-| B2 | ⬜ | scraper | `scraper/base/browser_scraper.py:126-132,210-217` | Context/page leak on `initialize()` error; `terminate()` bare `except: pass`. | try/finally cleanup; log instead of silent pass. |
-| P8 | ⬜ | scraper | `backend/scraper/adapter.py:162` | No top-level 5-min `asyncio.wait_for`; sync DB writes block event loop in `async run()`. | Wrap scrape in `wait_for(...,300)`; offload sync DB work via `run_in_executor`. |
-| P2 | ⬜ | backend | `backend/main.py:145-158, 174-175` | Startup N+1: per-investment `iterrows()`+UPDATE, per-row DELETE. | Bulk UPDATE / `delete(...).where(uid.in_(ids))`. |
-| P7 | ⬜ | repo | tagging_rules / budget / pending_refunds repos | N+1 delete/update loops. | Bulk `delete()/update().where()`. |
+| B4 | ✅ | repo | `backend/repositories/investment_snapshots_repository.py:57` | Non-atomic check-then-write upsert; NullPool race on `(investment_id,date)`. | UPDATE-first, INSERT if rowcount 0, `IntegrityError`→rollback+retry UPDATE under `uq_snapshot_investment_date`. |
+| B2 | ✅ | scraper | `scraper/base/browser_scraper.py:126-132,210-217` | Context/page leak on `initialize()` error; `terminate()` bare `except: pass`. | try/except cleanup+raise in `initialize()`; `terminate()` logs failures (resilient). |
+| P8 | ✅ | scraper | `backend/scraper/adapter.py:162` | No top-level 5-min `asyncio.wait_for`; sync DB writes block event loop in `async run()`. | `wait_for(..., SCRAPE_TIMEOUT_SECONDS=300)` + `TimeoutError` handler that force-`_safe_terminate()`s the scraper (closes the timeout-leak gap). Executor offload deferred — `wait_for` can't cancel executor threads (documented w/ TODO). |
+| P2 | ✅ | backend | `backend/main.py:145-158, 174-175` | Startup N+1: per-investment `iterrows()`+UPDATE, per-row DELETE. | pandas groupby + `db.execute(update(Investment), bulk_updates)` executemany; single `delete(...).where(unique_id.in_(ids))`. |
+| P7 | ✅ | repo | tagging_rules / budget / pending_refunds repos | N+1 delete/update loops. | tagging_rules: single `delete/update ... where`. pending_refunds: bulk `delete(RefundLink)`. budget `rename_tag`: kept per-row parse (semicolon tags) but narrowed candidates via `LIKE` — bulk REPLACE would corrupt substrings. |
 
 ## Phase 3 — Analytics performance refactor
 
