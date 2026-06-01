@@ -55,15 +55,15 @@ All Phase 3 changes kept KPI regression tests green (analysis 75 passed, investm
 
 | ID | Status | Area | Location | Issue | Fix |
 |----|--------|------|----------|-------|-----|
-| Q1 | ⬜ | routes | `routes/scraping.py` | `scraping_period_days` unvalidated (negative allowed); validate-in-background. | Pydantic `field_validator > 0`; fail fast. |
-| Q2 | ⬜ | routes | scraping/credentials/transactions | Missing `response_model` on several endpoints. | Add Pydantic response models. |
-| Q3 | ⬜ | routes | `routes/onboarding.py:36` | Sync `def` route among async routes. | `async def`. |
-| Q4 | ⬜ | backend | analysis/insights services | Duplicated category-exclusion lists. | Shared module constant. |
-| Q5 | ⬜ | backend | `analysis_service.py` | Cosmetic: `trend .append` spacing, `expensses_mask` typo. | Rename/clean. |
-| F3 | ⬜ | frontend | `DashboardChartsPanel.tsx:107` | Net-worth projection recomputed each render. | `useMemo`. |
-| F4 | ⬜ | frontend | `DashboardChartsPanel.tsx:686` | `pr-1` physical padding. | logical `pe-1`. |
-| F5 | ⬜ | frontend | `RuleEditorModal.tsx:270`, `DataSources.tsx` | `slide-in-from-left/right` not RTL-flipped. | conditional direction on `i18n.language`. |
-| F6 | ⬜ | frontend | `TransactionsTable.tsx`, charts, rule preview | Large lists unvirtualized (500+ rows). | Backlog: virtualization/pagination. May defer. |
+| Q1 | ✅ | routes | `routes/scraping.py` | `scraping_period_days` unvalidated (negative allowed); validate-in-background. | `Field(gt=0, le=365)` → 422 on bad input. |
+| Q2 | ✅ | routes | scraping/credentials/transactions | Missing `response_model` on several endpoints. | Added `response_model` to fixed-shape endpoints (status/fields/latest-date); genuinely dynamic dict responses left untyped (response_model would truncate). |
+| Q3 | ✅ | routes | `routes/onboarding.py:36` | Sync `def` route among async routes. | `async def`. |
+| Q4 | ✅ | backend | analysis/insights services | Duplicated category-exclusion lists. | `NON_EXPENSE_CATEGORIES` in `constants/categories.py`; Sankey's narrower set kept distinct. |
+| Q5 | ✅ | backend | `analysis_service.py` | Cosmetic: `trend .append` spacing, `expensses_mask` typo. | Fixed both. |
+| F3 | ⏭️ | frontend | `DashboardChartsPanel.tsx:107` | Net-worth projection recomputed each render. | **False positive** — `netWorthDeltas` was already `useMemo`'d in HEAD. No change. |
+| F4 | ✅ | frontend | `DashboardChartsPanel.tsx:686` | `pr-1` physical padding. | `pe-1` (both scroll containers). |
+| F5 | ✅ | frontend | `RuleEditorModal.tsx:270`, `DataSources.tsx` | `slide-in-from-left/right` not RTL-flipped. | Conditional on `i18n.language === "he"`; LTR unchanged. |
+| F6 | ⏭️ | frontend | `TransactionsTable.tsx`, charts, rule preview | Large lists unvirtualized (500+ rows). | **Deferred** — virtualization is a sizeable change with its own UX/e2e surface; tracked as backlog (see `docs/next-features.md`). Not a correctness bug. |
 
 ## Dropped (false positives from scan)
 - `analysis_service.py:315` "syntax error" — `trend .append` is valid Python; compiles.
