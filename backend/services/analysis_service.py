@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
-    IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
+    NON_EXPENSE_CATEGORIES,
     IncomeCategories,
 )
 from backend.constants.tables import Tables, TransactionsTableFields
@@ -202,10 +202,10 @@ class AnalysisService:
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
-        income_mask, investment_mask, expensses_mask = self.get_transactions_masks(df).values()
+        income_mask, investment_mask, expenses_mask = self.get_transactions_masks(df).values()
 
         income_df = df[income_mask]
-        expense_df = df[expensses_mask]
+        expense_df = df[expenses_mask]
 
         if exclude_refunds:
             income_df = income_df[income_df["amount"] > 0]
@@ -233,12 +233,12 @@ class AnalysisService:
         """
         income_mask = self._get_income_mask(df)
         investment_mask = self._get_investment_mask(df)
-        expensses_mask = ~income_mask & ~investment_mask
+        expenses_mask = ~income_mask & ~investment_mask
 
         return {
             "income": income_mask,
             "investments": investment_mask,
-            "expenses": expensses_mask,
+            "expenses": expenses_mask,
         }
 
     def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
@@ -312,7 +312,7 @@ class AnalysisService:
 
 
         trend = []
-        trend .append(
+        trend.append(
             {
                 "month": (pd.to_datetime(df["date"].min()) - pd.DateOffset(months=1)).strftime("%Y-%m"),
                 "net_change": 0.0,
@@ -351,12 +351,8 @@ class AnalysisService:
         if df.empty:
             return []
 
-        exclude_categories = [
-            INVESTMENTS_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY,
-            *IncomeCategories._value2member_map_.keys(),
-        ]
         # Regular expenses + negative liabilities (debt payments)
-        regular_expense_mask = ~df["category"].isin(exclude_categories + [LIABILITIES_CATEGORY]) & (df["amount"] < 0)
+        regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES) & (df["amount"] < 0)
         debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
         expense_mask = regular_expense_mask | debt_payment_mask
         expenses = df[expense_mask].copy()
@@ -397,8 +393,7 @@ class AnalysisService:
         if df.empty:
             return {"expenses": [], "refunds": []}
 
-        exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY, *IncomeCategories._value2member_map_.keys()]
-        expense_mask = ~df["category"].isin(exclude_categories)
+        expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
         grouped = expenses.groupby("category")["amount"].sum()
