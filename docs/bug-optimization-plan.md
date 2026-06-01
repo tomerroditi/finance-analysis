@@ -20,13 +20,13 @@ Status legend: ⬜ not started · 🔧 in progress · ✅ done (committed) · �
 
 | ID | Status | Area | Location | Issue | Fix |
 |----|--------|------|----------|-------|-----|
-| B1 | ⬜ | scraper | `scraper/utils/fetch.py:44-45` | `fetch_post()` returns `resp.json()` with no `raise_for_status()`; GET (l.27) has it. 4xx/5xx masked. | Add `resp.raise_for_status()` before return. |
-| B6 | ⬜ | scraper | `scraper/utils/fetch.py:62` + within-page fetchers (l.83/94/128/139) | Bare `Exception` on GraphQL/fetch errors; callers can't classify. | Raise typed `ScraperError(error_type=...)`. |
-| B3 | ⬜ | backend | `backend/services/insights_service.py:~110` | `avg = sum(prior_vals)/len(prior_vals)` can divide by zero. | Guard `if not prior_vals: continue`. |
-| P1 | ⬜ | db | `backend/models/transaction.py`, `scraping.py`, `investment_balance_snapshot.py` | No indexes on filtered/grouped columns (`date`,`provider`,`category`,`tag`,`source`; scraping composite; snapshot `(investment_id,date)`). | Add `__table_args__` indexes + Alembic migration (down_revision `b2c4d6e8f0a1`). |
-| B5 | ⬜ | frontend | `components/dashboard/GoalsSection.tsx:102` | `{goal.is_achieved && ...}` renders literal `0` for SQLite `0/1`. | `!!goal.is_achieved &&`. |
-| F2 | ⬜ | frontend | `components/modals/SplitTransactionModal.tsx:116` | `key={index}` on dynamic editable split list. | Stable per-split id (not `findIndex` identity). |
-| F1 | ⬜ | frontend | `components/common/InfoTooltip.tsx:55` | Hardcoded `aria-label="More info"`. | `t("common.moreInfo")` + en/he keys. |
+| B1 | ✅ | scraper | `scraper/utils/fetch.py:44-45` | `fetch_post()` returns `resp.json()` with no `raise_for_status()`; GET (l.27) has it. 4xx/5xx masked. | Added `resp.raise_for_status()` before return. |
+| B6 | ✅ | scraper | `scraper/utils/fetch.py:62` + within-page fetchers (l.83/94/128/139) | Bare `Exception` on GraphQL/fetch errors; callers can't classify. | Replaced 5 bare raises with `ScraperError(msg, ErrorType.GENERIC)` (class exists in `scraper/exceptions.py`). |
+| B3 | ✅ | backend | `backend/services/insights_service.py:~110` | `avg = sum(prior_vals)/len(prior_vals)` can divide by zero. | Added `if not prior_vals: continue` guard. |
+| P1 | ✅ | db | `backend/models/transaction.py`, `scraping.py`, `investment_balance_snapshot.py` | No indexes on filtered/grouped columns. | Added 25 indexes via `__table_args__` + idempotent Alembic migration `c3d5e7f9a1b3` (index-existence-guarded — `create_all` runs before alembic on startup). Verified up/down round-trip on throwaway DB. |
+| B5 | ✅ | frontend | `components/dashboard/GoalsSection.tsx:102` | `{goal.is_achieved && ...}` renders literal `0` for SQLite `0/1`. | `!!goal.is_achieved &&`. |
+| F2 | ✅ | frontend | `components/modals/SplitTransactionModal.tsx:116` | `key={index}` on dynamic editable split list. | Stable `makeSplitId()` counter; `key={split.id}`. |
+| F1 | ✅ | frontend | `components/common/InfoTooltip.tsx:55` | Hardcoded `aria-label="More info"`. | `t("common.moreInfo")` + en/he keys. |
 
 ## Phase 2 — Backend correctness / concurrency
 
