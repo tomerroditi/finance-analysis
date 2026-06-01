@@ -107,6 +107,8 @@ class InsightsService:
         results = []
         for category, amount in current["categories"].items():
             prior_vals = [m["categories"].get(category, 0.0) for m in prior]
+            if not prior_vals:
+                continue
             avg = sum(prior_vals) / len(prior_vals)
             if avg <= 0:
                 continue
