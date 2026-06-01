@@ -8,7 +8,7 @@ automated scraping of Israeli financial institutions.
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -21,7 +21,7 @@ class StartScrapingRequest(BaseModel):
     service: str
     provider: str
     account: str
-    scraping_period_days: Optional[int] = None
+    scraping_period_days: Optional[int] = Field(default=None, gt=0, le=365)
 
 
 class TFAFinishRequest(BaseModel):
@@ -33,6 +33,10 @@ class TFAFinishRequest(BaseModel):
 
 class AbortRequest(BaseModel):
     process_id: int
+
+
+class StatusResponse(BaseModel):
+    status: str
 
 
 @router.post("/start")
@@ -66,7 +70,7 @@ async def start_scraping_single(
     return scraping_process_id
 
 
-@router.post("/abort")
+@router.post("/abort", response_model=StatusResponse)
 async def abort_scraping(
     data: AbortRequest, db: Session = Depends(get_database)
 ) -> dict:
@@ -108,7 +112,7 @@ async def get_scraping_status(
     return service.get_scraping_status(scraping_process_id)
 
 
-@router.post("/2fa")
+@router.post("/2fa", response_model=StatusResponse)
 async def handle_2fa(
     data: TFAFinishRequest, db: Session = Depends(get_database)
 ) -> dict:

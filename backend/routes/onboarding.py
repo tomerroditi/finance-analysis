@@ -33,7 +33,7 @@ class OnboardingStatus(BaseModel):
 
 
 @router.get("/status", response_model=OnboardingStatus)
-def get_onboarding_status(
+async def get_onboarding_status(
     db: Session = Depends(get_database),
 ) -> OnboardingStatus:
     """Return whether the active database has been populated yet."""

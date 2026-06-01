@@ -64,6 +64,14 @@ class SplitRequest(BaseModel):
     splits: List[SplitItem]
 
 
+class StatusResponse(BaseModel):
+    status: str
+
+
+class LatestDateResponse(BaseModel):
+    latest_date: Optional[str] = None
+
+
 @router.get("/")
 async def get_transactions(
     service: Optional[str] = Query(
@@ -88,7 +96,7 @@ async def get_transactions(
     return df.to_dict(orient="records")
 
 
-@router.post("/")
+@router.post("/", response_model=StatusResponse)
 async def create_transaction(
     data: TransactionCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
@@ -103,7 +111,7 @@ async def create_transaction(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/{unique_id}")
+@router.put("/{unique_id}", response_model=StatusResponse)
 async def update_transaction(
     unique_id: str, data: TransactionUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
@@ -140,7 +148,7 @@ async def update_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{unique_id}")
+@router.delete("/{unique_id}", response_model=StatusResponse)
 async def delete_transaction(
     unique_id: str,
     source: str = Query(..., description="The source of the transaction"),
@@ -157,7 +165,7 @@ async def delete_transaction(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{unique_id}/split")
+@router.post("/{unique_id}/split", response_model=StatusResponse)
 async def split_transaction(
     unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
@@ -171,7 +179,7 @@ async def split_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{unique_id}/split")
+@router.delete("/{unique_id}/split", response_model=StatusResponse)
 async def revert_split(
     unique_id: int,
     source: str = Query(..., description="The source of the transaction"),
@@ -186,7 +194,7 @@ async def revert_split(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/bulk-tag")
+@router.post("/bulk-tag", response_model=StatusResponse)
 async def bulk_tag_transactions(
     data: BulkTagUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
@@ -208,7 +216,7 @@ async def bulk_tag_transactions(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/latest-date")
+@router.get("/latest-date", response_model=LatestDateResponse)
 async def get_latest_data_date(
     db: Session = Depends(get_database),
 ) -> dict[str, str | None]:
@@ -231,7 +239,7 @@ async def get_transaction(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.put("/{transaction_id}/tag")
+@router.put("/{transaction_id}/tag", response_model=StatusResponse)
 async def update_transaction_tag(
     transaction_id: str,
     category: str,
