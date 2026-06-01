@@ -1,7 +1,7 @@
 """Pending refunds repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import PendingRefund, RefundLink
@@ -203,16 +203,11 @@ class PendingRefundsRepository:
         pending_id : int
             ID of the pending refund to delete.
         """
-        # Delete links first
-        links = (
-            self.db.execute(
-                select(RefundLink).where(RefundLink.pending_refund_id == pending_id)
-            )
-            .scalars()
-            .all()
+        # Delete all links in a single bulk DELETE instead of fetching each
+        # RefundLink and deleting it in a loop (N+1).
+        self.db.execute(
+            delete(RefundLink).where(RefundLink.pending_refund_id == pending_id)
         )
-        for link in links:
-            self.db.delete(link)
 
         # Delete pending refund
         pending = self.db.get(PendingRefund, pending_id)

@@ -1,5 +1,5 @@
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
 from backend.models.tagging_rules import TaggingRule
@@ -180,15 +180,10 @@ class TaggingRulesRepository:
         bool
             True if any rules were deleted, False if none were found.
         """
-        rules = self.db.query(TaggingRule).filter_by(category=category).all()
-        if not rules:
-            return False
-
-        for rule in rules:
-            self.db.delete(rule)
-
+        stmt = delete(TaggingRule).where(TaggingRule.category == category)
+        result = self.db.execute(stmt)
         self.db.commit()
-        return True
+        return result.rowcount > 0
 
     def delete_rules_by_category_and_tag(self, category: str, tag: str) -> bool:
         """
@@ -206,32 +201,35 @@ class TaggingRulesRepository:
         bool
             True if any rules were deleted, False if none were found.
         """
-        rules = self.db.query(TaggingRule).filter_by(category=category, tag=tag).all()
-        if not rules:
-            return False
-
-        for rule in rules:
-            self.db.delete(rule)
-
+        stmt = delete(TaggingRule).where(
+            TaggingRule.category == category, TaggingRule.tag == tag
+        )
+        result = self.db.execute(stmt)
         self.db.commit()
-        return True
+        return result.rowcount > 0
 
     def rename_category(self, old_name: str, new_name: str) -> None:
         """Rename category across all tagging rules."""
-        rules = self.db.query(TaggingRule).filter_by(category=old_name).all()
-        for rule in rules:
-            rule.category = new_name
+        stmt = (
+            update(TaggingRule)
+            .where(TaggingRule.category == old_name)
+            .values(category=new_name)
+        )
+        self.db.execute(stmt)
         self.db.commit()
 
     def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
-        """Rename tag in tagging rules for given category."""
-        rules = (
-            self.db.query(TaggingRule)
-            .filter_by(category=category, tag=old_tag)
-            .all()
+        """Rename tag in tagging rules for given category.
+
+        TaggingRule.tag holds a single tag value (not a semicolon-joined
+        string), so an exact-match bulk UPDATE is safe here.
+        """
+        stmt = (
+            update(TaggingRule)
+            .where(TaggingRule.category == category, TaggingRule.tag == old_tag)
+            .values(tag=new_tag)
         )
-        for rule in rules:
-            rule.tag = new_tag
+        self.db.execute(stmt)
         self.db.commit()
 
     def update_category_for_tag(

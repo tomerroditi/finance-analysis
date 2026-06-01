@@ -6,6 +6,7 @@ from typing import Optional
 
 import pandas as pd
 from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
@@ -54,23 +55,37 @@ class InvestmentSnapshotsRepository:
             How the snapshot was created (``"manual"``, ``"scraped"``,
             or ``"calculated"``). Defaults to ``"manual"``.
         """
-        existing = (
-            self.db.query(InvestmentBalanceSnapshot)
-            .filter_by(investment_id=investment_id, date=date)
-            .first()
-        )
-
-        if existing:
-            existing.balance = balance
-            existing.source = source
-        else:
-            snapshot = InvestmentBalanceSnapshot(
-                investment_id=investment_id,
-                date=date,
-                balance=balance,
-                source=source,
+        def _try_update() -> int:
+            stmt = (
+                update(InvestmentBalanceSnapshot)
+                .where(
+                    InvestmentBalanceSnapshot.investment_id == investment_id,
+                    InvestmentBalanceSnapshot.date == date,
+                )
+                .values(balance=balance, source=source)
             )
-            self.db.add(snapshot)
+            return self.db.execute(stmt).rowcount
+
+        # Atomic upsert: try the UPDATE first; only INSERT when no row matched.
+        # The (investment_id, date) UniqueConstraint guards against a concurrent
+        # INSERT racing in between (NullPool gives each request its own
+        # connection with no shared isolation). If that happens the INSERT trips
+        # IntegrityError, so we roll back and re-run the UPDATE to win the race.
+        if _try_update() == 0:
+            try:
+                self.db.add(
+                    InvestmentBalanceSnapshot(
+                        investment_id=investment_id,
+                        date=date,
+                        balance=balance,
+                        source=source,
+                    )
+                )
+                self.db.commit()
+                return
+            except IntegrityError:
+                self.db.rollback()
+                _try_update()
 
         self.db.commit()
 

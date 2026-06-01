@@ -247,12 +247,23 @@ class BudgetRepository:
     def rename_tag(self, old_tag: str, new_tag: str) -> None:
         """Rename tag across all budget rules.
 
-        Budget tags are semicolon-separated strings. This finds all rules
-        containing old_tag and replaces it with new_tag.
+        Budget tags are semicolon-separated strings (``"tag1;tag2"``). A bulk
+        SQL ``REPLACE`` is unsafe here: it would corrupt substring matches
+        (renaming ``"food"`` would also hit ``"fastfood"``). So we keep the
+        per-row split/parse for correctness, but narrow the candidate set with
+        a ``LIKE`` filter so only rows whose tag string actually contains
+        ``old_tag`` as a substring are loaded — the per-row parse then rejects
+        any false-positive substring matches. This reduces N from "every rule
+        with tags" to "every rule mentioning this tag".
         """
-        rules = self.db.query(BudgetRule).filter(
-            BudgetRule.tags.isnot(None)
-        ).all()
+        rules = (
+            self.db.query(BudgetRule)
+            .filter(
+                BudgetRule.tags.isnot(None),
+                BudgetRule.tags.like(f"%{old_tag}%"),
+            )
+            .all()
+        )
         for rule in rules:
             tags = rule.tags.split(";") if rule.tags else []
             if old_tag in tags:
