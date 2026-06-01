@@ -2,10 +2,36 @@
 Transaction models for different financial services.
 """
 
-from sqlalchemy import Column, Float, Integer, String
+from sqlalchemy import Column, Float, Index, Integer, String
 
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+
+
+def _transaction_indexes(table_name: str) -> tuple:
+    """Build the standard index set for a transaction table.
+
+    Analytics filters/groups on ``date``, ``source``, ``provider``,
+    ``account_name``, ``category`` and ``tag``. Index names are prefixed with
+    the table name to stay globally unique across the transaction tables that
+    share :class:`TransactionBase`.
+
+    Parameters
+    ----------
+    table_name : str
+        Concrete table name used to namespace each index.
+
+    Returns
+    -------
+    tuple
+        Tuple of :class:`sqlalchemy.Index` objects for ``__table_args__``.
+    """
+    return (
+        Index(f"ix_{table_name}_date", "date"),
+        Index(f"ix_{table_name}_source", "source"),
+        Index(f"ix_{table_name}_provider_account_name", "provider", "account_name"),
+        Index(f"ix_{table_name}_category_tag", "category", "tag"),
+    )
 
 
 class TransactionBase(TimestampMixin):
@@ -67,24 +93,28 @@ class BankTransaction(Base, TransactionBase):
     """ORM model for bank account transactions (``bank_transactions`` table)."""
 
     __tablename__ = Tables.BANK.value
+    __table_args__ = _transaction_indexes(Tables.BANK.value)
 
 
 class CreditCardTransaction(Base, TransactionBase):
     """ORM model for credit card transactions (``credit_card_transactions`` table)."""
 
     __tablename__ = Tables.CREDIT_CARD.value
+    __table_args__ = _transaction_indexes(Tables.CREDIT_CARD.value)
 
 
 class CashTransaction(Base, TransactionBase):
     """ORM model for manually entered cash transactions (``cash_transactions`` table)."""
 
     __tablename__ = Tables.CASH.value
+    __table_args__ = _transaction_indexes(Tables.CASH.value)
 
 
 class ManualInvestmentTransaction(Base, TransactionBase):
     """ORM model for manually entered investment transactions (``manual_investment_transactions`` table)."""
 
     __tablename__ = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
+    __table_args__ = _transaction_indexes(Tables.MANUAL_INVESTMENT_TRANSACTIONS.value)
 
 
 class InsuranceTransaction(Base, TransactionBase):
@@ -95,6 +125,7 @@ class InsuranceTransaction(Base, TransactionBase):
     """
 
     __tablename__ = Tables.INSURANCE.value
+    __table_args__ = _transaction_indexes(Tables.INSURANCE.value)
 
     memo = Column(String, nullable=True)
 
@@ -122,6 +153,10 @@ class SplitTransaction(Base, TimestampMixin):
     """
 
     __tablename__ = Tables.SPLIT_TRANSACTIONS.value
+    __table_args__ = (
+        Index("ix_split_transactions_source", "source"),
+        Index("ix_split_transactions_transaction_id", "transaction_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     transaction_id = Column(Integer)  # References unique_id of parent
