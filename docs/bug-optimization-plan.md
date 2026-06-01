@@ -42,12 +42,14 @@ Status legend: ⬜ not started · 🔧 in progress · ✅ done (committed) · �
 
 | ID | Status | Area | Location | Issue | Fix |
 |----|--------|------|----------|-------|-----|
-| P3 | ⬜ | analytics | `analysis_service.py:513-516` | Sankey `nodes.index()` O(N) in loop → O(N²). | dict index map. |
-| P4 | ⬜ | analytics | `analysis_service.py:578` | `income_df.apply(..., axis=1)` row-wise label. | Vectorize (`np.where`/str concat). |
-| P5 | ⬜ | analytics | `analysis_service.py:323, 583` | `for month: df[df.month==month]` re-scans frame. | `groupby("month")`. |
-| P6 | ⬜ | analytics | `investments_service.py:~495, ~671` | `iterrows()` daily agg; per-investment `calculate_profit_loss()` N+1. | `groupby().sum()`; fetch txns once. |
+| P3 | ✅ | analytics | `analysis_service.py:513-516` | Sankey `nodes.index()` O(N) in loop → O(N²). | `node_idx` dict map; first-seen order preserved. |
+| P4 | ✅ | analytics | `analysis_service.py:578` | `income_df.apply(..., axis=1)` row-wise label. | Vectorized with `np.where` masks; identical labels incl. NaN/empty handling. |
+| P5 | ✅ | analytics | `analysis_service.py:323, 583` | `for month: df[df.month==month]` re-scans frame. | `groupby("month", sort=True)`. |
+| P6 | ✅ | analytics | `investments_service.py:~495, ~671` | `iterrows()` daily agg; per-investment N+1 read. | `groupby(date).sum()`; scoped `_cached_analysis_data()` memoizes `get_data_for_analysis` for the overview loop (read once, not 2×N). |
 
-All Phase 3 changes must keep KPI regression tests green (snapshot/CC-dedup/prior-wealth semantics unchanged).
+All Phase 3 changes kept KPI regression tests green (analysis 75 passed, investments 91 passed, full suite 1173). Output verified byte-identical (pure perf refactor).
+
+**e2e (Phase 1 UI rule):** ✅ Added `frontend/e2e/savings-goal-achieved.spec.ts`, `split-transaction-stable-keys.spec.ts`, `info-tooltip-aria-label.spec.ts`. All 5 specs pass via `with_server.py` using the sandbox Chromium override (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/opt/pw-browsers/chromium-1194/...`).
 
 ## Phase 4 — Cleanup
 
