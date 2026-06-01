@@ -34,7 +34,8 @@ const EMPTY_CONDITIONS: ConditionNode = {
 };
 
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill }: RuleEditorModalProps) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const isRtl = i18n.language === "he";
     const queryClient = useQueryClient();
     useScrollLock(isOpen);
     const { createCategory, createTag } = useCategoryTagCreate();
@@ -267,7 +268,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
                 {/* Footer */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 md:px-6 py-3 md:py-4 border-t border-[var(--surface-light)] bg-[var(--surface)]">
                     {error && (
-                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in slide-in-from-left-2 duration-200">
+                        <div className={`flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in duration-200 ${isRtl ? "slide-in-from-right-2" : "slide-in-from-left-2"}`}>
                             <AlertTriangle size={16} className="shrink-0" />
                             <span className="line-clamp-2">{error}</span>
                         </div>
