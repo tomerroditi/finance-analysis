@@ -99,7 +99,7 @@ function GoalRow({
     <div className="group border border-[var(--surface-light)] rounded-xl p-3 hover:bg-[var(--surface-light)]/30 transition-colors">
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          {goal.is_achieved && <Check size={14} className="text-emerald-400 shrink-0" />}
+          {!!goal.is_achieved && <Check size={14} className="text-emerald-400 shrink-0" />}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">

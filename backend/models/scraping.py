@@ -2,7 +2,7 @@
 Scraping history model.
 """
 
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Index, Integer, String
 
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
@@ -33,6 +33,16 @@ class ScrapingHistory(Base, TimestampMixin):
     """
 
     __tablename__ = Tables.SCRAPING_HISTORY.value
+    __table_args__ = (
+        Index(
+            "ix_scraping_history_service_provider_account_status",
+            "service_name",
+            "provider_name",
+            "account_name",
+            "status",
+        ),
+        Index("ix_scraping_history_date", "date"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 

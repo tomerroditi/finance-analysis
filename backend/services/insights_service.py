@@ -10,13 +10,7 @@ message so copy stays bilingual (en/he) without backend string formatting.
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.constants.categories import (
-    CREDIT_CARDS,
-    IGNORE_CATEGORY,
-    INVESTMENTS_CATEGORY,
-    LIABILITIES_CATEGORY,
-    IncomeCategories,
-)
+from backend.constants.categories import NON_EXPENSE_CATEGORIES
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.analysis_service import AnalysisService
 from backend.services.recurring_service import RecurringService
@@ -107,6 +101,8 @@ class InsightsService:
         results = []
         for category, amount in current["categories"].items():
             prior_vals = [m["categories"].get(category, 0.0) for m in prior]
+            if not prior_vals:
+                continue
             avg = sum(prior_vals) / len(prior_vals)
             if avg <= 0:
                 continue
@@ -159,14 +155,7 @@ class InsightsService:
         if df.empty:
             return []
 
-        exclude = [
-            CREDIT_CARDS,
-            IGNORE_CATEGORY,
-            INVESTMENTS_CATEGORY,
-            LIABILITIES_CATEGORY,
-            *IncomeCategories._value2member_map_.keys(),
-        ]
-        df = df[~df["category"].isin(exclude)]
+        df = df[~df["category"].isin(NON_EXPENSE_CATEGORIES)]
         df = df[df["amount"] < 0].copy()
         if df.empty:
             return []

@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
-    IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
+    NON_EXPENSE_CATEGORIES,
     IncomeCategories,
 )
 from backend.constants.tables import Tables, TransactionsTableFields
@@ -202,10 +202,10 @@ class AnalysisService:
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
-        income_mask, investment_mask, expensses_mask = self.get_transactions_masks(df).values()
+        income_mask, investment_mask, expenses_mask = self.get_transactions_masks(df).values()
 
         income_df = df[income_mask]
-        expense_df = df[expensses_mask]
+        expense_df = df[expenses_mask]
 
         if exclude_refunds:
             income_df = income_df[income_df["amount"] > 0]
@@ -233,12 +233,12 @@ class AnalysisService:
         """
         income_mask = self._get_income_mask(df)
         investment_mask = self._get_investment_mask(df)
-        expensses_mask = ~income_mask & ~investment_mask
+        expenses_mask = ~income_mask & ~investment_mask
 
         return {
             "income": income_mask,
             "investments": investment_mask,
-            "expenses": expensses_mask,
+            "expenses": expenses_mask,
         }
 
     def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
@@ -312,7 +312,7 @@ class AnalysisService:
 
 
         trend = []
-        trend .append(
+        trend.append(
             {
                 "month": (pd.to_datetime(df["date"].min()) - pd.DateOffset(months=1)).strftime("%Y-%m"),
                 "net_change": 0.0,
@@ -320,9 +320,7 @@ class AnalysisService:
             }
         )
 
-        for month in sorted(df["month"].unique()):
-            group = df[df["month"] == month]
-
+        for month, group in df.groupby("month", sort=True):
             net_change = float(group["amount"].sum())
             cumulative += net_change
 
@@ -353,12 +351,8 @@ class AnalysisService:
         if df.empty:
             return []
 
-        exclude_categories = [
-            INVESTMENTS_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY,
-            *IncomeCategories._value2member_map_.keys(),
-        ]
         # Regular expenses + negative liabilities (debt payments)
-        regular_expense_mask = ~df["category"].isin(exclude_categories + [LIABILITIES_CATEGORY]) & (df["amount"] < 0)
+        regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES) & (df["amount"] < 0)
         debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
         expense_mask = regular_expense_mask | debt_payment_mask
         expenses = df[expense_mask].copy()
@@ -399,8 +393,7 @@ class AnalysisService:
         if df.empty:
             return {"expenses": [], "refunds": []}
 
-        exclude_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, IGNORE_CATEGORY, *IncomeCategories._value2member_map_.keys()]
-        expense_mask = ~df["category"].isin(exclude_categories)
+        expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         expenses = df[expense_mask].copy()
         expenses["category"] = expenses["category"].fillna("Uncategorized")
         grouped = expenses.groupby("category")["amount"].sum()
@@ -508,12 +501,16 @@ class AnalysisService:
 
         # --- Calculate Flows ---
         nodes: list[str] = []
+        node_idx: dict[str, int] = {}
         links: list[dict] = []
 
         def get_node_idx(name) -> int:
-            if name not in nodes:
+            idx = node_idx.get(name)
+            if idx is None:
+                idx = len(nodes)
                 nodes.append(name)
-            return nodes.index(name)
+                node_idx[name] = idx
+            return idx
 
         # Layer 1: Sources (income) -> grouped sources (salary, debt, wealth deficit)
         for name, val in sources.items():
@@ -574,14 +571,30 @@ class AnalysisService:
         if income_df.empty:
             return []
 
-        # Build source labels
-        income_df["source_label"] = income_df.apply(self._income_source_label, axis=1)
+        # Build source labels (vectorized equivalent of _income_source_label)
+        import numpy as np
+
+        category = income_df["category"]
+        tag = income_df["tag"]
+        amount = income_df["amount"]
+        # A "truthy" tag mirrors the per-row checks: not NaN/None and not empty string.
+        tag_present = tag.notna() & (tag != "")
+        tag_str = tag.astype(object)
+
+        is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
+
+        loan_label = np.where(
+            tag_present, "Loans / " + tag_str.astype(str), "Loans"
+        )
+        non_loan_label = np.where(
+            tag_present, category.astype(str) + " / " + tag_str.astype(str), category
+        )
+        income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
 
         income_df["month"] = pd.to_datetime(income_df["date"]).dt.strftime("%Y-%m")
 
         result = []
-        for month in sorted(income_df["month"].unique()):
-            month_df = income_df[income_df["month"] == month]
+        for month, month_df in income_df.groupby("month", sort=True):
             sources = {}
             for label, group in month_df.groupby("source_label"):
                 sources[label] = round(float(group["amount"].sum()), 2)

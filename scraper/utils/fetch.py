@@ -5,6 +5,8 @@ from typing import Any, Optional
 import httpx
 from playwright.async_api import Page
 
+from scraper.exceptions import ErrorType, ScraperError
+
 logger = logging.getLogger(__name__)
 
 JSON_CONTENT_TYPE = "application/json"
@@ -42,6 +44,7 @@ async def fetch_post(
     _client = client or httpx.AsyncClient()
     try:
         resp = await _client.post(url, json=data, headers=headers)
+        resp.raise_for_status()
         return resp.json()
     finally:
         if not client:
@@ -59,7 +62,7 @@ async def fetch_graphql(
     payload = {"operationName": None, "query": query, "variables": variables or {}}
     result = await fetch_post(url, payload, extra_headers, client)
     if result.get("errors"):
-        raise Exception(result["errors"][0]["message"])
+        raise ScraperError(result["errors"][0]["message"], ErrorType.GENERIC)
     return result["data"]
 
 
@@ -80,8 +83,9 @@ async def fetch_get_within_page(
     result = await page.evaluate(js_fn, url)
     if "__error" in result:
         if not ignore_errors:
-            raise Exception(
-                f"fetchGetWithinPage error: {result['__error']}, url: {url}"
+            raise ScraperError(
+                f"fetchGetWithinPage error: {result['__error']}, url: {url}",
+                ErrorType.GENERIC,
             )
         return None
     data = result.get("__data")
@@ -91,8 +95,9 @@ async def fetch_get_within_page(
         return json.loads(data)
     except json.JSONDecodeError as e:
         if not ignore_errors:
-            raise Exception(
-                f"fetchGetWithinPage parse error: {e}, url: {url}, status: {result.get('__status')}"
+            raise ScraperError(
+                f"fetchGetWithinPage parse error: {e}, url: {url}, status: {result.get('__status')}",
+                ErrorType.GENERIC,
             )
         return None
 
@@ -125,8 +130,9 @@ async def fetch_post_within_page(
     result = await page.evaluate(js_fn, [url, data, extra_headers or {}])
     if "__error" in result:
         if not ignore_errors:
-            raise Exception(
-                f"fetchPostWithinPage error: {result['__error']}, url: {url}"
+            raise ScraperError(
+                f"fetchPostWithinPage error: {result['__error']}, url: {url}",
+                ErrorType.GENERIC,
             )
         return None
     text = result.get("__data")
@@ -136,7 +142,8 @@ async def fetch_post_within_page(
         return json.loads(text)
     except json.JSONDecodeError as e:
         if not ignore_errors:
-            raise Exception(
-                f"fetchPostWithinPage parse error: {e}, url: {url}"
+            raise ScraperError(
+                f"fetchPostWithinPage parse error: {e}, url: {url}",
+                ErrorType.GENERIC,
             )
         return None

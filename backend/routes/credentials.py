@@ -24,6 +24,14 @@ class CredentialCreate(BaseModel):
     credentials: Dict[str, Any]
 
 
+class StatusResponse(BaseModel):
+    status: str
+
+
+class ProviderFieldsResponse(BaseModel):
+    fields: List[str]
+
+
 @router.get("/")
 async def get_credentials(
     db: Session = Depends(get_database),
@@ -70,7 +78,7 @@ async def get_providers() -> dict[str, list[str]]:
     return CredentialsService.get_available_providers()
 
 
-@router.post("/")
+@router.post("/", response_model=StatusResponse)
 async def create_credential(
     credential: CredentialCreate,
     db: Session = Depends(get_database),
@@ -87,14 +95,14 @@ async def create_credential(
     return {"status": "success"}
 
 
-@router.get("/fields/{provider}")
+@router.get("/fields/{provider}", response_model=ProviderFieldsResponse)
 async def get_provider_fields(provider: str) -> dict[str, List[str]]:
     """Get the required fields for a provider login."""
     fields = LoginFields.get_fields(provider)
     return {"fields": fields}
 
 
-@router.delete("/{service}/{provider}/{account_name}")
+@router.delete("/{service}/{provider}/{account_name}", response_model=StatusResponse)
 async def delete_credential(
     service: str,
     provider: str,

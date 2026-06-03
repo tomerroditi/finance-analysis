@@ -4,6 +4,7 @@ Investments service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for investment tracking and analysis.
 """
 
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -490,11 +491,16 @@ class InvestmentsService:
             else date.today()
         )
 
-        # Build a dict of date -> total transaction amount for that day
-        txn_by_date = {}
-        for _, row in transactions_df.iterrows():
-            d = row["date"].date()
-            txn_by_date[d] = txn_by_date.get(d, 0.0) + row["amount"]
+        # Build a dict of date -> total transaction amount for that day.
+        # ``date`` is a datetime dtype here (parsed via ``pd.to_datetime`` above),
+        # so ``.dt.date`` yields the same per-row ``date`` objects the prior
+        # ``row["date"].date()`` loop produced. Vectorized groupby replaces the
+        # row-wise iterrows accumulation.
+        txn_by_date = (
+            transactions_df.groupby(transactions_df["date"].dt.date)["amount"]
+            .sum()
+            .to_dict()
+        )
 
         # Clear previous calculated snapshots
         self.snapshots_repo.delete_snapshots_for_investment(
@@ -602,6 +608,33 @@ class InvestmentsService:
             return 0.0
         return float(df["prior_wealth_amount"].sum())
 
+    @contextmanager
+    def _cached_analysis_data(self):
+        """Memoize ``transactions_service.get_data_for_analysis`` within a block.
+
+        The merged analysis table is identical for every investment processed
+        inside ``get_portfolio_overview``; without memoization it is recomputed
+        once per ``get_transactions_by_tag`` call (~2*N times). This wraps the
+        bound method with a per-``include_split_parents`` cache for the duration
+        of the ``with`` block and restores the original on exit, so the
+        optimization is fully scoped to the caller and returns byte-identical
+        DataFrames to every consumer.
+        """
+        ts = self.transactions_service
+        original = ts.get_data_for_analysis
+        cache: Dict[bool, pd.DataFrame] = {}
+
+        def cached(include_split_parents: bool = False) -> pd.DataFrame:
+            if include_split_parents not in cache:
+                cache[include_split_parents] = original(include_split_parents)
+            return cache[include_split_parents]
+
+        ts.get_data_for_analysis = cached
+        try:
+            yield
+        finally:
+            ts.get_data_for_analysis = original
+
     def _build_allocation_entry(
         self, inv_id: int, inv_name: str, inv_type: str
     ) -> Dict[str, Any]:
@@ -668,17 +701,30 @@ class InvestmentsService:
         total_withdrawals = 0.0
         allocation = []
 
-        for _, inv in all_investments.iterrows():
-            entry = self._build_allocation_entry(
-                inv["id"], inv["name"], inv["type"]
-            )
-            allocation.append(entry)
+        # N+1 hoist: each investment triggers ``calculate_profit_loss`` +
+        # ``calculate_balance_over_time``, both of which reach
+        # ``_get_all_transactions_for_investment`` ->
+        # ``transactions_service.get_transactions_by_tag`` ->
+        # ``transactions_service.get_data_for_analysis()``. That merged-table
+        # read (4 source tables + 2 synthetic prior-wealth frames) is identical
+        # for every investment within this call, but was recomputed ~2*N times.
+        # Memoize it for the duration of the loop so the full-table read happens
+        # once; each per-investment slice still filters the cached frame, and
+        # per-investment snapshot resolution is left untouched (it legitimately
+        # needs per-investment logic). The original method is restored in a
+        # ``finally`` so no state leaks past this call.
+        with self._cached_analysis_data():
+            for _, inv in all_investments.iterrows():
+                entry = self._build_allocation_entry(
+                    inv["id"], inv["name"], inv["type"]
+                )
+                allocation.append(entry)
 
-            # Only open investments contribute to portfolio totals
-            if not inv["is_closed"]:
-                total_value += entry["balance"]
-                total_deposits += entry["total_deposits"]
-                total_withdrawals += entry["total_withdrawals"]
+                # Only open investments contribute to portfolio totals
+                if not inv["is_closed"]:
+                    total_value += entry["balance"]
+                    total_deposits += entry["total_deposits"]
+                    total_withdrawals += entry["total_withdrawals"]
 
         total_profit = total_value - (total_deposits - total_withdrawals)
         portfolio_roi = (

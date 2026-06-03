@@ -721,7 +721,7 @@ export function DataSources() {
             </div>
 
             {step === 1 && (
-              <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+              <div className={`space-y-4 animate-in duration-300 ${isRtl ? "slide-in-from-left-4" : "slide-in-from-right-4"}`}>
                 <p className="text-[var(--text-muted)] font-medium mb-6">
                   {t("dataSources.chooseServiceType")}
                 </p>
@@ -795,7 +795,7 @@ export function DataSources() {
             )}
 
             {step === 2 && (
-              <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+              <div className={`space-y-4 animate-in duration-300 ${isRtl ? "slide-in-from-left-4" : "slide-in-from-right-4"}`}>
                 <p className="text-[var(--text-muted)] font-medium mb-6">
                   {t("dataSources.selectProvider")}
                 </p>
@@ -834,7 +834,7 @@ export function DataSources() {
             )}
 
             {step === 3 && (
-              <div className="space-y-4 md:space-y-6 animate-in slide-in-from-right-4 duration-300">
+              <div className={`space-y-4 md:space-y-6 animate-in duration-300 ${isRtl ? "slide-in-from-left-4" : "slide-in-from-right-4"}`}>
                 <p className="text-[var(--text-muted)] font-medium">
                   {isViewOnly ? t("dataSources.currentDetailsFor") : t("dataSources.enterDetailsFor")}{" "}
                   <span className="text-white font-black">

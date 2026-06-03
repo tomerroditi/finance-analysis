@@ -25,3 +25,15 @@ class IncomeCategories(Enum):
 
     SALARY = "Salary"
     OTHER_INCOME = "Other Income"
+
+
+# Categories excluded from expense breakdowns / analytics. Combines the
+# non-expense base set (Investments, Liabilities, the Credit Cards bank
+# bill-payment category, Ignore) with the income categories.
+NON_EXPENSE_CATEGORIES = [
+    INVESTMENTS_CATEGORY,
+    LIABILITIES_CATEGORY,
+    CREDIT_CARDS,
+    IGNORE_CATEGORY,
+    *(c.value for c in IncomeCategories),
+]

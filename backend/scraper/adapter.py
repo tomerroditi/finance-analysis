@@ -30,6 +30,12 @@ from backend.services.tagging_service import CategoriesTagsService
 
 logger = logging.getLogger(__name__)
 
+# Hard ceiling on a single scrape lifecycle. Enforces the documented
+# 5-minute scraping limit (see .claude/rules/backend_scraper.md → "Timeouts
+# & Limits") at the adapter level, so a hung browser / provider can't pin a
+# scrape coroutine indefinitely.
+SCRAPE_TIMEOUT_SECONDS = 300
+
 # Live adapters whose scrapers may end up awaiting an OTP. Keyed by
 # ``"{service} - {provider} - {account}"`` — the same string the
 # ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.
@@ -154,17 +160,27 @@ class ScraperAdapter:
             ts, self.provider_name, self.account_name, self.start_date,
         )
 
+        scraper = None
         try:
             scraper = self._create_scraper(create_scraper, ScraperOptions)
             if scraper_is_2fa_required(self.provider_name):
                 scraper.on_otp_request = self._otp_callback
 
-            result = await scraper.scrape()
+            result = await asyncio.wait_for(
+                scraper.scrape(), timeout=SCRAPE_TIMEOUT_SECONDS
+            )
 
             if result.success:
                 self._data = self._result_to_dataframe(result, self.service_name)
                 if self._data is not None and not self._data.empty:
                     self._data = self._data.sort_values(by=["date"])
+                    # TODO(perf): these are blocking sync DB writes (save,
+                    # auto-tag, rebalance) that run on the event loop thread.
+                    # Offloading them via run_in_executor was considered but
+                    # deferred: thread-pool work is NOT cancellable by the
+                    # asyncio.wait_for timeout above, so an executor hop would
+                    # let DB writes outlive the 5-minute ceiling. Revisit with
+                    # an explicit cancellation/cleanup story before offloading.
                     self._save_scraped_transactions()
                     self._apply_auto_tagging()
                     self._recalculate_bank_balances()
@@ -175,6 +191,20 @@ class ScraperAdapter:
                     "%s: %s: Scraping failed — %s",
                     self.provider_name, self.account_name, self._error,
                 )
+        except asyncio.TimeoutError:
+            self._error = (
+                f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
+                "and was aborted"
+            )
+            logger.error(
+                "%s: %s: Scraping timed out — %s",
+                self.provider_name, self.account_name, self._error,
+            )
+            # wait_for cancelled scrape() mid-flight, so the scraper's own
+            # terminate() in its finally may not have run — force browser
+            # cleanup here to avoid leaking a Playwright process on timeout.
+            if scraper is not None:
+                await scraper._safe_terminate(False)
         except Exception as exc:
             self._error = str(exc)
             logger.error(

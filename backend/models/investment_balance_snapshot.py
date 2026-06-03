@@ -2,7 +2,7 @@
 Investment balance snapshot model.
 """
 
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, String, ForeignKey, Index, UniqueConstraint
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
 
@@ -39,4 +39,5 @@ class InvestmentBalanceSnapshot(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("investment_id", "date", name="uq_snapshot_investment_date"),
+        Index("ix_investment_balance_snapshots_date", "date"),
     )

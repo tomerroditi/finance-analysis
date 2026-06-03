@@ -112,9 +112,11 @@ async def lifespan(app: FastAPI):
     # Migrate: seed Investment.prior_wealth_amount from transactions
     # and clean up legacy manual_investments prior wealth offset transactions
     with get_db_context() as db:
-        from sqlalchemy import text
+        from sqlalchemy import text, update, delete
         from backend.repositories.investments_repository import InvestmentsRepository
         from backend.repositories.transactions_repository import TransactionsRepository
+        from backend.models.investment import Investment
+        from backend.models.transaction import ManualInvestmentTransaction
         from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
         from backend.constants.providers import Services
         from backend.constants.tables import TransactionsTableFields
@@ -138,24 +140,36 @@ async def lifespan(app: FastAPI):
         investments_repo = InvestmentsRepository(db)
         txns_repo = TransactionsRepository(db)
 
-        # 2. Seed prior_wealth_amount for every investment from its transactions
+        # 2. Seed prior_wealth_amount for every investment from its transactions.
+        #    Vectorize the per-investment sum with a single pandas groupby over
+        #    (category, tag), then apply all updates in one executemany instead
+        #    of one UPDATE per investment (N+1).
         investments_df = investments_repo.get_all_investments(include_closed=True)
         if not investments_df.empty:
             txns_df = txns_repo.get_table(Services.MANUAL_INVESTMENTS.value)
+            if not txns_df.empty:
+                prior_by_key = (
+                    txns_df.groupby(["category", "tag"])["amount"].sum().mul(-1)
+                )
+            else:
+                prior_by_key = None
+
+            bulk_updates = []
             for _, inv in investments_df.iterrows():
-                if not txns_df.empty:
-                    mask = (txns_df["category"] == inv["category"]) & (
-                        txns_df["tag"] == inv["tag"]
-                    )
-                    inv_txns = txns_df[mask]
+                if prior_by_key is not None:
+                    key = (inv["category"], inv["tag"])
                     prior_wealth = (
-                        -float(inv_txns["amount"].sum())
-                        if not inv_txns.empty
-                        else 0.0
+                        float(prior_by_key[key]) if key in prior_by_key.index else 0.0
                     )
                 else:
                     prior_wealth = 0.0
-                investments_repo.update_prior_wealth(int(inv["id"]), prior_wealth)
+                bulk_updates.append(
+                    {"id": int(inv["id"]), "prior_wealth_amount": prior_wealth}
+                )
+
+            if bulk_updates:
+                db.execute(update(Investment), bulk_updates)
+                db.commit()
 
         # 3. Remove legacy manual_investments prior wealth offset transactions
         manual_inv_repo = txns_repo.manual_investments_repo
@@ -171,8 +185,18 @@ async def lifespan(app: FastAPI):
                 & (inv_all_df[cat_col] == IncomeCategories.OTHER_INCOME.value)
                 & (inv_all_df[acct_col] == PRIOR_WEALTH_TAG)
             )
-            for _, row in inv_all_df[pw_mask].iterrows():
-                manual_inv_repo.delete_transaction_by_unique_id(str(row[uid_col]))
+            # Collect the matching unique_ids and remove them in a single bulk
+            # DELETE instead of one DELETE per row (N+1).
+            unique_ids = [
+                int(uid) for uid in inv_all_df.loc[pw_mask, uid_col].tolist()
+            ]
+            if unique_ids:
+                db.execute(
+                    delete(ManualInvestmentTransaction).where(
+                        ManualInvestmentTransaction.unique_id.in_(unique_ids)
+                    )
+                )
+                db.commit()
 
     yield
     # Shutdown
