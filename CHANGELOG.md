@@ -1,3 +1,24 @@
+## v1.29.1 (2026-06-03)
+
+### Fix
+
+- **frontend**: RTL-aware slide animations and logical scroll padding
+- **routes**: validate scrape period, async onboarding, typed responses
+- **scraper**: enforce scrape timeout and stop leaking browsers
+- **frontend**: SQLite boolean render, stable split keys, i18n label
+- **scraper,insights**: surface HTTP errors and guard division
+
+### Refactor
+
+- **analytics**: share NON_EXPENSE_CATEGORIES, fix mask typos
+
+### Perf
+
+- **investments**: groupby daily aggregation and de-N+1 portfolio overview
+- **analytics**: drop O(N^2) Sankey lookup, vectorize labels, groupby months
+- **repos**: replace N+1 loops with bulk statements; atomic snapshot upsert
+- **db**: add indexes on hot analytics/scraping/snapshot columns
+
 ## v1.29.0 (2026-05-31)
 
 ### Feat
