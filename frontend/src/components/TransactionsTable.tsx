@@ -18,6 +18,9 @@ import {
   Settings2,
   Pencil,
   Eraser,
+  CalendarMinus,
+  CalendarPlus,
+  CalendarClock,
 } from "lucide-react";
 import { SplitTransactionModal } from "./modals/SplitTransactionModal";
 import { LinkRefundModal } from "./modals/LinkRefundModal";
@@ -26,7 +29,9 @@ import {
   transactionsApi,
   taggingApi,
   pendingRefundsApi,
+  budgetMonthOverridesApi,
   type PendingRefund,
+  type BudgetMonthOverride,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
 import { humanizeProvider } from "../utils/textFormatting";
@@ -69,6 +74,13 @@ export interface TransactionsTableProps {
   pendingRefundsMap?: Map<string, PendingRefund>;
   refundLinksMap?: Map<string, number>;
 
+  // Monthly-budget month override (only set on the monthly budget page).
+  // When budgetViewYear/budgetViewMonth are provided, per-row "move to
+  // prev/next month" actions are shown.
+  budgetMonthOverridesMap?: Map<string, BudgetMonthOverride>;
+  budgetViewYear?: number;
+  budgetViewMonth?: number;
+
   // External filter control
   onlyUntagged?: boolean;
 
@@ -108,10 +120,13 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   onAddTransaction,
   pendingRefundsMap,
   refundLinksMap,
+  budgetMonthOverridesMap,
+  budgetViewYear,
+  budgetViewMonth,
   onlyUntagged: onlyUntaggedProp,
   compact = false,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const { createCategory, createTag } = useCategoryTagCreate();
   const confirm = useConfirm();
@@ -255,6 +270,33 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
       invalidateAnalytics();
+      onTransactionUpdated?.();
+    },
+  });
+
+  // Monthly-budget month override mutation. Moves a transaction one month
+  // prior/next for budget bucketing only (backend caps movement at +/-1 and
+  // removes the override when the target equals the real month).
+  const monthOverrideMutation = useMutation({
+    mutationFn: ({
+      tx,
+      year,
+      month,
+    }: {
+      tx: Transaction;
+      year: number;
+      month: number;
+    }) =>
+      budgetMonthOverridesApi.set({
+        source_type: "transaction",
+        source_id: tx.unique_id || "",
+        source_table: tx.source || "unknown",
+        override_year: year,
+        override_month: month,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budgetMonthOverrides"] });
+      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
       onTransactionUpdated?.();
     },
   });
@@ -1034,6 +1076,74 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                               >
                                 <Link2 size={14} />
                               </button>
+                            );
+                          })()}
+                        {/* Monthly-budget month move (budget page only) */}
+                        {budgetViewYear != null &&
+                          budgetViewMonth != null &&
+                          (() => {
+                            const d = new Date(tx.date);
+                            const origIdx =
+                              d.getFullYear() * 12 + d.getMonth();
+                            const override = budgetMonthOverridesMap?.get(
+                              getTransactionId(tx),
+                            );
+                            const curIdx = override
+                              ? override.override_year * 12 +
+                                (override.override_month - 1)
+                              : origIdx;
+                            const canPrior = curIdx >= origIdx;
+                            const canNext = curIdx <= origIdx;
+                            const monthLabel = (idx: number) =>
+                              new Date(
+                                Math.floor(idx / 12),
+                                idx % 12,
+                              ).toLocaleString(
+                                i18n.language === "he" ? "he-IL" : "en-US",
+                                { month: "long", year: "numeric" },
+                              );
+                            const moveTo = (idx: number) =>
+                              monthOverrideMutation.mutate({
+                                tx,
+                                year: Math.floor(idx / 12),
+                                month: (idx % 12) + 1,
+                              });
+                            return (
+                              <>
+                                {override && (
+                                  <span
+                                    className="p-1.5 text-amber-400"
+                                    title={t("budget.monthMove.movedBadge", {
+                                      from: monthLabel(origIdx),
+                                      to: monthLabel(curIdx),
+                                    })}
+                                  >
+                                    <CalendarClock size={14} />
+                                  </span>
+                                )}
+                                <button
+                                  className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed"
+                                  title={t("budget.monthMove.toPrevMonth")}
+                                  aria-label={t("budget.monthMove.toPrevMonth")}
+                                  disabled={
+                                    !canPrior || monthOverrideMutation.isPending
+                                  }
+                                  onClick={() => moveTo(curIdx - 1)}
+                                >
+                                  <CalendarMinus size={14} />
+                                </button>
+                                <button
+                                  className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed"
+                                  title={t("budget.monthMove.toNextMonth")}
+                                  aria-label={t("budget.monthMove.toNextMonth")}
+                                  disabled={
+                                    !canNext || monthOverrideMutation.isPending
+                                  }
+                                  onClick={() => moveTo(curIdx + 1)}
+                                >
+                                  <CalendarPlus size={14} />
+                                </button>
+                              </>
                             );
                           })()}
                         {showDelete && isManual && (

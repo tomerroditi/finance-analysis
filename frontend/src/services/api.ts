@@ -551,6 +551,28 @@ export const pendingRefundsApi = {
   close: (id: number) => api.post(`/pending-refunds/${id}/close`),
 };
 
+export interface BudgetMonthOverride {
+  id: number;
+  source_type: "transaction" | "split";
+  source_id: string | number;
+  source_table: string;
+  override_year: number;
+  override_month: number;
+}
+
+export const budgetMonthOverridesApi = {
+  getAll: () =>
+    api.get<BudgetMonthOverride[]>("/budget-month-overrides/"),
+  set: (data: {
+    source_type: "transaction" | "split";
+    source_id: string | number;
+    source_table: string;
+    override_year: number;
+    override_month: number;
+  }) => api.post("/budget-month-overrides/", data),
+  remove: (id: number) => api.delete(`/budget-month-overrides/${id}`),
+};
+
 // Retirement API
 export interface RetirementGoal {
   id: number;

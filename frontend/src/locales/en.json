@@ -422,6 +422,11 @@
   "budget": {
     "title": "Budget",
     "subtitle": "Track your spending against your budget",
+    "monthMove": {
+      "toPrevMonth": "Count in previous month's budget",
+      "toNextMonth": "Count in next month's budget",
+      "movedBadge": "Counted in {{to}} (moved from {{from}})"
+    },
     "monthlyBudget": "Monthly Budget",
     "projectBudgets": "Project Budgets",
     "addBudget": "Add Budget",

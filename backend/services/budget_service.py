@@ -26,6 +26,7 @@ from backend.constants.budget import (
 from backend.constants.categories import INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
 from backend.repositories.budget_repository import BudgetRepository
+from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
@@ -53,6 +54,7 @@ class BudgetService:
         self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
         self.pending_refunds_service = PendingRefundsService(db)
+        self.month_override_service = BudgetMonthOverrideService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
         """
@@ -705,6 +707,57 @@ class MonthlyBudgetService(BudgetService):
 
         return expenses
 
+    def _apply_month_overrides(self, expenses: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add ``budget_year``/``budget_month`` columns honoring month overrides.
+
+        By default a transaction is bucketed into the month of its real
+        ``date``. Transactions (or splits) with an active budget month override
+        are bucketed into the override's month instead, so they leave their
+        natural month and appear in the target month of the monthly budget.
+
+        Parameters
+        ----------
+        expenses : pd.DataFrame
+            Filtered expense transactions with a parsed ``date`` column.
+
+        Returns
+        -------
+        pd.DataFrame
+            Copy of ``expenses`` with ``budget_year`` and ``budget_month``
+            integer columns added.
+        """
+        expenses = expenses.copy()
+        dates = pd.to_datetime(expenses[TransactionsTableFields.DATE.value])
+        budget_year = dates.dt.year
+        budget_month = dates.dt.month
+
+        overrides = self.month_override_service.get_override_map()
+
+        tx_map = overrides["transaction"]
+        if tx_map:
+            uid = expenses[TransactionsTableFields.UNIQUE_ID.value]
+            budget_year = uid.map({k: v[0] for k, v in tx_map.items()}).fillna(
+                budget_year
+            )
+            budget_month = uid.map({k: v[1] for k, v in tx_map.items()}).fillna(
+                budget_month
+            )
+
+        split_map = overrides["split"]
+        if split_map and TransactionsTableFields.SPLIT_ID.value in expenses.columns:
+            sid = expenses[TransactionsTableFields.SPLIT_ID.value]
+            budget_year = sid.map({k: v[0] for k, v in split_map.items()}).fillna(
+                budget_year
+            )
+            budget_month = sid.map({k: v[1] for k, v in split_map.items()}).fillna(
+                budget_month
+            )
+
+        expenses["budget_year"] = budget_year.astype(int)
+        expenses["budget_month"] = budget_month.astype(int)
+        return expenses
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -744,10 +797,14 @@ class MonthlyBudgetService(BudgetService):
             include_split_parents=include_split_parents,
         )
 
-        month_data = expenses.loc[
-            (expenses[TransactionsTableFields.DATE.value].dt.year == year)
-            & (expenses[TransactionsTableFields.DATE.value].dt.month == month)
-        ] if not expenses.empty else expenses
+        if not expenses.empty:
+            expenses = self._apply_month_overrides(expenses)
+            month_data = expenses.loc[
+                (expenses["budget_year"] == year)
+                & (expenses["budget_month"] == month)
+            ]
+        else:
+            month_data = expenses
 
         rules = budget_rules[
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
