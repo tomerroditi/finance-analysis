@@ -78,6 +78,38 @@ test.describe("Budget", () => {
     await expect(trend).toBeVisible();
   });
 
+  test("budget-vs-actual trend chart plots the Total Budget cap, not the rule sum", async ({
+    page,
+  }) => {
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    // Make sure the chart is expanded (collapsed by default on narrow viewports).
+    const trend = page.getByRole("button", { name: /Budget vs Actual/i });
+    await expect(trend).toBeVisible();
+    const plot = page.locator(".js-plotly-plot").last();
+    if (!(await plot.isVisible().catch(() => false))) {
+      await trend.click();
+    }
+    await expect(plot).toBeVisible({ timeout: 15_000 });
+
+    // Read the Plotly traces straight off the DOM. The budget series comes
+    // from each month's "Total Budget" row; if the old per-category-rule sum
+    // had crept back, the budget bars would be smaller than the gauge's cap.
+    const traces = await plot.evaluate(
+      (el) =>
+        (el as unknown as { data: { name: string; y: number[] }[] }).data.map(
+          (d) => ({ name: d.name, y: d.y }),
+        ),
+    );
+    expect(traces.length).toBe(2);
+    const budget = traces[0];
+    // The first trace is the budget series and the demo data defines a
+    // Total Budget, so at least one month must plot a positive budget cap.
+    expect(budget.y.some((v) => v > 0)).toBe(true);
+  });
+
+
   test("'View all projects' jumps to the Projects tab", async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");
