@@ -59,22 +59,15 @@ describe("useBudgetTrend", () => {
     expect(point.actual).toBe(5000);
   });
 
-  it("falls back to summing the per-category rules when no Total Budget rule exists", async () => {
-    getAnalysis.mockResolvedValue({
-      data: {
-        rules: [
-          { rule: { name: "Food", amount: 2000 }, current_amount: -1500 },
-          { rule: { name: "Transport", amount: 1000 }, current_amount: -800 },
-        ],
-      },
-    });
+  it("plots zeros for a month with no budget rules at all", async () => {
+    getAnalysis.mockResolvedValue({ data: { rules: [] } });
 
     const { result } = renderTrend();
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     const point = result.current.data.at(-1)!;
-    expect(point.budget).toBe(3000);
-    expect(point.actual).toBe(2300);
+    expect(point.budget).toBe(0);
+    expect(point.actual).toBe(0);
   });
 });

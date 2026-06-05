@@ -15,8 +15,6 @@ interface TrendRuleItem {
   current_amount: number;
 }
 
-const EXCLUDED_RULES = new Set(["Total Budget", "Other Expenses"]);
-
 /**
  * Build a budget-vs-actual series for the trailing `months` calendar months
  * ending at (and including) the given year/month.
@@ -25,8 +23,8 @@ const EXCLUDED_RULES = new Set(["Total Budget", "Other Expenses"]);
  * — the monthly view already prefetches ±2 months, so most of these are warm
  * cache hits. `budget` and `actual` come from the month's "Total Budget" row —
  * the same single source of truth the monthly gauge uses — so the trend bars
- * match the gauge exactly. We only fall back to summing the per-category rules
- * for months that have per-category budgets but no Total Budget rule defined.
+ * match the gauge exactly. (A month with no budget rules at all has no row and
+ * plots zeros.)
  */
 export function useBudgetTrend(
   year: number,
@@ -58,28 +56,12 @@ export function useBudgetTrend(
 
     // The "Total Budget" row is the source of truth: its amount is the
     // configured monthly cap and its current_amount is the month's total
-    // spend. Summing the per-category rules instead undercounts the budget
-    // (it ignores headroom not allocated to a rule) and the actual (it drops
-    // the "Other Expenses" catch-all).
+    // spend. Summing the per-category rules instead would undercount the
+    // budget (it ignores headroom not allocated to a rule) and the actual
+    // (it drops the "Other Expenses" catch-all).
     const totalRule = rules.find((item) => item.rule.name === "Total Budget");
-
-    let budget: number;
-    let actual: number;
-    if (totalRule) {
-      budget = totalRule.rule.amount || 0;
-      actual = Math.abs(totalRule.current_amount || 0);
-    } else {
-      // No Total Budget rule this month — fall back to the per-category rules,
-      // excluding the synthetic catch-all rows.
-      const relevant = rules.filter(
-        (item) => !EXCLUDED_RULES.has(item.rule.name),
-      );
-      budget = relevant.reduce((sum, item) => sum + (item.rule.amount || 0), 0);
-      actual = relevant.reduce(
-        (sum, item) => sum + Math.abs(item.current_amount || 0),
-        0,
-      );
-    }
+    const budget = totalRule?.rule.amount || 0;
+    const actual = Math.abs(totalRule?.current_amount || 0);
 
     return {
       key: `${p.year}-${String(p.month).padStart(2, "0")}`,
