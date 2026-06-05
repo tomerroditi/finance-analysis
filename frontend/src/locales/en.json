@@ -449,6 +449,18 @@
     "allGood": "All good!",
     "daysLeft": "Days Left",
     "inMonth": "in {{month}}",
+    "freshness": {
+      "upToDate": "Up to date",
+      "updated": "Updated {{time}}",
+      "neverSynced": "Never synced",
+      "syncing": "Syncing…",
+      "provisional": "Provisional — based on stale data",
+      "showDetails": "Show sync details",
+      "staleTitle": "Out-of-date sources",
+      "syncNow": "Sync now",
+      "bannerStale": "Budget may be incomplete — {{account}} last synced {{time}}.",
+      "bannerNeverSynced": "Budget may be incomplete — {{account}} has never synced."
+    },
     "confirmDeleteRule": "Are you sure you want to delete this budget rule?",
     "projectSpending": "Project Spending",
     "project": "Project",

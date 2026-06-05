@@ -41,3 +41,30 @@ export function formatMonthYear(date: string | Date): string {
   const dateObj = typeof date === "string" ? new Date(date) : date;
   return format(dateObj, "MMMM yyyy", getLocale());
 }
+
+/**
+ * Whole calendar-agnostic days elapsed between `date` and now.
+ * @param date - Date string (ISO format) or Date object
+ * @returns Number of full days since the given date (0 = today)
+ */
+export function daysSince(date: string | Date): number {
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  const diffMs = Date.now() - dateObj.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Human, localized relative date: "Today", "Yesterday", "3 d ago",
+ * "2 w ago", or an absolute short date once older than a month.
+ * Shared by the Data Sources sync badges and the budget freshness badge.
+ * @param date - Date string (ISO format) or Date object
+ * @returns Localized relative-time label
+ */
+export function formatRelativeDate(date: string | Date): string {
+  const diffDays = daysSince(date);
+  if (diffDays <= 0) return i18n.t("common.today");
+  if (diffDays === 1) return i18n.t("common.yesterday");
+  if (diffDays < 7) return `${diffDays} ${i18n.t("common.daysAgo")}`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${i18n.t("common.weeksAgo")}`;
+  return formatShortDate(date);
+}

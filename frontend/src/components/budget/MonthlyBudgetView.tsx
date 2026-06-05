@@ -16,6 +16,10 @@ import { useConfirm } from "../../context/DialogContext";
 import { MonthHeader } from "./MonthHeader";
 import { BudgetAlertsBanner } from "./BudgetAlertsBanner";
 import { BudgetSummaryStrip } from "./BudgetSummaryStrip";
+import { DataFreshnessBadge } from "./DataFreshnessBadge";
+import { BudgetFreshnessBanner } from "./BudgetFreshnessBanner";
+import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
+import { useScraping } from "../../hooks/useScraping";
 import { BudgetTrendChart } from "./BudgetTrendChart";
 import { BudgetRuleRow } from "./BudgetRuleRow";
 import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
@@ -65,6 +69,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   const queryClient = useQueryClient();
+  const freshness = useBudgetFreshness();
+  const { isAnyScraping } = useScraping();
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["budgetAnalysis", year, month, includeSplitParents],
@@ -200,6 +206,15 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
 
+  // Freshness only matters for the live month; historical months are settled.
+  const showFreshness = isCurrentMonth && freshness.hasScrapableAccounts;
+  const isBudgetStale =
+    showFreshness &&
+    !isAnyScraping &&
+    (freshness.tier === "stale" ||
+      freshness.tier === "veryStale" ||
+      freshness.tier === "never");
+
   if (isLoading)
     return (
       <div className="space-y-4 md:space-y-6">
@@ -264,6 +279,23 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         onAddRule={openAddModal}
       />
 
+      {showFreshness && (
+        <div className="flex justify-end -mt-1">
+          <DataFreshnessBadge
+            tier={freshness.tier}
+            oldestSyncDate={freshness.oldestSyncDate}
+            staleAccounts={freshness.staleAccounts}
+            isSyncing={isAnyScraping}
+          />
+        </div>
+      )}
+
+      <BudgetFreshnessBanner
+        freshness={freshness}
+        isSyncing={isAnyScraping}
+        show={showFreshness}
+      />
+
       {copiedFromForThisMonth && (
         <div className="flex items-start justify-between gap-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-3 rounded-xl text-sm font-medium">
           <span>{t("budget.rulesCopiedFrom", { month: copiedFromForThisMonth })}</span>
@@ -289,6 +321,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             biggestOverspend={biggestOverspend}
             daysLeft={daysLeft}
             monthLabel={monthShortLabel}
+            isStale={isBudgetStale}
           />
           <BudgetTrendChart
             year={year}
