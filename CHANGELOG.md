@@ -1,3 +1,13 @@
+## v1.29.2 (2026-06-05)
+
+### Fix
+
+- use Total Budget cap for budget-vs-actual trend chart
+
+### Refactor
+
+- drop the per-rule-sum fallback in budget trend
+
 ## v1.29.1 (2026-06-03)
 
 ### Fix
