@@ -553,6 +553,7 @@
     "renameTag": "לחץ לשינוי שם",
     "renameError": "לא ניתן לשנות שם. השם עשוי להיות קיים כבר או מוגן.",
     "protectedCannotRename": "לא ניתן לשנות שם של פריטים מוגנים",
+    "protectedCannotDelete": "לא ניתן למחוק קטגוריות מוגנות",
     "categoriesCount": "{{count}} קטגוריות",
     "tagsCount": "{{count}} תגיות",
     "searchPlaceholder": "חפש קטגוריות ותגיות...",

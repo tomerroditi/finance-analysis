@@ -553,6 +553,7 @@
     "renameTag": "Click to rename",
     "renameError": "Cannot rename. The name may already exist or is protected.",
     "protectedCannotRename": "Protected items cannot be renamed",
+    "protectedCannotDelete": "Protected categories cannot be deleted",
     "categoriesCount": "{{count}} categories",
     "tagsCount": "{{count}} tags",
     "searchPlaceholder": "Search categories and tags...",

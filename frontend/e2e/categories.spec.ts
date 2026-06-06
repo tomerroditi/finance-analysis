@@ -102,4 +102,38 @@ test.describe("Categories", () => {
     await panel.getByRole("button", { name: /^close$/i }).click();
     await expect(panel).toBeHidden({ timeout: 3_000 });
   });
+
+  test("protected category shows a disabled delete button with a reason on hover", async ({
+    page,
+  }) => {
+    await navigateTo(page, "/categories");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForLoadState("networkidle");
+
+    // Investments is a protected category — it cannot be deleted.
+    const protectedCard = page.locator('[data-testid="category-card-Investments"]');
+    await expect(protectedCard).toBeVisible({ timeout: 10_000 });
+    await protectedCard.click();
+
+    const panel = page.locator('[data-testid="category-panel"]');
+    await expect(panel).toBeVisible({ timeout: 5_000 });
+
+    // The delete button is rendered but disabled (not hidden).
+    const deleteBtn = panel.getByRole("button", { name: /delete category/i });
+    await expect(deleteBtn).toBeVisible({ timeout: 5_000 });
+    await expect(deleteBtn).toBeDisabled();
+
+    // Hovering reveals the reason tooltip.
+    const reason = panel.getByText(/cannot be deleted/i);
+    const hiddenOpacity = await reason.evaluate((el) => getComputedStyle(el.parentElement!).opacity);
+    expect(Number(hiddenOpacity)).toBe(0);
+
+    await deleteBtn.hover();
+    await expect
+      .poll(async () => reason.evaluate((el) => getComputedStyle(el.parentElement!).opacity))
+      .toBe("1");
+
+    await panel.getByRole("button", { name: /^close$/i }).click();
+    await expect(panel).toBeHidden({ timeout: 3_000 });
+  });
 });
