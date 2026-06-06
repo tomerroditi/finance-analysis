@@ -1,3 +1,14 @@
+## v1.30.0 (2026-06-06)
+
+### Feat
+
+- **demo**: seed two budget month overrides in demo data
+- **budget**: move a transaction to an adjacent month in the monthly budget
+
+### Fix
+
+- **demo**: shift budget month overrides with their transactions
+
 ## v1.29.2 (2026-06-05)
 
 ### Fix
