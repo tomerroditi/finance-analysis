@@ -1,7 +1,7 @@
 import React from "react";
 import { TransactionsTable } from "../TransactionsTable";
 import type { Transaction } from "../../types/transaction";
-import { type PendingRefund } from "../../services/api";
+import { type PendingRefund, type BudgetMonthOverride } from "../../services/api";
 
 interface TransactionCollapsibleListProps {
   transactions: Transaction[];
@@ -10,6 +10,10 @@ interface TransactionCollapsibleListProps {
   onTransactionUpdated?: () => void;
   pendingRefundsMap?: Map<string, PendingRefund>;
   refundLinksMap?: Map<string, number>;
+  // Monthly-budget month override props
+  budgetMonthOverridesMap?: Map<string, BudgetMonthOverride>;
+  budgetViewYear?: number;
+  budgetViewMonth?: number;
   // Split parents filter props
   showSplitParentsFilter?: boolean;
   includeSplitParents?: boolean;
@@ -29,6 +33,9 @@ export const TransactionCollapsibleList: React.FC<
   onTransactionUpdated,
   pendingRefundsMap,
   refundLinksMap,
+  budgetMonthOverridesMap,
+  budgetViewYear,
+  budgetViewMonth,
   showSplitParentsFilter = false,
   includeSplitParents = false,
   onIncludeSplitParentsChange,
@@ -48,6 +55,9 @@ export const TransactionCollapsibleList: React.FC<
           onTransactionUpdated={onTransactionUpdated}
           pendingRefundsMap={pendingRefundsMap}
           refundLinksMap={refundLinksMap}
+          budgetMonthOverridesMap={budgetMonthOverridesMap}
+          budgetViewYear={budgetViewYear}
+          budgetViewMonth={budgetViewMonth}
           showSplitParentsFilter={showSplitParentsFilter}
           includeSplitParents={includeSplitParents}
           onIncludeSplitParentsChange={onIncludeSplitParentsChange}

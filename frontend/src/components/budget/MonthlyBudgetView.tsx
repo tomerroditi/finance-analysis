@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { PenSquare, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import i18n from "../../i18n";
-import { budgetApi, pendingRefundsApi, type PendingRefund, type RefundLink } from "../../services/api";
+import { budgetApi, pendingRefundsApi, budgetMonthOverridesApi, type PendingRefund, type RefundLink, type BudgetMonthOverride } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { Skeleton } from "../common/Skeleton";
 import { EmptyState } from "../common/EmptyState";
@@ -126,6 +126,20 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     });
     return map;
   }, [pendingRefunds]);
+
+  // Budget month overrides — for the per-row "move to prev/next month" actions.
+  const { data: budgetMonthOverrides } = useQuery({
+    queryKey: ["budgetMonthOverrides"],
+    queryFn: () => budgetMonthOverridesApi.getAll().then((res) => res.data),
+  });
+
+  const budgetMonthOverridesMap = useMemo(() => {
+    const map = new Map<string, BudgetMonthOverride>();
+    budgetMonthOverrides?.forEach((o: BudgetMonthOverride) => {
+      map.set(`${o.source_table}_${o.source_id}`, o);
+    });
+    return map;
+  }, [budgetMonthOverrides]);
 
   const invalidateBudget = () => {
     queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
@@ -404,6 +418,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                 onTransactionUpdated={invalidateBudget}
                 pendingRefundsMap={pendingRefundsMap}
                 refundLinksMap={refundLinksMap}
+                budgetMonthOverridesMap={budgetMonthOverridesMap}
+                budgetViewYear={year}
+                budgetViewMonth={month}
                 showSplitParentsFilter
                 includeSplitParents={includeSplitParents}
                 onIncludeSplitParentsChange={setIncludeSplitParents}
@@ -514,6 +531,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                   onTransactionUpdated={invalidateBudget}
                   pendingRefundsMap={pendingRefundsMap}
                   refundLinksMap={refundLinksMap}
+                  budgetMonthOverridesMap={budgetMonthOverridesMap}
+                  budgetViewYear={year}
+                  budgetViewMonth={month}
                   showSplitParentsFilter
                   includeSplitParents={includeSplitParents}
                   onIncludeSplitParentsChange={setIncludeSplitParents}

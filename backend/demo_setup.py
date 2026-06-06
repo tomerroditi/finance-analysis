@@ -63,6 +63,85 @@ def sync_missing_columns(engine: Engine) -> None:
                 conn.commit()
 
 
+# Transaction tables an override's source_id can point into.
+_TXN_TABLES = {
+    "bank_transactions",
+    "credit_card_transactions",
+    "cash_transactions",
+    "manual_investment_transactions",
+}
+
+
+def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_table: str):
+    """Return the original ISO date of the transaction an override points at.
+
+    Returns ``None`` if it cannot be resolved (unknown table, missing row).
+    Must be called before transaction dates are shifted so the returned date
+    is the pre-shift value.
+    """
+    if source_type == "transaction" and source_table in _TXN_TABLES:
+        row = conn.execute(
+            text(f"SELECT date FROM {source_table} WHERE unique_id = :uid"),
+            {"uid": source_id},
+        ).fetchone()
+        return row[0] if row else None
+
+    if source_type == "split":
+        split = conn.execute(
+            text(
+                "SELECT source, transaction_id FROM split_transactions WHERE id = :sid"
+            ),
+            {"sid": source_id},
+        ).fetchone()
+        if split and split[0] in _TXN_TABLES:
+            parent = conn.execute(
+                text(f"SELECT date FROM {split[0]} WHERE unique_id = :uid"),
+                {"uid": split[1]},
+            ).fetchone()
+            return parent[0] if parent else None
+    return None
+
+
+def _shift_budget_month_overrides(conn, offset_days: int) -> None:
+    """Re-anchor each budget month override to its (shifted) transaction's month.
+
+    Call this *before* the transaction date columns are shifted — it relies on
+    reading the original transaction dates to recover each override's +/-1
+    direction.
+    """
+    try:
+        overrides = conn.execute(
+            text(
+                "SELECT id, source_type, source_id, source_table, "
+                "override_year, override_month FROM budget_month_overrides"
+            )
+        ).fetchall()
+    except Exception:
+        # Table may be absent in an older frozen DB; nothing to shift.
+        return
+
+    for ov_id, source_type, source_id, source_table, oy, om in overrides:
+        txn_date = _resolve_override_txn_date(
+            conn, source_type, source_id, source_table
+        )
+        if not txn_date:
+            continue
+        orig_txn = date.fromisoformat(txn_date[:10])
+        direction = (oy * 12 + (om - 1)) - (
+            orig_txn.year * 12 + (orig_txn.month - 1)
+        )
+        new_txn = orig_txn + timedelta(days=offset_days)
+        new_index = (new_txn.year * 12 + (new_txn.month - 1)) + direction
+        new_year, new_month0 = divmod(new_index, 12)
+        conn.execute(
+            text(
+                "UPDATE budget_month_overrides "
+                "SET override_year = :y, override_month = :m WHERE id = :id"
+            ),
+            {"y": new_year, "m": new_month0 + 1, "id": ov_id},
+        )
+
+
 def _shift_dates(engine: Engine, offset_days: int) -> None:
     """Shift every shiftable date column by ``offset_days`` days."""
     if offset_days == 0:
@@ -73,6 +152,17 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
     )
 
     with engine.connect() as conn:
+        # Budget month overrides must move in lockstep with the transactions
+        # they point at. Each override sits exactly one calendar month before
+        # or after its transaction's month; shifting the stored (year, month)
+        # by raw days — the way budget_rules are shifted — can drift it a month
+        # relative to the transaction (the rule anchors to day 1, the
+        # transaction to its real day). Instead, anchor each override to its
+        # transaction's *new* month plus the original +/-1 direction. This runs
+        # before the transaction dates below are shifted, so the lookups still
+        # see the original (pre-shift) transaction dates.
+        _shift_budget_month_overrides(conn, offset_days)
+
         for table in [
             "bank_transactions",
             "credit_card_transactions",

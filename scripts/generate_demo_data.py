@@ -29,6 +29,7 @@ from backend.models.base import Base  # noqa: E402
 from backend.models import (  # noqa: E402
     BankBalance,
     BankTransaction,
+    BudgetMonthOverride,
     BudgetRule,
     CashBalance,
     CashTransaction,
@@ -1893,6 +1894,82 @@ def create_budget_rules(session):
     session.flush()
 
 
+def create_budget_month_overrides(session, cc_txns):
+    """Move a couple of transactions into an adjacent month's budget.
+
+    Demonstrates the monthly-budget month-override feature: a transaction
+    keeps its real ``date`` everywhere, but is *counted* in a neighbouring
+    month's budget (movement is capped at +/- one month). Two in-character
+    examples for the Cohen household:
+
+    1. **Moved back** — a household/utility charge that posted in the first
+       days of the current month but really belongs to the previous month's
+       budget (paid late, e.g. the bill was due the month before).
+    2. **Moved forward** — a charge at the very end of December that the
+       couple counts against January's budget (paid in advance for the next
+       month).
+
+    Both endpoints sit inside the seeded budget window so each side renders.
+    Transactions are filtered to ``type == "normal"`` (so split parents,
+    whose type was rewritten to ``split_parent`` earlier, are skipped) and
+    away from categories used by the refund/split demos (Shopping, Food) and
+    the project budgets, so an override always lands on a transaction that is
+    actually visible in the monthly budget view.
+    """
+
+    def day_of(txn):
+        return int(txn.date[8:10])
+
+    skip_categories = ("Shopping", "Food", "Wedding", "Home Renovation")
+    overrides = []
+
+    # 1. Move back: an early-current-month expense -> the previous month.
+    ref_prefix = f"{REFERENCE_DATE.year:04d}-{REFERENCE_DATE.month:02d}"
+    if REFERENCE_DATE.month > 1:
+        prev_year, prev_month = REFERENCE_DATE.year, REFERENCE_DATE.month - 1
+    else:
+        prev_year, prev_month = REFERENCE_DATE.year - 1, 12
+    back_pool = [
+        t for t in cc_txns
+        if t.type == "normal" and t.amount < 0
+        and t.date.startswith(ref_prefix) and day_of(t) <= 8
+        and t.category not in skip_categories
+    ]
+    if back_pool:
+        t = back_pool[0]
+        overrides.append(BudgetMonthOverride(
+            source_type="transaction",
+            source_id=t.unique_id,
+            source_table=t.source,
+            override_year=prev_year,
+            override_month=prev_month,
+        ))
+
+    # 2. Move forward: a late-December charge -> the following January.
+    dec_year = REFERENCE_DATE.year - 1
+    dec_prefix = f"{dec_year:04d}-12"
+    fwd_pool = [
+        t for t in cc_txns
+        if t.type == "normal" and t.amount < 0
+        and t.date.startswith(dec_prefix) and day_of(t) >= 24
+        and t.category not in skip_categories
+    ]
+    if fwd_pool:
+        t = fwd_pool[0]
+        overrides.append(BudgetMonthOverride(
+            source_type="transaction",
+            source_id=t.unique_id,
+            source_table=t.source,
+            override_year=dec_year + 1,
+            override_month=1,
+        ))
+
+    for override in overrides:
+        session.add(override)
+    session.flush()
+    print(f"    Created {len(overrides)} budget month overrides")
+
+
 def create_split_transactions(session, cc_txns: list[CreditCardTransaction]):
     """Create 3 split transaction examples."""
     # 1. Find a large grocery transaction on Max (~-300 to -350 range)
@@ -2857,6 +2934,10 @@ def main():
         print("  Creating pending refunds...")
         create_pending_refunds(session, cc_txns, bank_txns)
 
+        # 14b. Budget month overrides (move transactions between budget months)
+        print("  Creating budget month overrides...")
+        create_budget_month_overrides(session, cc_txns)
+
         # 15. Liabilities
         print("  Creating liabilities...")
         create_liabilities(session)
@@ -2902,6 +2983,7 @@ def main():
             "investment_balance_snapshots",
             "pending_refunds",
             "refund_links",
+            "budget_month_overrides",
             "scraping_history",
             "bank_balances",
             "cash_balances",

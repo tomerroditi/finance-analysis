@@ -29,6 +29,7 @@ from backend.routes import (
     backup,
     bank_balances,
     budget,
+    budget_month_overrides,
     cash_balances,
     insurance_accounts,
     investments,
@@ -295,6 +296,11 @@ app.include_router(
     transactions.router, prefix="/api/transactions", tags=["Transactions"]
 )
 app.include_router(budget.router, prefix="/api/budget", tags=["Budget"])
+app.include_router(
+    budget_month_overrides.router,
+    prefix="/api/budget-month-overrides",
+    tags=["Budget Month Overrides"],
+)
 app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(liabilities.router, prefix="/api/liabilities", tags=["Liabilities"])

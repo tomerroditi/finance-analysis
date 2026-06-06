@@ -6,6 +6,7 @@ This package contains SQLAlchemy ORM models for database tables.
 
 from backend.models.bank_balance import BankBalance
 from backend.models.base import Base, TimestampMixin
+from backend.models.budget_month_override import BudgetMonthOverride
 from backend.models.cash_balance import CashBalance
 from backend.models.category import Category
 from backend.models.credential import Credential
@@ -55,6 +56,8 @@ __all__ = [
     # Refund linking
     "PendingRefund",
     "RefundLink",
+    # Budget month override
+    "BudgetMonthOverride",
     "RetirementGoal",
     "SavingsGoal",
 ]
