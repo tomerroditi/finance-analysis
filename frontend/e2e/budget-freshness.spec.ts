@@ -18,7 +18,12 @@ const daysAgoIso = (days: number) => new Date(Date.now() - days * DAY_MS).toISOS
 
 async function mockLastScrapes(
   page: Page,
-  accounts: { provider: string; account_name: string; last_scrape_date: string | null }[],
+  accounts: {
+    provider: string;
+    account_name: string;
+    last_scrape_date: string | null;
+    service?: string;
+  }[],
 ) {
   await page.route("**/scraping/last-scrapes", async (route) => {
     await route.fulfill({
@@ -26,7 +31,7 @@ async function mockLastScrapes(
       contentType: "application/json",
       body: JSON.stringify(
         accounts.map((a) => ({
-          service: "banks",
+          service: a.service ?? "banks",
           provider: a.provider,
           account_name: a.account_name,
           last_scrape_date: a.last_scrape_date,
@@ -109,6 +114,25 @@ test.describe("Budget data freshness", () => {
 
     await page.getByRole("button", { name: /Dismiss/i }).first().click();
     await expect(banner).toHaveCount(0);
+  });
+
+  test("a stale insurance sync does not flag the budget", async ({ page }) => {
+    // Insurance is scraped but unrelated to budget transactions — even a
+    // never-synced insurance account must not raise a freshness warning.
+    await mockLastScrapes(page, [
+      {
+        provider: "menora",
+        account_name: "Pension",
+        last_scrape_date: daysAgoIso(40),
+        service: "insurances",
+      },
+    ]);
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Show sync details/i })).toHaveCount(0);
+    await expect(page.getByText(/Up to date/i)).toHaveCount(0);
   });
 
   test("staleness shows on affected past months but not fully-settled ones", async ({

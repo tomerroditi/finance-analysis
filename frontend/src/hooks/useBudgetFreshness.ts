@@ -62,7 +62,11 @@ export function useBudgetFreshness(): BudgetFreshness {
     enabled: !isDemoMode,
   });
 
-  if (isDemoMode || !data || data.length === 0) {
+  // Insurance is scraped but never produces budget transactions, so a stale
+  // insurance sync says nothing about the budget's completeness — exclude it.
+  const budgetRelevant = (data ?? []).filter((s) => s.service !== "insurances");
+
+  if (isDemoMode || budgetRelevant.length === 0) {
     return {
       tier: "none",
       oldestSyncDate: null,
@@ -72,7 +76,7 @@ export function useBudgetFreshness(): BudgetFreshness {
     };
   }
 
-  const accounts: StaleAccount[] = data.map((s) => ({
+  const accounts: StaleAccount[] = budgetRelevant.map((s) => ({
     service: s.service,
     provider: s.provider,
     accountName: s.account_name,
