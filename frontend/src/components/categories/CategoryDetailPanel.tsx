@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Plus, Trash2, MoveRight, Wallet } from "lucide-react";
@@ -33,6 +33,7 @@ export function CategoryDetailPanel({
   const confirm = useConfirm();
   const notify = useNotify();
   const isProtected = PROTECTED_CATEGORIES.includes(category);
+  const deleteReasonId = useId();
 
   useScrollLock(true);
 
@@ -281,8 +282,8 @@ export function CategoryDetailPanel({
             </div>
 
             {/* Category danger zone */}
-            {!isProtected && (
-              <div className="pt-4 border-t border-[var(--surface-light)]">
+            <div className="pt-4 border-t border-[var(--surface-light)]">
+              <div className="group relative">
                 <button
                   onClick={async () => {
                     const ok = await confirm({
@@ -293,13 +294,30 @@ export function CategoryDetailPanel({
                     });
                     if (ok) deleteCategoryMutation.mutate(category);
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all font-bold text-sm"
+                  disabled={isProtected}
+                  aria-describedby={isProtected ? deleteReasonId : undefined}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-transparent transition-all font-bold text-sm ${
+                    isProtected
+                      ? "text-[var(--text-muted)] opacity-50 cursor-not-allowed"
+                      : "text-red-400 hover:bg-red-500/10 hover:border-red-500/20"
+                  }`}
                 >
                   <Trash2 size={16} />
                   {t("categories.deleteCategory")}
                 </button>
+                {isProtected && (
+                  <div className="pointer-events-none absolute bottom-full inset-x-0 mb-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span
+                      id={deleteReasonId}
+                      role="tooltip"
+                      className="px-3 py-1.5 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] text-xs text-[var(--text-muted)] shadow-lg max-w-[calc(100%-1rem)] text-center"
+                    >
+                      {t("categories.protectedCannotDelete")}
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
