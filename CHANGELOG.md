@@ -1,3 +1,14 @@
+## v1.32.0 (2026-06-06)
+
+### Feat
+
+- **categories**: show disabled delete button for protected categories
+- **categories**: move auto-tagging rules to top, pair search with add button
+
+### Fix
+
+- **categories**: avoid duplicate protected-delete tooltip
+
 ## v1.31.0 (2026-06-06)
 
 ### Feat
