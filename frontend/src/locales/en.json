@@ -451,7 +451,7 @@
     "inMonth": "in {{month}}",
     "freshness": {
       "upToDate": "Up to date",
-      "updated": "Updated {{time}}",
+      "missingLabel": "Missing",
       "neverSynced": "Never synced",
       "syncing": "Syncing…",
       "provisional": "Provisional — based on stale data",

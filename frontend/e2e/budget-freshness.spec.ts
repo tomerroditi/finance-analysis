@@ -78,9 +78,11 @@ test.describe("Budget data freshness", () => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");
 
-    // The chip is the only freshness element for mild staleness.
+    // The chip is the only freshness element for mild staleness, and it names
+    // the un-scraped window rather than a vague "N ago".
     const badge = page.getByRole("button", { name: /Show sync details/i });
     await expect(badge).toBeVisible({ timeout: 30_000 });
+    await expect(badge).toContainText(/Missing/i);
     await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
 
     // Popover names the account and links to Data Sources.

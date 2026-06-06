@@ -451,7 +451,7 @@
     "inMonth": "ב{{month}}",
     "freshness": {
       "upToDate": "מעודכן",
-      "updated": "עודכן {{time}}",
+      "missingLabel": "חסר",
       "neverSynced": "מעולם לא סונכרן",
       "syncing": "מסנכרן…",
       "provisional": "זמני — מבוסס על נתונים לא מעודכנים",

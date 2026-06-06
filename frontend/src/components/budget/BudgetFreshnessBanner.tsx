@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, X, ArrowRight } from "lucide-react";
 import type { BudgetFreshness } from "../../hooks/useBudgetFreshness";
 import { humanizeProvider } from "../../utils/textFormatting";
-import { formatRelativeDate } from "../../utils/dateFormatting";
+import { formatMissingRange } from "../../utils/dateFormatting";
 
 interface BudgetFreshnessBannerProps {
   freshness: BudgetFreshness;
@@ -53,11 +53,13 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
                   <span className="opacity-60"> · </span>
                   <span dir="auto">{acc.accountName}</span>
                 </span>
-                <span className="shrink-0 opacity-60" dir="auto">
-                  —{" "}
+                <span
+                  className="shrink-0 opacity-60"
+                  dir={acc.lastScrapeDate ? "ltr" : "auto"}
+                >
                   {acc.lastScrapeDate
-                    ? formatRelativeDate(acc.lastScrapeDate)
-                    : t("budget.freshness.neverSynced")}
+                    ? `— ${formatMissingRange(acc.lastScrapeDate)}`
+                    : `— ${t("budget.freshness.neverSynced")}`}
                 </span>
               </li>
             ))}

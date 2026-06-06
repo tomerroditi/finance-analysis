@@ -68,3 +68,37 @@ export function formatRelativeDate(date: string | Date): string {
   if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${i18n.t("common.weeksAgo")}`;
   return formatShortDate(date);
 }
+
+/**
+ * The un-scraped date window: from the day after the last successful scrape
+ * through today. Renders compactly — "26–30 May" within a month, "26 May – 6
+ * Jun" across months, "26 Dec 2025 – 6 Jan 2026" across years. Always LTR
+ * content; wrap the output in `dir="ltr"` when embedding in translated text.
+ * @param lastScrapeDate - Last successful scrape date (ISO string or Date)
+ * @returns Localized missing-range label
+ */
+export function formatMissingRange(lastScrapeDate: string | Date): string {
+  const start =
+    typeof lastScrapeDate === "string"
+      ? new Date(lastScrapeDate)
+      : new Date(lastScrapeDate.getTime());
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() + 1); // data through the scrape date is covered
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+
+  // Synced today/yesterday: only today is potentially missing.
+  if (start.getTime() >= end.getTime()) {
+    return format(end, "d MMM", getLocale());
+  }
+
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  if (sameMonth) {
+    return `${format(start, "d", getLocale())}–${format(end, "d MMM", getLocale())}`;
+  }
+  if (sameYear) {
+    return `${format(start, "d MMM", getLocale())} – ${format(end, "d MMM", getLocale())}`;
+  }
+  return `${format(start, "d MMM yyyy", getLocale())} – ${format(end, "d MMM yyyy", getLocale())}`;
+}

@@ -9,7 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { FreshnessTier, StaleAccount } from "../../hooks/useBudgetFreshness";
-import { formatRelativeDate } from "../../utils/dateFormatting";
+import { formatMissingRange } from "../../utils/dateFormatting";
 import { humanizeProvider } from "../../utils/textFormatting";
 
 interface DataFreshnessBadgeProps {
@@ -89,14 +89,20 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
   const effectiveTier = isSyncing ? "syncing" : tier;
   const style = styles[effectiveTier];
 
-  const label = (() => {
-    if (isSyncing) return t("budget.freshness.syncing");
-    if (tier === "fresh") return t("budget.freshness.upToDate");
-    if (tier === "never") return t("budget.freshness.neverSynced");
-    return t("budget.freshness.updated", {
-      time: oldestSyncDate ? formatRelativeDate(oldestSyncDate) : "",
-    });
-  })();
+  // The range is LTR date content; keep it isolated from any surrounding RTL
+  // label so the month/day order survives in Hebrew.
+  const labelNode = isSyncing ? (
+    <span>{t("budget.freshness.syncing")}</span>
+  ) : tier === "fresh" ? (
+    <span>{t("budget.freshness.upToDate")}</span>
+  ) : tier === "never" ? (
+    <span>{t("budget.freshness.neverSynced")}</span>
+  ) : (
+    <>
+      <span>{t("budget.freshness.missingLabel")}</span>
+      {oldestSyncDate && <span dir="ltr">{formatMissingRange(oldestSyncDate)}</span>}
+    </>
+  );
 
   // Popover only carries weight when there are accounts to act on and we're
   // not mid-sync.
@@ -123,7 +129,7 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
       aria-label={hasDetails ? t("budget.freshness.showDetails") : undefined}
     >
       {style.icon}
-      <span dir="auto">{label}</span>
+      {labelNode}
     </span>
   );
 
@@ -159,10 +165,13 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
                     <span className="text-[var(--text-muted)]"> · </span>
                     <span dir="auto">{acc.accountName}</span>
                   </span>
-                  <span className="shrink-0 text-[10px] text-[var(--text-muted)]" dir="auto">
+                  <span
+                    className="shrink-0 text-[10px] text-[var(--text-muted)]"
+                    dir={acc.lastScrapeDate ? "ltr" : "auto"}
+                  >
                     {acc.lastScrapeDate
-                      ? formatRelativeDate(acc.lastScrapeDate)
-                      : t("dataSources.neverSynced")}
+                      ? formatMissingRange(acc.lastScrapeDate)
+                      : t("budget.freshness.neverSynced")}
                   </span>
                 </li>
               ))}
