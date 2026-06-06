@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Plus, Trash2, MoveRight, Wallet } from "lucide-react";
@@ -33,6 +33,7 @@ export function CategoryDetailPanel({
   const confirm = useConfirm();
   const notify = useNotify();
   const isProtected = PROTECTED_CATEGORIES.includes(category);
+  const deleteReasonId = useId();
 
   useScrollLock(true);
 
@@ -294,7 +295,7 @@ export function CategoryDetailPanel({
                     if (ok) deleteCategoryMutation.mutate(category);
                   }}
                   disabled={isProtected}
-                  title={isProtected ? t("categories.protectedCannotDelete") : undefined}
+                  aria-describedby={isProtected ? deleteReasonId : undefined}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-transparent transition-all font-bold text-sm ${
                     isProtected
                       ? "text-[var(--text-muted)] opacity-50 cursor-not-allowed"
@@ -306,7 +307,11 @@ export function CategoryDetailPanel({
                 </button>
                 {isProtected && (
                   <div className="pointer-events-none absolute bottom-full inset-x-0 mb-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span className="px-3 py-1.5 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] text-xs text-[var(--text-muted)] shadow-lg max-w-[calc(100%-1rem)] text-center">
+                    <span
+                      id={deleteReasonId}
+                      role="tooltip"
+                      className="px-3 py-1.5 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] text-xs text-[var(--text-muted)] shadow-lg max-w-[calc(100%-1rem)] text-center"
+                    >
                       {t("categories.protectedCannotDelete")}
                     </span>
                   </div>
