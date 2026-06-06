@@ -458,8 +458,7 @@
       "showDetails": "הצג פרטי סנכרון",
       "staleTitle": "מקורות לא מעודכנים",
       "syncNow": "סנכרן עכשיו",
-      "bannerStale": "ייתכן שהתקציב חלקי — {{account}} סונכרן לאחרונה {{time}}.",
-      "bannerNeverSynced": "ייתכן שהתקציב חלקי — {{account}} מעולם לא סונכרן."
+      "bannerTitle": "ייתכן שהתקציב חלקי — המקורות הבאים אינם מעודכנים:"
     },
     "confirmDeleteRule": "האם אתה בטוח שברצונך למחוק כלל תקציב זה?",
     "projectSpending": "הוצאות פרויקט",

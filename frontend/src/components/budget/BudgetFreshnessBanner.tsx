@@ -36,27 +36,35 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
     return null;
   }
 
-  const worst = staleAccounts[0];
-  const worstLabel = worst
-    ? `${humanizeProvider(worst.provider)} · ${worst.accountName}`
-    : "";
-  const message =
-    tier === "never"
-      ? t("budget.freshness.bannerNeverSynced", { account: worstLabel })
-      : t("budget.freshness.bannerStale", {
-          account: worstLabel,
-          time: oldestSyncDate ? formatRelativeDate(oldestSyncDate) : "",
-        });
-
   return (
     <div className="flex items-start justify-between gap-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-xl text-sm font-medium">
       <div className="flex items-start gap-2 min-w-0">
         <AlertTriangle size={18} className="shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p dir="auto">{message}</p>
+          <p>{t("budget.freshness.bannerTitle")}</p>
+          <ul className="mt-1.5 space-y-1">
+            {staleAccounts.map((acc) => (
+              <li
+                key={`${acc.provider}_${acc.accountName}`}
+                className="flex items-center gap-1.5 text-xs font-normal text-amber-400/90"
+              >
+                <span className="truncate" dir="auto">
+                  {humanizeProvider(acc.provider)}
+                  <span className="opacity-60"> · </span>
+                  <span dir="auto">{acc.accountName}</span>
+                </span>
+                <span className="shrink-0 opacity-60" dir="auto">
+                  —{" "}
+                  {acc.lastScrapeDate
+                    ? formatRelativeDate(acc.lastScrapeDate)
+                    : t("budget.freshness.neverSynced")}
+                </span>
+              </li>
+            ))}
+          </ul>
           <Link
             to="/data-sources"
-            className="inline-flex items-center gap-1.5 mt-1 text-xs font-semibold hover:underline"
+            className="inline-flex items-center gap-1.5 mt-2 text-xs font-semibold hover:underline"
           >
             {t("budget.freshness.syncNow")}
             <ArrowRight size={13} className="shrink-0 rtl:rotate-180" />

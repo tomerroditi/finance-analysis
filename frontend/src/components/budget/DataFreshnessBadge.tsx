@@ -81,6 +81,11 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
 
   if (tier === "none") return null;
 
+  // Very-stale / never escalate to the banner, which carries the full account
+  // list and the call to action. Don't also render a redundant chip — except
+  // while syncing, when the chip shows live progress and the banner is hidden.
+  if (!isSyncing && (tier === "veryStale" || tier === "never")) return null;
+
   const effectiveTier = isSyncing ? "syncing" : tier;
   const style = styles[effectiveTier];
 

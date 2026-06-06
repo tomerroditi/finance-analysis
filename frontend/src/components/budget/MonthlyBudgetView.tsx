@@ -206,8 +206,20 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
 
-  // Freshness only matters for the live month; historical months are settled.
-  const showFreshness = isCurrentMonth && freshness.hasScrapableAccounts;
+  // Freshness applies to the current month and any earlier month whose data
+  // could still be missing transactions — i.e. months ending on/after the
+  // oldest sync. Fully-settled history (before the last sync) stays clean.
+  // Future months and never-synced accounts only flag the live month.
+  const viewedIndex = year * 12 + (month - 1);
+  const currentIndex = today.getFullYear() * 12 + today.getMonth();
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime();
+  const monthCouldBeIncomplete =
+    viewedIndex <= currentIndex &&
+    (isCurrentMonth ||
+      (freshness.oldestSyncDate !== null &&
+        monthEnd >= new Date(freshness.oldestSyncDate).getTime()));
+  const showFreshness =
+    freshness.hasScrapableAccounts && monthCouldBeIncomplete;
   const isBudgetStale =
     showFreshness &&
     !isAnyScraping &&
@@ -277,18 +289,17 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         onNext={handleNextMonth}
         onToday={handleCurrentMonth}
         onAddRule={openAddModal}
+        freshnessBadge={
+          showFreshness ? (
+            <DataFreshnessBadge
+              tier={freshness.tier}
+              oldestSyncDate={freshness.oldestSyncDate}
+              staleAccounts={freshness.staleAccounts}
+              isSyncing={isAnyScraping}
+            />
+          ) : undefined
+        }
       />
-
-      {showFreshness && (
-        <div className="flex justify-end -mt-1">
-          <DataFreshnessBadge
-            tier={freshness.tier}
-            oldestSyncDate={freshness.oldestSyncDate}
-            staleAccounts={freshness.staleAccounts}
-            isSyncing={isAnyScraping}
-          />
-        </div>
-      )}
 
       <BudgetFreshnessBanner
         freshness={freshness}

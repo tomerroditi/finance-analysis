@@ -10,6 +10,8 @@ interface MonthHeaderProps {
   onNext: () => void;
   onToday: () => void;
   onAddRule: () => void;
+  /** Optional data-freshness chip rendered inline beside the month controls. */
+  freshnessBadge?: React.ReactNode;
 }
 
 /** Month navigation + add-rule control. */
@@ -20,6 +22,7 @@ export const MonthHeader: React.FC<MonthHeaderProps> = ({
   onNext,
   onToday,
   onAddRule,
+  freshnessBadge,
 }) => {
   const { t } = useTranslation();
   const isRtl = i18n.language === "he";
@@ -50,6 +53,7 @@ export const MonthHeader: React.FC<MonthHeaderProps> = ({
             {t("common.today")}
           </button>
         )}
+        {freshnessBadge && <div className="min-w-0">{freshnessBadge}</div>}
       </div>
 
       <button
