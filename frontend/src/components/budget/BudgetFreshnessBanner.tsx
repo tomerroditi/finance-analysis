@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { AlertTriangle, X, ArrowRight } from "lucide-react";
 import type { BudgetFreshness } from "../../hooks/useBudgetFreshness";
+import { groupStaleAccountsByMonth } from "../../hooks/useBudgetFreshness";
 import { humanizeProvider } from "../../utils/textFormatting";
-import { formatMissingRange } from "../../utils/dateFormatting";
 
 interface BudgetFreshnessBannerProps {
   freshness: BudgetFreshness;
@@ -37,18 +37,11 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
   const isSevere = tier === "veryStale" || tier === "never";
   const dismissKey = `${tier}:${oldestSyncDate ?? "never"}`;
 
-  // Each account's missing window, clamped to the viewed month. Accounts fully
-  // covered for this month (synced after its end) drop out of the list.
-  const rows = staleAccounts
-    .map((acc) => ({
-      acc,
-      range: acc.lastScrapeDate
-        ? formatMissingRange(acc.lastScrapeDate, year, month)
-        : null,
-    }))
-    .filter(({ acc, range }) => acc.lastScrapeDate === null || range !== null);
+  // Accounts sharing a missing window (clamped to the viewed month) collapse
+  // into one row, so a common window is shown once instead of per account.
+  const groups = groupStaleAccountsByMonth(staleAccounts, year, month);
 
-  if (!show || isSyncing || !isSevere || rows.length === 0 || dismissedKey === dismissKey) {
+  if (!show || isSyncing || !isSevere || groups.length === 0 || dismissedKey === dismissKey) {
     return null;
   }
 
@@ -58,24 +51,20 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
         <AlertTriangle size={18} className="shrink-0 mt-0.5" />
         <div className="min-w-0">
           <p>{t("budget.freshness.bannerTitle")}</p>
-          <ul className="mt-1.5 space-y-1">
-            {rows.map(({ acc, range }) => (
+          <ul className="mt-1.5 space-y-1.5">
+            {groups.map((group) => (
               <li
-                key={`${acc.provider}_${acc.accountName}`}
-                className="flex items-center gap-1.5 text-xs font-normal text-amber-400/90"
+                key={group.range ?? "__never__"}
+                className="text-xs font-normal text-amber-400/90"
               >
-                <span className="truncate" dir="auto">
-                  {humanizeProvider(acc.provider)}
-                  <span className="opacity-60"> · </span>
-                  <span dir="auto">{acc.accountName}</span>
+                <span className="font-medium" dir={group.range ? "ltr" : "auto"}>
+                  {group.range ?? t("budget.freshness.neverSynced")}
                 </span>
-                <span
-                  className="shrink-0 opacity-60"
-                  dir={range ? "ltr" : "auto"}
-                >
-                  {range
-                    ? `— ${range}`
-                    : `— ${t("budget.freshness.neverSynced")}`}
+                <span className="opacity-70" dir="auto">
+                  {" — "}
+                  {group.accounts
+                    .map((acc) => `${humanizeProvider(acc.provider)} · ${acc.accountName}`)
+                    .join(", ")}
                 </span>
               </li>
             ))}

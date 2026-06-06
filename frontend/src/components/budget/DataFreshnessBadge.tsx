@@ -9,6 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { FreshnessTier, StaleAccount } from "../../hooks/useBudgetFreshness";
+import { groupStaleAccountsByMonth } from "../../hooks/useBudgetFreshness";
 import { formatMissingRange } from "../../utils/dateFormatting";
 import { humanizeProvider } from "../../utils/textFormatting";
 
@@ -111,17 +112,12 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
     </>
   );
 
-  // Accounts that are actually missing data within the viewed month (never
-  // synced, or with a non-empty clamped range for this month).
-  const monthStaleAccounts = staleAccounts.filter(
-    (acc) =>
-      acc.lastScrapeDate === null ||
-      formatMissingRange(acc.lastScrapeDate, year, month) !== null,
-  );
+  // Accounts missing data within the viewed month, grouped by shared window.
+  const groups = groupStaleAccountsByMonth(staleAccounts, year, month);
 
   // Popover only carries weight when there are accounts to act on and we're
   // not mid-sync.
-  const hasDetails = !isSyncing && monthStaleAccounts.length > 0;
+  const hasDetails = !isSyncing && groups.length > 0;
 
   const chip = (
     <span
@@ -169,25 +165,20 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
             <p className="text-xs font-semibold text-[var(--text-default)] mb-2">
               {t("budget.freshness.staleTitle")}
             </p>
-            <ul className="space-y-1.5 mb-3">
-              {monthStaleAccounts.map((acc) => (
-                <li
-                  key={`${acc.provider}_${acc.accountName}`}
-                  className="flex items-center justify-between gap-2 text-xs"
-                >
-                  <span className="truncate text-[var(--text-default)]" dir="auto">
-                    {humanizeProvider(acc.provider)}
-                    <span className="text-[var(--text-muted)]"> · </span>
-                    <span dir="auto">{acc.accountName}</span>
-                  </span>
-                  <span
-                    className="shrink-0 text-[10px] text-[var(--text-muted)]"
-                    dir={acc.lastScrapeDate ? "ltr" : "auto"}
+            <ul className="space-y-2 mb-3">
+              {groups.map((group) => (
+                <li key={group.range ?? "__never__"} className="text-xs">
+                  <p
+                    className="font-medium text-[var(--text-default)]"
+                    dir={group.range ? "ltr" : "auto"}
                   >
-                    {acc.lastScrapeDate
-                      ? formatMissingRange(acc.lastScrapeDate, year, month)
-                      : t("budget.freshness.neverSynced")}
-                  </span>
+                    {group.range ?? t("budget.freshness.neverSynced")}
+                  </p>
+                  <p className="text-[10px] text-[var(--text-muted)]" dir="auto">
+                    {group.accounts
+                      .map((acc) => `${humanizeProvider(acc.provider)} · ${acc.accountName}`)
+                      .join(", ")}
+                  </p>
                 </li>
               ))}
             </ul>

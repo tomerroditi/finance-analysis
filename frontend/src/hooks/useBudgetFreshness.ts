@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
 import { useDemoMode } from "../context/DemoModeContext";
-import { daysSince } from "../utils/dateFormatting";
+import { daysSince, formatMissingRange } from "../utils/dateFormatting";
 
 /**
  * Freshness tiers, ordered worst-to-best in severity. Drives the budget
@@ -39,6 +39,43 @@ export interface BudgetFreshness {
   /** True when at least one scrapable account exists (badge should render). */
   hasScrapableAccounts: boolean;
   isLoading: boolean;
+}
+
+export interface StaleAccountGroup {
+  /** Localized missing-window label, or null for never-synced accounts. */
+  range: string | null;
+  accounts: StaleAccount[];
+}
+
+/**
+ * Collapse stale accounts that share the same missing window (clamped to the
+ * viewed month) into one group, so the banner/popover shows each window once
+ * instead of repeating it per account. Accounts fully covered for the month
+ * are dropped. Never-synced accounts group together (range null) and sort
+ * first as the most severe.
+ */
+export function groupStaleAccountsByMonth(
+  accounts: StaleAccount[],
+  year: number,
+  month: number,
+): StaleAccountGroup[] {
+  const groups = new Map<string, StaleAccountGroup>();
+  for (const acc of accounts) {
+    const range = acc.lastScrapeDate
+      ? formatMissingRange(acc.lastScrapeDate, year, month)
+      : null;
+    if (acc.lastScrapeDate !== null && range === null) continue; // covered this month
+    const key = range ?? "__never__";
+    const existing = groups.get(key);
+    if (existing) existing.accounts.push(acc);
+    else groups.set(key, { range, accounts: [acc] });
+  }
+  // Never-synced first; otherwise stable insertion order.
+  return [...groups.values()].sort((a, b) => {
+    if (a.range === null) return -1;
+    if (b.range === null) return 1;
+    return 0;
+  });
 }
 
 const STALE_THRESHOLD_DAYS = 4;

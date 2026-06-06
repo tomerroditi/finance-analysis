@@ -104,6 +104,28 @@ test.describe("Budget data freshness", () => {
     await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
   });
 
+  test("accounts sharing a window collapse into one row", async ({ page }) => {
+    // Three accounts with the same last scrape → identical missing window →
+    // a single grouped row listing all three, not three repeated ranges.
+    const sameDay = daysAgoIso(10);
+    await mockLastScrapes(page, [
+      { provider: "hapoalim", account_name: "Shir", last_scrape_date: sameDay },
+      { provider: "one_zero", account_name: "Tomer", last_scrape_date: sameDay },
+      { provider: "isracard", account_name: "Joint", last_scrape_date: sameDay },
+    ]);
+    await navigateTo(page, "/budget");
+    await page.waitForLoadState("networkidle");
+
+    const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
+    await expect(banner).toBeVisible({ timeout: 30_000 });
+
+    // One window row, all three accounts named within it.
+    await expect(banner.locator("li")).toHaveCount(1);
+    await expect(banner.locator("li")).toContainText(/Shir/);
+    await expect(banner.locator("li")).toContainText(/Tomer/);
+    await expect(banner.locator("li")).toContainText(/Joint/);
+  });
+
   test("the banner can be dismissed", async ({ page }) => {
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: null },
