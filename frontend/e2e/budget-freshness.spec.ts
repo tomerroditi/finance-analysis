@@ -144,22 +144,35 @@ test.describe("Budget data freshness", () => {
     // current one) could still be missing transactions; two months ago cannot.
     const now = new Date();
     const prevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1, 12).toISOString();
+    const curMonthShort = now.toLocaleString("en-US", { month: "short" });
+    const prevMonthShort = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleString(
+      "en-US",
+      { month: "short" },
+    );
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: prevMonthFirst },
     ]);
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");
 
-    const banner = page.getByText(/Budget may be incomplete/i);
+    const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
     await expect(banner).toBeVisible({ timeout: 30_000 }); // current month
+    // Current-month view clamps to the current month only.
+    await expect(banner).toContainText(curMonthShort);
 
     const prev = page.getByRole("button", { name: /Previous/i }).first();
     await prev.click();
     await page.waitForLoadState("networkidle");
     await expect(banner).toBeVisible(); // previous month — still affected
+    // The range is clamped to the previous month — it must not bleed into the
+    // current month.
+    await expect(banner).toContainText(prevMonthShort);
+    if (prevMonthShort !== curMonthShort) {
+      await expect(banner).not.toContainText(curMonthShort);
+    }
 
     await prev.click();
     await page.waitForLoadState("networkidle");
-    await expect(banner).toHaveCount(0); // two months ago — settled
+    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0); // settled
   });
 });

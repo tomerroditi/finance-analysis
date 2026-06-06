@@ -11,6 +11,9 @@ interface BudgetFreshnessBannerProps {
   isSyncing: boolean;
   /** Only the current month gets the staleness nudge; history is settled. */
   show: boolean;
+  /** Viewed month — missing ranges are clamped to it. */
+  year: number;
+  month: number;
 }
 
 /**
@@ -24,6 +27,8 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
   freshness,
   isSyncing,
   show,
+  year,
+  month,
 }) => {
   const { t } = useTranslation();
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
@@ -32,7 +37,18 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
   const isSevere = tier === "veryStale" || tier === "never";
   const dismissKey = `${tier}:${oldestSyncDate ?? "never"}`;
 
-  if (!show || isSyncing || !isSevere || dismissedKey === dismissKey) {
+  // Each account's missing window, clamped to the viewed month. Accounts fully
+  // covered for this month (synced after its end) drop out of the list.
+  const rows = staleAccounts
+    .map((acc) => ({
+      acc,
+      range: acc.lastScrapeDate
+        ? formatMissingRange(acc.lastScrapeDate, year, month)
+        : null,
+    }))
+    .filter(({ acc, range }) => acc.lastScrapeDate === null || range !== null);
+
+  if (!show || isSyncing || !isSevere || rows.length === 0 || dismissedKey === dismissKey) {
     return null;
   }
 
@@ -43,7 +59,7 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
         <div className="min-w-0">
           <p>{t("budget.freshness.bannerTitle")}</p>
           <ul className="mt-1.5 space-y-1">
-            {staleAccounts.map((acc) => (
+            {rows.map(({ acc, range }) => (
               <li
                 key={`${acc.provider}_${acc.accountName}`}
                 className="flex items-center gap-1.5 text-xs font-normal text-amber-400/90"
@@ -55,10 +71,10 @@ export const BudgetFreshnessBanner: React.FC<BudgetFreshnessBannerProps> = ({
                 </span>
                 <span
                   className="shrink-0 opacity-60"
-                  dir={acc.lastScrapeDate ? "ltr" : "auto"}
+                  dir={range ? "ltr" : "auto"}
                 >
-                  {acc.lastScrapeDate
-                    ? `— ${formatMissingRange(acc.lastScrapeDate)}`
+                  {range
+                    ? `— ${range}`
                     : `— ${t("budget.freshness.neverSynced")}`}
                 </span>
               </li>

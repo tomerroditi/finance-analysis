@@ -296,6 +296,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               oldestSyncDate={freshness.oldestSyncDate}
               staleAccounts={freshness.staleAccounts}
               isSyncing={isAnyScraping}
+              year={year}
+              month={month}
             />
           ) : undefined
         }
@@ -305,6 +307,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         freshness={freshness}
         isSyncing={isAnyScraping}
         show={showFreshness}
+        year={year}
+        month={month}
       />
 
       {copiedFromForThisMonth && (

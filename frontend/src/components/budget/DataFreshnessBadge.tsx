@@ -17,6 +17,9 @@ interface DataFreshnessBadgeProps {
   oldestSyncDate: string | null;
   staleAccounts: StaleAccount[];
   isSyncing: boolean;
+  /** Viewed month — missing ranges are clamped to it. */
+  year: number;
+  month: number;
 }
 
 interface TierStyle {
@@ -37,6 +40,8 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
   oldestSyncDate,
   staleAccounts,
   isSyncing,
+  year,
+  month,
 }) => {
   const { t } = useTranslation();
   const [showDetails, setShowDetails] = useState(false);
@@ -100,13 +105,23 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
   ) : (
     <>
       <span>{t("budget.freshness.missingLabel")}</span>
-      {oldestSyncDate && <span dir="ltr">{formatMissingRange(oldestSyncDate)}</span>}
+      {oldestSyncDate && (
+        <span dir="ltr">{formatMissingRange(oldestSyncDate, year, month)}</span>
+      )}
     </>
+  );
+
+  // Accounts that are actually missing data within the viewed month (never
+  // synced, or with a non-empty clamped range for this month).
+  const monthStaleAccounts = staleAccounts.filter(
+    (acc) =>
+      acc.lastScrapeDate === null ||
+      formatMissingRange(acc.lastScrapeDate, year, month) !== null,
   );
 
   // Popover only carries weight when there are accounts to act on and we're
   // not mid-sync.
-  const hasDetails = !isSyncing && staleAccounts.length > 0;
+  const hasDetails = !isSyncing && monthStaleAccounts.length > 0;
 
   const chip = (
     <span
@@ -155,7 +170,7 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
               {t("budget.freshness.staleTitle")}
             </p>
             <ul className="space-y-1.5 mb-3">
-              {staleAccounts.map((acc) => (
+              {monthStaleAccounts.map((acc) => (
                 <li
                   key={`${acc.provider}_${acc.accountName}`}
                   className="flex items-center justify-between gap-2 text-xs"
@@ -170,7 +185,7 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
                     dir={acc.lastScrapeDate ? "ltr" : "auto"}
                   >
                     {acc.lastScrapeDate
-                      ? formatMissingRange(acc.lastScrapeDate)
+                      ? formatMissingRange(acc.lastScrapeDate, year, month)
                       : t("budget.freshness.neverSynced")}
                   </span>
                 </li>
