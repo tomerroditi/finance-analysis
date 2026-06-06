@@ -1,3 +1,20 @@
+## v1.31.0 (2026-06-06)
+
+### Feat
+
+- **budget**: aggregate freshness sources by shared missing window
+- **budget**: show missing scrape date range instead of "N ago"
+- **budget**: surface scrape freshness on monthly KPI cards
+
+### Fix
+
+- **budget**: clamp missing scrape range to the viewed month
+- **budget**: exclude insurance sources from freshness check
+
+### Refactor
+
+- **budget**: rework freshness UX from PR feedback
+
 ## v1.30.0 (2026-06-06)
 
 ### Feat
