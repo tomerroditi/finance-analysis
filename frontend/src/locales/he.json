@@ -454,6 +454,17 @@
     "allGood": "הכל בסדר!",
     "daysLeft": "ימים נותרו",
     "inMonth": "ב{{month}}",
+    "freshness": {
+      "upToDate": "מעודכן",
+      "missingLabel": "חסר",
+      "neverSynced": "מעולם לא סונכרן",
+      "syncing": "מסנכרן…",
+      "provisional": "זמני — מבוסס על נתונים לא מעודכנים",
+      "showDetails": "הצג פרטי סנכרון",
+      "staleTitle": "מקורות לא מעודכנים",
+      "syncNow": "סנכרן עכשיו",
+      "bannerTitle": "ייתכן שהתקציב חלקי — המקורות הבאים אינם מעודכנים:"
+    },
     "confirmDeleteRule": "האם אתה בטוח שברצונך למחוק כלל תקציב זה?",
     "projectSpending": "הוצאות פרויקט",
     "project": "פרויקט",

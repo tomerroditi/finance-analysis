@@ -16,6 +16,10 @@ import { useConfirm } from "../../context/DialogContext";
 import { MonthHeader } from "./MonthHeader";
 import { BudgetAlertsBanner } from "./BudgetAlertsBanner";
 import { BudgetSummaryStrip } from "./BudgetSummaryStrip";
+import { DataFreshnessBadge } from "./DataFreshnessBadge";
+import { BudgetFreshnessBanner } from "./BudgetFreshnessBanner";
+import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
+import { useScraping } from "../../hooks/useScraping";
 import { BudgetTrendChart } from "./BudgetTrendChart";
 import { BudgetRuleRow } from "./BudgetRuleRow";
 import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
@@ -65,6 +69,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   const queryClient = useQueryClient();
+  const freshness = useBudgetFreshness();
+  const { isAnyScraping } = useScraping();
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["budgetAnalysis", year, month, includeSplitParents],
@@ -214,6 +220,27 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
 
+  // Freshness applies to the current month and any earlier month whose data
+  // could still be missing transactions — i.e. months ending on/after the
+  // oldest sync. Fully-settled history (before the last sync) stays clean.
+  // Future months and never-synced accounts only flag the live month.
+  const viewedIndex = year * 12 + (month - 1);
+  const currentIndex = today.getFullYear() * 12 + today.getMonth();
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime();
+  const monthCouldBeIncomplete =
+    viewedIndex <= currentIndex &&
+    (isCurrentMonth ||
+      (freshness.oldestSyncDate !== null &&
+        monthEnd >= new Date(freshness.oldestSyncDate).getTime()));
+  const showFreshness =
+    freshness.hasScrapableAccounts && monthCouldBeIncomplete;
+  const isBudgetStale =
+    showFreshness &&
+    !isAnyScraping &&
+    (freshness.tier === "stale" ||
+      freshness.tier === "veryStale" ||
+      freshness.tier === "never");
+
   if (isLoading)
     return (
       <div className="space-y-4 md:space-y-6">
@@ -276,6 +303,26 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         onNext={handleNextMonth}
         onToday={handleCurrentMonth}
         onAddRule={openAddModal}
+        freshnessBadge={
+          showFreshness ? (
+            <DataFreshnessBadge
+              tier={freshness.tier}
+              oldestSyncDate={freshness.oldestSyncDate}
+              staleAccounts={freshness.staleAccounts}
+              isSyncing={isAnyScraping}
+              year={year}
+              month={month}
+            />
+          ) : undefined
+        }
+      />
+
+      <BudgetFreshnessBanner
+        freshness={freshness}
+        isSyncing={isAnyScraping}
+        show={showFreshness}
+        year={year}
+        month={month}
       />
 
       {copiedFromForThisMonth && (
@@ -303,6 +350,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             biggestOverspend={biggestOverspend}
             daysLeft={daysLeft}
             monthLabel={monthShortLabel}
+            isStale={isBudgetStale}
           />
           <BudgetTrendChart
             year={year}

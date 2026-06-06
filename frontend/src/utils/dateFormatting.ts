@@ -41,3 +41,84 @@ export function formatMonthYear(date: string | Date): string {
   const dateObj = typeof date === "string" ? new Date(date) : date;
   return format(dateObj, "MMMM yyyy", getLocale());
 }
+
+/**
+ * Whole calendar-agnostic days elapsed between `date` and now.
+ * @param date - Date string (ISO format) or Date object
+ * @returns Number of full days since the given date (0 = today)
+ */
+export function daysSince(date: string | Date): number {
+  const dateObj = typeof date === "string" ? new Date(date) : date;
+  const diffMs = Date.now() - dateObj.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Human, localized relative date: "Today", "Yesterday", "3 d ago",
+ * "2 w ago", or an absolute short date once older than a month.
+ * Shared by the Data Sources sync badges and the budget freshness badge.
+ * @param date - Date string (ISO format) or Date object
+ * @returns Localized relative-time label
+ */
+export function formatRelativeDate(date: string | Date): string {
+  const diffDays = daysSince(date);
+  if (diffDays <= 0) return i18n.t("common.today");
+  if (diffDays === 1) return i18n.t("common.yesterday");
+  if (diffDays < 7) return `${diffDays} ${i18n.t("common.daysAgo")}`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${i18n.t("common.weeksAgo")}`;
+  return formatShortDate(date);
+}
+
+function formatDayRange(start: Date, end: Date): string {
+  if (start.getTime() === end.getTime()) {
+    return format(end, "d MMM", getLocale());
+  }
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  if (sameMonth) {
+    return `${format(start, "d", getLocale())}–${format(end, "d MMM", getLocale())}`;
+  }
+  if (sameYear) {
+    return `${format(start, "d MMM", getLocale())} – ${format(end, "d MMM", getLocale())}`;
+  }
+  return `${format(start, "d MMM yyyy", getLocale())} – ${format(end, "d MMM yyyy", getLocale())}`;
+}
+
+/**
+ * The un-scraped date window for a *specific* month: the gap from the day
+ * after the last successful scrape through today, clamped to that month's
+ * boundaries. Viewing May never bleeds into June. Renders compactly —
+ * "24–31 May" within a month, "24 May – 6 Jun" across months (current view),
+ * with the year added across years. Returns `null` when the month is fully
+ * covered (last scrape lands on/after the month's end). Always LTR content;
+ * wrap output in `dir="ltr"` when embedding in translated text.
+ *
+ * @param lastScrapeDate - Last successful scrape date (ISO string or Date)
+ * @param year - Viewed year
+ * @param month - Viewed month (1-based)
+ * @returns Localized missing-range label, or null if nothing is missing
+ */
+export function formatMissingRange(
+  lastScrapeDate: string | Date,
+  year: number,
+  month: number,
+): string | null {
+  const monthStart = new Date(year, month - 1, 1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthEnd = new Date(year, month, 0); // day 0 of next month = last day
+  monthEnd.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const firstMissing =
+    typeof lastScrapeDate === "string"
+      ? new Date(lastScrapeDate)
+      : new Date(lastScrapeDate.getTime());
+  firstMissing.setHours(0, 0, 0, 0);
+  firstMissing.setDate(firstMissing.getDate() + 1); // scrape date itself is covered
+
+  const start = firstMissing > monthStart ? firstMissing : monthStart;
+  const end = today < monthEnd ? today : monthEnd;
+  if (start.getTime() > end.getTime()) return null;
+  return formatDayRange(start, end);
+}

@@ -40,21 +40,9 @@ import { useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
-import { formatShortDate } from "../utils/dateFormatting";
+import { formatRelativeDate } from "../utils/dateFormatting";
 import { formatCurrency } from "../utils/numberFormatting";
 import i18n from "../i18n";
-
-function formatRelativeDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return i18n.t("common.today");
-  if (diffDays === 1) return i18n.t("common.yesterday");
-  if (diffDays < 7) return `${diffDays} ${i18n.t("common.daysAgo")}`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} ${i18n.t("common.weeksAgo")}`;
-  return formatShortDate(date);
-}
 
 const SCRAPING_PERIODS = [
   { key: "auto", days: null },
