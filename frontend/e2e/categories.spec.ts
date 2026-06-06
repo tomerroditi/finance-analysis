@@ -40,6 +40,35 @@ test.describe("Categories", () => {
     await expect(page.getByText("Investments").first()).toBeVisible();
   });
 
+  test("auto-tagging rules sit above the search row, with add-category beside the search box", async ({
+    page,
+  }) => {
+    await navigateTo(page, "/categories");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForLoadState("networkidle");
+
+    const rulesCard = page.getByRole("button", { name: /Auto-Tagging Rules/i });
+    const searchBox = page.getByPlaceholder(/Search categories and tags/i);
+    const addButton = page.getByRole("button", { name: /New Category/i });
+
+    await expect(rulesCard).toBeVisible({ timeout: 10_000 });
+    await expect(searchBox).toBeVisible();
+    await expect(addButton).toBeVisible();
+
+    const rulesBox = await rulesCard.boundingBox();
+    const searchBoxBox = await searchBox.boundingBox();
+    const addBox = await addButton.boundingBox();
+    expect(rulesBox && searchBoxBox && addBox).toBeTruthy();
+
+    // The auto-tagging rules card is at the top — above the search row.
+    expect(rulesBox!.y + rulesBox!.height).toBeLessThanOrEqual(searchBoxBox!.y + 1);
+
+    // The search box and the add-category button share the same row (vertically aligned).
+    const searchCenter = searchBoxBox!.y + searchBoxBox!.height / 2;
+    const addCenter = addBox!.y + addBox!.height / 2;
+    expect(Math.abs(searchCenter - addCenter)).toBeLessThan(searchBoxBox!.height);
+  });
+
   test("delete button is visible inside the category detail panel", async ({ page }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });

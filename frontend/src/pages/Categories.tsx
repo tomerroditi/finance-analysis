@@ -61,26 +61,27 @@ export function Categories() {
 
   return (
     <div className="space-y-4 md:space-y-6 animate-in fade-in duration-500">
-      {/* Header */}
-      <div className="flex items-center justify-end gap-3">
+      {/* Auto-Tagging Rules */}
+      <RulesSection />
+
+      {/* Search Bar + Add Category */}
+      <div className="flex flex-col md:flex-row md:items-center gap-3">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            placeholder={t("categories.searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-11 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
+          />
+        </div>
         <button
           onClick={() => setIsAddCategoryOpen(true)}
-          className="flex items-center justify-center gap-2 px-4 md:px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all text-sm md:text-base"
+          className="flex items-center justify-center gap-2 px-4 md:px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold shadow-lg shadow-[var(--primary)]/20 hover:bg-[var(--primary-dark)] transition-all text-sm md:text-base shrink-0"
         >
           <Plus size={18} /> {t("categories.newCategory")}
         </button>
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search size={16} className="absolute start-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-        <input
-          type="text"
-          placeholder={t("categories.searchPlaceholder")}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-11 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
-        />
       </div>
 
       {/* Category Grid */}
@@ -121,11 +122,6 @@ export function Categories() {
           </div>
         )
       )}
-
-      {/* Auto-Tagging Rules */}
-      <div className="pt-2">
-        <RulesSection />
-      </div>
 
       {/* Detail Panel */}
       {selectedCategory && (
