@@ -198,8 +198,13 @@ class BudgetMonthOverrideService:
         Returns
         -------
         dict[str, dict]
-            Dictionary with keys 'transaction' and 'split', each mapping a
-            source_id to a ``(override_year, override_month)`` tuple.
+            Dictionary with keys 'transaction' and 'split'. The 'transaction'
+            map is keyed by ``(source_table, source_id)`` — ``unique_id``
+            values are per-table auto-increments, so the same integer exists
+            in every transaction table and the table must disambiguate. The
+            'split' map is keyed by ``source_id`` alone (split ids live in a
+            single table). Values are ``(override_year, override_month)``
+            tuples.
         """
         df = self.repo.get_all()
         if df.empty:
@@ -210,7 +215,11 @@ class BudgetMonthOverrideService:
             bucket = result.get(row.source_type)
             if bucket is None:
                 continue
-            bucket[row.source_id] = (int(row.override_year), int(row.override_month))
+            value = (int(row.override_year), int(row.override_month))
+            if row.source_type == "transaction":
+                bucket[(row.source_table, row.source_id)] = value
+            else:
+                bucket[row.source_id] = value
         return result
 
     @staticmethod

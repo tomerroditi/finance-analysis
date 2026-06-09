@@ -22,7 +22,9 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
 /** Read the computed Plotly dragmode off the first rendered graph div. */
 async function firstChartDragmode(page: Page): Promise<unknown> {
   const plot = page.locator(".js-plotly-plot").first();
-  await expect(plot).toBeVisible({ timeout: 15_000 });
+  // Plotly is lazy-loaded (LazyPlot); a cold first fetch+eval of the dev
+  // chunk can take tens of seconds on slow CI/sandbox machines.
+  await expect(plot).toBeVisible({ timeout: 45_000 });
   return plot.evaluate(
     (el) => (el as unknown as { _fullLayout?: { dragmode?: unknown } })._fullLayout?.dragmode,
   );

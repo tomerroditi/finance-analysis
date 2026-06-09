@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, DollarSign, Percent } from "lucide-react";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { investmentsApi } from "../../services/api";
 import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";

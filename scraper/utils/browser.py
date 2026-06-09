@@ -1,6 +1,10 @@
+import logging
+
 from playwright.async_api import Frame, Page
 
 from scraper.utils.waiting import wait_until
+
+logger = logging.getLogger(__name__)
 
 
 async def wait_until_element_found(
@@ -85,7 +89,8 @@ async def page_eval_all(
     """Evaluate a JS expression on all elements matching selector."""
     try:
         return await page_or_frame.eval_on_selector_all(selector, expression)
-    except Exception:
+    except Exception as e:
+        logger.debug("page_eval_all failed for selector %r: %s", selector, e)
         return default_result
 
 
@@ -98,7 +103,8 @@ async def page_eval(
     """Evaluate a JS expression on first element matching selector."""
     try:
         return await page_or_frame.eval_on_selector(selector, expression)
-    except Exception:
+    except Exception as e:
+        logger.debug("page_eval failed for selector %r: %s", selector, e)
         return default_result
 
 

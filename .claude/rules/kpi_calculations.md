@@ -224,6 +224,6 @@ All previously identified code misalignments have been fixed:
 - `get_expenses_by_category()` now excludes `Credit Cards` category alongside other non-expense categories
 - `get_income_investments_and_expenses()` now filters non-expense categories from expenses, with negative Liabilities overriding back into expenses
 - Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
-- Ignore category has no special treatment in KPI calculations — not in non-expense categories, not filtered
+- Ignore category is part of `NON_EXPENSE_CATEGORIES` (excluded from category breakdowns like the expense pie), but gets no special treatment in the income/expense masks used by aggregate totals
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`
 - `NonExpensesCategories` enum removed; non-expense categories now built from individual constants (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`) and `IncomeCategories` enum

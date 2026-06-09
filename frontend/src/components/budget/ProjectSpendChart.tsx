@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { BarChart3 } from "lucide-react";
 import i18n from "../../i18n";
 import { chartTheme, plotlyConfig, barMarker, CHART_COLORS } from "../../utils/plotlyLocale";

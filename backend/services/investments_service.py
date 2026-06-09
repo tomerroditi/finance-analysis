@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import INVESTMENTS_CATEGORY
@@ -73,20 +73,55 @@ class InvestmentsService:
         df = self.investments_repo.get_all_investments(include_closed=include_closed)
         df = df.replace({np.nan: None})
         records = df.to_dict(orient="records")
+        if not records:
+            return records
+
+        # Batch the per-investment lookups: one snapshot GROUP BY query, one
+        # merged-transactions load, and one insurance-transactions load —
+        # instead of 2-3 queries per investment.
+        snapshot_dates = self.snapshots_repo.get_latest_snapshot_dates(
+            date.today().strftime("%Y-%m-%d")
+        )
+
+        analysis_df = self.transactions_service.get_data_for_analysis()
+        manual_first_dates: dict[tuple[str, str], str] = {}
+        if not analysis_df.empty:
+            dated = analysis_df.assign(_date=pd.to_datetime(analysis_df["date"]))
+            manual_first_dates = {
+                key: first.strftime("%Y-%m-%d")
+                for key, first in dated.groupby(["category", "tag"])["_date"].min().items()
+            }
+
+        policy_ids = [
+            record["insurance_policy_id"]
+            for record in records
+            if record.get("insurance_policy_id")
+        ]
+        insurance_first_dates: dict[str, str] = {}
+        if policy_ids:
+            stmt = select(
+                InsuranceTransaction.account_number,
+                func.min(InsuranceTransaction.date),
+            ).where(
+                InsuranceTransaction.account_number.in_(policy_ids)
+            ).group_by(InsuranceTransaction.account_number)
+            insurance_first_dates = {
+                account: first[:10]
+                for account, first in self.db.execute(stmt).all()
+                if first
+            }
 
         for record in records:
-            latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
-                record["id"], date.today().strftime("%Y-%m-%d")
-            )
-            record["latest_snapshot_date"] = latest["date"] if latest else None
+            record["latest_snapshot_date"] = snapshot_dates.get(record["id"])
 
-            txns = self._get_all_transactions_for_investment(
-                record["category"], record["tag"], investment_id=record["id"]
-            )
-            if not txns.empty:
-                record["first_transaction_date"] = pd.to_datetime(txns["date"]).min().strftime("%Y-%m-%d")
-            else:
-                record["first_transaction_date"] = None
+            candidates = []
+            manual_first = manual_first_dates.get((record["category"], record["tag"]))
+            if manual_first:
+                candidates.append(manual_first)
+            policy_id = record.get("insurance_policy_id")
+            if policy_id and policy_id in insurance_first_dates:
+                candidates.append(insurance_first_dates[policy_id])
+            record["first_transaction_date"] = min(candidates) if candidates else None
 
         return records
 

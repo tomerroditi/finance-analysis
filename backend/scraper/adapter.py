@@ -392,7 +392,11 @@ class ScraperAdapter:
         """Persist the scraped DataFrame to the database."""
         with get_db_context() as db:
             transactions_repo = TransactionsRepository(db)
-            transactions_repo.add_scraped_transactions(self._data, self._table_name)
+            transactions_repo.add_scraped_transactions(
+                self._data,
+                self._table_name,
+                scrape_start_date=self.start_date.strftime("%Y-%m-%d"),
+            )
 
     def _apply_auto_tagging(self) -> None:
         """Apply tagging rules to newly scraped transactions.

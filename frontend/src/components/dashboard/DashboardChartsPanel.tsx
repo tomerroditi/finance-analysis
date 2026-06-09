@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingDown, Calculator, Tag } from "lucide-react";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { analyticsApi, taggingApi } from "../../services/api";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";

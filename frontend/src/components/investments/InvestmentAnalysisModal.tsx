@@ -13,7 +13,7 @@ import {
   Check,
   BarChart2,
 } from "lucide-react";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { investmentsApi } from "../../services/api";
 import { chartTheme, plotlyConfig, gradientFill } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";

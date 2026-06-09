@@ -25,6 +25,7 @@ from backend.constants.budget import (
 )
 from backend.constants.categories import INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
+from backend.errors import EntityNotFoundException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import PendingRefundsService
@@ -736,11 +737,21 @@ class MonthlyBudgetService(BudgetService):
 
         tx_map = overrides["transaction"]
         if tx_map:
-            uid = expenses[TransactionsTableFields.UNIQUE_ID.value]
-            budget_year = uid.map({k: v[0] for k, v in tx_map.items()}).fillna(
+            # Key by (source table, unique_id): unique_id is a per-table
+            # auto-increment, so the bare integer collides across tables.
+            keys = pd.Series(
+                list(
+                    zip(
+                        expenses[TransactionsTableFields.SOURCE.value],
+                        expenses[TransactionsTableFields.UNIQUE_ID.value],
+                    )
+                ),
+                index=expenses.index,
+            )
+            budget_year = keys.map({k: v[0] for k, v in tx_map.items()}).fillna(
                 budget_year
             )
-            budget_month = uid.map({k: v[1] for k, v in tx_map.items()}).fillna(
+            budget_month = keys.map({k: v[1] for k, v in tx_map.items()}).fillna(
                 budget_month
             )
 
@@ -1151,6 +1162,10 @@ class ProjectBudgetService(BudgetService):
         """
         rules = self.get_rules_for_project(category)
         total_rule = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
+        if total_rule.empty:
+            raise EntityNotFoundException(
+                f"No total budget rule found for project '{category}'"
+            )
         rule_id = int(total_rule.iloc[0][ID])
         self.update_rule(rule_id, amount=total_budget)
 

@@ -5,7 +5,7 @@ Investment balance snapshots repository with SQLAlchemy ORM.
 from typing import Optional
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -108,6 +108,31 @@ class InvestmentSnapshotsRepository:
             .order_by(InvestmentBalanceSnapshot.date.asc())
         )
         return pd.read_sql(stmt, self.db.bind)
+
+    def get_latest_snapshot_dates(self, target_date: str) -> dict[int, str]:
+        """Get the most recent snapshot date on or before a target date, per investment.
+
+        Parameters
+        ----------
+        target_date : str
+            Upper bound date in ``YYYY-MM-DD`` format (inclusive).
+
+        Returns
+        -------
+        dict[int, str]
+            Mapping of ``investment_id`` to its latest snapshot date.
+            Investments without snapshots are absent from the mapping.
+        """
+        rows = (
+            self.db.query(
+                InvestmentBalanceSnapshot.investment_id,
+                func.max(InvestmentBalanceSnapshot.date),
+            )
+            .filter(InvestmentBalanceSnapshot.date <= target_date)
+            .group_by(InvestmentBalanceSnapshot.investment_id)
+            .all()
+        )
+        return {investment_id: latest_date for investment_id, latest_date in rows}
 
     def get_latest_snapshot_on_or_before(
         self, investment_id: int, target_date: str

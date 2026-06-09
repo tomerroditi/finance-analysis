@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
-import Plot from "react-plotly.js";
+import Plot from "../components/common/LazyPlot";
 import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../utils/plotlyLocale";
 import {
   Plus,
