@@ -16,7 +16,7 @@ import {
   X,
   RotateCcw,
 } from "lucide-react";
-import Plot from "react-plotly.js";
+import Plot from "../components/common/LazyPlot";
 import { chartTheme, plotlyConfig, barMarker, donutMarker } from "../utils/plotlyLocale";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";

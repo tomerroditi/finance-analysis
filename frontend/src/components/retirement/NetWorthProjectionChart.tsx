@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { useTranslation } from "react-i18next";
 import { plotlyConfig, chartTheme, isTouchDevice } from "../../utils/plotlyLocale";
 
