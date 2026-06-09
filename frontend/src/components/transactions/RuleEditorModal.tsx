@@ -270,7 +270,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
                     {error && (
                         <div className={`flex-1 flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-in duration-200 ${isRtl ? "slide-in-from-right-2" : "slide-in-from-left-2"}`}>
                             <AlertTriangle size={16} className="shrink-0" />
-                            <span className="line-clamp-2">{error}</span>
+                            <span className="line-clamp-2" dir="auto">{error}</span>
                         </div>
                     )}
                     <div className="flex items-center gap-3 sm:ms-auto">

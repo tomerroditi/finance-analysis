@@ -126,7 +126,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
               key={s}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--primary)]/10 text-[var(--primary)] text-[10px] font-medium max-w-full"
             >
-              <span className="truncate">
+              <span className="truncate" dir="auto">
                 {s.length > 18 ? s.slice(0, 18) + "..." : s}
               </span>
               <button
@@ -199,7 +199,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                       <Check size={10} className="text-white" />
                     )}
                   </div>
-                  <span className="truncate text-[var(--text-default)]">
+                  <span className="truncate text-[var(--text-default)]" dir="auto">
                     {opt}
                   </span>
                 </button>
