@@ -737,11 +737,21 @@ class MonthlyBudgetService(BudgetService):
 
         tx_map = overrides["transaction"]
         if tx_map:
-            uid = expenses[TransactionsTableFields.UNIQUE_ID.value]
-            budget_year = uid.map({k: v[0] for k, v in tx_map.items()}).fillna(
+            # Key by (source table, unique_id): unique_id is a per-table
+            # auto-increment, so the bare integer collides across tables.
+            keys = pd.Series(
+                list(
+                    zip(
+                        expenses[TransactionsTableFields.SOURCE.value],
+                        expenses[TransactionsTableFields.UNIQUE_ID.value],
+                    )
+                ),
+                index=expenses.index,
+            )
+            budget_year = keys.map({k: v[0] for k, v in tx_map.items()}).fillna(
                 budget_year
             )
-            budget_month = uid.map({k: v[1] for k, v in tx_map.items()}).fillna(
+            budget_month = keys.map({k: v[1] for k, v in tx_map.items()}).fillna(
                 budget_month
             )
 
