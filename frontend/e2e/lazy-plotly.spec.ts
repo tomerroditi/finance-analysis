@@ -31,9 +31,12 @@ test.describe("Lazy-loaded Plotly charts", () => {
     test(`renders Plotly charts on the ${name} page`, async ({ page }) => {
       await navigateTo(page, path);
       // Plotly renders into div.js-plotly-plot only after the lazy chunk
-      // resolves and the Suspense fallback is replaced.
+      // resolves and the Suspense fallback is replaced. The dev server
+      // serves the chunk unminified, so its first cold fetch+eval can take
+      // tens of seconds on slow CI/sandbox machines — hence the generous
+      // timeout.
       await expect(page.locator(".js-plotly-plot").first()).toBeVisible({
-        timeout: 15_000,
+        timeout: 45_000,
       });
     });
   }
