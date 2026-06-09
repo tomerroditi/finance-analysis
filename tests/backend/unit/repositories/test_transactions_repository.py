@@ -479,3 +479,158 @@ class TestGetTransactionById:
         repo = TransactionsRepository(db_session)
         with pytest.raises(ValueError, match="not found"):
             repo.get_transaction_by_id(99999)
+
+
+class TestPendingReconciliation:
+    """Tests for pending-row reconciliation in add_scraped_transactions."""
+
+    @staticmethod
+    def _scraped_df(rows):
+        """Build a scraped-transactions DataFrame from partial row dicts."""
+        import pandas as pd
+
+        defaults = {
+            "id": "txn-1",
+            "date": "2026-06-05",
+            "provider": "hapoalim",
+            "account_name": "Main",
+            "account_number": "123",
+            "description": "Coffee",
+            "amount": -100.0,
+            "category": None,
+            "tag": None,
+            "source": "bank_transactions",
+            "type": "normal",
+            "status": "completed",
+        }
+        return pd.DataFrame([{**defaults, **row} for row in rows])
+
+    @staticmethod
+    def _add_bank_row(db_session, **overrides):
+        """Insert a BankTransaction directly and return it."""
+        from backend.models.transaction import BankTransaction
+
+        fields = {
+            "id": "txn-1",
+            "date": "2026-06-05",
+            "provider": "hapoalim",
+            "account_name": "Main",
+            "description": "Coffee",
+            "amount": -100.0,
+            "source": "bank_transactions",
+            "type": "normal",
+            "status": "pending",
+        }
+        fields.update(overrides)
+        row = BankTransaction(**fields)
+        db_session.add(row)
+        db_session.commit()
+        return row
+
+    def test_settled_pending_row_replaced(self, db_session):
+        """A pending row settling with a new amount is purged, not duplicated."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, amount=-100.0, status="pending")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"amount": -105.0, "status": "completed"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        rows = db_session.query(BankTransaction).all()
+        assert len(rows) == 1
+        assert rows[0].status == "completed"
+        assert rows[0].amount == -105.0
+
+    def test_still_pending_row_reinserted_with_carried_tag(self, db_session):
+        """A re-reported pending row keeps the user's category and tag."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, status="pending", category="Food", tag="Coffee")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"status": "pending"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        rows = db_session.query(BankTransaction).all()
+        assert len(rows) == 1
+        assert rows[0].status == "pending"
+        assert rows[0].category == "Food"
+        assert rows[0].tag == "Coffee"
+
+    def test_pending_outside_window_untouched(self, db_session):
+        """Pending rows older than the scraped window are not purged."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, id="old", date="2026-05-01", status="pending")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"id": "new", "date": "2026-06-05"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        rows = {r.id: r for r in db_session.query(BankTransaction).all()}
+        assert set(rows) == {"old", "new"}
+        assert rows["old"].status == "pending"
+
+    def test_split_parent_pending_not_purged(self, db_session):
+        """A split pending row is never purged (splits reference it)."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, id="split", type="split_parent", status="pending")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"id": "new"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        ids = {r.id for r in db_session.query(BankTransaction).all()}
+        assert ids == {"split", "new"}
+
+    def test_refund_locked_pending_not_purged(self, db_session):
+        """A pending row referenced by a pending refund is never purged."""
+        from backend.models.pending_refund import PendingRefund
+        from backend.models.transaction import BankTransaction
+
+        row = self._add_bank_row(db_session, id="locked", status="pending")
+        db_session.add(
+            PendingRefund(
+                source_type="transaction",
+                source_id=row.unique_id,
+                source_table="bank_transactions",
+                expected_amount=100.0,
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"id": "new"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        ids = {r.id for r in db_session.query(BankTransaction).all()}
+        assert ids == {"locked", "new"}
+
+    def test_completed_rows_unaffected(self, db_session):
+        """Completed rows in the window are never reconciled away."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, id="done", status="completed")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"id": "new"}])
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        ids = {r.id for r in db_session.query(BankTransaction).all()}
+        assert ids == {"done", "new"}
+
+    def test_no_window_start_falls_back_to_df_min_date(self, db_session):
+        """Without an explicit window the earliest scraped date bounds the purge."""
+        from backend.models.transaction import BankTransaction
+
+        self._add_bank_row(db_session, id="older", date="2026-06-01", status="pending")
+        self._add_bank_row(db_session, id="inside", date="2026-06-04", status="pending")
+        repo = TransactionsRepository(db_session)
+
+        df = self._scraped_df([{"id": "new", "date": "2026-06-03"}])
+        repo.add_scraped_transactions(df, "bank_transactions")
+
+        ids = {r.id for r in db_session.query(BankTransaction).all()}
+        assert ids == {"older", "new"}

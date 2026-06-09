@@ -197,8 +197,6 @@ export const taggingApi = {
     api.post(`/tagging-rules/rules/${id}/apply`, null, {
       params: { overwrite },
     }),
-  testRule: (conditions: ConditionNode[]) =>
-    api.post("/tagging-rules/rules/test", conditions),
   checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>
     api.post("/tagging-rules/rules/validate", {
       conditions,
