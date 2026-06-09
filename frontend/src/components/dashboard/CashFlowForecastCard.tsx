@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { TrendingUp, Wallet, CalendarClock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { analyticsApi } from "../../services/api";

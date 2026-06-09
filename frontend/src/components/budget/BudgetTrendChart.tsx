@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { ChevronDown, ChevronUp, TrendingUp } from "lucide-react";
 import i18n from "../../i18n";
 import { chartTheme, plotlyConfig, barMarker } from "../../utils/plotlyLocale";
