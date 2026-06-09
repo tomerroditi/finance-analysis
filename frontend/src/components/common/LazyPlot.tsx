@@ -12,10 +12,10 @@ const Plot = lazy(importPlotly);
 // data queries instead of starting only when the first chart mounts.
 if (typeof window !== "undefined") {
   const warm = () => void importPlotly();
-  if ("requestIdleCallback" in window) {
+  if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(warm, { timeout: 2000 });
   } else {
-    window.setTimeout(warm, 1000);
+    setTimeout(warm, 1000);
   }
 }
 
