@@ -115,5 +115,12 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    optimizeDeps: {
+      // Plotly is only reached through a dynamic import (LazyPlot), so the
+      // dev server's dependency scanner doesn't see it at startup. Without
+      // this, the first chart render triggers on-demand optimization and a
+      // full page reload mid-session.
+      include: ["react-plotly.js", "plotly.js/dist/plotly"],
+    },
   };
 });
