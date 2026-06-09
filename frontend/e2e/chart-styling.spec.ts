@@ -28,8 +28,11 @@ test.describe("Chart styling (soft gradient)", () => {
 
   test("dashboard charts render after the restyle", async ({ page }) => {
     await navigateTo(page, "/");
+    // Plotly is lazy-loaded (LazyPlot); the dev server serves the chunk
+    // unminified, so a cold first fetch+eval can take tens of seconds on
+    // slow CI/sandbox machines.
     await expect(page.locator(".js-plotly-plot").first()).toBeVisible({
-      timeout: 15_000,
+      timeout: 45_000,
     });
   });
 

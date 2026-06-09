@@ -5,7 +5,19 @@ import type { PlotParams } from "react-plotly.js";
 // bundle (and under the Workbox per-file precache budget, see
 // .claude/rules/frontend_pwa.md). All chart components must import Plot
 // from here instead of "react-plotly.js" directly.
-const Plot = lazy(() => import("react-plotly.js"));
+const importPlotly = () => import("react-plotly.js");
+const Plot = lazy(importPlotly);
+
+// Warm the chunk right after first paint so its fetch/parse overlaps the
+// data queries instead of starting only when the first chart mounts.
+if (typeof window !== "undefined") {
+  const warm = () => void importPlotly();
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(warm, { timeout: 2000 });
+  } else {
+    window.setTimeout(warm, 1000);
+  }
+}
 
 export default function LazyPlot(props: PlotParams) {
   return (
