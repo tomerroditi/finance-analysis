@@ -1,11 +1,14 @@
 """Pending refunds service with business logic."""
 
+import logging
 from typing import Literal, Optional
 
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
+
+logger = logging.getLogger(__name__)
 
 
 class PendingRefundsService:
@@ -290,7 +293,9 @@ class PendingRefundsService:
                                 "original_currency": "ILS",  # Assumption
                             }
                 except Exception:
-                    pass  # Fail gracefully on enrichment
+                    logger.warning(
+                        "Failed to enrich pending refunds from %s", table, exc_info=True
+                    )
             elif type_ == "split":
                 # For splits, we need to get the split record to find the parent transaction
                 # Then get details from the parent
@@ -323,7 +328,11 @@ class PendingRefundsService:
                                         "original_currency": "ILS",
                                     }
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to enrich pending refund splits from %s",
+                        table,
+                        exc_info=True,
+                    )
 
         # Apply details to pending items
         for p in pending_list:
@@ -378,7 +387,9 @@ class PendingRefundsService:
                                 "original_currency": "ILS",
                             }
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to enrich refund links from %s", table, exc_info=True
+                    )
 
             # Apply details to links
             for link in p["links"]:
