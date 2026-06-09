@@ -25,6 +25,7 @@ from backend.constants.budget import (
 )
 from backend.constants.categories import INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
+from backend.errors import EntityNotFoundException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import PendingRefundsService
@@ -1151,6 +1152,10 @@ class ProjectBudgetService(BudgetService):
         """
         rules = self.get_rules_for_project(category)
         total_rule = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
+        if total_rule.empty:
+            raise EntityNotFoundException(
+                f"No total budget rule found for project '{category}'"
+            )
         rule_id = int(total_rule.iloc[0][ID])
         self.update_rule(rule_id, amount=total_budget)
 
