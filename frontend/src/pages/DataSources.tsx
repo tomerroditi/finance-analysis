@@ -26,7 +26,6 @@ import {
   CheckCircle2,
   Clock,
   Shield,
-  KeyRound,
 } from "lucide-react";
 import {
   credentialsApi,
@@ -555,7 +554,13 @@ export function DataSources() {
                         title={t("dataSources.forceTfaTitle")}
                         aria-label={t("dataSources.forceTfa")}
                       >
-                        <KeyRound size={20} />
+                        <span className="relative inline-flex">
+                          <Smartphone size={20} />
+                          <RefreshCw
+                            size={11}
+                            className="absolute -bottom-1 -end-1.5 rounded-full bg-[var(--surface-light)] p-[1px] text-amber-400"
+                          />
+                        </span>
                       </button>
                     )}
                     <button
