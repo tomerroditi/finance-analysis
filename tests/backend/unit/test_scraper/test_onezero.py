@@ -187,3 +187,27 @@ class TestPostWithRetry:
         post_calls, sleep_calls = asyncio.run(run())
         assert post_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS
         assert sleep_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS - 1
+
+
+class TestLoginErrorDetail:
+    """login() records the failure detail so the UI can show the real reason."""
+
+    def test_resolve_failure_records_detail_and_returns_unknown(self):
+        """When OTP resolution raises, login stores the message and reports UNKNOWN_ERROR."""
+        scraper = _make_scraper()
+
+        async def run():
+            with patch.object(
+                scraper,
+                "_resolve_otp_token",
+                new=AsyncMock(
+                    side_effect=Exception(
+                        "HTTP 503 /v1/otp/prepare — body: prefix blocked"
+                    )
+                ),
+            ):
+                return await scraper.login()
+
+        result = asyncio.run(run())
+        assert result is onezero.LoginResult.UNKNOWN_ERROR
+        assert "prefix blocked" in scraper._login_error_detail

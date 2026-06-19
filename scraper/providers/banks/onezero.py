@@ -880,6 +880,7 @@ class OneZeroScraper(ApiScraper):
         try:
             otp_token = await self._resolve_otp_token()
         except Exception as e:
+            self._login_error_detail = str(e)
             logger.error("Failed to resolve OTP token: %s", e)
             return LoginResult.UNKNOWN_ERROR
 
@@ -909,6 +910,7 @@ class OneZeroScraper(ApiScraper):
             self._access_token = _extract_result_data(session_token_response, "accessToken")
 
         except Exception as e:
+            self._login_error_detail = str(e)
             logger.error("Login failed: %s", e)
             return LoginResult.UNKNOWN_ERROR
 

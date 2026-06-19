@@ -758,6 +758,7 @@
     "scrapeThisSource": "Scrape This Source",
     "forceTfa": "Re-authenticate (force 2FA)",
     "forceTfaTitle": "Force a fresh SMS code instead of the saved login",
+    "showErrorDetails": "Show error details",
     "viewDetails": "View Details",
     "disconnectAccount": "Disconnect Account",
     "confirmDisconnect": "Are you sure you want to disconnect this account?",

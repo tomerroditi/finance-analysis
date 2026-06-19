@@ -22,7 +22,6 @@ import {
   ChevronDown,
   Smartphone,
   XCircle,
-  Info,
   CheckCircle2,
   Clock,
   Shield,
@@ -38,6 +37,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
+import { ScrapeErrorTooltip } from "../components/common/ScrapeErrorTooltip";
 import { Skeleton } from "../components/common/Skeleton";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 import { formatRelativeDate } from "../utils/dateFormatting";
@@ -493,15 +493,8 @@ export function DataSources() {
                     {scraper?.status === "failed" && (
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-semibold text-red-400">{t("dataSources.failed")}</span>
-                        {scraper.error_message && (
-                          <div className="relative group/err">
-                            <Info size={12} className="text-red-400 cursor-help" />
-                            <div className="absolute bottom-full end-0 mb-1 hidden group-hover/err:block z-50">
-                              <div className="bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg max-w-[200px] whitespace-normal border border-gray-700">
-                                {scraper.error_message}
-                              </div>
-                            </div>
-                          </div>
+                        {!!scraper.error_message && (
+                          <ScrapeErrorTooltip message={scraper.error_message} />
                         )}
                       </div>
                     )}

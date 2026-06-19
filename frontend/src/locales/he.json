@@ -758,6 +758,7 @@
     "scrapeThisSource": "שלוף מקור זה",
     "forceTfa": "אימות מחדש (אילוץ קוד חד-פעמי)",
     "forceTfaTitle": "שליחת קוד SMS חדש במקום שימוש בהתחברות השמורה",
+    "showErrorDetails": "הצגת פרטי השגיאה",
     "viewDetails": "הצג פרטים",
     "disconnectAccount": "נתק חשבון",
     "confirmDisconnect": "האם אתה בטוח שברצונך לנתק חשבון זה?",
