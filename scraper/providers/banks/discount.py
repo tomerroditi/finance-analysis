@@ -205,6 +205,8 @@ def _get_possible_login_results() -> dict[LoginResult, list]:
             f"{BASE_URL}/apollo/retail/#/MY_ACCOUNT_HOMEPAGE",
             f"{BASE_URL}/apollo/retail2/#/MY_ACCOUNT_HOMEPAGE",
             f"{BASE_URL}/apollo/retail2/",
+            f"{BASE_URL}/apollo/retail3/#/MY_ACCOUNT_HOMEPAGE",
+            f"{BASE_URL}/apollo/retail3/",
         ],
         LoginResult.INVALID_PASSWORD: [
             f"{BASE_URL}/apollo/core/templates/lobby/masterPage.html#/LOGIN_PAGE",
