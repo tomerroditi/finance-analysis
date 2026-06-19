@@ -675,6 +675,10 @@ class OneZeroScraper(ApiScraper):
 
     _otp_context: Optional[str] = None
     _access_token: Optional[str] = None
+    # Set to the freshly obtained long-term token when the interactive OTP
+    # flow runs (None when a stored token was reused). The backend adapter
+    # reads this to persist a refreshed token after a forced re-auth.
+    refreshed_otp_long_term_token: Optional[str] = None
 
     async def _post_with_retry(
         self,
@@ -859,6 +863,7 @@ class OneZeroScraper(ApiScraper):
         otp_code = await self.on_otp_request()
 
         token_result = await self._get_long_term_token(otp_code)
+        self.refreshed_otp_long_term_token = token_result["long_term_token"]
         return token_result["long_term_token"]
 
     async def login(self) -> LoginResult:

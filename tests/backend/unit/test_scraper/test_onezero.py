@@ -11,6 +11,44 @@ from scraper.providers.banks import onezero
 from scraper.providers.banks.onezero import IDENTITY_SERVER_URL, OneZeroScraper
 
 
+class TestRefreshedOtpToken:
+    """The scraper exposes a long-term token only when it obtains a fresh one."""
+
+    def test_interactive_flow_records_fresh_token(self):
+        """No stored token → interactive flow sets refreshed_otp_long_term_token."""
+        scraper = OneZeroScraper(
+            provider="onezero",
+            credentials={"email": "e", "password": "p", "phoneNumber": "+15551234567"},
+            options=ScraperOptions(),
+        )
+        scraper.on_otp_request = AsyncMock(return_value="123456")
+
+        async def run():
+            with patch.object(
+                scraper, "_trigger_two_factor_auth",
+                new=AsyncMock(return_value={"success": True}),
+            ), patch.object(
+                scraper, "_get_long_term_token",
+                new=AsyncMock(return_value={"success": True, "long_term_token": "NEWTOKEN"}),
+            ):
+                return await scraper._resolve_otp_token()
+
+        token = asyncio.run(run())
+        assert token == "NEWTOKEN"
+        assert scraper.refreshed_otp_long_term_token == "NEWTOKEN"
+
+    def test_stored_token_leaves_refreshed_none(self):
+        """A stored token is reused and no fresh token is recorded."""
+        scraper = OneZeroScraper(
+            provider="onezero",
+            credentials={"email": "e", "password": "p", "otpLongTermToken": "STORED"},
+            options=ScraperOptions(),
+        )
+        token = asyncio.run(scraper._resolve_otp_token())
+        assert token == "STORED"
+        assert scraper.refreshed_otp_long_term_token is None
+
+
 def _make_scraper() -> OneZeroScraper:
     """Build a OneZeroScraper instance suitable for fully-mocked unit tests."""
     scraper = OneZeroScraper(
