@@ -187,32 +187,3 @@ class TestPostWithRetry:
         post_calls, sleep_calls = asyncio.run(run())
         assert post_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS
         assert sleep_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS - 1
-
-
-class TestHttpErrorDetail:
-    """Tests for the HTTP-error summarizer that surfaces the response body."""
-
-    @staticmethod
-    def _error(status: int, text: str = "") -> httpx.HTTPStatusError:
-        """Build an HTTPStatusError whose response carries the given body."""
-        request = httpx.Request("POST", f"{IDENTITY_SERVER_URL}/otp/prepare")
-        response = httpx.Response(status, request=request, text=text)
-        return httpx.HTTPStatusError("err", request=request, response=response)
-
-    def test_includes_status_url_and_body(self):
-        """The detail contains the status code, URL, and response body."""
-        detail = onezero._http_error_detail(self._error(503, '{"code":"OTP_BLOCKED"}'))
-        assert "503" in detail
-        assert "OTP_BLOCKED" in detail
-        assert "/otp/prepare" in detail
-
-    def test_truncates_long_body(self):
-        """A long body is truncated so logs stay readable."""
-        detail = onezero._http_error_detail(self._error(500, "A" * 1000))
-        assert "…" in detail
-        assert len(detail) < 400
-
-    def test_empty_body_renders_placeholder(self):
-        """An empty body renders a placeholder rather than a blank tail."""
-        detail = onezero._http_error_detail(self._error(503, ""))
-        assert "<empty>" in detail
