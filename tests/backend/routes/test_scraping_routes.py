@@ -1,7 +1,7 @@
 """Tests for the /api/scraping API endpoints."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture(autouse=True)
@@ -69,3 +69,22 @@ class TestScrapingRoutes:
         response = test_client.get("/api/scraping/last-scrapes")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
+
+    def test_start_forwards_force_2fa(self, test_client):
+        """POST /api/scraping/start passes force_2fa through to the service."""
+        instance = MagicMock()
+        instance.start_scraping_single.return_value = 42
+        with patch(
+            "backend.routes.scraping.ScrapingService", lambda db: instance
+        ):
+            resp = test_client.post(
+                "/api/scraping/start",
+                json={
+                    "service": "banks",
+                    "provider": "onezero",
+                    "account": "Acc",
+                    "force_2fa": True,
+                },
+            )
+        assert resp.status_code == 200
+        assert instance.start_scraping_single.call_args.kwargs["force_2fa"] is True

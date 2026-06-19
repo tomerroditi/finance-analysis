@@ -22,6 +22,7 @@ class StartScrapingRequest(BaseModel):
     provider: str
     account: str
     scraping_period_days: Optional[int] = Field(default=None, gt=0, le=365)
+    force_2fa: bool = False
 
 
 class TFAFinishRequest(BaseModel):
@@ -66,6 +67,7 @@ async def start_scraping_single(
         provider=data.provider,
         account=data.account,
         scraping_period_days=data.scraping_period_days,
+        force_2fa=data.force_2fa,
     )
     return scraping_process_id
 
