@@ -94,6 +94,7 @@ class ScrapingService:
         provider: str,
         account: str,
         scraping_period_days: Optional[int] = None,
+        force_2fa: bool = False,
     ) -> int:
         """
         Start the scraping process for a single account as an async task.
@@ -125,6 +126,11 @@ class ScrapingService:
         else:
             start_date = self._get_scraper_start_date(service, provider, account)
         creds = self.credentials_repo.get_credentials(service, provider, account)
+        # A forced re-auth must ignore any stored OneZero long-term token so the
+        # scraper falls into the interactive SMS flow; the adapter persists the
+        # fresh token afterwards.
+        if force_2fa:
+            creds = {k: v for k, v in creds.items() if k != "otpLongTermToken"}
         requires_2fa = is_2fa_required(service, provider)
 
         # Always start IN_PROGRESS — even for 2FA-capable providers. The
@@ -139,7 +145,8 @@ class ScrapingService:
             )
 
         adapter = create_adapter(
-            service, provider, account, creds, start_date, process_id
+            service, provider, account, creds, start_date, process_id,
+            force_2fa=force_2fa,
         )
         asyncio.create_task(adapter.run())
 
