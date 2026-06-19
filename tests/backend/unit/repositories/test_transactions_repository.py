@@ -3,10 +3,12 @@
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import (
+    BankTransaction,
     CashTransaction,
 )
 from backend.repositories.transactions_repository import (
@@ -385,6 +387,64 @@ class TestGetDateFromTable:
         repo = TransactionsRepository(db_session)
         result = repo.get_earliest_date_from_table("cash_transactions")
         assert result is None
+
+
+class TestAddScrapedTransactionsDistinctDuplicates:
+    """Tests that distinct duplicates survive scraping and re-scrapes stay deduped.
+
+    Two genuinely-distinct transactions can share the tuple
+    (provider, date, amount, id) — e.g. two identical ATM cash withdrawals on
+    the same day where the bank returns the same (or empty) reference id. With
+    the legacy ``bank_transactions_unique`` constraint dropped, both rows must
+    persist on the first scrape, while the existence-based dedup must still
+    prevent a second scrape from doubling them.
+    """
+
+    def _withdrawals_df(self) -> pd.DataFrame:
+        """Build a two-row batch sharing (provider, date, amount, id)."""
+        return pd.DataFrame(
+            [
+                {
+                    "id": "",
+                    "provider": "hapoalim",
+                    "date": "2024-05-01",
+                    "amount": -18000.0,
+                    "account_name": "Main",
+                    "description": "ATM withdrawal #1",
+                    "source": "bank_transactions",
+                },
+                {
+                    "id": "",
+                    "provider": "hapoalim",
+                    "date": "2024-05-01",
+                    "amount": -18000.0,
+                    "account_name": "Main",
+                    "description": "ATM withdrawal #2",
+                    "source": "bank_transactions",
+                },
+            ]
+        )
+
+    def test_distinct_duplicates_both_persist(self, db_session):
+        """Verify both identical-key rows persist on the first scrape."""
+        repo = TransactionsRepository(db_session)
+        repo.add_scraped_transactions(self._withdrawals_df(), "bank_transactions")
+
+        rows = db_session.query(BankTransaction).all()
+        assert len(rows) == 2
+        assert {r.description for r in rows} == {
+            "ATM withdrawal #1",
+            "ATM withdrawal #2",
+        }
+
+    def test_rescrape_adds_no_new_rows(self, db_session):
+        """Verify re-scraping the same batch adds no duplicates."""
+        repo = TransactionsRepository(db_session)
+        repo.add_scraped_transactions(self._withdrawals_df(), "bank_transactions")
+        assert db_session.query(BankTransaction).count() == 2
+
+        repo.add_scraped_transactions(self._withdrawals_df(), "bank_transactions")
+        assert db_session.query(BankTransaction).count() == 2
 
 
 class TestGetTransactionById:
