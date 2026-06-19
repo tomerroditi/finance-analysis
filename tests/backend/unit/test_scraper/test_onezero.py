@@ -1,9 +1,8 @@
-"""Tests for the OneZero bank scraper identity-server URLs and OTP retry logic."""
+"""Tests for the OneZero bank scraper: identity-server URLs, OTP flow, errors."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
 
 from scraper.base.base_scraper import ScraperOptions
@@ -60,16 +59,6 @@ def _make_scraper() -> OneZeroScraper:
     return scraper
 
 
-def _http_status_error(status_code: int) -> httpx.HTTPStatusError:
-    """Construct an ``httpx.HTTPStatusError`` carrying the given status code."""
-    url = f"{IDENTITY_SERVER_URL}/otp/prepare"
-    request = httpx.Request("POST", url)
-    response = httpx.Response(status_code, request=request)
-    return httpx.HTTPStatusError(
-        f"status {status_code}", request=request, response=response
-    )
-
-
 class TestIdentityServerUrl:
     """Tests for the identity-server URL construction."""
 
@@ -84,109 +73,31 @@ class TestIdentityServerUrl:
         assert "/v1//otp" not in built
 
 
-class TestPostWithRetry:
-    """Tests for the transient-failure retry helper on the OneZero scraper."""
+class TestPrepareNotRetried:
+    """The OTP-prepare flow makes a single attempt — no retries.
 
-    def test_retries_on_503_then_succeeds(self):
-        """A 503 retries with backoff and ultimately returns the success payload."""
+    Retrying /otp/prepare fires repeated SMS-send requests, which trips the
+    provider's fraud detection (Twilio temporarily blocks the number prefix).
+    A failure must therefore propagate after exactly one prepare call.
+    """
+
+    def test_prepare_failure_is_not_retried(self):
+        """A failure on /otp/prepare propagates after one prepare call (no retry)."""
         scraper = _make_scraper()
-        success = {"resultData": {"otpContext": "ctx"}}
+        device_ok = {"resultData": {"deviceToken": "dt"}}
 
         async def run():
             with patch.object(
                 onezero,
                 "fetch_post",
-                new=AsyncMock(
-                    side_effect=[
-                        _http_status_error(503),
-                        _http_status_error(503),
-                        success,
-                    ]
-                ),
-            ) as mock_post, patch.object(
-                onezero.asyncio, "sleep", new=AsyncMock()
-            ) as mock_sleep:
-                result = await scraper._post_with_retry(
-                    f"{IDENTITY_SERVER_URL}/otp/prepare", {"foo": "bar"}
-                )
-                return result, mock_post.call_count, mock_sleep.call_count
+                new=AsyncMock(side_effect=[device_ok, Exception("503 prefix blocked")]),
+            ) as mock_post:
+                with pytest.raises(Exception, match="prefix blocked"):
+                    await scraper._trigger_two_factor_auth("+15551234567")
+                return mock_post.call_count
 
-        result, post_calls, sleep_calls = asyncio.run(run())
-        assert result == success
-        assert post_calls == 3
-        assert sleep_calls == 2
-
-    def test_does_not_retry_on_401(self):
-        """A 401 (auth failure) is not transient and is re-raised immediately."""
-        scraper = _make_scraper()
-
-        async def run():
-            with patch.object(
-                onezero,
-                "fetch_post",
-                new=AsyncMock(side_effect=_http_status_error(401)),
-            ) as mock_post, patch.object(
-                onezero.asyncio, "sleep", new=AsyncMock()
-            ) as mock_sleep:
-                with pytest.raises(httpx.HTTPStatusError):
-                    await scraper._post_with_retry(
-                        f"{IDENTITY_SERVER_URL}/otp/verify", {"foo": "bar"}
-                    )
-                return mock_post.call_count, mock_sleep.call_count
-
-        post_calls, sleep_calls = asyncio.run(run())
-        assert post_calls == 1
-        assert sleep_calls == 0
-
-    def test_retries_on_transport_error(self):
-        """A transport-level error (ConnectError) is retried like a 5xx."""
-        scraper = _make_scraper()
-        success = {"resultData": {"deviceToken": "dt"}}
-
-        async def run():
-            with patch.object(
-                onezero,
-                "fetch_post",
-                new=AsyncMock(
-                    side_effect=[
-                        httpx.ConnectError("boom"),
-                        success,
-                    ]
-                ),
-            ) as mock_post, patch.object(
-                onezero.asyncio, "sleep", new=AsyncMock()
-            ) as mock_sleep:
-                result = await scraper._post_with_retry(
-                    f"{IDENTITY_SERVER_URL}/devices/token", {"foo": "bar"}
-                )
-                return result, mock_post.call_count, mock_sleep.call_count
-
-        result, post_calls, sleep_calls = asyncio.run(run())
-        assert result == success
-        assert post_calls == 2
-        assert sleep_calls == 1
-
-    def test_exhausts_attempts_and_reraises(self):
-        """When every attempt is transient, the last error is re-raised."""
-        scraper = _make_scraper()
-
-        async def run():
-            with patch.object(
-                onezero,
-                "fetch_post",
-                new=AsyncMock(side_effect=_http_status_error(503)),
-            ) as mock_post, patch.object(
-                onezero.asyncio, "sleep", new=AsyncMock()
-            ) as mock_sleep:
-                with pytest.raises(httpx.HTTPStatusError):
-                    await scraper._post_with_retry(
-                        f"{IDENTITY_SERVER_URL}/otp/prepare", {"foo": "bar"}
-                    )
-                return mock_post.call_count, mock_sleep.call_count
-
-        post_calls, sleep_calls = asyncio.run(run())
-        assert post_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS
-        assert sleep_calls == onezero.OTP_PREPARE_RETRY_ATTEMPTS - 1
+        # devices/token (1) + otp/prepare (1) = 2 calls, no retries.
+        assert asyncio.run(run()) == 2
 
 
 class TestLoginErrorDetail:

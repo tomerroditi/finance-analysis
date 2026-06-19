@@ -1,10 +1,7 @@
-import asyncio
 import logging
 import re
 from datetime import date, datetime, timedelta
-from typing import Any, Optional
-
-import httpx
+from typing import Optional
 
 from scraper.base import ApiScraper
 from scraper.models.account import AccountResult
@@ -20,13 +17,6 @@ HEBREW_WORDS_REGEX = re.compile(r"[\u0590-\u05FF][\u0590-\u05FF\"'\-_ /\\]*[\u05
 IDENTITY_SERVER_URL = "https://identity.tfd-bank.com/v1"
 
 GRAPHQL_API_URL = "https://mobile.tfd-bank.com/mobile-graph/graphql"
-
-# Retry policy for transient identity-server failures on the OTP prepare flow.
-OTP_PREPARE_RETRY_ATTEMPTS = 3
-OTP_PREPARE_RETRY_BASE_DELAY = 0.5
-OTP_PREPARE_RETRY_FACTOR = 2
-# HTTP status codes that are safe to retry (server-side / throttling, not auth).
-RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 GET_CUSTOMER = """
 query GetCustomer {
@@ -680,73 +670,6 @@ class OneZeroScraper(ApiScraper):
     # reads this to persist a refreshed token after a forced re-auth.
     refreshed_otp_long_term_token: Optional[str] = None
 
-    async def _post_with_retry(
-        self,
-        url: str,
-        data: dict,
-        *,
-        attempts: int = OTP_PREPARE_RETRY_ATTEMPTS,
-        base_delay: float = OTP_PREPARE_RETRY_BASE_DELAY,
-        factor: float = OTP_PREPARE_RETRY_FACTOR,
-    ) -> Any:
-        """POST with exponential backoff on transient identity-server failures.
-
-        Retries only on transient errors — retryable HTTP status codes
-        (``RETRYABLE_STATUS_CODES``: 429/5xx) and transport-level errors
-        (connection/read timeouts). Non-transient HTTP errors (e.g. 401) are
-        re-raised immediately, as is the last error once attempts are exhausted.
-
-        Parameters
-        ----------
-        url : str
-            The endpoint to POST to.
-        data : dict
-            JSON body to send.
-        attempts : int, optional
-            Maximum number of attempts (default ``OTP_PREPARE_RETRY_ATTEMPTS``).
-        base_delay : float, optional
-            Backoff delay before the first retry (default
-            ``OTP_PREPARE_RETRY_BASE_DELAY``).
-        factor : float, optional
-            Multiplier applied to the delay after each retry (default
-            ``OTP_PREPARE_RETRY_FACTOR``).
-
-        Returns
-        -------
-        any
-            The parsed JSON response from ``fetch_post``.
-
-        Raises
-        ------
-        httpx.HTTPStatusError
-            Non-retryable HTTP error, or the last error after exhausting attempts.
-        httpx.TransportError
-            The last transport error after exhausting attempts.
-        """
-        delay = base_delay
-        for attempt in range(1, attempts + 1):
-            try:
-                return await fetch_post(url, data, client=self.client)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code not in RETRYABLE_STATUS_CODES:
-                    raise
-                if attempt == attempts:
-                    raise
-                logger.warning(
-                    "Transient %s (attempt %d/%d), retrying in %.1fs",
-                    e, attempt, attempts, delay,
-                )
-            except httpx.TransportError as e:
-                if attempt == attempts:
-                    raise
-                logger.warning(
-                    "Transient transport error from %s (attempt %d/%d): %s, "
-                    "retrying in %.1fs",
-                    url, attempt, attempts, e, delay,
-                )
-            await asyncio.sleep(delay)
-            delay *= factor
-
     async def _trigger_two_factor_auth(self, phone_number: str) -> dict:
         """Trigger OTP SMS to the user's phone number.
 
@@ -772,20 +695,22 @@ class OneZeroScraper(ApiScraper):
             )
 
         logger.debug("Fetching device token")
-        device_token_response = await self._post_with_retry(
+        device_token_response = await fetch_post(
             f"{IDENTITY_SERVER_URL}/devices/token",
             {"extClientId": "mobile", "os": "Android"},
+            client=self.client,
         )
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug("Sending OTP to phone number %s", phone_number)
-        otp_prepare_response = await self._post_with_retry(
+        otp_prepare_response = await fetch_post(
             f"{IDENTITY_SERVER_URL}/otp/prepare",
             {
                 "factorValue": phone_number,
                 "deviceToken": device_token,
                 "otpChannel": "SMS_OTP",
             },
+            client=self.client,
         )
         self._otp_context = _extract_result_data(otp_prepare_response, "otpContext")
 
