@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Clock,
   Shield,
+  KeyRound,
 } from "lucide-react";
 import {
   credentialsApi,
@@ -542,6 +543,19 @@ export function DataSources() {
                         title={t("dataSources.scrapeThisSource")}
                       >
                         <PlayCircle size={20} />
+                      </button>
+                    )}
+                    {acc.provider === "onezero" && (
+                      <button
+                        onClick={() =>
+                          startScraper(acc, scrapingPeriodDays, { force2fa: true })
+                        }
+                        disabled={isAnyScraping}
+                        className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={t("dataSources.forceTfaTitle")}
+                        aria-label={t("dataSources.forceTfa")}
+                      >
+                        <KeyRound size={20} />
                       </button>
                     )}
                     <button

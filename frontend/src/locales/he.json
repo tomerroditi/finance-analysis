@@ -756,6 +756,8 @@
     "scrapeFirstToSetBalance": "שלוף נתונים תחילה להגדרת יתרה",
     "abortScraping": "הפסק שליפה",
     "scrapeThisSource": "שלוף מקור זה",
+    "forceTfa": "אימות מחדש (אילוץ קוד חד-פעמי)",
+    "forceTfaTitle": "שליחת קוד SMS חדש במקום שימוש בהתחברות השמורה",
     "viewDetails": "הצג פרטים",
     "disconnectAccount": "נתק חשבון",
     "confirmDisconnect": "האם אתה בטוח שברצונך לנתק חשבון זה?",
