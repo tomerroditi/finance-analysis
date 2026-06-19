@@ -666,6 +666,33 @@ def _extract_result_data(response: dict, key: str) -> any:
     return result_data[key]
 
 
+def _http_error_detail(error: httpx.HTTPStatusError) -> str:
+    """Summarize an HTTP error, including the response body.
+
+    httpx's default ``HTTPStatusError`` message omits the response body — which
+    is often where the provider explains *why* a request failed (e.g. the
+    OTP-blocked / rate-limit reason behind a 503 on ``/otp/prepare``). This
+    surfaces a truncated body so the log is actionable.
+
+    Parameters
+    ----------
+    error : httpx.HTTPStatusError
+        The error raised by ``response.raise_for_status()``.
+
+    Returns
+    -------
+    str
+        ``"HTTP <status> <url> — body: <truncated body>"``.
+    """
+    body = (error.response.text or "").strip()
+    if len(body) > 300:
+        body = body[:300] + "…"
+    return (
+        f"HTTP {error.response.status_code} {error.request.url} "
+        f"— body: {body or '<empty>'}"
+    )
+
+
 class OneZeroScraper(ApiScraper):
     """Scraper for One Zero Bank (https://www.onezerbank.com).
 
@@ -733,8 +760,8 @@ class OneZeroScraper(ApiScraper):
                 if attempt == attempts:
                     raise
                 logger.warning(
-                    "Transient HTTP %s from %s (attempt %d/%d), retrying in %.1fs",
-                    e.response.status_code, url, attempt, attempts, delay,
+                    "Transient %s (attempt %d/%d), retrying in %.1fs",
+                    _http_error_detail(e), attempt, attempts, delay,
                 )
             except httpx.TransportError as e:
                 if attempt == attempts:
@@ -879,6 +906,9 @@ class OneZeroScraper(ApiScraper):
         """
         try:
             otp_token = await self._resolve_otp_token()
+        except httpx.HTTPStatusError as e:
+            logger.error("Failed to resolve OTP token: %s", _http_error_detail(e))
+            return LoginResult.UNKNOWN_ERROR
         except Exception as e:
             logger.error("Failed to resolve OTP token: %s", e)
             return LoginResult.UNKNOWN_ERROR
@@ -908,6 +938,9 @@ class OneZeroScraper(ApiScraper):
             )
             self._access_token = _extract_result_data(session_token_response, "accessToken")
 
+        except httpx.HTTPStatusError as e:
+            logger.error("Login failed: %s", _http_error_detail(e))
+            return LoginResult.UNKNOWN_ERROR
         except Exception as e:
             logger.error("Login failed: %s", e)
             return LoginResult.UNKNOWN_ERROR
