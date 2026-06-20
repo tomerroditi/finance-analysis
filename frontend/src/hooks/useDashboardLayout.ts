@@ -52,8 +52,11 @@ const KNOWN = new Set<string>(ALL_IDS);
 const BETA_IDS = new Set<DashboardCardId>(
   DASHBOARD_CARDS.filter((c) => "beta" in c && c.beta).map((c) => c.id),
 );
+// Cards hidden on first load: those flagged `defaultHidden`, plus all `beta`
+// cards (beta implies hidden-by-default). Distinct from BETA_IDS so a
+// `defaultHidden` card does NOT get the experimental "Beta" pill.
 const DEFAULT_HIDDEN_IDS = new Set<DashboardCardId>(
-  DASHBOARD_CARDS.filter((c) => ("defaultHidden" in c && c.defaultHidden) || ("beta" in c && c.beta)).map((c) => c.id),
+  DASHBOARD_CARDS.filter((c) => ("defaultHidden" in c && c.defaultHidden) || BETA_IDS.has(c.id)).map((c) => c.id),
 );
 
 /** Whether a card is flagged experimental/beta. */
@@ -68,7 +71,8 @@ export interface DashboardLayout {
   hidden: DashboardCardId[];
 }
 
-// Defaults: non-beta cards visible (in declared order), beta cards hidden.
+// Defaults: visible cards (in declared order) and default-hidden cards
+// (beta or opt-in), per DEFAULT_HIDDEN_IDS.
 const DEFAULT_ORDER: DashboardCardId[] = ALL_IDS.filter((id) => !DEFAULT_HIDDEN_IDS.has(id));
 const DEFAULT_HIDDEN: DashboardCardId[] = ALL_IDS.filter((id) => DEFAULT_HIDDEN_IDS.has(id));
 const DEFAULT_LAYOUT: DashboardLayout = {
@@ -176,7 +180,8 @@ function subscribe(cb: () => void): () => void {
  * Returns the current dashboard layout plus mutators. `setOrder` replaces the
  * visible order; `toggleHidden` moves a card between the visible and hidden
  * lists (hiding appends to hidden and drops from order; showing appends to the
- * end of the visible order); `reset` restores the default (beta cards hidden).
+ * end of the visible order); `reset` restores the default (default-hidden
+ * cards — beta or opt-in — hidden).
  */
 export function useDashboardLayout() {
   const layout = useSyncExternalStore(subscribe, read, () => DEFAULT_LAYOUT);
