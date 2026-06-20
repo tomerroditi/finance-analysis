@@ -273,7 +273,7 @@ export function Dashboard() {
     ),
     recurring: () => <RecurringSection />,
     goals: () => <GoalsSection />,
-    heatmap: () => <SpendingHeatmap transactions={allTransactions} />,
+    heatmap: () => <SpendingHeatmap transactions={allTransactions} size={cardSize("heatmap")} />,
     income_by_source: () => <IncomeBySourceCard />,
     charts: () => <DashboardChartsPanel />,
   };
@@ -296,20 +296,24 @@ export function Dashboard() {
           neighbour before a full card leaves an empty gap, and the stored order
           is preserved exactly.
 
-          Every cell is a fixed height on >=lg (`lg:auto-rows-[var(--dash-card-h)]`)
-          so all blocks are the same size regardless of content. Each card fills
-          its cell (`[&>*]:h-full`) and scrolls its own overflow
-          (`[&>*]:overflow-y-auto`) instead of stretching the row. On mobile the
-          grid is a single column with natural heights. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 lg:auto-rows-[var(--dash-card-h)] [--dash-card-h:32rem]">
+          Rows size to their content on >=lg (`grid-auto-rows: auto`), so a card
+          alone on a row is exactly as tall as it needs to be — no empty gap
+          below short cards. The card height is capped at `--dash-card-h`
+          (`lg:[&>*]:max-h-[var(--dash-card-h)]`): content taller than the cap
+          scrolls inside the card (`[&>*]:overflow-y-auto`) instead of growing
+          the row. When two half cards share a row, the default
+          `align-items: stretch` plus `[&>*]:h-full` makes both as tall as the
+          taller card (still capped). On mobile the grid is a single column with
+          natural, uncapped heights. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 [--dash-card-h:39rem]">
         {layout.order.map((id) => (
           <div
             key={id}
             data-card-id={id}
             data-card-size={cardSize(id)}
             className={`min-w-0 [&>*]:h-full [&>*]:overflow-y-auto ${
-              cardSize(id) === "full" ? "lg:col-span-2" : ""
-            }`}
+              id !== "recent" ? "lg:[&>*]:max-h-[var(--dash-card-h)]" : ""
+            } ${cardSize(id) === "full" ? "lg:col-span-2" : ""}`}
           >
             {cardRenderers[id]()}
           </div>
