@@ -1,0 +1,6 @@
+{
+  "_comment": "Records the upstream eshaham/israeli-bank-scrapers commit our scraper ports were last checked against. The `sync-upstream-scraper` skill diffs this commit against upstream HEAD (via the compare API) to find which src/scrapers/* files changed since. Bump `last_checked_commit` to the current upstream HEAD after each sync pass.",
+  "repo": "eshaham/israeli-bank-scrapers",
+  "last_checked_commit": "d9d8f51b4dd9bc14ea1acc20e1a5dd73257b2cef",
+  "last_checked_date": "2026-06-20"
+}

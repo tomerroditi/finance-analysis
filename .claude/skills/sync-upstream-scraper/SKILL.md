@@ -16,6 +16,26 @@ When invoked, immediately execute the workflow below. Do not just display refere
 - `<provider>` -- sync a specific provider (e.g., `hapoalim`, `max`, `visa-cal`)
 - `--base` -- check base classes and framework files only
 
+## Sync State Manifest
+
+`scraper/upstream_sync.json` records the single **upstream commit our ports
+were last checked against**:
+
+```json
+{
+  "repo": "eshaham/israeli-bank-scrapers",
+  "last_checked_commit": "<upstream HEAD sha at last sync pass>",
+  "last_checked_date": "YYYY-MM-DD"
+}
+```
+
+This is the source of truth for "when did we last sync". The scan diffs
+`last_checked_commit` against upstream HEAD via the GitHub compare API, which
+returns exactly the `src/scrapers/*` files that changed in between -- no
+guessing from our own git history. **Bump `last_checked_commit` to the current
+upstream HEAD after each sync pass** (see Step 8). The manifest is committed
+alongside the code so the checked-state travels with the ports.
+
 ## Provider Name Mapping
 
 | Upstream TS file | Local Python file |
@@ -48,14 +68,19 @@ When invoked, immediately execute the workflow below. Do not just display refere
 
 ## Execution: Scan All Providers (no args)
 
-**Step 1:** Run the bulk scan to get last commit date per upstream provider:
+**Step 1:** Diff our last-checked commit against upstream HEAD. The compare API
+returns exactly the `src/scrapers/*` files that changed in between -- those are
+the providers that need attention:
 
 ```bash
-for f in hapoalim leumi discount mercantile mizrahi otsar-hahayal union-bank beinleumi massad yahav pagi one-zero max visa-cal isracard amex beyahad-bishvilha behatsdaa base-scraper base-scraper-with-browser interface; do
-  date=$(gh api "repos/eshaham/israeli-bank-scrapers/commits?path=src/scrapers/${f}.ts&per_page=1" --jq '.[0].commit.committer.date[:10]' 2>/dev/null)
-  echo "$date  $f"
-done | sort -r
+LAST=$(jq -r '.last_checked_commit' scraper/upstream_sync.json)
+gh api "repos/eshaham/israeli-bank-scrapers/compare/${LAST}...master" \
+  --jq '.files[].filename' | grep '^src/scrapers/' | grep -vE '\.test\.ts$'
 ```
+
+If the output is empty, nothing changed upstream since the last check -- you're
+done. Otherwise, map each changed file to its local port (see the mapping
+table) and proceed to the single-provider flow for each.
 
 **Step 2:** Also check for new upstream providers not yet ported:
 
@@ -66,12 +91,13 @@ gh api "repos/eshaham/israeli-bank-scrapers/git/trees/master?recursive=1" \
 
 Compare against the mapping table. Flag any files that don't have a local counterpart.
 
-**Step 3:** Present a summary table to the user:
+**Step 3:** Present a summary table to the user of the providers that changed
+since `last_checked_commit`:
 
-| Provider | Last Upstream Change | Status |
+| Provider | Changed Files | Notes |
 |---|---|---|
-| hapoalim | 2026-02-15 | May need update |
-| max | 2026-01-03 | Likely current |
+| yahav | src/scrapers/yahav.ts | datepicker + multi-portfolio |
+| discount | src/scrapers/discount.ts | new login URLs |
 | ... | ... | ... |
 
 Ask the user which provider(s) to sync. Then proceed to the single-provider flow below.
@@ -130,4 +156,18 @@ Always prefer framework utilities over raw Playwright:
 
 **Step 7 - Verify:** Run `poetry run pytest tests/backend/unit/test_scraper/ -v` to check nothing broke.
 
-**Step 8 - Commit:** `git commit -m "fix(scraper): update <provider> to match upstream changes"`
+**Step 8 - Update the sync manifest:** Once you've reconciled every changed
+provider in this pass (ported or confirmed equivalent), bump
+`last_checked_commit` to the current upstream HEAD so the next scan diffs from
+here. Only advance the pointer when **all** files surfaced by the Step 1 diff
+have been handled -- otherwise the unhandled ones silently drop off the radar.
+
+```bash
+read head_sha head_date < <(gh api repos/eshaham/israeli-bank-scrapers/commits/master --jq '"\(.sha) \(.commit.committer.date[:10])"')
+jq --arg c "$head_sha" --arg d "$(date +%F)" \
+  '.last_checked_commit = $c | .last_checked_date = $d' \
+  scraper/upstream_sync.json > scraper/upstream_sync.json.tmp && mv scraper/upstream_sync.json.tmp scraper/upstream_sync.json
+```
+
+**Step 9 - Commit:** Stage the provider file(s) **and** the manifest together:
+`git commit -m "fix(scraper): update <provider> to match upstream changes"`
