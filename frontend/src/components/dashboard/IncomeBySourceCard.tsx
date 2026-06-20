@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PieChart, ChevronDown, ChevronUp } from "lucide-react";
-import Plot from "react-plotly.js";
+import Plot from "../common/LazyPlot";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { useDemoMode } from "../../context/DemoModeContext";
