@@ -22,6 +22,11 @@ def upgrade() -> None:
     """Add monthly_income column to retirement_goal table."""
     conn = op.get_bind()
     inspector = sa.inspect(conn)
+    # Fresh DBs have the table created by Base.metadata.create_all() with the
+    # column already present; partial test DBs may not have it at all — both
+    # are valid no-op cases.
+    if 'retirement_goal' not in inspector.get_table_names():
+        return
     columns = [c['name'] for c in inspector.get_columns('retirement_goal')]
     if 'monthly_income' not in columns:
         with op.batch_alter_table('retirement_goal') as batch_op:
