@@ -1,3 +1,26 @@
+## v1.35.0 (2026-06-20)
+
+### Feat
+
+- **dashboard**: give every card a uniform fixed height with internal scroll
+- **dashboard**: make income-by-source card half-width
+- **dashboard**: show income source share to one decimal place
+- **dashboard**: make income-by-source breakdown table collapsible
+- **dashboard**: register income_by_source card
+- **dashboard**: add IncomeBySourceCard (donut + table)
+- **i18n**: add income-by-source card strings (en+he)
+- **api**: add getIncomeBySource client method
+- **analytics**: expose GET /analytics/income-by-source
+- **analytics**: add get_income_by_source date-range aggregate
+
+### Fix
+
+- **e2e**: use type import for Playwright Page to satisfy eslint
+
+### Refactor
+
+- **dashboard**: load income-by-source donut via shared LazyPlot
+
 ## v1.34.0 (2026-06-20)
 
 ### Feat
