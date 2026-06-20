@@ -294,14 +294,22 @@ export function Dashboard() {
           grid-auto-flow: row (no `dense`) fills top->bottom, start->end and
           honors document.dir for RTL automatically — a half card with no half
           neighbour before a full card leaves an empty gap, and the stored order
-          is preserved exactly. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
+          is preserved exactly.
+
+          Every cell is a fixed height on >=lg (`lg:auto-rows-[var(--dash-card-h)]`)
+          so all blocks are the same size regardless of content. Each card fills
+          its cell (`[&>*]:h-full`) and scrolls its own overflow
+          (`[&>*]:overflow-y-auto`) instead of stretching the row. On mobile the
+          grid is a single column with natural heights. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 lg:auto-rows-[var(--dash-card-h)] [--dash-card-h:32rem]">
         {layout.order.map((id) => (
           <div
             key={id}
             data-card-id={id}
             data-card-size={cardSize(id)}
-            className={cardSize(id) === "full" ? "lg:col-span-2" : ""}
+            className={`min-w-0 [&>*]:h-full [&>*]:overflow-y-auto ${
+              cardSize(id) === "full" ? "lg:col-span-2" : ""
+            }`}
           >
             {cardRenderers[id]()}
           </div>
