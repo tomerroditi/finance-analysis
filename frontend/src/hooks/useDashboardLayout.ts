@@ -17,19 +17,31 @@ const STORAGE_KEY = "fa.dashboard.layout";
 // run against older stored layouts (see `normalize`).
 const LAYOUT_VERSION = 2;
 
+/** A card's width on the dashboard grid. */
+export type DashboardCardSize = "half" | "full";
+
 /** Canonical card id union. Order here is the default top-to-bottom order. */
 export const DASHBOARD_CARDS = [
-  { id: "forecast", labelKey: "dashboard.cards.forecast", beta: true },
-  { id: "insights", labelKey: "dashboard.cards.insights", beta: true },
-  { id: "budget", labelKey: "dashboard.cards.budget" },
-  { id: "recent", labelKey: "dashboard.cards.recent" },
-  { id: "recurring", labelKey: "dashboard.cards.recurring", beta: true },
-  { id: "goals", labelKey: "dashboard.cards.goals", beta: true },
-  { id: "heatmap", labelKey: "dashboard.cards.heatmap" },
-  { id: "charts", labelKey: "dashboard.cards.charts" },
+  { id: "forecast", labelKey: "dashboard.cards.forecast", size: "full", beta: true },
+  { id: "insights", labelKey: "dashboard.cards.insights", size: "full", beta: true },
+  { id: "budget", labelKey: "dashboard.cards.budget", size: "half" },
+  { id: "recent", labelKey: "dashboard.cards.recent", size: "half" },
+  { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half", beta: true },
+  { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
+  { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "full" },
+  { id: "charts", labelKey: "dashboard.cards.charts", size: "full" },
 ] as const;
 
 export type DashboardCardId = (typeof DASHBOARD_CARDS)[number]["id"];
+
+const SIZE_BY_ID = new Map<DashboardCardId, DashboardCardSize>(
+  DASHBOARD_CARDS.map((c) => [c.id, c.size]),
+);
+
+/** The fixed grid width of a card. Half cards pair two-per-row on wide screens. */
+export function cardSize(id: DashboardCardId): DashboardCardSize {
+  return SIZE_BY_ID.get(id) ?? "full";
+}
 
 const ALL_IDS: DashboardCardId[] = DASHBOARD_CARDS.map((c) => c.id);
 const KNOWN = new Set<string>(ALL_IDS);
