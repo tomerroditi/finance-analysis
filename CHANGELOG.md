@@ -1,3 +1,16 @@
+## v1.34.0 (2026-06-20)
+
+### Feat
+
+- **dashboard**: make spending calendar (heatmap) half-width
+- **dashboard**: show card size badge in the layout settings list
+- **dashboard**: render cards in a half/full-width 2-column grid
+- **dashboard**: declare per-card size with cardSize helper
+
+### Fix
+
+- **test**: use type imports to satisfy consistent-type-imports lint
+
 ## v1.33.2 (2026-06-20)
 
 ### Fix
