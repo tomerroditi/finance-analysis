@@ -17,12 +17,14 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Eye, EyeOff, RotateCcw } from "lucide-react";
+import { GripVertical, Eye, EyeOff, RotateCcw, Columns2, RectangleHorizontal } from "lucide-react";
 import {
   useDashboardLayout,
   DASHBOARD_CARDS,
   isBetaCard,
+  cardSize,
   type DashboardCardId,
+  type DashboardCardSize,
 } from "../../hooks/useDashboardLayout";
 
 const LABEL_KEYS: Record<DashboardCardId, string> = Object.fromEntries(
@@ -33,6 +35,25 @@ const LABEL_KEYS: Record<DashboardCardId, string> = Object.fromEntries(
 function BetaBadge({ label }: { label: string }) {
   return (
     <span className="shrink-0 rounded-full bg-amber-500/15 text-amber-400 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5">
+      {label}
+    </span>
+  );
+}
+
+/** Small pill showing whether a card is half- or full-width on the dashboard. */
+function SizeBadge({ size }: { size: DashboardCardSize }) {
+  const { t } = useTranslation();
+  const isHalf = size === "half";
+  const Icon = isHalf ? Columns2 : RectangleHorizontal;
+  const label = isHalf
+    ? t("settings.dashboardLayoutSizeHalf")
+    : t("settings.dashboardLayoutSizeFull");
+  return (
+    <span
+      title={label}
+      className="shrink-0 inline-flex items-center gap-1 rounded-md bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+    >
+      <Icon size={12} />
       {label}
     </span>
   );
@@ -92,6 +113,7 @@ function SortableCardRow({
         {label}
       </span>
       {beta && <BetaBadge label={betaLabel} />}
+      <SizeBadge size={cardSize(id)} />
       <button
         type="button"
         // Don't let a press on the eye button begin a drag; keep it clickable.
@@ -206,6 +228,7 @@ export function DashboardLayoutManager() {
                   {t(LABEL_KEYS[id])}
                 </span>
                 {isBetaCard(id) && <BetaBadge label={t("settings.beta")} />}
+                <SizeBadge size={cardSize(id)} />
                 <button
                   type="button"
                   onClick={() => toggleHidden(id)}
