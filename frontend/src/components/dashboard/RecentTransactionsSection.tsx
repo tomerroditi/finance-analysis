@@ -1,24 +1,18 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Split, RefreshCw, Tag, Wand2, Link2 } from "lucide-react";
-import {
-  transactionsApi,
-  pendingRefundsApi,
-  type TaggingRule,
-} from "../../services/api";
+import { Split, RefreshCw, Tag, Link2 } from "lucide-react";
+import { transactionsApi, pendingRefundsApi } from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
-import { useTaggingRules } from "../../hooks/useTaggingRules";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
 import { useTranslation } from "react-i18next";
 import { formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
-import { findMatchingRule } from "../../utils/taggingRuleEval";
 import { isToday, isYesterday } from "date-fns";
 import i18n from "../../i18n";
 
@@ -79,7 +73,6 @@ export function RecentTransactionsFeed({
 
   // Categories for inline tag editing
   const { data: categories } = useCategories({ enabled: !!editingTxKey });
-  const { data: taggingRules } = useTaggingRules();
 
   const invalidateAnalytics = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
@@ -189,17 +182,6 @@ export function RecentTransactionsFeed({
     return groups;
   }, [visible]);
 
-  // Precompute which tagging rule matches each visible transaction
-  const ruleMatchMap = useMemo(() => {
-    if (!taggingRules || !visible.length) return new Map<string, TaggingRule>();
-    const map = new Map<string, TaggingRule>();
-    for (const tx of visible) {
-      const key = txKeyOf(tx);
-      const match = findMatchingRule(taggingRules, tx);
-      if (match) map.set(key, match);
-    }
-    return map;
-  }, [taggingRules, visible]);
 
   if (isLoading) {
     return (
@@ -241,12 +223,11 @@ export function RecentTransactionsFeed({
                 const isPositive = tx.amount >= 0;
                 const txKey = txKeyOf(tx);
                 const isEditing = editingTxKey === txKey;
-                const matchedRule = ruleMatchMap.get(txKey);
 
                 return (
                   <div key={txKey}>
                     <div
-                      className={`flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${mobileActionsTxKey === txKey ? "bg-[var(--surface-light)]/30" : ""}`}
+                      className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${mobileActionsTxKey === txKey ? "bg-[var(--surface-light)]/30" : ""}`}
                       onClick={() => {
                         // On mobile (< sm), toggle action card
                         if (window.innerWidth < 640) {
@@ -255,31 +236,17 @@ export function RecentTransactionsFeed({
                       }}
                     >
                       <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
-                      <div className="flex-1 min-w-0">
-                        {/* Description gets its own row with up to 2 lines of
-                            ellipsis so longer merchant names aren't cropped at
-                            inconsistent lengths on narrow screens. */}
+                      <div className="flex-1 min-w-0 flex items-center justify-center gap-2 overflow-hidden">
                         <span
-                          className="text-sm block break-words line-clamp-2"
+                          className="text-sm truncate shrink min-w-0"
                           title={tx.description || ""}
                           dir="auto"
                         >
                           {tx.description || ""}
                         </span>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          <span className="text-[11px] text-[var(--text-muted)]" dir="auto">
-                            {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
-                          </span>
-                          {matchedRule && (
-                            <span
-                              className="inline-flex items-center gap-0.5 px-1.5 py-px rounded-full bg-violet-500/15 text-violet-400 text-[10px]"
-                              title={`${t("tooltips.matchedRule")}: ${matchedRule.name}`}
-                            >
-                              <Wand2 size={9} />
-                              {matchedRule.name}
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0 whitespace-nowrap" dir="auto">
+                          {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
+                        </span>
                       </div>
                       {/* Action buttons — hidden on small mobile, visible on sm+ */}
                       <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[96px]">
