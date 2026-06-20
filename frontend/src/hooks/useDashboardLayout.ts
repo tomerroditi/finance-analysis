@@ -28,7 +28,7 @@ export const DASHBOARD_CARDS = [
   { id: "recent", labelKey: "dashboard.cards.recent", size: "half" },
   { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half", beta: true },
   { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
-  { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "full" },
+  { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
   { id: "charts", labelKey: "dashboard.cards.charts", size: "full" },
 ] as const;
 

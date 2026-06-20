@@ -4,7 +4,7 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
 /**
  * Half-width dashboard cards: on wide (>=lg) viewports the customizable region
  * is a 2-column grid. `budget` and `recent` are both half-width and adjacent in
- * the default order, so they pair on one row; `heatmap` is full-width and spans
+ * the default order, so they pair on one row; `charts` is full-width and spans
  * the row. Fill order is start->end and flips under RTL (Hebrew).
  */
 test.describe("Dashboard half-width blocks", () => {
@@ -38,12 +38,12 @@ test.describe("Dashboard half-width blocks", () => {
 
     const budget = await boxOf(page, "budget");
     const recent = await boxOf(page, "recent");
-    const heatmap = await boxOf(page, "heatmap");
+    const charts = await boxOf(page, "charts");
 
     expect(Math.abs(budget.y - recent.y)).toBeLessThan(4);
     expect(Math.abs(budget.width - recent.width)).toBeLessThan(8);
     expect(budget.x).toBeLessThan(recent.x);
-    expect(heatmap.width).toBeGreaterThan(budget.width * 1.8);
+    expect(charts.width).toBeGreaterThan(budget.width * 1.8);
   });
 
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {
