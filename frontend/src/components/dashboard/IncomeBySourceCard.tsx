@@ -223,7 +223,7 @@ export function IncomeBySourceCard() {
                           <span dir="ltr">{formatCurrency(s.amount)}</span>
                         </td>
                         <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
-                          {Math.round(s.share * 100)}%
+                          {(s.share * 100).toFixed(1)}%
                         </td>
                       </tr>
                     ))}
@@ -235,7 +235,7 @@ export function IncomeBySourceCard() {
                         <span dir="ltr">{formatCurrency(total)}</span>
                       </td>
                       <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
-                        100%
+                        100.0%
                       </td>
                     </tr>
                   </tbody>
