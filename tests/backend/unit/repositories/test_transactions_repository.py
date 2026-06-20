@@ -634,3 +634,41 @@ class TestPendingReconciliation:
 
         ids = {r.id for r in db_session.query(BankTransaction).all()}
         assert ids == {"older", "new"}
+
+    def test_duplicate_tuple_pending_rows_do_not_multiply_inserts(self, db_session):
+        """Two tagged pending rows sharing (id,provider,date,amount) don't explode.
+
+        Migration d4f6a8c0e2b5 allows two distinct transactions with the same
+        (id, provider, date, amount) tuple (e.g. identical same-day ATM
+        withdrawals with empty reference ids). If both are pending and tagged,
+        the tag-carry-over left-join must not cartesian-multiply the re-scraped
+        rows into extra inserts.
+        """
+        from backend.models.transaction import BankTransaction
+
+        # Two pending rows with an identical composite key, both tagged.
+        self._add_bank_row(
+            db_session, id="dup", amount=-200.0, status="pending",
+            category="Cash", tag="ATM",
+        )
+        self._add_bank_row(
+            db_session, id="dup", amount=-200.0, status="pending",
+            category="Cash", tag="ATM",
+        )
+        repo = TransactionsRepository(db_session)
+
+        # Re-scrape reports the same two settled rows.
+        df = self._scraped_df(
+            [
+                {"id": "dup", "amount": -200.0, "status": "completed"},
+                {"id": "dup", "amount": -200.0, "status": "completed"},
+            ]
+        )
+        repo.add_scraped_transactions(df, "bank_transactions", scrape_start_date="2026-06-01")
+
+        rows = db_session.query(BankTransaction).all()
+        # Exactly two rows persist (no cartesian blow-up), both settled and
+        # both keep the carried-over tag.
+        assert len(rows) == 2
+        assert all(r.status == "completed" for r in rows)
+        assert all(r.category == "Cash" and r.tag == "ATM" for r in rows)

@@ -608,7 +608,17 @@ class TransactionsRepository:
             self.db.delete(row)
         self.db.flush()
 
-        return pd.DataFrame(carried) if carried else None
+        if not carried:
+            return None
+        # Two distinct transactions can legitimately share
+        # (id, provider, date, amount) — e.g. two identical same-day ATM
+        # withdrawals with empty reference ids (see migration
+        # d4f6a8c0e2b5). Collapse duplicate keys so the left-join that
+        # restores tags can't cartesian-multiply a scraped row into
+        # several inserts.
+        return pd.DataFrame(carried).drop_duplicates(
+            subset=self.unique_columns, keep="first"
+        )
 
     def add_transaction(
         self,
