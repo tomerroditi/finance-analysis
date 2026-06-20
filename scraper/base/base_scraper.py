@@ -42,6 +42,10 @@ class BaseScraper(ABC):
         self.options = options or ScraperOptions()
         self.on_progress: Optional[Callable[[str], None]] = None
         self.on_otp_request: Optional[Callable[[], Awaitable[str]]] = None
+        # Optional human-readable detail a subclass can set when login fails, so
+        # a general/unknown login failure surfaces the real reason (e.g. the
+        # provider's HTTP error body) instead of a generic message.
+        self._login_error_detail: Optional[str] = None
 
     async def scrape(self) -> ScrapingResult:
         """Orchestrate the full scraping lifecycle.
@@ -175,8 +179,12 @@ class BaseScraper(ABC):
             LoginResult.UNKNOWN_ERROR: "GENERAL_ERROR",
         }
         error_type = error_mapping.get(result, "GENERAL_ERROR")
+        if error_type == "GENERAL_ERROR" and self._login_error_detail:
+            error_message = self._login_error_detail
+        else:
+            error_message = f"Login failed with result: {result.value}"
         return ScrapingResult(
             success=False,
             error_type=error_type,
-            error_message=f"Login failed with result: {result.value}",
+            error_message=error_message,
         )

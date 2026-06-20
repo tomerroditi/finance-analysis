@@ -22,6 +22,7 @@ from backend.config import AppConfig
 from backend.constants.providers import Services
 from backend.constants.tables import Tables, TransactionsTableFields
 from backend.database import get_db_context
+from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.bank_balance_service import BankBalanceService
@@ -68,6 +69,7 @@ def create_adapter(
     credentials: dict,
     start_date: date,
     process_id: int,
+    force_2fa: bool = False,
 ) -> "ScraperAdapter":
     """Create the appropriate adapter for the given service type.
 
@@ -77,6 +79,9 @@ def create_adapter(
         Service type (``"banks"``, ``"credit_cards"``, ``"insurances"``).
     provider_name, account_name, credentials, start_date, process_id
         Forwarded to the adapter constructor.
+    force_2fa : bool, optional
+        When ``True``, the adapter persists a refreshed long-term token after
+        a successful run (see ``ScraperAdapter._persist_refreshed_otp_token``).
 
     Returns
     -------
@@ -84,7 +89,10 @@ def create_adapter(
         An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
     """
     cls = InsuranceScraperAdapter if service_name == Services.INSURANCE.value else ScraperAdapter
-    return cls(service_name, provider_name, account_name, credentials, start_date, process_id)
+    return cls(
+        service_name, provider_name, account_name, credentials,
+        start_date, process_id, force_2fa=force_2fa,
+    )
 
 
 class ScraperAdapter:
@@ -120,6 +128,7 @@ class ScraperAdapter:
         credentials: dict,
         start_date: date,
         process_id: int,
+        force_2fa: bool = False,
     ):
         self.service_name = service_name
         self.provider_name = provider_name
@@ -127,6 +136,7 @@ class ScraperAdapter:
         self.credentials = credentials
         self.start_date = start_date
         self.process_id = process_id
+        self.force_2fa = force_2fa
 
         # 2FA state
         self._otp_code: str | None = None
@@ -185,6 +195,7 @@ class ScraperAdapter:
                     self._apply_auto_tagging()
                     self._recalculate_bank_balances()
                     self._post_save_hook(result)
+                self._persist_refreshed_otp_token(scraper)
             else:
                 self._error = result.error_message or result.error_type or "Unknown error"
                 logger.error(
@@ -230,6 +241,41 @@ class ScraperAdapter:
         """
         name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
         _tfa_scrapers_waiting.pop(name, None)
+
+    def _persist_refreshed_otp_token(self, scraper) -> None:
+        """Persist a freshly obtained long-term token after a forced re-auth.
+
+        Only acts on a forced run whose scraper exposes a fresh token. Merges
+        the new token into the existing credentials (so non-sensitive DB
+        fields are preserved, not wiped) and upserts via CredentialsRepository.
+        Any failure is logged and swallowed — it must never fail the scrape.
+
+        Parameters
+        ----------
+        scraper : object
+            The scraper instance that just ran; may expose
+            ``refreshed_otp_long_term_token``.
+        """
+        if not self.force_2fa:
+            return
+        token = getattr(scraper, "refreshed_otp_long_term_token", None)
+        if not token:
+            return
+        try:
+            merged = {**self.credentials, "otpLongTermToken": token}
+            with get_db_context() as db:
+                CredentialsRepository(db).save_credentials(
+                    self.service_name, self.provider_name, self.account_name, merged
+                )
+            logger.info(
+                "%s: %s: Persisted refreshed long-term token after forced 2FA",
+                self.provider_name, self.account_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "%s: %s: Failed to persist refreshed long-term token — %s",
+                self.provider_name, self.account_name, exc,
+            )
 
     def set_otp_code(self, code: str) -> None:
         """Set OTP code and signal the waiting coroutine.

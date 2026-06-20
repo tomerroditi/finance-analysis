@@ -24,7 +24,11 @@ export function useScraping() {
 
   // Start a single scraper
   const startScraper = useCallback(
-    async (acc: Account, scrapingPeriodDays: number | null) => {
+    async (
+      acc: Account,
+      scrapingPeriodDays: number | null,
+      opts?: { force2fa?: boolean },
+    ) => {
       try {
         const res = await scrapingApi.start({
           service: acc.service,
@@ -33,6 +37,7 @@ export function useScraping() {
           ...(scrapingPeriodDays !== null && {
             scraping_period_days: scrapingPeriodDays,
           }),
+          ...(opts?.force2fa && { force_2fa: true }),
         });
         const processId = res.data;
         setRunningScrapers((prev) => ({

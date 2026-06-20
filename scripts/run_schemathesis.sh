@@ -14,6 +14,12 @@
 #                                    reading these in fuzzing is unsafe.
 #   - /api/backups/*               — creates / restores the user DB; not
 #                                    something a fuzz run should touch.
+#   - /api/updates/*               — makes a real outbound HTTP call to the
+#                                    GitHub releases API (5s timeout, 60
+#                                    req/hr unauthenticated rate limit). It is
+#                                    non-deterministic, slow on a cache miss
+#                                    (which trips the hypothesis deadline),
+#                                    and fuzzing it burns GitHub's rate limit.
 #
 # Method exclusions:
 #   - DELETE / PUT / POST mutate state. We restrict to GET so a single CI
@@ -32,7 +38,7 @@ poetry run schemathesis run "${SCHEMA_URL}" \
   --base-url "${BASE_URL}" \
   --experimental=openapi-3.1 \
   --include-method=GET \
-  --exclude-path-regex='^/api/(testing|scraping|credentials|backups)' \
+  --exclude-path-regex='^/api/(testing|scraping|credentials|backups|updates)' \
   --hypothesis-max-examples="${MAX_EXAMPLES}" \
   --hypothesis-deadline=2000 \
   --hypothesis-suppress-health-check=too_slow,filter_too_much,data_too_large \

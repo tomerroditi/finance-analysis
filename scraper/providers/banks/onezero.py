@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 HEBREW_WORDS_REGEX = re.compile(r"[\u0590-\u05FF][\u0590-\u05FF\"'\-_ /\\]*[\u0590-\u05FF]")
 
-IDENTITY_SERVER_URL = "https://identity.tfd-bank.com/v1/"
+IDENTITY_SERVER_URL = "https://identity.tfd-bank.com/v1"
 
 GRAPHQL_API_URL = "https://mobile.tfd-bank.com/mobile-graph/graphql"
 
@@ -665,6 +665,10 @@ class OneZeroScraper(ApiScraper):
 
     _otp_context: Optional[str] = None
     _access_token: Optional[str] = None
+    # Set to the freshly obtained long-term token when the interactive OTP
+    # flow runs (None when a stored token was reused). The backend adapter
+    # reads this to persist a refreshed token after a forced re-auth.
+    refreshed_otp_long_term_token: Optional[str] = None
 
     async def _trigger_two_factor_auth(self, phone_number: str) -> dict:
         """Trigger OTP SMS to the user's phone number.
@@ -784,6 +788,7 @@ class OneZeroScraper(ApiScraper):
         otp_code = await self.on_otp_request()
 
         token_result = await self._get_long_term_token(otp_code)
+        self.refreshed_otp_long_term_token = token_result["long_term_token"]
         return token_result["long_term_token"]
 
     async def login(self) -> LoginResult:
@@ -800,6 +805,7 @@ class OneZeroScraper(ApiScraper):
         try:
             otp_token = await self._resolve_otp_token()
         except Exception as e:
+            self._login_error_detail = str(e)
             logger.error("Failed to resolve OTP token: %s", e)
             return LoginResult.UNKNOWN_ERROR
 
@@ -829,6 +835,7 @@ class OneZeroScraper(ApiScraper):
             self._access_token = _extract_result_data(session_token_response, "accessToken")
 
         except Exception as e:
+            self._login_error_detail = str(e)
             logger.error("Login failed: %s", e)
             return LoginResult.UNKNOWN_ERROR
 

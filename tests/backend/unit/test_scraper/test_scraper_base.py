@@ -2,11 +2,27 @@
 
 
 
-from scraper.models.result import ScrapingResult
+from scraper.base.base_scraper import BaseScraper, ScraperOptions
+from scraper.models.result import LoginResult, ScrapingResult
 from scraper.models.account import AccountResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 
 from backend.scraper import ScraperAdapter, is_2fa_required
+
+
+class _StubScraper(BaseScraper):
+    """Minimal concrete BaseScraper used to exercise base-class behavior."""
+
+    async def initialize(self) -> None:
+        """No-op initialization."""
+
+    async def login(self) -> LoginResult:
+        """Report success; individual tests drive the mapping helper directly."""
+        return LoginResult.SUCCESS
+
+    async def fetch_data(self) -> list:
+        """Return no accounts."""
+        return []
 
 
 DUMMY_ACCOUNT = "test_account"
@@ -128,3 +144,38 @@ class TestScraperAdapterDataConversion:
         assert row["provider"] == "hapoalim"
         assert row["account_name"] == DUMMY_ACCOUNT
         assert row["source"] == "bank_transactions"
+
+
+class TestLoginErrorDetail:
+    """Tests for surfacing the login error detail in the scraping result."""
+
+    def _scraper(self) -> _StubScraper:
+        """Build a stub scraper for mapping tests."""
+        return _StubScraper("onezero", DUMMY_CREDENTIALS, ScraperOptions())
+
+    def test_general_error_uses_login_detail_when_set(self):
+        """A general/unknown failure surfaces the detail as the error message."""
+        scraper = self._scraper()
+        scraper._login_error_detail = "HTTP 503 /otp/prepare — body: blocked prefix"
+        result = scraper._login_result_to_scraping_result(LoginResult.UNKNOWN_ERROR)
+        assert result.error_type == "GENERAL_ERROR"
+        assert result.error_message == "HTTP 503 /otp/prepare — body: blocked prefix"
+
+    def test_general_error_falls_back_to_generic_when_no_detail(self):
+        """Without a recorded detail, the generic message is used."""
+        scraper = self._scraper()
+        result = scraper._login_result_to_scraping_result(LoginResult.UNKNOWN_ERROR)
+        assert result.error_message == "Login failed with result: unknown_error"
+
+    def test_known_error_type_keeps_generic_message(self):
+        """A known failure type keeps its generic message even if a detail is set."""
+        scraper = self._scraper()
+        scraper._login_error_detail = "some noisy detail"
+        result = scraper._login_result_to_scraping_result(LoginResult.INVALID_PASSWORD)
+        assert result.error_type == "INVALID_PASSWORD"
+        assert result.error_message == "Login failed with result: invalid_password"
+
+    def test_success_returns_none(self):
+        """A successful login maps to None so the caller proceeds to fetch."""
+        scraper = self._scraper()
+        assert scraper._login_result_to_scraping_result(LoginResult.SUCCESS) is None

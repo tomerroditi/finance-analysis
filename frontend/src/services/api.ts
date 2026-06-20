@@ -245,6 +245,7 @@ export const scrapingApi = {
     provider: string;
     account: string;
     scraping_period_days?: number;
+    force_2fa?: boolean;
   }) => {
     return api.post("/scraping/start", payload);
   },

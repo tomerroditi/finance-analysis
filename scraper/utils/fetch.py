@@ -16,6 +16,39 @@ def _json_headers() -> dict[str, str]:
     return {"Accept": JSON_CONTENT_TYPE, "Content-Type": JSON_CONTENT_TYPE}
 
 
+def _raise_for_status_with_body(resp: httpx.Response) -> None:
+    """Like ``resp.raise_for_status()`` but include the response body in the error.
+
+    httpx's default ``HTTPStatusError`` message contains only the status line and
+    URL; the response body — where providers explain *why* a request failed
+    (rate-limit notices, validation messages, blocked-number reasons) — is
+    dropped. This re-raises the same ``HTTPStatusError`` with the status code and
+    response preserved (so status-based handling such as retry logic still
+    works) and a message that appends a truncated body.
+
+    Parameters
+    ----------
+    resp : httpx.Response
+        The response to validate.
+
+    Raises
+    ------
+    httpx.HTTPStatusError
+        If the status indicates an error, with the body included in the message.
+    """
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        body = (resp.text or "").strip()
+        if len(body) > 500:
+            body = body[:500] + "…"
+        raise httpx.HTTPStatusError(
+            f"HTTP {resp.status_code} {resp.request.url} — body: {body or '<empty>'}",
+            request=error.request,
+            response=error.response,
+        ) from error
+
+
 async def fetch_get(
     url: str,
     extra_headers: dict[str, str] | None = None,
@@ -26,7 +59,7 @@ async def fetch_get(
     _client = client or httpx.AsyncClient()
     try:
         resp = await _client.get(url, headers=headers)
-        resp.raise_for_status()
+        _raise_for_status_with_body(resp)
         return resp.json()
     finally:
         if not client:
@@ -44,7 +77,7 @@ async def fetch_post(
     _client = client or httpx.AsyncClient()
     try:
         resp = await _client.post(url, json=data, headers=headers)
-        resp.raise_for_status()
+        _raise_for_status_with_body(resp)
         return resp.json()
     finally:
         if not client:

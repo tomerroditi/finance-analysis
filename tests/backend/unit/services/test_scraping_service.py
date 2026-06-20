@@ -244,6 +244,67 @@ class TestScrapingServiceStart:
         call_args = mock_history_repo.record_scrape_start.call_args
         assert call_args[0][4] == "in_progress"
 
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_force_2fa_strips_token_and_forwards_flag(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """force_2fa=True drops otpLongTermToken from creds and passes the flag."""
+        mock_is_2fa.return_value = True
+        service.credentials_repo.get_credentials.return_value = {
+            "email": "e", "password": "p", "phoneNumber": "+1", "otpLongTermToken": "OLD",
+        }
+        mock_history_repo = MagicMock()
+        mock_history_repo.record_scrape_start.return_value = 7
+
+        @contextmanager
+        def fake_ctx():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_ctx
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            service.start_scraping_single("banks", "onezero", "Acc", force_2fa=True)
+
+        creds_arg = mock_create_adapter.call_args.args[3]
+        assert "otpLongTermToken" not in creds_arg
+        assert creds_arg["email"] == "e"
+        assert mock_create_adapter.call_args.kwargs["force_2fa"] is True
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_default_keeps_token_and_flag_false(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """Without force_2fa the stored token is preserved and the flag is False."""
+        mock_is_2fa.return_value = True
+        service.credentials_repo.get_credentials.return_value = {
+            "email": "e", "password": "p", "otpLongTermToken": "OLD",
+        }
+        mock_history_repo = MagicMock()
+        mock_history_repo.record_scrape_start.return_value = 8
+
+        @contextmanager
+        def fake_ctx():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_ctx
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            service.start_scraping_single("banks", "onezero", "Acc")
+
+        creds_arg = mock_create_adapter.call_args.args[3]
+        assert creds_arg["otpLongTermToken"] == "OLD"
+        assert mock_create_adapter.call_args.kwargs["force_2fa"] is False
+
 
 class TestScrapingService2FA:
     """Tests for 2FA code submission."""

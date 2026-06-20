@@ -10,6 +10,7 @@ poetry run uvicorn backend.main:app --reload          # Dev server (port 8000)
 poetry run pytest                                      # All tests
 poetry run pytest tests/backend/unit/                  # Unit tests only
 poetry run pytest -k "test_budget"                     # By keyword
+poetry run pytest <path> --no-cov                     # Targeted run (repo's 40% coverage gate fails small runs without --no-cov)
 
 # Frontend (from frontend/)
 npm run dev                                            # Dev server (port 5173)
@@ -48,6 +49,8 @@ python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && p
 ```
 
 **Why the auto-bootstrap exists:** Git worktrees only contain source files — they don't inherit the parent's `.venv/`, and a missing venv breaks `npm run backend` with a cryptic `sh: .venv/bin/activate: No such file or directory`. The bootstrap script is idempotent (exits silently when `.venv/bin/uvicorn` already exists), so the hot path stays fast.
+
+To run backend tests in a fresh worktree without the ~90s bootstrap, use the main checkout's venv against the worktree source (from the worktree root): `../../../.venv/bin/python -m pytest <path> --no-cov`
 
 User data lives in `~/.finance-analysis/` (SQLite DB at `data.db`). Auto-created on first run. Credentials and categories live in the DB; passwords are stored in the OS Keyring. Default categories ship bundled in `backend/resources/*.yaml` and are seeded into the DB on first run.
 
@@ -147,3 +150,5 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 - CORS only allows localhost:5173 by default (configurable via `CORS_ORIGINS` env var)
 - Closing an investment auto-creates a balance snapshot of 0 on the last transaction date (not the closure date)
 - Investment balance snapshots override transaction-based balance when present (snapshot-first, transaction fallback)
+- Alembic migrations run on startup (`backend/main.py` → `alembic upgrade head`) AFTER `Base.metadata.create_all` — they must be idempotent (fresh DBs already have current-model tables), set `down_revision` to the current head, and use `op.batch_alter_table(..., recreate="always")` to drop SQLite constraints/columns
+- Toggling Demo Mode (including e2e specs that flip it) re-copies the frozen demo snapshot — hand-added demo accounts/data are lost (real data is untouched)
