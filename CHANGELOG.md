@@ -1,3 +1,9 @@
+## v1.33.1 (2026-06-20)
+
+### Fix
+
+- **scraper**: sync discount, leumi, visa-cal, yahav with upstream
+
 ## v1.33.0 (2026-06-20)
 
 ### Feat
