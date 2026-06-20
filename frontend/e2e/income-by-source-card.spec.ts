@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
 
 /**
@@ -28,7 +28,7 @@ test.describe("Income by source dashboard card", () => {
    * several other Plotly charts). The dashboard ships mobile + desktop layout
    * variants simultaneously, so we filter to the visible instance.
    */
-  function cardContainer(page: import("@playwright/test").Page) {
+  function cardContainer(page: Page) {
     return page
       .locator("div")
       .filter({ has: page.getByText("Income by source", { exact: true }) })
