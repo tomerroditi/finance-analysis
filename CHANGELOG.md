@@ -1,3 +1,20 @@
+## v1.33.2 (2026-06-20)
+
+### Fix
+
+- **scraper**: dedup carried pending tags to prevent cartesian insert
+- reconcile pending scrapes, scope month overrides per table, cache parity
+- **frontend**: use typeof guard for requestIdleCallback warmup
+- **frontend**: pre-bundle plotly in vite dev server
+- **frontend**: add dir=auto to truncated user data for RTL
+- **budget**: return 404 instead of IndexError when project total rule is missing
+
+### Perf
+
+- **frontend**: warm plotly chunk on idle and widen chart e2e timeouts
+- **investments**: batch per-investment queries in get_all_investments
+- **frontend**: lazy-load Plotly to shrink main bundle 5.8MB -> 1.1MB
+
 ## v1.33.1 (2026-06-20)
 
 ### Fix
