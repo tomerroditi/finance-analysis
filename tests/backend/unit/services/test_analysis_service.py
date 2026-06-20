@@ -1200,3 +1200,95 @@ class TestCashFlowForecast:
         assert result["safe_to_spend"] <= max(
             0.0, result["expected_income"] - result["actual_expenses"]
         )
+
+
+class TestAnalysisServiceIncomeBySourceAggregate:
+    """Tests for get_income_by_source (date-range aggregate)."""
+
+    def _seed(self, db_session):
+        """Seed three months of income across two sources + one CC + prior wealth."""
+        records = [
+            BankTransaction(
+                id="agg_sal_jan", date="2024-01-15", provider="hapoalim",
+                account_name="Checking", description="Salary Jan",
+                amount=8000.0, category="Salary", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="agg_free_jan", date="2024-01-20", provider="leumi",
+                account_name="Business", description="Freelance Jan",
+                amount=2000.0, category="Other Income", tag="Freelance",
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="agg_sal_feb", date="2024-02-15", provider="hapoalim",
+                account_name="Checking", description="Salary Feb",
+                amount=8500.0, category="Salary", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            BankTransaction(
+                id="agg_sal_mar", date="2024-03-15", provider="hapoalim",
+                account_name="Checking", description="Salary Mar",
+                amount=8200.0, category="Salary", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            ),
+            # Credit-card income-category row must be EXCLUDED (CC source).
+            CreditCardTransaction(
+                id="agg_cc", date="2024-02-10", provider="isracard",
+                account_name="Visa", description="CC refund",
+                amount=999.0, category="Other Income", tag=None,
+                source="credit_card_transactions", type="normal", status="completed",
+            ),
+            # Prior Wealth must be EXCLUDED.
+            BankTransaction(
+                id="agg_pw", date="2024-01-01", provider="hapoalim",
+                account_name="Checking", description="Opening balance",
+                amount=50000.0, category="Salary", tag="Prior Wealth",
+                source="bank_transactions", type="normal", status="completed",
+            ),
+        ]
+        db_session.add_all(records)
+        db_session.commit()
+
+    def test_all_time_aggregates_and_sorts_by_amount(self, db_session):
+        """All-time: sources summed across months, sorted desc, with shares + total."""
+        self._seed(db_session)
+        result = AnalysisService(db_session).get_income_by_source()
+
+        assert result["start"] is None
+        assert result["end"] is None
+        # Salary 8000+8500+8200 = 24700; Freelance 2000. CC + Prior Wealth excluded.
+        assert result["total"] == 26700.0
+        labels = [s["label"] for s in result["sources"]]
+        assert labels == ["Salary", "Other Income / Freelance"]  # sorted desc
+        assert result["sources"][0]["amount"] == 24700.0
+        assert result["sources"][1]["amount"] == 2000.0
+        assert result["sources"][0]["share"] == round(24700.0 / 26700.0, 4)
+
+    def test_date_range_is_inclusive_on_both_edges(self, db_session):
+        """A window covering only Jan keeps Jan rows, drops Feb/Mar."""
+        from datetime import date
+        self._seed(db_session)
+        result = AnalysisService(db_session).get_income_by_source(
+            start=date(2024, 1, 1), end=date(2024, 1, 31)
+        )
+        assert result["start"] == "2024-01-01"
+        assert result["end"] == "2024-01-31"
+        assert result["total"] == 10000.0  # Salary 8000 + Freelance 2000
+        labels = {s["label"] for s in result["sources"]}
+        assert labels == {"Salary", "Other Income / Freelance"}
+
+    def test_empty_window_returns_zero(self, db_session):
+        """A window with no income returns empty sources and zero total."""
+        from datetime import date
+        self._seed(db_session)
+        result = AnalysisService(db_session).get_income_by_source(
+            start=date(2025, 1, 1), end=date(2025, 12, 31)
+        )
+        assert result["sources"] == []
+        assert result["total"] == 0.0
+
+    def test_empty_db_does_not_raise(self, db_session):
+        """Empty DB returns a zero result (regression: no KeyError on fresh install)."""
+        result = AnalysisService(db_session).get_income_by_source()
+        assert result == {"sources": [], "total": 0.0, "start": None, "end": None}
