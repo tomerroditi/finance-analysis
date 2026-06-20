@@ -1,3 +1,25 @@
+## v1.33.0 (2026-06-20)
+
+### Feat
+
+- **scraping**: show failure reason on mobile and for unknown errors
+- **data-sources**: add OneZero re-authenticate (force 2FA) button
+- **scraping**: thread force_2fa through api client and useScraping
+- **scraping**: accept force_2fa in start request
+- **scraping**: strip stored token and forward force_2fa flag
+- **scraper**: persist refreshed OneZero token after forced 2FA
+- **scraper**: expose freshly obtained OneZero long-term token
+
+### Fix
+
+- **scraper**: drop OneZero OTP-prepare retries to avoid SMS-fraud blocks
+- **scraper**: include response body in OneZero HTTP error logs
+- stop scrape failures from duplicate transactions and OneZero OTP
+
+### Refactor
+
+- **scraper**: capture HTTP error bodies in shared fetch util
+
 ## v1.32.0 (2026-06-06)
 
 ### Feat
