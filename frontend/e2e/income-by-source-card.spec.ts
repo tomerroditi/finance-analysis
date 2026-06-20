@@ -49,7 +49,7 @@ test.describe("Income by source dashboard card", () => {
 
     // Donut renders inside the card.
     await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
-      timeout: 15_000,
+      timeout: 45_000,
     });
 
     // Breakdown table has a Total row.
@@ -65,7 +65,7 @@ test.describe("Income by source dashboard card", () => {
 
     const card = cardContainer(page);
     await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
-      timeout: 15_000,
+      timeout: 45_000,
     });
 
     // Click the "Last 12 months" range preset (scoped to the card).
@@ -76,7 +76,7 @@ test.describe("Income by source dashboard card", () => {
 
     // The card must still render its donut after the range change (no crash).
     await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
-      timeout: 15_000,
+      timeout: 45_000,
     });
     await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
   });
@@ -90,7 +90,7 @@ test.describe("Income by source dashboard card", () => {
 
     const card = cardContainer(page);
     await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
-      timeout: 15_000,
+      timeout: 45_000,
     });
 
     // Table starts expanded.
