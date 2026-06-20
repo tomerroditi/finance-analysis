@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -602,6 +604,79 @@ class AnalysisService:
             result.append({"month": month, "sources": sources, "total": total})
 
         return result
+
+    def get_income_by_source(
+        self, start: date | None = None, end: date | None = None
+    ) -> dict:
+        """
+        Aggregate total income amount per source within a date window.
+
+        "Income source" is the category+tag label (same as
+        ``get_income_by_source_over_time``). Credit-card source and
+        Prior Wealth transactions are excluded, matching the over-time chart.
+
+        Parameters
+        ----------
+        start, end : date | None
+            Inclusive date bounds. ``None`` means unbounded (all time).
+
+        Returns
+        -------
+        dict
+            ``{sources: [{label, amount, share}], total, start, end}`` where
+            ``sources`` is sorted by ``amount`` descending and ``share`` is the
+            fraction of ``total``. ``start``/``end`` echo the resolved window as
+            ISO strings (or ``None``).
+        """
+        empty = {
+            "sources": [],
+            "total": 0.0,
+            "start": start.isoformat() if start else None,
+            "end": end.isoformat() if end else None,
+        }
+
+        df = self.repo.get_table()
+        if df.empty:
+            return empty
+
+        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
+        if df.empty:
+            return empty
+
+        income_df = df[self._get_income_mask(df)].copy()
+        income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
+        if income_df.empty:
+            return empty
+
+        parsed = pd.to_datetime(income_df["date"])
+        if start is not None:
+            income_df = income_df[parsed >= pd.Timestamp(start)]
+            parsed = pd.to_datetime(income_df["date"])
+        if end is not None:
+            income_df = income_df[parsed <= pd.Timestamp(end)]
+        if income_df.empty:
+            return empty
+
+        income_df["source_label"] = income_df.apply(self._income_source_label, axis=1)
+        grouped = income_df.groupby("source_label")["amount"].sum()
+        total = float(grouped.sum())
+
+        sources = [
+            {
+                "label": label,
+                "amount": round(float(amount), 2),
+                "share": round(float(amount) / total, 4) if total else 0.0,
+            }
+            for label, amount in grouped.items()
+        ]
+        sources.sort(key=lambda s: s["amount"], reverse=True)
+
+        return {
+            "sources": sources,
+            "total": round(total, 2),
+            "start": start.isoformat() if start else None,
+            "end": end.isoformat() if end else None,
+        }
 
     @staticmethod
     def _income_source_label(row: pd.Series) -> str:

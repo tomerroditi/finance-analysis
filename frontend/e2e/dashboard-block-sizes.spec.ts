@@ -46,6 +46,27 @@ test.describe("Dashboard half-width blocks", () => {
     expect(charts.width).toBeGreaterThan(budget.width * 1.8);
   });
 
+  test("every block is one fixed height with internal scroll (>=lg)", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto("/");
+
+    const ids = ["budget", "recent", "heatmap", "income_by_source", "charts"];
+    const heights: number[] = [];
+    for (const id of ids) heights.push((await boxOf(page, id)).height);
+
+    // All blocks (half and full alike) are the same fixed height.
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(2);
+
+    // Every block fills its cell and enables internal scrolling, so content
+    // that exceeds the fixed height scrolls within the block instead of
+    // stretching the row.
+    const overflowYs = await page
+      .locator("[data-card-id] > *")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).overflowY));
+    expect(overflowYs.length).toBeGreaterThan(0);
+    expect(overflowYs.every((o) => o === "auto")).toBe(true);
+  });
+
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {
     await page.addInitScript(() => window.localStorage.setItem("language", "he"));
     await page.setViewportSize({ width: 1440, height: 1000 });
