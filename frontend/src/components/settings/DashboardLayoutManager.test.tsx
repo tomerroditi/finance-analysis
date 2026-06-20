@@ -3,11 +3,12 @@ import { screen } from "@testing-library/react";
 import { renderWithProviders } from "../../test-utils";
 import { DashboardLayoutManager } from "./DashboardLayoutManager";
 import type { DashboardCardId } from "../../hooks/useDashboardLayout";
+import type * as DashboardLayoutModule from "../../hooks/useDashboardLayout";
 
 // Mock useDashboardLayout so the test uses a known layout with both half-width
 // and full-width cards visible, independent of localStorage cache state.
 vi.mock("../../hooks/useDashboardLayout", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../hooks/useDashboardLayout")>();
+  const actual = await importOriginal<typeof DashboardLayoutModule>();
   return {
     ...actual,
     useDashboardLayout: () => ({

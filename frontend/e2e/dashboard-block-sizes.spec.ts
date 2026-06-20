@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, disableDemoMode } from "./helpers";
 
 /**
@@ -24,7 +24,7 @@ test.describe("Dashboard half-width blocks", () => {
     await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
   });
 
-  async function boxOf(page: import("@playwright/test").Page, id: string) {
+  async function boxOf(page: Page, id: string) {
     const el = page.locator(`[data-card-id="${id}"]`);
     await expect(el).toBeVisible({ timeout: 45_000 });
     const box = await el.boundingBox();
