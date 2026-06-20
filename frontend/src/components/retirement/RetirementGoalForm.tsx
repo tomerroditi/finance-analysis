@@ -342,39 +342,37 @@ export function RetirementGoalForm({
               )
             }
           />
-          <div>
-            <SnapshotField
-              label={t("earlyRetirement.status.avgMonthlyIncome")}
-              icon={DollarSign}
-              iconColor="text-blue-400"
-              value={form.monthly_income}
-              statusValue={Math.round(status?.avg_monthly_income ?? 0)}
-              onChange={(v) => handleChange("monthly_income", v)}
-              onReset={() =>
-                handleChange(
-                  "monthly_income",
-                  Math.round(status?.avg_monthly_income ?? 0),
-                )
-              }
-            />
-            {scrapedDefaults?.avg_monthly_salary != null && (
-              <button
-                type="button"
-                onClick={() =>
-                  handleChange(
-                    "monthly_income",
-                    scrapedDefaults.avg_monthly_salary!,
-                  )
-                }
-                className="flex items-center gap-1 mt-1 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
-              >
-                <RefreshCw size={10} />
-                {t("earlyRetirement.form.useSalaryAvg", {
-                  amount: ILS_FORMAT.format(scrapedDefaults.avg_monthly_salary),
-                })}
-              </button>
-            )}
-          </div>
+          <SnapshotField
+            label={t("earlyRetirement.status.avgMonthlyIncome")}
+            icon={DollarSign}
+            iconColor="text-blue-400"
+            value={form.monthly_income}
+            statusValue={Math.round(status?.avg_monthly_income ?? 0)}
+            onChange={(v) => handleChange("monthly_income", v)}
+            onReset={() =>
+              handleChange(
+                "monthly_income",
+                Math.round(status?.avg_monthly_income ?? 0),
+              )
+            }
+            footer={
+              scrapedDefaults?.avg_monthly_salary != null ? (
+                <ScrapedHint
+                  onClick={() =>
+                    handleChange(
+                      "monthly_income",
+                      Math.round(scrapedDefaults.avg_monthly_salary!),
+                    )
+                  }
+                  label={t("earlyRetirement.form.useSalaryAvg", {
+                    amount: ILS_FORMAT.format(
+                      scrapedDefaults.avg_monthly_salary,
+                    ),
+                  })}
+                />
+              ) : null
+            }
+          />
           <SnapshotField
             label={t("earlyRetirement.status.avgMonthlyExpenses")}
             icon={Wallet}
@@ -770,10 +768,10 @@ function ScrapedHint({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 mt-1 text-[11px] text-[var(--primary)] hover:text-blue-300 transition-colors"
+      className="flex items-start gap-1 mt-1 w-full text-start text-[11px] leading-tight text-[var(--primary)] hover:text-blue-300 transition-colors"
     >
-      <RefreshCw size={10} className="shrink-0" />
-      <span className="truncate">{label}</span>
+      <RefreshCw size={10} className="shrink-0 mt-0.5" />
+      <span className="min-w-0 break-words">{label}</span>
     </button>
   );
 }
@@ -872,6 +870,7 @@ function SnapshotField({
   statusValue,
   onChange,
   onReset,
+  footer,
 }: {
   label: string;
   icon: React.ElementType;
@@ -880,6 +879,7 @@ function SnapshotField({
   statusValue: number;
   onChange: (value: number) => void;
   onReset: () => void;
+  footer?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const isOverridden = value !== statusValue && value !== 0;
@@ -888,6 +888,7 @@ function SnapshotField({
       label={label}
       icon={icon}
       iconColor={iconColor}
+      footer={footer}
       headerExtra={
         isOverridden ? (
           <button
