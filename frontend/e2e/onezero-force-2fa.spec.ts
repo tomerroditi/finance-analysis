@@ -69,15 +69,27 @@ test.describe("OneZero force-2FA (Re-authenticate)", () => {
     await expect(reauth).toBeVisible();
 
     // Clicking it must POST /api/scraping/start with the force_2fa flag set
-    // for the OneZero provider. Intercept the request and assert the JSON
-    // body — this is the wire contract the button exists to satisfy.
-    const startReq = page.waitForRequest(
-      (req) =>
-        req.url().includes("/api/scraping/start") && req.method() === "POST",
-    );
+    // for the OneZero provider — that wire contract is the whole point of
+    // this test. We MUST NOT let the request reach the backend, though:
+    // Demo Mode is a process-global flag (backend/config.py), the scrape
+    // runs as an async background task, and `afterAll`'s disableDemoMode()
+    // races it back to the production DB. A real dummy scrape here once
+    // leaked 6 fake transactions into the user's real data.db. So intercept
+    // the request, assert its body, and fulfill it with a stub — the scrape
+    // never actually starts. Do NOT "simplify" this back to waitForRequest +
+    // a live click; that reopens the leak.
+    let startBody: unknown;
+    await page.route("**/api/scraping/start", async (route) => {
+      startBody = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "started" }),
+      });
+    });
+
     await reauth.click();
-    const req = await startReq;
-    expect(req.postDataJSON()).toMatchObject({
+    await expect.poll(() => startBody).toMatchObject({
       provider: "onezero",
       force_2fa: true,
     });
