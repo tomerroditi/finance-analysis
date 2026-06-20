@@ -271,6 +271,7 @@
       "source": "Source",
       "amount": "Amount",
       "share": "Share",
+      "breakdown": "Breakdown",
       "empty": "No income in this range",
       "range": {
         "all": "All time",

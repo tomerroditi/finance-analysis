@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { PieChart } from "lucide-react";
+import { PieChart, ChevronDown, ChevronUp } from "lucide-react";
 import Plot from "react-plotly.js";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
@@ -43,6 +43,7 @@ export function IncomeBySourceCard() {
   const [preset, setPreset] = useState<RangePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [tableOpen, setTableOpen] = useState(true);
 
   const { start, end } = resolveRange(preset, customStart, customEnd);
 
@@ -128,9 +129,9 @@ export function IncomeBySourceCard() {
           📭 {t("dashboard.incomeBySource.empty")}
         </p>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
+        <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
           {/* Donut */}
-          <div className="w-full lg:w-1/2 min-h-[240px]">
+          <div className={`w-full min-h-[240px] ${tableOpen ? "lg:w-1/2" : "lg:flex-1"}`}>
             <Plot
               data={[
                 {
@@ -168,62 +169,79 @@ export function IncomeBySourceCard() {
             />
           </div>
 
-          {/* Table */}
-          <div className="w-full lg:w-1/2 overflow-x-auto">
-            <table className="w-full min-w-[280px] text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                  <th className="text-start px-3 py-2 font-bold whitespace-nowrap">
-                    {t("dashboard.incomeBySource.source")}
-                  </th>
-                  <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
-                    {t("dashboard.incomeBySource.amount")}
-                  </th>
-                  <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
-                    {t("dashboard.incomeBySource.share")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources.map((s, i) => (
-                  <tr
-                    key={s.label}
-                    className="border-b border-[var(--surface-light)]/50"
-                  >
-                    <td className="text-start px-3 py-2 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-2">
-                        <span
-                          className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{
-                            backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-                          }}
-                        />
-                        <span className="block max-w-[160px] truncate" dir="auto">
-                          {s.label}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="text-center px-3 py-2 whitespace-nowrap">
-                      <span dir="ltr">{formatCurrency(s.amount)}</span>
-                    </td>
-                    <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
-                      {Math.round(s.share * 100)}%
-                    </td>
-                  </tr>
-                ))}
-                <tr className="font-bold border-t-2 border-[var(--surface-light)]">
-                  <td className="text-start px-3 py-2 whitespace-nowrap">
-                    {t("dashboard.incomeBySource.total")}
-                  </td>
-                  <td className="text-center px-3 py-2 whitespace-nowrap">
-                    <span dir="ltr">{formatCurrency(total)}</span>
-                  </td>
-                  <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
-                    100%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          {/* Collapsible breakdown table */}
+          <div className={`w-full ${tableOpen ? "lg:w-1/2" : "lg:w-auto"}`}>
+            <button
+              type="button"
+              onClick={() => setTableOpen((open) => !open)}
+              aria-expanded={tableOpen}
+              className="flex items-center gap-1 mb-2 text-xs font-bold text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
+            >
+              {tableOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {t("dashboard.incomeBySource.breakdown")}
+            </button>
+            {tableOpen && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[280px] text-sm">
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
+                      <th className="text-start px-3 py-2 font-bold whitespace-nowrap">
+                        {t("dashboard.incomeBySource.source")}
+                      </th>
+                      <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
+                        {t("dashboard.incomeBySource.amount")}
+                      </th>
+                      <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
+                        {t("dashboard.incomeBySource.share")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sources.map((s, i) => (
+                      <tr
+                        key={s.label}
+                        className="border-b border-[var(--surface-light)]/50"
+                      >
+                        <td className="text-start px-3 py-2 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{
+                                backgroundColor:
+                                  CHART_COLORS[i % CHART_COLORS.length],
+                              }}
+                            />
+                            <span
+                              className="block max-w-[160px] truncate"
+                              dir="auto"
+                            >
+                              {s.label}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="text-center px-3 py-2 whitespace-nowrap">
+                          <span dir="ltr">{formatCurrency(s.amount)}</span>
+                        </td>
+                        <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
+                          {Math.round(s.share * 100)}%
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="font-bold border-t-2 border-[var(--surface-light)]">
+                      <td className="text-start px-3 py-2 whitespace-nowrap">
+                        {t("dashboard.incomeBySource.total")}
+                      </td>
+                      <td className="text-center px-3 py-2 whitespace-nowrap">
+                        <span dir="ltr">{formatCurrency(total)}</span>
+                      </td>
+                      <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
+                        100%
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

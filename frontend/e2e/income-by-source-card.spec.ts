@@ -80,4 +80,31 @@ test.describe("Income by source dashboard card", () => {
     });
     await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
   });
+
+  test("Breakdown toggle collapses and restores the table", async ({ page }) => {
+    await navigateTo(page, "/");
+
+    await expect(
+      page.getByText("Income by source", { exact: true }).first(),
+    ).toBeVisible({ timeout: 45_000 });
+
+    const card = cardContainer(page);
+    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Table starts expanded.
+    await expect(card.locator("table").first()).toBeVisible();
+
+    const toggle = card.getByRole("button", { name: "Breakdown" }).first();
+
+    // Collapse: the table is removed but the donut stays.
+    await toggle.click();
+    await expect(card.locator("table")).toHaveCount(0);
+    await expect(card.locator(".js-plotly-plot").first()).toBeVisible();
+
+    // Expand again: the table comes back.
+    await toggle.click();
+    await expect(card.locator("table").first()).toBeVisible();
+  });
 });
