@@ -1,3 +1,9 @@
+## v1.36.0 (2026-06-20)
+
+### Feat
+
+- **transactions**: default the transactions table to 100 rows per page
+
 ## v1.35.0 (2026-06-20)
 
 ### Feat
