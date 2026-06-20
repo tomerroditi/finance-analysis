@@ -24,7 +24,7 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
-import { useDashboardLayout, type DashboardCardId } from "../hooks/useDashboardLayout";
+import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
 
 /* ------------------------------------------------------------------ */
@@ -287,10 +287,24 @@ export function Dashboard() {
         isLoading={netWorthLoading}
       />
 
-      {/* Customizable, single-column region (order + visibility from settings) */}
-      {layout.order.map((id) => (
-        <div key={id}>{cardRenderers[id]()}</div>
-      ))}
+      {/* Customizable region: 2-column grid on wide screens (>=lg). Full-size
+          cards span both columns; half-size cards take one. Native
+          grid-auto-flow: row (no `dense`) fills top->bottom, start->end and
+          honors document.dir for RTL automatically — a half card with no half
+          neighbour before a full card leaves an empty gap, and the stored order
+          is preserved exactly. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
+        {layout.order.map((id) => (
+          <div
+            key={id}
+            data-card-id={id}
+            data-card-size={cardSize(id)}
+            className={cardSize(id) === "full" ? "lg:col-span-2" : ""}
+          >
+            {cardRenderers[id]()}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
