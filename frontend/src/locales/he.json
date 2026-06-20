@@ -148,7 +148,23 @@
     "netBalanceOverTime": "מאזן נטו לאורך זמן",
     "netWorthOverTime": "שווי נקי לאורך זמן",
     "cashFlow": "תזרים מזומנים",
-    "incomeBySource": "הכנסות לפי מקור",
+    "incomeBySource": {
+      "title": "הכנסה לפי מקור",
+      "total": "סה\"כ",
+      "source": "מקור",
+      "amount": "סכום",
+      "share": "חלק",
+      "breakdown": "פירוט",
+      "empty": "אין הכנסה בטווח זה",
+      "range": {
+        "all": "כל הזמן",
+        "year": "השנה",
+        "last12m": "12 החודשים האחרונים",
+        "custom": "מותאם…"
+      },
+      "from": "מתאריך",
+      "to": "עד תאריך"
+    },
     "budgetProgress": "מעקב תקציב",
     "recentTransactions": "תנועות אחרונות",
     "financialHealth": "בריאות פיננסית",
@@ -264,23 +280,6 @@
       "heatmap": "לוח הוצאות",
       "charts": "גרפים וניתוחים",
       "incomeBySource": "הכנסה לפי מקור"
-    },
-    "incomeBySource": {
-      "title": "הכנסה לפי מקור",
-      "total": "סה\"כ",
-      "source": "מקור",
-      "amount": "סכום",
-      "share": "חלק",
-      "breakdown": "פירוט",
-      "empty": "אין הכנסה בטווח זה",
-      "range": {
-        "all": "כל הזמן",
-        "year": "השנה",
-        "last12m": "12 החודשים האחרונים",
-        "custom": "מותאם…"
-      },
-      "from": "מתאריך",
-      "to": "עד תאריך"
     }
   },
   "transactions": {
@@ -1134,7 +1133,9 @@
       "resetPlan": "איפוס",
       "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}",
       "useScrapedKhMonthly": "השתמש בהפקדה מגרידה: {{amount}}",
-      "useScrapedPension": "השתמש בהפקדה מגרידה: {{amount}}"
+      "useScrapedPension": "השתמש בהפקדה מגרידה: {{amount}}",
+      "monthlyIncome": "הכנסה חודשית",
+      "useSalaryAvg": "השתמש בממוצע משכורת 6 חודשים: {{amount}}"
     },
     "status": {
       "netWorth": "שווי נקי",

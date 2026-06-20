@@ -139,6 +139,39 @@ class AnalysisService:
 
         return monthly_data
 
+    def get_avg_monthly_salary(self, months: int = 6) -> float | None:
+        """Compute average monthly salary income over the last N months.
+
+        Filters transactions by the Salary category and averages the
+        per-month totals over the most recent ``months`` months that
+        have at least one salary transaction.
+
+        Parameters
+        ----------
+        months : int
+            Number of recent months to average over.
+
+        Returns
+        -------
+        float or None
+            Average monthly salary, or None if no salary data exists.
+        """
+        df = self.repo.get_table()
+        if df.empty:
+            return None
+
+        salary_df = df[df[TransactionsTableFields.CATEGORY.value] == IncomeCategories.SALARY.value].copy()
+        if salary_df.empty:
+            return None
+
+        salary_df["month"] = pd.to_datetime(salary_df["date"]).dt.strftime("%Y-%m")
+        monthly_totals = salary_df.groupby("month")["amount"].sum()
+        recent = monthly_totals.sort_index().tail(months)
+        if recent.empty:
+            return None
+
+        return float(recent.mean())
+
     def get_debt_payments_over_time(self):
         """
         Aggregate debt (liability) payments by month over time.

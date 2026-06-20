@@ -67,6 +67,7 @@ class RetirementGoal(Base, TimestampMixin):
     bituach_leumi_eligible = Column(Boolean, nullable=False, default=1)
     bituach_leumi_monthly_estimate = Column(Float, nullable=False, default=2800.0)
     other_passive_income = Column(Float, nullable=False, default=0.0)
+    monthly_income = Column(Float, nullable=True)
 
     def __repr__(self):
         return f"<RetirementGoal(id={self.id}, age={self.current_age}, target={self.target_retirement_age})>"

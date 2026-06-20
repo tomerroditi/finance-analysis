@@ -34,6 +34,7 @@ class RetirementGoalUpsert(BaseModel):
     bituach_leumi_eligible: bool = True
     bituach_leumi_monthly_estimate: float = Field(2800.0, ge=0)
     other_passive_income: float = Field(0.0, ge=0)
+    monthly_income: Optional[float] = Field(None, ge=0)
 
 
 class RetirementGoalResponse(BaseModel):
@@ -54,6 +55,7 @@ class RetirementGoalResponse(BaseModel):
     bituach_leumi_eligible: bool
     bituach_leumi_monthly_estimate: float
     other_passive_income: float
+    monthly_income: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -136,6 +138,7 @@ class ScrapedDefaultsResponse(BaseModel):
     keren_hishtalmut_balance: Optional[float] = None
     keren_hishtalmut_monthly_contribution: Optional[float] = None
     pension_monthly_deposit: Optional[float] = None
+    avg_monthly_salary: Optional[float] = None
 
 
 @router.get("/goal", response_model=Optional[RetirementGoalResponse])

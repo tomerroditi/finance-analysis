@@ -58,6 +58,7 @@ function goalToForm(goal: RetirementGoal | null) {
       bituach_leumi_eligible: true,
       bituach_leumi_monthly_estimate: 2800,
       other_passive_income: 0,
+      monthly_income: 0,
     };
   }
   return {
@@ -76,6 +77,7 @@ function goalToForm(goal: RetirementGoal | null) {
     bituach_leumi_eligible: goal.bituach_leumi_eligible,
     bituach_leumi_monthly_estimate: goal.bituach_leumi_monthly_estimate,
     other_passive_income: goal.other_passive_income,
+    monthly_income: goal.monthly_income ?? 0,
   };
 }
 
@@ -118,6 +120,9 @@ export function RetirementGoalForm({
       }),
       ...(scrapedDefaults.pension_monthly_deposit != null && {
         pension_monthly_payout_estimate: scrapedDefaults.pension_monthly_deposit,
+      }),
+      ...(scrapedDefaults.avg_monthly_salary != null && {
+        monthly_income: scrapedDefaults.avg_monthly_salary,
       }),
     }));
   }
@@ -249,7 +254,7 @@ export function RetirementGoalForm({
   return (
     <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
       {/* Core Parameters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -294,9 +299,31 @@ export function RetirementGoalForm({
           value={form.monthly_expenses_in_retirement}
           onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
           min={0}
-          step={500}
           suffix="₪"
         />
+        <div>
+          <NumberField
+            label={t("earlyRetirement.form.monthlyIncome")}
+            value={form.monthly_income}
+            onChange={(v) => handleChange("monthly_income", v)}
+            min={0}
+            suffix="₪"
+          />
+          {scrapedDefaults?.avg_monthly_salary != null && (
+            <button
+              type="button"
+              onClick={() =>
+                handleChange("monthly_income", scrapedDefaults.avg_monthly_salary!)
+              }
+              className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+            >
+              <RefreshCw size={10} />
+              {t("earlyRetirement.form.useSalaryAvg", {
+                amount: ILS_FORMAT.format(scrapedDefaults.avg_monthly_salary),
+              })}
+            </button>
+          )}
+        </div>
         <NumberField
           label={t("earlyRetirement.form.expectedReturn")}
           value={form.expected_return_rate}
@@ -328,7 +355,6 @@ export function RetirementGoalForm({
                 handleChange("pension_monthly_payout_estimate", v)
               }
               min={0}
-              step={500}
               suffix="₪"
               tooltip={t("earlyRetirement.tooltips.pension")}
             />
@@ -419,7 +445,6 @@ export function RetirementGoalForm({
                 handleChange("bituach_leumi_monthly_estimate", Number(e.target.value))
               }
               min={0}
-              step={100}
               disabled={!form.bituach_leumi_eligible}
               className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               dir="ltr"
@@ -430,7 +455,6 @@ export function RetirementGoalForm({
             value={form.other_passive_income}
             onChange={(v) => handleChange("other_passive_income", v)}
             min={0}
-            step={500}
             suffix="₪"
           />
           <NumberField

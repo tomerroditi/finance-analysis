@@ -148,7 +148,23 @@
     "netBalanceOverTime": "Net Balance Over Time",
     "netWorthOverTime": "Net Worth Over Time",
     "cashFlow": "Cash Flow",
-    "incomeBySource": "Income by Source",
+    "incomeBySource": {
+      "title": "Income by source",
+      "total": "Total",
+      "source": "Source",
+      "amount": "Amount",
+      "share": "Share",
+      "breakdown": "Breakdown",
+      "empty": "No income in this range",
+      "range": {
+        "all": "All time",
+        "year": "This year",
+        "last12m": "Last 12 months",
+        "custom": "Custom…"
+      },
+      "from": "From",
+      "to": "To"
+    },
     "budgetProgress": "Budget Progress",
     "recentTransactions": "Recent Transactions",
     "financialHealth": "Financial Health",
@@ -264,23 +280,6 @@
       "heatmap": "Spending calendar",
       "charts": "Charts & analytics",
       "incomeBySource": "Income by source"
-    },
-    "incomeBySource": {
-      "title": "Income by source",
-      "total": "Total",
-      "source": "Source",
-      "amount": "Amount",
-      "share": "Share",
-      "breakdown": "Breakdown",
-      "empty": "No income in this range",
-      "range": {
-        "all": "All time",
-        "year": "This year",
-        "last12m": "Last 12 months",
-        "custom": "Custom…"
-      },
-      "from": "From",
-      "to": "To"
     }
   },
   "transactions": {
@@ -1134,7 +1133,9 @@
       "resetPlan": "Reset",
       "useScrapedKh": "Use scraped balance: {{amount}}",
       "useScrapedKhMonthly": "Use scraped deposit: {{amount}}",
-      "useScrapedPension": "Use scraped deposit: {{amount}}"
+      "useScrapedPension": "Use scraped deposit: {{amount}}",
+      "monthlyIncome": "Monthly Income",
+      "useSalaryAvg": "Use 6-month salary avg: {{amount}}"
     },
     "status": {
       "netWorth": "Net Worth",

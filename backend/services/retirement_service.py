@@ -62,6 +62,7 @@ class RetirementService:
             "bituach_leumi_eligible": bool(goal.bituach_leumi_eligible),
             "bituach_leumi_monthly_estimate": goal.bituach_leumi_monthly_estimate,
             "other_passive_income": goal.other_passive_income,
+            "monthly_income": goal.monthly_income,
         }
 
     def upsert_goal(self, **fields) -> dict:
@@ -107,6 +108,7 @@ class RetirementService:
                     "pension"
                 )
             ),
+            "avg_monthly_salary": self.analysis_service.get_avg_monthly_salary(),
         }
 
     def get_current_status(self) -> dict:
@@ -178,6 +180,15 @@ class RetirementService:
             raise EntityNotFoundException("Retirement goal not configured")
 
         status = self.get_current_status()
+
+        # If the user has set a manual monthly income, derive savings from it
+        # instead of the auto-calculated income/expenses averages.
+        manual_income = goal_data.get("monthly_income") or 0
+        if manual_income > 0:
+            status = {
+                **status,
+                "monthly_savings": manual_income - status["avg_monthly_expenses"],
+            }
 
         # FIRE number: annual expenses / withdrawal rate
         annual_expenses = goal_data["monthly_expenses_in_retirement"] * 12

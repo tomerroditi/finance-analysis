@@ -596,6 +596,7 @@ export interface RetirementGoal {
   bituach_leumi_eligible: boolean;
   bituach_leumi_monthly_estimate: number;
   other_passive_income: number;
+  monthly_income: number | null;
 }
 
 export interface RetirementStatus {
@@ -618,6 +619,7 @@ export interface ScrapedDefaults {
   keren_hishtalmut_balance: number | null;
   keren_hishtalmut_monthly_contribution: number | null;
   pension_monthly_deposit: number | null;
+  avg_monthly_salary: number | null;
 }
 
 export interface RetirementProjections {
