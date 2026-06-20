@@ -392,6 +392,13 @@ export const analyticsApi = {
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time"
     ),
+  getIncomeBySource: (start?: string, end?: string) =>
+    api.get<{
+      sources: { label: string; amount: number; share: number }[];
+      total: number;
+      start: string | null;
+      end: string | null;
+    }>("/analytics/income-by-source", { params: { start, end } }),
   getMonthlyExpenses: (excludePendingRefunds = true, includeProjects = false) =>
     api.get<{
       months: { month: string; expenses: number; project_expenses?: number }[];
