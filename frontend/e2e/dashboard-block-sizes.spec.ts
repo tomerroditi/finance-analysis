@@ -89,12 +89,14 @@ test.describe("Dashboard half-width blocks", () => {
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).maxHeight));
     expect(recentMaxH.every((h) => h === "none")).toBe(true);
 
-    // At least one demo card has more content than the cap and actually scrolls
-    // — proving the cap engages rather than every card just being short.
-    const anyScrolls = await page
-      .locator("[data-card-id] > *")
-      .evaluateAll((els) => els.some((el) => el.scrollHeight > el.clientHeight + 1));
-    expect(anyScrolls).toBe(true);
+    // At least one card is clamped to the cap rather than sized to its own
+    // content — proving the cap binds rather than every card just being short.
+    // The full-width chart cards carry a fixed ~600px chart region plus a
+    // header, so their natural height exceeds the cap and they clamp to it
+    // exactly. (Chart cards resize their plot to fit instead of overflowing at
+    // the card level; list-heavy cards scroll inside their own inner regions.)
+    const tallest = Math.max(...ids.map((id) => boxes[id].height));
+    expect(tallest, "a card should reach the height cap").toBeGreaterThanOrEqual(CAP - 2);
   });
 
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {
