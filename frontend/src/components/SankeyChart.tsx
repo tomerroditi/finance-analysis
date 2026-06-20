@@ -1,4 +1,4 @@
-import Plot from "react-plotly.js";
+import Plot from "./common/LazyPlot";
 import { chartTheme, plotlyConfig, CHART_COLORS, CHART_SURFACE_COLOR } from "../utils/plotlyLocale";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";

@@ -12,6 +12,13 @@ import { createStore, get, set, del } from "idb-keyval";
 const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   "scrapingStatus",
   "scraping-status",
+  // Mirrors the SW's /api/scraping/* exclusion (rules/frontend_pwa.md says
+  // both cache layers must agree).
+  "last-scrapes",
+  // Hits /api/credentials/providers — mirrors the SW's /api/credentials*
+  // exclusion; the key itself doesn't contain "credential" so the heuristic
+  // below misses it.
+  "providers",
   "rule-preview",
   "rule-conflicts",
   "retirement-preview",
@@ -116,4 +123,6 @@ export function shouldDehydrateQuery(query: Query): boolean {
  * type was renamed). A mismatch causes the persister to discard the saved
  * cache instead of hydrating stale data into incompatible components.
  */
-export const PERSIST_BUSTER = "v1";
+// v2: "last-scrapes" and "providers" became non-persistable; discard caches
+// that still hold them.
+export const PERSIST_BUSTER = "v2";

@@ -78,7 +78,7 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
 
   test("double-tap enters zoom mode; native drag zooms and persists", async ({ page }) => {
     await navigateTo(page, "/");
-    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
     const before = await markChart(page);
     expect(before, "expected a zoomable cartesian chart").not.toBeNull();
 
@@ -118,7 +118,7 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
 
   test("touching outside the chart leaves zoom mode", async ({ page }) => {
     await navigateTo(page, "/");
-    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
     await markChart(page);
 
     await doubleTap(page);

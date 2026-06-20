@@ -138,4 +138,53 @@ class TestBudgetMonthOverridePipeline:
         )
 
         mapping = override_svc.get_override_map()
-        assert mapping["transaction"][uid] == (2024, 2)
+        assert mapping["transaction"][("credit_card_transactions", uid)] == (2024, 2)
+
+    def test_override_does_not_leak_across_tables_with_same_uid(
+        self, db_session: Session, seed_base_transactions
+    ):
+        """Verify an override only moves the row in its own table.
+
+        ``unique_id`` is a per-table auto-increment, so the same integer
+        exists in the bank and credit-card tables. An override stored for a
+        credit-card transaction must not re-month the bank transaction that
+        happens to share its unique_id.
+        """
+        import pandas as pd
+
+        budget_svc = MonthlyBudgetService(db_session)
+        override_svc = BudgetMonthOverrideService(db_session)
+        uid = _cc_jan_5_uid(db_session)
+
+        # Stored for the credit-card table only (repo-level to keep the
+        # colliding bank uid fully synthetic and independent of seed dates).
+        override_svc.repo.upsert(
+            source_type="transaction",
+            source_id=uid,
+            source_table="credit_card_transactions",
+            override_year=2024,
+            override_month=2,
+        )
+
+        expenses = pd.DataFrame(
+            [
+                {
+                    "unique_id": uid,
+                    "source": "credit_card_transactions",
+                    "date": "2024-01-20",
+                    "amount": -250.0,
+                },
+                {
+                    "unique_id": uid,
+                    "source": "bank_transactions",
+                    "date": "2024-01-20",
+                    "amount": -99.0,
+                },
+            ]
+        )
+        result = budget_svc._apply_month_overrides(expenses)
+
+        cc_row = result[result["source"] == "credit_card_transactions"].iloc[0]
+        bank_row = result[result["source"] == "bank_transactions"].iloc[0]
+        assert int(cc_row["budget_month"]) == 2
+        assert int(bank_row["budget_month"]) == 1

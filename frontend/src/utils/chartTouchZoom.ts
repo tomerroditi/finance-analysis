@@ -1,4 +1,3 @@
-import Plotly from "plotly.js/dist/plotly";
 import i18n from "../i18n";
 
 /**
@@ -40,6 +39,18 @@ function isCartesian(gd: PlotlyGraphDiv): boolean {
   return Array.isArray(gd._fullLayout?.xaxis?.range);
 }
 
+/**
+ * Plotly is imported dynamically so this module doesn't pull the ~3 MB
+ * library into the main bundle (charts load it lazily via LazyPlot). By the
+ * time a chart can be touched, the chunk is already loaded — the dynamic
+ * import resolves from cache.
+ */
+function relayout(gd: PlotlyGraphDiv, layout: { dragmode: "zoom" | false }): void {
+  void import("plotly.js/dist/plotly").then(({ default: Plotly }) =>
+    Plotly.relayout(gd, layout)
+  );
+}
+
 export function installChartTouchZoom(): () => void {
   let pendingTime = 0;
   let pendingX = 0;
@@ -66,7 +77,7 @@ export function installChartTouchZoom(): () => void {
     zoomGd = gd;
     gd.classList.add("chart-zoom-active");
     showHint(gd);
-    void Plotly.relayout(gd, { dragmode: "zoom" });
+    relayout(gd, { dragmode: "zoom" });
   };
 
   const exitZoom = () => {
@@ -77,7 +88,7 @@ export function installChartTouchZoom(): () => void {
     hint?.remove();
     hint = null;
     // Drop back to scroll mode; the zoom itself stays (uirevision preserves it).
-    void Plotly.relayout(gd, { dragmode: false });
+    relayout(gd, { dragmode: false });
   };
 
   const onStart = (e: TouchEvent) => {
@@ -89,7 +100,7 @@ export function installChartTouchZoom(): () => void {
       // double-tap (its native reset). Re-assert dragmode in case a re-render
       // reset it back to the themed default.
       if (gd === zoomGd) {
-        if (gd._fullLayout?.dragmode !== "zoom") void Plotly.relayout(gd, { dragmode: "zoom" });
+        if (gd._fullLayout?.dragmode !== "zoom") relayout(gd, { dragmode: "zoom" });
         return;
       }
       // Touched elsewhere → leave zoom mode, then fall through so this touch is

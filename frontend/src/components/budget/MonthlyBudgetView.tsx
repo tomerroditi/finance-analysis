@@ -527,7 +527,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
                       <ChevronUp size={20} />
                     )}
                   </span>
-                  <span className="font-semibold text-[var(--text-default)] truncate">
+                  <span className="font-semibold text-[var(--text-default)] truncate" dir="auto">
                     {totalItem.rule.name}
                   </span>
                 </button>

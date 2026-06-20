@@ -142,6 +142,7 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 
 ## Gotchas
 
+- **`unique_id` is a per-table auto-increment** — bank #5 and credit-card #5 are different transactions. Never key merged/cross-table data by bare `unique_id`; always pair it with the table (`source` / `source_table`). See `.claude/rules/backend_repositories.md` → "unique_id Is Per-Table"
 - Passwords stored in OS Keyring, never in YAML or code
 - SQLite uses `NullPool` and `check_same_thread=False` for FastAPI compatibility
 - SQLite stores booleans as `0`/`1` integers — in React JSX, `{0 && <Component />}` renders "0". Always use `!!value &&` or `value > 0 &&` for SQLite boolean fields in JSX conditionals
