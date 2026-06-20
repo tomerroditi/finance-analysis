@@ -35,6 +35,9 @@ class RetirementGoalUpsert(BaseModel):
     bituach_leumi_monthly_estimate: float = Field(2800.0, ge=0)
     other_passive_income: float = Field(0.0, ge=0)
     monthly_income: Optional[float] = Field(None, ge=0)
+    net_worth_override: Optional[float] = Field(None, ge=0)
+    monthly_expenses_override: Optional[float] = Field(None, ge=0)
+    total_investments_override: Optional[float] = Field(None, ge=0)
 
 
 class RetirementGoalResponse(BaseModel):
@@ -56,6 +59,9 @@ class RetirementGoalResponse(BaseModel):
     bituach_leumi_monthly_estimate: float
     other_passive_income: float
     monthly_income: Optional[float] = None
+    net_worth_override: Optional[float] = None
+    monthly_expenses_override: Optional[float] = None
+    total_investments_override: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

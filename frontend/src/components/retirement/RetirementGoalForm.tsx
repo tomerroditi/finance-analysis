@@ -11,8 +11,19 @@ import {
   RotateCcw,
   Info,
   RefreshCw,
+  TrendingUp,
+  Wallet,
+  PiggyBank,
+  ArrowUpDown,
+  DollarSign,
+  Percent,
 } from "lucide-react";
-import { retirementApi, type RetirementGoal } from "../../services/api";
+import {
+  retirementApi,
+  type RetirementGoal,
+  type RetirementStatus,
+} from "../../services/api";
+import { formatCurrency } from "../../utils/numberFormatting";
 
 interface PendingAdjust {
   field: string;
@@ -21,6 +32,7 @@ interface PendingAdjust {
 
 interface Props {
   goal: RetirementGoal | null;
+  status: RetirementStatus | null;
   isCalculating?: boolean;
   pendingAdjust?: PendingAdjust | null;
   onAdjustApplied?: () => void;
@@ -41,7 +53,10 @@ function formToPayload(form: ReturnType<typeof goalToForm>) {
   };
 }
 
-function goalToForm(goal: RetirementGoal | null) {
+function goalToForm(
+  goal: RetirementGoal | null,
+  status: RetirementStatus | null = null,
+) {
   if (!goal) {
     return {
       current_age: 30,
@@ -58,7 +73,10 @@ function goalToForm(goal: RetirementGoal | null) {
       bituach_leumi_eligible: true,
       bituach_leumi_monthly_estimate: 2800,
       other_passive_income: 0,
-      monthly_income: 0,
+      monthly_income: Math.round(status?.avg_monthly_income ?? 0),
+      net_worth_override: Math.round(status?.net_worth ?? 0),
+      monthly_expenses_override: Math.round(status?.avg_monthly_expenses ?? 0),
+      total_investments_override: Math.round(status?.total_investments ?? 0),
     };
   }
   return {
@@ -77,12 +95,22 @@ function goalToForm(goal: RetirementGoal | null) {
     bituach_leumi_eligible: goal.bituach_leumi_eligible,
     bituach_leumi_monthly_estimate: goal.bituach_leumi_monthly_estimate,
     other_passive_income: goal.other_passive_income,
-    monthly_income: goal.monthly_income ?? 0,
+    monthly_income:
+      goal.monthly_income ?? Math.round(status?.avg_monthly_income ?? 0),
+    net_worth_override:
+      goal.net_worth_override ?? Math.round(status?.net_worth ?? 0),
+    monthly_expenses_override:
+      goal.monthly_expenses_override ??
+      Math.round(status?.avg_monthly_expenses ?? 0),
+    total_investments_override:
+      goal.total_investments_override ??
+      Math.round(status?.total_investments ?? 0),
   };
 }
 
 export function RetirementGoalForm({
   goal,
+  status,
   isCalculating,
   pendingAdjust,
   onAdjustApplied,
@@ -91,13 +119,35 @@ export function RetirementGoalForm({
   const queryClient = useQueryClient();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  const [form, setForm] = useState(() => goalToForm(goal));
+  const [form, setForm] = useState(() => goalToForm(goal, status));
 
   // Sync form from saved goal on first load
   const [goalLoaded, setGoalLoaded] = useState(!!goal);
   if (!goalLoaded && goal) {
     setGoalLoaded(true);
-    setForm(goalToForm(goal));
+    setForm(goalToForm(goal, status));
+  }
+
+  // Fill snapshot fields from status when they are still at the default (0)
+  // Handles the case where status arrives after the initial form state is set.
+  const [statusApplied, setStatusApplied] = useState(!!status);
+  if (!statusApplied && status) {
+    setStatusApplied(true);
+    setForm((prev) => ({
+      ...prev,
+      ...(prev.net_worth_override === 0 && {
+        net_worth_override: Math.round(status.net_worth),
+      }),
+      ...(prev.monthly_expenses_override === 0 && {
+        monthly_expenses_override: Math.round(status.avg_monthly_expenses),
+      }),
+      ...(prev.total_investments_override === 0 && {
+        total_investments_override: Math.round(status.total_investments),
+      }),
+      ...(prev.monthly_income === 0 && {
+        monthly_income: Math.round(status.avg_monthly_income),
+      }),
+    }));
   }
 
   const { data: scrapedDefaults } = useQuery({
@@ -209,10 +259,10 @@ export function RetirementGoalForm({
 
   const handleReset = () => {
     if (!goal) return;
-    setForm(goalToForm(goal));
+    setForm(goalToForm(goal, status));
     setHasUnsavedChanges(false);
     // Re-preview with saved values
-    const payload = formToPayload(goalToForm(goal));
+    const payload = formToPayload(goalToForm(goal, status));
     Promise.all([
       retirementApi.previewProjections(payload),
       retirementApi.previewSuggestions(payload),
@@ -251,10 +301,153 @@ export function RetirementGoalForm({
     saveMutation.isPending ||
     !!isCalculating;
 
+  // Compute derived snapshot values from current form inputs
+  const effectiveIncome =
+    form.monthly_income || (status?.avg_monthly_income ?? 0);
+  const effectiveExpenses =
+    form.monthly_expenses_override || (status?.avg_monthly_expenses ?? 0);
+  const computedSavings = effectiveIncome - effectiveExpenses;
+  const computedSavingsRate =
+    effectiveIncome > 0 ? (computedSavings / effectiveIncome) * 100 : 0;
+
   return (
     <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
+      {/* Financial Snapshot — editable current-status inputs */}
+      <div className="space-y-3 p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
+        <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          {t("earlyRetirement.sections.currentStatus")}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <SnapshotField
+            label={t("earlyRetirement.status.netWorth")}
+            icon={TrendingUp}
+            iconColor="text-emerald-400"
+            value={form.net_worth_override}
+            statusValue={Math.round(status?.net_worth ?? 0)}
+            onChange={(v) => handleChange("net_worth_override", v)}
+            onReset={() =>
+              handleChange(
+                "net_worth_override",
+                Math.round(status?.net_worth ?? 0),
+              )
+            }
+          />
+          <div>
+            <SnapshotField
+              label={t("earlyRetirement.status.avgMonthlyIncome")}
+              icon={DollarSign}
+              iconColor="text-blue-400"
+              value={form.monthly_income}
+              statusValue={Math.round(status?.avg_monthly_income ?? 0)}
+              onChange={(v) => handleChange("monthly_income", v)}
+              onReset={() =>
+                handleChange(
+                  "monthly_income",
+                  Math.round(status?.avg_monthly_income ?? 0),
+                )
+              }
+            />
+            {scrapedDefaults?.avg_monthly_salary != null && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleChange(
+                    "monthly_income",
+                    scrapedDefaults.avg_monthly_salary!,
+                  )
+                }
+                className="flex items-center gap-1 mt-1 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
+              >
+                <RefreshCw size={10} />
+                {t("earlyRetirement.form.useSalaryAvg", {
+                  amount: ILS_FORMAT.format(scrapedDefaults.avg_monthly_salary),
+                })}
+              </button>
+            )}
+          </div>
+          <SnapshotField
+            label={t("earlyRetirement.status.avgMonthlyExpenses")}
+            icon={Wallet}
+            iconColor="text-rose-400"
+            value={form.monthly_expenses_override}
+            statusValue={Math.round(status?.avg_monthly_expenses ?? 0)}
+            onChange={(v) => handleChange("monthly_expenses_override", v)}
+            onReset={() =>
+              handleChange(
+                "monthly_expenses_override",
+                Math.round(status?.avg_monthly_expenses ?? 0),
+              )
+            }
+          />
+          {/* Monthly Savings — computed */}
+          <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]">
+            <div className="flex items-center gap-1.5 mb-2">
+              <PiggyBank
+                size={14}
+                className={
+                  computedSavings >= 0 ? "text-emerald-400" : "text-rose-400"
+                }
+              />
+              <span className="text-xs text-[var(--text-muted)] truncate">
+                {t("earlyRetirement.status.monthlySavings")}
+              </span>
+            </div>
+            <div
+              className={`text-sm font-bold ${computedSavings >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+              dir="ltr"
+            >
+              {formatCurrency(computedSavings)}
+            </div>
+            <div className="text-xs text-[var(--text-muted)] mt-0.5 italic">
+              {t("earlyRetirement.status.computed")}
+            </div>
+          </div>
+          {/* Savings Rate — computed */}
+          <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Percent
+                size={14}
+                className={
+                  computedSavingsRate >= 50
+                    ? "text-emerald-400"
+                    : computedSavingsRate >= 20
+                      ? "text-amber-400"
+                      : "text-rose-400"
+                }
+              />
+              <span className="text-xs text-[var(--text-muted)] truncate">
+                {t("earlyRetirement.status.savingsRate")}
+              </span>
+            </div>
+            <div
+              className={`text-sm font-bold ${computedSavingsRate >= 50 ? "text-emerald-400" : computedSavingsRate >= 20 ? "text-amber-400" : "text-rose-400"}`}
+              dir="ltr"
+            >
+              {computedSavingsRate.toFixed(1)}%
+            </div>
+            <div className="text-xs text-[var(--text-muted)] mt-0.5 italic">
+              {t("earlyRetirement.status.computed")}
+            </div>
+          </div>
+          <SnapshotField
+            label={t("earlyRetirement.status.totalInvestments")}
+            icon={ArrowUpDown}
+            iconColor="text-purple-400"
+            value={form.total_investments_override}
+            statusValue={Math.round(status?.total_investments ?? 0)}
+            onChange={(v) => handleChange("total_investments_override", v)}
+            onReset={() =>
+              handleChange(
+                "total_investments_override",
+                Math.round(status?.total_investments ?? 0),
+              )
+            }
+          />
+        </div>
+      </div>
+
       {/* Core Parameters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
         <NumberField
           label={t("earlyRetirement.form.currentAge")}
           value={form.current_age}
@@ -301,29 +494,6 @@ export function RetirementGoalForm({
           min={0}
           suffix="₪"
         />
-        <div>
-          <NumberField
-            label={t("earlyRetirement.form.monthlyIncome")}
-            value={form.monthly_income}
-            onChange={(v) => handleChange("monthly_income", v)}
-            min={0}
-            suffix="₪"
-          />
-          {scrapedDefaults?.avg_monthly_salary != null && (
-            <button
-              type="button"
-              onClick={() =>
-                handleChange("monthly_income", scrapedDefaults.avg_monthly_salary!)
-              }
-              className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
-            >
-              <RefreshCw size={10} />
-              {t("earlyRetirement.form.useSalaryAvg", {
-                amount: ILS_FORMAT.format(scrapedDefaults.avg_monthly_salary),
-              })}
-            </button>
-          )}
-        </div>
         <NumberField
           label={t("earlyRetirement.form.expectedReturn")}
           value={form.expected_return_rate}
@@ -558,6 +728,56 @@ function NumberField({
         step={step}
         disabled={disabled}
         className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        dir="ltr"
+      />
+    </div>
+  );
+}
+
+function SnapshotField({
+  label,
+  icon: Icon,
+  iconColor,
+  value,
+  statusValue,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  icon: React.ElementType;
+  iconColor: string;
+  value: number;
+  statusValue: number;
+  onChange: (value: number) => void;
+  onReset: () => void;
+}) {
+  const isOverridden = value !== statusValue && value !== 0;
+  return (
+    <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Icon size={14} className={iconColor} />
+          <span className="text-xs text-[var(--text-muted)] truncate">{label}</span>
+        </div>
+        {isOverridden && (
+          <button
+            type="button"
+            onClick={onReset}
+            title="Reset to calculated"
+            className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors ms-1"
+          >
+            <RotateCcw size={11} />
+          </button>
+        )}
+      </div>
+      <input
+        type="number"
+        value={value || ""}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? statusValue : Number(e.target.value))
+        }
+        min={0}
+        className="w-full px-1.5 py-1 text-sm font-semibold bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         dir="ltr"
       />
     </div>

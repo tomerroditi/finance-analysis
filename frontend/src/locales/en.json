@@ -1143,7 +1143,8 @@
       "avgMonthlyExpenses": "Avg. Monthly Expenses",
       "monthlySavings": "Monthly Savings",
       "savingsRate": "Savings Rate",
-      "totalInvestments": "Total Investments"
+      "totalInvestments": "Total Investments",
+      "computed": "auto-calculated"
     },
     "projections": {
       "fireNumber": "FIRE Number",

@@ -1143,7 +1143,8 @@
       "avgMonthlyExpenses": "הוצאות חודשיות ממוצעות",
       "monthlySavings": "חיסכון חודשי",
       "savingsRate": "שיעור חיסכון",
-      "totalInvestments": "סה\"כ השקעות"
+      "totalInvestments": "סה\"כ השקעות",
+      "computed": "מחושב אוטומטית"
     },
     "projections": {
       "fireNumber": "מספר FIRE",

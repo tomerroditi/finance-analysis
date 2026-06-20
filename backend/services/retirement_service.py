@@ -63,6 +63,9 @@ class RetirementService:
             "bituach_leumi_monthly_estimate": goal.bituach_leumi_monthly_estimate,
             "other_passive_income": goal.other_passive_income,
             "monthly_income": goal.monthly_income,
+            "net_worth_override": goal.net_worth_override,
+            "monthly_expenses_override": goal.monthly_expenses_override,
+            "total_investments_override": goal.total_investments_override,
         }
 
     def upsert_goal(self, **fields) -> dict:
@@ -181,13 +184,34 @@ class RetirementService:
 
         status = self.get_current_status()
 
-        # If the user has set a manual monthly income, derive savings from it
-        # instead of the auto-calculated income/expenses averages.
-        manual_income = goal_data.get("monthly_income") or 0
-        if manual_income > 0:
+        # Apply manual status overrides from the goal (0 / None = use calculated)
+        if goal_data.get("net_worth_override"):
+            status = {**status, "net_worth": goal_data["net_worth_override"]}
+
+        effective_expenses = (
+            goal_data["monthly_expenses_override"]
+            if goal_data.get("monthly_expenses_override")
+            else status["avg_monthly_expenses"]
+        )
+        effective_income = (
+            goal_data["monthly_income"]
+            if goal_data.get("monthly_income")
+            else status["avg_monthly_income"]
+        )
+
+        if goal_data.get("monthly_income") or goal_data.get("monthly_expenses_override"):
+            monthly_savings = effective_income - effective_expenses
+            savings_rate = (
+                round(monthly_savings / effective_income * 100, 1)
+                if effective_income > 0
+                else 0.0
+            )
             status = {
                 **status,
-                "monthly_savings": manual_income - status["avg_monthly_expenses"],
+                "avg_monthly_income": effective_income,
+                "avg_monthly_expenses": effective_expenses,
+                "monthly_savings": monthly_savings,
+                "savings_rate": savings_rate,
             }
 
         # FIRE number: annual expenses / withdrawal rate

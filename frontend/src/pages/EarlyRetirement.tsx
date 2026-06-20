@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Target, BarChart3, Activity } from "lucide-react";
+import { Target, BarChart3 } from "lucide-react";
 import {
   retirementApi,
   type RetirementSuggestions,
 } from "../services/api";
 import { RetirementGoalForm } from "../components/retirement/RetirementGoalForm";
-import { RetirementStatus } from "../components/retirement/RetirementStatus";
 import { RetirementProjections } from "../components/retirement/RetirementProjections";
 
 type SuggestionField = keyof RetirementSuggestions;
@@ -24,7 +23,7 @@ export function EarlyRetirement() {
     queryFn: () => retirementApi.getGoal().then((r) => r.data),
   });
 
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const { data: status } = useQuery({
     queryKey: ["retirement", "status"],
     queryFn: () => retirementApi.getStatus().then((r) => r.data),
   });
@@ -58,19 +57,7 @@ export function EarlyRetirement() {
 
   return (
     <div className="flex flex-col gap-4 md:gap-6 p-4 md:p-6">
-      {/* Section 1: Current Status */}
-      <Section
-        icon={<Activity size={18} className="text-emerald-400" />}
-        title={t("earlyRetirement.sections.currentStatus")}
-      >
-        {statusLoading ? (
-          <StatusSkeleton />
-        ) : status ? (
-          <RetirementStatus status={status} />
-        ) : null}
-      </Section>
-
-      {/* Section 2: Retirement Goals */}
+      {/* Section 1: Retirement Goals (includes editable financial snapshot) */}
       <Section
         icon={<Target size={18} className="text-blue-400" />}
         title={t("earlyRetirement.sections.goals")}
@@ -80,6 +67,7 @@ export function EarlyRetirement() {
         ) : (
           <RetirementGoalForm
             goal={goal ?? null}
+            status={status ?? null}
             isCalculating={isBusy}
             pendingAdjust={pendingAdjust}
             onAdjustApplied={() => setPendingAdjust(null)}
@@ -127,19 +115,6 @@ function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-function StatusSkeleton() {
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className="h-24 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)] animate-pulse"
-        />
-      ))}
-    </div>
   );
 }
 

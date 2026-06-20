@@ -597,6 +597,9 @@ export interface RetirementGoal {
   bituach_leumi_monthly_estimate: number;
   other_passive_income: number;
   monthly_income: number | null;
+  net_worth_override: number | null;
+  monthly_expenses_override: number | null;
+  total_investments_override: number | null;
 }
 
 export interface RetirementStatus {
