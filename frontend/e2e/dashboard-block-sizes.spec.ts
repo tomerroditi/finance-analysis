@@ -67,20 +67,27 @@ test.describe("Dashboard half-width blocks", () => {
     expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
     expect(Math.abs(boxes.heatmap.height - boxes.income_by_source.height)).toBeLessThan(2);
 
-    // Every block enables internal scrolling and is height-capped, so content
-    // taller than the cap scrolls within the block instead of stretching the
-    // row.
-    const childStyles = await page
+    // Every block enables internal scrolling.
+    const allOverflows = await page
       .locator("[data-card-id] > *")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).overflowY));
+    expect(allOverflows.length).toBeGreaterThan(0);
+    expect(allOverflows.every((o) => o === "auto")).toBe(true);
+
+    // All cards except `recent` are height-capped. `recent` is intentionally
+    // uncapped so it can show more transactions than the cap allows.
+    const cappedStyles = await page
+      .locator("[data-card-id]:not([data-card-id='recent']) > *")
       .evaluateAll((els) =>
-        els.map((el) => {
-          const cs = getComputedStyle(el);
-          return { overflowY: cs.overflowY, maxHeight: cs.maxHeight };
-        }),
+        els.map((el) => getComputedStyle(el).maxHeight),
       );
-    expect(childStyles.length).toBeGreaterThan(0);
-    expect(childStyles.every((s) => s.overflowY === "auto")).toBe(true);
-    expect(childStyles.every((s) => s.maxHeight === `${CAP}px`)).toBe(true);
+    expect(cappedStyles.length).toBeGreaterThan(0);
+    expect(cappedStyles.every((h) => h === `${CAP}px`)).toBe(true);
+
+    const recentMaxH = await page
+      .locator("[data-card-id='recent'] > *")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).maxHeight));
+    expect(recentMaxH.every((h) => h === "none")).toBe(true);
 
     // At least one demo card has more content than the cap and actually scrolls
     // — proving the cap engages rather than every card just being short.

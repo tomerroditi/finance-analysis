@@ -32,8 +32,9 @@ test.describe("Dashboard spending calendar months", () => {
     const card = page.locator('[data-card-id="heatmap"]');
     await expect(card).toBeVisible({ timeout: 45_000 });
     // Each month renders a weekday header: a 7-column grid whose first cell is a
-    // single-letter weekday label.
-    return card.locator("div.grid.grid-cols-7.mb-1\\.5").count();
+    // single-letter weekday label. The header uses mb-1 (gap was mb-1.5 before
+    // the compact-cell refactor).
+    return card.locator("div.grid.grid-cols-7.mb-1").count();
   }
 
   test("shows two months at half-row width (>=lg)", async ({ page }) => {
