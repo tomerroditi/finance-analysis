@@ -46,25 +46,55 @@ test.describe("Dashboard half-width blocks", () => {
     expect(charts.width).toBeGreaterThan(budget.width * 1.8);
   });
 
-  test("every block is one fixed height with internal scroll (>=lg)", async ({ page }) => {
+  test("blocks are capped and scroll overflow; paired cards share a row height (>=lg)", async ({
+    page,
+  }) => {
+    // 39rem at the default 16px root font size — the max card height.
+    const CAP = 624;
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/");
 
     const ids = ["budget", "recent", "heatmap", "income_by_source", "charts"];
-    const heights: number[] = [];
-    for (const id of ids) heights.push((await boxOf(page, id)).height);
+    const boxes: Record<string, { height: number }> = {};
+    for (const id of ids) boxes[id] = await boxOf(page, id);
 
-    // All blocks (half and full alike) are the same fixed height.
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(2);
+    // No block grows past the cap — taller content scrolls inside instead.
+    for (const id of ids) {
+      expect(boxes[id].height, `${id} should not exceed the cap`).toBeLessThanOrEqual(CAP + 2);
+    }
 
-    // Every block fills its cell and enables internal scrolling, so content
-    // that exceeds the fixed height scrolls within the block instead of
-    // stretching the row.
-    const overflowYs = await page
+    // Two half cards sharing a row are the same height (the taller of the two).
+    expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
+    expect(Math.abs(boxes.heatmap.height - boxes.income_by_source.height)).toBeLessThan(2);
+
+    // Every block enables internal scrolling.
+    const allOverflows = await page
       .locator("[data-card-id] > *")
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).overflowY));
-    expect(overflowYs.length).toBeGreaterThan(0);
-    expect(overflowYs.every((o) => o === "auto")).toBe(true);
+    expect(allOverflows.length).toBeGreaterThan(0);
+    expect(allOverflows.every((o) => o === "auto")).toBe(true);
+
+    // All cards except `recent` are height-capped. `recent` is intentionally
+    // uncapped so it can show more transactions than the cap allows.
+    const cappedStyles = await page
+      .locator("[data-card-id]:not([data-card-id='recent']) > *")
+      .evaluateAll((els) =>
+        els.map((el) => getComputedStyle(el).maxHeight),
+      );
+    expect(cappedStyles.length).toBeGreaterThan(0);
+    expect(cappedStyles.every((h) => h === `${CAP}px`)).toBe(true);
+
+    const recentMaxH = await page
+      .locator("[data-card-id='recent'] > *")
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).maxHeight));
+    expect(recentMaxH.every((h) => h === "none")).toBe(true);
+
+    // At least one demo card has more content than the cap and actually scrolls
+    // — proving the cap engages rather than every card just being short.
+    const anyScrolls = await page
+      .locator("[data-card-id] > *")
+      .evaluateAll((els) => els.some((el) => el.scrollHeight > el.clientHeight + 1));
+    expect(anyScrolls).toBe(true);
   });
 
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {
