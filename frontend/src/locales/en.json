@@ -262,7 +262,24 @@
       "recurring": "Subscriptions & recurring",
       "goals": "Savings goals",
       "heatmap": "Spending calendar",
-      "charts": "Charts & analytics"
+      "charts": "Charts & analytics",
+      "incomeBySource": "Income by source"
+    },
+    "incomeBySource": {
+      "title": "Income by source",
+      "total": "Total",
+      "source": "Source",
+      "amount": "Amount",
+      "share": "Share",
+      "empty": "No income in this range",
+      "range": {
+        "all": "All time",
+        "year": "This year",
+        "last12m": "Last 12 months",
+        "custom": "Custom…"
+      },
+      "from": "From",
+      "to": "To"
     }
   },
   "transactions": {
