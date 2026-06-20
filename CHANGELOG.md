@@ -1,3 +1,9 @@
+## v1.37.0 (2026-06-20)
+
+### Feat
+
+- **dashboard**: dynamic card sizing with content-driven rows and spending calendar improvements
+
 ## v1.36.0 (2026-06-20)
 
 ### Feat
