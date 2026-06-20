@@ -1,3 +1,9 @@
+## v1.37.1 (2026-06-20)
+
+### Refactor
+
+- **dashboard**: compact recent transactions rows and remove auto-tag chip
+
 ## v1.37.0 (2026-06-20)
 
 ### Feat
