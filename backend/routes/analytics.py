@@ -4,6 +4,8 @@ Analytics API routes.
 Provides endpoints for financial analysis and reporting.
 """
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -141,6 +143,30 @@ async def get_income_by_source_over_time(
     """
     service = AnalysisService(db)
     return service.get_income_by_source_over_time()
+
+
+@router.get("/income-by-source")
+async def get_income_by_source(
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    db: Session = Depends(get_database),
+) -> dict:
+    """Return total income amount per source (category+tag) for a date window.
+
+    Parameters
+    ----------
+    start, end : date | None
+        Inclusive ``YYYY-MM-DD`` bounds. Omit both for all-time.
+
+    Returns
+    -------
+    dict
+        ``{sources: [{label, amount, share}], total, start, end}`` with sources
+        sorted by amount descending. Prior Wealth and credit-card source are
+        excluded.
+    """
+    service = AnalysisService(db)
+    return service.get_income_by_source(start=start, end=end)
 
 
 @router.get("/monthly-expenses")

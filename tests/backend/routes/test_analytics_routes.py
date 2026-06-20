@@ -114,3 +114,29 @@ class TestAnalyticsRoutes:
         response = test_client.get("/api/analytics/income-by-source-over-time")
         assert response.status_code == 200
         assert response.json() == []
+
+
+class TestIncomeBySourceRoute:
+    """Tests for the GET /api/analytics/income-by-source endpoint."""
+
+    def test_get_income_by_source_all_time(self, test_client, seed_base_transactions):
+        """GET /api/analytics/income-by-source with no window returns null bounds."""
+        response = test_client.get("/api/analytics/income-by-source")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert isinstance(data["sources"], list)
+        assert "total" in data
+        assert data["start"] is None
+        assert data["end"] is None
+
+    def test_get_income_by_source_date_range(self, test_client, seed_base_transactions):
+        """GET /api/analytics/income-by-source echoes the requested date window."""
+        response = test_client.get(
+            "/api/analytics/income-by-source",
+            params={"start": "2024-01-01", "end": "2024-01-31"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["start"] == "2024-01-01"
+        assert data["end"] == "2024-01-31"
