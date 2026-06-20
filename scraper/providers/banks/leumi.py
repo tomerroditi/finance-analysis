@@ -44,6 +44,11 @@ INVALID_PASSWORD_MSG = (
 
 SHEKEL_CURRENCY = "ILS"
 
+# Leumi redesigned its forced-password-change flow (upstream 2026-05-31,
+# commit ddec311). The old URL/`form[action="/changepassword"]` markers no
+# longer match; the modal is now detected by the new-password input field.
+CHANGE_PASSWORD_MODAL_SELECTOR = 'form input[name="newPwd"]'
+
 
 def _remove_special_characters(s: str) -> str:
     """Remove non-numeric characters except dash and slash."""
@@ -151,7 +156,7 @@ async def _wait_for_post_login(page) -> None:
             ),
             asyncio.create_task(
                 wait_until_element_found(
-                    page, 'form[action="/changepassword"]', only_visible=True, timeout=60000
+                    page, CHANGE_PASSWORD_MODAL_SELECTOR, only_visible=True, timeout=60000
                 )
             ),
         ],
@@ -191,11 +196,15 @@ def _get_possible_login_results(page) -> dict[LoginResult, list]:
         )
         return bool(error_message and error_message.startswith(ACCOUNT_BLOCKED_MSG))
 
+    async def is_change_password(**kwargs):
+        target = kwargs.get("page", page)
+        return bool(await target.query_selector(CHANGE_PASSWORD_MODAL_SELECTOR))
+
     return {
         LoginResult.SUCCESS: [re.compile(r"ebanking/SO/SPA\.aspx", re.IGNORECASE)],
         LoginResult.INVALID_PASSWORD: [is_invalid_password],
         LoginResult.ACCOUNT_BLOCKED: [is_account_blocked],
-        LoginResult.CHANGE_PASSWORD: ["https://hb2.bankleumi.co.il/authenticate"],
+        LoginResult.CHANGE_PASSWORD: [is_change_password],
     }
 
 

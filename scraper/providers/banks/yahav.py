@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import date, datetime, timedelta
+
+from dateutil.relativedelta import relativedelta
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
@@ -11,6 +14,7 @@ from scraper.models.transaction import Transaction, TransactionStatus, Transacti
 from scraper.utils import (
     click_button,
     element_present_on_page,
+    page_eval,
     page_eval_all,
     wait_for_navigation,
     wait_until_element_disappear,
@@ -27,11 +31,22 @@ INVALID_DETAILS_SELECTOR = ".ui-dialog-buttons"
 CHANGE_PASSWORD_OLD_PASS = "input#ef_req_parameter_old_credential"
 BASE_WELCOME_URL = f"{BASE_URL}main/home"
 
-ACCOUNT_ID_SELECTOR = (
-    'span.portfolio-value[ng-if="mainController.data.portfolioList.length === 1"]'
+# Portfolio selectors (upstream 2026-06-12, commit 4521667). Multi-portfolio
+# accounts render an <inline-drop-down> inside form[name="formPortfolioSelect"]
+# with the current portfolio at .selected-item-top and the others as <li>s;
+# single-portfolio accounts render only the single value span.
+PORTFOLIO_FORM = 'form[name="formPortfolioSelect"]'
+ACCOUNT_ID_SELECTOR_SINGLE = "span.portfolio-value"
+ACCOUNT_ID_SELECTOR_MULTI = f"{PORTFOLIO_FORM} .selected-item-top"
+PORTFOLIO_OPTION_SELECTOR = (
+    f"{PORTFOLIO_FORM} .drop-down-item-list li.drop-down-item"
 )
 ACCOUNT_DETAILS_SELECTOR = ".account-details"
 DATE_FORMAT = "%d/%m/%Y"
+
+# All datepicker selectors are scoped to the "from date" control to avoid
+# ambiguity with the "to date" picker.
+FROM_PICKER = 'date-picker-access[btn-label="from"]'
 
 USER_ELEM = "#username"
 PASSWD_ELEM = "#password"
@@ -177,8 +192,6 @@ async def _redirect_or_dialog(page) -> None:
     page : Page
         Playwright page instance.
     """
-    import asyncio
-
     await wait_for_navigation(page)
     await wait_until_element_disappear(page, ".loading-bar-spinner")
 
@@ -209,8 +222,12 @@ async def _redirect_or_dialog(page) -> None:
     await wait_until_element_disappear(page, ".loading-bar-spinner")
 
 
-async def _get_account_id(page) -> str:
-    """Extract the account ID from the page.
+async def _get_portfolio_ids(page) -> list[str]:
+    """Snapshot the list of portfolio IDs available on the home page.
+
+    The dropdown only lists *unselected* portfolios, so the IDs are captured
+    up front (selected-first) before any portfolio switch loses the ones not
+    yet scraped. Single-portfolio accounts render only the single value span.
 
     Parameters
     ----------
@@ -219,27 +236,73 @@ async def _get_account_id(page) -> str:
 
     Returns
     -------
-    str
-        The account ID text.
+    list[str]
+        Portfolio IDs, selected portfolio first. Empty if none found.
     """
-    try:
-        element = await page.query_selector(ACCOUNT_ID_SELECTOR)
-        if element:
-            text = await element.text_content()
-            return text or ""
-    except Exception as e:
-        raise Exception(
-            f"Failed to retrieve account ID. "
-            f"Possible outdated selector '{ACCOUNT_ID_SELECTOR}': {e}"
-        )
-    raise Exception(
-        f"Failed to retrieve account ID. "
-        f"Possible outdated selector '{ACCOUNT_ID_SELECTOR}'"
+    done, pending = await asyncio.wait(
+        [
+            asyncio.create_task(
+                page.wait_for_selector(ACCOUNT_ID_SELECTOR_MULTI, timeout=10000)
+            ),
+            asyncio.create_task(
+                page.wait_for_selector(ACCOUNT_ID_SELECTOR_SINGLE, timeout=10000)
+            ),
+        ],
+        return_when=asyncio.FIRST_COMPLETED,
     )
+    for task in pending:
+        task.cancel()
+    for task in done:
+        task.exception()  # consume any exception so it isn't logged as unretrieved
+
+    selected_el = await page.query_selector(ACCOUNT_ID_SELECTOR_MULTI)
+    if selected_el:
+        selected = ((await selected_el.text_content()) or "").strip()
+        if selected:
+            option_els = await page.query_selector_all(PORTFOLIO_OPTION_SELECTOR)
+            others = [
+                ((await el.text_content()) or "").strip() for el in option_els
+            ]
+            return [pid for pid in [selected, *others] if pid]
+
+    single_el = await page.query_selector(ACCOUNT_ID_SELECTOR_SINGLE)
+    if single_el:
+        single = ((await single_el.text_content()) or "").strip()
+        return [single] if single else []
+    return []
+
+
+async def _select_portfolio(page, target_id: str) -> None:
+    """Select a portfolio by its ID from the dropdown.
+
+    Angular's listItemAction navigates the page back to /main/home with the
+    new portfolio selected, so the caller must re-enter the statements flow
+    after this returns.
+
+    Parameters
+    ----------
+    page : Page
+        Playwright page instance.
+    target_id : str
+        The portfolio ID (trimmed text) to select.
+    """
+    option_els = await page.query_selector_all(PORTFOLIO_OPTION_SELECTOR)
+    for el in option_els:
+        text = ((await el.text_content()) or "").strip()
+        if text == target_id:
+            await el.click()
+            await wait_until_element_disappear(page, ".loading-bar-spinner")
+            return
+    raise Exception(f"Portfolio option not found for ID: {target_id}")
 
 
 async def _search_by_dates(page, start_date: date) -> None:
-    """Manipulate the calendar dropdown to set the start date.
+    """Set the "from" date by stepping the datepicker calendar back.
+
+    Opens the "from" picker, reads its current input value (always
+    ``DD/MM/YYYY``) to learn which month it opened on, steps back the required
+    number of months, then clicks the target day. Reading the input value
+    avoids parsing the header text, which renders in the account's locale.
 
     Parameters
     ----------
@@ -248,64 +311,36 @@ async def _search_by_dates(page, start_date: date) -> None:
     start_date : date
         The start date for the transaction search.
     """
-    start_day = str(start_date.day)
-    start_month = str(start_date.month)
-    start_year = str(start_date.year)
-
-    # Open the calendar date picker
-    date_from_pick = (
-        "div.date-options-cell:nth-child(7) > date-picker:nth-child(1) "
-        "> div:nth-child(1) > span:nth-child(2)"
-    )
-    await wait_until_element_found(page, date_from_pick, only_visible=True)
-    await click_button(page, date_from_pick)
-
-    # Wait for days to appear
+    open_button = f"{FROM_PICKER} a.datepicker-button"
+    await wait_until_element_found(page, open_button, only_visible=True)
+    await click_button(page, open_button)
     await wait_until_element_found(
-        page, ".pmu-days > div:nth-child(1)", only_visible=True
+        page, f"{FROM_PICKER} .datepicker-calendar", only_visible=True
     )
 
-    # Open months view
-    month_from_pick = ".pmu-month"
-    await wait_until_element_found(page, month_from_pick, only_visible=True)
-    await click_button(page, month_from_pick)
-    await wait_until_element_found(
-        page, ".pmu-months > div:nth-child(1)", only_visible=True
+    input_value = await page_eval(
+        page, f"{FROM_PICKER} .date-picker-input", "el => el.value", ""
     )
+    try:
+        displayed = datetime.strptime(input_value, "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        displayed = date.today()
 
-    # Open years view
-    await wait_until_element_found(page, month_from_pick, only_visible=True)
-    await click_button(page, month_from_pick)
-    await wait_until_element_found(
-        page, ".pmu-years > div:nth-child(1)", only_visible=True
+    months_to_go_back = (displayed.year - start_date.year) * 12 + (
+        displayed.month - start_date.month
     )
+    prev_month_selector = f"{FROM_PICKER} .datepicker-month-prev.enabled"
+    for _ in range(max(0, months_to_go_back)):
+        await wait_until_element_found(page, prev_month_selector, only_visible=True)
+        await click_button(page, prev_month_selector)
 
-    # Select year from the 12-year grid
-    for i in range(1, 13):
-        selector = f".pmu-years > div:nth-child({i})"
-        element = await page.query_selector(selector)
-        if element:
-            year_text = await element.inner_text()
-            if start_year == year_text:
-                await click_button(page, selector)
-                break
-
-    # Select month (1-indexed: January = 1)
-    await wait_until_element_found(
-        page, ".pmu-months > div:nth-child(1)", only_visible=True
+    # :not(.other-month) avoids adjacent-month cells sharing the same day number.
+    day_selector = (
+        f'{FROM_PICKER} .datepicker-calendar td.day.selectable:not(.other-month)'
+        f'[data-value="{start_date.day}"]'
     )
-    month_selector = f".pmu-months > div:nth-child({start_month})"
-    await click_button(page, month_selector)
-
-    # Select day from the calendar grid (up to 42 cells)
-    for i in range(1, 43):
-        selector = f".pmu-days > div:nth-child({i})"
-        element = await page.query_selector(selector)
-        if element:
-            day_text = await element.inner_text()
-            if start_day == day_text:
-                await click_button(page, selector)
-                break
+    await wait_until_element_found(page, day_selector, only_visible=True)
+    await click_button(page, day_selector)
 
 
 async def _get_account_transactions(page) -> list[Transaction]:
@@ -390,6 +425,50 @@ async def _fetch_account_data(
     )
 
 
+async def _fetch_accounts(page, start_date: date) -> list[AccountResult]:
+    """Iterate every portfolio, entering the statements flow for each.
+
+    Portfolio IDs are snapshotted up front (the dropdown only lists the
+    unselected portfolios, so after the first switch the rest would be lost).
+    For each portfolio the statements page is (re-)entered, since selecting a
+    portfolio navigates back to /main/home.
+
+    Parameters
+    ----------
+    page : Page
+        Playwright page instance.
+    start_date : date
+        Earliest transaction date.
+
+    Returns
+    -------
+    list[AccountResult]
+        One result per portfolio.
+    """
+    portfolio_ids = await _get_portfolio_ids(page)
+    if not portfolio_ids:
+        raise Exception(
+            "No portfolios found on /main/home — Yahav DOM likely changed"
+        )
+
+    accounts: list[AccountResult] = []
+    for i, portfolio_id in enumerate(portfolio_ids):
+        if i > 0:
+            await _select_portfolio(page, portfolio_id)
+        await wait_until_element_found(
+            page, ACCOUNT_DETAILS_SELECTOR, only_visible=True
+        )
+        await click_button(page, ACCOUNT_DETAILS_SELECTOR)
+        await wait_until_element_found(
+            page, ".statement-options .selected-item-top", only_visible=True
+        )
+        accounts.append(
+            await _fetch_account_data(page, start_date, portfolio_id)
+        )
+
+    return accounts
+
+
 class YahavScraper(BrowserScraper):
     """Scraper for Yahav Bank (https://www.yahav.co.il).
 
@@ -432,25 +511,18 @@ class YahavScraper(BrowserScraper):
         Returns
         -------
         list[AccountResult]
-            List of accounts with their transactions.
+            One result per portfolio, each with its transactions.
         """
-        # Navigate to account details / statements page
+        # Wait for the home page; the statements flow is (re-)entered per
+        # portfolio inside _fetch_accounts.
         await wait_until_element_found(
             self.page, ACCOUNT_DETAILS_SELECTOR, only_visible=True
         )
-        await click_button(self.page, ACCOUNT_DETAILS_SELECTOR)
-        await wait_until_element_found(
-            self.page, ".statement-options .selected-item-top", only_visible=True
-        )
 
-        default_start = date.today() - timedelta(days=90 - 1)
-        effective_start = max(
-            default_start, self.options.start_date or default_start
-        )
+        default_start = date.today() - relativedelta(months=3) + timedelta(days=1)
+        start = self.options.start_date or default_start
+        # Clamp to [default_start, today]: never earlier than the default
+        # window, never in the future.
+        effective_start = min(max(default_start, start), date.today())
 
-        account_id = await _get_account_id(self.page)
-        account = await _fetch_account_data(
-            self.page, effective_start, account_id
-        )
-
-        return [account]
+        return await _fetch_accounts(self.page, effective_start)

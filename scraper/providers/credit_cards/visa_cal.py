@@ -67,6 +67,14 @@ INVALID_PASSWORD_MESSAGE = (
 
 X_SITE_ID = "09031987-273E-2311-906C-8AF85B17C8D9"
 
+# Forced-password-change detection. Upstream (2026-06-14, commit 809513e)
+# expanded this from a single subtitle check to four signals — the modal can
+# surface as a frame route, an Angular component, a title, or a subtitle — plus
+# the legacy ``.err-desc`` message.
+CHANGE_PASSWORD_URL = "/change-password"
+CHANGE_PASSWORD_SUBTITLE = "הגיע הזמן לסיסמה חדשה"
+CHANGE_PASSWORD_MESSAGE = "להחליף סיסמה"
+
 
 class TrnTypeCode(str, Enum):
     """Visa Cal transaction type codes."""
@@ -250,7 +258,14 @@ async def _has_invalid_password_error(page) -> bool:
 
 
 async def _has_change_password_form(page) -> bool:
-    """Check if change password form is displayed.
+    """Check if a forced password-change prompt is displayed.
+
+    Mirrors upstream's multi-signal detection: a frame navigated to the
+    change-password route, the ``change-password`` Angular component, a
+    ``.change-password-title``/``.change-password-subtitle`` element, or the
+    legacy ``.err-desc`` message. The login frame may already be gone by the
+    time this runs (it navigates to the change-password route), so the frame
+    URL scan happens first and the rest is guarded.
 
     Parameters
     ----------
@@ -260,10 +275,38 @@ async def _has_change_password_form(page) -> bool:
     Returns
     -------
     bool
-        True if change password form is present.
+        True if a change-password prompt is present.
     """
-    frame = await _get_login_frame(page)
-    return await element_present_on_page(frame, ".change-password-subtitle")
+    for frame in page.frames:
+        url = frame.url or ""
+        if "connect.cal-online.co.il" in url and CHANGE_PASSWORD_URL in url:
+            return True
+
+    try:
+        frame = await _get_login_frame(page)
+
+        if await element_present_on_page(frame, "change-password"):
+            return True
+
+        if await element_present_on_page(frame, ".change-password-title"):
+            return True
+
+        if await element_present_on_page(frame, ".change-password-subtitle"):
+            subtitle_text = await page_eval(
+                frame, ".change-password-subtitle", "el => el.innerText.trim()", ""
+            )
+            if CHANGE_PASSWORD_SUBTITLE in subtitle_text:
+                return True
+
+        if await element_present_on_page(frame, ".err-desc"):
+            err_text = await page_eval(
+                frame, ".err-desc", "el => el.innerText.trim()", ""
+            )
+            return CHANGE_PASSWORD_MESSAGE in err_text
+    except Exception as exc:
+        logger.debug("failed to check change password form in login frame: %s", exc)
+
+    return False
 
 
 def _get_possible_login_results(page) -> dict[LoginResult, list]:
