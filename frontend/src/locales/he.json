@@ -262,8 +262,11 @@
       "recurring": "מנויים וחיובים חוזרים",
       "goals": "יעדי חיסכון",
       "heatmap": "לוח הוצאות",
-      "charts": "גרפים וניתוחים",
-      "incomeBySource": "הכנסה לפי מקור"
+      "incomeBySource": "הכנסה לפי מקור",
+      "incomeExpenses": "הכנסות והוצאות",
+      "netWorth": "שווי נקי",
+      "cashFlow": "תזרים מזומנים",
+      "category": "קטגוריות"
     },
     "incomeBySource": {
       "title": "הכנסה לפי מקור",
