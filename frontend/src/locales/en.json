@@ -114,6 +114,8 @@
     "dashboardNoVisibleCards": "All cards are hidden",
     "dashboardHideCard": "Hide card",
     "dashboardShowCard": "Show card",
+    "dashboardLayoutSizeHalf": "Half width",
+    "dashboardLayoutSizeFull": "Full width",
     "beta": "Beta"
   },
   "dashboard": {

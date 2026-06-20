@@ -114,6 +114,8 @@
     "dashboardNoVisibleCards": "כל הכרטיסים מוסתרים",
     "dashboardHideCard": "הסתרת כרטיס",
     "dashboardShowCard": "הצגת כרטיס",
+    "dashboardLayoutSizeHalf": "חצי רוחב",
+    "dashboardLayoutSizeFull": "רוחב מלא",
     "beta": "בטא"
   },
   "dashboard": {
