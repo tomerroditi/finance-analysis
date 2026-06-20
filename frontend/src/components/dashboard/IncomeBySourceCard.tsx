@@ -71,7 +71,7 @@ export function IncomeBySourceCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+      <div className="flex flex-col gap-3 mb-4">
         <div className="flex items-center gap-2">
           <div className="p-1.5 rounded-lg bg-[var(--primary)]/15 text-[var(--primary)]">
             <PieChart size={18} />
@@ -129,9 +129,9 @@ export function IncomeBySourceCard() {
           📭 {t("dashboard.incomeBySource.empty")}
         </p>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
+        <div className="flex flex-col gap-4">
           {/* Donut */}
-          <div className={`w-full min-h-[240px] ${tableOpen ? "lg:w-1/2" : "lg:flex-1"}`}>
+          <div className="w-full min-h-[240px]">
             <Plot
               data={[
                 {
@@ -170,7 +170,7 @@ export function IncomeBySourceCard() {
           </div>
 
           {/* Collapsible breakdown table */}
-          <div className={`w-full ${tableOpen ? "lg:w-1/2" : "lg:w-auto"}`}>
+          <div className="w-full">
             <button
               type="button"
               onClick={() => setTableOpen((open) => !open)}
@@ -182,16 +182,16 @@ export function IncomeBySourceCard() {
             </button>
             {tableOpen && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[280px] text-sm">
+                <table className="w-full min-w-[240px] text-sm">
                   <thead>
                     <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                      <th className="text-start px-3 py-2 font-bold whitespace-nowrap">
+                      <th className="text-start px-2 py-2 font-bold whitespace-nowrap">
                         {t("dashboard.incomeBySource.source")}
                       </th>
-                      <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
+                      <th className="text-center px-2 py-2 font-bold whitespace-nowrap">
                         {t("dashboard.incomeBySource.amount")}
                       </th>
-                      <th className="text-center px-3 py-2 font-bold whitespace-nowrap">
+                      <th className="text-center px-2 py-2 font-bold whitespace-nowrap">
                         {t("dashboard.incomeBySource.share")}
                       </th>
                     </tr>
@@ -202,7 +202,7 @@ export function IncomeBySourceCard() {
                         key={s.label}
                         className="border-b border-[var(--surface-light)]/50"
                       >
-                        <td className="text-start px-3 py-2 whitespace-nowrap">
+                        <td className="text-start px-2 py-2 whitespace-nowrap">
                           <span className="inline-flex items-center gap-2">
                             <span
                               className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
@@ -212,29 +212,29 @@ export function IncomeBySourceCard() {
                               }}
                             />
                             <span
-                              className="block max-w-[160px] truncate"
+                              className="block max-w-[96px] truncate"
                               dir="auto"
                             >
                               {s.label}
                             </span>
                           </span>
                         </td>
-                        <td className="text-center px-3 py-2 whitespace-nowrap">
+                        <td className="text-center px-2 py-2 whitespace-nowrap">
                           <span dir="ltr">{formatCurrency(s.amount)}</span>
                         </td>
-                        <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
+                        <td className="text-center px-2 py-2 whitespace-nowrap text-[var(--text-muted)]">
                           {(s.share * 100).toFixed(1)}%
                         </td>
                       </tr>
                     ))}
                     <tr className="font-bold border-t-2 border-[var(--surface-light)]">
-                      <td className="text-start px-3 py-2 whitespace-nowrap">
+                      <td className="text-start px-2 py-2 whitespace-nowrap">
                         {t("dashboard.incomeBySource.total")}
                       </td>
-                      <td className="text-center px-3 py-2 whitespace-nowrap">
+                      <td className="text-center px-2 py-2 whitespace-nowrap">
                         <span dir="ltr">{formatCurrency(total)}</span>
                       </td>
-                      <td className="text-center px-3 py-2 whitespace-nowrap text-[var(--text-muted)]">
+                      <td className="text-center px-2 py-2 whitespace-nowrap text-[var(--text-muted)]">
                         100.0%
                       </td>
                     </tr>
