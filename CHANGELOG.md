@@ -1,3 +1,9 @@
+## v1.37.2 (2026-06-20)
+
+### Refactor
+
+- **investments**: move Add New Investment button into Active Investments row
+
 ## v1.37.1 (2026-06-20)
 
 ### Refactor
