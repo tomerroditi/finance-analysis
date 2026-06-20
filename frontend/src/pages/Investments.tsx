@@ -510,23 +510,6 @@ export function Investments() {
 
   return (
     <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex items-center justify-end gap-3">
-        <div className="flex gap-3 md:gap-4">
-          <button
-            onClick={() => setIsAddOpen(true)}
-            disabled={Object.keys(filteredCategories).length === 0}
-            className="flex items-center gap-2 px-4 md:px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale text-sm md:text-base"
-            title={
-              Object.keys(filteredCategories).length === 0
-                ? t("investments.allTagsInUse")
-                : ""
-            }
-          >
-            <Plus size={18} /> {t("investments.newInvestment")}
-          </button>
-        </div>
-      </div>
-
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium">
           {t("investments.failedToLoad")}
@@ -542,12 +525,26 @@ export function Investments() {
       <div>
         {activeInvestments.length > 0 ? (
           <>
-            <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2">
-              {t("investments.activeInvestments")}
-              <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
-                {activeInvestments.length}
-              </span>
-            </h2>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <h2 className="text-lg md:text-xl font-bold flex items-center gap-2">
+                {t("investments.activeInvestments")}
+                <span className="text-[10px] font-black bg-[var(--primary)]/20 text-[var(--primary)] px-2 py-0.5 rounded-full">
+                  {activeInvestments.length}
+                </span>
+              </h2>
+              <button
+                onClick={() => setIsAddOpen(true)}
+                disabled={Object.keys(filteredCategories).length === 0}
+                className="flex items-center gap-2 px-4 md:px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:grayscale text-sm md:text-base"
+                title={
+                  Object.keys(filteredCategories).length === 0
+                    ? t("investments.allTagsInUse")
+                    : ""
+                }
+              >
+                <Plus size={18} /> {t("investments.newInvestment")}
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
               {activeInvestments.map((inv: Investment) => (
                 <InvestmentCard
