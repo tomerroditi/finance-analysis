@@ -405,7 +405,7 @@ export function Transactions() {
                 showSplitParentsFilter
                 includeSplitParents={includeSplitParents}
                 onIncludeSplitParentsChange={setIncludeSplitParents}
-                rowsPerPage={10}
+                rowsPerPage={100}
                 rowsPerPageOptions={[10, 50, 100, 500, 1000]}
                 onTransactionUpdated={refreshAll}
                 pendingRefundsMap={pendingRefundsMap}
