@@ -137,10 +137,21 @@ class RetirementService:
         monthly_savings = 0.0
 
         if monthly_data:
-            # Use last 6 months for averages (or all if less)
-            recent = monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
-            avg_monthly_income = sum(m["income"] for m in recent) / len(recent)
-            avg_monthly_expenses = sum(m["expenses"] for m in recent) / len(recent)
+            # Income: last 6 months average (or all if fewer).
+            recent_income = (
+                monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
+            )
+            avg_monthly_income = sum(
+                m["income"] for m in recent_income
+            ) / len(recent_income)
+            # Expenses: last 12 months average (or all if fewer) — a full
+            # year smooths out seasonal spikes (holidays, annual fees).
+            recent_expenses = (
+                monthly_data[-12:] if len(monthly_data) >= 12 else monthly_data
+            )
+            avg_monthly_expenses = sum(
+                m["expenses"] for m in recent_expenses
+            ) / len(recent_expenses)
             monthly_savings = avg_monthly_income - avg_monthly_expenses
 
         savings_rate = (

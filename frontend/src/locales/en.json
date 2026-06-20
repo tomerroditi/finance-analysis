@@ -1107,7 +1107,8 @@
     "sections": {
       "currentStatus": "Current Financial Status",
       "goals": "Retirement Goals",
-      "projections": "Projections & Insights"
+      "projections": "Projections & Insights",
+      "parameters": "Retirement Parameters"
     },
     "form": {
       "currentAge": "Current Age",
@@ -1144,7 +1145,8 @@
       "monthlySavings": "Monthly Savings",
       "savingsRate": "Savings Rate",
       "totalInvestments": "Total Investments",
-      "computed": "auto-calculated"
+      "computed": "auto-calculated",
+      "resetToCalculated": "Reset to calculated"
     },
     "projections": {
       "fireNumber": "FIRE Number",

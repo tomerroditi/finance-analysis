@@ -1107,7 +1107,8 @@
     "sections": {
       "currentStatus": "מצב פיננסי נוכחי",
       "goals": "יעדי פרישה",
-      "projections": "תחזיות ותובנות"
+      "projections": "תחזיות ותובנות",
+      "parameters": "פרמטרי פרישה"
     },
     "form": {
       "currentAge": "גיל נוכחי",
@@ -1144,7 +1145,8 @@
       "monthlySavings": "חיסכון חודשי",
       "savingsRate": "שיעור חיסכון",
       "totalInvestments": "סה\"כ השקעות",
-      "computed": "מחושב אוטומטית"
+      "computed": "מחושב אוטומטית",
+      "resetToCalculated": "אפס למחושב"
     },
     "projections": {
       "fireNumber": "מספר FIRE",

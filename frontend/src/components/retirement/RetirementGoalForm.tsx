@@ -12,11 +12,19 @@ import {
   Info,
   RefreshCw,
   TrendingUp,
+  TrendingDown,
   Wallet,
   PiggyBank,
   ArrowUpDown,
   DollarSign,
   Percent,
+  User,
+  Users,
+  Flag,
+  Activity,
+  Landmark,
+  Coins,
+  Shield,
 } from "lucide-react";
 import {
   retirementApi,
@@ -95,16 +103,18 @@ function goalToForm(
     bituach_leumi_eligible: goal.bituach_leumi_eligible,
     bituach_leumi_monthly_estimate: goal.bituach_leumi_monthly_estimate,
     other_passive_income: goal.other_passive_income,
-    monthly_income:
-      goal.monthly_income ?? Math.round(status?.avg_monthly_income ?? 0),
-    net_worth_override:
-      goal.net_worth_override ?? Math.round(status?.net_worth ?? 0),
-    monthly_expenses_override:
-      goal.monthly_expenses_override ??
-      Math.round(status?.avg_monthly_expenses ?? 0),
-    total_investments_override:
-      goal.total_investments_override ??
-      Math.round(status?.total_investments ?? 0),
+    monthly_income: Math.round(
+      goal.monthly_income ?? status?.avg_monthly_income ?? 0,
+    ),
+    net_worth_override: Math.round(
+      goal.net_worth_override ?? status?.net_worth ?? 0,
+    ),
+    monthly_expenses_override: Math.round(
+      goal.monthly_expenses_override ?? status?.avg_monthly_expenses ?? 0,
+    ),
+    total_investments_override: Math.round(
+      goal.total_investments_override ?? status?.total_investments ?? 0,
+    ),
   };
 }
 
@@ -446,189 +456,89 @@ export function RetirementGoalForm({
         </div>
       </div>
 
-      {/* Core Parameters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 items-end">
-        <NumberField
-          label={t("earlyRetirement.form.currentAge")}
-          value={form.current_age}
-          onChange={(v) => handleChange("current_age", v)}
-          min={18}
-          max={100}
-          step={1}
-        />
-        <div>
-          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-            {t("earlyRetirement.form.gender")}
-          </label>
-          <select
-            value={form.gender}
-            onChange={(e) => handleChange("gender", e.target.value)}
-            className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-          >
-            <option value="male">{t("earlyRetirement.form.male")}</option>
-            <option value="female">
-              {t("earlyRetirement.form.female")}
-            </option>
-          </select>
-        </div>
-        <NumberField
-          label={t("earlyRetirement.form.targetRetirementAge")}
-          value={form.target_retirement_age}
-          onChange={(v) => handleChange("target_retirement_age", v)}
-          min={30}
-          max={100}
-          step={1}
-        />
-        <NumberField
-          label={t("earlyRetirement.form.lifeExpectancy")}
-          value={form.life_expectancy}
-          onChange={(v) => handleChange("life_expectancy", v)}
-          min={60}
-          max={120}
-          step={1}
-        />
-        <NumberField
-          label={t("earlyRetirement.form.monthlyExpenses")}
-          value={form.monthly_expenses_in_retirement}
-          onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
-          min={0}
-          suffix="₪"
-        />
-        <NumberField
-          label={t("earlyRetirement.form.expectedReturn")}
-          value={form.expected_return_rate}
-          onChange={(v) => handleChange("expected_return_rate", v)}
-          min={-10}
-          max={30}
-          step={0.01}
-          suffix="%"
-        />
-        <NumberField
-          label={t("earlyRetirement.form.withdrawalRate")}
-          value={form.withdrawal_rate}
-          onChange={(v) => handleChange("withdrawal_rate", v)}
-          min={0.5}
-          max={10}
-          step={0.01}
-          suffix="%"
-          tooltip={t("earlyRetirement.tooltips.withdrawalRate")}
-        />
-      </div>
-
-      {/* Israeli Savings Vehicles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 p-4 rounded-lg bg-[var(--surface-light)] items-end">
-          <div>
-            <NumberField
-              label={t("earlyRetirement.form.pensionPayout")}
-              value={form.pension_monthly_payout_estimate}
-              onChange={(v) =>
-                handleChange("pension_monthly_payout_estimate", v)
-              }
-              min={0}
-              suffix="₪"
-              tooltip={t("earlyRetirement.tooltips.pension")}
-            />
-            {scrapedDefaults?.pension_monthly_deposit != null && (
-              <button
-                type="button"
-                onClick={applyScrapedPension}
-                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
-              >
-                <RefreshCw size={10} />
-                {t("earlyRetirement.form.useScrapedPension", {
-                  amount: ILS_FORMAT.format(scrapedDefaults.pension_monthly_deposit),
-                })}
-              </button>
-            )}
-          </div>
-          <div>
-            <NumberField
-              label={t("earlyRetirement.form.kerenHishtalmutBalance")}
-              value={form.keren_hishtalmut_balance}
-              onChange={(v) =>
-                handleChange("keren_hishtalmut_balance", v)
-              }
-              min={0}
-              suffix="₪"
-            />
-            {scrapedDefaults?.keren_hishtalmut_balance != null && (
-              <button
-                type="button"
-                onClick={applyScrapedKhBalance}
-                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
-              >
-                <RefreshCw size={10} />
-                {t("earlyRetirement.form.useScrapedKh", {
-                  amount: ILS_FORMAT.format(scrapedDefaults.keren_hishtalmut_balance),
-                })}
-              </button>
-            )}
-          </div>
-          <div>
-            <NumberField
-              label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
-              value={form.keren_hishtalmut_monthly_contribution}
-              onChange={(v) =>
-                handleChange(
-                  "keren_hishtalmut_monthly_contribution",
-                  v,
-                )
-              }
-              min={0}
-              suffix="₪"
-            />
-            {scrapedDefaults?.keren_hishtalmut_monthly_contribution != null && (
-              <button
-                type="button"
-                onClick={applyScrapedKhMonthly}
-                className="flex items-center gap-1 mt-0.5 text-xs text-[var(--primary)] hover:text-blue-300 transition-colors"
-              >
-                <RefreshCw size={10} />
-                {t("earlyRetirement.form.useScrapedKhMonthly", {
-                  amount: ILS_FORMAT.format(scrapedDefaults.keren_hishtalmut_monthly_contribution),
-                })}
-              </button>
-            )}
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1">
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={form.bituach_leumi_eligible}
-                  onChange={(e) =>
-                    handleChange(
-                      "bituach_leumi_eligible",
-                      e.target.checked,
-                    )
-                  }
-                  className="w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
-                />
-                {t("earlyRetirement.form.bituachLeumiEstimate")}
-              </label>
-              <span className="text-[var(--text-muted)]">(₪)</span>
-            </div>
-            <input
-              type="number"
-              value={form.bituach_leumi_monthly_estimate}
-              onChange={(e) =>
-                handleChange("bituach_leumi_monthly_estimate", Number(e.target.value))
-              }
-              min={0}
-              disabled={!form.bituach_leumi_eligible}
-              className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              dir="ltr"
-            />
-          </div>
+      {/* Retirement Parameters */}
+      <div className="space-y-3 p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
+        <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          {t("earlyRetirement.sections.parameters")}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <NumberField
-            label={t("earlyRetirement.form.otherPassiveIncome")}
-            value={form.other_passive_income}
-            onChange={(v) => handleChange("other_passive_income", v)}
+            label={t("earlyRetirement.form.currentAge")}
+            icon={User}
+            iconColor="text-blue-400"
+            value={form.current_age}
+            onChange={(v) => handleChange("current_age", v)}
+            min={18}
+            max={100}
+            step={1}
+          />
+          <SelectField
+            label={t("earlyRetirement.form.gender")}
+            icon={Users}
+            iconColor="text-cyan-400"
+            value={form.gender}
+            onChange={(v) => handleChange("gender", v)}
+            options={[
+              { value: "male", label: t("earlyRetirement.form.male") },
+              { value: "female", label: t("earlyRetirement.form.female") },
+            ]}
+          />
+          <NumberField
+            label={t("earlyRetirement.form.targetRetirementAge")}
+            icon={Flag}
+            iconColor="text-amber-400"
+            value={form.target_retirement_age}
+            onChange={(v) => handleChange("target_retirement_age", v)}
+            min={30}
+            max={100}
+            step={1}
+          />
+          <NumberField
+            label={t("earlyRetirement.form.lifeExpectancy")}
+            icon={Activity}
+            iconColor="text-rose-400"
+            value={form.life_expectancy}
+            onChange={(v) => handleChange("life_expectancy", v)}
+            min={60}
+            max={120}
+            step={1}
+          />
+          <NumberField
+            label={t("earlyRetirement.form.monthlyExpenses")}
+            icon={Wallet}
+            iconColor="text-rose-400"
+            value={form.monthly_expenses_in_retirement}
+            onChange={(v) => handleChange("monthly_expenses_in_retirement", v)}
             min={0}
             suffix="₪"
           />
           <NumberField
+            label={t("earlyRetirement.form.expectedReturn")}
+            icon={TrendingUp}
+            iconColor="text-emerald-400"
+            value={form.expected_return_rate}
+            onChange={(v) => handleChange("expected_return_rate", v)}
+            min={-10}
+            max={30}
+            step={0.01}
+            suffix="%"
+          />
+          <NumberField
+            label={t("earlyRetirement.form.withdrawalRate")}
+            icon={Percent}
+            iconColor="text-purple-400"
+            value={form.withdrawal_rate}
+            onChange={(v) => handleChange("withdrawal_rate", v)}
+            min={0.5}
+            max={10}
+            step={0.01}
+            suffix="%"
+            tooltip={t("earlyRetirement.tooltips.withdrawalRate")}
+          />
+          <NumberField
             label={t("earlyRetirement.form.inflationRate")}
+            icon={TrendingDown}
+            iconColor="text-orange-400"
             value={form.inflation_rate}
             onChange={(v) => handleChange("inflation_rate", v)}
             min={0}
@@ -636,6 +546,115 @@ export function RetirementGoalForm({
             step={0.01}
             suffix="%"
           />
+        </div>
+      </div>
+
+      {/* Israeli Savings Vehicles */}
+      <div className="space-y-3 p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
+        <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          {t("earlyRetirement.form.israeliVehicles")}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <NumberField
+            label={t("earlyRetirement.form.pensionPayout")}
+            icon={Landmark}
+            iconColor="text-indigo-400"
+            value={form.pension_monthly_payout_estimate}
+            onChange={(v) => handleChange("pension_monthly_payout_estimate", v)}
+            min={0}
+            suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.pension")}
+            footer={
+              scrapedDefaults?.pension_monthly_deposit != null ? (
+                <ScrapedHint
+                  onClick={applyScrapedPension}
+                  label={t("earlyRetirement.form.useScrapedPension", {
+                    amount: ILS_FORMAT.format(
+                      scrapedDefaults.pension_monthly_deposit,
+                    ),
+                  })}
+                />
+              ) : null
+            }
+          />
+          <NumberField
+            label={t("earlyRetirement.form.kerenHishtalmutBalance")}
+            icon={PiggyBank}
+            iconColor="text-emerald-400"
+            value={form.keren_hishtalmut_balance}
+            onChange={(v) => handleChange("keren_hishtalmut_balance", v)}
+            min={0}
+            suffix="₪"
+            footer={
+              scrapedDefaults?.keren_hishtalmut_balance != null ? (
+                <ScrapedHint
+                  onClick={applyScrapedKhBalance}
+                  label={t("earlyRetirement.form.useScrapedKh", {
+                    amount: ILS_FORMAT.format(
+                      scrapedDefaults.keren_hishtalmut_balance,
+                    ),
+                  })}
+                />
+              ) : null
+            }
+          />
+          <NumberField
+            label={t("earlyRetirement.form.kerenHishtalmutMonthly")}
+            icon={Coins}
+            iconColor="text-amber-400"
+            value={form.keren_hishtalmut_monthly_contribution}
+            onChange={(v) =>
+              handleChange("keren_hishtalmut_monthly_contribution", v)
+            }
+            min={0}
+            suffix="₪"
+            footer={
+              scrapedDefaults?.keren_hishtalmut_monthly_contribution != null ? (
+                <ScrapedHint
+                  onClick={applyScrapedKhMonthly}
+                  label={t("earlyRetirement.form.useScrapedKhMonthly", {
+                    amount: ILS_FORMAT.format(
+                      scrapedDefaults.keren_hishtalmut_monthly_contribution,
+                    ),
+                  })}
+                />
+              ) : null
+            }
+          />
+          <NumberField
+            label={t("earlyRetirement.form.bituachLeumiEstimate")}
+            icon={Shield}
+            iconColor="text-teal-400"
+            value={form.bituach_leumi_monthly_estimate}
+            onChange={(v) =>
+              handleChange("bituach_leumi_monthly_estimate", v)
+            }
+            min={0}
+            suffix="₪"
+            disabled={!form.bituach_leumi_eligible}
+            headerExtra={
+              <input
+                type="checkbox"
+                checked={form.bituach_leumi_eligible}
+                onChange={(e) =>
+                  handleChange("bituach_leumi_eligible", e.target.checked)
+                }
+                title={t("earlyRetirement.form.bituachLeumiEligible")}
+                aria-label={t("earlyRetirement.form.bituachLeumiEligible")}
+                className="shrink-0 w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
+              />
+            }
+          />
+          <NumberField
+            label={t("earlyRetirement.form.otherPassiveIncome")}
+            icon={DollarSign}
+            iconColor="text-green-400"
+            value={form.other_passive_income}
+            onChange={(v) => handleChange("other_passive_income", v)}
+            min={0}
+            suffix="₪"
+          />
+        </div>
       </div>
 
       {/* Action Buttons */}
@@ -677,8 +696,92 @@ export function RetirementGoalForm({
   );
 }
 
+const CARD_INPUT_CLASS =
+  "w-full px-1.5 py-1 text-sm font-semibold bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
+/**
+ * Shared card shell for every form field. Header row holds an icon, the
+ * label, an optional suffix/tooltip and an optional right-aligned extra
+ * (reset button, eligibility checkbox); the control renders below it.
+ */
+function FieldCard({
+  label,
+  icon: Icon,
+  iconColor,
+  suffix,
+  tooltip,
+  headerExtra,
+  footer,
+  children,
+}: {
+  label: string;
+  icon?: React.ElementType;
+  iconColor?: string;
+  suffix?: string;
+  tooltip?: string;
+  headerExtra?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]">
+      <div className="flex items-center justify-between gap-1 mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {Icon && (
+            <Icon size={14} className={`shrink-0 ${iconColor ?? ""}`} />
+          )}
+          <span className="text-xs text-[var(--text-muted)] truncate">
+            {label}
+          </span>
+          {suffix && (
+            <span className="text-[10px] text-[var(--text-muted)] shrink-0">
+              ({suffix})
+            </span>
+          )}
+          {tooltip && <FieldTooltip text={tooltip} />}
+        </div>
+        {headerExtra}
+      </div>
+      {children}
+      {footer}
+    </div>
+  );
+}
+
+function FieldTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative shrink-0">
+      <Info size={12} className="text-[var(--text-muted)] cursor-help" />
+      <span className="absolute z-10 hidden group-hover:block w-48 sm:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function ScrapedHint({
+  onClick,
+  label,
+}: {
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 mt-1 text-[11px] text-[var(--primary)] hover:text-blue-300 transition-colors"
+    >
+      <RefreshCw size={10} className="shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
 function NumberField({
   label,
+  icon,
+  iconColor,
   value,
   onChange,
   min,
@@ -687,8 +790,12 @@ function NumberField({
   suffix,
   tooltip,
   disabled,
+  headerExtra,
+  footer,
 }: {
   label: string;
+  icon?: React.ElementType;
+  iconColor?: string;
   value: number;
   onChange: (value: number) => void;
   min?: number;
@@ -697,28 +804,19 @@ function NumberField({
   suffix?: string;
   tooltip?: string;
   disabled?: boolean;
+  headerExtra?: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-        <span className="flex items-center gap-1">
-          {label}
-          {suffix && (
-            <span className="text-[var(--text-muted)]">({suffix})</span>
-          )}
-          {tooltip && (
-            <span className="group relative">
-              <Info
-                size={12}
-                className="text-[var(--text-muted)] cursor-help"
-              />
-              <span className="absolute z-10 hidden group-hover:block w-48 sm:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-6">
-                {tooltip}
-              </span>
-            </span>
-          )}
-        </span>
-      </label>
+    <FieldCard
+      label={label}
+      icon={icon}
+      iconColor={iconColor}
+      suffix={suffix}
+      tooltip={tooltip}
+      headerExtra={headerExtra}
+      footer={footer}
+    >
       <input
         type="number"
         value={value}
@@ -727,16 +825,48 @@ function NumberField({
         max={max}
         step={step}
         disabled={disabled}
-        className="w-full px-2 py-1.5 text-sm bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className={CARD_INPUT_CLASS}
         dir="ltr"
       />
-    </div>
+    </FieldCard>
+  );
+}
+
+function SelectField({
+  label,
+  icon,
+  iconColor,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  icon?: React.ElementType;
+  iconColor?: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <FieldCard label={label} icon={icon} iconColor={iconColor}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-1.5 py-1 text-sm font-semibold bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </FieldCard>
   );
 }
 
 function SnapshotField({
   label,
-  icon: Icon,
+  icon,
   iconColor,
   value,
   statusValue,
@@ -751,25 +881,27 @@ function SnapshotField({
   onChange: (value: number) => void;
   onReset: () => void;
 }) {
+  const { t } = useTranslation();
   const isOverridden = value !== statusValue && value !== 0;
   return (
-    <div className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Icon size={14} className={iconColor} />
-          <span className="text-xs text-[var(--text-muted)] truncate">{label}</span>
-        </div>
-        {isOverridden && (
+    <FieldCard
+      label={label}
+      icon={icon}
+      iconColor={iconColor}
+      headerExtra={
+        isOverridden ? (
           <button
             type="button"
             onClick={onReset}
-            title="Reset to calculated"
+            title={t("earlyRetirement.status.resetToCalculated")}
+            aria-label={t("earlyRetirement.status.resetToCalculated")}
             className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors ms-1"
           >
             <RotateCcw size={11} />
           </button>
-        )}
-      </div>
+        ) : null
+      }
+    >
       <input
         type="number"
         value={value || ""}
@@ -777,9 +909,9 @@ function SnapshotField({
           onChange(e.target.value === "" ? statusValue : Number(e.target.value))
         }
         min={0}
-        className="w-full px-1.5 py-1 text-sm font-semibold bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        className={CARD_INPUT_CLASS}
         dir="ltr"
       />
-    </div>
+    </FieldCard>
   );
 }
