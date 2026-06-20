@@ -353,7 +353,6 @@ export function RetirementGoalForm({
                 handleChange("keren_hishtalmut_balance", v)
               }
               min={0}
-              step={1000}
               suffix="₪"
             />
             {scrapedDefaults?.keren_hishtalmut_balance != null && (
@@ -380,7 +379,6 @@ export function RetirementGoalForm({
                 )
               }
               min={0}
-              step={100}
               suffix="₪"
             />
             {scrapedDefaults?.keren_hishtalmut_monthly_contribution != null && (
