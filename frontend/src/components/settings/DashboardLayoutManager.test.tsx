@@ -13,15 +13,15 @@ vi.mock("../../hooks/useDashboardLayout", async (importOriginal) => {
     ...actual,
     useDashboardLayout: () => ({
       layout: {
-        // budget, recent, heatmap are half-width; charts, forecast, insights
-        // are full-width — so both badge labels appear at least twice.
+        // budget, recent, heatmap are half-width; income_expenses, net_worth,
+        // cash_flow are full-width — so both badge labels appear at least twice.
         order: [
           "budget",
           "recent",
           "heatmap",
-          "charts",
-          "forecast",
-          "insights",
+          "income_expenses",
+          "net_worth",
+          "cash_flow",
         ] as DashboardCardId[],
         hidden: [] as DashboardCardId[],
       },
