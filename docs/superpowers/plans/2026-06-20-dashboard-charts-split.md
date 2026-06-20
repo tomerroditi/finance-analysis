@@ -54,7 +54,7 @@ extracted JSX differ per card:
 ```tsx
 <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
   <div className="px-3 md:px-6 pt-4 md:pt-5">
-    <h2 className="text-sm md:text-base font-bold" dir="auto">{t(CARD_TITLE_KEY)}</h2>
+    <h2 className="text-sm md:text-base font-bold">{t(CARD_TITLE_KEY)}</h2>
   </div>
   <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
     {/* extracted tab body — the inner content of the matching `insightTab === ...` block */}
@@ -119,7 +119,7 @@ export function NetWorthCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5">
-        <h2 className="text-sm md:text-base font-bold" dir="auto">{t("dashboard.netWorth")}</h2>
+        <h2 className="text-sm md:text-base font-bold">{t("dashboard.netWorth")}</h2>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         {/* PASTE: inner content of the `insightTab === "net_worth"` block (lines 229-369),
@@ -204,7 +204,7 @@ export function IncomeExpensesCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5">
-        <h2 className="text-sm md:text-base font-bold" dir="auto">{t("dashboard.incomeAndExpenses")}</h2>
+        <h2 className="text-sm md:text-base font-bold">{t("dashboard.incomeAndExpenses")}</h2>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         {/* PASTE: inner content of the `insightTab === "income_expenses"` block (lines 387-635). */}
@@ -269,7 +269,7 @@ export function CashFlowCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5">
-        <h2 className="text-sm md:text-base font-bold" dir="auto">{t("dashboard.cashFlow")}</h2>
+        <h2 className="text-sm md:text-base font-bold">{t("dashboard.cashFlow")}</h2>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         {/* PASTE: inner content of the `insightTab === "cash_flow"` block (lines 374-382). */}
@@ -333,7 +333,7 @@ export function CategoryBreakdownCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5">
-        <h2 className="text-sm md:text-base font-bold" dir="auto">{t("dashboard.categories")}</h2>
+        <h2 className="text-sm md:text-base font-bold">{t("dashboard.categories")}</h2>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         {/* PASTE: the body of the `insightTab === "category"` IIFE (lines 640-739),

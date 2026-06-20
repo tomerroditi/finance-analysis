@@ -122,7 +122,7 @@ export function NetWorthCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5">
-        <h2 className="text-sm md:text-base font-bold" dir="auto">{t("dashboard.netWorth")}</h2>
+        <h2 className="text-sm md:text-base font-bold">{t("dashboard.netWorth")}</h2>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0">
