@@ -1292,3 +1292,29 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         """Empty DB returns a zero result (regression: no KeyError on fresh install)."""
         result = AnalysisService(db_session).get_income_by_source()
         assert result == {"sources": [], "total": 0.0, "start": None, "end": None}
+
+    def test_one_sided_windows_filter_independently(self, db_session):
+        """A start-only window and an end-only window each filter on their own edge."""
+        from datetime import date
+
+        self._seed(db_session)
+        service = AnalysisService(db_session)
+
+        # start-only: drop Jan, keep Feb (8500) + Mar (8200) Salary.
+        start_only = service.get_income_by_source(start=date(2024, 2, 1))
+        assert start_only["start"] == "2024-02-01"
+        assert start_only["end"] is None
+        assert start_only["total"] == 16700.0
+        assert [s["label"] for s in start_only["sources"]] == ["Salary"]
+
+        # end-only: keep only Jan Salary (8000) + Freelance (2000).
+        end_only = service.get_income_by_source(end=date(2024, 1, 31))
+        assert end_only["start"] is None
+        assert end_only["end"] == "2024-01-31"
+        assert end_only["total"] == 10000.0
+        assert {s["label"] for s in end_only["sources"]} == {
+            "Salary",
+            "Other Income / Freelance",
+        }
+        # Shares of a complete breakdown sum to ~1.
+        assert round(sum(s["share"] for s in end_only["sources"]), 4) == 1.0
