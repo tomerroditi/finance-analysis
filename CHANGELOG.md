@@ -1,3 +1,24 @@
+## v1.38.0 (2026-06-21)
+
+### Feat
+
+- **retirement**: card-style fields, rounded snapshots, 12-month expenses
+- **retirement**: replace read-only status cards with editable snapshot fields
+- **retirement**: add monthly income field with 6-month salary average default
+
+### Fix
+
+- **retirement**: contain scraped-default hint buttons inside their cards
+- **migration**: skip monthly_income migration when retirement_goal table absent
+- **migration**: correct down_revision for monthly_income migration
+- **retirement**: remove step restriction on keren hishtalmut inputs
+
+## v1.37.2 (2026-06-20)
+
+### Refactor
+
+- **investments**: move Add New Investment button into Active Investments row
+
 ## v1.37.1 (2026-06-20)
 
 ### Refactor

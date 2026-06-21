@@ -148,7 +148,23 @@
     "netBalanceOverTime": "Net Balance Over Time",
     "netWorthOverTime": "Net Worth Over Time",
     "cashFlow": "Cash Flow",
-    "incomeBySource": "Income by Source",
+    "incomeBySource": {
+      "title": "Income by source",
+      "total": "Total",
+      "source": "Source",
+      "amount": "Amount",
+      "share": "Share",
+      "breakdown": "Breakdown",
+      "empty": "No income in this range",
+      "range": {
+        "all": "All time",
+        "year": "This year",
+        "last12m": "Last 12 months",
+        "custom": "Custom…"
+      },
+      "from": "From",
+      "to": "To"
+    },
     "budgetProgress": "Budget Progress",
     "recentTransactions": "Recent Transactions",
     "financialHealth": "Financial Health",
@@ -267,23 +283,6 @@
       "netWorth": "Net Worth",
       "cashFlow": "Cash Flow",
       "category": "Categories"
-    },
-    "incomeBySource": {
-      "title": "Income by source",
-      "total": "Total",
-      "source": "Source",
-      "amount": "Amount",
-      "share": "Share",
-      "breakdown": "Breakdown",
-      "empty": "No income in this range",
-      "range": {
-        "all": "All time",
-        "year": "This year",
-        "last12m": "Last 12 months",
-        "custom": "Custom…"
-      },
-      "from": "From",
-      "to": "To"
     }
   },
   "transactions": {
@@ -1111,7 +1110,8 @@
     "sections": {
       "currentStatus": "Current Financial Status",
       "goals": "Retirement Goals",
-      "projections": "Projections & Insights"
+      "projections": "Projections & Insights",
+      "parameters": "Retirement Parameters"
     },
     "form": {
       "currentAge": "Current Age",
@@ -1137,7 +1137,9 @@
       "resetPlan": "Reset",
       "useScrapedKh": "Use scraped balance: {{amount}}",
       "useScrapedKhMonthly": "Use scraped deposit: {{amount}}",
-      "useScrapedPension": "Use scraped deposit: {{amount}}"
+      "useScrapedPension": "Use scraped deposit: {{amount}}",
+      "monthlyIncome": "Monthly Income",
+      "useSalaryAvg": "Use 6-month salary avg: {{amount}}"
     },
     "status": {
       "netWorth": "Net Worth",
@@ -1145,7 +1147,9 @@
       "avgMonthlyExpenses": "Avg. Monthly Expenses",
       "monthlySavings": "Monthly Savings",
       "savingsRate": "Savings Rate",
-      "totalInvestments": "Total Investments"
+      "totalInvestments": "Total Investments",
+      "computed": "auto-calculated",
+      "resetToCalculated": "Reset to calculated"
     },
     "projections": {
       "fireNumber": "FIRE Number",
