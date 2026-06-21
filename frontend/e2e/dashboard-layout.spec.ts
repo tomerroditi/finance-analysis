@@ -45,13 +45,13 @@ test.describe("Dashboard layout customization", () => {
   });
 
   test("hidden card persists across reload and can be restored", async ({ page }) => {
-    // Versioned (v:2) layout so it isn't migrated; heatmap hidden explicitly.
+    // Current (v:3) layout so it isn't migrated; heatmap hidden explicitly.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "fa.dashboard.layout",
         JSON.stringify({
-          v: 2,
-          order: ["budget", "recent", "charts"],
+          v: 3,
+          order: ["budget", "recent", "income_expenses", "net_worth"],
           hidden: ["heatmap"],
         }),
       );

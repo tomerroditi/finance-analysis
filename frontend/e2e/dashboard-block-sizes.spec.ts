@@ -4,8 +4,8 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
 /**
  * Half-width dashboard cards: on wide (>=lg) viewports the customizable region
  * is a 2-column grid. `budget` and `recent` are both half-width and adjacent in
- * the default order, so they pair on one row; `charts` is full-width and spans
- * the row. Fill order is start->end and flips under RTL (Hebrew).
+ * the default order, so they pair on one row; `income_expenses` is full-width
+ * and spans the row. Fill order is start->end and flips under RTL (Hebrew).
  */
 test.describe("Dashboard half-width blocks", () => {
   test.beforeAll(async ({ browser }) => {
@@ -38,12 +38,12 @@ test.describe("Dashboard half-width blocks", () => {
 
     const budget = await boxOf(page, "budget");
     const recent = await boxOf(page, "recent");
-    const charts = await boxOf(page, "charts");
+    const incomeExpenses = await boxOf(page, "income_expenses");
 
     expect(Math.abs(budget.y - recent.y)).toBeLessThan(4);
     expect(Math.abs(budget.width - recent.width)).toBeLessThan(8);
     expect(budget.x).toBeLessThan(recent.x);
-    expect(charts.width).toBeGreaterThan(budget.width * 1.8);
+    expect(incomeExpenses.width).toBeGreaterThan(budget.width * 1.8);
   });
 
   test("blocks are capped and scroll overflow; paired cards share a row height (>=lg)", async ({
@@ -54,7 +54,7 @@ test.describe("Dashboard half-width blocks", () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/");
 
-    const ids = ["budget", "recent", "heatmap", "income_by_source", "charts"];
+    const ids = ["budget", "recent", "heatmap", "income_by_source", "income_expenses"];
     const boxes: Record<string, { height: number }> = {};
     for (const id of ids) boxes[id] = await boxOf(page, id);
 
@@ -89,12 +89,14 @@ test.describe("Dashboard half-width blocks", () => {
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).maxHeight));
     expect(recentMaxH.every((h) => h === "none")).toBe(true);
 
-    // At least one demo card has more content than the cap and actually scrolls
-    // — proving the cap engages rather than every card just being short.
-    const anyScrolls = await page
-      .locator("[data-card-id] > *")
-      .evaluateAll((els) => els.some((el) => el.scrollHeight > el.clientHeight + 1));
-    expect(anyScrolls).toBe(true);
+    // At least one card is clamped to the cap rather than sized to its own
+    // content — proving the cap binds rather than every card just being short.
+    // The full-width chart cards carry a fixed ~600px chart region plus a
+    // header, so their natural height exceeds the cap and they clamp to it
+    // exactly. (Chart cards resize their plot to fit instead of overflowing at
+    // the card level; list-heavy cards scroll inside their own inner regions.)
+    const tallest = Math.max(...ids.map((id) => boxes[id].height));
+    expect(tallest, "a card should reach the height cap").toBeGreaterThanOrEqual(CAP - 2);
   });
 
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {

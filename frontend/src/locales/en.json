@@ -278,8 +278,11 @@
       "recurring": "Subscriptions & recurring",
       "goals": "Savings goals",
       "heatmap": "Spending calendar",
-      "charts": "Charts & analytics",
-      "incomeBySource": "Income by source"
+      "incomeBySource": "Income by source",
+      "incomeExpenses": "Income & Expenses",
+      "netWorth": "Net Worth",
+      "cashFlow": "Cash Flow",
+      "category": "Categories"
     }
   },
   "transactions": {

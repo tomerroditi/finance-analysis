@@ -22,14 +22,14 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await page.close();
   });
 
-  // Seed a layout (v2, so no migration) with all cards visible so the beta
-  // forecast / insights / recurring / goals sections render.
+  // Seed a current (v3, so no migration) layout with the beta forecast /
+  // insights / recurring / goals sections visible so they render.
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "fa.dashboard.layout",
         JSON.stringify({
-          v: 2,
+          v: 3,
           order: [
             "forecast",
             "insights",
@@ -38,9 +38,10 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
             "recurring",
             "goals",
             "heatmap",
-            "charts",
+            "income_expenses",
+            "net_worth",
           ],
-          hidden: [],
+          hidden: ["cash_flow", "category"],
         }),
       );
     });
