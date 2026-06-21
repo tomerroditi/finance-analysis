@@ -606,3 +606,56 @@ class TestSolveAllFields:
         service = RetirementService.__new__(RetirementService)
         with pytest.raises(Exception):
             service.solve_all_fields()
+
+
+class TestCurrentStatus:
+    """Tests for get_current_status averaging windows."""
+
+    @staticmethod
+    def _service(monthly_data, net_worth=0.0, total_investments=0.0):
+        """Build a RetirementService with a mocked analysis_service."""
+        service = RetirementService.__new__(RetirementService)
+        analysis = MagicMock()
+        analysis.get_income_expenses_over_time.return_value = monthly_data
+        analysis.get_net_worth_over_time.return_value = (
+            [{"net_worth": net_worth}] if net_worth else []
+        )
+        analysis.get_overview.return_value = {
+            "total_investments": total_investments
+        }
+        service.analysis_service = analysis
+        return service
+
+    def test_expenses_use_last_12_months_income_last_6(self):
+        """Expenses average the last 12 months; income the last 6."""
+        # 14 months: income ramps 100..1400, expenses fixed pattern.
+        monthly = [
+            {"income": (i + 1) * 100, "expenses": (i + 1) * 10}
+            for i in range(14)
+        ]
+        service = self._service(monthly)
+        status = service.get_current_status()
+        # Income: months 9..14 -> incomes 900..1400, mean = 1150
+        assert status["avg_monthly_income"] == pytest.approx(1150.0)
+        # Expenses: months 3..14 -> expenses 30..140, mean = 85
+        assert status["avg_monthly_expenses"] == pytest.approx(85.0)
+
+    def test_short_history_uses_all_available_months(self):
+        """Fewer than 6 months: both averages use every month."""
+        monthly = [
+            {"income": 1000, "expenses": 400},
+            {"income": 2000, "expenses": 600},
+        ]
+        service = self._service(monthly)
+        status = service.get_current_status()
+        assert status["avg_monthly_income"] == pytest.approx(1500.0)
+        assert status["avg_monthly_expenses"] == pytest.approx(500.0)
+
+    def test_empty_history_returns_zeros(self):
+        """No monthly data yields zeroed averages without raising."""
+        service = self._service([])
+        status = service.get_current_status()
+        assert status["avg_monthly_income"] == 0.0
+        assert status["avg_monthly_expenses"] == 0.0
+        assert status["monthly_savings"] == 0.0
+        assert status["savings_rate"] == 0.0

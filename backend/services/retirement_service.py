@@ -62,6 +62,10 @@ class RetirementService:
             "bituach_leumi_eligible": bool(goal.bituach_leumi_eligible),
             "bituach_leumi_monthly_estimate": goal.bituach_leumi_monthly_estimate,
             "other_passive_income": goal.other_passive_income,
+            "monthly_income": goal.monthly_income,
+            "net_worth_override": goal.net_worth_override,
+            "monthly_expenses_override": goal.monthly_expenses_override,
+            "total_investments_override": goal.total_investments_override,
         }
 
     def upsert_goal(self, **fields) -> dict:
@@ -107,6 +111,7 @@ class RetirementService:
                     "pension"
                 )
             ),
+            "avg_monthly_salary": self.analysis_service.get_avg_monthly_salary(),
         }
 
     def get_current_status(self) -> dict:
@@ -132,10 +137,21 @@ class RetirementService:
         monthly_savings = 0.0
 
         if monthly_data:
-            # Use last 6 months for averages (or all if less)
-            recent = monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
-            avg_monthly_income = sum(m["income"] for m in recent) / len(recent)
-            avg_monthly_expenses = sum(m["expenses"] for m in recent) / len(recent)
+            # Income: last 6 months average (or all if fewer).
+            recent_income = (
+                monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
+            )
+            avg_monthly_income = sum(
+                m["income"] for m in recent_income
+            ) / len(recent_income)
+            # Expenses: last 12 months average (or all if fewer) — a full
+            # year smooths out seasonal spikes (holidays, annual fees).
+            recent_expenses = (
+                monthly_data[-12:] if len(monthly_data) >= 12 else monthly_data
+            )
+            avg_monthly_expenses = sum(
+                m["expenses"] for m in recent_expenses
+            ) / len(recent_expenses)
             monthly_savings = avg_monthly_income - avg_monthly_expenses
 
         savings_rate = (
@@ -178,6 +194,36 @@ class RetirementService:
             raise EntityNotFoundException("Retirement goal not configured")
 
         status = self.get_current_status()
+
+        # Apply manual status overrides from the goal (0 / None = use calculated)
+        if goal_data.get("net_worth_override"):
+            status = {**status, "net_worth": goal_data["net_worth_override"]}
+
+        effective_expenses = (
+            goal_data["monthly_expenses_override"]
+            if goal_data.get("monthly_expenses_override")
+            else status["avg_monthly_expenses"]
+        )
+        effective_income = (
+            goal_data["monthly_income"]
+            if goal_data.get("monthly_income")
+            else status["avg_monthly_income"]
+        )
+
+        if goal_data.get("monthly_income") or goal_data.get("monthly_expenses_override"):
+            monthly_savings = effective_income - effective_expenses
+            savings_rate = (
+                round(monthly_savings / effective_income * 100, 1)
+                if effective_income > 0
+                else 0.0
+            )
+            status = {
+                **status,
+                "avg_monthly_income": effective_income,
+                "avg_monthly_expenses": effective_expenses,
+                "monthly_savings": monthly_savings,
+                "savings_rate": savings_rate,
+            }
 
         # FIRE number: annual expenses / withdrawal rate
         annual_expenses = goal_data["monthly_expenses_in_retirement"] * 12
