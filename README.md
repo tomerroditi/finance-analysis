@@ -23,7 +23,7 @@
 
 <p><strong>macOS:</strong> <a href="#build-from-source-macos">build from source ↓</a> (Apple's Gatekeeper blocks unsigned downloads on macOS 15+, so a notarized installer would need an Apple Developer ID; until then the source build is the only path)</p>
 
-<p>🌐 <strong><a href="https://finance-analysis-fawn.vercel.app">Live demo → finance-analysis-fawn.vercel.app</a></strong></p>
+<p>🌐 <strong><a href="https://finance-analysis.tomerroditi.workers.dev">Live demo → finance-analysis.tomerroditi.workers.dev</a></strong></p>
 
 </div>
 

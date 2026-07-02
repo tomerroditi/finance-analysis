@@ -1,0 +1,9 @@
+# Scopes the build context for deploy/cloudflare/Dockerfile (the only Docker
+# build in this repo — context is the repo root, see wrangler.jsonc
+# image_build_context). Whitelist just what the image COPYies so wrangler
+# deploy doesn't ship node_modules/.venv/frontend builds to the Docker daemon.
+*
+!backend/
+!demo_app.py
+**/__pycache__/
+**/*.pyc

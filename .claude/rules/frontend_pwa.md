@@ -19,8 +19,8 @@ endpoint, change brand assets, or wire a new mutation.
 `vite-plugin-pwa` runs in `generateSW` mode — the SW is generated from
 the JSON config in `vite.config.ts`. We previously tried `injectManifest`
 with a hand-written `src/sw.ts` to broadcast `fetchDidFail` from inside
-the SW, but Vercel's deploy step consistently failed on it. The
-network-failure broadcast now happens client-side in the axios
+the SW, but the demo host's deploy step (then Vercel) consistently failed
+on it. The network-failure broadcast now happens client-side in the axios
 interceptor, which loses the "silent SW cache fallback" signal but
 catches every other failure mode and reliably deploys.
 
@@ -157,12 +157,13 @@ by bumping the limit.
 ## Lockfile hygiene
 
 `vite-plugin-pwa` is in `dependencies`, not `devDependencies`, because
-Vercel needs it during `npm ci && npm run build`. More importantly:
-**never regenerate `frontend/package-lock.json` from scratch in this
-sandbox.** The local npm proxy strips `resolved` URLs from registry
-responses, leaving the lockfile valid-looking but unusable by Vercel
-(`npm ci` can't fetch packages without those URLs and silently bails,
-producing a deploy failure with no actionable error).
+the demo deploy build needs it during `npm ci && npm run build` (see
+`.github/workflows/deploy.yml`). More importantly: **never regenerate
+`frontend/package-lock.json` from scratch in this sandbox.** The local
+npm proxy strips `resolved` URLs from registry responses, leaving the
+lockfile valid-looking but unusable by CI (`npm ci` can't fetch packages
+without those URLs and silently bails, producing a deploy failure with
+no actionable error).
 
 Safe lockfile workflows:
 
@@ -175,8 +176,8 @@ Safe lockfile workflows:
   `npm install` to add your branch's new deps incrementally.
 - **Sanity check before pushing:** `grep -c '"resolved":'
   frontend/package-lock.json` should equal the number of entries
-  (search for `"node_modules/"` to count). Any gap means Vercel will
-  fail.
+  (search for `"node_modules/"` to count). Any gap means every CI job
+  that runs `npm ci` will fail.
 
 ## CSP and worker-src
 
@@ -206,9 +207,11 @@ surface inside the SW.
 - Do **not** put credentials, OTP secrets, or scrape-result raw payloads
   into a query whose key doesn't include the word "credential" or
   "scraping" — the heuristics in `shouldDehydrateQuery` won't catch it.
-- Do **not** switch `vite-plugin-pwa` to `injectManifest` without
-  testing on Vercel — we tried it and Vercel's deploy step bailed
-  every time (works locally + GitHub Actions). Stay on `generateSW`.
+- Do **not** switch `vite-plugin-pwa` to `injectManifest` without a
+  strong reason and a verified run of the full deploy pipeline
+  (`.github/workflows/deploy.yml`). The original failure was on Vercel
+  (since retired), but the axios-interceptor design made the custom SW
+  unnecessary anyway. Stay on `generateSW`.
 - Do **not** ship a new build that changes the API response shape of a
   cached endpoint without bumping `PERSIST_BUSTER`. Old clients will
   hydrate the new code with the old shape.
@@ -217,7 +220,7 @@ surface inside the SW.
   triggered them.
 - Do **not** delete `frontend/package-lock.json` and run `npm install`
   in this sandbox to "regenerate" it. The proxy strips `resolved` URLs
-  and Vercel's `npm ci` will fail. See "Lockfile hygiene" above.
+  and CI's `npm ci` will fail. See "Lockfile hygiene" above.
 
 ## File map (quick reference)
 

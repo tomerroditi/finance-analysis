@@ -1,0 +1,46 @@
+# Deploys the public demo to Cloudflare Workers.
+#
+# The Worker serves the React build as static assets and routes /api requests
+# to a Cloudflare Container running the FastAPI backend in demo mode — see
+# wrangler.jsonc and deploy/cloudflare/. `wrangler deploy` builds and pushes
+# the container image with Docker (available on ubuntu-latest).
+#
+# Requires two repository secrets:
+#   CLOUDFLARE_API_TOKEN   — API token with the "Edit Cloudflare Workers"
+#                            template permissions + Containers write
+#   CLOUDFLARE_ACCOUNT_ID  — the target Cloudflare account id
+name: Deploy Demo (Cloudflare)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

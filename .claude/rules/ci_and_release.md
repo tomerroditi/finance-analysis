@@ -3,12 +3,13 @@
 How GitHub Actions are wired up. Read this before touching anything in
 `.github/workflows/`.
 
-## Two workflows, two responsibilities
+## Three workflows, three responsibilities
 
 | Workflow                 | Trigger                | Purpose                                          |
 |--------------------------|------------------------|--------------------------------------------------|
 | `.github/workflows/ci.yml`     | `pull_request` to main, manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest. Fails the PR if anything breaks. |
 | `.github/workflows/release.yml`| `push` to main         | Re-run CI checks, then `commitizen` bump, build the Windows installer + macOS DMG, attach to the GitHub release. |
+| `.github/workflows/deploy.yml` | `push` to main, manual | Deploy the public demo to Cloudflare Workers — frontend as edge static assets, FastAPI backend as a Cloudflare Container (see `wrangler.jsonc` + `deploy/cloudflare/`). Needs the `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` repo secrets. |
 
 The split exists because:
 

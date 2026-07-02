@@ -1,9 +1,9 @@
-"""Vercel serverless entry point for Finance Analysis API.
+"""Demo-deployment entry point for the Finance Analysis API.
 
-Vercel natively supports FastAPI — it auto-detects the `app` variable.
-No Mangum adapter needed. On cold start we seed the demo database into /tmp,
-shift its dates so the data tracks today, and force demo mode so preview
-deployments are stocked with sample data.
+The Cloudflare Containers image (deploy/cloudflare/Dockerfile) runs this
+module under uvicorn. On process start we seed the demo database into /tmp,
+shift its dates so the data tracks today, and force demo mode so the public
+demo is stocked with sample data.
 """
 
 import os
@@ -12,20 +12,20 @@ import os
 # AppConfig._base_user_dir is evaluated at class-definition time from FAD_USER_DIR.
 # CORS_ORIGINS is read at middleware init time during `from backend.main import app`.
 os.environ["FAD_USER_DIR"] = "/tmp/finance-analysis"
-# Default to the deployed Vercel URL when available. We deliberately avoid a
-# wildcard fallback so a misconfigured deployment fails closed (browsers will
-# simply refuse cross-origin requests) rather than silently accepting every
-# origin. Override ``CORS_ORIGINS`` in Vercel project settings to pin a
-# specific domain.
-_vercel_url = os.environ.get("VERCEL_URL")
-if _vercel_url and "CORS_ORIGINS" not in os.environ:
-    os.environ["CORS_ORIGINS"] = f"https://{_vercel_url}"
-else:
-    os.environ.setdefault(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    )
-os.environ.setdefault("VERCEL", "1")
+# In the deployed demo the Worker serves the frontend and the API from one
+# origin, so cross-origin requests never happen and this default only matters
+# when running the container locally against a Vite dev server. Override
+# ``CORS_ORIGINS`` on the container if a cross-origin setup is ever needed —
+# there is deliberately no wildcard fallback, so a misconfigured deployment
+# fails closed (browsers refuse the cross-origin response) rather than
+# silently accepting every origin.
+os.environ.setdefault(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
+# Skips the lifespan startup work in backend.main (migrations, keyring-backed
+# credential migration) — the demo DB prepared below is already current.
+os.environ.setdefault("FAD_DEMO_DEPLOYMENT", "1")
 
 from backend.config import AppConfig  # noqa: E402
 from backend.demo_setup import prepare_demo_database  # noqa: E402
@@ -48,8 +48,7 @@ from backend.services.investments_service import InvestmentsService  # noqa: E40
 with get_db_context() as _db:
     InvestmentsService(_db).backfill_from_insurance_accounts()
 
-# Vercel auto-detects this `app` variable as the FastAPI application.
-# lifespan is skipped (VERCEL env var guard) because it imports keyring.
+# uvicorn is pointed at this `app` binding (see the Dockerfile CMD).
 from backend.main import app  # noqa: E402
 
 __all__ = ["app"]

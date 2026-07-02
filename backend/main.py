@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
-    # Skip startup migrations in serverless (demo DB is pre-built)
-    if os.environ.get("VERCEL"):
+    # Skip startup migrations in demo deployments (demo DB is pre-built)
+    if os.environ.get("FAD_DEMO_DEPLOYMENT"):
         yield
         return
 
@@ -453,7 +453,7 @@ async def health_check():
 # Serve frontend static build in production.
 #
 # Two layouts to support:
-#   1. Dev / pip-install / Vercel  → frontend/dist sits next to backend/
+#   1. Dev / pip-install           → frontend/dist sits next to backend/
 #                                    in the repo tree.
 #   2. PyInstaller-frozen bundle   → frontend/dist lives inside
 #                                    sys._MEIPASS (the temp dir the

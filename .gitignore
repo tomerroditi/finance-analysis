@@ -72,7 +72,7 @@ $RECYCLE.BIN/
 
 .worktrees
 .claude/worktrees/
-.vercel
+.wrangler/
 .env*.local
 
 # Playwright artifacts (MCP screenshots, runner reports/traces)

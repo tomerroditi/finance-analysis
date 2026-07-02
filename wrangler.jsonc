@@ -1,0 +1,63 @@
+// Cloudflare Workers configuration for the public demo deployment.
+//
+// One Worker serves the whole demo:
+//   - The React build (frontend/dist) is uploaded as static assets and served
+//     from Cloudflare's edge with SPA fallback for client-side routes.
+//   - Backend paths (run_worker_first below) are routed by the Worker script
+//     to a Cloudflare Container running the FastAPI app — see
+//     deploy/cloudflare/worker.js and deploy/cloudflare/Dockerfile.
+//
+// Deploys run from .github/workflows/deploy.yml (wrangler deploy builds and
+// pushes the container image, so Docker must be available). Local end-to-end
+// testing: `npx wrangler dev` (also requires Docker).
+{
+	"name": "finance-analysis",
+	"main": "deploy/cloudflare/worker.js",
+	"compatibility_date": "2026-07-01",
+	"assets": {
+		"directory": "frontend/dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		// Backend paths must reach the Worker script; without this the SPA
+		// fallback would answer them with index.html.
+		"run_worker_first": [
+			"/api/*",
+			"/health",
+			"/docs",
+			"/redoc",
+			"/openapi.json"
+		]
+	},
+	"containers": [
+		{
+			"class_name": "FinanceBackend",
+			"image": "./deploy/cloudflare/Dockerfile",
+			// Build from the repo root so the image can COPY backend/ and
+			// demo_app.py.
+			"image_build_context": ".",
+			// The demo is a single shared instance — every visitor sees the
+			// same freshly-seeded demo database (reset on container restart).
+			"max_instances": 1,
+			// "basic" = 1 GiB memory. pandas + the seeded demo DB do not fit
+			// comfortably in the default "lite" (256 MiB) instance.
+			"instance_type": "basic"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "BACKEND",
+				"class_name": "FinanceBackend"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["FinanceBackend"]
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}

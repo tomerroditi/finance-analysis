@@ -18,8 +18,8 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         // generateSW: Workbox builds the SW from JSON config. We previously
         // ran injectManifest with a hand-written src/sw.ts to use a custom
-        // fetchDidFail plugin, but that path consistently failed Vercel's
-        // build (works locally + GitHub Actions). The network-failure
+        // fetchDidFail plugin, but that path consistently failed the build
+        // on Vercel (the since-retired demo host). The network-failure
         // surface is now reproduced client-side via an axios response
         // interceptor in src/services/api.ts, so we don't need the inline
         // plugin and can stay on the simpler, build-portable generateSW
