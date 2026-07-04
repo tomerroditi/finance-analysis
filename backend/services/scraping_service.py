@@ -215,6 +215,12 @@ class ScrapingService:
         adapter = _tfa_scrapers_waiting.pop(name)
         adapter.set_otp_code(code)
 
+        # _active_scrapers is deliberately NOT popped here: the entry must
+        # persist through code submission so the account stays single-flight
+        # locked while the submitted code is being verified, preventing a
+        # duplicate launch. The adapter's run() `finally` cleans it up once
+        # the scrape actually finishes (success, failure, or cancellation).
+
         # Transition status from waiting_for_2fa to in_progress
         if code != ScraperAdapter.CANCEL:
             self.scraping_history_repo.update_status(
@@ -272,10 +278,13 @@ class ScrapingService:
         try:
             await adapter.resend_otp()
         except OtpRateLimitError as err:
-            raise BadRequestException(str(err))
+            raise BadRequestException(str(err)) from err
         except ResendNotSupportedError:
             # Browser providers can't re-issue mid-flow: abort the parked
             # scrape and relaunch from scratch (no period → auto start date).
+            # abort_scraping_process() removes the _active_scrapers entry
+            # synchronously, so start_scraping_single's single-flight check
+            # sees a clean slate here — no double-registration for this account.
             self.abort_scraping_process(adapter.process_id)
             new_id = self.start_scraping_single(service, provider, account)
             return {"status": "restarted", "process_id": new_id}

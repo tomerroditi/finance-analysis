@@ -657,7 +657,7 @@ export function DataSources() {
                           {t("dataSources.verify")}
                         </button>
                         <button
-                          onClick={() => resendTfa(scraper, scrapingPeriodDays)}
+                          onClick={() => resendTfa(scraper)}
                           disabled={tfaIsPending || cooldownRemaining > 0}
                           className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >

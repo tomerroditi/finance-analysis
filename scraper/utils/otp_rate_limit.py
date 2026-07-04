@@ -31,6 +31,12 @@ OTP_PREPARE_MAX_PER_WINDOW = 3
 OTP_PREPARE_WINDOW_SECONDS = 900
 OTP_BLOCK_COOLDOWN_SECONDS = 3600
 
+OTP_PROVIDER_BLOCKED_MESSAGE = (
+    "Your phone number is temporarily blocked by the bank's "
+    "SMS provider (too many code requests). Please try "
+    "again later."
+)
+
 
 class OtpRateLimitError(Exception):
     """Raised when an OTP prepare request violates the rate limit."""
@@ -97,11 +103,7 @@ class OtpPrepareRateLimiter:
         blocked_until = self._blocked_until.get(phone_number)
         if blocked_until is not None:
             if blocked_until > now:
-                raise OtpProviderBlockedError(
-                    "Your phone number is temporarily blocked by the bank's "
-                    "SMS provider (too many code requests). Please try "
-                    "again later."
-                )
+                raise OtpProviderBlockedError(OTP_PROVIDER_BLOCKED_MESSAGE)
             # Cooldown elapsed — prune the stale block entry.
             del self._blocked_until[phone_number]
 

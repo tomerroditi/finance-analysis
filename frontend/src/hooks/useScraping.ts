@@ -188,7 +188,7 @@ export function useScraping() {
   // browser-based providers can't resend mid-flow, so the backend aborts
   // and relaunches, returning a NEW process_id we must swap in.
   const resendTfa = useCallback(
-    async (scraper: ScraperState, _scrapingPeriodDays: number | null) => {
+    async (scraper: ScraperState) => {
       const oldProcessId = scraper.process_id;
       setResendErrors((prev) => {
         const next = { ...prev };

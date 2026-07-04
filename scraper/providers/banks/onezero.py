@@ -11,7 +11,11 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
-from scraper.utils.otp_rate_limit import OtpProviderBlockedError, otp_prepare_rate_limiter
+from scraper.utils.otp_rate_limit import (
+    OTP_PROVIDER_BLOCKED_MESSAGE,
+    OtpProviderBlockedError,
+    otp_prepare_rate_limiter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -759,11 +763,7 @@ class OneZeroScraper(ApiScraper):
                 phone_number,
             )
             otp_prepare_rate_limiter.record_provider_block(phone_number)
-            raise OtpProviderBlockedError(
-                "Your phone number is temporarily blocked by the bank's "
-                "SMS provider (too many code requests). Please try again "
-                "later."
-            ) from error
+            raise OtpProviderBlockedError(OTP_PROVIDER_BLOCKED_MESSAGE) from error
 
         self._otp_context = _extract_result_data(otp_prepare_response, "otpContext")
 

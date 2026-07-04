@@ -115,7 +115,7 @@ describe("useScraping.scrapeAll", () => {
     const seededWaiting = result.current.getScraperForAccount(waiting2faAcc);
     expect(seededWaiting).toBeDefined();
     await act(async () => {
-      await result.current.resendTfa(seededWaiting!, null);
+      await result.current.resendTfa(seededWaiting!);
     });
     expect(result.current.getScraperForAccount(waiting2faAcc)?.status).toBe(
       "waiting_for_2fa",
@@ -158,7 +158,7 @@ describe("useScraping.resendTfa", () => {
     const { result } = renderHook(() => useScraping(), { wrapper });
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     expect(scrapingApi.resend2fa).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.start as ReturnType<typeof vi.fn>).mockClear();
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     const scraper = result.current.getScraperForAccount(acc);
@@ -202,7 +202,7 @@ describe("useScraping.resendTfa", () => {
     });
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     const scraper = result.current.getScraperForAccount(acc);
@@ -219,7 +219,7 @@ describe("useScraping.resendTfa", () => {
     expect(result.current.resendCooldownRemaining(1)).toBe(0);
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     expect(RESEND_COOLDOWN_SECONDS).toBe(60);
@@ -239,7 +239,7 @@ describe("useScraping.resendTfa", () => {
     const { result } = renderHook(() => useScraping(), { wrapper });
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     expect(result.current.resendErrors[1]).toEqual({
@@ -256,7 +256,7 @@ describe("useScraping.resendTfa", () => {
     const { result } = renderHook(() => useScraping(), { wrapper });
 
     await act(async () => {
-      await result.current.resendTfa(waitingScraper, 30);
+      await result.current.resendTfa(waitingScraper);
     });
 
     expect(result.current.resendErrors[1]).toEqual({ kind: "expired" });
