@@ -19,10 +19,12 @@ import {
   Workflow,
   Bell,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
+import { useDemoMode } from "../../context/DemoModeContext";
+import { prefetchRoute } from "../../services/routePrefetch";
 import { SettingsPopup } from "./SettingsPopup";
 import { BudgetAlertsBell } from "./BudgetAlertsBell";
 import { BudgetAlertsPopup } from "./BudgetAlertsPopup";
@@ -50,6 +52,15 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileAlertsOpen, setMobileAlertsOpen] = useState(false);
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const { isDemoMode } = useDemoMode();
+
+  // Warm the destination route's data on hover / focus / press so the click
+  // lands on an already-fetched page instead of a loading skeleton.
+  const handlePrefetch = useCallback(
+    (path: string) => prefetchRoute(queryClient, path, { isDemoMode }),
+    [queryClient, isDemoMode],
+  );
 
   // Budget alerts visible-count for the mobile drawer tile badge
   const { enabled: budgetAlertsEnabled } = useBudgetAlertSettings();
@@ -164,6 +175,9 @@ export function Sidebar() {
             key={item.path}
             to={item.path}
             onClick={() => setMobileSidebarOpen(false)}
+            onMouseEnter={() => handlePrefetch(item.path)}
+            onFocus={() => handlePrefetch(item.path)}
+            onPointerDown={() => handlePrefetch(item.path)}
             className={({ isActive }) =>
               `relative flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                 isActive
