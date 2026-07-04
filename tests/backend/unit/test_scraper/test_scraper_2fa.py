@@ -71,6 +71,39 @@ class TestAdapter2FA:
         code = asyncio.run(run())
         assert code == "654321"
 
+    def test_otp_callback_returns_immediately_for_pre_delivered_code(self):
+        """A code set BEFORE the callback runs must not be lost.
+
+        Regression test for the clear()-then-wait race: the service
+        registers the adapter in ``_tfa_scrapers_waiting`` eagerly, before
+        the scraper coroutine reaches ``await on_otp_request()``. If the
+        user (or a client) calls ``set_otp_code`` in that gap, the old
+        implementation's ``self._otp_event.clear()`` — which ran *after*
+        the code was already set — would discard the delivered code and
+        the event, and the scraper would then hang on
+        ``await self._otp_event.wait()`` until the 5-minute scrape timeout.
+
+        Guarding the wait with ``if self._otp_code is None`` means a
+        pre-delivered code is returned immediately, with no wait at all.
+        """
+        adapter = ScraperAdapter(
+            "banks", "onezero", DUMMY_ACCOUNT,
+            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        )
+
+        # Code delivered BEFORE _otp_callback is ever invoked.
+        adapter.set_otp_code("111222")
+
+        async def run():
+            # A tight timeout: if the old clear()-then-wait bug were still
+            # present, this would hang until the timeout fires and the
+            # test would fail with asyncio.TimeoutError instead of hanging
+            # forever — a fast, clear failure signal.
+            return await asyncio.wait_for(adapter._otp_callback(), timeout=1.0)
+
+        code = asyncio.run(run())
+        assert code == "111222"
+
     def test_otp_callback_flips_status_to_waiting_for_2fa(self):
         """The status is flipped to WAITING_FOR_2FA when the scraper awaits an OTP.
 

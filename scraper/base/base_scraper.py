@@ -10,6 +10,31 @@ from scraper.models.result import LoginResult, ScrapingResult
 
 logger = logging.getLogger(__name__)
 
+# Sentinel value the OTP callback (``on_otp_request``) returns to signal that
+# the user aborted two-factor authentication. A scraper that receives this
+# value MUST short-circuit its login and MUST NOT forward it to the provider
+# as an OTP code. Kept in sync with ``ScraperAdapter.CANCEL``.
+OTP_CANCEL_SENTINEL = "cancel"
+
+
+class OtpCanceledError(Exception):
+    """Raised when the user cancels the interactive OTP flow.
+
+    A clean, user-initiated abort of two-factor authentication — distinct from
+    an OTP verification failure — so ``login`` can end without contacting the
+    provider's verify endpoint.
+    """
+
+
+class ResendNotSupportedError(Exception):
+    """Raised when a scraper cannot re-issue its OTP in place.
+
+    Interactive SMS providers (e.g. OneZero) override ``resend_otp`` to
+    re-request the code without restarting login. Browser-driven providers
+    that can't re-issue mid-flow leave the base implementation, which raises
+    this so the backend falls back to aborting and relaunching the scrape.
+    """
+
 
 @dataclass
 class ScraperOptions:
@@ -41,6 +66,9 @@ class BaseScraper(ABC):
         self.credentials = credentials
         self.options = options or ScraperOptions()
         self.on_progress: Optional[Callable[[str], None]] = None
+        # Async callback returning the OTP code entered by the user. Returning
+        # ``OTP_CANCEL_SENTINEL`` signals a user cancellation — the scraper must
+        # abort without forwarding it to the provider (raise ``OtpCanceledError``).
         self.on_otp_request: Optional[Callable[[], Awaitable[str]]] = None
         # Optional human-readable detail a subclass can set when login fails, so
         # a general/unknown login failure surfaces the real reason (e.g. the
@@ -156,6 +184,25 @@ class BaseScraper(ABC):
             logger.warning(
                 "Error during terminate for %s: %s", self.provider, e
             )
+
+    async def resend_otp(self) -> None:
+        """Re-issue the OTP for a scraper currently awaiting one.
+
+        The default implementation raises :class:`ResendNotSupportedError`.
+        Providers whose OTP can be re-sent without restarting login (an
+        interactive SMS flow like OneZero) override this to re-request the
+        code, updating any provider-side OTP context in place. Browser-driven
+        providers leave this default, and the backend falls back to aborting
+        and relaunching the scrape.
+
+        Raises
+        ------
+        ResendNotSupportedError
+            Always, unless a subclass overrides this method.
+        """
+        raise ResendNotSupportedError(
+            f"{self.provider} does not support resending the OTP in place"
+        )
 
     def _emit_progress(self, message: str) -> None:
         """Call the progress callback if one is set."""
