@@ -23,6 +23,7 @@ import { NetWorthCard } from "../components/dashboard/NetWorthCard";
 import { CashFlowCard } from "../components/dashboard/CashFlowCard";
 import { CategoryBreakdownCard } from "../components/dashboard/CategoryBreakdownCard";
 import { Skeleton } from "../components/common/Skeleton";
+import { DeferUntilVisible } from "../components/common/DeferUntilVisible";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useDemoMode } from "../context/DemoModeContext";
@@ -31,6 +32,12 @@ import { formatCurrency, formatChange, formatPercentChange } from "../utils/numb
 import { formatMonthCompact } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
+
+/* How many leading cards render eagerly on first paint. The rest defer until
+ * scrolled near the viewport. Four covers the two half-card rows that sit above
+ * the fold in the default layout, so the visible dashboard is never gated on a
+ * skeleton while the heavier chart cards below load lazily. */
+const EAGER_CARD_COUNT = 4;
 
 /* ------------------------------------------------------------------ */
 /*  Helper sub-components (extracted to avoid creating during render)  */
@@ -361,7 +368,7 @@ export function Dashboard() {
           taller card (still capped). On mobile the grid is a single column with
           natural, uncapped heights. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 [--dash-card-h:39rem]">
-        {layout.order.map((id) => (
+        {layout.order.map((id, index) => (
           <div
             key={id}
             data-card-id={id}
@@ -370,7 +377,17 @@ export function Dashboard() {
               id !== "recent" ? "lg:[&>*]:max-h-[var(--dash-card-h)]" : ""
             } ${cardSize(id) === "full" ? "lg:col-span-2" : ""}`}
           >
-            {cardRenderers[id]()}
+            {/* The first cards render eagerly (above the fold on any viewport);
+                the rest wait until scrolled near, so their analytics requests
+                don't compete with the header + top cards on first paint. The
+                placeholder reserves the card's capped height so lower cards
+                stay below the fold and the layout doesn't jump on mount. */}
+            <DeferUntilVisible
+              eager={index < EAGER_CARD_COUNT}
+              reserveClassName={cardSize(id) === "full" ? "min-h-[39rem]" : "min-h-[20rem]"}
+            >
+              {cardRenderers[id]()}
+            </DeferUntilVisible>
           </div>
         ))}
       </div>
