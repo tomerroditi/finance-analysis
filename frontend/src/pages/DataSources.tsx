@@ -86,6 +86,7 @@ export function DataSources() {
   const {
     startScraper, scrapeAll, submitTfa, resendTfa, abortScraper,
     getScraperForAccount, isAnyScraping, tfaIsPending,
+    resendCooldownRemaining, resendErrors,
   } = useScraping();
 
   const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(null);
@@ -590,7 +591,21 @@ export function DataSources() {
                 </div>
 
                 {/* 2FA Inline Section */}
-                {scraper?.status === "waiting_for_2fa" && (
+                {scraper?.status === "waiting_for_2fa" && (() => {
+                  const cooldownRemaining = resendCooldownRemaining(scraper.process_id);
+                  const resendErrorInfo = resendErrors[scraper.process_id];
+                  // Rate-limit detail is the backend's own actionable
+                  // wait-and-retry hint — show it verbatim. Everything else
+                  // gets a translated message (backend strings are
+                  // English-only and not meant for direct display).
+                  const resendError = resendErrorInfo
+                    ? resendErrorInfo.kind === "rate_limited" && resendErrorInfo.detail
+                      ? resendErrorInfo.detail
+                      : resendErrorInfo.kind === "expired"
+                        ? t("dataSources.resendProcessExpired")
+                        : t("dataSources.resendFailed")
+                    : undefined;
+                  return (
                   <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-amber-500/20">
                     <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
                       <Smartphone className="text-amber-400 shrink-0" size={18} />
@@ -643,15 +658,23 @@ export function DataSources() {
                         </button>
                         <button
                           onClick={() => resendTfa(scraper, scrapingPeriodDays)}
-                          disabled={tfaIsPending}
-                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50"
+                          disabled={tfaIsPending || cooldownRemaining > 0}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
-                          {t("dataSources.resend")}
+                          {cooldownRemaining > 0
+                            ? t("dataSources.resendIn", { seconds: cooldownRemaining })
+                            : t("dataSources.resend")}
                         </button>
                       </div>
                     </div>
+                    {!!resendError && (
+                      <p className="mt-2 text-xs text-red-400 font-medium" dir="auto">
+                        {resendError}
+                      </p>
+                    )}
                   </div>
-                )}
+                  );
+                })()}
               </div>
               );
             };
