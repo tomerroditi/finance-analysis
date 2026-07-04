@@ -33,7 +33,7 @@ class ProviderFieldsResponse(BaseModel):
 
 
 @router.get("/")
-async def get_credentials(
+def get_credentials(
     db: Session = Depends(get_database),
 ) -> dict[str, dict[str, list[str]]]:
     """Return all stored credentials, omitting passwords.
@@ -49,7 +49,7 @@ async def get_credentials(
 
 
 @router.get("/accounts")
-async def get_accounts(
+def get_accounts(
     db: Session = Depends(get_database),
 ) -> list[dict[str, str]]:
     """Get a list of all configured accounts."""
@@ -58,7 +58,7 @@ async def get_accounts(
 
 
 @router.get("/{service}/{provider}/{account_name}")
-async def get_credential_details(
+def get_credential_details(
     service: str,
     provider: str,
     account_name: str,
@@ -73,13 +73,13 @@ async def get_credential_details(
 
 
 @router.get("/providers")
-async def get_providers() -> dict[str, list[str]]:
+def get_providers() -> dict[str, list[str]]:
     """Get all supported providers."""
     return CredentialsService.get_available_providers()
 
 
 @router.post("/", response_model=StatusResponse)
-async def create_credential(
+def create_credential(
     credential: CredentialCreate,
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
@@ -96,14 +96,14 @@ async def create_credential(
 
 
 @router.get("/fields/{provider}", response_model=ProviderFieldsResponse)
-async def get_provider_fields(provider: str) -> dict[str, List[str]]:
+def get_provider_fields(provider: str) -> dict[str, List[str]]:
     """Get the required fields for a provider login."""
     fields = LoginFields.get_fields(provider)
     return {"fields": fields}
 
 
 @router.delete("/{service}/{provider}/{account_name}", response_model=StatusResponse)
-async def delete_credential(
+def delete_credential(
     service: str,
     provider: str,
     account_name: str,

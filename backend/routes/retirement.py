@@ -148,14 +148,14 @@ class ScrapedDefaultsResponse(BaseModel):
 
 
 @router.get("/goal", response_model=Optional[RetirementGoalResponse])
-async def get_goal(db: Session = Depends(get_database)):
+def get_goal(db: Session = Depends(get_database)):
     """Get the retirement goal profile, or null if not configured."""
     service = RetirementService(db)
     return service.get_goal()
 
 
 @router.put("/goal", response_model=RetirementGoalResponse)
-async def upsert_goal(
+def upsert_goal(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
 ):
     """Create or update the retirement goal profile."""
@@ -164,21 +164,21 @@ async def upsert_goal(
 
 
 @router.get("/status", response_model=RetirementStatusResponse)
-async def get_status(db: Session = Depends(get_database)):
+def get_status(db: Session = Depends(get_database)):
     """Get current financial status from real tracked data."""
     service = RetirementService(db)
     return service.get_current_status()
 
 
 @router.get("/projections", response_model=RetirementProjectionsResponse)
-async def get_projections(db: Session = Depends(get_database)):
+def get_projections(db: Session = Depends(get_database)):
     """Get FIRE projections from the saved goal."""
     service = RetirementService(db)
     return service.get_projections()
 
 
 @router.post("/projections", response_model=RetirementProjectionsResponse)
-async def preview_projections(
+def preview_projections(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
 ):
     """Compute FIRE projections from provided goal params without saving."""
@@ -187,14 +187,14 @@ async def preview_projections(
 
 
 @router.get("/suggestions", response_model=RetirementSuggestionsResponse)
-async def get_suggestions(db: Session = Depends(get_database)):
+def get_suggestions(db: Session = Depends(get_database)):
     """Solve all adjustable fields from the saved goal."""
     service = RetirementService(db)
     return service.solve_all_fields()
 
 
 @router.post("/suggestions", response_model=RetirementSuggestionsResponse)
-async def preview_suggestions(
+def preview_suggestions(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
 ):
     """Solve all adjustable fields from provided goal params without saving."""
@@ -203,14 +203,14 @@ async def preview_suggestions(
 
 
 @router.get("/solve/{field}", response_model=SolveFieldResponse)
-async def solve_for_field(field: str, db: Session = Depends(get_database)):
+def solve_for_field(field: str, db: Session = Depends(get_database)):
     """Solve for a field value that reaches FIRE at target retirement age."""
     service = RetirementService(db)
     return service.solve_for_field(field)
 
 
 @router.get("/keren-hishtalmut-balance", response_model=KerenHishtalmutBalanceResponse)
-async def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
+def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
     """Get auto-detected Keren Hishtalmut balance from scraped insurance data."""
     service = RetirementService(db)
     balance = service.get_keren_hishtalmut_scraped_balance()
@@ -218,7 +218,7 @@ async def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
 
 
 @router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
-async def get_scraped_defaults(db: Session = Depends(get_database)):
+def get_scraped_defaults(db: Session = Depends(get_database)):
     """Get all auto-fillable values from scraped insurance data.
 
     Returns Keren Hishtalmut balance and monthly contribution, plus
