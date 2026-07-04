@@ -11,6 +11,16 @@ from scraper.models.result import LoginResult, ScrapingResult
 logger = logging.getLogger(__name__)
 
 
+class ResendNotSupportedError(Exception):
+    """Raised when a scraper cannot re-issue its OTP in place.
+
+    Interactive SMS providers (e.g. OneZero) override ``resend_otp`` to
+    re-request the code without restarting login. Browser-driven providers
+    that can't re-issue mid-flow leave the base implementation, which raises
+    this so the backend falls back to aborting and relaunching the scrape.
+    """
+
+
 @dataclass
 class ScraperOptions:
     """Configuration options for a scraper run."""
@@ -156,6 +166,25 @@ class BaseScraper(ABC):
             logger.warning(
                 "Error during terminate for %s: %s", self.provider, e
             )
+
+    async def resend_otp(self) -> None:
+        """Re-issue the OTP for a scraper currently awaiting one.
+
+        The default implementation raises :class:`ResendNotSupportedError`.
+        Providers whose OTP can be re-sent without restarting login (an
+        interactive SMS flow like OneZero) override this to re-request the
+        code, updating any provider-side OTP context in place. Browser-driven
+        providers leave this default, and the backend falls back to aborting
+        and relaunching the scrape.
+
+        Raises
+        ------
+        ResendNotSupportedError
+            Always, unless a subclass overrides this method.
+        """
+        raise ResendNotSupportedError(
+            f"{self.provider} does not support resending the OTP in place"
+        )
 
     def _emit_progress(self, message: str) -> None:
         """Call the progress callback if one is set."""

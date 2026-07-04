@@ -22,6 +22,7 @@ from backend.config import AppConfig
 from backend.constants.providers import Services
 from backend.constants.tables import Tables, TransactionsTableFields
 from backend.database import get_db_context
+from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -62,6 +63,18 @@ def _import_scraper_module(name: str):
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     return importlib.import_module(name)
+
+
+# Re-export the root-package OTP errors so callers (e.g. ScrapingService) can
+# ``from backend.scraper.adapter import ResendNotSupportedError`` without doing
+# a bare ``import scraper`` (which collides with ``backend.scraper``). Resolved
+# here via the helper so the collision workaround lives in exactly one place.
+ResendNotSupportedError = _import_scraper_module(
+    "scraper.base.base_scraper"
+).ResendNotSupportedError
+OtpRateLimitError = _import_scraper_module(
+    "scraper.utils.otp_rate_limit"
+).OtpRateLimitError
 
 # Maps frontend service names to DB table / source column values.
 _SERVICE_TO_TABLE = {
@@ -150,6 +163,10 @@ class ScraperAdapter:
         # 2FA state
         self._otp_code: str | None = None
         self._otp_event = asyncio.Event()
+        # The underlying scraper instance, set once ``run()`` builds it. Stays
+        # ``None`` until then, so a resend that races ahead of scraper
+        # construction can be rejected cleanly (see ``resend_otp``).
+        self._scraper = None
 
         # Pipeline state
         self._data: pd.DataFrame | None = None
@@ -182,6 +199,9 @@ class ScraperAdapter:
         scraper = None
         try:
             scraper = self._create_scraper(create_scraper, ScraperOptions)
+            # Expose the scraper so resend_otp can reach it while the
+            # coroutine is parked in _otp_callback awaiting the user's code.
+            self._scraper = scraper
             if scraper_is_2fa_required(self.provider_name):
                 scraper.on_otp_request = self._otp_callback
 
@@ -251,10 +271,20 @@ class ScraperAdapter:
         2FA ones) has no earlier removal point — this is its only cleanup —
         so a completed or failed scrape stops blocking a fresh launch of
         the same account.
+
+        Pops **by identity**: an entry is removed only when it still points
+        to ``self``. In the abort→relaunch race, an aborted adapter's
+        ``finally`` runs after a fresh adapter has already re-registered
+        under the same account key; a pop-by-name would evict that newer
+        adapter and silently drop its single-flight lock (letting a
+        duplicate scrape — and a duplicate OTP SMS — launch). Checking
+        identity leaves the newer adapter untouched.
         """
         name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
-        _tfa_scrapers_waiting.pop(name, None)
-        _active_scrapers.pop(name, None)
+        if _tfa_scrapers_waiting.get(name) is self:
+            _tfa_scrapers_waiting.pop(name, None)
+        if _active_scrapers.get(name) is self:
+            _active_scrapers.pop(name, None)
 
     def _persist_refreshed_otp_token(self, scraper) -> None:
         """Persist a freshly obtained long-term token after a forced re-auth.
@@ -301,6 +331,31 @@ class ScraperAdapter:
         """
         self._otp_code = code
         self._otp_event.set()
+
+    async def resend_otp(self) -> None:
+        """Re-issue the OTP for the underlying scraper without restarting it.
+
+        Delegates to the scraper's ``resend_otp``. This only mutates the
+        provider's OTP context (e.g. OneZero's ``_otp_context``); it does not
+        touch ``_otp_event`` or ``_otp_code``, so it is safe to call while the
+        scraper coroutine is parked in ``_otp_callback`` awaiting the user's
+        code. When the user later submits the code, the parked coroutine reads
+        the freshly-updated context.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the scraper hasn't been built yet (the resend raced ahead of
+            ``run()`` constructing it).
+        ResendNotSupportedError
+            If the underlying scraper can't re-issue its OTP in place (the
+            caller falls back to abort + relaunch).
+        OtpRateLimitError
+            If the underlying prepare is rate-limited.
+        """
+        if self._scraper is None:
+            raise EntityNotFoundException("Scraper is not ready for a resend yet")
+        await self._scraper.resend_otp()
 
     # ------------------------------------------------------------------
     # Scraper creation

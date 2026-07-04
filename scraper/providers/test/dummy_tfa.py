@@ -31,3 +31,13 @@ class DummyTFAScraper(DummyRegularScraper):
             return LoginResult.UNKNOWN_ERROR
 
         return LoginResult.SUCCESS
+
+    async def resend_otp(self) -> None:
+        """Simulate an in-place OTP resend (no-op).
+
+        Overrides the base ``ResendNotSupportedError`` so demo-mode e2e can
+        exercise the "resend in place" path. No real SMS is sent and no
+        state changes — the dummy login accepts any subsequently submitted
+        code.
+        """
+        self._emit_progress("Resent OTP code")

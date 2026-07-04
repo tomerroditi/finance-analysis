@@ -5,11 +5,16 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.database import get_db_context
-from backend.errors import EntityNotFoundException
+from backend.errors import BadRequestException, EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
-from backend.scraper.adapter import _active_scrapers, _tfa_scrapers_waiting
+from backend.scraper.adapter import (
+    OtpRateLimitError,
+    ResendNotSupportedError,
+    _active_scrapers,
+    _tfa_scrapers_waiting,
+)
 
 
 class ScrapingService:
@@ -215,6 +220,67 @@ class ScrapingService:
             self.scraping_history_repo.update_status(
                 adapter.process_id, self.scraping_history_repo.IN_PROGRESS
             )
+
+    async def resend_2fa_code(
+        self, service: str, provider: str, account: str
+    ) -> dict:
+        """Re-issue the OTP for an awaiting scraper without losing its process.
+
+        Resolves the live adapter (``_active_scrapers`` first, then
+        ``_tfa_scrapers_waiting``) and asks it to re-issue the OTP in place.
+        Behaviour depends on the provider:
+
+        - **Resend-capable** (OneZero — interactive SMS): the same scraper
+          re-runs its OTP prepare (rate-limited), the process stays alive, and
+          this returns ``{"status": "resent", "process_id": <same id>}``.
+        - **Not resend-capable** (browser-based providers that raise
+          ``ResendNotSupportedError``): falls back to the old behaviour —
+          abort the current process and relaunch a fresh scrape with an
+          automatic start date, returning
+          ``{"status": "restarted", "process_id": <new id>}``.
+
+        Parameters
+        ----------
+        service : str
+            Service type of the waiting scraper (e.g. ``"banks"``).
+        provider : str
+            Provider identifier (e.g. ``"onezero"``, ``"hapoalim"``).
+        account : str
+            Account name of the waiting scraper.
+
+        Returns
+        -------
+        dict
+            ``{"status": "resent", "process_id": int}`` when the SMS was
+            re-issued in place, or ``{"status": "restarted", "process_id":
+            int}`` when the scrape was aborted and relaunched.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no active or 2FA-waiting scraper matches the given
+            service/provider/account.
+        BadRequestException
+            If the resend is rate-limited (too many code requests too
+            quickly). The message is the actionable wait-and-retry hint.
+        """
+        name = f"{service} - {provider} - {account}"
+        adapter = _active_scrapers.get(name) or _tfa_scrapers_waiting.get(name)
+        if adapter is None:
+            raise EntityNotFoundException("Scraping process not found")
+
+        try:
+            await adapter.resend_otp()
+        except OtpRateLimitError as err:
+            raise BadRequestException(str(err))
+        except ResendNotSupportedError:
+            # Browser providers can't re-issue mid-flow: abort the parked
+            # scrape and relaunch from scratch (no period → auto start date).
+            self.abort_scraping_process(adapter.process_id)
+            new_id = self.start_scraping_single(service, provider, account)
+            return {"status": "restarted", "process_id": new_id}
+
+        return {"status": "resent", "process_id": adapter.process_id}
 
     def abort_scraping_process(self, process_id: int) -> None:
         """

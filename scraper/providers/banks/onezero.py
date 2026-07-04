@@ -722,6 +722,38 @@ class OneZeroScraper(ApiScraper):
 
         return {"success": True}
 
+    async def resend_otp(self) -> None:
+        """Re-issue the OTP SMS in place without restarting login.
+
+        Re-runs the ``/otp/prepare`` flow for the credentials' phone number,
+        which sends a fresh SMS and replaces ``self._otp_context`` with the
+        new context. The subsequent ``/otp/verify`` (done by
+        ``_get_long_term_token`` when the user submits the code) reads
+        ``self._otp_context`` at call time, so the code the user reads from
+        the new SMS matches the context it is verified against.
+
+        This mutates only ``self._otp_context``; it does not touch the
+        adapter's OTP event/code, so it is safe to call while the scraper
+        coroutine is parked waiting for the user's code. The underlying
+        prepare call is rate-limited (see
+        ``scraper.utils.otp_rate_limit``), so rapid resends raise
+        ``OtpRateLimitError`` instead of firing a burst of SMS messages.
+
+        Raises
+        ------
+        Exception
+            If ``phoneNumber`` is missing from the credentials.
+        OtpRateLimitError
+            If a prepare was issued for this phone too recently (see
+            ``_trigger_two_factor_auth``).
+        """
+        phone_number = self.credentials.get("phoneNumber")
+        if not phone_number:
+            raise Exception(
+                "phoneNumber is required to resend the verification code"
+            )
+        await self._trigger_two_factor_auth(phone_number)
+
     async def _get_long_term_token(self, otp_code: str) -> dict:
         """Exchange an OTP code for a long-term token.
 
