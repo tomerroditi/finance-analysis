@@ -18,7 +18,10 @@ import { RecurringSection } from "../components/dashboard/RecurringSection";
 import { GoalsSection } from "../components/dashboard/GoalsSection";
 import { SpendingHeatmap } from "../components/dashboard/SpendingHeatmap";
 import { IncomeBySourceCard } from "../components/dashboard/IncomeBySourceCard";
-import { DashboardChartsPanel } from "../components/dashboard/DashboardChartsPanel";
+import { IncomeExpensesCard } from "../components/dashboard/IncomeExpensesCard";
+import { NetWorthCard } from "../components/dashboard/NetWorthCard";
+import { CashFlowCard } from "../components/dashboard/CashFlowCard";
+import { CategoryBreakdownCard } from "../components/dashboard/CategoryBreakdownCard";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
@@ -324,7 +327,10 @@ export function Dashboard() {
     goals: () => <GoalsSection />,
     heatmap: () => <SpendingHeatmap transactions={allTransactions} size={cardSize("heatmap")} />,
     income_by_source: () => <IncomeBySourceCard />,
-    charts: () => <DashboardChartsPanel />,
+    income_expenses: () => <IncomeExpensesCard />,
+    net_worth: () => <NetWorthCard />,
+    cash_flow: () => <CashFlowCard />,
+    category: () => <CategoryBreakdownCard />,
   };
 
   return (

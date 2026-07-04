@@ -19,9 +19,9 @@ test.describe("Dashboard strip cards", () => {
   const STRIP_CARDS = ["forecast", "insights"] as const;
 
   const LAYOUT = {
-    order: ["forecast", "insights", "budget", "recent", "heatmap", "income_by_source", "charts"],
-    hidden: ["recurring", "goals"],
-    v: 2,
+    order: ["forecast", "insights", "budget", "recent", "heatmap", "income_by_source", "income_expenses", "net_worth"],
+    hidden: ["recurring", "goals", "cash_flow", "category"],
+    v: 3,
   };
 
   test.beforeAll(async ({ browser }) => {

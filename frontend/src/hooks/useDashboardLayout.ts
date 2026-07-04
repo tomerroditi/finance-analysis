@@ -15,7 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 const STORAGE_KEY = "fa.dashboard.layout";
 // Bump when the default visibility policy changes so a one-time migration can
 // run against older stored layouts (see `normalize`).
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 
 /** A card's width on the dashboard grid. */
 export type DashboardCardSize = "half" | "full";
@@ -30,7 +30,10 @@ export const DASHBOARD_CARDS = [
   { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
   { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
   { id: "income_by_source", labelKey: "dashboard.cards.incomeBySource", size: "half" },
-  { id: "charts", labelKey: "dashboard.cards.charts", size: "full" },
+  { id: "income_expenses", labelKey: "dashboard.cards.incomeExpenses", size: "full" },
+  { id: "net_worth", labelKey: "dashboard.cards.netWorth", size: "full" },
+  { id: "cash_flow", labelKey: "dashboard.cards.cashFlow", size: "full", defaultHidden: true },
+  { id: "category", labelKey: "dashboard.cards.category", size: "full", defaultHidden: true },
 ] as const;
 
 export type DashboardCardId = (typeof DASHBOARD_CARDS)[number]["id"];
@@ -49,6 +52,12 @@ const KNOWN = new Set<string>(ALL_IDS);
 const BETA_IDS = new Set<DashboardCardId>(
   DASHBOARD_CARDS.filter((c) => "beta" in c && c.beta).map((c) => c.id),
 );
+// Cards hidden on first load: those flagged `defaultHidden`, plus all `beta`
+// cards (beta implies hidden-by-default). Distinct from BETA_IDS so a
+// `defaultHidden` card does NOT get the experimental "Beta" pill.
+const DEFAULT_HIDDEN_IDS = new Set<DashboardCardId>(
+  DASHBOARD_CARDS.filter((c) => ("defaultHidden" in c && c.defaultHidden) || BETA_IDS.has(c.id)).map((c) => c.id),
+);
 
 /** Whether a card is flagged experimental/beta. */
 export function isBetaCard(id: DashboardCardId): boolean {
@@ -62,16 +71,22 @@ export interface DashboardLayout {
   hidden: DashboardCardId[];
 }
 
-// Defaults: non-beta cards visible (in declared order), beta cards hidden.
-const DEFAULT_ORDER: DashboardCardId[] = ALL_IDS.filter((id) => !BETA_IDS.has(id));
-const DEFAULT_HIDDEN: DashboardCardId[] = ALL_IDS.filter((id) => BETA_IDS.has(id));
+// Defaults: visible cards (in declared order) and default-hidden cards
+// (beta or opt-in), per DEFAULT_HIDDEN_IDS.
+const DEFAULT_ORDER: DashboardCardId[] = ALL_IDS.filter((id) => !DEFAULT_HIDDEN_IDS.has(id));
+const DEFAULT_HIDDEN: DashboardCardId[] = ALL_IDS.filter((id) => DEFAULT_HIDDEN_IDS.has(id));
 const DEFAULT_LAYOUT: DashboardLayout = {
   order: [...DEFAULT_ORDER],
   hidden: [...DEFAULT_HIDDEN],
 };
 
-interface StoredLayout extends Partial<DashboardLayout> {
+// Stored/migration input: order/hidden may contain legacy or unknown ids
+// (e.g. the pre-v3 "charts" card), so they're typed as plain strings here and
+// filtered down to known DashboardCardIds in `normalize`.
+interface StoredLayout {
   v?: number;
+  order?: string[];
+  hidden?: string[];
 }
 
 const listeners = new Set<() => void>();
@@ -79,7 +94,7 @@ const listeners = new Set<() => void>();
 // only on write (or first read), never per-render.
 let cache: DashboardLayout | null = null;
 
-function normalize(raw: StoredLayout): DashboardLayout {
+export function normalize(raw: StoredLayout): DashboardLayout {
   const version = typeof raw.v === "number" ? raw.v : 0;
   let rawHidden = Array.isArray(raw.hidden) ? [...raw.hidden] : [];
   let rawOrder = Array.isArray(raw.order) ? [...raw.order] : [];
@@ -93,21 +108,38 @@ function normalize(raw: StoredLayout): DashboardLayout {
     rawOrder = rawOrder.filter((id) => !BETA_IDS.has(id as DashboardCardId));
   }
 
+  // v3: the single "charts" panel became four per-chart cards. Map the user's
+  // old layout: a visible charts card becomes the two default-visible chart
+  // cards (rest hidden); a hidden charts card hides all four.
+  if (version < 3) {
+    const NEW_VISIBLE = ["income_expenses", "net_worth"] as DashboardCardId[];
+    const NEW_HIDDEN = ["cash_flow", "category"] as DashboardCardId[];
+    const chartsIdx = rawOrder.indexOf("charts");
+    if (chartsIdx !== -1) {
+      rawOrder.splice(chartsIdx, 1, ...NEW_VISIBLE);
+      rawHidden = [...rawHidden, ...NEW_HIDDEN];
+    } else if (rawHidden.includes("charts")) {
+      rawHidden = [...rawHidden, ...NEW_VISIBLE, ...NEW_HIDDEN];
+    }
+    rawOrder = rawOrder.filter((id) => id !== "charts");
+    rawHidden = rawHidden.filter((id) => id !== "charts");
+  }
+
   const hidden = Array.from(
     new Set(rawHidden.filter((id): id is DashboardCardId => KNOWN.has(id))),
   );
   const hiddenSet = new Set<string>(hidden);
 
   // Keep stored order (known ids, not hidden), then append any known cards the
-  // stored layout never saw so future-added cards still surface: beta ones go
-  // to hidden, the rest to the end of the visible order.
+  // stored layout never saw so future-added cards still surface: default-hidden
+  // (beta or opt-in) ones go to hidden, the rest to the end of the visible order.
   const order = rawOrder.filter(
     (id): id is DashboardCardId => KNOWN.has(id) && !hiddenSet.has(id),
   );
   const seen = new Set<string>([...order, ...hidden]);
   for (const id of ALL_IDS) {
     if (seen.has(id)) continue;
-    if (BETA_IDS.has(id)) hidden.push(id);
+    if (DEFAULT_HIDDEN_IDS.has(id)) hidden.push(id);
     else order.push(id);
   }
   return { order, hidden };
@@ -148,7 +180,8 @@ function subscribe(cb: () => void): () => void {
  * Returns the current dashboard layout plus mutators. `setOrder` replaces the
  * visible order; `toggleHidden` moves a card between the visible and hidden
  * lists (hiding appends to hidden and drops from order; showing appends to the
- * end of the visible order); `reset` restores the default (beta cards hidden).
+ * end of the visible order); `reset` restores the default (default-hidden
+ * cards — beta or opt-in — hidden).
  */
 export function useDashboardLayout() {
   const layout = useSyncExternalStore(subscribe, read, () => DEFAULT_LAYOUT);
