@@ -1,5 +1,6 @@
 import asyncio
 
+from scraper.base import OTP_CANCEL_SENTINEL
 from scraper.models.result import LoginResult
 from scraper.providers.test.dummy_regular import DummyRegularScraper
 
@@ -27,7 +28,7 @@ class DummyTFAScraper(DummyRegularScraper):
         self._emit_progress("Waiting for OTP code")
         otp_code = await self.on_otp_request()
 
-        if otp_code == "cancel":
+        if otp_code == OTP_CANCEL_SENTINEL:
             return LoginResult.UNKNOWN_ERROR
 
         return LoginResult.SUCCESS

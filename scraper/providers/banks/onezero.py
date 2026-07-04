@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 
-from scraper.base import ApiScraper
+from scraper.base import OTP_CANCEL_SENTINEL, ApiScraper, OtpCanceledError
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
@@ -871,6 +871,12 @@ class OneZeroScraper(ApiScraper):
         await self._trigger_two_factor_auth(phone_number)
 
         otp_code = await self.on_otp_request()
+        if otp_code == OTP_CANCEL_SENTINEL:
+            # User aborted the 2FA prompt — end cleanly instead of POSTing the
+            # sentinel to /otp/verify (which would be a wasted, failing call).
+            raise OtpCanceledError(
+                "Two-factor authentication canceled by the user"
+            )
 
         token_result = await self._get_long_term_token(otp_code)
         self.refreshed_otp_long_term_token = token_result["long_term_token"]
@@ -889,6 +895,9 @@ class OneZeroScraper(ApiScraper):
         """
         try:
             otp_token = await self._resolve_otp_token()
+        except OtpCanceledError:
+            logger.info("Login aborted: user canceled two-factor authentication")
+            return LoginResult.UNKNOWN_ERROR
         except Exception as e:
             self._login_error_detail = str(e)
             logger.error("Failed to resolve OTP token: %s", e)

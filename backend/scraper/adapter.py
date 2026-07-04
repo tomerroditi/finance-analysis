@@ -147,6 +147,10 @@ class ScraperAdapter:
         Scraping history record ID for status tracking.
     """
 
+    # Sentinel passed to set_otp_code() to abort a 2FA scrape. Must stay in
+    # sync with scraper.base.base_scraper.OTP_CANCEL_SENTINEL — the scraper's
+    # OTP callback returns this value and short-circuits without contacting
+    # the provider (see OtpCanceledError).
     CANCEL = "cancel"
 
     def __init__(

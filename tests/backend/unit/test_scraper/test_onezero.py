@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from scraper.base.base_scraper import ScraperOptions
+from scraper.base.base_scraper import (
+    OTP_CANCEL_SENTINEL,
+    OtpCanceledError,
+    ScraperOptions,
+)
+from scraper.models.result import LoginResult
 from scraper.providers.banks import onezero
 from scraper.providers.banks.onezero import IDENTITY_SERVER_URL, OneZeroScraper
 from scraper.utils.otp_rate_limit import (
@@ -367,3 +372,62 @@ class TestLoginErrorDetail:
         result = asyncio.run(run())
         assert result is onezero.LoginResult.UNKNOWN_ERROR
         assert "prefix blocked" in scraper._login_error_detail
+
+
+def _fake_fetch_by_url(url, *args, **kwargs):
+    """Return a canned OneZero API response keyed off the request URL.
+
+    Lets a test assert exactly which identity-server endpoints were hit
+    without depending on call ordering/count.
+    """
+    if "/devices/token" in url:
+        return {"resultData": {"deviceToken": "dt"}}
+    if "/otp/prepare" in url:
+        return {"resultData": {"otpContext": "ctx"}}
+    if "/otp/verify" in url:
+        return {"resultData": {"otpToken": "TOK"}}
+    if "/getIdToken" in url:
+        return {"resultData": {"idToken": "ID"}}
+    if "/sessions/token" in url:
+        return {"resultData": {"accessToken": "ACC"}}
+    raise AssertionError(f"unexpected url: {url}")
+
+
+class TestOtpCancel:
+    """Canceling the OTP prompt aborts login without POSTing to /otp/verify."""
+
+    def test_cancel_sentinel_does_not_post_to_verify(self):
+        """When on_otp_request returns the cancel sentinel, the SMS-prepare
+        calls fire but the sentinel is never POSTed to /otp/verify, and login
+        reports UNKNOWN_ERROR."""
+        scraper = _make_scraper()
+        scraper.credentials["phoneNumber"] = "+15551234567"
+        scraper.on_otp_request = AsyncMock(return_value=OTP_CANCEL_SENTINEL)
+
+        async def run():
+            with patch.object(
+                onezero, "fetch_post", new=AsyncMock(side_effect=_fake_fetch_by_url)
+            ) as mock_post:
+                result = await scraper.login()
+                return result, [c.args[0] for c in mock_post.call_args_list]
+
+        result, urls = asyncio.run(run())
+        assert result is LoginResult.UNKNOWN_ERROR
+        assert any("/devices/token" in u for u in urls)
+        assert any("/otp/prepare" in u for u in urls)
+        assert not any("/otp/verify" in u for u in urls)
+
+    def test_resolve_otp_token_raises_otp_canceled(self):
+        """_resolve_otp_token raises OtpCanceledError on the cancel sentinel."""
+        scraper = _make_scraper()
+        scraper.credentials["phoneNumber"] = "+15551234567"
+        scraper.on_otp_request = AsyncMock(return_value=OTP_CANCEL_SENTINEL)
+
+        async def run():
+            with patch.object(
+                onezero, "fetch_post", new=AsyncMock(side_effect=_fake_fetch_by_url)
+            ):
+                await scraper._resolve_otp_token()
+
+        with pytest.raises(OtpCanceledError):
+            asyncio.run(run())

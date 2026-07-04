@@ -10,6 +10,21 @@ from scraper.models.result import LoginResult, ScrapingResult
 
 logger = logging.getLogger(__name__)
 
+# Sentinel value the OTP callback (``on_otp_request``) returns to signal that
+# the user aborted two-factor authentication. A scraper that receives this
+# value MUST short-circuit its login and MUST NOT forward it to the provider
+# as an OTP code. Kept in sync with ``ScraperAdapter.CANCEL``.
+OTP_CANCEL_SENTINEL = "cancel"
+
+
+class OtpCanceledError(Exception):
+    """Raised when the user cancels the interactive OTP flow.
+
+    A clean, user-initiated abort of two-factor authentication — distinct from
+    an OTP verification failure — so ``login`` can end without contacting the
+    provider's verify endpoint.
+    """
+
 
 class ResendNotSupportedError(Exception):
     """Raised when a scraper cannot re-issue its OTP in place.
@@ -51,6 +66,9 @@ class BaseScraper(ABC):
         self.credentials = credentials
         self.options = options or ScraperOptions()
         self.on_progress: Optional[Callable[[str], None]] = None
+        # Async callback returning the OTP code entered by the user. Returning
+        # ``OTP_CANCEL_SENTINEL`` signals a user cancellation — the scraper must
+        # abort without forwarding it to the provider (raise ``OtpCanceledError``).
         self.on_otp_request: Optional[Callable[[], Awaitable[str]]] = None
         # Optional human-readable detail a subclass can set when login fails, so
         # a general/unknown login failure surfaces the real reason (e.g. the
