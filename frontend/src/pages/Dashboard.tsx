@@ -58,22 +58,21 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
 }
 
 function MonthlyChangeList({
-  title,
   items,
 }: {
-  title: string;
-  items: { month: string; label: string; change: number }[];
+  items: { month: string; label: string; change: number; percent: number | null }[];
 }) {
   return (
     <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
-      <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{title}</p>
       {items.map((item) => (
         <div key={item.month} className="flex justify-between text-xs">
           <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.label}</span>
           <span
+            dir="ltr"
             className={`tabular-nums font-medium shrink-0 ${item.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
           >
             {formatChange(item.change)}
+            {item.percent !== null && ` (${formatPercentChange(item.percent)})`}
           </span>
         </div>
       ))}
@@ -120,17 +119,23 @@ function FinancialHealthHeader({
   const cashMom = calcMom(latestNetWorth?.cash, previousNetWorth?.cash);
 
   // Net worth change per month for the last 3 months (most recent first).
-  // Each change is the month-over-month delta of net_worth; the series
-  // already carries every month, so no extra API call is needed.
+  // Each change is the month-over-month delta of net_worth, with its percent
+  // relative to the prior month; the series already carries every month, so no
+  // extra API call is needed.
   const netWorthMonthlyChanges =
     netWorthData && netWorthData.length >= 2
       ? netWorthData
           .slice(1)
-          .map((entry, i) => ({
-            month: entry.month,
-            label: formatMonthShort(entry.month),
-            change: entry.net_worth - netWorthData[i].net_worth,
-          }))
+          .map((entry, i) => {
+            const prev = netWorthData[i].net_worth;
+            const change = entry.net_worth - prev;
+            return {
+              month: entry.month,
+              label: formatMonthShort(entry.month),
+              change,
+              percent: prev !== 0 ? (change / Math.abs(prev)) * 100 : null,
+            };
+          })
           .slice(-3)
           .reverse()
       : [];
@@ -161,10 +166,7 @@ function FinancialHealthHeader({
         </p>
         <MomBadge mom={netWorthMom} />
         {expanded && netWorthMonthlyChanges.length > 0 && (
-          <MonthlyChangeList
-            title={t("dashboard.netWorthMonthlyChange")}
-            items={netWorthMonthlyChanges}
-          />
+          <MonthlyChangeList items={netWorthMonthlyChanges} />
         )}
       </div>
 

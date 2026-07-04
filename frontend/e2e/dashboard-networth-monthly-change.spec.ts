@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { enableDemoMode, disableDemoMode } from "./helpers";
 
+// A "MMM yyyy" month-row label, e.g. "Jul 2026" — rendered only inside the
+// expanded Net Worth card's per-month change breakdown.
+const MONTH_ROW = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+20\d{2}\b/;
+
 test.describe("Dashboard net worth monthly change", () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -14,7 +18,7 @@ test.describe("Dashboard net worth monthly change", () => {
     await page.close();
   });
 
-  test("expanding the KPI cards reveals the last-3-months net worth change", async ({ page }) => {
+  test("expanding the KPI cards reveals the last-3-months net worth change with percent", async ({ page }) => {
     await page.goto("/");
 
     // "Cash Balance" is text unique to the pinned KPI header (the chart filter
@@ -25,26 +29,28 @@ test.describe("Dashboard net worth monthly change", () => {
     const cashBalanceLabel = page.getByText("Cash Balance", { exact: true });
     await expect(cashBalanceLabel).toBeVisible({ timeout: 45_000 });
 
-    // The whole KPI grid is one click target that toggles the expanded
-    // breakdowns; the monthly-change block is hidden until then.
+    // Scope to the Net Worth KPI card via its label's card ancestor.
+    const netWorthCard = page
+      .getByText("Net Worth", { exact: true })
+      .first()
+      .locator("xpath=ancestor::*[contains(@class,'rounded-xl')][1]");
+
+    // Collapsed: no per-month breakdown rows yet.
+    await expect(netWorthCard).not.toContainText(MONTH_ROW);
+
+    // The whole KPI grid is one click target that toggles the breakdowns.
     const kpiGrid = cashBalanceLabel.locator(
       "xpath=ancestor::*[contains(@class,'cursor-pointer')][1]",
     );
-    const monthlyChangeTitle = page.getByText(/Monthly Change \(last 3 months\)/i);
-    await expect(monthlyChangeTitle).toHaveCount(0);
-
     await kpiGrid.click();
-    await expect(monthlyChangeTitle).toBeVisible();
 
-    // The Net Worth card lists up to three month rows once expanded; each row
-    // carries a signed (+/-) currency delta.
-    const netWorthCard = monthlyChangeTitle.locator(
-      "xpath=ancestor::*[contains(@class,'rounded-xl')][1]",
-    );
-    await expect(netWorthCard).toContainText(/[+-]/);
+    // Expanded: the Net Worth card lists up to three month rows, each with a
+    // signed currency delta and a percentage in parentheses.
+    await expect(netWorthCard).toContainText(MONTH_ROW);
+    await expect(netWorthCard).toContainText(/[+-].*%\)/);
 
     // Collapsing hides the breakdown again.
     await kpiGrid.click();
-    await expect(monthlyChangeTitle).toHaveCount(0);
+    await expect(netWorthCard).not.toContainText(MONTH_ROW);
   });
 });
