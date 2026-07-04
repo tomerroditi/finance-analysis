@@ -9,6 +9,7 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
+from scraper.utils.otp_rate_limit import otp_prepare_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -687,12 +688,17 @@ class OneZeroScraper(ApiScraper):
         ------
         Exception
             If the phone number format is invalid.
+        OtpRateLimitError
+            If too many prepare requests have been made recently for this
+            phone number (see ``scraper.utils.otp_rate_limit``).
         """
         if not phone_number.startswith("+"):
             raise Exception(
                 "A full international phone number starting with + "
                 "and a three digit country code is required"
             )
+
+        otp_prepare_rate_limiter.check_and_record(phone_number)
 
         logger.debug("Fetching device token")
         device_token_response = await fetch_post(
