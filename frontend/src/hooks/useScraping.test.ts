@@ -66,6 +66,88 @@ describe("useScraping.startScraper force2fa", () => {
   });
 });
 
+describe("useScraping.scrapeAll", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const idleAcc = { service: "banks", provider: "hapoalim", account_name: "Idle" };
+  const runningAcc = {
+    service: "banks",
+    provider: "onezero",
+    account_name: "Running",
+  };
+  const waiting2faAcc = {
+    service: "credit_cards",
+    provider: "max",
+    account_name: "Waiting2fa",
+  };
+
+  it("does not call startScraper for an account already in_progress or waiting_for_2fa, but does for idle accounts", async () => {
+    // Two distinct process_ids so seeding runningAcc and waiting2faAcc into
+    // runningScrapers doesn't have the second startScraper's default `{
+    // data: 1 }` response clobber the first one's entry under the same
+    // dict key. Use *Once so the mock's steady-state resolution (used by
+    // later describe blocks in this file) is untouched.
+    (scrapingApi.start as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: 201 })
+      .mockResolvedValueOnce({ data: 202 });
+
+    const { result } = renderHook(() => useScraping(), { wrapper });
+
+    // Seed runningAcc into runningScrapers as "in_progress" — startScraper's
+    // normal, only outcome.
+    await act(async () => {
+      await result.current.startScraper(runningAcc, null);
+    });
+
+    // Drive waiting2faAcc into a genuine "waiting_for_2fa" state through the
+    // same public path the "restarted" resend flow uses elsewhere in this
+    // file (see useScraping.resendTfa 'swaps in the new process id under
+    // "restarted"' below): start it, then resolve resend2fa with a
+    // different process_id so resendTfa tracks the new process as
+    // waiting_for_2fa. This proves the dedupe against real hook state
+    // instead of a hand-constructed fixture.
+    await act(async () => {
+      await result.current.startScraper(waiting2faAcc, null);
+    });
+    (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { status: "restarted", process_id: 999 },
+    });
+    const seededWaiting = result.current.getScraperForAccount(waiting2faAcc);
+    expect(seededWaiting).toBeDefined();
+    await act(async () => {
+      await result.current.resendTfa(seededWaiting!, null);
+    });
+    expect(result.current.getScraperForAccount(waiting2faAcc)?.status).toBe(
+      "waiting_for_2fa",
+    );
+
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockClear();
+
+    await act(async () => {
+      result.current.scrapeAll([idleAcc, runningAcc, waiting2faAcc], null);
+    });
+
+    await waitFor(() => expect(scrapingApi.start).toHaveBeenCalledTimes(1));
+    expect(scrapingApi.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: idleAcc.service,
+        provider: idleAcc.provider,
+        account: idleAcc.account_name,
+      }),
+    );
+  });
+
+  it("starts every account when none are currently active", async () => {
+    const { result } = renderHook(() => useScraping(), { wrapper });
+
+    await act(async () => {
+      result.current.scrapeAll([idleAcc, runningAcc], null);
+    });
+
+    await waitFor(() => expect(scrapingApi.start).toHaveBeenCalledTimes(2));
+  });
+});
+
 describe("useScraping.resendTfa", () => {
   beforeEach(() => vi.clearAllMocks());
 

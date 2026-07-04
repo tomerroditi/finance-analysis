@@ -122,12 +122,29 @@ export function useScraping() {
     [],
   );
 
-  // Start all accounts
+  // Start all accounts, skipping any that already have an active scraper
+  // (in_progress or waiting_for_2fa). Without this guard, clicking
+  // "Scrape All" while one account is mid-2FA would fire a second
+  // concurrent scrape for that same account — exactly the burst the
+  // backend single-flight guard + OTP rate-limiter (Tasks 1-2) exist to
+  // stop, just triggered from the UI instead of a double-click.
   const scrapeAll = useCallback(
     (accounts: Account[], scrapingPeriodDays: number | null) => {
-      accounts.forEach((acc) => startScraper(acc, scrapingPeriodDays));
+      const activeScrapers = Object.values(runningScrapers).filter(
+        (s) => s.status === "in_progress" || s.status === "waiting_for_2fa",
+      );
+      accounts.forEach((acc) => {
+        const isActive = activeScrapers.some(
+          (s) =>
+            s.account.service === acc.service &&
+            s.account.provider === acc.provider &&
+            s.account.account_name === acc.account_name,
+        );
+        if (isActive) return;
+        startScraper(acc, scrapingPeriodDays);
+      });
     },
-    [startScraper],
+    [startScraper, runningScrapers],
   );
 
   // 2FA mutation
