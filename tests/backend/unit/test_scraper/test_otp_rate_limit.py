@@ -181,6 +181,44 @@ class TestPerPhoneIsolation:
         limiter.check_and_record(phone_b)
 
 
+class TestPhoneNumberNormalization:
+    """The same physical phone number must share one bucket regardless of formatting.
+
+    Without normalization, ``"+1 555-123 4567"`` and ``"+15551234567"`` would
+    hash to two different dict keys and split the joint per-phone cap in
+    half — defeating the point of rate-limiting by phone number at all.
+    """
+
+    def test_differently_formatted_same_number_share_the_min_interval_bucket(self):
+        """A formatted and an unformatted version of the same number collide.
+
+        The second call (unformatted) must be blocked by the min-interval
+        rule as if it were an exact repeat of the first (formatted) call.
+        """
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+
+        limiter.check_and_record("+1 555-123 4567")
+
+        with pytest.raises(OtpRateLimitError):
+            limiter.check_and_record("+15551234567")
+
+    def test_provider_block_on_formatted_number_blocks_unformatted_lookup(self):
+        """A provider block recorded under one formatting blocks the other.
+
+        Ensures ``record_provider_block`` and ``check_and_record`` normalize
+        to the same key so a block armed via one phone-string spelling is
+        actually enforced when the number is looked up in another spelling.
+        """
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+
+        limiter.record_provider_block("+1 555-123 4567")
+
+        with pytest.raises(OtpProviderBlockedError):
+            limiter.check_and_record("+15551234567")
+
+
 class TestProviderBlockCircuitBreaker:
     """Once the SMS provider (Twilio) blocks a number, stop hammering it.
 

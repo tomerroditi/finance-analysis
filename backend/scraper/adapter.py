@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 # scrape coroutine indefinitely.
 SCRAPE_TIMEOUT_SECONDS = 300
 
+# NOTE: these two dicts are plain in-process, single-event-loop state —
+# there is exactly one asyncio event loop per uvicorn worker, and the app
+# runs a single in-process worker (see ``build/app_entry.py``). Under a
+# hypothetical multi-worker deployment, each worker would get its own copy
+# and these guards (single-flight lock, 2FA-waiting registry) would need
+# to move to shared state (e.g. a DB row or Redis) to stay correct.
+
 # Live adapters whose scrapers may end up awaiting an OTP. Keyed by
 # ``"{service} - {provider} - {account}"`` — the same string the
 # ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.

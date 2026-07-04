@@ -231,8 +231,18 @@ export function useScraping() {
           });
         }
 
+        // Same condition as the runningScrapers branch above, so the
+        // cooldown always keys off whichever process_id that branch just
+        // decided is "the current one" for this account — today the
+        // backend always mints a fresh id on "restarted", so
+        // newProcessId !== oldProcessId is always true in that branch and
+        // this is equivalent to `status === "restarted" ? newProcessId :
+        // oldProcessId`, but keeping the two conditions textually
+        // identical avoids the two ever silently diverging.
         const cooldownProcessId =
-          status === "restarted" ? newProcessId : oldProcessId;
+          status === "restarted" && newProcessId !== oldProcessId
+            ? newProcessId
+            : oldProcessId;
         setResendCooldownEnd((prev) => ({
           ...prev,
           [cooldownProcessId]: Date.now() + RESEND_COOLDOWN_SECONDS * 1000,

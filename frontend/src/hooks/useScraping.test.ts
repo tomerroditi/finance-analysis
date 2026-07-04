@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -260,5 +260,90 @@ describe("useScraping.resendTfa", () => {
     });
 
     expect(result.current.resendErrors[1]).toEqual({ kind: "expired" });
+  });
+});
+
+describe("useScraping.resendTfa restarted — stale process cleanup (regression)", () => {
+  // Regression coverage for a leak that `getScraperForAccount` masks: it
+  // sorts by highest process_id and returns only the top entry, so a stale
+  // old-id record sitting unseen in `runningScrapers` doesn't show up
+  // through that lookup even if it's still there. But the *polling effect*
+  // iterates every entry whose status is in_progress/waiting_for_2fa —
+  // Object.values(runningScrapers).filter(...) — with no dedup by account.
+  // If `resendTfa`'s "restarted" branch ever stopped deleting the old
+  // process_id before adding the new one, the leaked old entry would (a)
+  // permanently disable scrape buttons via `isAnyScraping`'s `.some()` over
+  // ALL entries, and (b) keep polling a dead process every 2s forever. This
+  // test drives the real polling effect (not getScraperForAccount) so it
+  // can't be fooled by that masking.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stops polling the old process_id and only polls the new one after a restart", async () => {
+    const oldProcessId = 1;
+    const newProcessId = 2;
+
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: oldProcessId,
+    });
+    // First poll tick (still under oldProcessId) reports waiting_for_2fa,
+    // so the seeded scraper reaches the state resend is actually offered
+    // from in the app. Every later call also resolves to waiting_for_2fa
+    // so the loop keeps polling instead of retiring the entry.
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "waiting_for_2fa" },
+    });
+    (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { status: "restarted", process_id: newProcessId },
+    });
+
+    const { result } = renderHook(() => useScraping(), { wrapper });
+
+    // Seed a real waiting_for_2fa entry under oldProcessId the way the app
+    // actually gets there (start -> poll), instead of hand-constructing
+    // runningScrapers.
+    await act(async () => {
+      await result.current.startScraper(acc, 30);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    const scraperBeforeResend = result.current.getScraperForAccount(acc)!;
+    expect(scraperBeforeResend.process_id).toBe(oldProcessId);
+    expect(scraperBeforeResend.status).toBe("waiting_for_2fa");
+
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockClear();
+
+    await act(async () => {
+      await result.current.resendTfa(scraperBeforeResend);
+    });
+
+    // Sanity: the swap actually happened.
+    expect(result.current.getScraperForAccount(acc)?.process_id).toBe(
+      newProcessId,
+    );
+
+    // Advance past several poll ticks. The old process_id must NEVER be
+    // polled again — only the new one. This is the assertion that fails
+    // if the "restarted" branch stops deleting `next[oldProcessId]` before
+    // adding the new entry: the stale old entry would keep being polled
+    // forever alongside the new one.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000 * 5);
+    });
+
+    const calledIds = (
+      scrapingApi.getStatus as ReturnType<typeof vi.fn>
+    ).mock.calls.map(([id]) => id);
+
+    expect(calledIds).toContain(newProcessId);
+    expect(calledIds).not.toContain(oldProcessId);
   });
 });

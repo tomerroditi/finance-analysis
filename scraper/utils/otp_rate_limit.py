@@ -23,6 +23,7 @@ for that number until the cooldown elapses — hammering an already-blocked
 number can prolong the provider-side block.
 """
 
+import re
 import time
 from typing import Callable
 
@@ -36,6 +37,33 @@ OTP_PROVIDER_BLOCKED_MESSAGE = (
     "SMS provider (too many code requests). Please try "
     "again later."
 )
+
+
+def _normalize_phone(phone: str) -> str:
+    """Normalize a phone number for use as a rate-limit bucket key.
+
+    Strips whitespace, dashes, and parentheses so the same physical phone
+    number stored with different formatting (e.g. ``"+1 555-123 4567"`` vs
+    ``"+15551234567"``) collapses onto the same bucket — otherwise the
+    per-phone caps split across buckets and the intended joint cap is
+    weakened. Keeps the leading ``+`` and all digits, which is all that's
+    needed to distinguish genuinely different numbers.
+
+    This is purely an internal keying transform for ``_history`` /
+    ``_blocked_until``: it must never be used for the value sent to the
+    SMS provider, which needs the original, unmodified phone string.
+
+    Parameters
+    ----------
+    phone : str
+        The raw phone number as supplied by the caller.
+
+    Returns
+    -------
+    str
+        The phone number with whitespace, dashes, and parentheses removed.
+    """
+    return re.sub(r"[\s\-()]", "", phone)
 
 
 class OtpRateLimitError(Exception):
@@ -65,6 +93,10 @@ class OtpPrepareRateLimiter:
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
         self._clock = clock
+        # NOTE: plain in-process dicts backing the module-level singleton
+        # below — correct only within a single event loop / uvicorn worker
+        # (see ``build/app_entry.py``). A multi-worker deployment would need
+        # this moved to shared state (DB row, Redis) for the caps to hold.
         self._history: dict[str, list[float]] = {}
         self._blocked_until: dict[str, float] = {}
 
@@ -98,6 +130,11 @@ class OtpPrepareRateLimiter:
             ``OTP_PREPARE_MAX_PER_WINDOW`` prepares already occurred within
             ``OTP_PREPARE_WINDOW_SECONDS``.
         """
+        # Normalize only for use as the internal dict key below — the
+        # original, unmodified ``phone_number`` the caller passed in is
+        # never touched or returned; callers still send that raw value to
+        # the SMS provider.
+        phone_number = _normalize_phone(phone_number)
         now = self._clock()
 
         blocked_until = self._blocked_until.get(phone_number)
@@ -145,6 +182,10 @@ class OtpPrepareRateLimiter:
         phone_number : str
             The phone number the provider has blocked.
         """
+        # Same internal-key-only normalization as check_and_record — must
+        # land in the same bucket regardless of how this phone number is
+        # formatted elsewhere.
+        phone_number = _normalize_phone(phone_number)
         self._blocked_until[phone_number] = self._clock() + OTP_BLOCK_COOLDOWN_SECONDS
 
     def reset(self) -> None:
