@@ -9,7 +9,7 @@ from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
-from backend.scraper.adapter import _tfa_scrapers_waiting
+from backend.scraper.adapter import _active_scrapers, _tfa_scrapers_waiting
 
 
 class ScrapingService:
@@ -20,7 +20,9 @@ class ScrapingService:
     recording scraping history, and computing start dates from the last
     successful scrape. Scrapers that require 2FA are kept in the
     module-level ``_tfa_scrapers_waiting`` dict until a code is submitted
-    or the process is aborted.
+    or the process is aborted. Every running scraper (any provider) is
+    also tracked in the module-level ``_active_scrapers`` dict, which
+    makes ``start_scraping_single`` single-flight per account.
     """
 
     def __init__(self, db: Session):
@@ -102,7 +104,9 @@ class ScrapingService:
         Records a new scraping history entry, creates a ``ScraperAdapter``,
         and launches it via ``asyncio.create_task``. If the provider requires
         2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP
-        is submitted.
+        is submitted. If an account is already scraping (present in
+        ``_active_scrapers``), this is a no-op that returns the existing
+        run's ``process_id`` — no new history row, adapter, task, or SMS.
 
         Parameters
         ----------
@@ -119,8 +123,14 @@ class ScrapingService:
         Returns
         -------
         int
-            The ``process_id`` of the new scraping history record.
+            The ``process_id`` of the (possibly already-running) scraping
+            history record.
         """
+        name = f"{service} - {provider} - {account}"
+        existing = _active_scrapers.get(name)
+        if existing is not None:
+            return existing.process_id
+
         if scraping_period_days is not None:
             start_date = date.today() - timedelta(days=scraping_period_days)
         else:
@@ -150,13 +160,20 @@ class ScrapingService:
         )
         asyncio.create_task(adapter.run())
 
+        # Register synchronously (no `await` between the earlier `.get()`
+        # check and this insert) so a second concurrent call can't slip in
+        # between the check and the registration. Registered for ALL
+        # providers, not just 2FA ones, so any account is single-flight.
+        # The adapter's run() pops this entry on completion (success,
+        # failure, or cancellation).
+        _active_scrapers[name] = adapter
+
         # Park the adapter so submit_2fa_code can resolve it later. We register
         # eagerly (rather than when the scraper actually awaits OTP) because
         # the user can submit the code immediately after receiving the SMS,
         # before the scraper has reached `await on_otp_request()`. The
         # adapter's run() cleans this entry up on completion.
         if requires_2fa:
-            name = f"{service} - {provider} - {account}"
             _tfa_scrapers_waiting[name] = adapter
 
         return process_id
@@ -204,8 +221,12 @@ class ScrapingService:
         Abort an in-progress or 2FA-waiting scraping process.
 
         If the process is waiting for a 2FA code, the scraper is cancelled
-        via its OTP channel and removed from ``_tfa_scrapers_waiting``.
-        The history record is always marked ``FAILED`` regardless.
+        via its OTP channel and removed from ``_tfa_scrapers_waiting``. Any
+        matching entry in ``_active_scrapers`` is removed regardless of
+        whether the process was 2FA-waiting, so an aborted account can be
+        re-launched immediately instead of waiting for ``run()``'s
+        (now-moot) cleanup. The history record is always marked ``FAILED``
+        regardless.
 
         Parameters
         ----------
@@ -223,6 +244,16 @@ class ScrapingService:
             # Cancel the 2FA scraper
             adapter = _tfa_scrapers_waiting.pop(target_name)
             adapter.set_otp_code(ScraperAdapter.CANCEL)
+
+        # Remove from the active-scraper registry regardless of 2FA state,
+        # so the account isn't left single-flight-locked after an abort.
+        active_name = None
+        for name, adapter in _active_scrapers.items():
+            if adapter.process_id == process_id:
+                active_name = name
+                break
+        if active_name:
+            _active_scrapers.pop(active_name, None)
 
         # Mark as failed in the database regardless
         with get_db_context() as db:

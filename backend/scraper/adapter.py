@@ -42,6 +42,15 @@ SCRAPE_TIMEOUT_SECONDS = 300
 # ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.
 _tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
 
+# Every adapter currently running for a given account, across ALL
+# providers (not just 2FA-capable ones). Keyed identically to
+# ``_tfa_scrapers_waiting``. ``ScrapingService.start_scraping_single``
+# checks this before launching a new scrape so a second click / a
+# "scrape all" fan-out can't double-launch the same account — critical
+# for 2FA providers, where a second launch fires a second ``/otp/prepare``
+# that supersedes the SMS code the user is already looking at.
+_active_scrapers: dict[str, "ScraperAdapter"] = {}
+
 
 def _import_scraper_module(name: str):
     """Import a module from the root ``scraper`` package.
@@ -233,14 +242,19 @@ class ScraperAdapter:
         )
 
     def _unregister_from_2fa_waiting(self) -> None:
-        """Pop this adapter from the 2FA-waiting registry if still present.
+        """Pop this adapter from the 2FA-waiting and active-scraper registries.
 
-        Belt-and-braces cleanup: ``submit_2fa_code`` already pops the entry
-        when the user provides the OTP, but if the scraper never awaited
-        2FA (Hapoalim happy path) the entry would otherwise leak.
+        Belt-and-braces cleanup: ``submit_2fa_code`` already pops the 2FA
+        entry when the user provides the OTP, but if the scraper never
+        awaited 2FA (Hapoalim happy path) the entry would otherwise leak.
+        The active-scraper entry (registered for every provider, not just
+        2FA ones) has no earlier removal point — this is its only cleanup —
+        so a completed or failed scrape stops blocking a fresh launch of
+        the same account.
         """
         name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
         _tfa_scrapers_waiting.pop(name, None)
+        _active_scrapers.pop(name, None)
 
     def _persist_refreshed_otp_token(self, scraper) -> None:
         """Persist a freshly obtained long-term token after a forced re-auth.
@@ -331,13 +345,24 @@ class ScraperAdapter:
         """Async callback passed to the scraper for OTP requests.
 
         Flips the scraping-history status to WAITING_FOR_2FA (so the UI's
-        polling loop shows the OTP prompt), clears the event, waits for
-        ``set_otp_code`` to fire, and returns the code (or ``"cancel"``).
+        polling loop shows the OTP prompt), then waits for ``set_otp_code``
+        to fire — unless a code was already delivered before this callback
+        ran, in which case it returns immediately — and returns the code
+        (or ``"cancel"``).
 
         The status flip happens lazily — only when the scraper actually
         awaits an OTP — so providers that *may* request 2FA (like Hapoalim
         from a trusted device) don't show a stale "Waiting for 2FA" state
         when no code is actually needed.
+
+        Note: this deliberately does NOT call ``self._otp_event.clear()``.
+        ``ScrapingService.start_scraping_single`` registers the adapter in
+        ``_tfa_scrapers_waiting`` *before* the scraper coroutine reaches
+        this callback, so a client can call ``set_otp_code`` in that gap.
+        Adapters are single-use (one ``_otp_event`` per scrape), so there
+        is never a second OTP round to clear stale state for — clearing
+        here would instead discard a pre-delivered code's event and hang
+        this coroutine until the 5-minute scrape timeout.
 
         Returns
         -------
@@ -345,8 +370,8 @@ class ScraperAdapter:
             The OTP code entered by the user.
         """
         self._mark_waiting_for_2fa()
-        self._otp_event.clear()
-        await self._otp_event.wait()
+        if self._otp_code is None:
+            await self._otp_event.wait()
         return self._otp_code
 
     def _mark_waiting_for_2fa(self) -> None:
