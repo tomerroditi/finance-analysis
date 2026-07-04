@@ -48,7 +48,7 @@ class InsuranceAccountRename(BaseModel):
 
 
 @router.get("/", response_model=list[InsuranceAccountResponse])
-async def get_insurance_accounts(
+def get_insurance_accounts(
     db: Session = Depends(get_database),
 ):
     """Get all insurance account metadata records.
@@ -63,7 +63,7 @@ async def get_insurance_accounts(
 
 
 @router.patch("/{policy_id}/rename", response_model=InsuranceAccountResponse)
-async def rename_insurance_account(
+def rename_insurance_account(
     policy_id: str,
     body: InsuranceAccountRename,
     db: Session = Depends(get_database),
@@ -86,7 +86,7 @@ async def rename_insurance_account(
 
 
 @router.post("/sync-investments")
-async def sync_hishtalmut_investments(
+def sync_hishtalmut_investments(
     db: Session = Depends(get_database),
 ) -> dict:
     """Backfill investments from existing hishtalmut insurance accounts.

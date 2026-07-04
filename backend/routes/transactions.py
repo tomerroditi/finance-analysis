@@ -73,7 +73,7 @@ class LatestDateResponse(BaseModel):
 
 
 @router.get("/")
-async def get_transactions(
+def get_transactions(
     service: Optional[str] = Query(
         None, description="Filter by service: credit_card, bank, cash"
     ),
@@ -97,7 +97,7 @@ async def get_transactions(
 
 
 @router.post("/", response_model=StatusResponse)
-async def create_transaction(
+def create_transaction(
     data: TransactionCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new manual transaction."""
@@ -112,7 +112,7 @@ async def create_transaction(
 
 
 @router.put("/{unique_id}", response_model=StatusResponse)
-async def update_transaction(
+def update_transaction(
     unique_id: str, data: TransactionUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Update editable fields of a transaction.
@@ -149,7 +149,7 @@ async def update_transaction(
 
 
 @router.delete("/{unique_id}", response_model=StatusResponse)
-async def delete_transaction(
+def delete_transaction(
     unique_id: str,
     source: str = Query(..., description="The source of the transaction"),
     db: Session = Depends(get_database),
@@ -166,7 +166,7 @@ async def delete_transaction(
 
 
 @router.post("/{unique_id}/split", response_model=StatusResponse)
-async def split_transaction(
+def split_transaction(
     unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Split a transaction into multiple parts."""
@@ -180,7 +180,7 @@ async def split_transaction(
 
 
 @router.delete("/{unique_id}/split", response_model=StatusResponse)
-async def revert_split(
+def revert_split(
     unique_id: int,
     source: str = Query(..., description="The source of the transaction"),
     db: Session = Depends(get_database),
@@ -195,7 +195,7 @@ async def revert_split(
 
 
 @router.post("/bulk-tag", response_model=StatusResponse)
-async def bulk_tag_transactions(
+def bulk_tag_transactions(
     data: BulkTagUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Apply tagging and optional field updates to multiple transactions of the same source."""
@@ -217,7 +217,7 @@ async def bulk_tag_transactions(
 
 
 @router.get("/latest-date", response_model=LatestDateResponse)
-async def get_latest_data_date(
+def get_latest_data_date(
     db: Session = Depends(get_database),
 ) -> dict[str, str | None]:
     """Get the latest transaction date across all tables."""
@@ -227,7 +227,7 @@ async def get_latest_data_date(
 
 
 @router.get("/{transaction_id}")
-async def get_transaction(
+def get_transaction(
     transaction_id: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Get a specific transaction by ID."""
@@ -240,7 +240,7 @@ async def get_transaction(
 
 
 @router.put("/{transaction_id}/tag", response_model=StatusResponse)
-async def update_transaction_tag(
+def update_transaction_tag(
     transaction_id: str,
     category: str,
     tag: str,

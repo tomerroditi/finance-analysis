@@ -36,19 +36,19 @@ class SavingsGoalUpdate(BaseModel):
 
 
 @router.get("/")
-async def list_goals(db: Session = Depends(get_database)):
+def list_goals(db: Session = Depends(get_database)):
     """Return all savings goals enriched with progress metrics."""
     return SavingsGoalService(db).get_all()
 
 
 @router.post("/")
-async def create_goal(data: SavingsGoalCreate, db: Session = Depends(get_database)):
+def create_goal(data: SavingsGoalCreate, db: Session = Depends(get_database)):
     """Create a new savings goal."""
     return SavingsGoalService(db).create(**data.model_dump())
 
 
 @router.put("/{goal_id}")
-async def update_goal(
+def update_goal(
     goal_id: int, data: SavingsGoalUpdate, db: Session = Depends(get_database)
 ):
     """Update an existing savings goal."""
@@ -56,7 +56,7 @@ async def update_goal(
 
 
 @router.delete("/{goal_id}")
-async def delete_goal(goal_id: int, db: Session = Depends(get_database)):
+def delete_goal(goal_id: int, db: Session = Depends(get_database)):
     """Delete a savings goal."""
     SavingsGoalService(db).delete(goal_id)
     return {"status": "deleted"}

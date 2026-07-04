@@ -44,7 +44,7 @@ class LiabilityUpdate(BaseModel):
 
 
 @router.get("/")
-async def get_liabilities(
+def get_liabilities(
     include_paid_off: bool = False, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
     """Return all liability records.
@@ -60,7 +60,7 @@ async def get_liabilities(
 
 
 @router.get("/debt-over-time")
-async def get_debt_over_time(
+def get_debt_over_time(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Return debt-over-time data for all active liabilities using actual transactions."""
@@ -69,7 +69,7 @@ async def get_debt_over_time(
 
 
 @router.get("/detect-transactions")
-async def detect_tag_transactions(
+def detect_tag_transactions(
     tag: str, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Detect existing transactions for a liability tag.
@@ -82,7 +82,7 @@ async def detect_tag_transactions(
 
 
 @router.get("/{liability_id}/analysis")
-async def get_liability_analysis(
+def get_liability_analysis(
     liability_id: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Return detailed analysis for a specific liability."""
@@ -91,7 +91,7 @@ async def get_liability_analysis(
 
 
 @router.get("/{liability_id}/transactions")
-async def get_liability_transactions(
+def get_liability_transactions(
     liability_id: int, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
     """Return all transactions associated with a specific liability."""
@@ -100,7 +100,7 @@ async def get_liability_transactions(
 
 
 @router.get("/{liability_id}")
-async def get_liability(
+def get_liability(
     liability_id: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Get a specific liability by ID."""
@@ -109,7 +109,7 @@ async def get_liability(
 
 
 @router.post("/")
-async def create_liability(
+def create_liability(
     liability: LiabilityCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new liability."""
@@ -128,7 +128,7 @@ async def create_liability(
 
 
 @router.put("/{liability_id}")
-async def update_liability(
+def update_liability(
     liability_id: int,
     liability: LiabilityUpdate,
     db: Session = Depends(get_database),
@@ -145,7 +145,7 @@ class PayOffRequest(BaseModel):
 
 
 @router.post("/{liability_id}/pay-off")
-async def pay_off_liability(
+def pay_off_liability(
     liability_id: int, body: PayOffRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Mark a liability as paid off.
@@ -163,7 +163,7 @@ async def pay_off_liability(
 
 
 @router.post("/{liability_id}/reopen")
-async def reopen_liability(
+def reopen_liability(
     liability_id: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Reopen a paid-off liability."""
@@ -173,7 +173,7 @@ async def reopen_liability(
 
 
 @router.post("/{liability_id}/generate-transactions")
-async def generate_missing_transactions(
+def generate_missing_transactions(
     liability_id: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Auto-generate missing payment transactions from amortization schedule."""
@@ -183,7 +183,7 @@ async def generate_missing_transactions(
 
 
 @router.delete("/{liability_id}")
-async def delete_liability(
+def delete_liability(
     liability_id: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Delete a liability."""

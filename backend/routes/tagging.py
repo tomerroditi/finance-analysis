@@ -50,13 +50,13 @@ class TagRename(BaseModel):
 
 
 @router.get("/categories")
-async def get_categories(db: Session = Depends(get_database)):
+def get_categories(db: Session = Depends(get_database)):
     """Get all categories and their tags."""
     return CategoriesTagsService(db).get_categories_and_tags()
 
 
 @router.post("/categories")
-async def add_category(category: CategoryCreate, db: Session = Depends(get_database)):
+def add_category(category: CategoryCreate, db: Session = Depends(get_database)):
     """Add a new category."""
     try:
         CategoriesTagsService(db).add_category(category.name, category.tags)
@@ -66,7 +66,7 @@ async def add_category(category: CategoryCreate, db: Session = Depends(get_datab
 
 
 @router.delete("/categories/{name}")
-async def delete_category(name: str, db: Session = Depends(get_database)):
+def delete_category(name: str, db: Session = Depends(get_database)):
     """Delete a category and all its tags.
 
     Transactions that were assigned to this category or any of its tags
@@ -80,7 +80,7 @@ async def delete_category(name: str, db: Session = Depends(get_database)):
 
 
 @router.post("/tags")
-async def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
+def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
     """Add a tag to a category."""
     try:
         CategoriesTagsService(db).add_tag(tag.category, tag.name)
@@ -90,7 +90,7 @@ async def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
 
 
 @router.delete("/tags/{category}/{name}")
-async def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
+def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
     """Delete a tag from a category.
 
     Transactions tagged with this tag have their ``tag`` field (and optionally
@@ -104,7 +104,7 @@ async def delete_tag(category: str, name: str, db: Session = Depends(get_databas
 
 
 @router.post("/tags/relocate")
-async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
+def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
     """Move a tag from one category to another.
 
     Updates the YAML config and re-categorises transactions that carry this
@@ -120,7 +120,7 @@ async def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
 
 
 @router.put("/categories/{name}")
-async def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_database)):
+def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_database)):
     """Rename a category and cascade the change across all tables."""
     from backend.errors import ValidationException
 
@@ -133,7 +133,7 @@ async def rename_category(name: str, data: CategoryRename, db: Session = Depends
 
 
 @router.put("/tags/{category}/{name}")
-async def rename_tag(category: str, name: str, data: TagRename, db: Session = Depends(get_database)):
+def rename_tag(category: str, name: str, data: TagRename, db: Session = Depends(get_database)):
     """Rename a tag and cascade the change across all tables."""
     from backend.errors import ValidationException
 
@@ -146,13 +146,13 @@ async def rename_tag(category: str, name: str, data: TagRename, db: Session = De
 
 
 @router.get("/icons")
-async def get_category_icons(db: Session = Depends(get_database)):
+def get_category_icons(db: Session = Depends(get_database)):
     """Get category icons mapping."""
     return CategoriesTagsService(db).get_categories_icons()
 
 
 @router.put("/icons/{category}")
-async def update_category_icon(
+def update_category_icon(
     category: str, icon: str, db: Session = Depends(get_database)
 ):
     """Update a category's icon."""
@@ -161,7 +161,7 @@ async def update_category_icon(
 
 
 @router.post("/add-new-credit-card-tags")
-async def add_new_credit_card_tags(db: Session = Depends(get_database)):
+def add_new_credit_card_tags(db: Session = Depends(get_database)):
     """Discover credit card accounts from transaction data and register them as tags.
 
     Scans credit card transactions for unique provider/account combinations and

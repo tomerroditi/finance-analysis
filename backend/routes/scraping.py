@@ -48,7 +48,7 @@ class StatusResponse(BaseModel):
 
 
 @router.post("/start")
-async def start_scraping_single(
+def start_scraping_single(
     data: StartScrapingRequest, db: Session = Depends(get_database)
 ) -> int:
     """Start a scraping job for a single account.
@@ -80,7 +80,7 @@ async def start_scraping_single(
 
 
 @router.post("/abort", response_model=StatusResponse)
-async def abort_scraping(
+def abort_scraping(
     data: AbortRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Abort a running scraping process.
@@ -101,7 +101,7 @@ async def abort_scraping(
 
 
 @router.get("/status")
-async def get_scraping_status(
+def get_scraping_status(
     scraping_process_id: int, db: Session = Depends(get_database)
 ) -> dict:
     """Return the current status of a scraping job.
@@ -122,7 +122,7 @@ async def get_scraping_status(
 
 
 @router.post("/2fa", response_model=StatusResponse)
-async def handle_2fa(
+def handle_2fa(
     data: TFAFinishRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Submit a 2FA OTP code to unblock a waiting scraping job.
@@ -186,7 +186,7 @@ async def resend_2fa(
 
 
 @router.get("/last-scrapes")
-async def get_last_scrapes(db: Session = Depends(get_database)) -> list:
+def get_last_scrapes(db: Session = Depends(get_database)) -> list:
     """Return the last successful scrape date for each configured account.
 
     Returns

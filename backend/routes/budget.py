@@ -47,7 +47,7 @@ class ProjectUpdate(BaseModel):
 
 
 @router.get("/rules")
-async def get_budget_rules(
+def get_budget_rules(
     db: Session = Depends(get_database),
 ) -> list[dict]:
     """Get all budget rules."""
@@ -57,7 +57,7 @@ async def get_budget_rules(
 
 
 @router.get("/rules/{year}/{month}")
-async def get_budget_rules_by_month(
+def get_budget_rules_by_month(
     year: int, month: int, db: Session = Depends(get_database)
 ) -> list[dict]:
     """Get budget rules for a specific month."""
@@ -67,7 +67,7 @@ async def get_budget_rules_by_month(
 
 
 @router.post("/rules")
-async def create_budget_rule(
+def create_budget_rule(
     rule: BudgetRuleCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new budget rule."""
@@ -82,7 +82,7 @@ async def create_budget_rule(
 
 
 @router.put("/rules/{rule_id}")
-async def update_budget_rule(
+def update_budget_rule(
     rule_id: int, rule: BudgetRuleUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Update a budget rule."""
@@ -93,7 +93,7 @@ async def update_budget_rule(
 
 
 @router.delete("/rules/{rule_id}")
-async def delete_budget_rule(
+def delete_budget_rule(
     rule_id: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Delete a budget rule."""
@@ -103,7 +103,7 @@ async def delete_budget_rule(
 
 
 @router.post("/rules/{year}/{month}/copy")
-async def copy_previous_month_rules(
+def copy_previous_month_rules(
     year: int, month: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Copy budget rules from the previous calendar month into the given month.
@@ -139,7 +139,7 @@ async def copy_previous_month_rules(
 
 
 @router.get("/analysis/{year}/{month}")
-async def get_monthly_analysis(
+def get_monthly_analysis(
     year: int,
     month: int,
     include_split_parents: bool = Query(False),
@@ -171,7 +171,7 @@ async def get_monthly_analysis(
 
 
 @router.get("/alerts")
-async def get_current_month_alerts(
+def get_current_month_alerts(
     threshold: float = Query(0.8, ge=0.0, le=1.0),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -197,7 +197,7 @@ async def get_current_month_alerts(
 
 
 @router.get("/alerts/{year}/{month}")
-async def get_month_alerts(
+def get_month_alerts(
     year: int,
     month: int,
     threshold: float = Query(0.8, ge=0.0, le=1.0),
@@ -228,7 +228,7 @@ async def get_month_alerts(
 
 
 @router.get("/projects")
-async def get_projects(
+def get_projects(
     db: Session = Depends(get_database),
 ) -> list[str]:
     """Get all project names."""
@@ -237,7 +237,7 @@ async def get_projects(
 
 
 @router.get("/projects/available")
-async def get_available_categories_for_new_project(
+def get_available_categories_for_new_project(
     db: Session = Depends(get_database),
 ) -> list[str]:
     """Get available categories for a new project."""
@@ -246,7 +246,7 @@ async def get_available_categories_for_new_project(
 
 
 @router.post("/projects")
-async def create_project(
+def create_project(
     project: ProjectCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new project."""
@@ -256,7 +256,7 @@ async def create_project(
 
 
 @router.put("/projects/{name}")
-async def update_project(
+def update_project(
     name: str, project: ProjectUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Update project total budget."""
@@ -266,7 +266,7 @@ async def update_project(
 
 
 @router.delete("/projects/{name}")
-async def delete_project(
+def delete_project(
     name: str, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Delete a project."""
@@ -276,7 +276,7 @@ async def delete_project(
 
 
 @router.get("/projects/{name}")
-async def get_project_details(
+def get_project_details(
     name: str,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
