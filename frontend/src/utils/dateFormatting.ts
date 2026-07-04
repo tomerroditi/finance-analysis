@@ -43,14 +43,14 @@ export function formatMonthYear(date: string | Date): string {
 }
 
 /**
- * Format a "YYYY-MM" month key (or Date) with a short month name and year
- * (e.g., "Jun 2026"). Parses the month key in local time to avoid the
+ * Format a "YYYY-MM" month key (or Date) compactly as numeric month + 2-digit
+ * year (e.g., "06.26"). Parses the month key in local time to avoid the
  * UTC-midnight off-by-one that `new Date("2026-06")` produces in negative
  * offsets.
  * @param month - Month key string ("YYYY-MM") or Date object
- * @returns Localized short month + year label
+ * @returns Compact "MM.yy" label
  */
-export function formatMonthShort(month: string | Date): string {
+export function formatMonthCompact(month: string | Date): string {
   let dateObj: Date;
   if (typeof month === "string") {
     const [year, monthNum] = month.split("-").map(Number);
@@ -58,7 +58,7 @@ export function formatMonthShort(month: string | Date): string {
   } else {
     dateObj = month;
   }
-  return format(dateObj, "MMM yyyy", getLocale());
+  return format(dateObj, "MM.yy", getLocale());
 }
 
 /**

@@ -25,7 +25,7 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
-import { formatMonthShort } from "../utils/dateFormatting";
+import { formatMonthCompact } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
 
@@ -131,7 +131,7 @@ function FinancialHealthHeader({
             const change = entry.net_worth - prev;
             return {
               month: entry.month,
-              label: formatMonthShort(entry.month),
+              label: formatMonthCompact(entry.month),
               change,
               percent: prev !== 0 ? (change / Math.abs(prev)) * 100 : null,
             };

@@ -1,9 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { enableDemoMode, disableDemoMode } from "./helpers";
 
-// A "MMM yyyy" month-row label, e.g. "Jul 2026" — rendered only inside the
-// expanded Net Worth card's per-month change breakdown.
-const MONTH_ROW = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+20\d{2}\b/;
+// A compact "MM.yy" month-row label, e.g. "07.26" — rendered only inside the
+// expanded Net Worth card's per-month change breakdown. Currency deltas and
+// percentages in the card use at most one fractional digit, so a two-digit.
+// two-digit pattern is unique to these month labels.
+const MONTH_ROW = /\b\d{2}\.\d{2}\b/;
 
 test.describe("Dashboard net worth monthly change", () => {
   test.beforeAll(async ({ browser }) => {
