@@ -43,6 +43,25 @@ export function formatMonthYear(date: string | Date): string {
 }
 
 /**
+ * Format a "YYYY-MM" month key (or Date) with a short month name and year
+ * (e.g., "Jun 2026"). Parses the month key in local time to avoid the
+ * UTC-midnight off-by-one that `new Date("2026-06")` produces in negative
+ * offsets.
+ * @param month - Month key string ("YYYY-MM") or Date object
+ * @returns Localized short month + year label
+ */
+export function formatMonthShort(month: string | Date): string {
+  let dateObj: Date;
+  if (typeof month === "string") {
+    const [year, monthNum] = month.split("-").map(Number);
+    dateObj = new Date(year, monthNum - 1, 1);
+  } else {
+    dateObj = month;
+  }
+  return format(dateObj, "MMM yyyy", getLocale());
+}
+
+/**
  * Whole calendar-agnostic days elapsed between `date` and now.
  * @param date - Date string (ISO format) or Date object
  * @returns Number of full days since the given date (0 = today)

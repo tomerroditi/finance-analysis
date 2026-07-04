@@ -25,6 +25,7 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
+import { formatMonthShort } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
 
@@ -50,6 +51,30 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
         <div key={item.name} className="flex justify-between text-xs">
           <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0" dir="ltr">{formatCurrency(item.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthlyChangeList({
+  title,
+  items,
+}: {
+  title: string;
+  items: { month: string; label: string; change: number }[];
+}) {
+  return (
+    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+      <p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{title}</p>
+      {items.map((item) => (
+        <div key={item.month} className="flex justify-between text-xs">
+          <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.label}</span>
+          <span
+            className={`tabular-nums font-medium shrink-0 ${item.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+          >
+            {formatChange(item.change)}
+          </span>
         </div>
       ))}
     </div>
@@ -94,6 +119,22 @@ function FinancialHealthHeader({
   const investmentMom = calcMom(latestNetWorth?.investment_value, previousNetWorth?.investment_value);
   const cashMom = calcMom(latestNetWorth?.cash, previousNetWorth?.cash);
 
+  // Net worth change per month for the last 3 months (most recent first).
+  // Each change is the month-over-month delta of net_worth; the series
+  // already carries every month, so no extra API call is needed.
+  const netWorthMonthlyChanges =
+    netWorthData && netWorthData.length >= 2
+      ? netWorthData
+          .slice(1)
+          .map((entry, i) => ({
+            month: entry.month,
+            label: formatMonthShort(entry.month),
+            change: entry.net_worth - netWorthData[i].net_worth,
+          }))
+          .slice(-3)
+          .reverse()
+      : [];
+
   const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
   const openInvestments = portfolioAllocation?.filter((i) => i.balance > 0);
 
@@ -119,6 +160,12 @@ function FinancialHealthHeader({
           {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
         </p>
         <MomBadge mom={netWorthMom} />
+        {expanded && netWorthMonthlyChanges.length > 0 && (
+          <MonthlyChangeList
+            title={t("dashboard.netWorthMonthlyChange")}
+            items={netWorthMonthlyChanges}
+          />
+        )}
       </div>
 
       {/* Bank Balance */}
