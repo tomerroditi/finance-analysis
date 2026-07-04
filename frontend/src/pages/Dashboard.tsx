@@ -25,6 +25,7 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
+import { formatMonthCompact } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
 
@@ -50,6 +51,29 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
         <div key={item.name} className="flex justify-between text-xs">
           <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0" dir="ltr">{formatCurrency(item.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthlyChangeList({
+  items,
+}: {
+  items: { month: string; label: string; change: number; percent: number | null }[];
+}) {
+  return (
+    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+      {items.map((item) => (
+        <div key={item.month} className="flex justify-between text-xs">
+          <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.label}</span>
+          <span
+            dir="ltr"
+            className={`tabular-nums font-medium shrink-0 ${item.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+          >
+            {formatChange(item.change)}
+            {item.percent !== null && ` (${formatPercentChange(item.percent)})`}
+          </span>
         </div>
       ))}
     </div>
@@ -94,6 +118,28 @@ function FinancialHealthHeader({
   const investmentMom = calcMom(latestNetWorth?.investment_value, previousNetWorth?.investment_value);
   const cashMom = calcMom(latestNetWorth?.cash, previousNetWorth?.cash);
 
+  // Net worth change per month for the last 3 months (most recent first).
+  // Each change is the month-over-month delta of net_worth, with its percent
+  // relative to the prior month; the series already carries every month, so no
+  // extra API call is needed.
+  const netWorthMonthlyChanges =
+    netWorthData && netWorthData.length >= 2
+      ? netWorthData
+          .slice(1)
+          .map((entry, i) => {
+            const prev = netWorthData[i].net_worth;
+            const change = entry.net_worth - prev;
+            return {
+              month: entry.month,
+              label: formatMonthCompact(entry.month),
+              change,
+              percent: prev !== 0 ? (change / Math.abs(prev)) * 100 : null,
+            };
+          })
+          .slice(-3)
+          .reverse()
+      : [];
+
   const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
   const openInvestments = portfolioAllocation?.filter((i) => i.balance > 0);
 
@@ -119,6 +165,9 @@ function FinancialHealthHeader({
           {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
         </p>
         <MomBadge mom={netWorthMom} />
+        {expanded && netWorthMonthlyChanges.length > 0 && (
+          <MonthlyChangeList items={netWorthMonthlyChanges} />
+        )}
       </div>
 
       {/* Bank Balance */}
