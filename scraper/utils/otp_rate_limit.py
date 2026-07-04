@@ -13,6 +13,14 @@ This module enforces two independent limits per phone number:
   (``OTP_PREPARE_MIN_INTERVAL_SECONDS``).
 - A maximum number of prepares within a rolling window
   (``OTP_PREPARE_MAX_PER_WINDOW`` per ``OTP_PREPARE_WINDOW_SECONDS``).
+
+It also acts as a circuit breaker once the provider itself has blocked a
+number: callers observing that block (see
+``scraper.providers.banks.onezero._is_sms_provider_block``) call
+``record_provider_block`` to arm a per-phone cooldown
+(``OTP_BLOCK_COOLDOWN_SECONDS``), so we stop attempting ``/otp/prepare``
+for that number until the cooldown elapses — hammering an already-blocked
+number can prolong the provider-side block.
 """
 
 import time
@@ -21,10 +29,21 @@ from typing import Callable
 OTP_PREPARE_MIN_INTERVAL_SECONDS = 60
 OTP_PREPARE_MAX_PER_WINDOW = 3
 OTP_PREPARE_WINDOW_SECONDS = 900
+OTP_BLOCK_COOLDOWN_SECONDS = 3600
 
 
 class OtpRateLimitError(Exception):
     """Raised when an OTP prepare request violates the rate limit."""
+
+
+class OtpProviderBlockedError(OtpRateLimitError):
+    """Raised when the SMS provider itself has blocked the phone number.
+
+    A subclass of :class:`OtpRateLimitError` so every existing
+    ``except OtpRateLimitError`` handler (the resend route's
+    ``BadRequestException`` mapping, ``login()``'s error surfacing) already
+    handles it with no new wiring.
+    """
 
 
 class OtpPrepareRateLimiter:
@@ -41,15 +60,20 @@ class OtpPrepareRateLimiter:
     def __init__(self, clock: Callable[[], float] = time.monotonic):
         self._clock = clock
         self._history: dict[str, list[float]] = {}
+        self._blocked_until: dict[str, float] = {}
 
     def check_and_record(self, phone_number: str) -> None:
         """Validate a prepare request for ``phone_number`` and record it.
 
-        Enforces both the minimum-interval and window-cap rules. On
-        violation, raises :class:`OtpRateLimitError` without recording a
-        new timestamp — only genuinely accepted prepares count toward
-        either limit. On success, prunes timestamps older than the
-        rolling window and records the current one.
+        First checks whether the provider itself has blocked this number
+        (see :meth:`record_provider_block`); if so, raises
+        :class:`OtpProviderBlockedError` immediately without touching the
+        min-interval/window history. Otherwise enforces both the
+        minimum-interval and window-cap rules. On violation, raises
+        :class:`OtpRateLimitError` without recording a new timestamp —
+        only genuinely accepted prepares count toward either limit. On
+        success, prunes timestamps older than the rolling window and
+        records the current one.
 
         Parameters
         ----------
@@ -59,6 +83,9 @@ class OtpPrepareRateLimiter:
 
         Raises
         ------
+        OtpProviderBlockedError
+            If the provider has blocked this phone number and the cooldown
+            (``OTP_BLOCK_COOLDOWN_SECONDS``) has not yet elapsed.
         OtpRateLimitError
             If a prepare was recorded for this phone within
             ``OTP_PREPARE_MIN_INTERVAL_SECONDS``, or if
@@ -66,6 +93,18 @@ class OtpPrepareRateLimiter:
             ``OTP_PREPARE_WINDOW_SECONDS``.
         """
         now = self._clock()
+
+        blocked_until = self._blocked_until.get(phone_number)
+        if blocked_until is not None:
+            if blocked_until > now:
+                raise OtpProviderBlockedError(
+                    "Your phone number is temporarily blocked by the bank's "
+                    "SMS provider (too many code requests). Please try "
+                    "again later."
+                )
+            # Cooldown elapsed — prune the stale block entry.
+            del self._blocked_until[phone_number]
+
         timestamps = self._history.get(phone_number, [])
 
         # Prune stale entries before evaluating the window cap so an old
@@ -90,9 +129,26 @@ class OtpPrepareRateLimiter:
         timestamps.append(now)
         self._history[phone_number] = timestamps
 
+    def record_provider_block(self, phone_number: str) -> None:
+        """Arm a cooldown after the SMS provider blocks ``phone_number``.
+
+        Called when the caller detects the provider itself has rejected
+        the request (e.g. a Twilio SMS-block response), as opposed to our
+        own min-interval/window limits. While the cooldown is active,
+        :meth:`check_and_record` raises :class:`OtpProviderBlockedError`
+        immediately, without consuming a min-interval/window slot.
+
+        Parameters
+        ----------
+        phone_number : str
+            The phone number the provider has blocked.
+        """
+        self._blocked_until[phone_number] = self._clock() + OTP_BLOCK_COOLDOWN_SECONDS
+
     def reset(self) -> None:
-        """Clear all recorded prepare history for every phone number."""
+        """Clear all recorded prepare history and provider blocks."""
         self._history.clear()
+        self._blocked_until.clear()
 
 
 otp_prepare_rate_limiter = OtpPrepareRateLimiter()

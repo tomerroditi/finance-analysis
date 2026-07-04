@@ -9,10 +9,12 @@ hardens against.
 import pytest
 
 from scraper.utils.otp_rate_limit import (
+    OTP_BLOCK_COOLDOWN_SECONDS,
     OTP_PREPARE_MAX_PER_WINDOW,
     OTP_PREPARE_MIN_INTERVAL_SECONDS,
     OTP_PREPARE_WINDOW_SECONDS,
     OtpPrepareRateLimiter,
+    OtpProviderBlockedError,
     OtpRateLimitError,
     otp_prepare_rate_limiter,
 )
@@ -177,6 +179,94 @@ class TestPerPhoneIsolation:
 
         # phone_b has never been recorded, so it must be allowed immediately.
         limiter.check_and_record(phone_b)
+
+
+class TestProviderBlockCircuitBreaker:
+    """Once the SMS provider (Twilio) blocks a number, stop hammering it.
+
+    ``record_provider_block`` arms a per-phone cooldown that short-circuits
+    ``check_and_record`` immediately — no min-interval/window bookkeeping is
+    consulted or mutated while the block is active.
+    """
+
+    def test_check_and_record_raises_while_blocked(self):
+        """A blocked phone raises OtpProviderBlockedError on the very next call."""
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+        phone = "+15551234567"
+
+        limiter.record_provider_block(phone)
+
+        with pytest.raises(OtpProviderBlockedError):
+            limiter.check_and_record(phone)
+
+    def test_allowed_again_after_cooldown_elapses(self):
+        """Advancing the clock past OTP_BLOCK_COOLDOWN_SECONDS lifts the block."""
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+        phone = "+15551234567"
+
+        limiter.record_provider_block(phone)
+        clock.advance(OTP_BLOCK_COOLDOWN_SECONDS)
+
+        # Must not raise — the cooldown has fully elapsed.
+        limiter.check_and_record(phone)
+
+    def test_blocked_call_consumes_no_min_interval_or_window_slot(self):
+        """Rejections from the block never count toward the other limits.
+
+        Only a genuinely accepted prepare (post-block) should start the
+        min-interval clock or occupy a window slot.
+        """
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+        phone = "+15551234567"
+
+        limiter.record_provider_block(phone)
+        for _ in range(5):
+            with pytest.raises(OtpProviderBlockedError):
+                limiter.check_and_record(phone)
+
+        clock.advance(OTP_BLOCK_COOLDOWN_SECONDS)
+
+        # The first post-cooldown call must succeed as if nothing had ever
+        # been recorded — the repeated blocked attempts above left no trace.
+        limiter.check_and_record(phone)
+
+        # Immediately calling again must hit the (unrelated) min-interval
+        # rule, proving exactly one timestamp was recorded by the call above.
+        with pytest.raises(OtpRateLimitError):
+            limiter.check_and_record(phone)
+
+    def test_other_phones_are_unaffected_by_a_block(self):
+        """Blocking one phone number must not block a different phone."""
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+        blocked_phone = "+15551234567"
+        other_phone = "+15557654321"
+
+        limiter.record_provider_block(blocked_phone)
+
+        # Must not raise — other_phone was never blocked.
+        limiter.check_and_record(other_phone)
+
+    def test_otp_provider_blocked_error_is_a_rate_limit_error_subclass(self):
+        """Subclassing means existing `except OtpRateLimitError` handlers
+        (resend route's BadRequestException mapping, login()'s error
+        surfacing) already catch this with no new wiring."""
+        assert issubclass(OtpProviderBlockedError, OtpRateLimitError)
+
+    def test_reset_clears_the_block(self):
+        """reset() lifts an active block, not just the timestamp history."""
+        clock = FakeClock()
+        limiter = OtpPrepareRateLimiter(clock=clock)
+        phone = "+15551234567"
+
+        limiter.record_provider_block(phone)
+        limiter.reset()
+
+        # Must not raise — reset() cleared blocked_until too.
+        limiter.check_and_record(phone)
 
 
 class TestErrorMessage:

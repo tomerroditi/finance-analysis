@@ -3,12 +3,17 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from scraper.base.base_scraper import ScraperOptions
 from scraper.providers.banks import onezero
 from scraper.providers.banks.onezero import IDENTITY_SERVER_URL, OneZeroScraper
-from scraper.utils.otp_rate_limit import OtpRateLimitError, otp_prepare_rate_limiter
+from scraper.utils.otp_rate_limit import (
+    OtpProviderBlockedError,
+    OtpRateLimitError,
+    otp_prepare_rate_limiter,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -179,6 +184,165 @@ class TestPrepareRateLimiting:
         # second immediate call must now be blocked.
         with pytest.raises(OtpRateLimitError):
             otp_prepare_rate_limiter.check_and_record(phone)
+
+
+def _sms_provider_block_error() -> httpx.HTTPStatusError:
+    """Build the real HTTPStatusError raised for a Twilio-blocked prepare.
+
+    Mirrors what ``_raise_for_status_with_body`` (``scraper/utils/fetch.py``)
+    actually raises: a genuine ``httpx.Response``/``httpx.Request`` pair so
+    ``error.response.text`` and ``error.response.status_code`` are populated,
+    not a bare mock.
+    """
+    request = httpx.Request("POST", f"{IDENTITY_SERVER_URL}/otp/prepare")
+    response = httpx.Response(
+        503,
+        request=request,
+        text=(
+            '{"errorResponse":{"type":"ErrorOtpService",'
+            '"description":"temporarily blocked by Twilio"}}'
+        ),
+    )
+    return httpx.HTTPStatusError(
+        f"HTTP 503 {request.url} — body: {response.text}",
+        request=request,
+        response=response,
+    )
+
+
+def _http_status_error(status_code: int, body: str) -> httpx.HTTPStatusError:
+    """Build a real HTTPStatusError with an arbitrary status and body."""
+    request = httpx.Request("POST", f"{IDENTITY_SERVER_URL}/otp/prepare")
+    response = httpx.Response(status_code, request=request, text=body)
+    return httpx.HTTPStatusError(
+        f"HTTP {status_code} {request.url} — body: {body}",
+        request=request,
+        response=response,
+    )
+
+
+class TestSmsProviderBlockCircuitBreaker:
+    """Once Twilio (via OneZero) blocks a number, stop hammering /otp/prepare.
+
+    Detects the block by inspecting the HTTPStatusError's response body for
+    the ``ErrorOtpService`` marker, arms the rate limiter's cooldown, and
+    raises a clear user-facing error instead of the raw 503 body.
+    """
+
+    def test_provider_block_response_arms_the_limiter_and_raises_clear_error(self):
+        """An ErrorOtpService 503 records a block and raises OtpProviderBlockedError.
+
+        The raised error must carry a clear, user-facing message — not the
+        raw 503 JSON body — while still subclassing OtpRateLimitError.
+        """
+        scraper = _make_scraper()
+        phone = "+15551234567"
+        device_ok = {"resultData": {"deviceToken": "dt"}}
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(
+                    side_effect=[device_ok, _sms_provider_block_error()]
+                ),
+            ):
+                with pytest.raises(OtpProviderBlockedError) as exc_info:
+                    await scraper._trigger_two_factor_auth(phone)
+                return str(exc_info.value)
+
+        message = asyncio.run(run())
+        assert "ErrorOtpService" not in message
+        assert "errorResponse" not in message
+
+    def test_subsequent_call_is_blocked_without_a_prepare_post(self):
+        """Once armed, a second trigger for the same phone sends NO prepare POST.
+
+        Device-token fetch may still happen, but the SMS-sending prepare
+        call — which would just get blocked again and can prolong the
+        provider-side block — must never fire while the cooldown is active.
+        """
+        scraper = _make_scraper()
+        phone = "+15551234567"
+        device_ok = {"resultData": {"deviceToken": "dt"}}
+
+        async def first_call():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(
+                    side_effect=[device_ok, _sms_provider_block_error()]
+                ),
+            ):
+                with pytest.raises(OtpProviderBlockedError):
+                    await scraper._trigger_two_factor_auth(phone)
+
+        asyncio.run(first_call())
+
+        async def second_call():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(return_value=device_ok),
+            ) as mock_post:
+                with pytest.raises(OtpProviderBlockedError):
+                    await scraper._trigger_two_factor_auth(phone)
+                return mock_post.call_args_list
+
+        calls = asyncio.run(second_call())
+        prepare_calls = [
+            c for c in calls if IDENTITY_SERVER_URL + "/otp/prepare" in c.args
+        ]
+        assert prepare_calls == []
+
+    def test_generic_server_error_does_not_arm_the_block(self):
+        """A plain 500 (no ErrorOtpService marker) does not arm the cooldown.
+
+        The failure must propagate as the original HTTPStatusError
+        unchanged (not converted to OtpProviderBlockedError), and a
+        subsequent call for a *different* phone (isolating this test from
+        the pre-existing, unrelated min-interval rule) must not be
+        short-circuited by a provider block.
+        """
+        scraper = _make_scraper()
+        phone = "+15551234567"
+        other_phone = "+15557654321"
+        device_ok = {"resultData": {"deviceToken": "dt"}}
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(
+                    side_effect=[
+                        device_ok,
+                        _http_status_error(500, "internal server error"),
+                    ]
+                ),
+            ):
+                with pytest.raises(httpx.HTTPStatusError) as exc_info:
+                    await scraper._trigger_two_factor_auth(phone)
+                return exc_info.value
+
+        error = asyncio.run(run())
+        assert not isinstance(error, OtpProviderBlockedError)
+
+        # Must not raise — no block was armed for any phone number,
+        # including the one that just saw the generic 500.
+        otp_prepare_rate_limiter.check_and_record(other_phone)
+
+    def test_verify_error_otp_code_does_not_arm_the_block(self):
+        """The 401 ErrorOtpCode (wrong code, on verify) never arms the block.
+
+        This body doesn't reach ``_trigger_two_factor_auth`` at all (it's a
+        ``/otp/verify`` response, checked by ``_get_long_term_token``), but
+        the detection helper must not treat it as a block marker if it ever
+        saw a body like this on the prepare call.
+        """
+        error = _http_status_error(
+            401, '{"errorResponse":{"type":"ErrorOtpCode","description":"wrong code"}}'
+        )
+        assert onezero._is_sms_provider_block(error) is False
 
 
 class TestLoginErrorDetail:

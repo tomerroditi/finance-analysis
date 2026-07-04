@@ -3,13 +3,15 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+import httpx
+
 from scraper.base import ApiScraper
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
-from scraper.utils.otp_rate_limit import otp_prepare_rate_limiter
+from scraper.utils.otp_rate_limit import OtpProviderBlockedError, otp_prepare_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -657,6 +659,32 @@ def _extract_result_data(response: dict, key: str) -> any:
     return result_data[key]
 
 
+def _is_sms_provider_block(error: httpx.HTTPStatusError) -> bool:
+    """Detect whether an HTTP error is the Twilio SMS-provider block.
+
+    OneZero's identity server returns HTTP 503 with an ``ErrorOtpService``
+    marker in the body when the SMS provider (Twilio) has temporarily
+    blocked the phone number for too many code requests. This is distinct
+    from a wrong-code ``ErrorOtpCode`` (401, on verify) or a generic
+    server error (500) — only the ``ErrorOtpService`` marker should arm
+    the rate limiter's circuit breaker.
+
+    Parameters
+    ----------
+    error : httpx.HTTPStatusError
+        The error raised by ``fetch_post`` for the ``/otp/prepare`` call.
+
+    Returns
+    -------
+    bool
+        True if the error's response body contains the ``ErrorOtpService``
+        marker, False otherwise (including when no response is attached).
+    """
+    if error.response is None:
+        return False
+    return "ErrorOtpService" in (error.response.text or "")
+
+
 class OneZeroScraper(ApiScraper):
     """Scraper for One Zero Bank (https://www.onezerbank.com).
 
@@ -691,6 +719,10 @@ class OneZeroScraper(ApiScraper):
         OtpRateLimitError
             If too many prepare requests have been made recently for this
             phone number (see ``scraper.utils.otp_rate_limit``).
+        OtpProviderBlockedError
+            If this prepare call is itself rejected by the SMS provider
+            (Twilio) as blocked, or if a prior call already recorded such
+            a block and the cooldown hasn't elapsed yet.
         """
         if not phone_number.startswith("+"):
             raise Exception(
@@ -709,15 +741,30 @@ class OneZeroScraper(ApiScraper):
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug("Sending OTP to phone number %s", phone_number)
-        otp_prepare_response = await fetch_post(
-            f"{IDENTITY_SERVER_URL}/otp/prepare",
-            {
-                "factorValue": phone_number,
-                "deviceToken": device_token,
-                "otpChannel": "SMS_OTP",
-            },
-            client=self.client,
-        )
+        try:
+            otp_prepare_response = await fetch_post(
+                f"{IDENTITY_SERVER_URL}/otp/prepare",
+                {
+                    "factorValue": phone_number,
+                    "deviceToken": device_token,
+                    "otpChannel": "SMS_OTP",
+                },
+                client=self.client,
+            )
+        except httpx.HTTPStatusError as error:
+            if not _is_sms_provider_block(error):
+                raise
+            logger.warning(
+                "SMS provider blocked phone number %s; arming cooldown",
+                phone_number,
+            )
+            otp_prepare_rate_limiter.record_provider_block(phone_number)
+            raise OtpProviderBlockedError(
+                "Your phone number is temporarily blocked by the bank's "
+                "SMS provider (too many code requests). Please try again "
+                "later."
+            ) from error
+
         self._otp_context = _extract_result_data(otp_prepare_response, "otpContext")
 
         return {"success": True}
