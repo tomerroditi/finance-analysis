@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, request } from "@playwright/test";
 import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 
 test.describe("DataSources", () => {
@@ -81,6 +81,103 @@ test.describe("DataSources", () => {
     for (const provider of ["Max", "Visa Cal", "Isracard", "Amex"]) {
       const img = page.getByRole("img", { name: provider }).last();
       await expect(img).toBeVisible();
+    }
+  });
+
+  test("opens the shared balance modal from the $ button and saves", async ({ page }) => {
+    const API_BASE = "http://localhost:8000/api";
+    const provider = "onezero";
+    const accountName = "E2E Balance Bank";
+    const today = new Date().toISOString();
+
+    // Seed a throwaway bank credential so a bank row (with the $ button) renders.
+    const ctx = await request.newContext();
+    await ctx.post(`${API_BASE}/credentials/`, {
+      data: {
+        service: "banks",
+        provider,
+        account_name: accountName,
+        credentials: {
+          email: "e2e-balance@example.com",
+          password: "e2e-password",
+          phoneNumber: "+15551234567",
+        },
+      },
+    });
+    await ctx.dispose();
+
+    try {
+      // Deterministic scrape status + balance for the seeded account.
+      await page.route("**/api/scraping/last-scrapes", async (route) => {
+        await route.fulfill({
+          json: [
+            { service: "banks", provider, account_name: accountName, last_scrape_date: today },
+          ],
+        });
+      });
+      await page.route("**/api/bank-balances/", async (route) => {
+        if (route.request().method() === "GET") {
+          await route.fulfill({
+            json: [
+              {
+                id: 99,
+                provider,
+                account_name: accountName,
+                balance: 1000,
+                prior_wealth_amount: 0,
+                last_manual_update: null,
+                last_scrape_update: today,
+              },
+            ],
+          });
+        } else {
+          await route.fulfill({
+            json: {
+              id: 99,
+              provider,
+              account_name: accountName,
+              balance: 7777,
+              prior_wealth_amount: 0,
+              last_manual_update: today,
+              last_scrape_update: today,
+            },
+          });
+        }
+      });
+
+      await page.goto("/");
+      await page.evaluate(() =>
+        sessionStorage.setItem("onboardingDismissedAt", String(Date.now())),
+      );
+      await page.goto("/data-sources");
+      await page.waitForLoadState("networkidle");
+
+      // The seeded bank row's amber "$" button (enabled because scraped today).
+      const setBtn = page.getByRole("button", { name: /^Set Balance$/ }).first();
+      await expect(setBtn).toBeEnabled();
+      await setBtn.click();
+
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(/net worth/i)).toBeVisible();
+
+      const [req] = await Promise.all([
+        page.waitForRequest(
+          (r) => r.url().includes("/api/bank-balances/") && r.method() === "POST",
+        ),
+        (async () => {
+          await dialog.getByRole("spinbutton").fill("7777");
+          await dialog.getByRole("button", { name: /^Save$/ }).click();
+        })(),
+      ]);
+      expect(req.postDataJSON()).toEqual({ provider, account_name: accountName, balance: 7777 });
+      await expect(dialog).toBeHidden();
+    } finally {
+      const cleanup = await request.newContext();
+      await cleanup.delete(
+        `${API_BASE}/credentials/banks/${provider}/${encodeURIComponent(accountName)}`,
+      );
+      await cleanup.dispose();
     }
   });
 });
