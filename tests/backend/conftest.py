@@ -9,6 +9,7 @@ fixtures they need.
 import pytest
 from sqlalchemy.orm import Session
 
+from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT
 from backend.models.bank_balance import BankBalance
 from backend.models.budget import BudgetRule
 from backend.models.cash_balance import CashBalance
@@ -887,6 +888,7 @@ def seed_project_transactions(db_session: Session) -> dict:
             tags="Venue;Catering",
             year=None,
             month=None,
+            period_type=PERIOD_PROJECT,
         ),
         BudgetRule(
             name="Renovation Budget",
@@ -895,6 +897,7 @@ def seed_project_transactions(db_session: Session) -> dict:
             tags="Materials;Labor",
             year=None,
             month=None,
+            period_type=PERIOD_PROJECT,
         ),
     ]
 
@@ -925,6 +928,7 @@ def seed_budget_rules(db_session: Session) -> list:
             tags=None,
             year=2024,
             month=1,
+            period_type=PERIOD_MONTHLY,
         ),
         BudgetRule(
             name="Food",
@@ -933,6 +937,7 @@ def seed_budget_rules(db_session: Session) -> list:
             tags="All Tags",
             year=2024,
             month=1,
+            period_type=PERIOD_MONTHLY,
         ),
         BudgetRule(
             name="Transport",
@@ -941,6 +946,7 @@ def seed_budget_rules(db_session: Session) -> list:
             tags=None,
             year=2024,
             month=1,
+            period_type=PERIOD_MONTHLY,
         ),
         BudgetRule(
             name="Entertainment",
@@ -949,6 +955,7 @@ def seed_budget_rules(db_session: Session) -> list:
             tags=None,
             year=2024,
             month=1,
+            period_type=PERIOD_MONTHLY,
         ),
     ]
 

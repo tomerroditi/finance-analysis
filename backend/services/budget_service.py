@@ -20,6 +20,10 @@ from backend.constants.budget import (
     ID,
     MONTH,
     NAME,
+    PERIOD_MONTHLY,
+    PERIOD_PROJECT,
+    PERIOD_TYPE,
+    PERIOD_YEARLY,
     TAGS,
     TOTAL_BUDGET,
     YEAR,
@@ -94,9 +98,13 @@ class BudgetService:
         tags: str | list[str],
         month: Optional[int] = None,
         year: Optional[int] = None,
+        period_type: Optional[str] = None,
     ) -> None:
         """
         Add a new budget rule, converting tags to semicolon-separated storage format.
+
+        ``period_type`` is forwarded to the repository, which derives it from
+        ``(year, month)`` when ``None``.
 
         Parameters
         ----------
@@ -112,9 +120,12 @@ class BudgetService:
             Calendar month (1–12). ``None`` for project budgets.
         year : int, optional
             Calendar year. ``None`` for project budgets.
+        period_type : str, optional
+            One of ``"monthly"``, ``"yearly"``, or ``"project"``. When
+            ``None``, the repository derives it from ``(year, month)``.
         """
         tags_str = ";".join(tags) if isinstance(tags, list) else tags
-        self.budget_repository.add(name, amount, category, tags_str, month, year)
+        self.budget_repository.add(name, amount, category, tags_str, month, year, period_type)
 
     def update_rule(self, id_: int, **fields):
         """
@@ -319,16 +330,11 @@ class MonthlyBudgetService(BudgetService):
     """Service for managing monthly budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
-        """
-        Get all monthly budget rules (excludes project rules).
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules where both ``year`` and ``month`` are non-null.
-        """
+        """Get all monthly budget rules (period_type == 'monthly')."""
         rules = super().get_all_rules()
-        return rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_MONTHLY]
 
     def delete_rules_by_month(self, year: int, month: int) -> None:
         """
@@ -1120,17 +1126,11 @@ class ProjectBudgetService(BudgetService):
     """Service for managing project-based budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
-        """
-        Get all project budget rules (excludes monthly rules).
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules where both ``year`` and ``month`` are null,
-            with those columns dropped.
-        """
+        """Get all project budget rules (period_type == 'project')."""
         rules = super().get_all_rules()
-        return rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()].drop(
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_PROJECT].drop(
             columns=[YEAR, MONTH]
         )
 

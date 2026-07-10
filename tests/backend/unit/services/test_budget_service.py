@@ -1882,3 +1882,16 @@ class TestGetProjectBudgetViewConstruction:
         assert photo_entry is not None
         assert photo_entry["current_amount"] == 1500.0
         assert photo_entry["rule"][TAGS] == ["Photography"]
+
+
+class TestPeriodTypeDiscriminator:
+    """Monthly/project services filter by period_type, not year/month nulls."""
+
+    def test_monthly_filters_on_period_type(self, db_session):
+        """get_all_rules keys on period_type == 'monthly'."""
+        svc = MonthlyBudgetService(db_session)
+        svc.add_rule("M", 10.0, "Food", ["Groceries"], month=5, year=2026)
+        # A yearly-typed row written directly must be excluded.
+        svc.budget_repository.add("Y", 20.0, "Travel", "Hotels", None, 2026, period_type="yearly")
+        names = list(svc.get_all_rules()["name"])
+        assert names == ["M"]
