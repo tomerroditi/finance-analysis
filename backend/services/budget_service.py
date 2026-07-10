@@ -169,8 +169,17 @@ class BudgetService:
     def _rules_of_type_for(
         self, category: str, year: int, period_type: str
     ) -> pd.DataFrame:
-        """All rules of ``period_type`` for a given category and year (tags as lists)."""
-        rules = self.get_all_rules()
+        """All rules of ``period_type`` for a given category and year (tags as lists).
+
+        Reads through the base ``BudgetService.get_all_rules`` explicitly
+        (bypassing any subclass override) since ``period_type`` here is a
+        caller-supplied filter that may name a different period than the
+        calling service's own kind (e.g. a ``YearlyBudgetService`` checking
+        for monthly conflicts). A polymorphic ``self.get_all_rules()`` would
+        already be pre-filtered to the calling subclass's period type and
+        could never see rules of any other kind.
+        """
+        rules = BudgetService.get_all_rules(self)
         if rules.empty:
             return rules
         return rules.loc[
@@ -422,6 +431,78 @@ class BudgetService:
                 )
 
         return True, ""
+
+    def get_filtered_expenses(
+        self,
+        exclude_pending_refunds: bool = True,
+        include_split_parents: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Get expense transactions with budget-style filtering applied.
+
+        Loads all transactions (split-aware), then excludes non-expense
+        categories, project categories, and optionally pending refund
+        transactions. Split parent rows are excluded from the result.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            When ``True``, excludes transactions marked as pending refunds.
+            Default is ``True``.
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered expense transactions with parsed dates. Amounts are
+            negative (raw convention). The caller should negate to get
+            positive expense values.
+        """
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
+
+        if all_data.empty:
+            return all_data
+
+        # Filter to expense categories
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
+                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+            )
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+
+        # Exclude project categories
+        projects = ProjectBudgetService(self.db).get_all_projects_names()
+        if projects:
+            expenses = expenses.loc[
+                ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
+            ]
+
+        # Optionally exclude pending refunds
+        if exclude_pending_refunds:
+            pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
+            tx_ids = pending_refs["transaction_ids"]
+            split_ids = pending_refs["split_ids"]
+
+            expenses = expenses[
+                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
+            ]
+            if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
+                expenses = expenses[
+                    ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
+                ]
+
+        # Exclude split_parent transactions from amounts
+        if "type" in expenses.columns:
+            expenses = expenses[expenses["type"] != "split_parent"]
+
+        return expenses
 
 
 class MonthlyBudgetService(BudgetService):
@@ -780,78 +861,6 @@ class MonthlyBudgetService(BudgetService):
             },
             "copied_from": copied_from,
         }
-
-    def get_filtered_expenses(
-        self,
-        exclude_pending_refunds: bool = True,
-        include_split_parents: bool = False,
-    ) -> pd.DataFrame:
-        """
-        Get expense transactions with budget-style filtering applied.
-
-        Loads all transactions (split-aware), then excludes non-expense
-        categories, project categories, and optionally pending refund
-        transactions. Split parent rows are excluded from the result.
-
-        Parameters
-        ----------
-        exclude_pending_refunds : bool, optional
-            When ``True``, excludes transactions marked as pending refunds.
-            Default is ``True``.
-        include_split_parents : bool, optional
-            When ``True``, include parent transactions alongside split children.
-            Default is ``False``.
-
-        Returns
-        -------
-        pd.DataFrame
-            Filtered expense transactions with parsed dates. Amounts are
-            negative (raw convention). The caller should negate to get
-            positive expense values.
-        """
-        all_data = self.transactions_service.get_data_for_analysis(
-            include_split_parents
-        )
-
-        if all_data.empty:
-            return all_data
-
-        # Filter to expense categories
-        expenses = all_data.loc[
-            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
-            )
-        ].copy()
-        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
-            expenses[TransactionsTableFields.DATE.value]
-        )
-
-        # Exclude project categories
-        projects = ProjectBudgetService(self.db).get_all_projects_names()
-        if projects:
-            expenses = expenses.loc[
-                ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
-            ]
-
-        # Optionally exclude pending refunds
-        if exclude_pending_refunds:
-            pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
-            tx_ids = pending_refs["transaction_ids"]
-            split_ids = pending_refs["split_ids"]
-
-            expenses = expenses[
-                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
-            ]
-            if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
-                expenses = expenses[
-                    ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
-                ]
-
-        # Exclude split_parent transactions from amounts
-        if "type" in expenses.columns:
-            expenses = expenses[expenses["type"] != "split_parent"]
-
-        return expenses
 
     def _apply_month_overrides(self, expenses: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1547,3 +1556,233 @@ class ProjectBudgetService(BudgetService):
                 )
 
         return {"name": project, "rules": view, "total_spent": total_spent}
+
+
+class YearlyBudgetService(BudgetService):
+    """Service for managing yearly budget rules.
+
+    A yearly budget is a flat list of independent ``(category, tags)`` rules for
+    a calendar year. Spend accumulates over the whole year. There is no overall
+    cap and no synthetic "Other Expenses" entry. Yearly rules are mutually
+    exclusive with monthly rules on ``(category, tag)`` within the same year.
+    """
+
+    def get_all_rules(self) -> pd.DataFrame:
+        """Get all yearly budget rules (period_type == 'yearly'), MONTH dropped."""
+        rules = super().get_all_rules()
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_YEARLY].drop(columns=[MONTH])
+
+    def get_year_rules(self, year: int) -> pd.DataFrame:
+        """Yearly rules scoped to a single calendar year."""
+        rules = self.get_all_rules()
+        if rules.empty:
+            return rules
+        return rules.loc[rules[YEAR] == year]
+
+    def _validate(
+        self,
+        name: str,
+        category: str,
+        tags: list[str],
+        amount: float,
+        year: int,
+        id_: int | None,
+    ) -> None:
+        """Validate a yearly rule; raise ``ValueError`` on failure.
+
+        Checks: non-empty name/category/tags, positive amount, name uniqueness
+        within the year, and mutual exclusion against monthly rules for the year.
+        """
+        if not name:
+            raise ValueError("Please enter a name")
+        if not category:
+            raise ValueError("Please select a category")
+        if not tags:
+            raise ValueError("Please select at least one tag")
+        if amount <= 0:
+            raise ValueError("Amount must be a positive number")
+
+        existing = self.get_year_rules(year)
+        if not existing.empty:
+            dupes = existing.loc[existing[NAME] == name]
+            if id_ is not None:
+                dupes = dupes.loc[dupes[ID] != id_]
+            if not dupes.empty:
+                raise ValueError(
+                    f"A yearly rule with the name '{name}' already exists for {year}."
+                )
+
+        conflicts = self.find_conflicting_tags(
+            category, tags, year, PERIOD_MONTHLY, exclude_rule_id=id_
+        )
+        if conflicts:
+            joined = ", ".join(conflicts)
+            raise ValueError(
+                f"{joined} is already used by your monthly budget for {year}. "
+                f"A tag can't be in both for the same year."
+            )
+
+    def create_rule(
+        self,
+        name: str,
+        amount: float,
+        category: str,
+        tags: str | list[str],
+        year: int,
+    ) -> None:
+        """Create a yearly rule after validation. Raises ``ValueError`` if invalid."""
+        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        self._validate(name, category, parsed_tags, amount, year, None)
+        self.add_rule(name, amount, category, parsed_tags, month=None, year=year,
+                      period_type=PERIOD_YEARLY)
+
+    def update_rule(self, id_: int, **fields):
+        """Update a yearly rule with validation of any category/tags/name/amount change.
+
+        Allowed fields: ``name``, ``amount``, ``category``, ``tags``. The rule's
+        ``year`` is immutable via this method.
+        """
+        valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
+        assert all(k in valid_fields for k in fields), (
+            f"Invalid fields for update. Valid fields: {valid_fields}"
+        )
+        current = self.get_all_rules()
+        row = current.loc[current[ID] == id_]
+        if row.empty:
+            raise ValueError(f"No yearly rule found with ID {id_}.")
+        row = row.iloc[0]
+        year = int(row[YEAR])
+        name = fields.get(NAME, row[NAME])
+        amount = fields.get(AMOUNT, row[AMOUNT])
+        category = fields.get(CATEGORY, row[CATEGORY])
+        tags = fields.get(TAGS, row[TAGS])
+        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        self._validate(name, category, parsed_tags, amount, year, id_)
+
+        if TAGS in fields and isinstance(fields[TAGS], list):
+            fields[TAGS] = ";".join(fields[TAGS])
+        self.budget_repository.update(id_, **fields)
+
+    def get_yearly_budget_view(
+        self, year: int, include_split_parents: bool = False
+    ) -> Optional[list[dict]]:
+        """Compute spend-vs-limit per yearly rule for a calendar year.
+
+        Returns ``None`` when the year has no yearly rules. Otherwise a flat list
+        of ``{rule, current_amount, data, allow_edit, allow_delete}`` — no total
+        rule, no "Other Expenses" remainder.
+        """
+        rules = self.get_year_rules(year)
+        if rules.empty:
+            return None
+
+        expenses = self.get_filtered_expenses(
+            exclude_pending_refunds=True, include_split_parents=include_split_parents
+        )
+        if not expenses.empty:
+            year_data = expenses.loc[
+                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year == year
+            ]
+        else:
+            year_data = expenses
+
+        view = []
+        for _, rule in rules.iterrows():
+            tags = rule[TAGS]
+            if year_data.empty:
+                cat_data = year_data
+            else:
+                cat_data = year_data[
+                    year_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
+                ]
+                if not self._is_all_tags(tags):
+                    cat_data = cat_data[
+                        cat_data[TransactionsTableFields.TAG.value].isin(tags)
+                    ]
+            amt = (
+                cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+                if not cat_data.empty
+                else 0.0
+            )
+            view.append(
+                {
+                    "rule": rule.to_dict(),
+                    "current_amount": amt,
+                    "data": cat_data.to_dict(orient="records"),
+                    "allow_edit": True,
+                    "allow_delete": True,
+                }
+            )
+        return view
+
+    def get_year_summary(self, year: int) -> dict:
+        """Computed, display-only roll-up for the year header.
+
+        Returns
+        -------
+        dict
+            ``total_allocated``, ``total_spent``, ``remaining``, ``on_track``
+            (count of rules at/under budget), ``over`` (count over budget), and
+            ``biggest_overspend`` (``{"name", "percentage"}`` or ``None``).
+        """
+        view = self.get_yearly_budget_view(year) or []
+        total_allocated = sum(float(e["rule"].get(AMOUNT) or 0) for e in view)
+        total_spent = sum(float(e["current_amount"] or 0) for e in view)
+        on_track = 0
+        over = 0
+        biggest = None
+        for e in view:
+            amount = float(e["rule"].get(AMOUNT) or 0)
+            spent = float(e["current_amount"] or 0)
+            pct = spent / amount if amount > 0 else 0.0
+            if amount > 0 and spent > amount:
+                over += 1
+                if biggest is None or pct > biggest["percentage"]:
+                    biggest = {"name": str(e["rule"].get(NAME) or ""), "percentage": pct}
+            else:
+                on_track += 1
+        return {
+            "total_allocated": total_allocated,
+            "total_spent": total_spent,
+            "remaining": total_allocated - total_spent,
+            "on_track": on_track,
+            "over": over,
+            "biggest_overspend": biggest,
+        }
+
+    def get_alerts(self, year: int, warning_threshold: float = 0.8) -> list[dict]:
+        """Yearly rules whose spend reached the warning threshold.
+
+        Mirrors ``MonthlyBudgetService.get_alerts`` — ``percentage = spent/amount``;
+        ``critical`` at ≥ 1.0, ``warning`` in ``[threshold, 1.0)``. There is no
+        Total Budget / Other Expenses row to skip.
+        """
+        view = self.get_yearly_budget_view(year)
+        if view is None:
+            return []
+        alerts = []
+        for entry in view:
+            rule = entry["rule"]
+            amount = float(rule.get(AMOUNT) or 0)
+            if amount <= 0:
+                continue
+            spent = float(entry.get("current_amount") or 0)
+            percentage = spent / amount
+            if percentage < warning_threshold:
+                continue
+            alerts.append(
+                {
+                    "rule_id": int(rule[ID]),
+                    "name": str(rule.get(NAME) or ""),
+                    "category": str(rule.get(CATEGORY) or ""),
+                    "tags": list(rule.get(TAGS) or []),
+                    "amount": amount,
+                    "spent": spent,
+                    "percentage": percentage,
+                    "severity": "critical" if percentage >= 1.0 else "warning",
+                }
+            )
+        alerts.sort(key=lambda a: a["percentage"], reverse=True)
+        return alerts

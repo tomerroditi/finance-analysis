@@ -17,6 +17,7 @@ from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
+    YearlyBudgetService,
 )
 
 
@@ -1885,7 +1886,7 @@ class TestGetProjectBudgetViewConstruction:
 
 
 class TestPeriodTypeDiscriminator:
-    """Monthly/project services filter by period_type, not year/month nulls."""
+    """Monthly/yearly services filter by period_type, not year/month nulls."""
 
     def test_monthly_filters_on_period_type(self, db_session):
         """get_all_rules keys on period_type == 'monthly'."""
@@ -1895,3 +1896,12 @@ class TestPeriodTypeDiscriminator:
         svc.budget_repository.add("Y", 20.0, "Travel", "Hotels", None, 2026, period_type="yearly")
         names = list(svc.get_all_rules()["name"])
         assert names == ["M"]
+
+    def test_yearly_filters_on_period_type(self, db_session):
+        """get_all_rules keys on period_type == 'yearly'."""
+        svc = YearlyBudgetService(db_session)
+        svc.add_rule("Y", 20.0, "Travel", ["Hotels"], month=None, year=2026, period_type="yearly")
+        # A monthly-typed row written directly must be excluded.
+        svc.budget_repository.add("M", 10.0, "Food", "Groceries", 5, 2026, period_type="monthly")
+        names = list(svc.get_all_rules()["name"])
+        assert names == ["Y"]
