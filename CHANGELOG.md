@@ -1,3 +1,9 @@
+## v1.41.1 (2026-07-10)
+
+### Fix
+
+- **serverless**: guard VERCEL lifespan before keyring-backed import
+
 ## v1.41.0 (2026-07-10)
 
 ### Feat
