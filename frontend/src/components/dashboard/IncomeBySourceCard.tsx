@@ -44,6 +44,18 @@ export function IncomeBySourceCard() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [tableOpen, setTableOpen] = useState(true);
+  const [expandedLabels, setExpandedLabels] = useState<Set<string>>(new Set());
+
+  const toggleLabel = (label: string) =>
+    setExpandedLabels((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
 
   const { start, end } = resolveRange(preset, customStart, customEnd);
 
@@ -202,22 +214,32 @@ export function IncomeBySourceCard() {
                         key={s.label}
                         className="border-b border-[var(--surface-light)]/50"
                       >
-                        <td className="text-start px-2 py-2 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-2">
+                        <td className="text-start px-2 py-2 w-full max-w-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleLabel(s.label)}
+                            aria-expanded={expandedLabels.has(s.label)}
+                            title={s.label}
+                            className="flex items-start gap-2 w-full text-start"
+                          >
                             <span
-                              className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                              className="mt-[3px] inline-block w-2.5 h-2.5 rounded-full shrink-0"
                               style={{
                                 backgroundColor:
                                   CHART_COLORS[i % CHART_COLORS.length],
                               }}
                             />
                             <span
-                              className="block max-w-[96px] truncate"
+                              className={`min-w-0 ${
+                                expandedLabels.has(s.label)
+                                  ? "whitespace-normal break-words"
+                                  : "truncate"
+                              }`}
                               dir="auto"
                             >
                               {s.label}
                             </span>
-                          </span>
+                          </button>
                         </td>
                         <td className="text-center px-2 py-2 whitespace-nowrap">
                           <span dir="ltr">{formatCurrency(s.amount)}</span>
