@@ -1,3 +1,9 @@
+## v1.39.3 (2026-07-10)
+
+### Fix
+
+- **frontend**: sort category/tag options and fill select on inline create
+
 ## v1.39.2 (2026-07-10)
 
 ### Fix
