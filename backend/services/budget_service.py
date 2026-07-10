@@ -5,6 +5,7 @@ This module provides business logic for budget rule operations.
 """
 
 import calendar
+import threading
 from datetime import date
 from typing import Optional
 
@@ -31,6 +32,17 @@ from backend.services.budget_month_override_service import BudgetMonthOverrideSe
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
+
+
+# Serializes the auto-fill of a month's budget rules across concurrent
+# requests. FastAPI runs the (synchronous) budget-analysis handlers in its
+# worker threadpool, and the budget page fires the active month's request
+# alongside prefetches for adjacent months. Auto-fill is a read-modify-write
+# (read "month is empty" -> copy the source month's rules in), so without a
+# guard each racing request reads its own snapshot as empty and copies the
+# source month, duplicating every rule. A single-process lock is sufficient:
+# the app runs one uvicorn process, and the desktop bundle likewise.
+_auto_fill_lock = threading.Lock()
 
 
 class BudgetService:
@@ -441,11 +453,40 @@ class MonthlyBudgetService(BudgetService):
             A human-readable source month string (e.g. ``"January 2026"``) if
             rules were copied, or ``None`` if the current month already has
             rules or no source month was found.
+
+        Notes
+        -----
+        Serialized via ``_auto_fill_lock`` so concurrent threadpool requests
+        (the active month plus adjacent-month prefetches) don't each copy the
+        source month and duplicate rules. The passed-in ``budget_rules`` is a
+        snapshot taken before the lock, so we re-read it fresh inside the lock
+        to observe rules a request that won the race already committed.
         """
-        # If current month already has rules, nothing to do
-        current_rules = self.get_month_rules(current_year, current_month, budget_rules)
-        if not current_rules.empty:
-            return None
+        with _auto_fill_lock:
+            # Drop this session's read snapshot and re-read committed state so a
+            # request that lost the race sees the month already filled.
+            self.db.rollback()
+            budget_rules = self.get_all_rules()
+
+            # If current month already has rules, nothing to do
+            current_rules = self.get_month_rules(
+                current_year, current_month, budget_rules
+            )
+            if not current_rules.empty:
+                return None
+
+            return self._auto_fill_empty_months_locked(
+                current_year, current_month, budget_rules
+            )
+
+    def _auto_fill_empty_months_locked(
+        self, current_year: int, current_month: int, budget_rules: pd.DataFrame
+    ) -> Optional[str]:
+        """Fill empty months from the latest prior month with rules.
+
+        Must be called while holding ``_auto_fill_lock`` with a freshly-read
+        ``budget_rules``. See :meth:`auto_fill_empty_months`.
+        """
 
         # Find the latest month with rules, strictly before the current month
         monthly_rules = budget_rules.dropna(subset=[YEAR, MONTH])

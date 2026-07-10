@@ -50,7 +50,7 @@ class BalanceSnapshotUpdate(BaseModel):
 
 
 @router.get("/")
-async def get_investments(
+def get_investments(
     include_closed: bool = False, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
     """Return all investment records.
@@ -66,7 +66,7 @@ async def get_investments(
 
 
 @router.get("/{investment_id}")
-async def get_investment(
+def get_investment(
     investment_id: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Get a specific investment by ID."""
@@ -75,7 +75,7 @@ async def get_investment(
 
 
 @router.get("/analysis/portfolio")
-async def get_portfolio_analysis(
+def get_portfolio_analysis(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get portfolio-level analysis and metrics."""
@@ -84,7 +84,7 @@ async def get_portfolio_analysis(
 
 
 @router.get("/analysis/balance-history")
-async def get_portfolio_balance_history(
+def get_portfolio_balance_history(
     include_closed: bool = False,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -94,7 +94,7 @@ async def get_portfolio_balance_history(
 
 
 @router.get("/{investment_id}/analysis")
-async def get_investment_analysis(
+def get_investment_analysis(
     investment_id: int,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -116,7 +116,7 @@ async def get_investment_analysis(
 
 
 @router.post("/")
-async def create_investment(
+def create_investment(
     investment: InvestmentCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new investment."""
@@ -139,7 +139,7 @@ async def create_investment(
 
 
 @router.put("/{investment_id}")
-async def update_investment(
+def update_investment(
     investment_id: int,
     investment: InvestmentUpdate,
     db: Session = Depends(get_database),
@@ -152,7 +152,7 @@ async def update_investment(
 
 
 @router.post("/{investment_id}/close")
-async def close_investment(
+def close_investment(
     investment_id: int, closed_date: str, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Mark an investment as closed.
@@ -170,7 +170,7 @@ async def close_investment(
 
 
 @router.post("/{investment_id}/reopen")
-async def reopen_investment(
+def reopen_investment(
     investment_id: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Reopen a closed investment."""
@@ -180,7 +180,7 @@ async def reopen_investment(
 
 
 @router.delete("/{investment_id}")
-async def delete_investment(
+def delete_investment(
     investment_id: int, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Delete an investment."""
@@ -193,7 +193,7 @@ async def delete_investment(
 
 
 @router.get("/{investment_id}/balances")
-async def get_balance_snapshots(
+def get_balance_snapshots(
     investment_id: int, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
     """Get all balance snapshots for an investment."""
@@ -202,7 +202,7 @@ async def get_balance_snapshots(
 
 
 @router.post("/{investment_id}/balances")
-async def create_balance_snapshot(
+def create_balance_snapshot(
     investment_id: int,
     snapshot: BalanceSnapshotCreate,
     db: Session = Depends(get_database),
@@ -214,7 +214,7 @@ async def create_balance_snapshot(
 
 
 @router.post("/{investment_id}/balances/calculate")
-async def calculate_fixed_rate_snapshots(
+def calculate_fixed_rate_snapshots(
     investment_id: int,
     end_date: Optional[str] = None,
     db: Session = Depends(get_database),
@@ -226,7 +226,7 @@ async def calculate_fixed_rate_snapshots(
 
 
 @router.put("/{investment_id}/balances/{snapshot_id}")
-async def update_balance_snapshot(
+def update_balance_snapshot(
     investment_id: int,
     snapshot_id: int,
     snapshot: BalanceSnapshotUpdate,
@@ -240,7 +240,7 @@ async def update_balance_snapshot(
 
 
 @router.delete("/{investment_id}/balances/{snapshot_id}")
-async def delete_balance_snapshot(
+def delete_balance_snapshot(
     investment_id: int,
     snapshot_id: int,
     db: Session = Depends(get_database),

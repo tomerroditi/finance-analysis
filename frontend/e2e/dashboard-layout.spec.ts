@@ -45,13 +45,13 @@ test.describe("Dashboard layout customization", () => {
   });
 
   test("hidden card persists across reload and can be restored", async ({ page }) => {
-    // Versioned (v:2) layout so it isn't migrated; heatmap hidden explicitly.
+    // Current (v:3) layout so it isn't migrated; heatmap hidden explicitly.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "fa.dashboard.layout",
         JSON.stringify({
-          v: 2,
-          order: ["budget", "recent", "charts"],
+          v: 3,
+          order: ["budget", "recent", "income_expenses", "net_worth"],
           hidden: ["heatmap"],
         }),
       );
@@ -67,6 +67,10 @@ test.describe("Dashboard layout customization", () => {
     await hiddenRow.getByRole("button", { name: /Show card/i }).click();
     await page.keyboard.press("Escape");
 
+    // A restored card is appended to the end of the order — below the fold,
+    // where cards defer their mount until scrolled near. Scroll to it, then
+    // its content renders.
+    await page.locator('[data-card-id="heatmap"]').scrollIntoViewIfNeeded();
     await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible();
   });
 
@@ -110,6 +114,9 @@ test.describe("Dashboard layout customization", () => {
     await betaRow.getByRole("button", { name: /Show card/i }).click();
     await page.keyboard.press("Escape");
 
+    // The newly enabled card is appended below the fold, where cards defer
+    // their mount until scrolled near. Scroll to it, then its content renders.
+    await page.locator('[data-card-id="forecast"]').scrollIntoViewIfNeeded();
     // "Safe to spend" is unique to the forecast card.
     await expect(page.getByText(/Safe to spend/i).first()).toBeVisible();
   });

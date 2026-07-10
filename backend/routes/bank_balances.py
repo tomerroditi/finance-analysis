@@ -21,7 +21,7 @@ class SetBalanceRequest(BaseModel):
 
 
 @router.get("/")
-async def get_bank_balances(
+def get_bank_balances(
     db: Session = Depends(get_database),
 ) -> list[dict]:
     """Get all bank balance records."""
@@ -30,7 +30,7 @@ async def get_bank_balances(
 
 
 @router.post("/")
-async def set_bank_balance(
+def set_bank_balance(
     request: SetBalanceRequest,
     db: Session = Depends(get_database),
 ) -> dict:

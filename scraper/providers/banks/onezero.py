@@ -3,12 +3,19 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from scraper.base import ApiScraper
+import httpx
+
+from scraper.base import OTP_CANCEL_SENTINEL, ApiScraper, OtpCanceledError
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
+from scraper.utils.otp_rate_limit import (
+    OTP_PROVIDER_BLOCKED_MESSAGE,
+    OtpProviderBlockedError,
+    otp_prepare_rate_limiter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -656,6 +663,32 @@ def _extract_result_data(response: dict, key: str) -> any:
     return result_data[key]
 
 
+def _is_sms_provider_block(error: httpx.HTTPStatusError) -> bool:
+    """Detect whether an HTTP error is the Twilio SMS-provider block.
+
+    OneZero's identity server returns HTTP 503 with an ``ErrorOtpService``
+    marker in the body when the SMS provider (Twilio) has temporarily
+    blocked the phone number for too many code requests. This is distinct
+    from a wrong-code ``ErrorOtpCode`` (401, on verify) or a generic
+    server error (500) — only the ``ErrorOtpService`` marker should arm
+    the rate limiter's circuit breaker.
+
+    Parameters
+    ----------
+    error : httpx.HTTPStatusError
+        The error raised by ``fetch_post`` for the ``/otp/prepare`` call.
+
+    Returns
+    -------
+    bool
+        True if the error's response body contains the ``ErrorOtpService``
+        marker, False otherwise (including when no response is attached).
+    """
+    if error.response is None:
+        return False
+    return "ErrorOtpService" in (error.response.text or "")
+
+
 class OneZeroScraper(ApiScraper):
     """Scraper for One Zero Bank (https://www.onezerbank.com).
 
@@ -687,12 +720,21 @@ class OneZeroScraper(ApiScraper):
         ------
         Exception
             If the phone number format is invalid.
+        OtpRateLimitError
+            If too many prepare requests have been made recently for this
+            phone number (see ``scraper.utils.otp_rate_limit``).
+        OtpProviderBlockedError
+            If this prepare call is itself rejected by the SMS provider
+            (Twilio) as blocked, or if a prior call already recorded such
+            a block and the cooldown hasn't elapsed yet.
         """
         if not phone_number.startswith("+"):
             raise Exception(
                 "A full international phone number starting with + "
                 "and a three digit country code is required"
             )
+
+        otp_prepare_rate_limiter.check_and_record(phone_number)
 
         logger.debug("Fetching device token")
         device_token_response = await fetch_post(
@@ -703,18 +745,61 @@ class OneZeroScraper(ApiScraper):
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug("Sending OTP to phone number %s", phone_number)
-        otp_prepare_response = await fetch_post(
-            f"{IDENTITY_SERVER_URL}/otp/prepare",
-            {
-                "factorValue": phone_number,
-                "deviceToken": device_token,
-                "otpChannel": "SMS_OTP",
-            },
-            client=self.client,
-        )
+        try:
+            otp_prepare_response = await fetch_post(
+                f"{IDENTITY_SERVER_URL}/otp/prepare",
+                {
+                    "factorValue": phone_number,
+                    "deviceToken": device_token,
+                    "otpChannel": "SMS_OTP",
+                },
+                client=self.client,
+            )
+        except httpx.HTTPStatusError as error:
+            if not _is_sms_provider_block(error):
+                raise
+            logger.warning(
+                "SMS provider blocked phone number %s; arming cooldown",
+                phone_number,
+            )
+            otp_prepare_rate_limiter.record_provider_block(phone_number)
+            raise OtpProviderBlockedError(OTP_PROVIDER_BLOCKED_MESSAGE) from error
+
         self._otp_context = _extract_result_data(otp_prepare_response, "otpContext")
 
         return {"success": True}
+
+    async def resend_otp(self) -> None:
+        """Re-issue the OTP SMS in place without restarting login.
+
+        Re-runs the ``/otp/prepare`` flow for the credentials' phone number,
+        which sends a fresh SMS and replaces ``self._otp_context`` with the
+        new context. The subsequent ``/otp/verify`` (done by
+        ``_get_long_term_token`` when the user submits the code) reads
+        ``self._otp_context`` at call time, so the code the user reads from
+        the new SMS matches the context it is verified against.
+
+        This mutates only ``self._otp_context``; it does not touch the
+        adapter's OTP event/code, so it is safe to call while the scraper
+        coroutine is parked waiting for the user's code. The underlying
+        prepare call is rate-limited (see
+        ``scraper.utils.otp_rate_limit``), so rapid resends raise
+        ``OtpRateLimitError`` instead of firing a burst of SMS messages.
+
+        Raises
+        ------
+        Exception
+            If ``phoneNumber`` is missing from the credentials.
+        OtpRateLimitError
+            If a prepare was issued for this phone too recently (see
+            ``_trigger_two_factor_auth``).
+        """
+        phone_number = self.credentials.get("phoneNumber")
+        if not phone_number:
+            raise Exception(
+                "phoneNumber is required to resend the verification code"
+            )
+        await self._trigger_two_factor_auth(phone_number)
 
     async def _get_long_term_token(self, otp_code: str) -> dict:
         """Exchange an OTP code for a long-term token.
@@ -786,6 +871,12 @@ class OneZeroScraper(ApiScraper):
         await self._trigger_two_factor_auth(phone_number)
 
         otp_code = await self.on_otp_request()
+        if otp_code == OTP_CANCEL_SENTINEL:
+            # User aborted the 2FA prompt — end cleanly instead of POSTing the
+            # sentinel to /otp/verify (which would be a wasted, failing call).
+            raise OtpCanceledError(
+                "Two-factor authentication canceled by the user"
+            )
 
         token_result = await self._get_long_term_token(otp_code)
         self.refreshed_otp_long_term_token = token_result["long_term_token"]
@@ -804,6 +895,9 @@ class OneZeroScraper(ApiScraper):
         """
         try:
             otp_token = await self._resolve_otp_token()
+        except OtpCanceledError:
+            logger.info("Login aborted: user canceled two-factor authentication")
+            return LoginResult.UNKNOWN_ERROR
         except Exception as e:
             self._login_error_detail = str(e)
             logger.error("Failed to resolve OTP token: %s", e)

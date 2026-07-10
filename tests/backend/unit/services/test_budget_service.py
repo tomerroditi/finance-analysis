@@ -1220,6 +1220,34 @@ class TestAutoFillEmptyMonths:
         result = service.auto_fill_empty_months(2026, 3, budget_rules)
         assert result is None
 
+    def test_stale_snapshot_does_not_duplicate_rules(self, db_session):
+        """Verify a fill run with a pre-fill snapshot is a no-op, not a re-copy.
+
+        The budget-analysis handlers run concurrently in the threadpool and the
+        budget page fires the active month alongside adjacent-month prefetches.
+        Each request holds a ``budget_rules`` snapshot read before the fill, so
+        the request that loses the race still sees the month as empty in its
+        snapshot. Auto-fill must re-read committed state inside its lock and no-op
+        rather than copy the source month again and duplicate every rule.
+        """
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 1, 2026)
+
+        # Snapshot taken before any fill — what a racing request would hold.
+        stale_snapshot = service.get_all_rules()
+
+        # Winner of the race fills February and March from January.
+        assert service.auto_fill_empty_months(2026, 3, stale_snapshot) is not None
+
+        # Loser re-runs with the SAME stale snapshot (March still looks empty in
+        # it), but must no-op because the lock re-reads committed state.
+        assert service.auto_fill_empty_months(2026, 3, stale_snapshot) is None
+
+        # Each filled month has exactly one copy, not two.
+        assert len(service.get_month_rules(2026, 2)) == 2
+        assert len(service.get_month_rules(2026, 3)) == 2
+
 
 class TestUpdateRuleTagConversion:
     """Tests for update_rule tag list-to-string conversion (line 128)."""

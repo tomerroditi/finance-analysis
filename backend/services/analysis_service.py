@@ -799,15 +799,26 @@ class AnalysisService:
             "net_worth": round(prior_wealth_total + cash_prior_wealth, 2),
         }]
 
+        # Value the portfolio at every month end in a single pass rather than
+        # one snapshot/transaction database walk per month (the old per-month
+        # call re-fetched every investment and its snapshots for each month).
+        month_ends = {
+            month: (pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0))
+            for month in months
+        }
+        inv_values = self.investments_service.get_total_values_at_dates(
+            [month_end.strftime("%Y-%m-%d") for month_end in month_ends.values()]
+        )
+
         for month in months:
-            month_end = pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0)
+            month_end = month_ends[month]
             month_end_str = month_end.strftime("%Y-%m-%d")
 
             bank_balance = prior_wealth_total + float(
                 bank_df.loc[bank_df["date_parsed"] <= month_end, "amount"].sum()
             )
 
-            inv_value = self.investments_service.get_total_value_at_date(month_end_str)
+            inv_value = inv_values[month_end_str]
 
             cash_balance = cash_prior_wealth + float(
                 cash_df.loc[cash_df["date_parsed"] <= month_end, "amount"].sum()

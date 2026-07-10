@@ -278,8 +278,11 @@
       "recurring": "מנויים וחיובים חוזרים",
       "goals": "יעדי חיסכון",
       "heatmap": "לוח הוצאות",
-      "charts": "גרפים וניתוחים",
-      "incomeBySource": "הכנסה לפי מקור"
+      "incomeBySource": "הכנסה לפי מקור",
+      "incomeExpenses": "הכנסות והוצאות",
+      "netWorth": "שווי נקי",
+      "cashFlow": "תזרים מזומנים",
+      "category": "קטגוריות"
     }
   },
   "transactions": {
@@ -788,6 +791,9 @@
     "displayNamePlaceholder": "לדוגמה: חשבון ההשקעות שלי",
     "verify": "אמת",
     "resend": "שלח שוב",
+    "resendIn": "שליחה חוזרת בעוד {{seconds}} שנ׳",
+    "resendFailed": "שליחת הקוד מחדש נכשלה",
+    "resendProcessExpired": "הפעלת השליפה הזו פגה. התחל שליפה חדשה כדי לנסות שוב.",
     "bankAccounts": "חשבונות בנק",
     "accountDetails": "פרטי חשבון",
     "editConnection": "ערוך חיבור",

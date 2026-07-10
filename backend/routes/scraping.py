@@ -7,11 +7,12 @@ automated scraping of Israeli financial institutions.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.errors import BadRequestException, EntityNotFoundException
 from backend.services.scraping_service import ScrapingService
 
 router = APIRouter()
@@ -32,6 +33,12 @@ class TFAFinishRequest(BaseModel):
     code: str
 
 
+class ResendTFARequest(BaseModel):
+    service: str
+    provider: str
+    account: str
+
+
 class AbortRequest(BaseModel):
     process_id: int
 
@@ -41,7 +48,7 @@ class StatusResponse(BaseModel):
 
 
 @router.post("/start")
-async def start_scraping_single(
+def start_scraping_single(
     data: StartScrapingRequest, db: Session = Depends(get_database)
 ) -> int:
     """Start a scraping job for a single account.
@@ -73,7 +80,7 @@ async def start_scraping_single(
 
 
 @router.post("/abort", response_model=StatusResponse)
-async def abort_scraping(
+def abort_scraping(
     data: AbortRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Abort a running scraping process.
@@ -94,7 +101,7 @@ async def abort_scraping(
 
 
 @router.get("/status")
-async def get_scraping_status(
+def get_scraping_status(
     scraping_process_id: int, db: Session = Depends(get_database)
 ) -> dict:
     """Return the current status of a scraping job.
@@ -115,7 +122,7 @@ async def get_scraping_status(
 
 
 @router.post("/2fa", response_model=StatusResponse)
-async def handle_2fa(
+def handle_2fa(
     data: TFAFinishRequest, db: Session = Depends(get_database)
 ) -> dict:
     """Submit a 2FA OTP code to unblock a waiting scraping job.
@@ -137,8 +144,49 @@ async def handle_2fa(
     return {"status": "success"}
 
 
+@router.post("/resend-2fa")
+async def resend_2fa(
+    data: ResendTFARequest, db: Session = Depends(get_database)
+) -> dict:
+    """Re-issue the OTP for an awaiting scraper without losing its process.
+
+    For providers that support in-place resend (OneZero), the same scraping
+    process stays alive and a fresh SMS is sent. For providers that can't
+    resend mid-flow, the service falls back to aborting and relaunching the
+    scrape.
+
+    Parameters
+    ----------
+    data : ResendTFARequest
+        ``service``, ``provider``, and ``account`` identifying the awaiting
+        scraper.
+
+    Returns
+    -------
+    dict
+        ``{"status": "resent", "process_id": int}`` when the code was
+        re-issued in place, or ``{"status": "restarted", "process_id": int}``
+        when the scrape was aborted and relaunched.
+
+    Raises
+    ------
+    HTTPException
+        404 if no active or 2FA-waiting scraper matches.
+        400 if the resend is rate-limited (with a wait-and-retry message).
+    """
+    service = ScrapingService(db)
+    try:
+        return await service.resend_2fa_code(
+            data.service, data.provider, data.account
+        )
+    except EntityNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except BadRequestException as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/last-scrapes")
-async def get_last_scrapes(db: Session = Depends(get_database)) -> list:
+def get_last_scrapes(db: Session = Depends(get_database)) -> list:
     """Return the last successful scrape date for each configured account.
 
     Returns

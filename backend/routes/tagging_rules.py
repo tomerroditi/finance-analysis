@@ -41,7 +41,7 @@ class RuleValidate(BaseModel):
 
 
 @router.get("/rules")
-async def get_tagging_rules(db: Session = Depends(get_database)):
+def get_tagging_rules(db: Session = Depends(get_database)):
     """Get all tagging rules."""
     service = TaggingRulesService(db)
     df = service.get_all_rules()
@@ -49,7 +49,7 @@ async def get_tagging_rules(db: Session = Depends(get_database)):
 
 
 @router.post("/rules")
-async def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
+def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
     """Create a new tagging rule and immediately apply it to existing transactions.
 
     Returns
@@ -79,7 +79,7 @@ async def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_databa
 
 
 @router.put("/rules/{rule_id}")
-async def update_tagging_rule(
+def update_tagging_rule(
     rule_id: int, rule: RuleUpdate, db: Session = Depends(get_database)
 ):
     """Update an existing tagging rule and re-apply it.
@@ -109,7 +109,7 @@ async def update_tagging_rule(
 
 
 @router.delete("/rules/{rule_id}")
-async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
+def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
     """Delete a tagging rule."""
     service = TaggingRulesService(db)
     try:
@@ -120,7 +120,7 @@ async def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database))
 
 
 @router.post("/rules/apply")
-async def apply_tagging_rules(
+def apply_tagging_rules(
     overwrite: bool = False, db: Session = Depends(get_database)
 ):
     """Manually trigger application of all active tagging rules.
@@ -145,7 +145,7 @@ async def apply_tagging_rules(
 
 
 @router.post("/rules/{rule_id}/apply")
-async def apply_single_tagging_rule(
+def apply_single_tagging_rule(
     rule_id: int, overwrite: bool = False, db: Session = Depends(get_database)
 ):
     """Apply a single tagging rule to all transactions.
@@ -174,7 +174,7 @@ async def apply_single_tagging_rule(
 
 
 @router.post("/rules/validate")
-async def validate_rule_conflicts(
+def validate_rule_conflicts(
     rule: RuleValidate, db: Session = Depends(get_database)
 ):
     """Check whether a rule's conditions conflict with existing rules.
@@ -220,7 +220,7 @@ class RulePreview(BaseModel):
 
 
 @router.post("/rules/preview")
-async def preview_rule_matches(
+def preview_rule_matches(
     preview: RulePreview, db: Session = Depends(get_database)
 ):
     """Preview which transactions would be matched by given rule conditions.
@@ -250,7 +250,7 @@ async def preview_rule_matches(
 
 
 @router.post("/rules/auto-tag-credit-cards-bills")
-async def auto_tag_credit_cards_bills(db: Session = Depends(get_database)):
+def auto_tag_credit_cards_bills(db: Session = Depends(get_database)):
     """Auto-tag bank transactions that represent credit card monthly bill payments.
 
     For each credit card account tag (discovered via ``add-new-credit-card-tags``),

@@ -168,6 +168,61 @@ class TestInvestmentsServiceCalculations:
         last_date = history[-1]["date"]
         assert last_date == "2024-01-10"
 
+    def test_get_total_values_at_dates_transaction_based(
+        self, db_session, seed_investments
+    ):
+        """Verify batch valuation matches per-date resolution with no snapshots.
+
+        Stock fund txns: -10000 @ 2023-06-15, -2000 @ 2024-01-15.
+        Bond fund txns: -5000 @ 2023-01-10, +5160 @ 2024-01-10.
+        Balance per investment is -(sum of amounts up to the date).
+        """
+        service = InvestmentsService(db_session)
+        dates = ["2023-01-01", "2023-06-15", "2024-01-10", "2024-01-15"]
+
+        totals = service.get_total_values_at_dates(dates)
+
+        assert totals["2023-01-01"] == 0.0  # before any transaction
+        assert totals["2023-06-15"] == 15000.0  # stock 10000 + bond 5000
+        assert totals["2024-01-10"] == pytest.approx(9840.0)  # 10000 + (-160)
+        assert totals["2024-01-15"] == pytest.approx(11840.0)  # 12000 + (-160)
+
+        # A single-date call must agree with the batch call, entry for entry.
+        for d in dates:
+            assert service.get_total_value_at_date(d) == pytest.approx(totals[d])
+
+    def test_get_total_values_at_dates_snapshot_first(
+        self, db_session, seed_investments
+    ):
+        """Verify batch valuation is snapshot-first with transaction fallback.
+
+        A snapshot on 2023-12-31 overrides the stock fund's transaction-based
+        balance for dates on or after it; dates before it still fall back to
+        the transaction calculation.
+        """
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2023-12-31", balance=11000.0, source="manual"
+        )
+
+        totals = service.get_total_values_at_dates(
+            ["2023-06-15", "2023-12-31", "2024-01-15"]
+        )
+
+        # Before the snapshot: transaction-based (stock 10000 + bond 5000).
+        assert totals["2023-06-15"] == 15000.0
+        # On the snapshot date: stock snapshot 11000 + bond txns 5000.
+        assert totals["2023-12-31"] == pytest.approx(16000.0)
+        # After the snapshot: stock snapshot 11000 + bond -160.
+        assert totals["2024-01-15"] == pytest.approx(10840.0)
+
+    def test_get_total_values_at_dates_empty_inputs(self, db_session):
+        """Verify empty date list and empty portfolio both return safe defaults."""
+        service = InvestmentsService(db_session)
+        assert service.get_total_values_at_dates([]) == {}
+        assert service.get_total_values_at_dates(["2024-01-01"]) == {"2024-01-01": 0.0}
+
     def test_get_portfolio_overview(self, db_session, seed_investments):
         """Verify portfolio totals reflect open only; allocation includes all."""
         service = InvestmentsService(db_session)

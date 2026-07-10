@@ -253,6 +253,11 @@ export const scrapingApi = {
     account: string,
     code: string,
   ) => api.post("/scraping/2fa", { service, provider, account, code }),
+  resend2fa: (service: string, provider: string, account: string) =>
+    api.post<{ status: "resent" | "restarted"; process_id: number }>(
+      "/scraping/resend-2fa",
+      { service, provider, account },
+    ),
   abort: (processId: number) =>
     api.post("/scraping/abort", { process_id: processId }),
   getLastScrapes: () =>

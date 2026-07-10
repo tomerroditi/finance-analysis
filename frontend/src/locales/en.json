@@ -278,8 +278,11 @@
       "recurring": "Subscriptions & recurring",
       "goals": "Savings goals",
       "heatmap": "Spending calendar",
-      "charts": "Charts & analytics",
-      "incomeBySource": "Income by source"
+      "incomeBySource": "Income by source",
+      "incomeExpenses": "Income & Expenses",
+      "netWorth": "Net Worth",
+      "cashFlow": "Cash Flow",
+      "category": "Categories"
     }
   },
   "transactions": {
@@ -788,6 +791,9 @@
     "displayNamePlaceholder": "e.g. My Investment Account",
     "verify": "Verify",
     "resend": "Resend",
+    "resendIn": "Resend in {{seconds}}s",
+    "resendFailed": "Failed to resend code",
+    "resendProcessExpired": "This scraping session has expired. Start a new scrape to try again.",
     "bankAccounts": "Bank Accounts",
     "accountDetails": "Account Details",
     "editConnection": "Edit Connection",

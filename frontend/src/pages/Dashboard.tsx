@@ -18,15 +18,26 @@ import { RecurringSection } from "../components/dashboard/RecurringSection";
 import { GoalsSection } from "../components/dashboard/GoalsSection";
 import { SpendingHeatmap } from "../components/dashboard/SpendingHeatmap";
 import { IncomeBySourceCard } from "../components/dashboard/IncomeBySourceCard";
-import { DashboardChartsPanel } from "../components/dashboard/DashboardChartsPanel";
+import { IncomeExpensesCard } from "../components/dashboard/IncomeExpensesCard";
+import { NetWorthCard } from "../components/dashboard/NetWorthCard";
+import { CashFlowCard } from "../components/dashboard/CashFlowCard";
+import { CategoryBreakdownCard } from "../components/dashboard/CategoryBreakdownCard";
 import { Skeleton } from "../components/common/Skeleton";
+import { DeferUntilVisible } from "../components/common/DeferUntilVisible";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
+import { formatMonthCompact } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
 
+
+/* How many leading cards render eagerly on first paint. The rest defer until
+ * scrolled near the viewport. Four covers the two half-card rows that sit above
+ * the fold in the default layout, so the visible dashboard is never gated on a
+ * skeleton while the heavier chart cards below load lazily. */
+const EAGER_CARD_COUNT = 4;
 
 /* ------------------------------------------------------------------ */
 /*  Helper sub-components (extracted to avoid creating during render)  */
@@ -50,6 +61,29 @@ function BreakdownList({ items }: { items: { name: string; amount: number }[] })
         <div key={item.name} className="flex justify-between text-xs">
           <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.name}</span>
           <span className="tabular-nums font-medium shrink-0" dir="ltr">{formatCurrency(item.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthlyChangeList({
+  items,
+}: {
+  items: { month: string; label: string; change: number; percent: number | null }[];
+}) {
+  return (
+    <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+      {items.map((item) => (
+        <div key={item.month} className="flex justify-between text-xs">
+          <span className="text-[var(--text-muted)] truncate me-2" dir="auto">{item.label}</span>
+          <span
+            dir="ltr"
+            className={`tabular-nums font-medium shrink-0 ${item.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+          >
+            {formatChange(item.change)}
+            {item.percent !== null && ` (${formatPercentChange(item.percent)})`}
+          </span>
         </div>
       ))}
     </div>
@@ -94,6 +128,28 @@ function FinancialHealthHeader({
   const investmentMom = calcMom(latestNetWorth?.investment_value, previousNetWorth?.investment_value);
   const cashMom = calcMom(latestNetWorth?.cash, previousNetWorth?.cash);
 
+  // Net worth change per month for the last 3 months (most recent first).
+  // Each change is the month-over-month delta of net_worth, with its percent
+  // relative to the prior month; the series already carries every month, so no
+  // extra API call is needed.
+  const netWorthMonthlyChanges =
+    netWorthData && netWorthData.length >= 2
+      ? netWorthData
+          .slice(1)
+          .map((entry, i) => {
+            const prev = netWorthData[i].net_worth;
+            const change = entry.net_worth - prev;
+            return {
+              month: entry.month,
+              label: formatMonthCompact(entry.month),
+              change,
+              percent: prev !== 0 ? (change / Math.abs(prev)) * 100 : null,
+            };
+          })
+          .slice(-3)
+          .reverse()
+      : [];
+
   const totalCash = cashBalances?.reduce((sum, c) => sum + c.balance, 0) ?? 0;
   const openInvestments = portfolioAllocation?.filter((i) => i.balance > 0);
 
@@ -119,6 +175,9 @@ function FinancialHealthHeader({
           {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
         </p>
         <MomBadge mom={netWorthMom} />
+        {expanded && netWorthMonthlyChanges.length > 0 && (
+          <MonthlyChangeList items={netWorthMonthlyChanges} />
+        )}
       </div>
 
       {/* Bank Balance */}
@@ -275,7 +334,10 @@ export function Dashboard() {
     goals: () => <GoalsSection />,
     heatmap: () => <SpendingHeatmap transactions={allTransactions} size={cardSize("heatmap")} />,
     income_by_source: () => <IncomeBySourceCard />,
-    charts: () => <DashboardChartsPanel />,
+    income_expenses: () => <IncomeExpensesCard />,
+    net_worth: () => <NetWorthCard />,
+    cash_flow: () => <CashFlowCard />,
+    category: () => <CategoryBreakdownCard />,
   };
 
   return (
@@ -306,7 +368,7 @@ export function Dashboard() {
           taller card (still capped). On mobile the grid is a single column with
           natural, uncapped heights. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 [--dash-card-h:39rem]">
-        {layout.order.map((id) => (
+        {layout.order.map((id, index) => (
           <div
             key={id}
             data-card-id={id}
@@ -315,7 +377,17 @@ export function Dashboard() {
               id !== "recent" ? "lg:[&>*]:max-h-[var(--dash-card-h)]" : ""
             } ${cardSize(id) === "full" ? "lg:col-span-2" : ""}`}
           >
-            {cardRenderers[id]()}
+            {/* The first cards render eagerly (above the fold on any viewport);
+                the rest wait until scrolled near, so their analytics requests
+                don't compete with the header + top cards on first paint. The
+                placeholder reserves the card's capped height so lower cards
+                stay below the fold and the layout doesn't jump on mount. */}
+            <DeferUntilVisible
+              eager={index < EAGER_CARD_COUNT}
+              reserveClassName={cardSize(id) === "full" ? "min-h-[39rem]" : "min-h-[20rem]"}
+            >
+              {cardRenderers[id]()}
+            </DeferUntilVisible>
           </div>
         ))}
       </div>

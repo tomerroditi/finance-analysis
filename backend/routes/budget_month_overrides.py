@@ -28,7 +28,7 @@ class SetMonthOverrideRequest(BaseModel):
 
 
 @router.post("/")
-async def set_month_override(
+def set_month_override(
     request: SetMonthOverrideRequest,
     db: Session = Depends(get_database),
 ):
@@ -44,14 +44,14 @@ async def set_month_override(
 
 
 @router.get("/")
-async def get_month_overrides(db: Session = Depends(get_database)):
+def get_month_overrides(db: Session = Depends(get_database)):
     """Get all budget month overrides."""
     service = BudgetMonthOverrideService(db)
     return service.get_all()
 
 
 @router.delete("/{override_id}")
-async def delete_month_override(
+def delete_month_override(
     override_id: int,
     db: Session = Depends(get_database),
 ):

@@ -20,7 +20,7 @@ class SetBalanceRequest(BaseModel):
 
 
 @router.get("/")
-async def get_cash_balances(
+def get_cash_balances(
     db: Session = Depends(get_database),
 ) -> list[dict]:
     """Get all cash balance records."""
@@ -29,7 +29,7 @@ async def get_cash_balances(
 
 
 @router.post("/")
-async def set_cash_balance(
+def set_cash_balance(
     request: SetBalanceRequest,
     db: Session = Depends(get_database),
 ) -> dict:
@@ -45,7 +45,7 @@ async def set_cash_balance(
 
 
 @router.post("/migrate")
-async def migrate_cash_balances(
+def migrate_cash_balances(
     db: Session = Depends(get_database),
 ) -> list[dict]:
     """Migrate existing cash transactions to cash_balances table.
@@ -58,7 +58,7 @@ async def migrate_cash_balances(
 
 
 @router.delete("/{account_name}")
-async def delete_cash_balance(
+def delete_cash_balance(
     account_name: str,
     db: Session = Depends(get_database),
 ) -> dict:

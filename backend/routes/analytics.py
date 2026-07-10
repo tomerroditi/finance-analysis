@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/overview")
-async def get_overview(
+def get_overview(
     db: Session = Depends(get_database),
 ):
     """Return an aggregate financial overview across all available data.
@@ -34,7 +34,7 @@ async def get_overview(
 
 
 @router.get("/net-balance-over-time")
-async def get_net_balance_over_time(
+def get_net_balance_over_time(
     db: Session = Depends(get_database),
 ):
     """Return the cumulative net balance trend over time.
@@ -49,7 +49,7 @@ async def get_net_balance_over_time(
 
 
 @router.get("/income-expenses-over-time")
-async def get_income_expenses_over_time(
+def get_income_expenses_over_time(
     db: Session = Depends(get_database),
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
@@ -80,7 +80,7 @@ async def get_income_expenses_over_time(
 
 
 @router.get("/debt-payments-over-time")
-async def get_debt_payments_over_time(
+def get_debt_payments_over_time(
     db: Session = Depends(get_database),
 ):
     """Return monthly debt payment totals over time."""
@@ -89,7 +89,7 @@ async def get_debt_payments_over_time(
 
 
 @router.get("/expenses-by-category-over-time")
-async def get_expenses_by_category_over_time(
+def get_expenses_by_category_over_time(
     db: Session = Depends(get_database),
 ):
     """Return monthly expenses broken down by category."""
@@ -98,7 +98,7 @@ async def get_expenses_by_category_over_time(
 
 
 @router.get("/by-category")
-async def get_expenses_by_category(
+def get_expenses_by_category(
     db: Session = Depends(get_database),
 ):
     """Return expenses aggregated by category.
@@ -114,7 +114,7 @@ async def get_expenses_by_category(
 
 
 @router.get("/sankey")
-async def get_sankey_data(
+def get_sankey_data(
     db: Session = Depends(get_database),
 ) -> dict:
     """Return Sankey chart data showing income-to-expense flow.
@@ -130,7 +130,7 @@ async def get_sankey_data(
 
 
 @router.get("/income-by-source-over-time")
-async def get_income_by_source_over_time(
+def get_income_by_source_over_time(
     db: Session = Depends(get_database),
 ):
     """Return monthly income broken down by source (category+tag).
@@ -146,7 +146,7 @@ async def get_income_by_source_over_time(
 
 
 @router.get("/income-by-source")
-async def get_income_by_source(
+def get_income_by_source(
     start: date | None = Query(None),
     end: date | None = Query(None),
     db: Session = Depends(get_database),
@@ -170,7 +170,7 @@ async def get_income_by_source(
 
 
 @router.get("/monthly-expenses")
-async def get_monthly_expenses(
+def get_monthly_expenses(
     exclude_pending_refunds: bool = Query(True),
     include_projects: bool = Query(False),
     db: Session = Depends(get_database),
@@ -201,7 +201,7 @@ async def get_monthly_expenses(
 
 
 @router.get("/recurring")
-async def get_recurring(
+def get_recurring(
     db: Session = Depends(get_database),
 ):
     """Return detected recurring charges (subscriptions, bills).
@@ -217,7 +217,7 @@ async def get_recurring(
 
 
 @router.get("/insights")
-async def get_insights(
+def get_insights(
     db: Session = Depends(get_database),
 ):
     """Return rule-based financial insight cards.
@@ -233,7 +233,7 @@ async def get_insights(
 
 
 @router.get("/cash-flow-forecast")
-async def get_cash_flow_forecast(
+def get_cash_flow_forecast(
     db: Session = Depends(get_database),
 ):
     """Return the current-month cash-flow forecast.
@@ -252,7 +252,7 @@ async def get_cash_flow_forecast(
 
 
 @router.get("/net-worth-over-time")
-async def get_net_worth_over_time(
+def get_net_worth_over_time(
     db: Session = Depends(get_database),
 ):
     """Return the net worth trend over time including investment balances.

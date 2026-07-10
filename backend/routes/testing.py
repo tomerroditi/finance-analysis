@@ -28,7 +28,7 @@ class DemoModeRequest(BaseModel):
 
 
 @router.post("/toggle_demo_mode")
-async def toggle_demo_mode(
+def toggle_demo_mode(
     request: DemoModeRequest,
 ) -> dict[str, str | bool]:
     """Toggle the application's demo mode on or off.
@@ -73,6 +73,6 @@ async def toggle_demo_mode(
 
 
 @router.get("/demo_mode_status")
-async def get_demo_mode_status():
+def get_demo_mode_status():
     """Get the current demo mode status."""
     return {"demo_mode": AppConfig().is_demo_mode}

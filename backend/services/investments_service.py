@@ -4,6 +4,7 @@ Investments service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for investment tracking and analysis.
 """
 
+from bisect import bisect_right
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -905,26 +906,68 @@ class InvestmentsService:
         float
             Total portfolio value as of ``target_date``.
         """
+        return self.get_total_values_at_dates([target_date])[target_date]
+
+    def get_total_values_at_dates(self, target_dates: List[str]) -> Dict[str, float]:
+        """Snapshot-resolved total portfolio value at many dates in one pass.
+
+        Equivalent to calling :meth:`get_total_value_at_date` for each date,
+        but fetches every investment's snapshots and transactions **once**
+        instead of once per date. This turns the net-worth-over-time chart
+        (which values the portfolio at each month end) from an O(months ×
+        investments) database walk into O(investments) — the per-month
+        resolution then happens in-memory.
+
+        Per investment and per date the resolution is identical to the
+        single-date method: the latest snapshot on or before the date if one
+        exists (snapshots are unique per ``(investment, date)`` and stored as
+        ``YYYY-MM-DD`` strings, so an ordered lexical search is exact),
+        otherwise the transaction-based ``-sum(amounts up to the date)``.
+
+        Parameters
+        ----------
+        target_dates : list[str]
+            Cut-off dates in ``YYYY-MM-DD`` format (inclusive).
+
+        Returns
+        -------
+        dict[str, float]
+            Mapping of each requested date to the total portfolio value as of
+            that date.
+        """
+        totals = {d: 0.0 for d in target_dates}
+        if not target_dates:
+            return totals
+
         investments = self.investments_repo.get_all_investments(include_closed=True)
         if investments.empty:
-            return 0.0
+            return totals
 
-        total = 0.0
         for _, inv in investments.iterrows():
             inv_id = int(inv["id"])
-            snapshot = self.snapshots_repo.get_latest_snapshot_on_or_before(
-                inv_id, target_date
+            snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
+            snapshot_dates = snapshots["date"].tolist() if not snapshots.empty else []
+            snapshot_balances = (
+                snapshots["balance"].tolist() if not snapshots.empty else []
             )
-            if snapshot is not None:
-                total += float(snapshot["balance"])
-                continue
-            txns = self._get_all_transactions_for_investment(
-                inv["category"], inv["tag"], investment_id=inv_id
-            )
-            total += self._calculate_balance_from_transactions(
-                txns, as_of_date=target_date
-            )
-        return total
+
+            # Transactions are only needed for dates with no preceding
+            # snapshot; fetch lazily so investments fully covered by snapshots
+            # never touch the transactions table.
+            txns = None
+            for target_date in target_dates:
+                idx = bisect_right(snapshot_dates, target_date) - 1
+                if idx >= 0:
+                    totals[target_date] += float(snapshot_balances[idx])
+                    continue
+                if txns is None:
+                    txns = self._get_all_transactions_for_investment(
+                        inv["category"], inv["tag"], investment_id=inv_id
+                    )
+                totals[target_date] += self._calculate_balance_from_transactions(
+                    txns, as_of_date=target_date
+                )
+        return totals
 
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str

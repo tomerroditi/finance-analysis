@@ -35,7 +35,7 @@ class LinkRefundRequest(BaseModel):
 
 
 @router.post("/")
-async def create_pending_refund(
+def create_pending_refund(
     request: CreatePendingRefundRequest,
     db: Session = Depends(get_database),
 ):
@@ -51,7 +51,7 @@ async def create_pending_refund(
 
 
 @router.get("/")
-async def get_all_pending_refunds(
+def get_all_pending_refunds(
     status: Optional[str] = None,
     db: Session = Depends(get_database),
 ):
@@ -61,7 +61,7 @@ async def get_all_pending_refunds(
 
 
 @router.get("/budget-adjustment")
-async def get_budget_adjustment(
+def get_budget_adjustment(
     year: int,
     month: int,
     db: Session = Depends(get_database),
@@ -92,7 +92,7 @@ async def get_budget_adjustment(
 
 
 @router.get("/{pending_id}")
-async def get_pending_refund(
+def get_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
 ):
@@ -102,7 +102,7 @@ async def get_pending_refund(
 
 
 @router.delete("/{pending_id}")
-async def cancel_pending_refund(
+def cancel_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
 ):
@@ -113,7 +113,7 @@ async def cancel_pending_refund(
 
 
 @router.post("/{pending_id}/link")
-async def link_refund(
+def link_refund(
     pending_id: int,
     request: LinkRefundRequest,
     db: Session = Depends(get_database),
@@ -129,7 +129,7 @@ async def link_refund(
 
 
 @router.post("/{pending_id}/close")
-async def close_pending_refund(
+def close_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
 ):
@@ -139,7 +139,7 @@ async def close_pending_refund(
 
 
 @router.delete("/links/{link_id}")
-async def unlink_refund(
+def unlink_refund(
     link_id: int,
     db: Session = Depends(get_database),
 ):
