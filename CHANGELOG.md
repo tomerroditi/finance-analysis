@@ -1,3 +1,38 @@
+## v1.39.0 (2026-07-10)
+
+### Feat
+
+- **dashboard**: split charts panel into per-chart cards with migration
+- **scraper**: circuit-break OneZero OTP prepare after a Twilio SMS block
+- **scraper**: dedupe Scrape All against already-active scrapers
+- **scraper**: resend 2FA in place from the frontend with a cooldown
+- **scraper**: resend OTP in place without restarting the scrape
+- **scraper**: rate-limit OneZero OTP prepare requests
+- **dashboard**: show percent delta in net worth monthly change rows
+- **dashboard**: show last-3-months net worth change in KPI card
+
+### Fix
+
+- **budget**: serialize month auto-fill to stop concurrent rule duplication
+- **scraper**: don't POST the cancel sentinel to OneZero /otp/verify
+- **scraper**: single-flight scraper launches and fix OTP callback race
+
+### Refactor
+
+- **dashboard**: extract CategoryBreakdownCard from charts panel
+- **dashboard**: extract CashFlowCard from charts panel
+- **dashboard**: extract IncomeExpensesCard from charts panel
+- **dashboard**: extract NetWorthCard from charts panel
+- **scraper**: apply final-review cleanups (exception chaining, shared block message, drop dead param, comments)
+- **dashboard**: use compact MM.yy month labels in net worth change
+
+### Perf
+
+- **frontend**: prefetch route data on nav-link intent
+- **dashboard**: defer below-the-fold cards until scrolled into view
+- **analytics**: value net worth at all month ends in one pass
+- **api**: run blocking route handlers in the threadpool
+
 ## v1.38.0 (2026-06-21)
 
 ### Feat
