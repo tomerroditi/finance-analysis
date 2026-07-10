@@ -533,6 +533,11 @@
       "show": "Show trend",
       "hide": "Hide trend",
       "empty": "Not enough history yet"
+    },
+    "yearly": {
+      "tab": "Yearly",
+      "addRule": "Add yearly rule",
+      "currentYear": "Current year"
     }
   },
   "budgetAlerts": {
