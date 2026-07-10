@@ -15,3 +15,8 @@ YEAR = "year"
 ALL_TAGS = "all_tags"
 
 TOTAL_BUDGET = "Total Budget"
+
+PERIOD_TYPE = "period_type"
+PERIOD_MONTHLY = "monthly"
+PERIOD_YEARLY = "yearly"
+PERIOD_PROJECT = "project"

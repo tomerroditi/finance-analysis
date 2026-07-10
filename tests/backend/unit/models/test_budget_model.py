@@ -88,3 +88,24 @@ class TestBudgetRule:
 
         assert hasattr(rule, "created_at")
         assert rule.created_at is not None
+
+
+class TestBudgetRulePeriodType:
+    """The period_type discriminator column on BudgetRule."""
+
+    def test_period_type_column_exists_and_persists(self, db_session):
+        """A BudgetRule stores and returns its period_type value."""
+        from backend.models.budget import BudgetRule
+
+        rule = BudgetRule(
+            name="Vacations", amount=20000.0, category="Travel",
+            tags="Hotels;Activities", year=2026, month=None,
+            period_type="yearly",
+        )
+        db_session.add(rule)
+        db_session.commit()
+
+        fetched = db_session.query(BudgetRule).filter_by(name="Vacations").one()
+        assert fetched.period_type == "yearly"
+        assert fetched.month is None
+        assert fetched.year == 2026
