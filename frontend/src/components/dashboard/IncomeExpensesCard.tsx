@@ -26,7 +26,7 @@ type LabelMode = "pct" | "amt";
 const DEFAULT_VISIBLE_MONTHS = 12;
 
 /** The three rolling averages + a monthly series, feeding one KPI summary card. */
-type KpiSeries = { avg3: number; avg6: number; avg12: number; series: number[] };
+type KpiSeries = { avg3: number; avg6: number; avg12: number };
 
 /** Mean of a numeric field over a slice of months (0 when empty). */
 function avgOf(rows: { income: number }[] | undefined): number {
@@ -35,17 +35,18 @@ function avgOf(rows: { income: number }[] | undefined): number {
 }
 
 /**
- * Robust upper bound for bar scaling: the p-th percentile of the positive
- * values (default 90th). Scaling decorative bars to this instead of the raw
- * max stops a single outlier month (a bonus, a renovation) from squashing
- * every normal month into a 2% sliver — the outlier's bar just caps out while
- * its exact ₪ label still tells the true story.
+ * Bar-scale cap = median(positive values) × `multiplier`. Anchoring to the
+ * median (not the max or a high percentile) keeps typical months in the
+ * mid-range with headroom, even when the data clusters on one value (e.g. a
+ * constant salary) where a percentile would collapse onto the cluster and max
+ * out every bar. Values above the cap are drawn full-width and flagged as
+ * outliers — their exact ₪ label still tells the true story.
  */
-function robustMax(values: number[], p = 0.9): number {
+function barCap(values: number[], multiplier = 1.6): number {
   const positives = values.filter((v) => v > 0).sort((a, b) => a - b);
   if (positives.length === 0) return 1;
-  const idx = Math.min(positives.length - 1, Math.floor(p * (positives.length - 1)));
-  return positives[idx] || positives[positives.length - 1] || 1;
+  const median = positives[Math.floor(positives.length / 2)];
+  return (median || positives[positives.length - 1] || 1) * multiplier;
 }
 
 /** Income & Expenses dashboard card (KPI averages, refund/project filters, Totals/Income/Expenses sub-views). */
@@ -90,13 +91,11 @@ export function IncomeExpensesCard() {
               avg3: avgOf(incomeOutcome?.slice(-3)),
               avg6: avgOf(incomeOutcome?.slice(-6)),
               avg12: avgOf(incomeOutcome?.slice(-12)),
-              series: (incomeOutcome ?? []).slice(-12).map((d) => d.income),
             }}
             expenses={{
               avg3: monthlyExpenses?.avg_3_months ?? 0,
               avg6: monthlyExpenses?.avg_6_months ?? 0,
               avg12: monthlyExpenses?.avg_12_months ?? 0,
-              series: (incomeOutcome ?? []).slice(-12).map((d) => Math.abs(d.expenses)),
             }}
           />
 
@@ -230,14 +229,14 @@ export function IncomeExpensesCard() {
 
 /**
  * The two KPI summary cards above the chart — one for income, one for expenses.
- * Each consolidates the 3/6/12-month rolling averages (12-month leads, 3M/6M
- * beside it), a 12-month sparkline for shape, and a trend chip comparing the
+ * Compact and always side-by-side (one row at every width): the 12-month
+ * average leads, the 3M/6M windows sit beneath, and a trend chip compares the
  * recent 3-month average to the 12-month baseline.
  */
 function KpiCards({ income, expenses }: { income: KpiSeries; expenses: KpiSeries }) {
   const { t } = useTranslation();
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-3 mb-3">
+    <div className="grid grid-cols-2 gap-2 md:gap-3 mb-3">
       <KpiCard label={t("dashboard.income")} kind="income" data={income} color={INCOME_COLOR} />
       <KpiCard label={t("dashboard.expenses")} kind="expense" data={expenses} color={EXPENSE_COLOR} />
     </div>
@@ -264,35 +263,30 @@ function KpiCard({
   return (
     <div
       data-testid={`kpi-${kind}`}
-      className="rounded-xl border border-[var(--surface-light)] p-3 md:p-3.5"
+      className="rounded-xl border border-[var(--surface-light)] p-2.5 md:p-3.5"
       style={{ background: gradient }}
     >
-      <div className="flex items-center gap-2 mb-2.5">
+      <div className="flex items-center gap-1.5 mb-2">
         <div
-          className="p-1.5 rounded-lg"
+          className="p-1 rounded-md flex-none"
           style={{ background: kind === "income" ? "rgba(16,185,129,0.16)" : "rgba(244,63,94,0.16)", color }}
         >
-          <Icon size={15} />
+          <Icon size={13} />
         </div>
-        <span className="text-xs font-bold text-[var(--text-muted)]">{label}</span>
+        <span className="text-[11px] md:text-xs font-bold text-[var(--text-muted)] truncate">{label}</span>
         <div className="flex-1" />
         <TrendChip value={data.avg3} baseline={data.avg12} kind={kind} title={t("dashboard.avgTrendTitle")} />
       </div>
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <div className="text-xl md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg12)}</div>
-          <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg12mo")}</div>
-        </div>
-        <Sparkline series={data.series} color={color} />
-      </div>
-      <div className="flex gap-4 mt-2.5 pt-2.5 border-t border-[var(--surface-light)]">
+      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg12)}</div>
+      <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg12mo")}</div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">
         <div className="flex items-baseline gap-1.5">
           <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo3")}</span>
-          <span className="text-xs font-bold tabular-nums">{formatCurrency(data.avg3)}</span>
+          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg3)}</span>
         </div>
         <div className="flex items-baseline gap-1.5">
           <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo6")}</span>
-          <span className="text-xs font-bold tabular-nums">{formatCurrency(data.avg6)}</span>
+          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg6)}</span>
         </div>
       </div>
     </div>
@@ -337,34 +331,6 @@ function TrendChip({
   );
 }
 
-/** Minimal filled sparkline (12-month trend) — no axes, just the shape + a last-point dot. */
-function Sparkline({ series, color, width = 84, height = 32 }: { series: number[]; color: string; width?: number; height?: number }) {
-  const clean = series.filter((v) => Number.isFinite(v));
-  // Drop trailing zero-activity months (typically the current, still-partial
-  // month) so the line doesn't nose-dive to 0 every time a new month starts.
-  while (clean.length > 2 && clean[clean.length - 1] === 0) clean.pop();
-  if (clean.length < 2) return null;
-  const pad = 3;
-  const mx = Math.max(...clean);
-  const mn = Math.min(...clean);
-  const rng = mx - mn || 1;
-  const pts = clean.map((v, i) => {
-    const x = pad + (i / (clean.length - 1)) * (width - 2 * pad);
-    const y = height - pad - ((v - mn) / rng) * (height - 2 * pad);
-    return [x, y] as const;
-  });
-  const line = pts.map((p) => p.join(",")).join(" ");
-  const area = `${pad},${height - pad} ${line} ${width - pad},${height - pad}`;
-  const last = pts[pts.length - 1];
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="flex-none" aria-hidden="true">
-      <polygon points={area} fill={color} opacity={0.12} />
-      <polyline points={line} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={last[0]} cy={last[1]} r={2.4} fill={color} />
-    </svg>
-  );
-}
-
 /**
  * Totals view — a statement-style ledger, newest month on top. Each row shows
  * the income bar (grows toward the centre), the expense bar (mirrored), and the
@@ -386,10 +352,10 @@ function LedgerView({
   const { t } = useTranslation();
   if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
 
-  // Robust scale over the FULL history so bar widths don't shift when the user
-  // expands earlier months; only the *displayed* rows are capped to `limit`.
-  const scaleMax = robustMax(rows.flatMap((d) => [d.income, Math.abs(d.expenses)]));
-  const width = (v: number) => `${Math.min(Math.max((Math.abs(v) / scaleMax) * 100, 2), 100)}%`;
+  // Median-anchored cap over the FULL history so typical months sit mid-range
+  // (with headroom) and widths don't shift when earlier months are revealed;
+  // only the *displayed* rows are capped to `limit`.
+  const cap = barCap(rows.flatMap((d) => [d.income, Math.abs(d.expenses)]));
   const lastMonth = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
@@ -419,36 +385,9 @@ function LedgerView({
             <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
               {formatMonthShort(d.month)}
             </div>
-            {/* income — grows toward the centre */}
-            <div className="flex justify-end">
-              <div
-                className="h-[22px] rounded-md flex items-center justify-end"
-                style={{
-                  width: width(d.income),
-                  background: "rgba(16,185,129,0.16)",
-                  border: "1px solid rgba(16,185,129,0.5)",
-                }}
-              >
-                <span className="text-[11px] font-bold px-2 whitespace-nowrap tabular-nums" style={{ color: INCOME_COLOR }}>
-                  {formatCurrency(d.income)}
-                </span>
-              </div>
-            </div>
-            {/* expenses — mirrored, grows from the centre outward */}
-            <div className="flex justify-start">
-              <div
-                className="h-[22px] rounded-md flex items-center justify-start"
-                style={{
-                  width: width(d.expenses),
-                  background: "rgba(244,63,94,0.16)",
-                  border: "1px solid rgba(244,63,94,0.5)",
-                }}
-              >
-                <span className="text-[11px] font-bold px-2 whitespace-nowrap tabular-nums" style={{ color: expenseColor }}>
-                  {formatCurrency(Math.abs(d.expenses))}
-                </span>
-              </div>
-            </div>
+            {/* income grows toward the centre; expenses mirror outward */}
+            <LedgerBar value={d.income} kind="income" cap={cap} />
+            <LedgerBar value={d.expenses} kind="expense" cap={cap} color={expenseColor} />
             <div
               className="text-xs font-extrabold text-end whitespace-nowrap tabular-nums"
               style={{ color: net >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
@@ -459,6 +398,72 @@ function LedgerView({
         );
       })}
       <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
+    </div>
+  );
+}
+
+/**
+ * One ledger bar. Income grows toward the centre, expenses mirror outward. A
+ * value above the shared cap is drawn full-width and flagged as an outlier: a
+ * hatched strip at the growing tip plus a dashed edge signal "off the scale",
+ * while the exact ₪ still shows the real figure.
+ */
+function LedgerBar({
+  value,
+  kind,
+  cap,
+  color,
+}: {
+  value: number;
+  kind: "income" | "expense";
+  cap: number;
+  color?: string;
+}) {
+  const { t } = useTranslation();
+  const abs = Math.abs(value);
+  const pct = Math.min(Math.max((abs / cap) * 100, 2), 100);
+  const capped = abs > cap;
+  const income = kind === "income";
+  const barColor = color ?? (income ? INCOME_COLOR : EXPENSE_COLOR);
+  const soft = income ? "rgba(16,185,129,0.16)" : "rgba(244,63,94,0.16)";
+  const borderRgba = income ? "rgba(16,185,129,0.5)" : "rgba(244,63,94,0.5)";
+  const tip = income ? "left" : "right"; // the growing end of the bar
+  return (
+    <div className={`flex ${income ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`relative h-[22px] rounded-md flex items-center ${income ? "justify-end" : "justify-start"}`}
+        title={capped ? t("dashboard.barAboveScale") : undefined}
+        style={{
+          width: `${pct}%`,
+          background: soft,
+          border: `1px solid ${borderRgba}`,
+          ...(capped
+            ? {
+                [income ? "borderLeftColor" : "borderRightColor"]: barColor,
+                [income ? "borderLeftStyle" : "borderRightStyle"]: "dashed",
+              }
+            : {}),
+        }}
+      >
+        {capped && (
+          <div
+            className="absolute inset-y-0 w-4 pointer-events-none"
+            style={{
+              [tip]: 0,
+              [income ? "borderTopLeftRadius" : "borderTopRightRadius"]: 5,
+              [income ? "borderBottomLeftRadius" : "borderBottomRightRadius"]: 5,
+              opacity: 0.6,
+              background: `repeating-linear-gradient(${income ? "45deg" : "-45deg"}, ${barColor} 0 1.5px, transparent 1.5px 4.5px)`,
+            }}
+          />
+        )}
+        <span
+          className="relative text-[11px] font-bold px-2 whitespace-nowrap tabular-nums"
+          style={{ color: barColor }}
+        >
+          {formatCurrency(abs)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -489,6 +494,7 @@ function CompositionView({
   onShowMore: () => void;
   onShowLess: () => void;
 }) {
+  const { t } = useTranslation();
   // Stable series order + colour, shared by the legend and every row so a
   // category keeps its colour month to month.
   let series = Array.from(new Set(rows.flatMap((d) => Object.keys(d.values))));
@@ -496,9 +502,9 @@ function CompositionView({
   const colorOf = (name: string) => palette[series.indexOf(name) % palette.length];
 
   const totalOf = (v: Record<string, number>) => series.reduce((s, name) => s + (v[name] || 0), 0);
-  // Robust meter scale over the FULL history so widths stay stable across "Show
-  // earlier months"; only the *displayed* rows are capped to `limit`.
-  const meterMax = robustMax(rows.map((d) => totalOf(d.values)));
+  // Median-anchored meter cap over the FULL history so widths stay stable across
+  // "Show earlier months"; totals above it are flagged as outliers.
+  const meterCap = barCap(rows.map((d) => totalOf(d.values)));
   const lastMonth = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
@@ -556,8 +562,20 @@ function CompositionView({
             </div>
             <div className="text-end">
               <div className="text-xs font-extrabold whitespace-nowrap tabular-nums">{formatCurrency(total)}</div>
-              <div className="h-[3px] rounded-sm bg-[var(--surface-light)] mt-1 overflow-hidden">
-                <div className="h-full rounded-sm bg-[var(--text-muted)]" style={{ width: `${Math.min((total / meterMax) * 100, 100)}%` }} />
+              <div
+                className="h-[3px] rounded-sm bg-[var(--surface-light)] mt-1 overflow-hidden"
+                title={total > meterCap ? t("dashboard.barAboveScale") : undefined}
+              >
+                <div
+                  className="h-full rounded-sm"
+                  style={{
+                    width: `${Math.min((total / meterCap) * 100, 100)}%`,
+                    background:
+                      total > meterCap
+                        ? "repeating-linear-gradient(-45deg, var(--text-muted) 0 1.5px, transparent 1.5px 4px)"
+                        : "var(--text-muted)",
+                  }}
+                />
               </div>
             </div>
           </div>

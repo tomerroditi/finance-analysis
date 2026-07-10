@@ -209,6 +209,7 @@
     "showAmount": "Show amount (₪)",
     "showEarlierMonths": "Show earlier months ({{count}})",
     "showLess": "Show less",
+    "barAboveScale": "Above the chart scale — see the exact amount",
     "noIncomeSourceData": "No income source data available.",
     "topCategory": "Top Category",
     "forecast": {

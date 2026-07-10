@@ -209,6 +209,7 @@
     "showAmount": "הצג סכום (₪)",
     "showEarlierMonths": "הצג חודשים קודמים ({{count}})",
     "showLess": "הצג פחות",
+    "barAboveScale": "מעל קנה המידה של הגרף — ראה את הסכום המדויק",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
     "topCategory": "קטגוריה מובילה",
     "forecast": {
