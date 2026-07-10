@@ -1,5 +1,6 @@
 """Tests for ScrapingService."""
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 from contextlib import contextmanager
@@ -141,7 +142,7 @@ class TestScrapingServiceStart:
 
         assert process_id == 7
         mock_create_adapter.assert_called_once()
-        mock_asyncio.create_task.assert_called_once()
+        mock_asyncio.run_coroutine_threadsafe.assert_called_once()
 
     @patch("backend.services.scraping_service.asyncio")
     @patch("backend.services.scraping_service.create_adapter")
@@ -314,6 +315,80 @@ class TestScrapingServiceStart:
         assert mock_create_adapter.call_args.kwargs["force_2fa"] is False
 
 
+class TestScrapingServiceLaunchFromSyncContext:
+    """The scraper launch must work from a synchronous route handler.
+
+    ``POST /api/scraping/start`` is a sync ``def`` route, which FastAPI runs
+    in a threadpool worker thread with no running event loop. The launch
+    therefore cannot use ``asyncio.create_task`` — it requires a loop in the
+    *calling* thread and raises ``RuntimeError: no running event loop``,
+    leaving ``adapter.run()`` an un-awaited coroutine (the RuntimeWarning
+    that surfaced on a real OneZero scrape). It must submit the coroutine to
+    the main loop captured at startup. Regression test for that bug.
+    """
+
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_launch_from_threadpool_thread_actually_runs_coroutine(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, service
+    ):
+        """A launch from a no-event-loop worker thread executes adapter.run()."""
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        mock_is_2fa.return_value = False
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+
+        ran = threading.Event()
+
+        async def fake_run():
+            ran.set()
+
+        mock_adapter = MagicMock()
+        mock_adapter.process_id = 77
+        mock_adapter.run = fake_run
+        mock_create_adapter.return_value = mock_adapter
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        mock_history_repo.record_scrape_start.return_value = 77
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        # A real event loop, spinning in a background thread, stands in for
+        # the server's main uvicorn loop captured at startup.
+        loop = asyncio.new_event_loop()
+        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
+        loop_thread.start()
+        ss.set_main_loop(loop)
+
+        try:
+            with patch(
+                "backend.services.scraping_service.ScrapingHistoryRepository",
+                return_value=mock_history_repo,
+            ):
+                # Run start_scraping_single in a worker thread with no event
+                # loop, exactly as FastAPI runs a sync route. On the buggy
+                # create_task path this raises RuntimeError here.
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    process_id = pool.submit(
+                        service.start_scraping_single, "banks", "onezero", "Acc"
+                    ).result(timeout=5)
+
+            assert process_id == 77
+            assert ran.wait(timeout=5), "adapter.run() was never scheduled/executed"
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            loop_thread.join(timeout=5)
+            loop.close()
+            ss.set_main_loop(None)
+
+
 class TestScrapingServiceSingleFlight:
     """A second start_scraping_single call for the same account is a no-op.
 
@@ -363,7 +438,7 @@ class TestScrapingServiceSingleFlight:
         # Only the first call created an adapter / history row / task.
         mock_create_adapter.assert_called_once()
         mock_history_repo.record_scrape_start.assert_called_once()
-        mock_asyncio.create_task.assert_called_once()
+        mock_asyncio.run_coroutine_threadsafe.assert_called_once()
 
     @patch("backend.services.scraping_service.asyncio")
     @patch("backend.services.scraping_service.create_adapter")
@@ -432,7 +507,7 @@ class TestScrapingServiceSingleFlight:
         assert first_id == 40
         assert second_id == 41
         assert mock_create_adapter.call_count == 2
-        assert mock_asyncio.create_task.call_count == 2
+        assert mock_asyncio.run_coroutine_threadsafe.call_count == 2
 
 
 class TestScrapingService2FA:
