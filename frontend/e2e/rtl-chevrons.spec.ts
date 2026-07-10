@@ -1,19 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 test.describe("RTL chevrons", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test.afterEach(async ({ page }) => {
     if (page.url().startsWith("http")) {
       await page.evaluate(() => localStorage.setItem("language", "en"));

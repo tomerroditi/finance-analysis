@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * Guards the "net refund" display invariant on the monthly budget view.
@@ -18,18 +18,6 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * every recent month, catching a regression the moment such a row appears.
  */
 test.describe("Budget — net refund rows", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test("a refund figure is never shown as over budget", async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");

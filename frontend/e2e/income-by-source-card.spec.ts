@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * The "Income by source" dashboard card (id `income_by_source`) renders a
@@ -10,18 +10,6 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * switching range presets doesn't crash it.
  */
 test.describe("Income by source dashboard card", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   /**
    * Locate the card container by its title, then climb to the enclosing
    * card div so we can scope the donut/table lookups (the dashboard renders

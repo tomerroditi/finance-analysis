@@ -1,5 +1,4 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
 
 /**
  * The dashboard grid sizes cards to their content on >=lg, capped at
@@ -23,19 +22,6 @@ test.describe("Dashboard strip cards", () => {
     hidden: ["recurring", "goals", "cash_flow", "category"],
     v: 3,
   };
-
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((layout) => {
       window.localStorage.setItem("fa.dashboard.layout", JSON.stringify(layout));

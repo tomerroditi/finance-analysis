@@ -1,19 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
+import { navigateTo, expectPageTitle } from "./helpers";
 
 test.describe("Liabilities", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test("loads the liabilities page", async ({ page }) => {
     await navigateTo(page, "/liabilities");
     await expectPageTitle(page, /Liabilities/);

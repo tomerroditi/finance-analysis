@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * Plotly is code-split out of the main bundle (components/common/LazyPlot.tsx)
@@ -8,18 +8,6 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * from the Suspense skeleton into a rendered figure.
  */
 test.describe("Lazy-loaded Plotly charts", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   const pagesWithCharts: [string, string][] = [
     ["dashboard", "/"],
     ["budget", "/budget"],

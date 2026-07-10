@@ -1,5 +1,4 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
 
 /**
  * The Spending Calendar (`heatmap`) card shows two months (previous + current)
@@ -11,18 +10,6 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * needed — it renders at its configured half width.
  */
 test.describe("Dashboard spending calendar months", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
   });

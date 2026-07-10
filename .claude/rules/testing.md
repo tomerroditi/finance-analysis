@@ -240,6 +240,69 @@ this; the env var is harmless when unset. **Verified green is the only
 "verified"** — if the browser failed to launch, the spec did not run, no
 matter what the exit summary scrolls past.
 
+### Projects & parallelism (why the suite isn't one flat run)
+
+Demo Mode is a **process-global backend singleton** — one shared SQLite DB
+for the whole backend process. That's why the suite can't naively run at
+`workers > 1`: parallel workers would race on the same rows, and any spec
+that flips the global demo toggle would pull the DB out from under a
+concurrently-running spec. The config (`frontend/playwright.config.ts`)
+handles this with four projects sequenced by a shared setup:
+
+```
+demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
+```
+
+- **`demo-setup`** enables Demo Mode once. This replaced the old per-file
+  `beforeAll(enableDemoMode)` / `afterAll(disableDemoMode)` pattern, which
+  toggled the global demo state at *every* file boundary and forced a full
+  demo-DB rebuild (file copy + date-shift over every table) each time.
+- **`read-only`** holds specs that do **zero backend writes** (the
+  `READ_ONLY_SPECS` list). They share the one demo snapshot safely, so they
+  fan out across workers (`fullyParallel`). This is the main speedup — it
+  overlaps the slow cold-cache page loads (13–25 s each) instead of paying
+  them back to back.
+- **`mutating`** holds everything else and runs **serially**. Each mutating
+  spec still owns its `beforeAll`/`afterAll` demo lifecycle for per-file DB
+  isolation, so its writes never leak into a sibling.
+- **`demo-teardown`** disables Demo Mode at the very end.
+
+Run it with the npm script:
+
+```bash
+python .claude/scripts/with_server.py -- bash -c \
+  "cd frontend && PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/opt/pw-browsers/chromium-<NNNN>/chrome-linux/chrome \
+   npm run test:e2e"
+```
+
+`npm run test:e2e` is a bare `playwright test` — it runs every project
+**serially** and is always safe (`mutating` depends on `read-only`, so the
+write-free specs finish before any spec toggles demo off). The `demo-setup`
+project still enables Demo Mode once instead of rebuilding the demo DB at every
+read-only file boundary, so serial is already faster than the old per-file
+enable/disable dance.
+
+**Why not parallel by default?** `npm run test:e2e:parallel` runs
+`--project=read-only --workers=50%` then `--project=mutating --workers=1
+--no-deps`. It only pays off when each worker isn't contending on the single
+shared backend. Measured on the web sandbox (4 cores → `50%` = 2 workers):
+the parallel read-only phase came in **slower** (8.4 m vs 6.8 m serial) with
+**13 flaky timeouts** — two concurrent browsers saturate uvicorn's serialized
+SQLite query path and the heavy cold-cache dashboards (~30 parallel React Query
+requests behind the HTTP/1.1 6-connection cap) blow past the 45 s expect
+timeout. Client-side parallelism can't beat a serialized backend. Real parallel
+speedup needs **per-worker isolated backends** — a separate uvicorn + demo DB
+per worker (`FAD_USER_DIR` override + `VITE_BACKEND_URL` per worker). Use
+`test:e2e:parallel` only on a machine whose backend can sustain the concurrency.
+
+**Adding a spec to `READ_ONLY_SPECS`:** only if it performs *no* backend
+writes — no POST/PUT/DELETE, no form submit, no create/edit/delete/move of
+data. Opening a popover, toggling a view, switching a chart tab, and
+navigation are all fine. One writing spec in that list corrupts every
+sibling running in parallel, so when in doubt leave it out (unlisted specs
+run serially, which is always safe). If you add a write to a spec that's
+already in the list, move it out in the same change.
+
 **Authoring gotchas that cost a debugging loop here:**
 - The **Auto Tagging "New Rule" / "Apply Rules" buttons live inside a
   collapsed side panel** — click `getByRole("button", { name: /^Auto

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * Drives the double-tap-to-enter native zoom mode (utils/chartTouchZoom.ts).
@@ -15,19 +15,6 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  */
 test.describe("Chart double-tap native zoom mode (touch)", () => {
   test.use({ hasTouch: true, isMobile: true });
-
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   /**
    * Scroll a cartesian (zoomable) chart card into view so it mounts.
    *

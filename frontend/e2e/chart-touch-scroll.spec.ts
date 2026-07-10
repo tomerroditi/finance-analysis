@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * Guards the touch-scroll fix in utils/plotlyLocale.ts.
@@ -31,18 +31,6 @@ async function firstChartDragmode(page: Page): Promise<unknown> {
 }
 
 test.describe("Chart touch-scroll (dragmode)", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test.describe("on a touch device", () => {
     test.use({ hasTouch: true, isMobile: true });
 

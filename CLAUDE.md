@@ -104,10 +104,34 @@ poetry run pytest
 # 2. Frontend lint + type-check/build + unit tests (matches CI)
 cd frontend && npm run lint && npm run build && npm test && cd ..
 
-# 3. Frontend e2e (Playwright) — needs BOTH servers up, so run via the orchestrator
+# 3. Frontend e2e (Playwright) — needs BOTH servers up, so run via the orchestrator.
+#    `npm run test:e2e` runs the suite serially (safe everywhere). See
+#    "e2e projects & parallelism" below before reaching for the parallel variant.
 python .claude/scripts/with_server.py -- bash -c \
-  "cd frontend && npx playwright test --reporter=line"
+  "cd frontend && npm run test:e2e"
 ```
+
+**e2e projects & parallelism.** Demo Mode is a **process-global backend DB**
+(one shared SQLite for the whole backend process), so the suite is organized
+into Playwright projects sequenced by a shared setup:
+`demo-setup` enables Demo Mode **once** (this replaced the old per-file
+enable/disable that forced a full demo-DB rebuild at every file boundary),
+`read-only` holds write-free specs, `mutating` holds the rest (each keeps its
+own per-file demo lifecycle for DB isolation), and `demo-teardown` disables
+Demo Mode at the end. `mutating` depends on `read-only`, so a bare
+`playwright test` runs everything serially and safely.
+
+**Default is serial (`npm run test:e2e`).** The `read-only` project *can* fan
+out across workers (`npm run test:e2e:parallel`), but that only helps when each
+worker isn't contending on the single shared backend. On a resource-constrained
+box (e.g. the web sandbox, 4 cores) even 2 workers saturate uvicorn's serialized
+query path and the heavy cold-cache dashboards time out — the parallel run came
+in *slower* than serial (8.4 m vs 6.8 m) with flaky timeouts. Real parallel
+speedup needs per-worker isolated backends (separate uvicorn + DB per worker);
+until then, keep the default serial. **A spec may only join the
+`READ_ONLY_SPECS` list in `playwright.config.ts` if it performs zero backend
+writes** — one writing spec there corrupts every parallel sibling. Add a write
+to a listed spec? Move it out of the list in the same change.
 
 - **Run the whole suite, not just the one test you touched.** Backend `pytest` has a 40 % coverage gate — a targeted run needs `--no-cov` (see Commands), but the pre-PR run is the full suite with coverage on.
 - **e2e is required, not optional** — `npm test` (vitest) and e2e (`playwright test`) are different layers. e2e specs live in `frontend/e2e/` and drive the real UI in Demo Mode; type-checking and unit tests miss the focus-trap / click-outside / query-invalidation bugs UI patches introduce. Every UI patch must add or update an e2e spec (see the CLAUDE.md "UI Testing" section).

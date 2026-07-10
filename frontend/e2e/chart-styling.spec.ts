@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { navigateTo } from "./helpers";
 
 /**
  * Guards the "soft gradient" chart restyle (see utils/plotlyLocale.ts).
@@ -14,18 +14,6 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * the Cohen-family investments/liabilities the charts need.
  */
 test.describe("Chart styling (soft gradient)", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
   test("dashboard charts render after the restyle", async ({ page }) => {
     await navigateTo(page, "/");
     // Plotly is lazy-loaded (LazyPlot); the dev server serves the chunk
