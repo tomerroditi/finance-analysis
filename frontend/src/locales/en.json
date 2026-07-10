@@ -546,7 +546,18 @@
       "empty": "No yearly rules yet. Add one to start tracking annual expenses.",
       "confirmDelete": "Delete the yearly rule \"{{name}}\"?",
       "carried": "Carried rules forward from {{fromYear}}.",
-      "carriedWithSkips": "Carried rules forward from {{fromYear}}. Skipped {{tags}} — already in your monthly budget for this year."
+      "carriedWithSkips": "Carried rules forward from {{fromYear}}. Skipped {{tags}} — already in your monthly budget for this year.",
+      "addTitle": "Add yearly rule",
+      "editTitle": "Edit yearly rule",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Vacations",
+      "categoryLabel": "Category",
+      "categoryPlaceholder": "Select a category",
+      "amountLabel": "Annual limit",
+      "amountPlaceholder": "e.g. 20000",
+      "tagsLabel": "Tags",
+      "tagsPlaceholder": "Select tags",
+      "saveFailed": "Could not save the rule."
     }
   },
   "budgetAlerts": {

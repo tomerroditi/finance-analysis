@@ -546,7 +546,18 @@
       "empty": "אין עדיין כללים שנתיים. הוסף כלל כדי להתחיל לעקוב אחר הוצאות שנתיות.",
       "confirmDelete": "למחוק את הכלל השנתי \"{{name}}\"?",
       "carried": "הכללים הועתקו משנת {{fromYear}}.",
-      "carriedWithSkips": "הכללים הועתקו משנת {{fromYear}}. דילג על {{tags}} — כבר קיימות בתקציב החודשי לשנה זו."
+      "carriedWithSkips": "הכללים הועתקו משנת {{fromYear}}. דילג על {{tags}} — כבר קיימות בתקציב החודשי לשנה זו.",
+      "addTitle": "הוספת כלל שנתי",
+      "editTitle": "עריכת כלל שנתי",
+      "nameLabel": "שם",
+      "namePlaceholder": "לדוגמה: חופשות",
+      "categoryLabel": "קטגוריה",
+      "categoryPlaceholder": "בחר קטגוריה",
+      "amountLabel": "תקרה שנתית",
+      "amountPlaceholder": "לדוגמה: 20000",
+      "tagsLabel": "תגיות",
+      "tagsPlaceholder": "בחר תגיות",
+      "saveFailed": "לא ניתן היה לשמור את הכלל."
     }
   },
   "budgetAlerts": {
