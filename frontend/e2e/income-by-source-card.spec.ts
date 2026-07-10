@@ -107,4 +107,40 @@ test.describe("Income by source dashboard card", () => {
     await toggle.click();
     await expect(card.locator("table").first()).toBeVisible();
   });
+
+  /**
+   * Source names are truncated to fit the column. Tapping a name toggles a
+   * full-name reveal (the label switches from `truncate` to a wrapped,
+   * `whitespace-normal` display). This is the mobile affordance for reading
+   * long source labels like "Salary / Corr…". Each row's source cell is a
+   * button carrying `aria-expanded`; the Breakdown toggle lives outside the
+   * table, so scoping to `table button` isolates the source-name buttons.
+   */
+  test("tapping a source name reveals and hides the full label", async ({ page }) => {
+    await navigateTo(page, "/");
+
+    await expect(
+      page.getByText("Income by source", { exact: true }).first(),
+    ).toBeVisible({ timeout: 45_000 });
+
+    const card = cardContainer(page);
+    await expect(card.locator("table").first()).toBeVisible({ timeout: 45_000 });
+
+    const sourceButton = card.locator("table button[aria-expanded]").first();
+    const label = sourceButton.locator("span").last();
+
+    // Collapsed by default: label truncates.
+    await expect(sourceButton).toHaveAttribute("aria-expanded", "false");
+    await expect(label).toHaveClass(/truncate/);
+
+    // Tap reveals the full name (wraps instead of truncating).
+    await sourceButton.click();
+    await expect(sourceButton).toHaveAttribute("aria-expanded", "true");
+    await expect(label).toHaveClass(/whitespace-normal/);
+
+    // Tap again collapses back to the truncated view.
+    await sourceButton.click();
+    await expect(sourceButton).toHaveAttribute("aria-expanded", "false");
+    await expect(label).toHaveClass(/truncate/);
+  });
 });
