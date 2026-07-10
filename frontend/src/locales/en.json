@@ -205,6 +205,10 @@
     "bySource": "By Source",
     "incomeBreakdown": "Income Breakdown",
     "expensesBreakdown": "Expenses Breakdown",
+    "ledgerMonth": "Month",
+    "ledgerNet": "Net",
+    "showShare": "Show share (%)",
+    "showAmount": "Show amount (₪)",
     "noIncomeSourceData": "No income source data available.",
     "topCategory": "Top Category",
     "forecast": {

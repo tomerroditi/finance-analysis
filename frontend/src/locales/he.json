@@ -205,6 +205,10 @@
     "bySource": "לפי מקור",
     "incomeBreakdown": "פירוט הכנסות",
     "expensesBreakdown": "פירוט הוצאות",
+    "ledgerMonth": "חודש",
+    "ledgerNet": "נטו",
+    "showShare": "הצג אחוז (%)",
+    "showAmount": "הצג סכום (₪)",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
     "topCategory": "קטגוריה מובילה",
     "forecast": {
