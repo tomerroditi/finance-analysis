@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { DollarSign } from "lucide-react";
 import {
   analyticsApi,
   cashBalancesApi,
@@ -8,8 +9,10 @@ import {
   investmentsApi,
   transactionsApi,
   taggingApi,
+  scrapingApi,
   type BankBalance,
 } from "../services/api";
+import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
 import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";
 import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactionsSection";
 import { CashFlowForecastSection } from "../components/dashboard/CashFlowForecastCard";
@@ -99,6 +102,7 @@ function FinancialHealthHeader({
   cashBalances,
   bankBalances,
   portfolioAllocation,
+  lastScrapes,
   isLoading,
 }: {
   netWorthData:
@@ -107,10 +111,30 @@ function FinancialHealthHeader({
   cashBalances: { account_name: string; balance: number }[] | undefined;
   bankBalances: BankBalance[] | undefined;
   portfolioAllocation: { name: string; balance: number }[] | undefined;
+  lastScrapes:
+    | { service: string; provider: string; account_name: string; last_scrape_date: string | null }[]
+    | undefined;
   isLoading: boolean;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [balanceModalAccount, setBalanceModalAccount] = useState<
+    { provider: string; account_name: string; balance: number } | null
+  >(null);
+
+  const isScrapedToday = (provider: string, accountName: string): boolean => {
+    const scrape = lastScrapes?.find(
+      (s) => s.provider === provider && s.account_name === accountName,
+    );
+    if (!scrape?.last_scrape_date) return false;
+    const d = new Date(scrape.last_scrape_date);
+    const now = new Date();
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    );
+  };
 
   const latestNetWorth = netWorthData?.length ? netWorthData[netWorthData.length - 1] : null;
   const previousNetWorth =
@@ -164,6 +188,7 @@ function FinancialHealthHeader({
   }
 
   return (
+    <>
     <div
       className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
@@ -188,9 +213,55 @@ function FinancialHealthHeader({
         </p>
         <MomBadge mom={bankMom} />
         {expanded && bankBalances && bankBalances.length > 0 && (
-          <BreakdownList
-            items={bankBalances.map((b) => ({ name: b.account_name, amount: b.balance }))}
-          />
+          <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
+            {bankBalances.map((b) => {
+              const canUpdate = isScrapedToday(b.provider, b.account_name);
+              return (
+                <div
+                  key={`${b.provider}|${b.account_name}`}
+                  className="flex items-center justify-between text-xs gap-2"
+                >
+                  <span className="text-[var(--text-muted)] truncate me-1" dir="auto">
+                    {b.account_name}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="tabular-nums font-medium">{formatCurrency(b.balance)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (canUpdate) {
+                          setBalanceModalAccount({
+                            provider: b.provider,
+                            account_name: b.account_name,
+                            balance: b.balance,
+                          });
+                        }
+                      }}
+                      disabled={!canUpdate}
+                      aria-label={
+                        canUpdate
+                          ? t("dataSources.setBalance")
+                          : t("dataSources.scrapeFirstToSetBalance")
+                      }
+                      title={
+                        canUpdate
+                          ? t("dataSources.setBalance")
+                          : t("dataSources.scrapeFirstToSetBalance")
+                      }
+                      className={`p-1 rounded-md transition-all ${
+                        canUpdate
+                          ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                          : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed opacity-50"
+                      }`}
+                    >
+                      <DollarSign size={12} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -221,6 +292,19 @@ function FinancialHealthHeader({
       </div>
 
     </div>
+    <UpdateBankBalanceModal
+      isOpen={balanceModalAccount !== null}
+      onClose={() => setBalanceModalAccount(null)}
+      provider={balanceModalAccount?.provider ?? ""}
+      accountName={balanceModalAccount?.account_name ?? ""}
+      currentBalance={balanceModalAccount?.balance ?? null}
+      isScrapedToday={
+        balanceModalAccount
+          ? isScrapedToday(balanceModalAccount.provider, balanceModalAccount.account_name)
+          : false
+      }
+    />
+    </>
   );
 }
 
@@ -245,6 +329,11 @@ export function Dashboard() {
   const { data: bankBalances } = useQuery({
     queryKey: ["bank-balances", isDemoMode],
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+  });
+
+  const { data: lastScrapes } = useQuery({
+    queryKey: ["last-scrapes", isDemoMode],
+    queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
   });
 
   const { data: portfolioData } = useQuery({
@@ -348,6 +437,7 @@ export function Dashboard() {
         cashBalances={cashBalances}
         bankBalances={bankBalances}
         portfolioAllocation={portfolioData?.allocation}
+        lastScrapes={lastScrapes}
         isLoading={netWorthLoading}
       />
 
