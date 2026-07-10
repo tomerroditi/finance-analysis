@@ -1,3 +1,14 @@
+## v1.41.0 (2026-07-10)
+
+### Feat
+
+- **dashboard**: update-balance chip on the bank KPI card breakdown
+- **frontend**: add shared UpdateBankBalanceModal + bankBalance i18n
+
+### Refactor
+
+- **datasources**: use shared UpdateBankBalanceModal instead of inline editor
+
 ## v1.40.0 (2026-07-10)
 
 ### Feat
