@@ -537,7 +537,16 @@
     "yearly": {
       "tab": "שנתי",
       "addRule": "הוסף כלל שנתי",
-      "currentYear": "השנה הנוכחית"
+      "currentYear": "השנה הנוכחית",
+      "allocated": "הוקצה",
+      "spentYtd": "הוצאו השנה",
+      "remaining": "נותר",
+      "health": "מצב התקציב",
+      "allTags": "כל התגיות",
+      "empty": "אין עדיין כללים שנתיים. הוסף כלל כדי להתחיל לעקוב אחר הוצאות שנתיות.",
+      "confirmDelete": "למחוק את הכלל השנתי \"{{name}}\"?",
+      "carried": "הכללים הועתקו משנת {{fromYear}}.",
+      "carriedWithSkips": "הכללים הועתקו משנת {{fromYear}}. דילג על {{tags}} — כבר קיימות בתקציב החודשי לשנה זו."
     }
   },
   "budgetAlerts": {

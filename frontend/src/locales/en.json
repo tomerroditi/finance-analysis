@@ -537,7 +537,16 @@
     "yearly": {
       "tab": "Yearly",
       "addRule": "Add yearly rule",
-      "currentYear": "Current year"
+      "currentYear": "Current year",
+      "allocated": "Allocated",
+      "spentYtd": "Spent YTD",
+      "remaining": "Remaining",
+      "health": "Budget health",
+      "allTags": "all tags",
+      "empty": "No yearly rules yet. Add one to start tracking annual expenses.",
+      "confirmDelete": "Delete the yearly rule \"{{name}}\"?",
+      "carried": "Carried rules forward from {{fromYear}}.",
+      "carriedWithSkips": "Carried rules forward from {{fromYear}}. Skipped {{tags}} — already in your monthly budget for this year."
     }
   },
   "budgetAlerts": {
