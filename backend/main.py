@@ -55,6 +55,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
+    # Skip startup migrations and scraper wiring in serverless (demo DB is
+    # pre-built, and there's no keyring/browser to scrape with). This guard
+    # MUST come before any import that transitively pulls in keyring-backed
+    # code: `keyring` is intentionally absent from the Vercel requirements.txt,
+    # so importing scraping_service here would crash cold start with
+    # ModuleNotFoundError → FUNCTION_INVOCATION_FAILED.
+    if os.environ.get("VERCEL"):
+        yield
+        return
+
     # Capture the running event loop so synchronous scraping routes (executed
     # in a threadpool worker thread with no loop of their own) can launch
     # scraper coroutines on it via run_coroutine_threadsafe. Without this,
@@ -63,11 +73,6 @@ async def lifespan(app: FastAPI):
     from backend.services.scraping_service import set_main_loop
 
     set_main_loop(asyncio.get_running_loop())
-
-    # Skip startup migrations in serverless (demo DB is pre-built)
-    if os.environ.get("VERCEL"):
-        yield
-        return
 
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
