@@ -166,6 +166,105 @@ class BudgetService:
         """
         self.budget_repository.delete(id_)
 
+    def _rules_of_type_for(
+        self, category: str, year: int, period_type: str
+    ) -> pd.DataFrame:
+        """All rules of ``period_type`` for a given category and year (tags as lists)."""
+        rules = self.get_all_rules()
+        if rules.empty:
+            return rules
+        return rules.loc[
+            (rules[PERIOD_TYPE] == period_type)
+            & (rules[YEAR] == year)
+            & (rules[CATEGORY] == category)
+        ]
+
+    @staticmethod
+    def _is_all_tags(tags: list[str]) -> bool:
+        """True when a tag list is the all-tags sentinel (case-insensitive)."""
+        return [t.lower() for t in tags] == [ALL_TAGS.lower()]
+
+    def find_conflicting_tags(
+        self,
+        category: str,
+        tags: list[str],
+        year: int,
+        other_period_type: str,
+        *,
+        exclude_rule_id: int | None = None,
+    ) -> list[str]:
+        """Return incoming tags that collide with existing ``other_period_type`` rules.
+
+        Two rules conflict when they share ``category`` and ``year`` and at least
+        one tag. An ``all_tags`` sentinel on either side claims the whole category,
+        so every incoming (non-sentinel) tag conflicts.
+
+        Parameters
+        ----------
+        category : str
+            Category of the incoming rule.
+        tags : list[str]
+            Incoming tag list (may be the ``all_tags`` sentinel).
+        year : int
+            Calendar year the incoming rule applies to.
+        other_period_type : str
+            The budget kind to check against (e.g. ``"yearly"`` when validating a
+            monthly rule).
+        exclude_rule_id : int, optional
+            A rule id to ignore (the rule being edited).
+
+        Returns
+        -------
+        list[str]
+            Sorted conflicting tag names. Empty when there is no conflict. When
+            the incoming rule is itself ``all_tags`` and any other rule exists in
+            the category+year, returns ``["all_tags"]`` to signal a whole-category
+            conflict.
+        """
+        others = self._rules_of_type_for(category, year, other_period_type)
+        if exclude_rule_id is not None and not others.empty:
+            others = others.loc[others[ID] != exclude_rule_id]
+        if others.empty:
+            return []
+
+        incoming_all = self._is_all_tags(tags)
+        conflicts: set[str] = set()
+        for _, other in others.iterrows():
+            other_tags = other[TAGS]
+            other_all = self._is_all_tags(other_tags)
+            if incoming_all:
+                # Incoming claims the whole category; any existing rule collides.
+                return [ALL_TAGS]
+            if other_all:
+                conflicts.update(tags)
+            else:
+                conflicts.update(set(tags) & set(other_tags))
+        return sorted(conflicts)
+
+    def strip_conflicting_tags(
+        self,
+        category: str,
+        tags: list[str],
+        year: int,
+        other_period_type: str,
+    ) -> tuple[list[str], list[str]]:
+        """Split ``tags`` into (kept, skipped) for auto-fill/carry-forward.
+
+        Skipped tags are those that conflict with ``other_period_type`` rules for
+        the same category+year. If the incoming rule is ``all_tags`` and conflicts,
+        all-tags is treated as fully skipped (returns ``([], ["all_tags"])``).
+        """
+        conflicts = set(
+            self.find_conflicting_tags(category, tags, year, other_period_type)
+        )
+        if not conflicts:
+            return list(tags), []
+        if self._is_all_tags(tags):
+            return [], [ALL_TAGS]
+        kept = [t for t in tags if t not in conflicts]
+        skipped = [t for t in tags if t in conflicts]
+        return kept, skipped
+
     @staticmethod
     def validate_rule_inputs(
         budget_rules: pd.DataFrame,
