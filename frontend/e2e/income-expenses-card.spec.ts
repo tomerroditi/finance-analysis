@@ -123,4 +123,24 @@ test.describe("Income & Expenses dashboard card", () => {
     // before ₪, so match just the grouped number.)
     await expect(income).toContainText(/\d,\d{3}/);
   });
+
+  test("ledger caps to 12 months; 'Show earlier months' reveals more, 'Show less' collapses", async ({ page }) => {
+    const card = await openCard(page);
+    const rows = card.getByTestId("ledger-row");
+    await expect(rows.first()).toBeVisible({ timeout: 45_000 });
+
+    const initial = await rows.count();
+    expect(initial).toBeLessThanOrEqual(12);
+
+    // The demo history spans well over a year, so the pager must be present.
+    const showMore = card.getByRole("button", { name: /Show earlier months/ });
+    await expect(showMore).toBeVisible();
+
+    await showMore.click();
+    await expect.poll(() => rows.count()).toBeGreaterThan(initial);
+
+    // Collapsing returns to the 12-month window.
+    await card.getByRole("button", { name: "Show less" }).click();
+    await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
+  });
 });

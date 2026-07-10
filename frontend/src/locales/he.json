@@ -207,6 +207,8 @@
     "ledgerNet": "נטו",
     "showShare": "הצג אחוז (%)",
     "showAmount": "הצג סכום (₪)",
+    "showEarlierMonths": "הצג חודשים קודמים ({{count}})",
+    "showLess": "הצג פחות",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
     "topCategory": "קטגוריה מובילה",
     "forecast": {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,9 @@ const CATEGORY_COLORS = [
 ];
 
 type LabelMode = "pct" | "amt";
+
+/** How many recent months the ledger / breakdown views show before "Show earlier months". */
+const DEFAULT_VISIBLE_MONTHS = 12;
 
 /** The three rolling averages + a monthly series, feeding one KPI summary card. */
 type KpiSeries = { avg3: number; avg6: number; avg12: number; series: number[] };
@@ -51,6 +54,9 @@ export function IncomeExpensesCard() {
   const { isDemoMode } = useDemoMode();
   const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
   const [labelMode, setLabelMode] = useState<LabelMode>("pct");
+  const [visibleMonths, setVisibleMonths] = useState(DEFAULT_VISIBLE_MONTHS);
+  const showMore = () => setVisibleMonths((v) => v + DEFAULT_VISIBLE_MONTHS);
+  const showLess = () => setVisibleMonths(DEFAULT_VISIBLE_MONTHS);
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
   const [excludeRefunds, setExcludeRefunds] = useState(false);
@@ -180,7 +186,7 @@ export function IncomeExpensesCard() {
 
           {incomeView === "overview" && (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <LedgerView rows={incomeOutcome ?? []} />
+              <LedgerView rows={incomeOutcome ?? []} limit={visibleMonths} onShowMore={showMore} onShowLess={showLess} />
             </div>
           )}
           {incomeView === "by_source" && (
@@ -190,6 +196,9 @@ export function IncomeExpensesCard() {
                   rows={incomeBySourceData.map((d) => ({ month: d.month, values: d.sources }))}
                   palette={CHART_COLORS}
                   labelMode={labelMode}
+                  limit={visibleMonths}
+                  onShowMore={showMore}
+                  onShowLess={showLess}
                 />
               ) : (
                 <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noIncomeSourceData")}</p>
@@ -204,6 +213,9 @@ export function IncomeExpensesCard() {
                   palette={CATEGORY_COLORS}
                   labelMode={labelMode}
                   sortSeries
+                  limit={visibleMonths}
+                  onShowMore={showMore}
+                  onShowLess={showLess}
                 />
               ) : (
                 <p className="text-[var(--text-muted)]">{t("common.noData")}</p>
@@ -360,14 +372,26 @@ function Sparkline({ series, color, width = 84, height = 32 }: { series: number[
  * magnitudes stay comparable; the exact ₪ sits on every bar so nothing needs a
  * hover. Vertical layout keeps the month labels always visible (no bottom axis).
  */
-function LedgerView({ rows }: { rows: { month: string; income: number; expenses: number }[] }) {
+function LedgerView({
+  rows,
+  limit,
+  onShowMore,
+  onShowLess,
+}: {
+  rows: { month: string; income: number; expenses: number }[];
+  limit: number;
+  onShowMore: () => void;
+  onShowLess: () => void;
+}) {
   const { t } = useTranslation();
   if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
 
-  // Robust scale so one outlier month doesn't squash the rest to slivers.
+  // Robust scale over the FULL history so bar widths don't shift when the user
+  // expands earlier months; only the *displayed* rows are capped to `limit`.
   const scaleMax = robustMax(rows.flatMap((d) => [d.income, Math.abs(d.expenses)]));
   const width = (v: number) => `${Math.min(Math.max((Math.abs(v) / scaleMax) * 100, 2), 100)}%`;
   const lastMonth = rows[rows.length - 1]?.month;
+  const visible = rows.slice(-limit).reverse();
 
   return (
     <div className="min-w-[300px]">
@@ -380,7 +404,7 @@ function LedgerView({ rows }: { rows: { month: string; income: number; expenses:
         <div>{t("dashboard.expenses")}</div>
         <div className="text-end">{t("dashboard.ledgerNet")}</div>
       </div>
-      {rows.slice().reverse().map((d) => {
+      {visible.map((d) => {
         const net = d.income - Math.abs(d.expenses);
         const isCurrent = d.month === lastMonth;
         const expenseColor = d.expenses < 0 ? EXPENSE_LIGHT : EXPENSE_COLOR;
@@ -434,6 +458,7 @@ function LedgerView({ rows }: { rows: { month: string; income: number; expenses:
           </div>
         );
       })}
+      <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
     </div>
   );
 }
@@ -452,11 +477,17 @@ function CompositionView({
   palette,
   labelMode,
   sortSeries = false,
+  limit,
+  onShowMore,
+  onShowLess,
 }: {
   rows: { month: string; values: Record<string, number> }[];
   palette: string[];
   labelMode: LabelMode;
   sortSeries?: boolean;
+  limit: number;
+  onShowMore: () => void;
+  onShowLess: () => void;
 }) {
   // Stable series order + colour, shared by the legend and every row so a
   // category keeps its colour month to month.
@@ -465,9 +496,11 @@ function CompositionView({
   const colorOf = (name: string) => palette[series.indexOf(name) % palette.length];
 
   const totalOf = (v: Record<string, number>) => series.reduce((s, name) => s + (v[name] || 0), 0);
-  // Robust scale for the magnitude meter so an outlier month doesn't flatten it.
+  // Robust meter scale over the FULL history so widths stay stable across "Show
+  // earlier months"; only the *displayed* rows are capped to `limit`.
   const meterMax = robustMax(rows.map((d) => totalOf(d.values)));
   const lastMonth = rows[rows.length - 1]?.month;
+  const visible = rows.slice(-limit).reverse();
 
   // amounts need more room than a "42%" — raise the label threshold accordingly.
   const threshold = labelMode === "amt" ? 16 : 11;
@@ -482,7 +515,7 @@ function CompositionView({
           </span>
         ))}
       </div>
-      {rows.slice().reverse().map((d) => {
+      {visible.map((d) => {
         const total = totalOf(d.values);
         const isCurrent = d.month === lastMonth;
         return (
@@ -530,6 +563,50 @@ function CompositionView({
           </div>
         );
       })}
+      <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
+    </div>
+  );
+}
+
+/**
+ * "Show earlier months" / "Show less" control shown under a capped month list.
+ * Hidden entirely when everything already fits in the default window.
+ */
+function MonthPager({
+  total,
+  visible,
+  onShowMore,
+  onShowLess,
+}: {
+  total: number;
+  visible: number;
+  onShowMore: () => void;
+  onShowLess: () => void;
+}) {
+  const { t } = useTranslation();
+  const hasMore = total > visible;
+  const canCollapse = visible > DEFAULT_VISIBLE_MONTHS;
+  if (!hasMore && !canCollapse) return null;
+  return (
+    <div className="flex items-center justify-center gap-4 pt-3 pb-1">
+      {hasMore && (
+        <button
+          onClick={onShowMore}
+          className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
+        >
+          <ChevronDown size={14} />
+          {t("dashboard.showEarlierMonths", { count: total - visible })}
+        </button>
+      )}
+      {canCollapse && (
+        <button
+          onClick={onShowLess}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text)]"
+        >
+          <ChevronUp size={14} />
+          {t("dashboard.showLess")}
+        </button>
+      )}
     </div>
   );
 }

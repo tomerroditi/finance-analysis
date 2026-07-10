@@ -207,6 +207,8 @@
     "ledgerNet": "Net",
     "showShare": "Show share (%)",
     "showAmount": "Show amount (₪)",
+    "showEarlierMonths": "Show earlier months ({{count}})",
+    "showLess": "Show less",
     "noIncomeSourceData": "No income source data available.",
     "topCategory": "Top Category",
     "forecast": {
