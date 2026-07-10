@@ -519,6 +519,7 @@
     "addRule": "הוסף כלל",
     "remainingAmount": "נותרו {{amount}}",
     "overByAmount": "חריגה של {{amount}}",
+    "netRefund": "זיכוי נטו של {{amount}}",
     "spendOverTime": "הוצאות לאורך זמן",
     "spendOverTimeSubtitle": "הוצאה לכל חודש",
     "spendOverTimeEmpty": "אין הוצאות שנרשמו עדיין",

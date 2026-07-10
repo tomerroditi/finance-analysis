@@ -519,6 +519,7 @@
     "addRule": "Add Rule",
     "remainingAmount": "{{amount}} remaining",
     "overByAmount": "{{amount}} over",
+    "netRefund": "{{amount}} net refund",
     "spendOverTime": "Spend Over Time",
     "spendOverTimeSubtitle": "Spent per month",
     "spendOverTimeEmpty": "No spending recorded yet",

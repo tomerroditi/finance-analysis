@@ -33,7 +33,12 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
   children,
 }) => {
   const { t } = useTranslation();
-  const spent = Math.abs(current);
+  // `current` is the signed net for the period: positive = net spend,
+  // negative = net refund (refunds exceeded spend). A net refund is not
+  // spending — clamp to 0 for the bar / over-budget logic so a refund can
+  // never fill the bar or read as "over budget".
+  const isNetRefund = current < 0;
+  const spent = Math.max(current, 0);
   const percent =
     total > 0 ? Math.min((spent / total) * 100, 100) : spent > 0 ? 100 : 0;
   const over = spent > total && total > 0;
@@ -48,8 +53,9 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
   const dotColor = barColor;
 
   const remaining = total - spent;
-  const hint =
-    total > 0
+  const hint = isNetRefund
+    ? t("budget.netRefund", { amount: formatCurrency(Math.abs(current)) })
+    : total > 0
       ? over
         ? t("budget.overByAmount", { amount: formatCurrency(Math.abs(remaining)) })
         : t("budget.remainingAmount", { amount: formatCurrency(remaining) })
@@ -82,7 +88,7 @@ export const BudgetRuleRow: React.FC<BudgetRuleRowProps> = ({
           </div>
 
           <span className="font-bold font-mono text-xs md:text-sm whitespace-nowrap shrink-0" dir="ltr">
-            {formatCurrency(spent)}{" "}
+            {formatCurrency(current)}{" "}
             <span className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal">
               / {formatCurrency(total)}
             </span>
