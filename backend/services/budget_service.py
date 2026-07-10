@@ -848,6 +848,60 @@ class MonthlyBudgetService(BudgetService):
 
         self.add_rule(name, amount, category, tags, month, year)
 
+    def update_rule(self, id_: int, **fields):
+        """Update a monthly rule, guarding edits that would claim a yearly-owned tag.
+
+        The ``PUT /budget/rules/{id}`` route is shared between monthly and
+        project rules (both are edited through the same ``rule_id``), so this
+        loads the target row through the base, unfiltered
+        ``BudgetService.get_all_rules`` — ``self.get_all_rules()`` here would
+        be pre-filtered to ``period_type == "monthly"`` and silently miss a
+        project rule's id.
+
+        Only runs the conflict check when the row being edited is itself a
+        monthly rule (non-null ``year``) outside the ``Total Budget``
+        category — mirroring the guard in :meth:`create_rule`. Project rules
+        (``year`` is ``NaN``) and edits that never touch ``category``/``tags``
+        fall straight through to the base update as a no-op.
+
+        Parameters
+        ----------
+        id_ : int
+            ID of the budget rule to update.
+        **fields
+            Fields to update; see ``BudgetService.update_rule``.
+
+        Raises
+        ------
+        ValueError
+            If the edit would claim a tag already owned by a yearly rule for
+            the same year.
+        """
+        all_rules = BudgetService.get_all_rules(self)
+        if not all_rules.empty:
+            row = all_rules.loc[all_rules[ID] == id_]
+            if not row.empty:
+                row = row.iloc[0]
+                year = row[YEAR]
+                category = fields.get(CATEGORY, row[CATEGORY])
+                if pd.notnull(year) and category != TOTAL_BUDGET:
+                    tags = fields.get(TAGS, row[TAGS])
+                    parsed_tags = (
+                        tags.split(";") if isinstance(tags, str) else list(tags)
+                    )
+                    conflicts = self.find_conflicting_tags(
+                        category, parsed_tags, int(year), PERIOD_YEARLY,
+                        exclude_rule_id=id_,
+                    )
+                    if conflicts:
+                        joined = ", ".join(conflicts)
+                        raise ValueError(
+                            f"{joined} is already used by your yearly budget for "
+                            f"{int(year)}. A tag can't be in both for the same year."
+                        )
+
+        BudgetService.update_rule(self, id_, **fields)
+
     def get_monthly_analysis(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> dict:
@@ -904,7 +958,7 @@ class MonthlyBudgetService(BudgetService):
             year, month
         )
 
-        skipped_yearly = getattr(self, "_auto_fill_skipped", [])
+        skipped_yearly = sorted(set(getattr(self, "_auto_fill_skipped", [])))
 
         return {
             "rules": view if view else [],
@@ -1927,5 +1981,5 @@ class YearlyBudgetService(BudgetService):
             "summary": self.get_year_summary(year),
             "alerts": self.get_alerts(year),
             "carried_from": carried_from,
-            "skipped_conflicts": skipped_conflicts,
+            "skipped_conflicts": sorted(set(skipped_conflicts)),
         }

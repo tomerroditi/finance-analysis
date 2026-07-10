@@ -16,6 +16,7 @@ from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
+    YearlyBudgetService,
 )
 
 router = APIRouter()
@@ -31,6 +32,21 @@ class BudgetRuleCreate(BaseModel):
 
 
 class BudgetRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    tags: Optional[str | List[str]] = None
+
+
+class YearlyRuleCreate(BaseModel):
+    name: str
+    amount: float
+    category: str
+    tags: str | List[str]
+    year: int
+
+
+class YearlyRuleUpdate(BaseModel):
     name: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
@@ -85,11 +101,20 @@ def create_budget_rule(
 def update_budget_rule(
     rule_id: int, rule: BudgetRuleUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Update a budget rule."""
-    service = BudgetService(db)
+    """Update a budget rule.
+
+    This route is shared between monthly and project rules (both are edited
+    through the same ``rule_id``), so it uses ``MonthlyBudgetService`` — its
+    ``update_rule`` override guards monthly edits against claiming a
+    yearly-owned tag and is a no-op passthrough for project rules.
+    """
+    service = MonthlyBudgetService(db)
     updates = {k: v for k, v in rule.model_dump().items() if v is not None}
-    service.update_rule(rule_id, **updates)
-    return {"status": "success"}
+    try:
+        service.update_rule(rule_id, **updates)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/rules/{rule_id}")
@@ -222,6 +247,96 @@ def get_month_alerts(
     service = MonthlyBudgetService(db)
     alerts = service.get_alerts(year, month, warning_threshold=threshold)
     return {"year": year, "month": month, "alerts": alerts}
+
+
+# --- Yearly Budget Endpoints ---
+
+
+@router.get("/yearly/{year}")
+def get_yearly_view(
+    year: int,
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return the yearly budget view (rule rows) for a calendar year."""
+    service = YearlyBudgetService(db)
+    view = service.get_yearly_budget_view(year, include_split_parents)
+    return {"rules": view if view else []}
+
+
+@router.get("/yearly/{year}/analysis")
+def get_yearly_analysis(
+    year: int,
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return view + computed roll-up + alerts + carry-forward report for a year."""
+    return YearlyBudgetService(db).get_yearly_analysis(year, include_split_parents)
+
+
+@router.post("/yearly/rules")
+def create_yearly_rule(
+    rule: YearlyRuleCreate, db: Session = Depends(get_database)
+) -> dict[str, str]:
+    """Create a yearly budget rule (409-style conflicts surface as 400)."""
+    service = YearlyBudgetService(db)
+    try:
+        service.create_rule(rule.name, rule.amount, rule.category, rule.tags, rule.year)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/yearly/rules/{rule_id}")
+def update_yearly_rule(
+    rule_id: int, rule: YearlyRuleUpdate, db: Session = Depends(get_database)
+) -> dict[str, str]:
+    """Update a yearly budget rule."""
+    service = YearlyBudgetService(db)
+    updates = {k: v for k, v in rule.model_dump().items() if v is not None}
+    try:
+        service.update_rule(rule_id, **updates)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/yearly/rules/{rule_id}")
+def delete_yearly_rule(
+    rule_id: int, db: Session = Depends(get_database)
+) -> dict[str, str]:
+    """Delete a yearly budget rule."""
+    YearlyBudgetService(db).delete_rule(rule_id)
+    return {"status": "success"}
+
+
+@router.post("/yearly/{year}/copy")
+def copy_previous_year_rules(
+    year: int, db: Session = Depends(get_database)
+) -> dict[str, Any]:
+    """Force-copy the latest prior year's yearly rules into ``year``."""
+    service = YearlyBudgetService(db)
+    # Clear the guard that makes carry-forward a no-op when the year has rules
+    # is intentional here: /copy is the explicit user action. Delete existing
+    # then carry forward.
+    existing = service.get_year_rules(year)
+    for _, r in existing.iterrows():
+        service.delete_rule(int(r["id"]))
+    result = service.auto_carry_forward(year)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No prior year rules to copy.")
+    return {"status": "success", **result}
+
+
+@router.get("/yearly/alerts/{year}")
+def get_yearly_alerts(
+    year: int,
+    threshold: float = Query(0.8, ge=0.0, le=1.0),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return yearly budget alerts for a calendar year."""
+    alerts = YearlyBudgetService(db).get_alerts(year, warning_threshold=threshold)
+    return {"year": year, "alerts": alerts}
 
 
 # --- Project Endpoints ---

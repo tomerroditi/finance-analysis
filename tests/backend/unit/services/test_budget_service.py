@@ -2059,3 +2059,119 @@ class TestMonthlyYearlyIntegration:
         )
         analysis = service.get_monthly_analysis(2024, 1)
         assert analysis["skipped_yearly_conflicts"] == []
+
+
+class TestMonthlyUpdateRuleYearlyConflict:
+    """MonthlyBudgetService.update_rule blocks EDITs that claim a yearly-owned tag.
+
+    Mirrors the CREATE-time guard in ``create_rule`` — mutual exclusion must be
+    enforced on both create and edit, in both directions.
+    """
+
+    def test_edit_adding_yearly_conflicting_tag_raises(self, db_session):
+        """Adding a tag already claimed by a yearly rule for the same year is rejected."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        with pytest.raises(ValueError, match="Hotels"):
+            service.update_rule(travel_rule_id, tags=["Car rental", "Hotels"])
+
+        # Rule is untouched — the failed edit didn't partially apply.
+        unchanged = service.get_month_rules(2026, 5)
+        travel_rule = unchanged.loc[unchanged[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Car rental"]
+
+    def test_edit_excludes_self_from_conflict_check(self, db_session):
+        """Editing a monthly rule's own already-owned tag does not self-conflict."""
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        # Renaming/re-amounting the same rule (tags unchanged) must not raise.
+        service.update_rule(travel_rule_id, amount=750.0, tags=["Car rental"])
+        updated = service.get_month_rules(2026, 5)
+        travel_rule = updated.loc[updated[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[AMOUNT] == 750.0
+
+    def test_edit_total_budget_category_bypasses_check(self, db_session):
+        """The Total Budget category is exempt from the yearly-conflict guard on edit."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        total_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Total Budget", ID]
+        )
+        # Must not raise even though "all_tags" would otherwise "conflict" with everything.
+        service.update_rule(total_rule_id, amount=12000.0)
+
+    def test_edit_project_rule_is_noop_for_guard(self, db_session):
+        """Project rules (year is None) skip the yearly-conflict guard entirely.
+
+        The PUT /budget/rules/{id} route is shared between monthly and project
+        rules, so ``MonthlyBudgetService.update_rule`` may be invoked with a
+        project rule's id. It must fall through to a plain delegate.
+        """
+        project_service = ProjectBudgetService(db_session)
+        project_service.create_project("Wedding", 10000.0)
+        rules = project_service.get_all_rules()
+        total_rule_id = int(
+            rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])].iloc[0][ID]
+        )
+        # Must not raise (no year -> guard short-circuits) and must still update,
+        # even though the service used is MonthlyBudgetService (the route's choice).
+        MonthlyBudgetService(db_session).update_rule(total_rule_id, amount=15000.0)
+        updated = project_service.get_all_rules()
+        updated_rule = updated.loc[updated[ID] == total_rule_id].iloc[0]
+        assert updated_rule[AMOUNT] == 15000.0
+
+    def test_edit_without_touching_tags_or_category_unaffected(self, db_session):
+        """Editing only the amount/name (tags/category untouched) is unaffected by the guard."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        service.update_rule(travel_rule_id, name="Travel M2", amount=600.0)
+        updated = service.get_month_rules(2026, 5)
+        travel_rule = updated.loc[updated[NAME] == "Travel M2"].iloc[0]
+        assert travel_rule[AMOUNT] == 600.0
+
+
+class TestMonthlySkippedYearlyConflictsDedup:
+    """skipped_yearly_conflicts must not repeat a tag skipped across multiple months."""
+
+    def test_auto_fill_skip_deduped_across_gap_months(self, db_session, monkeypatch):
+        """A tag stripped in two separate auto-filled months appears only once."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=8, year=2026)
+
+        fake_today = date_cls(2026, 10, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            # Gap fills Sept and Oct 2026 — "Hotels" conflicts with the 2026
+            # yearly rule in both fill iterations.
+            analysis = service.get_monthly_analysis(2026, 10)
+
+        assert analysis["skipped_yearly_conflicts"] == ["Hotels"]

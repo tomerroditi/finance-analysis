@@ -156,3 +156,29 @@ class TestYearlyCarryForward:
         carried = svc.get_year_rules(2026)
         trips = carried.loc[carried["name"] == "Trips"].iloc[0]
         assert trips["tags"] == ["Hotels"]  # Flights stripped
+
+
+class TestYearlyAnalysisSkippedConflictsDedup:
+    """get_yearly_analysis must not repeat a tag skipped by more than one carried rule."""
+
+    def test_skipped_conflicts_deduped_across_rules(self, db_session, monkeypatch):
+        """Two prior-year rules skipping the same tag report it only once."""
+        from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
+        import backend.services.budget_service as mod
+
+        svc = YearlyBudgetService(db_session)
+        # Two independent 2025 yearly rules both touch Travel/Hotels — both will
+        # collide with the 2026 monthly rule below when carried forward.
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2025)
+        svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2025)
+
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Travel M", 500.0, "Travel", ["Hotels"], 3, 2026
+        )
+
+        monkeypatch.setattr(mod, "_today", lambda: date(2026, 1, 1))
+        analysis = svc.get_yearly_analysis(2026)
+        assert analysis["skipped_conflicts"] == ["Hotels"]
