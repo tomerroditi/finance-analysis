@@ -104,4 +104,23 @@ test.describe("Income & Expenses dashboard card", () => {
     // Toggle is present here too and defaults to share.
     await expect(card.getByRole("button", { name: "Show amount (₪)" })).toBeVisible();
   });
+
+  test("KPI cards summarise income and expenses with period labels", async ({ page }) => {
+    const card = await openCard(page);
+
+    const income = card.getByTestId("kpi-income");
+    const expenses = card.getByTestId("kpi-expense");
+    await expect(income).toBeVisible();
+    await expect(expenses).toBeVisible();
+
+    // Each card leads with a 12-month average and keeps the 3M/6M windows.
+    await expect(income.getByText("12-mo avg")).toBeVisible();
+    await expect(income.getByText("3M", { exact: true })).toBeVisible();
+    await expect(income.getByText("6M", { exact: true })).toBeVisible();
+
+    // Income averages come straight from the loaded series — a real thousands
+    // figure (e.g. "30,321"), not a zero placeholder. (Currency uses an NBSP
+    // before ₪, so match just the grouped number.)
+    await expect(income).toContainText(/\d,\d{3}/);
+  });
 });

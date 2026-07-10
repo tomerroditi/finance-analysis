@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Calculator } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,15 @@ const CATEGORY_COLORS = [
 ];
 
 type LabelMode = "pct" | "amt";
+
+/** The three rolling averages + a monthly series, feeding one KPI summary card. */
+type KpiSeries = { avg3: number; avg6: number; avg12: number; series: number[] };
+
+/** Mean of a numeric field over a slice of months (0 when empty). */
+function avgOf(rows: { income: number }[] | undefined): number {
+  if (!rows || rows.length === 0) return 0;
+  return rows.reduce((s, d) => s + d.income, 0) / rows.length;
+}
 
 /**
  * Robust upper bound for bar scaling: the p-th percentile of the positive
@@ -70,62 +79,20 @@ export function IncomeExpensesCard() {
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-3">
-            {(() => {
-              const recent3 = incomeOutcome?.slice(-3) || [];
-              const recent6 = incomeOutcome?.slice(-6) || [];
-              const recent12 = incomeOutcome?.slice(-12) || [];
-              const avgIncome3 = recent3.length ? recent3.reduce((s, d) => s + d.income, 0) / recent3.length : 0;
-              const avgIncome6 = recent6.length ? recent6.reduce((s, d) => s + d.income, 0) / recent6.length : 0;
-              const avgIncome12 = recent12.length ? recent12.reduce((s, d) => s + d.income, 0) / recent12.length : 0;
-              return (
-                <>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome3Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(avgIncome3)}</p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome6Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(avgIncome6)}</p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgIncome12Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(avgIncome12)}</p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses3Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_3_months ?? 0)}</p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses6Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_6_months ?? 0)}</p>
-                    </div>
-                  </div>
-                  <div className="bg-[var(--surface-light)] rounded-xl px-3 py-2 flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400"><Calculator size={14} /></div>
-                    <div>
-                      <p className="text-[var(--text-muted)] text-[10px]">{t("dashboard.avgExpenses12Months")}</p>
-                      <p className="text-sm font-bold">{formatCurrency(monthlyExpenses?.avg_12_months ?? 0)}</p>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
+          <KpiCards
+            income={{
+              avg3: avgOf(incomeOutcome?.slice(-3)),
+              avg6: avgOf(incomeOutcome?.slice(-6)),
+              avg12: avgOf(incomeOutcome?.slice(-12)),
+              series: (incomeOutcome ?? []).slice(-12).map((d) => d.income),
+            }}
+            expenses={{
+              avg3: monthlyExpenses?.avg_3_months ?? 0,
+              avg6: monthlyExpenses?.avg_6_months ?? 0,
+              avg12: monthlyExpenses?.avg_12_months ?? 0,
+              series: (incomeOutcome ?? []).slice(-12).map((d) => Math.abs(d.expenses)),
+            }}
+          />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
             <div className="flex flex-wrap gap-2">
@@ -246,6 +213,143 @@ export function IncomeExpensesCard() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The two KPI summary cards above the chart — one for income, one for expenses.
+ * Each consolidates the 3/6/12-month rolling averages (12-month leads, 3M/6M
+ * beside it), a 12-month sparkline for shape, and a trend chip comparing the
+ * recent 3-month average to the 12-month baseline.
+ */
+function KpiCards({ income, expenses }: { income: KpiSeries; expenses: KpiSeries }) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:gap-3 mb-3">
+      <KpiCard label={t("dashboard.income")} kind="income" data={income} color={INCOME_COLOR} />
+      <KpiCard label={t("dashboard.expenses")} kind="expense" data={expenses} color={EXPENSE_COLOR} />
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  kind,
+  data,
+  color,
+}: {
+  label: string;
+  kind: "income" | "expense";
+  data: KpiSeries;
+  color: string;
+}) {
+  const { t } = useTranslation();
+  const Icon = kind === "income" ? TrendingUp : TrendingDown;
+  const gradient =
+    kind === "income"
+      ? "linear-gradient(160deg, rgba(16,185,129,0.14), transparent 62%)"
+      : "linear-gradient(160deg, rgba(244,63,94,0.14), transparent 62%)";
+  return (
+    <div
+      data-testid={`kpi-${kind}`}
+      className="rounded-xl border border-[var(--surface-light)] p-3 md:p-3.5"
+      style={{ background: gradient }}
+    >
+      <div className="flex items-center gap-2 mb-2.5">
+        <div
+          className="p-1.5 rounded-lg"
+          style={{ background: kind === "income" ? "rgba(16,185,129,0.16)" : "rgba(244,63,94,0.16)", color }}
+        >
+          <Icon size={15} />
+        </div>
+        <span className="text-xs font-bold text-[var(--text-muted)]">{label}</span>
+        <div className="flex-1" />
+        <TrendChip value={data.avg3} baseline={data.avg12} kind={kind} title={t("dashboard.avgTrendTitle")} />
+      </div>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-xl md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg12)}</div>
+          <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg12mo")}</div>
+        </div>
+        <Sparkline series={data.series} color={color} />
+      </div>
+      <div className="flex gap-4 mt-2.5 pt-2.5 border-t border-[var(--surface-light)]">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo3")}</span>
+          <span className="text-xs font-bold tabular-nums">{formatCurrency(data.avg3)}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo6")}</span>
+          <span className="text-xs font-bold tabular-nums">{formatCurrency(data.avg6)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Trend pill comparing a recent average to a baseline. "Good" is direction-aware:
+ * rising income is good, falling expenses is good — both render green.
+ */
+function TrendChip({
+  value,
+  baseline,
+  kind,
+  title,
+}: {
+  value: number;
+  baseline: number;
+  kind: "income" | "expense";
+  title: string;
+}) {
+  const d = baseline ? ((value - baseline) / baseline) * 100 : 0;
+  const up = d >= 0.5;
+  const down = d <= -0.5;
+  const good = kind === "expense" ? down : up;
+  const bad = kind === "expense" ? up : down;
+  const Icon = up ? ArrowUp : down ? ArrowDown : Minus;
+  const cls = good
+    ? "text-emerald-400 bg-emerald-500/15"
+    : bad
+      ? "text-rose-400 bg-rose-500/15"
+      : "text-slate-400 bg-[var(--surface-light)]";
+  return (
+    <span
+      title={title}
+      dir="ltr"
+      className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums ${cls}`}
+    >
+      <Icon size={11} strokeWidth={2.5} />
+      {Math.abs(d).toFixed(1)}%
+    </span>
+  );
+}
+
+/** Minimal filled sparkline (12-month trend) — no axes, just the shape + a last-point dot. */
+function Sparkline({ series, color, width = 84, height = 32 }: { series: number[]; color: string; width?: number; height?: number }) {
+  const clean = series.filter((v) => Number.isFinite(v));
+  // Drop trailing zero-activity months (typically the current, still-partial
+  // month) so the line doesn't nose-dive to 0 every time a new month starts.
+  while (clean.length > 2 && clean[clean.length - 1] === 0) clean.pop();
+  if (clean.length < 2) return null;
+  const pad = 3;
+  const mx = Math.max(...clean);
+  const mn = Math.min(...clean);
+  const rng = mx - mn || 1;
+  const pts = clean.map((v, i) => {
+    const x = pad + (i / (clean.length - 1)) * (width - 2 * pad);
+    const y = height - pad - ((v - mn) / rng) * (height - 2 * pad);
+    return [x, y] as const;
+  });
+  const line = pts.map((p) => p.join(",")).join(" ");
+  const area = `${pad},${height - pad} ${line} ${width - pad},${height - pad}`;
+  const last = pts[pts.length - 1];
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="flex-none" aria-hidden="true">
+      <polygon points={area} fill={color} opacity={0.12} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r={2.4} fill={color} />
+    </svg>
   );
 }
 
