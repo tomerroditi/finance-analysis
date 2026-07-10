@@ -227,15 +227,14 @@ class BudgetService:
         if others.empty:
             return []
 
-        incoming_all = self._is_all_tags(tags)
+        if self._is_all_tags(tags):
+            # Incoming claims the whole category; any existing rule collides.
+            return [ALL_TAGS]
+
         conflicts: set[str] = set()
         for _, other in others.iterrows():
             other_tags = other[TAGS]
-            other_all = self._is_all_tags(other_tags)
-            if incoming_all:
-                # Incoming claims the whole category; any existing rule collides.
-                return [ALL_TAGS]
-            if other_all:
+            if self._is_all_tags(other_tags):
                 conflicts.update(tags)
             else:
                 conflicts.update(set(tags) & set(other_tags))
