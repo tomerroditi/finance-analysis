@@ -365,7 +365,11 @@ export function RecentTransactionsFeed({
                               }}
                               placeholder={t("common.select")}
                               size="sm"
-                              onCreateNew={async (name) => { await createCategory(name); }}
+                              onCreateNew={async (name) => {
+                                const formatted = await createCategory(name);
+                                setStagedCategory(formatted);
+                                setStagedTag("");
+                              }}
                             />
                           </div>
                           <div className="flex-1 min-w-0">
@@ -382,7 +386,10 @@ export function RecentTransactionsFeed({
                               size="sm"
                               onCreateNew={
                                 stagedCategory
-                                  ? async (name) => { await createTag(stagedCategory, name); }
+                                  ? async (name) => {
+                                      const formatted = await createTag(stagedCategory, name);
+                                      setStagedTag(formatted);
+                                    }
                                   : undefined
                               }
                             />
