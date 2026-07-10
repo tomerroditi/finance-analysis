@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, X, PenSquare, Trash2 } from "lucide-react";
@@ -7,15 +7,22 @@ import { BudgetProgressBar } from "../BudgetProgressBar";
 import { YearHeader } from "./YearHeader";
 import { YearlySummaryStrip } from "./YearlySummaryStrip";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
+import { useConfirm } from "../../context/DialogContext";
 
 export const YearlyBudgetView: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [modalOpen, setModalOpen] = useState(false);
   const [editRule, setEditRule] = useState<YearlyAnalysis["rules"][number]["rule"] | null>(null);
   const [alertDismissed, setAlertDismissed] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAlertDismissed(false);
+  }, [year]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["yearlyBudget", year],
@@ -86,29 +93,37 @@ export const YearlyBudgetView: React.FC = () => {
                 subLabel={subLabel}
                 actions={
                   <>
-                    <button
-                      onClick={() => {
-                        setEditRule(r);
-                        setModalOpen(true);
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                      title={t("budget.editRule")}
-                      aria-label={t("budget.editRule")}
-                    >
-                      <PenSquare size={16} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(t("budget.yearly.confirmDelete", { name: r.name }))) {
-                          deleteMutation.mutate(r.id);
-                        }
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                      title={t("budget.deleteRule")}
-                      aria-label={t("budget.deleteRule")}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {entry.allow_edit && (
+                      <button
+                        onClick={() => {
+                          setEditRule(r);
+                          setModalOpen(true);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
+                        title={t("budget.editRule")}
+                        aria-label={t("budget.editRule")}
+                      >
+                        <PenSquare size={16} />
+                      </button>
+                    )}
+                    {entry.allow_delete && (
+                      <button
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: t("budget.deleteRule"),
+                            message: t("budget.yearly.confirmDelete", { name: r.name }),
+                            confirmLabel: t("common.delete"),
+                            isDestructive: true,
+                          });
+                          if (ok) deleteMutation.mutate(r.id);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
+                        title={t("budget.deleteRule")}
+                        aria-label={t("budget.deleteRule")}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </>
                 }
               />
