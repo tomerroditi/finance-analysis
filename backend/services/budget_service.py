@@ -593,6 +593,7 @@ class MonthlyBudgetService(BudgetService):
             rules were found and copied, or ``None`` if the prior month
             has no rules.
         """
+        self._last_copy_skipped = []
         last_month = month - 1 if month != 1 else 12
         last_year = year if month != 1 else year - 1
 
@@ -605,15 +606,30 @@ class MonthlyBudgetService(BudgetService):
 
         self.delete_rules_by_month(year, month)
 
+        skipped: list[str] = []
         for _, rule in rules_to_copy.iterrows():
+            tags = rule[TAGS]
+            # Only run the conflict check when there are tags to check — a
+            # rule with no tags (e.g. Total Budget, or a legacy rule with
+            # tags=None) always gets copied as-is, matching prior behavior.
+            if rule[CATEGORY] != TOTAL_BUDGET and tags:
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], tags, year, PERIOD_YEARLY
+                )
+            else:
+                kept, dropped = tags, []
+            skipped.extend(dropped)
+            if tags and not kept:
+                continue
             self.add_rule(
                 name=rule[NAME],
                 amount=rule[AMOUNT],
                 category=rule[CATEGORY],
-                tags=rule[TAGS],
+                tags=kept,
                 month=month,
                 year=year,
             )
+        self._last_copy_skipped = skipped
 
         return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
 
@@ -652,6 +668,7 @@ class MonthlyBudgetService(BudgetService):
         snapshot taken before the lock, so we re-read it fresh inside the lock
         to observe rules a request that won the race already committed.
         """
+        self._auto_fill_skipped = []
         with _auto_fill_lock:
             # Drop this session's read snapshot and re-read committed state so a
             # request that lost the race sees the month already filled.
@@ -706,6 +723,7 @@ class MonthlyBudgetService(BudgetService):
         source_rules = self.get_month_rules(source_year, source_month, budget_rules)
 
         # Iterate from source+1 to current month, filling empty months
+        skipped: list[str] = list(getattr(self, "_auto_fill_skipped", []))
         y, m = source_year, source_month
         while True:
             # Advance one month
@@ -719,11 +737,24 @@ class MonthlyBudgetService(BudgetService):
             month_rules = self.get_month_rules(y, m, budget_rules)
             if month_rules.empty:
                 for _, rule in source_rules.iterrows():
+                    tags = rule[TAGS]
+                    # Only run the conflict check when there are tags to
+                    # check — a rule with no tags always gets copied as-is,
+                    # matching prior behavior.
+                    if rule[CATEGORY] != TOTAL_BUDGET and tags:
+                        kept, dropped = self.strip_conflicting_tags(
+                            rule[CATEGORY], tags, y, PERIOD_YEARLY
+                        )
+                    else:
+                        kept, dropped = tags, []
+                    skipped.extend(dropped)
+                    if tags and not kept:
+                        continue
                     self.add_rule(
                         name=rule[NAME],
                         amount=rule[AMOUNT],
                         category=rule[CATEGORY],
-                        tags=rule[TAGS],
+                        tags=kept,
                         month=m,
                         year=y,
                     )
@@ -731,6 +762,7 @@ class MonthlyBudgetService(BudgetService):
             if y == current_year and m == current_month:
                 break
 
+        self._auto_fill_skipped = skipped
         source_month_name = calendar.month_name[source_month]
         return f"{source_month_name} {source_year}"
 
@@ -792,9 +824,21 @@ class MonthlyBudgetService(BudgetService):
         Raises
         ------
         ValueError
-            If validation fails (invalid inputs or budget cap exceeded).
+            If validation fails (invalid inputs or budget cap exceeded), or if
+            any tag is already claimed by a yearly rule for the same ``year``.
         """
         parsed_tags = tags.split(";") if isinstance(tags, str) else tags
+        if category != TOTAL_BUDGET and year is not None:
+            conflicts = self.find_conflicting_tags(
+                category, parsed_tags, year, PERIOD_YEARLY
+            )
+            if conflicts:
+                joined = ", ".join(conflicts)
+                raise ValueError(
+                    f"{joined} is already used by your yearly budget for {year}. "
+                    f"A tag can't be in both for the same year."
+                )
+
         budget_rules = self.get_all_rules()
         is_valid, msg = self.validate_rule_inputs(
             budget_rules, name, category, parsed_tags, amount, year, month, None
@@ -833,6 +877,9 @@ class MonthlyBudgetService(BudgetService):
               ``total_expected`` (sum of expected amounts).
             - ``copied_from`` – source month name if rules were auto-filled,
               or ``None``.
+            - ``skipped_yearly_conflicts`` – tag names dropped from an
+              auto-fill copy because they are claimed by a yearly rule for
+              this year.
         """
         copied_from = None
         today = date.today()
@@ -857,6 +904,8 @@ class MonthlyBudgetService(BudgetService):
             year, month
         )
 
+        skipped_yearly = getattr(self, "_auto_fill_skipped", [])
+
         return {
             "rules": view if view else [],
             "project_spending": project_summary,
@@ -865,6 +914,7 @@ class MonthlyBudgetService(BudgetService):
                 "total_expected": budget_adjustment,
             },
             "copied_from": copied_from,
+            "skipped_yearly_conflicts": skipped_yearly,
         }
 
     def _apply_month_overrides(self, expenses: pd.DataFrame) -> pd.DataFrame:
@@ -928,6 +978,29 @@ class MonthlyBudgetService(BudgetService):
         expenses["budget_month"] = budget_month.astype(int)
         return expenses
 
+    def _exclude_yearly_claimed(self, month_data: pd.DataFrame, year: int) -> pd.DataFrame:
+        """Drop transactions whose (category, tag) is owned by a yearly rule for ``year``.
+
+        Yearly-managed tags are mutually exclusive with monthly rules, so their
+        spend must not leak into the monthly view's per-rule matching or the
+        synthetic "Other Expenses" remainder.
+        """
+        if month_data.empty:
+            return month_data
+        yearly_rules = YearlyBudgetService(self.db).get_year_rules(year)
+        if yearly_rules.empty:
+            return month_data
+        cat_col = TransactionsTableFields.CATEGORY.value
+        tag_col = TransactionsTableFields.TAG.value
+        mask = pd.Series(False, index=month_data.index)
+        for _, rule in yearly_rules.iterrows():
+            in_cat = month_data[cat_col] == rule[CATEGORY]
+            if self._is_all_tags(rule[TAGS]):
+                mask |= in_cat
+            else:
+                mask |= in_cat & month_data[tag_col].isin(rule[TAGS])
+        return month_data.loc[~mask]
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -973,6 +1046,7 @@ class MonthlyBudgetService(BudgetService):
                 (expenses["budget_year"] == year)
                 & (expenses["budget_month"] == month)
             ]
+            month_data = self._exclude_yearly_claimed(month_data, year)
         else:
             month_data = expenses
 

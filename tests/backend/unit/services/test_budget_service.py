@@ -1905,3 +1905,157 @@ class TestPeriodTypeDiscriminator:
         svc.budget_repository.add("M", 10.0, "Food", "Groceries", 5, 2026, period_type="monthly")
         names = list(svc.get_all_rules()["name"])
         assert names == ["Y"]
+
+
+class TestMonthlyYearlyIntegration:
+    """Yearly-managed spend is excluded from the monthly view and mutually blocked."""
+
+    def _seed(self, db_session, date, category, tag, amount):
+        """Seed one bank transaction with the real ORM field shape."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"tx_{date}_{tag}",
+                date=date,
+                provider="p",
+                account_name="a",
+                description="x",
+                amount=amount,
+                category=category,
+                tag=tag,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    def test_yearly_claimed_tag_absent_from_monthly_other_expenses(self, db_session):
+        """A vacation tag under a yearly rule does not appear in monthly Other Expenses."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        # A per-category rule that matches nothing seeded, so the "Other Expenses"
+        # remainder bucket is populated (it only appears when at least one
+        # non-Total-Budget rule exists for the month).
+        MonthlyBudgetService(db_session).create_rule("Placeholder", 100.0, "Transport", ["Gas"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        other = next((e for e in view if e["rule"]["category"] == "Other Expenses"), None)
+        # Only the 500 groceries remains; the 3000 hotels is yearly-managed.
+        assert other is not None and other["current_amount"] == 500.0
+
+    def test_yearly_claimed_tag_excluded_from_total_budget(self, db_session):
+        """Yearly-managed spend also drops out of the monthly Total Budget figure."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        total = next((e for e in view if e["rule"]["category"] == "Total Budget"), None)
+        assert total is not None and total["current_amount"] == 500.0
+
+    def test_monthly_view_unaffected_without_yearly_rules(self, db_session):
+        """No-op guarantee: with zero yearly rules the monthly view is unchanged."""
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        MonthlyBudgetService(db_session).create_rule("Placeholder", 100.0, "Transport", ["Gas"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        other = next((e for e in view if e["rule"]["category"] == "Other Expenses"), None)
+        assert other is not None and other["current_amount"] == 3500.0
+
+    def test_monthly_create_conflict_with_yearly_raises(self, db_session):
+        """A monthly rule reusing a yearly tag for the same year is rejected."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        with pytest.raises(ValueError, match="yearly budget"):
+            MonthlyBudgetService(db_session).create_rule("Hotels M", 1000.0, "Travel", ["Hotels"], 3, 2026)
+
+    def test_monthly_create_total_budget_bypasses_yearly_check(self, db_session):
+        """The Total Budget category is exempt from the yearly-conflict check."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        # Must not raise even though "all_tags" would otherwise "conflict" with everything.
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+
+    def test_copy_last_month_rules_skips_yearly_conflicting_tag(self, db_session):
+        """copy_last_month_rules drops tags claimed by a yearly rule for the target year.
+
+        The source rule lives in Dec 2025 (year 2025) so it never conflicted
+        with the year-2026 yearly rule at creation time; the conflict only
+        surfaces once it's copied forward into 2026.
+        """
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        service.copy_last_month_rules(2026, 1, all_rules)
+
+        jan_rules = service.get_month_rules(2026, 1)
+        travel_rule = jan_rules.loc[jan_rules[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Flights"]
+        assert service._last_copy_skipped == ["Hotels"]
+
+    def test_copy_last_month_rules_skips_whole_rule_when_all_tags_conflict(self, db_session):
+        """If every copied tag conflicts, the rule is skipped entirely (not created empty)."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        service.copy_last_month_rules(2026, 1, all_rules)
+
+        jan_rules = service.get_month_rules(2026, 1)
+        assert "Travel M" not in list(jan_rules[NAME])
+        assert service._last_copy_skipped == ["Hotels"]
+
+    def test_auto_fill_skips_yearly_conflicting_tag_and_reports_it(self, db_session):
+        """auto_fill_empty_months strips yearly-conflicting tags and records the skip."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        # Source is Dec 2025; current month Jan 2026 is a single-month gap so
+        # only one fill iteration runs (avoids double-counting the skip).
+        result = service.auto_fill_empty_months(2026, 1, all_rules)
+
+        assert result is not None
+        jan_rules = service.get_month_rules(2026, 1)
+        travel_rule = jan_rules.loc[jan_rules[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Flights"]
+        assert service._auto_fill_skipped == ["Hotels"]
+
+    def test_get_monthly_analysis_reports_skipped_yearly_conflicts(self, db_session):
+        """get_monthly_analysis surfaces skipped_yearly_conflicts from auto-fill."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        fake_today = date_cls(2026, 1, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            analysis = service.get_monthly_analysis(2026, 1)
+
+        assert analysis["skipped_yearly_conflicts"] == ["Hotels"]
+
+    def test_get_monthly_analysis_skipped_yearly_conflicts_empty_by_default(
+        self, db_session, seed_base_transactions
+    ):
+        """Existing behavior: no yearly rules means an empty skip list, not a missing key."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(
+            name=TOTAL_BUDGET, amount=10000.0, category=TOTAL_BUDGET,
+            tags=[ALL_TAGS], month=1, year=2024,
+        )
+        analysis = service.get_monthly_analysis(2024, 1)
+        assert analysis["skipped_yearly_conflicts"] == []
