@@ -73,6 +73,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Non-expense categories:** Ignore, Salary, Other Income, Investments, Liabilities
 - **Service names:** frontend/API use plural (`banks`, `credit_cards`, `cash`, `manual_investments`)
 - **Tags stored in budgets:** semicolon-separated (`"tag1;tag2;tag3"`)
+- **Budget kinds:** three kinds — monthly, yearly, project — discriminated by `budget_rules.period_type` (explicit column, not inferred from nulls). Yearly rules are per-year category/tag envelopes, mutually exclusive with monthly rules on the same (category, tag) within a year. Demo DB backfills `period_type` in `backend/demo_setup.py`.
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
 
