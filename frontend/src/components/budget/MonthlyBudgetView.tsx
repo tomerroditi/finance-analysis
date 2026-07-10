@@ -262,26 +262,30 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const budgetRules = rules.filter(
     (item: BudgetAnalysisItem) => item.rule.name !== "Total Budget",
   );
+  // A rule's net can be negative when refunds exceed spend for the period.
+  // Clamp to 0 (net spend) so a refund is never counted as overspend or
+  // ranked as the "biggest overspend".
   const onTrackCount = budgetRules.filter(
     (item: BudgetAnalysisItem) =>
-      Math.abs(item.current_amount || 0) <= (item.rule.amount || 0),
+      Math.max(item.current_amount || 0, 0) <= (item.rule.amount || 0),
   ).length;
   const overCount = budgetRules.length - onTrackCount;
   const biggestOverspendItem = budgetRules
     .filter(
       (item: BudgetAnalysisItem) =>
-        item.rule.amount > 0 && Math.abs(item.current_amount || 0) > item.rule.amount,
+        item.rule.amount > 0 &&
+        Math.max(item.current_amount || 0, 0) > item.rule.amount,
     )
     .sort(
       (a: BudgetAnalysisItem, b: BudgetAnalysisItem) =>
-        Math.abs(b.current_amount) / b.rule.amount -
-        Math.abs(a.current_amount) / a.rule.amount,
+        Math.max(b.current_amount, 0) / b.rule.amount -
+        Math.max(a.current_amount, 0) / a.rule.amount,
     )[0];
   const biggestOverspend = biggestOverspendItem
     ? {
         name: biggestOverspendItem.rule.name,
         percentage:
-          Math.abs(biggestOverspendItem.current_amount) /
+          Math.max(biggestOverspendItem.current_amount, 0) /
           biggestOverspendItem.rule.amount,
       }
     : undefined;
@@ -484,7 +488,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           // collapses or expands the per-rule breakdown; a separate "view
           // month transactions" toggle reveals every transaction for the
           // month. Each rule row still expands its own transactions too.
-          const spentT = Math.abs(totalItem.current_amount);
+          const spentT = Math.max(totalItem.current_amount, 0);
           const totalT = totalItem.rule.amount;
           const percentT =
             totalT > 0
