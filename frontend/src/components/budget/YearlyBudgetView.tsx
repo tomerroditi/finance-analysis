@@ -20,6 +20,11 @@ export const YearlyBudgetView: React.FC = () => {
   const [alertDismissed, setAlertDismissed] = useState(false);
 
   useEffect(() => {
+    // Reset the dismissed-alert flag when the selected year changes so a
+    // carry-forward/conflict alert dismissed for one year doesn't stay
+    // hidden after navigating to another. `year` is the only dep and is
+    // stable between renders (no loop) — matches the SelectDropdown
+    // precedent for resetting local UI state on a prop/param change.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAlertDismissed(false);
   }, [year]);

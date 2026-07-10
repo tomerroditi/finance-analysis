@@ -35,6 +35,12 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
 
   useEffect(() => {
     if (isOpen) {
+      // Re-seed the staged form fields (and clear any stale conflict error)
+      // from `editRule` every time the modal opens — this is the "stage
+      // locally, commit on Done" pattern, not a derived-state loop: deps
+      // are `isOpen`/`editRule`, and the writes only happen on the
+      // open transition. Matches the SelectDropdown precedent for
+      // resetting local state when a modal/panel opens.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(editRule?.name ?? "");
       setCategory(editRule?.category ?? "");

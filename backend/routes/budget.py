@@ -314,15 +314,15 @@ def delete_yearly_rule(
 def copy_previous_year_rules(
     year: int, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
-    """Force-copy the latest prior year's yearly rules into ``year``."""
+    """Force-copy the latest prior year's yearly rules into ``year``.
+
+    Unlike the auto-carry-forward used on page load, this explicit user
+    action is allowed to overwrite a non-empty target year. It resolves the
+    source year first — if there is no prior year with yearly rules, nothing
+    is deleted (see ``YearlyBudgetService.force_copy_from_prior_year``).
+    """
     service = YearlyBudgetService(db)
-    # Clear the guard that makes carry-forward a no-op when the year has rules
-    # is intentional here: /copy is the explicit user action. Delete existing
-    # then carry forward.
-    existing = service.get_year_rules(year)
-    for _, r in existing.iterrows():
-        service.delete_rule(int(r["id"]))
-    result = service.auto_carry_forward(year)
+    result = service.force_copy_from_prior_year(year)
     if result is None:
         raise HTTPException(status_code=404, detail="No prior year rules to copy.")
     return {"status": "success", **result}

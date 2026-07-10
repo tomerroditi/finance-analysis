@@ -47,6 +47,14 @@ export const YearlySummaryStrip: React.FC<Props> = ({ summary }) => {
             </>
           )}
         </div>
+        {summary.biggest_overspend && (
+          <p className="text-[10px] sm:text-xs text-rose-400 truncate mt-1" dir="auto">
+            {t("budget.yearly.biggest", {
+              name: summary.biggest_overspend.name,
+              pct: Math.round(summary.biggest_overspend.percentage * 100),
+            })}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1963,6 +1963,57 @@ class YearlyBudgetService(BudgetService):
                 )
             return {"copied_from": source_year, "skipped": skipped}
 
+    def force_copy_from_prior_year(self, year: int) -> Optional[dict]:
+        """Force-copy the latest prior year's yearly rules into ``year``.
+
+        This is the explicit user-triggered "Copy from previous year" action
+        (the ``/yearly/{year}/copy`` route), distinct from
+        ``auto_carry_forward``: it does not gate on ``year`` being the
+        current/future year, and it does not require ``year`` to already be
+        empty — the user may be intentionally overwriting an existing year.
+
+        To avoid data loss, the source year is resolved *first*. Only once a
+        valid prior year with yearly rules is confirmed does this delete
+        ``year``'s existing rules and copy the source rules forward. If no
+        prior year has any yearly rules, nothing is deleted.
+
+        Returns
+        -------
+        dict or None
+            ``{"copied_from": <int year>, "skipped": [<tag>, ...]}`` when
+            rules were copied. ``None`` when there is no prior year with
+            yearly rules to copy from — in that case ``year``'s existing
+            rules (if any) are left untouched.
+        """
+        all_rules = self.get_all_rules()
+        if all_rules.empty:
+            return None
+        prior = all_rules.loc[all_rules[YEAR] < year]
+        if prior.empty:
+            return None
+        source_year = int(prior[YEAR].max())
+        source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+
+        with _auto_fill_lock:
+            self.db.rollback()
+            existing = self.get_year_rules(year)
+            for _, r in existing.iterrows():
+                self.delete_rule(int(r[ID]))
+
+            skipped: list[str] = []
+            for _, rule in source_rules.iterrows():
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], rule[TAGS], year, PERIOD_MONTHLY
+                )
+                skipped.extend(dropped)
+                if not kept:
+                    continue
+                self.add_rule(
+                    name=rule[NAME], amount=rule[AMOUNT], category=rule[CATEGORY],
+                    tags=kept, month=None, year=year, period_type=PERIOD_YEARLY,
+                )
+            return {"copied_from": source_year, "skipped": sorted(set(skipped))}
+
     def get_yearly_analysis(
         self, year: int, include_split_parents: bool = False
     ) -> dict:

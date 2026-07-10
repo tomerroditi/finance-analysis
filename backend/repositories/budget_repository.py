@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.budget import BudgetRule
 from backend.constants.budget import (
-    AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR, PERIOD_TYPE,
+    AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR,
     PERIOD_MONTHLY, PERIOD_YEARLY, PERIOD_PROJECT,
 )
 from backend.constants.tables import Tables

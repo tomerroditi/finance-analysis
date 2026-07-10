@@ -76,6 +76,44 @@ class TestYearlyBudgetRoutes:
         r = test_client.post("/api/budget/yearly/2031/copy")
         assert r.status_code == 404
 
+    def test_copy_previous_year_copies_rules(self, test_client):
+        """POST /yearly/{year}/copy copies the latest prior year's rules in."""
+        test_client.post("/api/budget/yearly/rules", json={
+            "name": "Vacations", "amount": 20000, "category": "Travel",
+            "tags": ["Hotels"], "year": 2032})
+
+        r = test_client.post("/api/budget/yearly/2033/copy")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "success"
+        assert body["copied_from"] == 2032
+
+        rules = test_client.get("/api/budget/yearly/2033/analysis").json()["rules"]
+        names = [e["rule"]["name"] for e in rules]
+        assert "Vacations" in names
+
+    def test_copy_previous_year_no_source_does_not_delete_existing_target_rules(
+        self, test_client
+    ):
+        """Data-loss regression: 404 with no prior source must not wipe target rules.
+
+        The target year (2034) has its own rules and there is no earlier year
+        with yearly rules at all. The old implementation deleted the target
+        year's rules unconditionally before checking for a source, losing
+        data on a 404. This asserts the rules are still present after the
+        failed copy attempt.
+        """
+        test_client.post("/api/budget/yearly/rules", json={
+            "name": "Existing", "amount": 5000, "category": "Food",
+            "tags": ["Groceries"], "year": 2034})
+
+        r = test_client.post("/api/budget/yearly/2034/copy")
+        assert r.status_code == 404
+
+        rules = test_client.get("/api/budget/yearly/2034/analysis").json()["rules"]
+        names = [e["rule"]["name"] for e in rules]
+        assert names == ["Existing"]
+
 
 class TestMonthlyEditYearlyConflictRoute:
     """Editing a monthly rule to claim a yearly-owned tag must be rejected."""

@@ -542,6 +542,7 @@
       "spentYtd": "Spent YTD",
       "remaining": "Remaining",
       "health": "Budget health",
+      "biggest": "Biggest: {{name}} {{pct}}%",
       "allTags": "all tags",
       "empty": "No yearly rules yet. Add one to start tracking annual expenses.",
       "confirmDelete": "Delete the yearly rule \"{{name}}\"?",

@@ -182,3 +182,63 @@ class TestYearlyAnalysisSkippedConflictsDedup:
         monkeypatch.setattr(mod, "_today", lambda: date(2026, 1, 1))
         analysis = svc.get_yearly_analysis(2026)
         assert analysis["skipped_conflicts"] == ["Hotels"]
+
+
+class TestForceCopyFromPriorYear:
+    """Explicit user-triggered "Copy from previous year" — must never lose data."""
+
+    def test_copies_prior_year_rules_stripping_conflicts(self, db_session):
+        """Target year's rules become the source year's, minus conflicting tags."""
+        from backend.services.budget_service import MonthlyBudgetService, YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Trips", 20000.0, "Travel", ["Flights", "Hotels"], 2025)
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Flights M", 4000.0, "Travel", ["Flights"], 3, 2026
+        )
+
+        result = svc.force_copy_from_prior_year(2026)
+        assert result == {"copied_from": 2025, "skipped": ["Flights"]}
+        carried = svc.get_year_rules(2026)
+        trips = carried.loc[carried["name"] == "Trips"].iloc[0]
+        assert trips["tags"] == ["Hotels"]
+
+    def test_no_prior_year_returns_none_and_does_not_delete_target(self, db_session):
+        """Data-loss regression: no source year -> 404-worthy None, target rules survive.
+
+        This is the exact bug the fix targets: previously the route deleted
+        the target year's existing rules *before* checking whether a prior
+        year existed to copy from, silently destroying data when there was
+        no source. ``force_copy_from_prior_year`` must resolve the source
+        first and leave the target untouched when none is found.
+        """
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        # Target year already has rules of its own — there is no earlier
+        # year with yearly rules anywhere in the DB.
+        svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        result = svc.force_copy_from_prior_year(2026)
+
+        assert result is None
+        survivors = svc.get_year_rules(2026)
+        assert list(survivors["name"]) == ["Vacations"]
+
+    def test_overwrites_non_empty_target_when_source_exists(self, db_session):
+        """Unlike auto_carry_forward, this explicit action may overwrite a non-empty year."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("OldRule", 1000.0, "Food", ["Groceries"], 2026)
+        svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2025)
+
+        result = svc.force_copy_from_prior_year(2026)
+
+        assert result == {"copied_from": 2025, "skipped": []}
+        names = list(svc.get_year_rules(2026)["name"])
+        assert names == ["Vacations"]
+        assert "OldRule" not in names
