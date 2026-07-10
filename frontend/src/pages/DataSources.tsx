@@ -16,7 +16,6 @@ import {
   Eye,
   EyeOff,
   DollarSign,
-  Check,
   RefreshCw,
   PlayCircle,
   ChevronDown,
@@ -34,11 +33,12 @@ import {
 import type { BankBalance } from "../services/api";
 
 import { useDemoMode } from "../context/DemoModeContext";
-import { useConfirm, useNotify } from "../context/DialogContext";
+import { useConfirm } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
 import { ScrapeErrorTooltip } from "../components/common/ScrapeErrorTooltip";
 import { Skeleton } from "../components/common/Skeleton";
+import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
 import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 import { formatRelativeDate } from "../utils/dateFormatting";
 import { formatCurrency } from "../utils/numberFormatting";
@@ -66,7 +66,6 @@ export function DataSources() {
   const { isDemoMode } = useDemoMode();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const notify = useNotify();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<
@@ -155,23 +154,9 @@ export function DataSources() {
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
   });
 
-  const setBalanceMutation = useMutation({
-    mutationFn: bankBalancesApi.setBalance,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["bank-balances"] });
-      setEditingBalance(null);
-      setBalanceInput("");
-    },
-    onError: (error: unknown) => {
-      const axiosErr = error as { response?: { data?: { detail?: string } } };
-      notify.error(
-        axiosErr.response?.data?.detail || t("dataSources.failedSetBalance"),
-      );
-    },
-  });
-
-  const [editingBalance, setEditingBalance] = useState<string | null>(null);
-  const [balanceInput, setBalanceInput] = useState("");
+  const [balanceModalAccount, setBalanceModalAccount] = useState<
+    { provider: string; account_name: string; balance: number | null } | null
+  >(null);
 
   const getAccountBalance = (
     provider: string,
@@ -368,68 +353,8 @@ export function DataSources() {
                   <div className="md:w-[160px] flex items-center md:justify-end">
                   {acc.service === "banks" &&
                     (() => {
-                      const bal = getAccountBalance(
-                        acc.provider,
-                        acc.account_name,
-                      );
-                      const key = `${acc.provider}|${acc.account_name}`;
-                      const isEditing = editingBalance === key;
-                      const canSetBalance = isScrapedToday(
-                        acc.provider,
-                        acc.account_name,
-                      );
-
-                      if (isEditing) {
-                        return (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              value={balanceInput}
-                              onChange={(e) => setBalanceInput(e.target.value)}
-                              placeholder={t("dataSources.balancePlaceholder")}
-                              className="w-36 px-3 py-1.5 rounded-lg bg-[var(--bg)] border border-[var(--surface-light)] text-white text-sm focus:outline-none focus:border-[var(--primary)]"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && balanceInput) {
-                                  setBalanceMutation.mutate({
-                                    provider: acc.provider,
-                                    account_name: acc.account_name,
-                                    balance: parseFloat(balanceInput),
-                                  });
-                                }
-                                if (e.key === "Escape") {
-                                  setEditingBalance(null);
-                                  setBalanceInput("");
-                                }
-                              }}
-                            />
-                            <button
-                              onClick={() => {
-                                if (balanceInput) {
-                                  setBalanceMutation.mutate({
-                                    provider: acc.provider,
-                                    account_name: acc.account_name,
-                                    balance: parseFloat(balanceInput),
-                                  });
-                                }
-                              }}
-                              className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all"
-                            >
-                              <Check size={16} />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingBalance(null);
-                                setBalanceInput("");
-                              }}
-                              className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        );
-                      }
-
+                      const bal = getAccountBalance(acc.provider, acc.account_name);
+                      const canSetBalance = isScrapedToday(acc.provider, acc.account_name);
                       return (
                         <div className="flex items-center gap-2">
                           {bal ? (
@@ -442,14 +367,13 @@ export function DataSources() {
                             </span>
                           )}
                           <button
-                            onClick={() => {
-                              if (canSetBalance) {
-                                setEditingBalance(key);
-                                setBalanceInput(
-                                  bal ? String(bal.balance) : "",
-                                );
-                              }
-                            }}
+                            onClick={() =>
+                              setBalanceModalAccount({
+                                provider: acc.provider,
+                                account_name: acc.account_name,
+                                balance: bal ? bal.balance : null,
+                              })
+                            }
                             disabled={!canSetBalance}
                             className={`p-1.5 rounded-lg transition-all ${
                               canSetBalance
@@ -965,6 +889,19 @@ export function DataSources() {
           </div>
         </div>
       )}
+
+      <UpdateBankBalanceModal
+        isOpen={balanceModalAccount !== null}
+        onClose={() => setBalanceModalAccount(null)}
+        provider={balanceModalAccount?.provider ?? ""}
+        accountName={balanceModalAccount?.account_name ?? ""}
+        currentBalance={balanceModalAccount?.balance ?? null}
+        isScrapedToday={
+          balanceModalAccount
+            ? isScrapedToday(balanceModalAccount.provider, balanceModalAccount.account_name)
+            : false
+        }
+      />
     </div>
   );
 }

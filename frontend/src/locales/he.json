@@ -743,6 +743,15 @@
     "demoConfirmEnable": "הפעל מצב הדגמה",
     "demoConfirmCancel": "ביטול"
   },
+  "bankBalance": {
+    "title": "עדכון יתרה",
+    "explanation": "הזינו את היתרה הנוכחית המוצגת בבנק. אנו משלבים אותה עם התנועות שנסרקו כדי לחשב את ההון ההתחלתי שלכם, כך שהשווי הנקי נשאר מדויק. יש לסרוק את החשבון היום תחילה כדי שהחישוב יתבסס על תנועות מעודכנות.",
+    "scrapeNote": "סרקו את החשבון היום תחילה, ולאחר מכן הגדירו את היתרה.",
+    "balanceLabel": "יתרה נוכחית",
+    "placeholder": "הזינו יתרה…",
+    "current": "כעת",
+    "failed": "הגדרת היתרה נכשלה."
+  },
   "dataSources": {
     "title": "מקורות מידע",
     "subtitle": "נהל את החשבונות המחוברים שלך",
@@ -785,10 +794,8 @@
     "viewDetails": "הצג פרטים",
     "disconnectAccount": "נתק חשבון",
     "confirmDisconnect": "האם אתה בטוח שברצונך לנתק חשבון זה?",
-    "failedSetBalance": "הגדרת היתרה נכשלה.",
     "enter2faCode": "הזן קוד אימות",
     "enter2faCodePlaceholder": "קוד",
-    "balancePlaceholder": "הזן יתרה...",
     "displayNamePlaceholder": "לדוגמה: חשבון ההשקעות שלי",
     "verify": "אמת",
     "resend": "שלח שוב",
