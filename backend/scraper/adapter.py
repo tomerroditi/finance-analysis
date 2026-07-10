@@ -174,6 +174,12 @@ class ScraperAdapter:
         # 2FA state
         self._otp_code: str | None = None
         self._otp_event = asyncio.Event()
+        # The event loop ``run()`` executes on, captured at its start. Lets
+        # ``set_otp_code`` — invoked from a synchronous route in a threadpool
+        # worker thread — wake the parked scraper by marshaling the
+        # ``asyncio.Event.set()`` back onto that loop (Event is not
+        # thread-safe). ``None`` until ``run()`` starts.
+        self._loop: "asyncio.AbstractEventLoop | None" = None
         # The underlying scraper instance, set once ``run()`` builds it. Stays
         # ``None`` until then, so a resend that races ahead of scraper
         # construction can be rejected cleanly (see ``resend_otp``).
@@ -196,6 +202,10 @@ class ScraperAdapter:
         auto-tagging, and recalculates bank balances. Always records the
         outcome in the scraping history table.
         """
+        # Capture the loop we're running on so set_otp_code (called from a
+        # threadpool worker thread) can wake us thread-safely.
+        self._loop = asyncio.get_running_loop()
+
         _scraper_pkg = _import_scraper_module("scraper")
         create_scraper = _scraper_pkg.create_scraper
         scraper_is_2fa_required = _scraper_pkg.is_2fa_required
@@ -341,7 +351,17 @@ class ScraperAdapter:
             The one-time password, or ``"cancel"`` to abort the scrape.
         """
         self._otp_code = code
-        self._otp_event.set()
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            # run() executes on the server's main event loop; this method is
+            # called from a synchronous route in a threadpool worker thread.
+            # Marshal Event.set() onto that loop so the parked scraper
+            # coroutine is woken reliably — asyncio.Event is not thread-safe.
+            loop.call_soon_threadsafe(self._otp_event.set)
+        else:
+            # No loop captured yet (adapter constructed but run() not started,
+            # or unit-tested in isolation) — safe to set directly.
+            self._otp_event.set()
 
     async def resend_otp(self) -> None:
         """Re-issue the OTP for the underlying scraper without restarting it.

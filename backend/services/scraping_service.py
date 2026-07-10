@@ -17,6 +17,62 @@ from backend.scraper.adapter import (
 )
 
 
+# The server's main asyncio event loop, captured at startup (see
+# ``backend.main.lifespan``). ``start_scraping_single`` runs inside a
+# synchronous FastAPI route — executed in a threadpool worker thread with no
+# running event loop — so it cannot use ``asyncio.create_task`` (which needs a
+# loop in the *calling* thread and would raise "no running event loop",
+# leaking the ``adapter.run()`` coroutine). Instead it submits the coroutine
+# to this captured loop via ``asyncio.run_coroutine_threadsafe``, which is
+# safe from any thread, including the loop's own thread (the async
+# resend-relaunch path).
+_main_loop: "asyncio.AbstractEventLoop | None" = None
+
+
+def set_main_loop(loop: "asyncio.AbstractEventLoop | None") -> None:
+    """Register the server's main event loop for launching scrapers.
+
+    Called once from the application lifespan startup. Scraper launches are
+    submitted to this loop from synchronous route handlers.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop or None
+        The running event loop to schedule scraper coroutines on.
+    """
+    global _main_loop
+    _main_loop = loop
+
+
+def _launch_adapter(adapter: ScraperAdapter) -> None:
+    """Schedule ``adapter.run()`` on the server's main event loop.
+
+    Submitting via ``run_coroutine_threadsafe`` (rather than
+    ``asyncio.create_task``) lets this work from a synchronous route running
+    in a threadpool worker thread, which has no running loop of its own. The
+    returned ``concurrent.futures.Future`` is stored on the adapter so the
+    running task stays referenced for its full lifetime.
+
+    Parameters
+    ----------
+    adapter : ScraperAdapter
+        The adapter whose ``run()`` coroutine should be launched.
+    """
+    loop = _main_loop
+    if loop is None:
+        # No captured loop — only expected outside the running app (e.g. an
+        # async caller already on a loop). Fall back to the running loop, or
+        # fail loudly rather than silently dropping the scrape.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "No event loop available to launch scraper; set_main_loop() "
+                "was not called at startup."
+            ) from exc
+    adapter._run_future = asyncio.run_coroutine_threadsafe(adapter.run(), loop)
+
+
 class ScrapingService:
     """
     Service for managing data scraping operations.
@@ -107,7 +163,9 @@ class ScrapingService:
         Start the scraping process for a single account as an async task.
 
         Records a new scraping history entry, creates a ``ScraperAdapter``,
-        and launches it via ``asyncio.create_task``. If the provider requires
+        and launches it on the main event loop via ``_launch_adapter`` (using
+        ``run_coroutine_threadsafe`` so it works from this synchronous route,
+        which runs in a threadpool worker thread). If the provider requires
         2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP
         is submitted. If an account is already scraping (present in
         ``_active_scrapers``), this is a no-op that returns the existing
@@ -163,7 +221,7 @@ class ScrapingService:
             service, provider, account, creds, start_date, process_id,
             force_2fa=force_2fa,
         )
-        asyncio.create_task(adapter.run())
+        _launch_adapter(adapter)
 
         # Register synchronously (no `await` between the earlier `.get()`
         # check and this insert) so a second concurrent call can't slip in

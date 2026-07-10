@@ -2,6 +2,8 @@
 
 import asyncio
 import datetime
+import threading
+import time
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -173,3 +175,54 @@ class TestAdapter2FA:
             code = asyncio.run(run())
 
         assert code == "99999"
+
+    def test_set_otp_code_wakes_parked_coroutine_from_another_thread(self):
+        """set_otp_code from a worker thread wakes a scraper parked on the loop.
+
+        In production ``run()`` executes on the server's main event loop while
+        ``set_otp_code`` is called from a synchronous route in a threadpool
+        worker thread. ``asyncio.Event`` is not thread-safe: a bare
+        ``_otp_event.set()`` from a foreign thread schedules the waiter's
+        wake-up with ``call_soon`` but never wakes the (idle) loop, so an
+        already-parked ``await _otp_event.wait()`` hangs until the 5-minute
+        scrape timeout. ``set_otp_code`` must marshal the set onto the loop via
+        ``call_soon_threadsafe``. Regression test for that cross-thread wake.
+        """
+        adapter = ScraperAdapter(
+            "banks", "onezero", DUMMY_ACCOUNT,
+            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        )
+
+        loop = asyncio.new_event_loop()
+        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
+        loop_thread.start()
+        # Simulate run() having captured the loop it executes on.
+        adapter._loop = loop
+
+        started = threading.Event()
+        woke = threading.Event()
+
+        async def park():
+            started.set()
+            await adapter._otp_event.wait()
+            woke.set()
+            return adapter._otp_code
+
+        future = asyncio.run_coroutine_threadsafe(park(), loop)
+        try:
+            # Ensure the coroutine is actually parked on `await wait()` before
+            # delivering the code — otherwise a set-before-wait would pass even
+            # with the buggy foreign-thread set().
+            assert started.wait(timeout=5)
+            time.sleep(0.1)
+
+            # Called from the main test thread — a different thread than the
+            # one running the loop, exactly like the sync 2FA route.
+            adapter.set_otp_code("654321")
+
+            assert woke.wait(timeout=5), "parked coroutine was not woken across threads"
+            assert future.result(timeout=5) == "654321"
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            loop_thread.join(timeout=5)
+            loop.close()
