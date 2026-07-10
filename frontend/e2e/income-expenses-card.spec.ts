@@ -113,10 +113,10 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(income).toBeVisible();
     await expect(expenses).toBeVisible();
 
-    // Each card leads with a 12-month average and keeps the 3M/6M windows.
-    await expect(income.getByText("12-mo avg")).toBeVisible();
-    await expect(income.getByText("3M", { exact: true })).toBeVisible();
+    // Each card leads with the 3-month average and keeps the 6M/12M windows.
+    await expect(income.getByText("3-mo avg")).toBeVisible();
     await expect(income.getByText("6M", { exact: true })).toBeVisible();
+    await expect(income.getByText("12M", { exact: true })).toBeVisible();
 
     // Income averages come straight from the loaded series — a real thousands
     // figure (e.g. "30,321"), not a zero placeholder. (Currency uses an NBSP

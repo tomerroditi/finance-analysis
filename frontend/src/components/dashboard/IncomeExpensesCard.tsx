@@ -277,16 +277,16 @@ function KpiCard({
         <div className="flex-1" />
         <TrendChip value={data.avg3} baseline={data.avg12} kind={kind} title={t("dashboard.avgTrendTitle")} />
       </div>
-      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg12)}</div>
-      <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg12mo")}</div>
+      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg3)}</div>
+      <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg3mo")}</div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo3")}</span>
-          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg3)}</span>
-        </div>
         <div className="flex items-baseline gap-1.5">
           <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo6")}</span>
           <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg6)}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo12")}</span>
+          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg12)}</span>
         </div>
       </div>
     </div>
