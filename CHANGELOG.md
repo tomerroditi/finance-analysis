@@ -1,3 +1,9 @@
+## v1.39.2 (2026-07-10)
+
+### Fix
+
+- **budget**: render net-refund budget rows as credit, not overspend
+
 ## v1.39.1 (2026-07-10)
 
 ### Fix
