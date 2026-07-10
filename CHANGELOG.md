@@ -1,3 +1,9 @@
+## v1.39.1 (2026-07-10)
+
+### Fix
+
+- **scraper**: launch scraper on captured main loop from sync route
+
 ## v1.39.0 (2026-07-10)
 
 ### Feat
