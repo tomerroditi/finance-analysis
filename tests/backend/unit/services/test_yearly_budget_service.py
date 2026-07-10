@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 
@@ -121,3 +123,36 @@ class TestYearlyAlerts:
         db_session.commit()
         alerts = svc.get_alerts(2026)
         assert alerts and alerts[0]["severity"] == "critical"
+
+
+class TestYearlyCarryForward:
+    """Prior-year rules carry into an empty current/future year, minus conflicts."""
+
+    def test_carries_prior_year_rules(self, db_session, monkeypatch):
+        """An empty 2026 inherits 2025's yearly rules."""
+        from backend.services.budget_service import YearlyBudgetService
+        import backend.services.budget_service as mod
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2025)
+
+        # Pretend "today" is in 2026 so carry-forward is allowed.
+        monkeypatch.setattr(mod, "_today", lambda: date(2026, 1, 1))
+        result = svc.auto_carry_forward(2026)
+        assert result["copied_from"] == 2025 and result["skipped"] == []
+        assert "Vacations" in list(svc.get_year_rules(2026)["name"])
+
+    def test_skips_tags_conflicting_with_monthly(self, db_session, monkeypatch):
+        """A carried tag that a 2026 monthly rule owns is skipped and reported."""
+        from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
+        import backend.services.budget_service as mod
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Trips", 20000.0, "Travel", ["Flights", "Hotels"], 2025)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        MonthlyBudgetService(db_session).create_rule("Flights M", 4000.0, "Travel", ["Flights"], 3, 2026)
+
+        monkeypatch.setattr(mod, "_today", lambda: date(2026, 1, 1))
+        result = svc.auto_carry_forward(2026)
+        assert result["skipped"] == ["Flights"]
+        carried = svc.get_year_rules(2026)
+        trips = carried.loc[carried["name"] == "Trips"].iloc[0]
+        assert trips["tags"] == ["Hotels"]  # Flights stripped

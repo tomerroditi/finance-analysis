@@ -49,6 +49,11 @@ from backend.services.transactions_service import TransactionsService
 _auto_fill_lock = threading.Lock()
 
 
+def _today() -> date:
+    """Return today's date. Indirection point so tests can monkeypatch the clock."""
+    return date.today()
+
+
 class BudgetService:
     """
     Service for budget rule business logic.
@@ -1786,3 +1791,67 @@ class YearlyBudgetService(BudgetService):
             )
         alerts.sort(key=lambda a: a["percentage"], reverse=True)
         return alerts
+
+    def auto_carry_forward(self, year: int) -> Optional[dict]:
+        """Copy the latest prior year's yearly rules into an empty ``year``.
+
+        Only runs for the current or a future year (never rewrites history) and
+        only when ``year`` has no yearly rules yet. Tags that conflict with
+        monthly rules for ``year`` are stripped; a rule left with no tags is
+        skipped entirely.
+
+        Returns
+        -------
+        dict or None
+            ``{"copied_from": <int year>, "skipped": [<tag>, ...]}`` when rules
+            were copied, else ``None``.
+        """
+        if year < _today().year:
+            return None
+        with _auto_fill_lock:
+            self.db.rollback()
+            if not self.get_year_rules(year).empty:
+                return None
+            all_rules = self.get_all_rules()
+            if all_rules.empty:
+                return None
+            prior = all_rules.loc[all_rules[YEAR] < year]
+            if prior.empty:
+                return None
+            source_year = int(prior[YEAR].max())
+            source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+
+            skipped: list[str] = []
+            for _, rule in source_rules.iterrows():
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], rule[TAGS], year, PERIOD_MONTHLY
+                )
+                skipped.extend(dropped)
+                if not kept:
+                    continue
+                self.add_rule(
+                    name=rule[NAME], amount=rule[AMOUNT], category=rule[CATEGORY],
+                    tags=kept, month=None, year=year, period_type=PERIOD_YEARLY,
+                )
+            return {"copied_from": source_year, "skipped": skipped}
+
+    def get_yearly_analysis(
+        self, year: int, include_split_parents: bool = False
+    ) -> dict:
+        """Bundle the yearly view, computed roll-up, alerts, and carry-forward report."""
+        carried_from = None
+        skipped_conflicts: list[str] = []
+        if self.get_year_rules(year).empty and year >= _today().year:
+            result = self.auto_carry_forward(year)
+            if result is not None:
+                carried_from = result["copied_from"]
+                skipped_conflicts = result["skipped"]
+
+        view = self.get_yearly_budget_view(year, include_split_parents)
+        return {
+            "rules": view if view else [],
+            "summary": self.get_year_summary(year),
+            "alerts": self.get_alerts(year),
+            "carried_from": carried_from,
+            "skipped_conflicts": skipped_conflicts,
+        }
