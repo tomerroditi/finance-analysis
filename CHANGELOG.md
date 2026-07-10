@@ -1,3 +1,9 @@
+## v1.40.0 (2026-07-10)
+
+### Feat
+
+- **dashboard**: expandable source names in income-by-source table
+
 ## v1.39.3 (2026-07-10)
 
 ### Fix
