@@ -742,6 +742,15 @@
     "demoConfirmEnable": "Enable demo mode",
     "demoConfirmCancel": "Cancel"
   },
+  "bankBalance": {
+    "title": "Update Balance",
+    "explanation": "Enter the current balance shown in your bank. We combine it with your scraped transactions to compute your starting (prior) wealth, keeping your net worth accurate. The account must be scraped today first so the calculation uses up-to-date transactions.",
+    "scrapeNote": "Scrape this account today first, then set its balance.",
+    "balanceLabel": "Current balance",
+    "placeholder": "Enter balance…",
+    "current": "Currently",
+    "failed": "Failed to set balance."
+  },
   "dataSources": {
     "title": "Data Sources",
     "subtitle": "Manage your connected accounts",
