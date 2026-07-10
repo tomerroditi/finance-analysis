@@ -28,6 +28,21 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
     await page.close();
   });
 
+  /**
+   * Scroll a cartesian (zoomable) chart card into view so it mounts.
+   *
+   * The dashboard defers below-the-fold cards (DeferUntilVisible), and the
+   * only eager Plotly chart in the default layout is the Income-by-source
+   * donut — a pie, which has no zoomable cartesian axis. The Income vs
+   * Expenses bar chart is a full-width card further down, so it must be
+   * scrolled into view before it exists in the DOM for markChart to find.
+   */
+  async function revealZoomableChart(page: Page) {
+    const card = page.locator('[data-card-id="income_expenses"]');
+    await card.scrollIntoViewIfNeeded();
+    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
+  }
+
   /** Mark the first zoomable (cartesian) chart and return its x-span, or null. */
   async function markChart(page: Page): Promise<number | null> {
     return page.evaluate(() => {
@@ -78,7 +93,7 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
 
   test("double-tap enters zoom mode; native drag zooms and persists", async ({ page }) => {
     await navigateTo(page, "/");
-    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
+    await revealZoomableChart(page);
     const before = await markChart(page);
     expect(before, "expected a zoomable cartesian chart").not.toBeNull();
 
@@ -118,7 +133,7 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
 
   test("touching outside the chart leaves zoom mode", async ({ page }) => {
     await navigateTo(page, "/");
-    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
+    await revealZoomableChart(page);
     await markChart(page);
 
     await doubleTap(page);
