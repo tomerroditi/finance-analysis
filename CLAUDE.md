@@ -91,6 +91,28 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - `dev` accumulates changes; when ready, `dev` is merged into `main` via a PR that triggers the full CI/CD pipeline (Windows installer build + GitHub release). macOS bundles are no longer built in CI — see `.claude/rules/installation_and_updates.md`.
 - Never open a PR directly to `main` for feature work — only `dev → main` merges go there.
 
+## Pre-PR Checklist
+
+Run these locally and get them **all green before opening a PR** — CI runs the same checks and a red PR wastes a round-trip. Run from the repo root unless noted. See `.claude/rules/ci_and_release.md` (CI parity) and `.claude/rules/testing.md` (e2e details).
+
+```bash
+# 1. Backend tests (full suite — matches CI's `poetry run pytest`)
+poetry run pytest
+
+# 2. Frontend lint + type-check/build + unit tests (matches CI)
+cd frontend && npm run lint && npm run build && npm test && cd ..
+
+# 3. Frontend e2e (Playwright) — needs BOTH servers up, so run via the orchestrator
+python .claude/scripts/with_server.py -- bash -c \
+  "cd frontend && npx playwright test --reporter=line"
+```
+
+- **Run the whole suite, not just the one test you touched.** Backend `pytest` has a 40 % coverage gate — a targeted run needs `--no-cov` (see Commands), but the pre-PR run is the full suite with coverage on.
+- **e2e is required, not optional** — `npm test` (vitest) and e2e (`playwright test`) are different layers. e2e specs live in `frontend/e2e/` and drive the real UI in Demo Mode; type-checking and unit tests miss the focus-trap / click-outside / query-invalidation bugs UI patches introduce. Every UI patch must add or update an e2e spec (see the CLAUDE.md "UI Testing" section).
+- **Sandbox (Claude Code on the web) gotcha:** a bare `npx playwright test` fails because the bundled Chromium lags `package.json`. Point Playwright at the installed full-chrome binary via `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` — full procedure in `.claude/rules/testing.md` → "Running e2e specs". **Verified green is the only "verified"** — a browser that failed to launch means the spec did not run.
+- **Fresh worktree:** the first backend command auto-bootstraps `.venv/` (~90 s); frontend deps need a manual `cd frontend && npm install`. See "Environment Setup" above.
+- Use a Conventional Commits subject on the PR merge (drives the Commitizen version bump).
+
 ## API
 
 - Base URL: `http://localhost:8000`
