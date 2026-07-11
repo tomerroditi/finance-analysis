@@ -29,11 +29,11 @@ import { Skeleton } from "../components/common/Skeleton";
 import { DeferUntilVisible } from "../components/common/DeferUntilVisible";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
-import { useDemoMode } from "../context/DemoModeContext";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
 import { formatMonthCompact } from "../utils/dateFormatting";
 import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
+import { useQueryKeys } from "../hooks/useQueryKeys";
 
 
 /* How many leading cards render eagerly on first paint. The rest defer until
@@ -314,35 +314,35 @@ function FinancialHealthHeader({
 
 export function Dashboard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
   const navigate = useNavigate();
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const { layout } = useDashboardLayout();
+  const qk = useQueryKeys();
 
   // ---- Queries used by the page shell + the customizable cards ----
 
   const { data: cashBalances } = useQuery({
-    queryKey: ["cash-balances", isDemoMode],
+    queryKey: qk.balances.cash(),
     queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
   });
 
   const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isDemoMode],
+    queryKey: qk.balances.bank(),
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
   const { data: lastScrapes } = useQuery({
-    queryKey: ["last-scrapes", isDemoMode],
+    queryKey: qk.scraping.lastScrapes(),
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
   });
 
   const { data: portfolioData } = useQuery({
-    queryKey: ["portfolio-analysis", isDemoMode],
+    queryKey: qk.investments.portfolio(),
     queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
   const { data: netWorthData, isLoading: netWorthLoading } = useQuery({
-    queryKey: ["net-worth-over-time", isDemoMode],
+    queryKey: qk.analytics.netWorthOverTime(),
     queryFn: async () => {
       const res = await analyticsApi.getNetWorthOverTime();
       return res.data;
@@ -350,7 +350,7 @@ export function Dashboard() {
   });
 
   const { data: allTransactions, isLoading: transactionsLoading } = useQuery({
-    queryKey: ["all-transactions", isDemoMode],
+    queryKey: qk.transactions.list(undefined, false),
     queryFn: async () => {
       const res = await transactionsApi.getAll(undefined, false);
       return res.data;
@@ -358,7 +358,7 @@ export function Dashboard() {
   });
 
   const { data: categoryIcons } = useQuery({
-    queryKey: ["category-icons", isDemoMode],
+    queryKey: qk.tagging.icons(),
     queryFn: async () => {
       const res = await taggingApi.getIcons();
       return res.data;

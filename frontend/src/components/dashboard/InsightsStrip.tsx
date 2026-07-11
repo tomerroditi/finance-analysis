@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Info, Sparkles, Lightbulb } from "lucide-react";
 import { analyticsApi, type Insight } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 const SEVERITY_STYLES: Record<Insight["severity"], { box: string; icon: typeof Info }> = {
@@ -50,11 +50,11 @@ function useInsightMessage() {
 /** Horizontal strip of rule-based insight cards from ``/analytics/insights``. */
 export function InsightsStrip() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const message = useInsightMessage();
 
   const { data } = useQuery({
-    queryKey: ["insights", isDemoMode],
+    queryKey: qk.analytics.insights(),
     queryFn: async () => {
       const res = await analyticsApi.getInsights();
       return res.data;

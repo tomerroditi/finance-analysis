@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Calculator } from "lucide-react";
 import Plot from "../common/LazyPlot";
 import { analyticsApi } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { chartTheme, plotlyConfig, isTouchDevice, barMarker, CHART_COLORS } from "../../utils/plotlyLocale";
@@ -11,26 +11,26 @@ import { chartTheme, plotlyConfig, isTouchDevice, barMarker, CHART_COLORS } from
 /** Income & Expenses dashboard card (KPI averages, refund/project filters, Totals/Income/Expenses sub-views). */
 export function IncomeExpensesCard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
   const [excludeRefunds, setExcludeRefunds] = useState(false);
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: ["income-outcome", includeProjects, excludeRefunds, isDemoMode],
+    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludeRefunds),
     queryFn: async () => (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludeRefunds)).data,
   });
   const { data: expensesByCategoryOverTime } = useQuery({
-    queryKey: ["expenses-by-category-over-time", isDemoMode],
+    queryKey: qk.analytics.expensesByCategoryOverTime(),
     queryFn: async () => (await analyticsApi.getExpensesByCategoryOverTime()).data,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: ["income-by-source", isDemoMode],
+    queryKey: qk.analytics.incomeBySourceOverTime(),
     queryFn: async () => (await analyticsApi.getIncomeBySourceOverTime()).data,
   });
   const { data: monthlyExpenses } = useQuery({
-    queryKey: ["monthly-expenses", excludePendingRefunds, includeProjects, isDemoMode],
+    queryKey: qk.analytics.monthlyExpenses(excludePendingRefunds, includeProjects),
     queryFn: async () => (await analyticsApi.getMonthlyExpenses(excludePendingRefunds, includeProjects)).data,
   });
 

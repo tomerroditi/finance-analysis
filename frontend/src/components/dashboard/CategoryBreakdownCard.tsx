@@ -1,21 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { TrendingDown, Tag } from "lucide-react";
 import { analyticsApi, taggingApi } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 /** Category breakdown dashboard card (expenses + refunds, sorted, with share %). */
 export function CategoryBreakdownCard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const { data: categoryData } = useQuery({
-    queryKey: ["analytics-category", isDemoMode],
+    queryKey: qk.analytics.byCategory(),
     queryFn: async () => (await analyticsApi.getByCategory()).data,
   });
   const { data: categoryIcons } = useQuery({
-    queryKey: ["category-icons", isDemoMode],
+    queryKey: qk.tagging.icons(),
     queryFn: async () => (await taggingApi.getIcons()).data,
   });
 
