@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
 /**
  * The Spending Calendar (`heatmap`) card shows two months (previous + current)
@@ -10,6 +11,13 @@ import { test, expect, type Page } from "@playwright/test";
  * needed — it renders at its configured half width.
  */
 test.describe("Dashboard spending calendar months", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
   });

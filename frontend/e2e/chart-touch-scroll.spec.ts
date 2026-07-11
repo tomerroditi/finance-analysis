@@ -1,6 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * Guards the touch-scroll fix in utils/plotlyLocale.ts.
  *
@@ -31,6 +30,13 @@ async function firstChartDragmode(page: Page): Promise<unknown> {
 }
 
 test.describe("Chart touch-scroll (dragmode)", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test.describe("on a touch device", () => {
     test.use({ hasTouch: true, isMobile: true });
 

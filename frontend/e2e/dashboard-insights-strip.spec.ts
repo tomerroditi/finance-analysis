@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
 /**
  * The dashboard grid sizes cards to their content on >=lg, capped at
@@ -14,6 +15,13 @@ import { test, expect, type Page } from "@playwright/test";
  * that puts them first, ahead of the half-width `budget` card.
  */
 test.describe("Dashboard strip cards", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   const CAP = 624; // --dash-card-h: 39rem at the default 16px root font size.
   const STRIP_CARDS = ["forecast", "insights"] as const;
 

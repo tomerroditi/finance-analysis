@@ -1,6 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * The "Income by source" dashboard card (id `income_by_source`) renders a
  * Plotly donut + a breakdown table with a Total row, plus range-preset
@@ -10,6 +9,13 @@ import { navigateTo } from "./helpers";
  * switching range presets doesn't crash it.
  */
 test.describe("Income by source dashboard card", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   /**
    * Locate the card container by its title, then climb to the enclosing
    * card div so we can scope the donut/table lookups (the dashboard renders

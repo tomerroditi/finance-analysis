@@ -29,8 +29,11 @@ import { defineConfig, devices } from "@playwright/test";
  *   project stays serial (`--workers=1`).
  *
  * `npm run test:e2e` is a bare `playwright test`: everything runs serially
- * (global `workers: 1`) and is always safe — `mutating` depends on `read-only`,
- * so the write-free specs finish before any spec toggles demo mode off.
+ * (global `workers: 1`) and is always safe. read-only and mutating are both
+ * plain, shardable projects (CI runs `playwright test --shard=X/4`); each spec
+ * self-heals demo mode in its own beforeAll, so they can run in any order or
+ * interleave within a shard without a spec's teardown pulling demo out from
+ * under another.
  *
  * `npm run test:e2e:parallel` fans `read-only` across workers, then runs
  * `mutating` serially. This ONLY helps when the backend can sustain the
@@ -134,11 +137,13 @@ export default defineConfig({
       name: "mutating",
       testMatch: /\.spec\.ts$/,
       testIgnore: READ_ONLY_SPECS,
-      // Depend on read-only so a bare `playwright test` phases correctly:
-      // write-free specs finish before any spec toggles demo mode off. The
-      // `test:e2e:parallel` script runs this phase with `--no-deps` to avoid
-      // re-running read-only.
-      dependencies: ["read-only"],
+      // Depend on demo-setup only — NOT read-only. Making read-only a
+      // dependency would turn it into a non-shardable setup project that
+      // re-runs in full in every CI shard (Playwright never shards
+      // dependencies). Instead, read-only and mutating are both plain,
+      // shardable projects; each spec self-heals demo mode in its own
+      // beforeAll, so they can interleave within a shard safely.
+      dependencies: ["demo-setup"],
       fullyParallel: false,
       use: chromiumUse,
     },

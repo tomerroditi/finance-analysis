@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
 /**
  * Half-width dashboard cards: on wide (>=lg) viewports the customizable region
@@ -7,6 +8,13 @@ import { test, expect, type Page } from "@playwright/test";
  * and spans the row. Fill order is start->end and flips under RTL (Hebrew).
  */
 test.describe("Dashboard half-width blocks", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
   });

@@ -118,8 +118,9 @@ into Playwright projects sequenced by a shared setup:
 enable/disable that forced a full demo-DB rebuild at every file boundary),
 `read-only` holds write-free specs, `mutating` holds the rest (each keeps its
 own per-file demo lifecycle for DB isolation), and `demo-teardown` disables
-Demo Mode at the end. `mutating` depends on `read-only`, so a bare
-`playwright test` runs everything serially and safely.
+Demo Mode at the end. read-only and mutating are both plain, shardable
+projects (CI runs `playwright test --shard=X/4`); each spec self-heals Demo
+Mode in its own `beforeAll`, so any order or per-shard interleaving is safe.
 
 **Default is serial (`npm run test:e2e`).** The `read-only` project *can* fan
 out across workers (`npm run test:e2e:parallel`), but profiling showed the suite

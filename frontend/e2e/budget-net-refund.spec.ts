@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * Guards the "net refund" display invariant on the monthly budget view.
  *
@@ -18,6 +17,13 @@ import { navigateTo } from "./helpers";
  * every recent month, catching a regression the moment such a row appears.
  */
 test.describe("Budget — net refund rows", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test("a refund figure is never shown as over budget", async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");

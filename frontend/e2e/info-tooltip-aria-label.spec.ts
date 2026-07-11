@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * Regression coverage for InfoTooltip.tsx.
  *
@@ -15,6 +14,13 @@ import { navigateTo } from "./helpers";
  * he.json common.moreInfo = "מידע נוסף"
  */
 test.describe("InfoTooltip aria-label i18n", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test.afterEach(async ({ page }) => {
     if (page.url().startsWith("http")) {
       await page.evaluate(() => localStorage.setItem("language", "en"));

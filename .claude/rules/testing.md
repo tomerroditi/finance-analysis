@@ -276,11 +276,19 @@ python .claude/scripts/with_server.py -- bash -c \
 ```
 
 `npm run test:e2e` is a bare `playwright test` — it runs every project
-**serially** and is always safe (`mutating` depends on `read-only`, so the
-write-free specs finish before any spec toggles demo off). The `demo-setup`
-project still enables Demo Mode once instead of rebuilding the demo DB at every
-read-only file boundary, so serial is already faster than the old per-file
-enable/disable dance.
+**serially** and is always safe. read-only and mutating are both plain,
+shardable projects (CI runs `playwright test --shard=X/4` across 4 jobs); each
+spec self-heals Demo Mode in its own `beforeAll` (a no-op once `demo-setup` has
+enabled it), so they can run in any order or interleave within a shard without
+one spec's teardown pulling demo out from under another. The `demo-setup`
+project enables Demo Mode once up front, which also lets the `read-only` project
+fan out across workers safely (no worker races to rebuild the demo DB).
+
+**Do not make `read-only` a dependency of `mutating`.** Playwright never shards
+dependency projects — they run in full in every shard — so a `mutating ->
+read-only` dependency makes CI run the entire (slow, chart-heavy) read-only
+project 4× (once per shard) instead of sharding it. Self-healing `beforeAll`s
+are what keep interleaving safe, not a project dependency.
 
 **Why not parallel by default?** `npm run test:e2e:parallel` runs
 `--project=read-only --workers=50%` then `--project=mutating --workers=1

@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * Guards the "soft gradient" chart restyle (see utils/plotlyLocale.ts).
  *
@@ -14,6 +13,13 @@ import { navigateTo } from "./helpers";
  * the Cohen-family investments/liabilities the charts need.
  */
 test.describe("Chart styling (soft gradient)", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test("dashboard charts render after the restyle", async ({ page }) => {
     await navigateTo(page, "/");
     // Plotly is lazy-loaded (LazyPlot); the dev server serves the chunk

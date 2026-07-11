@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
 /**
  * Pages share one bundle, so navigation lag is the destination page's first
@@ -8,6 +9,13 @@ import { test, expect } from "@playwright/test";
  * without navigating — and then that the page renders without a fresh fetch.
  */
 test.describe("Route data prefetching", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test("hovering a nav link prefetches that route's data", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText(/Net Worth/i).first()).toBeVisible({

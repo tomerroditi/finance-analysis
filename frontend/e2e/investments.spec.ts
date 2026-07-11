@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
-import { navigateTo, expectPageTitle } from "./helpers";
-
+import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 test.describe("Investments", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test("loads the investments page", async ({ page }) => {
     await navigateTo(page, "/investments");
     await expectPageTitle(page, /Investments/);

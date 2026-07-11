@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
 /**
  * Below-the-fold dashboard cards defer mounting (and their analytics requests)
@@ -7,6 +8,13 @@ import { test, expect } from "@playwright/test";
  * a deferred chart card must mount its Plotly chart only after it scrolls in.
  */
 test.describe("Dashboard lazy card mounting", () => {
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
+  });
+
   test.beforeEach(async ({ page }) => {
     // Start from the default layout (income_expenses + net_worth visible last).
     await page.addInitScript(() =>
