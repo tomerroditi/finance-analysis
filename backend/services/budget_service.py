@@ -254,6 +254,66 @@ class BudgetService:
                 conflicts.update(set(tags) & set(other_tags))
         return sorted(conflicts)
 
+    def is_category_project_owned(self, category: str) -> bool:
+        """True if any project rule uses ``category``.
+
+        Reads through the unfiltered base ``get_all_rules`` so it works from any
+        subclass.
+        """
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return False
+        return not rules.loc[
+            (rules[PERIOD_TYPE] == PERIOD_PROJECT) & (rules[CATEGORY] == category)
+        ].empty
+
+    def category_used_by_monthly_or_yearly(self, category: str) -> bool:
+        """True if any monthly or yearly rule uses ``category`` (excluding the
+        ``Total Budget`` cap category, which is not a real category)."""
+        if category == TOTAL_BUDGET:
+            return False
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return False
+        return not rules.loc[
+            (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY]))
+            & (rules[CATEGORY] == category)
+            & (rules[CATEGORY] != TOTAL_BUDGET)
+        ].empty
+
+    def find_category_overlaps(self) -> list[dict]:
+        """Categories that are BOTH project-owned and budget-used.
+
+        Returns
+        -------
+        list[dict]
+            One entry per overlapping category:
+            ``{"category": str, "kinds": [<"monthly"|"yearly">, ...]}`` — the
+            non-project kinds that collide, sorted. Empty when there is no
+            overlap.
+        """
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return []
+        project_cats = set(
+            rules.loc[rules[PERIOD_TYPE] == PERIOD_PROJECT, CATEGORY].dropna()
+        )
+        overlaps = []
+        for cat in sorted(project_cats):
+            kinds = sorted(
+                {
+                    pt
+                    for pt in rules.loc[
+                        (rules[CATEGORY] == cat)
+                        & (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY])),
+                        PERIOD_TYPE,
+                    ]
+                }
+            )
+            if kinds:
+                overlaps.append({"category": cat, "kinds": kinds})
+        return overlaps
+
     def strip_conflicting_tags(
         self,
         category: str,
