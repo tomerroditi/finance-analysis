@@ -121,23 +121,43 @@ class AnalysisService:
             df = df[df[TransactionsTableFields.CATEGORY.value] != LIABILITIES_CATEGORY]
 
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        # Month index from the *pre-exclusion* frame: a CC-only month must
+        # still appear (with zeros), matching the historical per-month loop.
+        months = sorted(df["month"].unique())
 
-        monthly_data = []
-        for month in sorted(df["month"].unique()):
-            month_df = df[df["month"] == month]
-            income, investments, expenses = self.get_income_investments_and_expenses(
-                month_df, exclude_refunds=exclude_refunds
-            )
-            monthly_data.append(
+        flow = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
+        masks = self.get_transactions_masks(flow)
+
+        income_amounts = flow["amount"].where(masks["income"], 0.0)
+        expense_amounts = flow["amount"].where(masks["expenses"], 0.0)
+        if exclude_refunds:
+            income_amounts = income_amounts.where(flow["amount"] > 0, 0.0)
+            expense_amounts = expense_amounts.where(flow["amount"] < 0, 0.0)
+        investment_amounts = flow["amount"].where(masks["investments"], 0.0)
+
+        grouped = (
+            pd.DataFrame(
                 {
-                    "month": month,
-                    "income": income,
-                    "investments": investments,
-                    "expenses": expenses,
+                    "month": flow["month"],
+                    "income": income_amounts,
+                    "investments": investment_amounts,
+                    "expenses": expense_amounts,
                 }
             )
+            .groupby("month")
+            .sum()
+            .reindex(months, fill_value=0.0)
+        )
 
-        return monthly_data
+        return [
+            {
+                "month": month,
+                "income": float(row["income"]),
+                "investments": float(row["investments"]) * -1,
+                "expenses": float(row["expenses"]) * -1,
+            }
+            for month, row in grouped.iterrows()
+        ]
 
     def get_avg_monthly_salary(self, months: int = 6) -> float | None:
         """Compute average monthly salary income over the last N months.
