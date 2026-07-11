@@ -328,3 +328,28 @@ class TestYearlyVsYearlyExclusion:
         rid_b = int(rules.loc[rules["name"] == "VacB"].iloc[0]["id"])
         with pytest.raises(ValueError, match="Hotels"):
             svc.update_rule(rid_b, tags=["Flights", "Hotels"])
+
+
+class TestYearlyProjectCategoryExclusion:
+    """A yearly rule can't target a category already owned by a project budget."""
+
+    def test_yearly_create_on_project_category_raises(self, db_session):
+        """A yearly rule on a project-owned category is rejected."""
+        from backend.services.budget_service import ProjectBudgetService, YearlyBudgetService
+
+        ProjectBudgetService(db_session).budget_repository.add(
+            "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
+        with pytest.raises(ValueError, match="project"):
+            YearlyBudgetService(db_session).create_rule("Reno Y", 3000.0, "Renovation", ["Materials"], 2026)
+
+    def test_yearly_edit_into_project_category_raises(self, db_session):
+        """Editing a yearly rule to a project-owned category is rejected."""
+        from backend.services.budget_service import ProjectBudgetService, YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        ProjectBudgetService(db_session).budget_repository.add(
+            "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
+        rid = int(svc.get_year_rules(2026).iloc[0]["id"])
+        with pytest.raises(ValueError, match="project"):
+            svc.update_rule(rid, category="Renovation", tags=["Materials"])

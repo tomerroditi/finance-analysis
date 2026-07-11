@@ -2204,3 +2204,26 @@ class TestProjectCategoryExclusion:
         )
         available = ProjectBudgetService(db_session).get_available_categories_for_new_project()
         assert "Food" not in available and "Transport" not in available
+
+    def _make_project(self, db_session, category):
+        """Seed a project owning a category (bypasses the config-tag loop)."""
+        ProjectBudgetService(db_session).budget_repository.add(
+            "Total Budget", 5000.0, category, "all_tags", None, None, period_type="project")
+
+    def test_monthly_create_on_project_category_raises(self, db_session):
+        """A monthly rule on a project-owned category is rejected."""
+        self._make_project(db_session, "Renovation")
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        with pytest.raises(ValueError, match="project"):
+            MonthlyBudgetService(db_session).create_rule("Reno M", 500.0, "Renovation", ["Materials"], 5, 2026)
+
+    def test_monthly_edit_into_project_category_raises(self, db_session):
+        """Editing a monthly rule to a project-owned category is rejected."""
+        svc = MonthlyBudgetService(db_session)
+        svc.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        svc.create_rule("Food M", 500.0, "Food", ["Groceries"], 5, 2026)
+        self._make_project(db_session, "Renovation")
+        rules = svc.get_all_rules()
+        rid = int(rules.loc[rules[NAME] == "Food M"].iloc[0][ID])
+        with pytest.raises(ValueError, match="project"):
+            svc.update_rule(rid, category="Renovation", tags=["Materials"])

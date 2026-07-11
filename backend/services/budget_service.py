@@ -888,6 +888,11 @@ class MonthlyBudgetService(BudgetService):
             any tag is already claimed by a yearly rule for the same ``year``.
         """
         parsed_tags = tags.split(";") if isinstance(tags, str) else tags
+        if category != TOTAL_BUDGET and self.is_category_project_owned(category):
+            raise ValueError(
+                f"The '{category}' category belongs to a project budget. "
+                f"A monthly rule can't target a project category."
+            )
         if category != TOTAL_BUDGET and year is not None:
             conflicts = self.find_conflicting_tags(
                 category, parsed_tags, year, PERIOD_YEARLY
@@ -945,6 +950,11 @@ class MonthlyBudgetService(BudgetService):
                 year = row[YEAR]
                 category = fields.get(CATEGORY, row[CATEGORY])
                 if pd.notnull(year) and category != TOTAL_BUDGET:
+                    if self.is_category_project_owned(category):
+                        raise ValueError(
+                            f"The '{category}' category belongs to a project "
+                            f"budget. A monthly rule can't target a project category."
+                        )
                     tags = fields.get(TAGS, row[TAGS])
                     parsed_tags = (
                         tags.split(";") if isinstance(tags, str) else list(tags)
@@ -1849,6 +1859,12 @@ class YearlyBudgetService(BudgetService):
             raise ValueError(
                 f"{joined} is already used by another yearly rule for {year}. "
                 f"A tag can't be in two yearly rules for the same year."
+            )
+
+        if self.is_category_project_owned(category):
+            raise ValueError(
+                f"The '{category}' category belongs to a project budget. "
+                f"A yearly rule can't target a project category."
             )
 
     def create_rule(
