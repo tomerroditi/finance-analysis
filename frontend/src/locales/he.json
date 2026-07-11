@@ -515,6 +515,7 @@
     "confirmCloseRefund": "לסגור את ההחזר? היתרה שלא הוחזרה תיחשב כהוצאה.",
     "confirmCancelRefund": "לבטל ציפייה להחזר זה?",
     "failedCancelRefund": "ביטול החזר נכשל",
+    "failedCreateProject": "יצירת הפרויקט נכשלה",
     "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר",
     "addRule": "הוסף כלל",
     "remainingAmount": "נותרו {{amount}}",

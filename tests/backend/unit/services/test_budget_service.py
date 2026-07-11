@@ -2227,3 +2227,51 @@ class TestProjectCategoryExclusion:
         rid = int(rules.loc[rules[NAME] == "Food M"].iloc[0][ID])
         with pytest.raises(ValueError, match="project"):
             svc.update_rule(rid, category="Renovation", tags=["Materials"])
+
+    def test_shared_put_route_blocks_project_edit_into_budget_used_category(self, db_session):
+        """The shared PUT /budget/rules/{id} route (MonthlyBudgetService.update_rule)
+        must reject changing a PROJECT rule's category to one already claimed by a
+        monthly/yearly budget — not just the reverse (monthly-into-project) direction.
+
+        Project rules store ``year = NaN``, so without an explicit guard for the
+        NaN-year branch this edit falls straight through to the base update and
+        creates the exact category-name-used-for-two-purposes-at-once,
+        overlap the feature exists to forbid.
+        """
+        self._make_project(db_session, "Renovation")
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        project_rules = ProjectBudgetService(db_session).get_all_rules()
+        project_rule_id = int(
+            project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
+        )
+
+        with pytest.raises(ValueError, match="Food"):
+            MonthlyBudgetService(db_session).update_rule(
+                project_rule_id, category="Food", tags=["Materials"]
+            )
+
+        # No overlap was created — the project rule's category is unchanged.
+        unchanged = ProjectBudgetService(db_session).get_all_rules()
+        unchanged_rule = unchanged.loc[unchanged[ID] == project_rule_id].iloc[0]
+        assert unchanged_rule[CATEGORY] == "Renovation"
+
+    def test_shared_put_route_allows_project_edit_without_category_change(self, db_session):
+        """A legitimate project-rule edit that doesn't touch category (e.g. amount
+        only) is unaffected by the new NaN-year guard — it must remain a no-op."""
+        self._make_project(db_session, "Renovation")
+        project_rules = ProjectBudgetService(db_session).get_all_rules()
+        project_rule_id = int(
+            project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
+        )
+
+        MonthlyBudgetService(db_session).update_rule(project_rule_id, amount=7500.0)
+
+        updated = ProjectBudgetService(db_session).get_all_rules()
+        updated_rule = updated.loc[updated[ID] == project_rule_id].iloc[0]
+        assert updated_rule[AMOUNT] == 7500.0
+        assert updated_rule[CATEGORY] == "Renovation"

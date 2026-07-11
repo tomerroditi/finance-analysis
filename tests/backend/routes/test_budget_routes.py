@@ -338,3 +338,48 @@ class TestCategoryConflictsRoutes:
         r = test_client.get("/api/budget/category-conflicts")
         assert r.status_code == 200
         assert "conflicts" in r.json()
+
+    def test_shared_put_route_rejects_project_category_change_to_budget_used(
+        self, test_client, monkeypatch
+    ):
+        """PUT /budget/rules/{id} must reject changing a PROJECT rule's category
+        to one already claimed by a monthly/yearly budget.
+
+        The route is shared between monthly and project rule edits. Project
+        rules have ``year = NaN``, which previously fell through the
+        service's category guard entirely, letting a raw PUT create the same
+        project/budget category overlap ``POST /budget/projects`` blocks.
+        """
+        monkeypatch.setattr(
+            "backend.services.tagging_service._categories_cache",
+            SAMPLE_CATEGORIES,
+        )
+        test_client.post("/api/budget/rules", json={
+            "name": "Total Budget", "amount": 9999, "category": "Total Budget",
+            "tags": ["all_tags"], "month": 5, "year": 2026,
+        })
+        test_client.post("/api/budget/rules", json={
+            "name": "Food M", "amount": 500, "category": "Food",
+            "tags": ["Groceries"], "month": 5, "year": 2026,
+        })
+        project_resp = test_client.post(
+            "/api/budget/projects", json={"category": "Renovation", "total_budget": 5000}
+        )
+        assert project_resp.status_code == 200
+
+        rules = test_client.get("/api/budget/rules").json()
+        project_rule = next(
+            r for r in rules if r["category"] == "Renovation" and r["year"] is None
+        )
+
+        r = test_client.put(
+            f"/api/budget/rules/{project_rule['id']}",
+            json={"category": "Food", "tags": ["Materials"]},
+        )
+        assert r.status_code == 400
+        assert "Food" in r.json()["detail"]
+
+        # No overlap was created — the project rule's category is unchanged.
+        unchanged = test_client.get("/api/budget/rules").json()
+        unchanged_rule = next(r for r in unchanged if r["id"] == project_rule["id"])
+        assert unchanged_rule["category"] == "Renovation"

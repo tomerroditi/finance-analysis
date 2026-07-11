@@ -106,7 +106,9 @@ def update_budget_rule(
     This route is shared between monthly and project rules (both are edited
     through the same ``rule_id``), so it uses ``MonthlyBudgetService`` — its
     ``update_rule`` override guards monthly edits against claiming a
-    yearly-owned tag and is a no-op passthrough for project rules.
+    yearly-owned or project-owned tag/category, and guards project edits
+    against claiming a category already used by a monthly/yearly budget. It
+    is a no-op passthrough only when the edit doesn't touch category/tags.
     """
     service = MonthlyBudgetService(db)
     updates = {k: v for k, v in rule.model_dump().items() if v is not None}

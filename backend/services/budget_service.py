@@ -923,11 +923,17 @@ class MonthlyBudgetService(BudgetService):
         be pre-filtered to ``period_type == "monthly"`` and silently miss a
         project rule's id.
 
-        Only runs the conflict check when the row being edited is itself a
-        monthly rule (non-null ``year``) outside the ``Total Budget``
-        category — mirroring the guard in :meth:`create_rule`. Project rules
-        (``year`` is ``NaN``) and edits that never touch ``category``/``tags``
-        fall straight through to the base update as a no-op.
+        Runs the monthly-vs-yearly conflict check when the row being edited
+        is itself a monthly rule (non-null ``year``) outside the
+        ``Total Budget`` category — mirroring the guard in
+        :meth:`create_rule`. Also guards the opposite case: this route is
+        the same one project rules are edited through (``year`` is
+        ``NaN`` for a project row), so a category change on a project rule
+        that targets a category already claimed by a monthly/yearly budget
+        is rejected too — otherwise the invariant "a category is never both
+        project-owned and budget-used" could be broken via this shared
+        endpoint alone. Edits that never touch ``category``/``tags`` fall
+        straight through to the base update as a no-op.
 
         Parameters
         ----------
@@ -940,7 +946,8 @@ class MonthlyBudgetService(BudgetService):
         ------
         ValueError
             If the edit would claim a tag already owned by a yearly rule for
-            the same year.
+            the same year, or (for a project rule) would move it onto a
+            category already used by a monthly or yearly budget.
         """
         all_rules = BudgetService.get_all_rules(self)
         if not all_rules.empty:
@@ -968,6 +975,13 @@ class MonthlyBudgetService(BudgetService):
                         raise ValueError(
                             f"{joined} is already used by your yearly budget for "
                             f"{int(year)}. A tag can't be in both for the same year."
+                        )
+                elif pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]:
+                    if self.category_used_by_monthly_or_yearly(category):
+                        raise ValueError(
+                            f"The '{category}' category is already used by a "
+                            f"monthly or yearly budget and can't be assigned to a "
+                            f"project rule."
                         )
 
         BudgetService.update_rule(self, id_, **fields)
