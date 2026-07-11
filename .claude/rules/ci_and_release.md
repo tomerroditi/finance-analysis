@@ -7,7 +7,7 @@ How GitHub Actions are wired up. Read this before touching anything in
 
 | Workflow                 | Trigger                | Purpose                                          |
 |--------------------------|------------------------|--------------------------------------------------|
-| `.github/workflows/ci.yml`     | `pull_request` to main, manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest. Fails the PR if anything breaks. |
+| `.github/workflows/ci.yml`     | `pull_request` to main, manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest, **and the full Playwright e2e suite across 4 parallel shards**. Fails the PR if anything breaks. |
 | `.github/workflows/release.yml`| `push` to main         | Re-run CI checks, then `commitizen` bump, build the Windows installer + macOS DMG, attach to the GitHub release. |
 
 The split exists because:
@@ -25,14 +25,23 @@ Don't merge them into one workflow. The duplicate-CI-step is intentional.
 - Backend: `poetry run pytest`
 - Frontend: `npm run lint`, `npm run build` (`tsc -b && vite build`),
   `npm test` (vitest)
+- **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`).
+  This runs the **entire** `frontend/e2e/` suite, not just the specs you added.
+  It is a required check — a red shard blocks the merge.
 
-Add a step here when you:
+**All of these are required checks.** After you push, don't assume green just
+because your own new spec passed locally — the e2e job runs every spec, so a
+change that removes or restructures shared UI can break a spec you never
+touched (e.g. removing a Plotly chart from a card breaks
+`chart-touch-zoom.spec.ts`, which looks for `.js-plotly-plot` on that card).
+Before pushing a change to a shared component, grep `frontend/e2e/` for the
+`data-card-id` / testid / selector you're changing. After pushing, run
+`gh pr checks <PR#>` and fix any red check — that's part of the task, not
+optional follow-up.
 
-- Land a new lint or static-analysis tool that should block merges.
-- Add a new test layer (e.g. e2e in CI).
-
-Do **not** add release-only steps (installer builds, DMG signing) here —
-they belong in `release.yml`.
+Add a step here when you land a new lint or static-analysis tool that should
+block merges. Do **not** add release-only steps (installer builds, DMG signing)
+here — they belong in `release.yml`.
 
 ## Conventional commits & version bumping
 
