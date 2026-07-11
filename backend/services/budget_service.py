@@ -1757,6 +1757,25 @@ class YearlyBudgetService(BudgetService):
                 f"A tag can't be in both for the same year."
             )
 
+        # A (category, tag) may not be covered by two yearly rules in the same
+        # year. Unlike monthly rules (bounded by the Total Budget cap), yearly
+        # rules have no overall cap, so a shared tag would double-count in the
+        # roll-up's total_spent/remaining/health.
+        yearly_conflicts = self.find_conflicting_tags(
+            category, tags, year, PERIOD_YEARLY, exclude_rule_id=id_
+        )
+        if yearly_conflicts:
+            if yearly_conflicts == [ALL_TAGS]:
+                raise ValueError(
+                    f"Another yearly rule already covers the '{category}' "
+                    f"category for {year}."
+                )
+            joined = ", ".join(yearly_conflicts)
+            raise ValueError(
+                f"{joined} is already used by another yearly rule for {year}. "
+                f"A tag can't be in two yearly rules for the same year."
+            )
+
     def create_rule(
         self,
         name: str,

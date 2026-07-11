@@ -167,16 +167,22 @@ class TestYearlyAnalysisSkippedConflictsDedup:
         import backend.services.budget_service as mod
 
         svc = YearlyBudgetService(db_session)
-        # Two independent 2025 yearly rules both touch Travel/Hotels — both will
-        # collide with the 2026 monthly rule below when carried forward.
+        # Two independent 2025 yearly rules in DIFFERENT categories both carry a
+        # "Hotels" tag; each collides with its category's 2026 monthly rule when
+        # carried forward, so both skip "Hotels". (Same-category overlap is now
+        # blocked by the yearly-vs-yearly guard, so the dedup scenario is
+        # constructed across categories that happen to share a tag name.)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2025)
-        svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2025)
+        svc.create_rule("VacB", 3000.0, "Leisure", ["Hotels"], 2025)
 
         MonthlyBudgetService(db_session).create_rule(
             "Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026
         )
         MonthlyBudgetService(db_session).create_rule(
             "Travel M", 500.0, "Travel", ["Hotels"], 3, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Leisure M", 500.0, "Leisure", ["Hotels"], 3, 2026
         )
 
         monkeypatch.setattr(mod, "_today", lambda: date(2026, 1, 1))
@@ -242,3 +248,83 @@ class TestForceCopyFromPriorYear:
         names = list(svc.get_year_rules(2026)["name"])
         assert names == ["Vacations"]
         assert "OldRule" not in names
+
+
+class TestYearlyVsYearlyExclusion:
+    """A (category, tag) cannot be covered by two yearly rules in the same year."""
+
+    def test_create_conflicting_tag_with_another_yearly_raises(self, db_session):
+        """A second yearly rule sharing a tag in the same category+year is rejected."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels", "Flights"], 2026)
+        with pytest.raises(ValueError, match="Hotels"):
+            svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
+
+    def test_non_overlapping_tags_same_category_ok(self, db_session):
+        """Two yearly rules in one category+year with disjoint tags coexist."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        svc.create_rule("VacB", 3000.0, "Travel", ["Flights"], 2026)
+        assert len(svc.get_year_rules(2026)) == 2
+
+    def test_new_all_tags_conflicts_with_existing_yearly(self, db_session):
+        """An all_tags yearly rule collides with any existing yearly rule in the category+year."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        with pytest.raises(ValueError, match="Travel"):
+            svc.create_rule("VacAll", 3000.0, "Travel", ["all_tags"], 2026)
+
+    def test_existing_all_tags_blocks_new_specific(self, db_session):
+        """A specific-tag yearly rule is rejected when an all_tags rule already covers the category+year."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacAll", 5000.0, "Travel", ["all_tags"], 2026)
+        with pytest.raises(ValueError, match="Hotels"):
+            svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
+
+    def test_same_tag_different_category_ok(self, db_session):
+        """The same tag name in a different category does not conflict."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        svc.create_rule("StayB", 3000.0, "Leisure", ["Hotels"], 2026)
+        assert len(svc.get_year_rules(2026)) == 2
+
+    def test_same_category_tag_different_year_ok(self, db_session):
+        """The same (category, tag) in a different year does not conflict."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Vac25", 5000.0, "Travel", ["Hotels"], 2025)
+        svc.create_rule("Vac26", 3000.0, "Travel", ["Hotels"], 2026)
+        assert not svc.get_year_rules(2026).empty
+
+    def test_edit_amount_does_not_conflict_with_itself(self, db_session):
+        """Editing a yearly rule's amount does not trip the self-overlap guard."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        rid = int(svc.get_year_rules(2026).iloc[0]["id"])
+        svc.update_rule(rid, amount=6000.0)
+        assert float(svc.get_year_rules(2026).iloc[0]["amount"]) == 6000.0
+
+    def test_edit_to_add_conflicting_tag_raises(self, db_session):
+        """Editing a yearly rule to add a tag owned by another yearly rule is rejected."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
+        svc.create_rule("VacB", 3000.0, "Travel", ["Flights"], 2026)
+        rules = svc.get_year_rules(2026)
+        rid_b = int(rules.loc[rules["name"] == "VacB"].iloc[0]["id"])
+        with pytest.raises(ValueError, match="Hotels"):
+            svc.update_rule(rid_b, tags=["Flights", "Hotels"])
