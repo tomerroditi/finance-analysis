@@ -318,3 +318,23 @@ class TestBudgetRoutesErrors:
                     "/api/budget/projects/Wedding",
                     json={"total_budget": 60000.0},
                 )
+
+
+class TestCategoryConflictsRoutes:
+    """Category-level project ↔ monthly/yearly conflict surfacing + block."""
+
+    def test_create_project_on_budget_category_returns_400(self, test_client):
+        """POST /budget/projects on a monthly-used category is 400."""
+        test_client.post("/api/budget/rules", json={
+            "name": "Total Budget", "amount": 9999, "category": "Total Budget", "tags": ["all_tags"], "month": 5, "year": 2026})
+        test_client.post("/api/budget/rules", json={
+            "name": "Food M", "amount": 500, "category": "Food", "tags": ["Groceries"], "month": 5, "year": 2026})
+        r = test_client.post("/api/budget/projects", json={"category": "Food", "total_budget": 5000})
+        assert r.status_code == 400
+        assert "Food" in r.json()["detail"]
+
+    def test_category_conflicts_endpoint(self, test_client):
+        """GET /budget/category-conflicts returns the overlap list shape."""
+        r = test_client.get("/api/budget/category-conflicts")
+        assert r.status_code == 200
+        assert "conflicts" in r.json()

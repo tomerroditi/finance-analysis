@@ -366,8 +366,17 @@ def create_project(
 ) -> dict[str, str]:
     """Create a new project."""
     service = ProjectBudgetService(db)
-    service.create_project(project.category, project.total_budget)
-    return {"status": "success"}
+    try:
+        service.create_project(project.category, project.total_budget)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/category-conflicts")
+def get_category_conflicts(db: Session = Depends(get_database)) -> dict[str, Any]:
+    """Categories currently in BOTH a project and a monthly/yearly budget."""
+    return {"conflicts": BudgetService(db).find_category_overlaps()}
 
 
 @router.put("/projects/{name}")
