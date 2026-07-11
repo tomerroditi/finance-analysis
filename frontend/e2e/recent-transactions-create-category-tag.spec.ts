@@ -31,7 +31,6 @@ test.describe("Recent transactions — inline create category/tag", () => {
     page,
   }) => {
     await navigateTo(page, "/");
-    await page.waitForLoadState("networkidle");
 
     // Open the inline category/tag editor on the first recent transaction.
     const editButton = page

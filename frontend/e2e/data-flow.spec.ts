@@ -68,7 +68,6 @@ test.describe("DataFlow diagram", () => {
 
   test("diagram nodes are visible and clickable", async ({ page }) => {
     await page.goto("/data-flow");
-    await page.waitForLoadState("networkidle");
 
     // Column headers should render
     await expect(page.getByText(/Data Sources/i).first()).toBeVisible();

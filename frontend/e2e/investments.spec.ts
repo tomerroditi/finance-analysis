@@ -9,7 +9,6 @@ test.describe("Investments", () => {
 
   test("displays investment cards", async ({ page }) => {
     await navigateTo(page, "/investments");
-    await page.waitForLoadState("networkidle");
 
     // Should show investment cards with names
     const cards = page.locator("[class*='rounded-2xl']");
@@ -18,7 +17,6 @@ test.describe("Investments", () => {
 
   test("shows portfolio overview section", async ({ page }) => {
     await navigateTo(page, "/investments");
-    await page.waitForLoadState("networkidle");
 
     // Portfolio section should be visible
     await expect(page.getByText(/Portfolio/i).first()).toBeVisible();

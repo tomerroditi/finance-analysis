@@ -21,7 +21,6 @@ test.describe("DataSources", () => {
 
   test("displays connected accounts in demo mode", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // In demo mode, there should be demo accounts listed
     const content = page.locator("main");
@@ -30,7 +29,6 @@ test.describe("DataSources", () => {
 
   test("shows bank balance section", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // Bank balance section should show account balances
     const content = page.locator("main");
@@ -59,7 +57,6 @@ test.describe("DataSources", () => {
 
   test("shows provider logos in the connect-account modal grid", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // Step 1: open the connect-account modal and pick the Bank Account flow.
     await page.getByRole("button", { name: "Connect Account", exact: true }).click();
@@ -150,7 +147,6 @@ test.describe("DataSources", () => {
         sessionStorage.setItem("onboardingDismissedAt", String(Date.now())),
       );
       await page.goto("/data-sources");
-      await page.waitForLoadState("networkidle");
 
       // The seeded bank row's amber "$" button (enabled because scraped today).
       const setBtn = page.getByRole("button", { name: /^Set Balance$/ }).first();

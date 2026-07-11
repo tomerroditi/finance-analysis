@@ -28,7 +28,6 @@ test.describe("Transactions", () => {
 
     // Click the Credit Card tab
     await page.getByRole("button", { name: /Credit Card/i }).click();
-    await page.waitForLoadState("networkidle");
 
     // The tab should be visually active
     const ccTab = page.getByRole("button", { name: /Credit Card/i });
@@ -99,7 +98,6 @@ test.describe("Transactions", () => {
     // The global MutationCache.onSuccess debounced invalidator fires ~200 ms
     // after the mutation succeeds, then React Query refetches the transactions.
     // Wait for the network to settle so the re-render completes.
-    await page.waitForLoadState("networkidle");
 
     // Re-locate the same row by its stable data-testid. The eraser is still
     // present (kept for alignment) but now disabled — the category and tag
@@ -163,7 +161,6 @@ test.describe("Transactions", () => {
     // The global MutationCache.onSuccess debounced invalidator fires ~200 ms
     // after the mutation succeeds, then React Query refetches the transactions.
     // Wait for the network to settle so the re-render completes.
-    await page.waitForLoadState("networkidle");
 
     // Both rows now have a disabled per-row eraser — the category and tag have
     // been cleared, so the button stays (for alignment) but `disabled` is true.

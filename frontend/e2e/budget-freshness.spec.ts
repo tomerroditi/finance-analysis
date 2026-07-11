@@ -55,7 +55,6 @@ test.describe("Budget data freshness", () => {
       { provider: "leumi", account_name: "Savings", last_scrape_date: daysAgoIso(12) },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     // Banner lists ALL out-of-sync accounts and offers a single Sync now CTA.
     await expect(page.getByText(/Budget may be incomplete/i)).toBeVisible({
@@ -76,7 +75,6 @@ test.describe("Budget data freshness", () => {
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(5) },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     // The chip is the only freshness element for mild staleness, and it names
     // the un-scraped window rather than a vague "N ago".
@@ -98,7 +96,6 @@ test.describe("Budget data freshness", () => {
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(0) },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(/Up to date/i)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
@@ -114,7 +111,6 @@ test.describe("Budget data freshness", () => {
       { provider: "isracard", account_name: "Joint", last_scrape_date: sameDay },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
     await expect(banner).toBeVisible({ timeout: 30_000 });
@@ -131,7 +127,6 @@ test.describe("Budget data freshness", () => {
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: null },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     const banner = page.getByText(/Budget may be incomplete/i);
     await expect(banner).toBeVisible({ timeout: 30_000 });
@@ -152,7 +147,6 @@ test.describe("Budget data freshness", () => {
       },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Show sync details/i })).toHaveCount(0);
@@ -175,7 +169,6 @@ test.describe("Budget data freshness", () => {
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: prevMonthFirst },
     ]);
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
     await expect(banner).toBeVisible({ timeout: 30_000 }); // current month
@@ -184,7 +177,6 @@ test.describe("Budget data freshness", () => {
 
     const prev = page.getByRole("button", { name: /Previous/i }).first();
     await prev.click();
-    await page.waitForLoadState("networkidle");
     await expect(banner).toBeVisible(); // previous month — still affected
     // The range is clamped to the previous month — it must not bleed into the
     // current month.
@@ -194,7 +186,6 @@ test.describe("Budget data freshness", () => {
     }
 
     await prev.click();
-    await page.waitForLoadState("networkidle");
     await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0); // settled
   });
 });

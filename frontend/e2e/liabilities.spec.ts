@@ -9,7 +9,6 @@ test.describe("Liabilities", () => {
 
   test("displays liability cards or empty state", async ({ page }) => {
     await navigateTo(page, "/liabilities");
-    await page.waitForLoadState("networkidle");
 
     // Should show liability cards OR an empty state
     const content = page.locator("main");
@@ -18,7 +17,6 @@ test.describe("Liabilities", () => {
 
   test("shows debt over time chart", async ({ page }) => {
     await navigateTo(page, "/liabilities");
-    await page.waitForLoadState("networkidle");
 
     // Debt over time section should be present
     await expect(page.getByText(/Debt Over Time/i)).toBeVisible({ timeout: 10_000 });

@@ -163,7 +163,6 @@ test.describe("Onboarding flows", () => {
     // the gate must respect the dismissal flag and let the dashboard
     // render.
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // Give the gate's effect a tick to run; assert we did NOT bounce.
     expect(page.url()).toMatch(/\/$/);

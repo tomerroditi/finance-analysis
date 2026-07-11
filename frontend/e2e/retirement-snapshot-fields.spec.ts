@@ -93,7 +93,6 @@ test.describe("Retirement snapshot fields", () => {
     page,
   }) => {
     await navigateTo(page, "/early-retirement");
-    await page.waitForLoadState("networkidle");
 
     // Set a custom net worth
     const netWorthInput = page

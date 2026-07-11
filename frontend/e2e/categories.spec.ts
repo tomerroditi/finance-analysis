@@ -12,7 +12,6 @@ test.describe("Categories", () => {
 
   test("categories have tags nested inside", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Food category should have tags visible
     const foodSection = page.getByText("Food").first();
@@ -21,7 +20,6 @@ test.describe("Categories", () => {
 
   test("protected categories are displayed", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Protected categories should be visible
     await expect(page.getByText("Salary").first()).toBeVisible();

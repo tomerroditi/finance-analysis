@@ -111,7 +111,6 @@ test.describe("Scrape All burst guard", () => {
     });
 
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(RUNNING_ACCOUNT, { exact: false })).toBeVisible();
     await expect(page.getByText(IDLE_ACCOUNT, { exact: false })).toBeVisible();
@@ -189,7 +188,6 @@ test.describe("Scrape All burst guard", () => {
       });
 
       await navigateTo(page, "/data-sources");
-      await page.waitForLoadState("networkidle");
 
       const card = page
         .getByRole("heading", { name: FAILED_ACCOUNT, exact: true })

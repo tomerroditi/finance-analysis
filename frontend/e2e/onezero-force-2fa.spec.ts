@@ -55,7 +55,6 @@ test.describe("OneZero force-2FA (Re-authenticate)", () => {
     page,
   }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // The seeded OneZero account card must be present.
     await expect(page.getByText(ONEZERO_ACCOUNT, { exact: false })).toBeVisible();

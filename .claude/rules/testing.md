@@ -284,16 +284,29 @@ enable/disable dance.
 
 **Why not parallel by default?** `npm run test:e2e:parallel` runs
 `--project=read-only --workers=50%` then `--project=mutating --workers=1
---no-deps`. It only pays off when each worker isn't contending on the single
-shared backend. Measured on the web sandbox (4 cores → `50%` = 2 workers):
-the parallel read-only phase came in **slower** (8.4 m vs 6.8 m serial) with
-**13 flaky timeouts** — two concurrent browsers saturate uvicorn's serialized
-SQLite query path and the heavy cold-cache dashboards (~30 parallel React Query
-requests behind the HTTP/1.1 6-connection cap) blow past the 45 s expect
-timeout. Client-side parallelism can't beat a serialized backend. Real parallel
-speedup needs **per-worker isolated backends** — a separate uvicorn + demo DB
-per worker (`FAD_USER_DIR` override + `VITE_BACKEND_URL` per worker). Use
-`test:e2e:parallel` only on a machine whose backend can sustain the concurrency.
+--no-deps`. Profiling showed the suite is **CPU-bound on browser-side Plotly
+rendering**, not the servers — the backend answers even the heaviest analytics
+endpoint in <1 s, and a demo-DB rebuild is ~0.08 s. On the web sandbox (4
+cores) two concurrent Chromium instances each rendering Plotly saturate the
+CPU, so the parallel read-only phase came in **slower** than serial (measured
+7.3–8.4 m vs ~6.0 m) with flaky timeouts. Client-side parallelism can't beat a
+per-test render cost when the box is already CPU-bound. It *does* help on a
+machine with spare cores; real across-the-board parallel speedup needs
+**per-worker isolated backends** (a separate uvicorn + demo DB per worker via
+`FAD_USER_DIR` + `VITE_BACKEND_URL`). Use `test:e2e:parallel` only where the CPU
+can sustain the concurrency.
+
+**Prefer auto-waiting assertions over `waitForLoadState("networkidle")`.** A
+bare `networkidle` after navigation waits for *every* straggler request plus a
+500 ms quiet window — measured ~2 s of dead wait on a warm dashboard, far more
+cold. Playwright's `expect(...).toBeVisible()`, `.click()`, `.fill()`, and
+`.waitFor()` already auto-wait for the specific element the test needs, so a
+following `networkidle` is usually redundant. Drop it — **unless** the test
+then does a *non-waiting* read (`.count()`, `.evaluate()`, `.inputValue()`,
+`.textContent()`, `.isVisible()`), which can race the render; there, keep an
+explicit wait (`networkidle`, or better, `await expect(target.first())
+.toBeVisible()` before the read). Trimming the redundant ones shaved the
+read-only phase from ~6.8 m to ~6.0 m.
 
 **Adding a spec to `READ_ONLY_SPECS`:** only if it performs *no* backend
 writes — no POST/PUT/DELETE, no form submit, no create/edit/delete/move of

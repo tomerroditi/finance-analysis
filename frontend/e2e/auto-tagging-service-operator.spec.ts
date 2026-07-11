@@ -33,7 +33,6 @@ test.describe("Auto-tagging: service operator restriction + apply toast", () => 
 
   test("service field exposes only the Equals operator", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Open the rules manager, then the rule editor.
     await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();
@@ -70,7 +69,6 @@ test.describe("Auto-tagging: service operator restriction + apply toast", () => 
 
   test("applying all rules surfaces a localized success toast", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Open the rules manager, then apply all rules.
     await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();

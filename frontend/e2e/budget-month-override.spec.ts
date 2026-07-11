@@ -80,7 +80,6 @@ test.describe("Budget month override", () => {
       firstBtn.click(),
     ]);
     expect(resp.ok()).toBeTruthy();
-    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(500);
 
     // The moved transaction leaves the current month's dataset entirely.
@@ -88,7 +87,6 @@ test.describe("Budget month override", () => {
 
     // Navigate to the next month — the moved transaction shows the badge.
     await page.locator("button .lucide-chevron-right").first().click();
-    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(300);
     await ensureTotalOpen(page);
 
@@ -110,7 +108,6 @@ test.describe("Budget month override", () => {
       ),
       movedRow.locator("button:has(.lucide-calendar-minus)").click(),
     ]);
-    await page.waitForLoadState("networkidle");
     await page.waitForTimeout(400);
     await expect(page.locator(`[data-testid="${rowId}"]`)).toHaveCount(0);
   });

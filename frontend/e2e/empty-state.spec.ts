@@ -47,7 +47,6 @@ test.describe("Empty database smoke", () => {
   test("onboarding wizard renders for fresh users", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/onboarding");
-    await page.waitForLoadState("networkidle");
 
     await expect(
       page.getByRole("heading", { level: 1 }).first(),
@@ -90,7 +89,6 @@ test.describe("Empty database smoke", () => {
     }) => {
       const errors = collectPageErrors(page);
       await page.goto(route);
-      await page.waitForLoadState("networkidle");
 
       // The Layout shell mounted — Sidebar's <nav> proves React got
       // past the top-level page component without throwing. Most

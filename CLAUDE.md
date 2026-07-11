@@ -122,16 +122,25 @@ Demo Mode at the end. `mutating` depends on `read-only`, so a bare
 `playwright test` runs everything serially and safely.
 
 **Default is serial (`npm run test:e2e`).** The `read-only` project *can* fan
-out across workers (`npm run test:e2e:parallel`), but that only helps when each
-worker isn't contending on the single shared backend. On a resource-constrained
-box (e.g. the web sandbox, 4 cores) even 2 workers saturate uvicorn's serialized
-query path and the heavy cold-cache dashboards time out — the parallel run came
-in *slower* than serial (8.4 m vs 6.8 m) with flaky timeouts. Real parallel
-speedup needs per-worker isolated backends (separate uvicorn + DB per worker);
-until then, keep the default serial. **A spec may only join the
-`READ_ONLY_SPECS` list in `playwright.config.ts` if it performs zero backend
-writes** — one writing spec there corrupts every parallel sibling. Add a write
-to a listed spec? Move it out of the list in the same change.
+out across workers (`npm run test:e2e:parallel`), but profiling showed the suite
+is **CPU-bound on browser-side Plotly rendering** (the backend answers in <1 s;
+a demo-DB rebuild is ~0.08 s). On a resource-constrained box (e.g. the web
+sandbox, 4 cores) two concurrent Chromium instances rendering Plotly saturate
+the CPU, so parallel came in *slower* than serial (~7.3–8.4 m vs ~6.0 m) with
+flaky timeouts. Parallel helps only where the CPU has spare cores; broad
+speedup needs per-worker isolated backends. Keep the default serial. **A spec
+may only join the `READ_ONLY_SPECS` list in `playwright.config.ts` if it
+performs zero backend writes** — one writing spec there corrupts every parallel
+sibling. Add a write to a listed spec? Move it out of the list in the same
+change.
+
+**Avoid redundant `waitForLoadState("networkidle")`.** It waits for every
+straggler request + 500 ms quiet (~2 s of dead time warm, more cold), but
+Playwright's `expect().toBeVisible()`/`.click()`/`.fill()`/`.waitFor()` already
+auto-wait for the element the test needs. Drop the `networkidle` — *unless* the
+test then does a non-waiting read (`.count()`, `.evaluate()`, `.inputValue()`,
+`.textContent()`, `.isVisible()`), which can race the render; there keep an
+explicit wait. See `.claude/rules/testing.md`.
 
 - **Run the whole suite, not just the one test you touched.** Backend `pytest` has a 40 % coverage gate — a targeted run needs `--no-cov` (see Commands), but the pre-PR run is the full suite with coverage on.
 - **e2e is required, not optional** — `npm test` (vitest) and e2e (`playwright test`) are different layers. e2e specs live in `frontend/e2e/` and drive the real UI in Demo Mode; type-checking and unit tests miss the focus-trap / click-outside / query-invalidation bugs UI patches introduce. Every UI patch must add or update an e2e spec (see the CLAUDE.md "UI Testing" section).
