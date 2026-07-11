@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
@@ -42,6 +42,23 @@ function avgOf(rows: { income: number }[] | undefined): number {
  * out every bar. Values above the cap are drawn full-width and flagged as
  * outliers — their exact ₪ label still tells the true story.
  */
+/**
+ * Pick a legible ink for a label sitting on a coloured fill: dark text on light
+ * segments (amber, lime, cyan…), light text on dark ones, each with a matching
+ * soft shadow. Uses perceived brightness so white never disappears on a yellow
+ * slice again.
+ */
+function labelInk(hex: string): { color: string; textShadow: string } {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 150
+    ? { color: "#0b1220", textShadow: "0 1px 1px rgba(255,255,255,0.35)" }
+    : { color: "#ffffff", textShadow: "0 1px 2px rgba(0,0,0,0.4)" };
+}
+
 function barCap(values: number[], multiplier = 1.6): number {
   const positives = values.filter((v) => v > 0).sort((a, b) => a - b);
   if (positives.length === 0) return 1;
@@ -508,11 +525,32 @@ function CompositionView({
   const lastMonth = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
-  // amounts need more room than a "42%" — raise the label threshold accordingly.
-  const threshold = labelMode === "amt" ? 16 : 11;
+  // Show a slice's label whenever the slice is genuinely wide enough to hold the
+  // text — measured against the real (responsive) bar width, not a flat % cut, so
+  // every tile that *can* fit its number shows it.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [barPx, setBarPx] = useState(0);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    // The bar occupies the 1fr column: root width minus month(56) + total(112) + two gap-3 gaps(24).
+    const measure = () => setBarPx(Math.max(0, el.clientWidth - 56 - 112 - 24));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Estimated label width at 10px extra-bold tabular-nums (~6.3px/char) + a little
+  // breathing room, ignoring zero-width bidi-isolate chars. Before the first
+  // measurement, fall back to a conservative % so labels still paint on load.
+  const fits = (labelText: string, pct: number) => {
+    const chars = labelText.replace(/[⁦⁩]/g, "").length;
+    if (barPx <= 0) return pct >= (labelMode === "amt" ? 18 : 12);
+    return (pct / 100) * barPx >= chars * 6.3 + 8;
+  };
 
   return (
-    <div className="min-w-[320px]">
+    <div ref={rootRef} className="min-w-[320px]">
       <div className="flex flex-wrap gap-x-3.5 gap-y-2 mb-3">
         {series.map((name) => (
           <span key={name} className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
@@ -541,17 +579,19 @@ function CompositionView({
                 if (val <= 0) return null;
                 const pct = (val / total) * 100;
                 const label = labelMode === "amt" ? formatCompactCurrency(val) : `${Math.round(pct)}%`;
+                const segColor = colorOf(name);
+                const ink = labelInk(segColor);
                 return (
                   <div
                     key={name}
                     className="h-full flex items-center justify-center overflow-hidden"
-                    style={{ width: `${pct}%`, background: colorOf(name) }}
+                    style={{ width: `${pct}%`, background: segColor }}
                     title={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
                   >
-                    {pct >= threshold && (
+                    {fits(label, pct) && (
                       <span
-                        className="text-[9px] font-extrabold whitespace-nowrap tabular-nums"
-                        style={{ color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)" }}
+                        className="text-[10px] font-extrabold whitespace-nowrap tabular-nums"
+                        style={{ color: ink.color, textShadow: ink.textShadow }}
                       >
                         {label}
                       </span>
