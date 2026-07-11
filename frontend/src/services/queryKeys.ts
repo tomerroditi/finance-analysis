@@ -19,6 +19,10 @@
 
 export const qkPrefix = {
   transactions: ["transactions"] as const,
+  // Matches only transaction LIST entries (["transactions","list",...]) —
+  // setQueriesData patches assume Transaction[] data and must NOT match
+  // sibling entries like ["transactions","uncategorized-count",...].
+  transactionsList: ["transactions", "list"] as const,
   pendingRefunds: ["pending-refunds"] as const,
   budget: ["budget"] as const,
   analytics: ["analytics"] as const,

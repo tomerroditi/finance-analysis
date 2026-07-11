@@ -100,8 +100,10 @@ export function RecentTransactionsFeed({
         t.source === tx.source &&
         (t.unique_id ?? t.id) === (tx.unique_id ?? tx.id);
       const patchList = (old: Transaction[] | undefined) =>
-        old?.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t)) ?? old;
-      queryClient.setQueriesData<Transaction[]>({ queryKey: qkPrefix.transactions }, patchList);
+        Array.isArray(old)
+          ? old.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t))
+          : old;
+      queryClient.setQueriesData<Transaction[]>({ queryKey: qkPrefix.transactionsList }, patchList);
       queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       invalidateAnalytics();
     },

@@ -41,4 +41,12 @@ describe("makeQueryKeys", () => {
       k.analytics.incomeBySource(undefined, undefined),
     );
   });
+
+  it("transactionsList prefix matches list keys but not the count key", () => {
+    const k = makeQueryKeys(false);
+    const list = k.transactions.list("all", false);
+    const count = k.transactions.uncategorizedCount();
+    expect(list.slice(0, qkPrefix.transactionsList.length)).toEqual([...qkPrefix.transactionsList]);
+    expect(count.slice(0, qkPrefix.transactionsList.length)).not.toEqual([...qkPrefix.transactionsList]);
+  });
 });
