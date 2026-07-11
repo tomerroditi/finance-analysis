@@ -141,7 +141,7 @@ export function InvestmentAnalysisModal({
       // MutationCache.onSuccess in queryClient.ts handles refreshing the
       // heavier portfolio/analysis queries after a 200 ms debounce.
       queryClient.setQueryData<Snapshot[]>(
-        ["investment-snapshots", investmentId],
+        qk.investments.snapshots(investmentId),
         (old) => old?.filter((s) => s.id !== snapshotId),
       );
     },
