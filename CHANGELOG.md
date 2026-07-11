@@ -1,3 +1,18 @@
+## v1.42.0 (2026-07-11)
+
+### Feat
+
+- **dashboard**: readable segment labels — auto-contrast ink, 10px, fit-based
+- **dashboard**: lead KPI cards with the 3-month average (3 → 6 → 12 order)
+- **dashboard**: rescale ledger bars, flag outliers, and compact the KPI cards
+- **dashboard**: cap Income & Expenses views to 12 months with "Show earlier months"
+- **dashboard**: consolidate Income & Expenses KPI tiles into two trend cards
+- **dashboard**: redesign Income & Expenses card with ledger + composition views
+
+### Fix
+
+- **e2e**: repoint chart-touch-zoom to the Net Worth card after Plotly removal
+
 ## v1.41.1 (2026-07-10)
 
 ### Fix
