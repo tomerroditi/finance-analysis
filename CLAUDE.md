@@ -74,6 +74,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Service names:** frontend/API use plural (`banks`, `credit_cards`, `cash`, `manual_investments`)
 - **Tags stored in budgets:** semicolon-separated (`"tag1;tag2;tag3"`)
 - **Budget kinds:** three kinds — monthly, yearly, project — discriminated by `budget_rules.period_type` (explicit column, not inferred from nulls). Yearly rules are per-year category/tag envelopes, mutually exclusive with monthly rules on the same (category, tag) within a year. Demo DB backfills `period_type` in `backend/demo_setup.py`.
+- **Project ↔ monthly/yearly category exclusion:** a category can't be both project-owned and used by a monthly/yearly rule — the new-project category picker (`GET /budget/projects/available`) filters out any category already claimed by a monthly/yearly rule, and monthly/yearly rule creation blocks categories already claimed by a project. Existing overlaps (e.g. from data predating this rule) surface via `GET /budget/category-conflicts` and the `CategoryConflictBanner` on the Budget page — non-blocking, dismissible.
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
 
