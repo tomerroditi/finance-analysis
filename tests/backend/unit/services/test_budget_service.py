@@ -2175,3 +2175,32 @@ class TestMonthlySkippedYearlyConflictsDedup:
             analysis = service.get_monthly_analysis(2026, 10)
 
         assert analysis["skipped_yearly_conflicts"] == ["Hotels"]
+
+
+class TestProjectCategoryExclusion:
+    """A project can't claim a category already used by monthly/yearly budgets."""
+
+    def test_create_project_on_budget_used_category_raises(self, db_session):
+        """Creating a project on a category with a monthly rule is rejected."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        with pytest.raises(ValueError, match="Food"):
+            ProjectBudgetService(db_session).create_project("Food", 5000.0)
+
+    def test_available_categories_excludes_budget_used(self, db_session):
+        """The new-project picker hides categories that have monthly/yearly rules."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        YearlyBudgetService(db_session).create_rule(
+            "Transport Y", 20000.0, "Transport", ["Gas"], 2026
+        )
+        available = ProjectBudgetService(db_session).get_available_categories_for_new_project()
+        assert "Food" not in available and "Transport" not in available

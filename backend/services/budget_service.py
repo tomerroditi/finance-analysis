@@ -1473,7 +1473,20 @@ class ProjectBudgetService(BudgetService):
             Project category name (must already exist in categories config).
         total_budget : float
             Overall spending limit for the project.
+
+        Raises
+        ------
+        ValueError
+            If ``category`` already has a monthly or yearly budget rule. A
+            category can't be in both a project and a monthly/yearly budget.
         """
+        if self.category_used_by_monthly_or_yearly(category):
+            raise ValueError(
+                f"The '{category}' category is already used by a monthly or "
+                f"yearly budget. A category can't be in both a project and a "
+                f"monthly/yearly budget."
+            )
+
         self.add_rule(
             name=TOTAL_BUDGET,
             amount=total_budget,
@@ -1577,7 +1590,8 @@ class ProjectBudgetService(BudgetService):
         -------
         list[str]
             Category names from the categories config that are not already
-            used as project budget categories.
+            used as project budget categories, and do not already have a
+            monthly or yearly budget rule.
         """
         current_projects = self.get_all_projects_names()
         new_possible_projects = [
@@ -1586,6 +1600,7 @@ class ProjectBudgetService(BudgetService):
                 copy=True
             ).keys()
             if cat not in current_projects
+            and not self.category_used_by_monthly_or_yearly(cat)
         ]
         return new_possible_projects
 
