@@ -127,10 +127,16 @@ class TestRecurringDetection:
 
     def test_excludes_project_budget_categories(self, db_session):
         """Transactions in a project-budget category are not treated as recurring."""
+        from backend.constants.budget import PERIOD_PROJECT
         from backend.models.budget import BudgetRule
 
         db_session.add(
-            BudgetRule(name="Home Renovation", category="Home Renovation", amount=50000)
+            BudgetRule(
+                name="Home Renovation",
+                category="Home Renovation",
+                amount=50000,
+                period_type=PERIOD_PROJECT,
+            )
         )
         for n in range(4):
             _add_charge(db_session, "PAINTER", -2500.0, _months_ago(n), category="Home Renovation")

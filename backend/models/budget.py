@@ -29,6 +29,8 @@ class BudgetRule(Base, TimestampMixin):
         Year of the monthly budget rule; ``NULL`` for project budgets.
     month : int, optional
         Month (1–12) of the monthly budget rule; ``NULL`` for project budgets.
+    period_type : str, optional
+        Rule kind discriminator: ``"monthly"``, ``"yearly"``, or ``"project"``.
     """
 
     __tablename__ = Tables.BUDGET_RULES.value
@@ -40,3 +42,4 @@ class BudgetRule(Base, TimestampMixin):
     tags = Column(String, nullable=True)
     year = Column(Integer, nullable=True)
     month = Column(Integer, nullable=True)
+    period_type = Column(String, nullable=True)

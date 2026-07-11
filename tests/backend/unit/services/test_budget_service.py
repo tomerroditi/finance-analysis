@@ -17,6 +17,7 @@ from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
+    YearlyBudgetService,
 )
 
 
@@ -1882,3 +1883,395 @@ class TestGetProjectBudgetViewConstruction:
         assert photo_entry is not None
         assert photo_entry["current_amount"] == 1500.0
         assert photo_entry["rule"][TAGS] == ["Photography"]
+
+
+class TestPeriodTypeDiscriminator:
+    """Monthly/yearly services filter by period_type, not year/month nulls."""
+
+    def test_monthly_filters_on_period_type(self, db_session):
+        """get_all_rules keys on period_type == 'monthly'."""
+        svc = MonthlyBudgetService(db_session)
+        svc.add_rule("M", 10.0, "Food", ["Groceries"], month=5, year=2026)
+        # A yearly-typed row written directly must be excluded.
+        svc.budget_repository.add("Y", 20.0, "Travel", "Hotels", None, 2026, period_type="yearly")
+        names = list(svc.get_all_rules()["name"])
+        assert names == ["M"]
+
+    def test_yearly_filters_on_period_type(self, db_session):
+        """get_all_rules keys on period_type == 'yearly'."""
+        svc = YearlyBudgetService(db_session)
+        svc.add_rule("Y", 20.0, "Travel", ["Hotels"], month=None, year=2026, period_type="yearly")
+        # A monthly-typed row written directly must be excluded.
+        svc.budget_repository.add("M", 10.0, "Food", "Groceries", 5, 2026, period_type="monthly")
+        names = list(svc.get_all_rules()["name"])
+        assert names == ["Y"]
+
+
+class TestMonthlyYearlyIntegration:
+    """Yearly-managed spend is excluded from the monthly view and mutually blocked."""
+
+    def _seed(self, db_session, date, category, tag, amount):
+        """Seed one bank transaction with the real ORM field shape."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"tx_{date}_{tag}",
+                date=date,
+                provider="p",
+                account_name="a",
+                description="x",
+                amount=amount,
+                category=category,
+                tag=tag,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    def test_yearly_claimed_tag_absent_from_monthly_other_expenses(self, db_session):
+        """A vacation tag under a yearly rule does not appear in monthly Other Expenses."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        # A per-category rule that matches nothing seeded, so the "Other Expenses"
+        # remainder bucket is populated (it only appears when at least one
+        # non-Total-Budget rule exists for the month).
+        MonthlyBudgetService(db_session).create_rule("Placeholder", 100.0, "Transport", ["Gas"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        other = next((e for e in view if e["rule"]["category"] == "Other Expenses"), None)
+        # Only the 500 groceries remains; the 3000 hotels is yearly-managed.
+        assert other is not None and other["current_amount"] == 500.0
+
+    def test_yearly_claimed_tag_excluded_from_total_budget(self, db_session):
+        """Yearly-managed spend also drops out of the monthly Total Budget figure."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        total = next((e for e in view if e["rule"]["category"] == "Total Budget"), None)
+        assert total is not None and total["current_amount"] == 500.0
+
+    def test_monthly_view_unaffected_without_yearly_rules(self, db_session):
+        """No-op guarantee: with zero yearly rules the monthly view is unchanged."""
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        MonthlyBudgetService(db_session).create_rule("Placeholder", 100.0, "Transport", ["Gas"], 3, 2026)
+        self._seed(db_session, "2026-03-10", "Travel", "Hotels", -3000.0)
+        self._seed(db_session, "2026-03-11", "Food", "Groceries", -500.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        other = next((e for e in view if e["rule"]["category"] == "Other Expenses"), None)
+        assert other is not None and other["current_amount"] == 3500.0
+
+    def test_monthly_create_conflict_with_yearly_raises(self, db_session):
+        """A monthly rule reusing a yearly tag for the same year is rejected."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        with pytest.raises(ValueError, match="yearly budget"):
+            MonthlyBudgetService(db_session).create_rule("Hotels M", 1000.0, "Travel", ["Hotels"], 3, 2026)
+
+    def test_monthly_create_total_budget_bypasses_yearly_check(self, db_session):
+        """The Total Budget category is exempt from the yearly-conflict check."""
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        # Must not raise even though "all_tags" would otherwise "conflict" with everything.
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+
+    def test_copy_last_month_rules_skips_yearly_conflicting_tag(self, db_session):
+        """copy_last_month_rules drops tags claimed by a yearly rule for the target year.
+
+        The source rule lives in Dec 2025 (year 2025) so it never conflicted
+        with the year-2026 yearly rule at creation time; the conflict only
+        surfaces once it's copied forward into 2026.
+        """
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        service.copy_last_month_rules(2026, 1, all_rules)
+
+        jan_rules = service.get_month_rules(2026, 1)
+        travel_rule = jan_rules.loc[jan_rules[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Flights"]
+        assert service._last_copy_skipped == ["Hotels"]
+
+    def test_copy_last_month_rules_skips_whole_rule_when_all_tags_conflict(self, db_session):
+        """If every copied tag conflicts, the rule is skipped entirely (not created empty)."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        service.copy_last_month_rules(2026, 1, all_rules)
+
+        jan_rules = service.get_month_rules(2026, 1)
+        assert "Travel M" not in list(jan_rules[NAME])
+        assert service._last_copy_skipped == ["Hotels"]
+
+    def test_auto_fill_skips_yearly_conflicting_tag_and_reports_it(self, db_session):
+        """auto_fill_empty_months strips yearly-conflicting tags and records the skip."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        all_rules = service.get_all_rules()
+        # Source is Dec 2025; current month Jan 2026 is a single-month gap so
+        # only one fill iteration runs (avoids double-counting the skip).
+        result = service.auto_fill_empty_months(2026, 1, all_rules)
+
+        assert result is not None
+        jan_rules = service.get_month_rules(2026, 1)
+        travel_rule = jan_rules.loc[jan_rules[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Flights"]
+        assert service._auto_fill_skipped == ["Hotels"]
+
+    def test_get_monthly_analysis_reports_skipped_yearly_conflicts(self, db_session):
+        """get_monthly_analysis surfaces skipped_yearly_conflicts from auto-fill."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels", "Flights"], month=12, year=2025)
+        YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+
+        fake_today = date_cls(2026, 1, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            analysis = service.get_monthly_analysis(2026, 1)
+
+        assert analysis["skipped_yearly_conflicts"] == ["Hotels"]
+
+    def test_get_monthly_analysis_skipped_yearly_conflicts_empty_by_default(
+        self, db_session, seed_base_transactions
+    ):
+        """Existing behavior: no yearly rules means an empty skip list, not a missing key."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(
+            name=TOTAL_BUDGET, amount=10000.0, category=TOTAL_BUDGET,
+            tags=[ALL_TAGS], month=1, year=2024,
+        )
+        analysis = service.get_monthly_analysis(2024, 1)
+        assert analysis["skipped_yearly_conflicts"] == []
+
+
+class TestMonthlyUpdateRuleYearlyConflict:
+    """MonthlyBudgetService.update_rule blocks EDITs that claim a yearly-owned tag.
+
+    Mirrors the CREATE-time guard in ``create_rule`` — mutual exclusion must be
+    enforced on both create and edit, in both directions.
+    """
+
+    def test_edit_adding_yearly_conflicting_tag_raises(self, db_session):
+        """Adding a tag already claimed by a yearly rule for the same year is rejected."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        with pytest.raises(ValueError, match="Hotels"):
+            service.update_rule(travel_rule_id, tags=["Car rental", "Hotels"])
+
+        # Rule is untouched — the failed edit didn't partially apply.
+        unchanged = service.get_month_rules(2026, 5)
+        travel_rule = unchanged.loc[unchanged[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[TAGS] == ["Car rental"]
+
+    def test_edit_excludes_self_from_conflict_check(self, db_session):
+        """Editing a monthly rule's own already-owned tag does not self-conflict."""
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        # Renaming/re-amounting the same rule (tags unchanged) must not raise.
+        service.update_rule(travel_rule_id, amount=750.0, tags=["Car rental"])
+        updated = service.get_month_rules(2026, 5)
+        travel_rule = updated.loc[updated[NAME] == "Travel M"].iloc[0]
+        assert travel_rule[AMOUNT] == 750.0
+
+    def test_edit_total_budget_category_bypasses_check(self, db_session):
+        """The Total Budget category is exempt from the yearly-conflict guard on edit."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        total_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Total Budget", ID]
+        )
+        # Must not raise even though "all_tags" would otherwise "conflict" with everything.
+        service.update_rule(total_rule_id, amount=12000.0)
+
+    def test_edit_project_rule_is_noop_for_guard(self, db_session):
+        """Project rules (year is None) skip the yearly-conflict guard entirely.
+
+        The PUT /budget/rules/{id} route is shared between monthly and project
+        rules, so ``MonthlyBudgetService.update_rule`` may be invoked with a
+        project rule's id. It must fall through to a plain delegate.
+        """
+        project_service = ProjectBudgetService(db_session)
+        project_service.create_project("Wedding", 10000.0)
+        rules = project_service.get_all_rules()
+        total_rule_id = int(
+            rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])].iloc[0][ID]
+        )
+        # Must not raise (no year -> guard short-circuits) and must still update,
+        # even though the service used is MonthlyBudgetService (the route's choice).
+        MonthlyBudgetService(db_session).update_rule(total_rule_id, amount=15000.0)
+        updated = project_service.get_all_rules()
+        updated_rule = updated.loc[updated[ID] == total_rule_id].iloc[0]
+        assert updated_rule[AMOUNT] == 15000.0
+
+    def test_edit_without_touching_tags_or_category_unaffected(self, db_session):
+        """Editing only the amount/name (tags/category untouched) is unaffected by the guard."""
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        service.create_rule("Travel M", 500.0, "Travel", ["Car rental"], 5, 2026)
+        travel_rule_id = int(
+            service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
+        )
+        service.update_rule(travel_rule_id, name="Travel M2", amount=600.0)
+        updated = service.get_month_rules(2026, 5)
+        travel_rule = updated.loc[updated[NAME] == "Travel M2"].iloc[0]
+        assert travel_rule[AMOUNT] == 600.0
+
+
+class TestMonthlySkippedYearlyConflictsDedup:
+    """skipped_yearly_conflicts must not repeat a tag skipped across multiple months."""
+
+    def test_auto_fill_skip_deduped_across_gap_months(self, db_session, monkeypatch):
+        """A tag stripped in two separate auto-filled months appears only once."""
+        from datetime import date as date_cls
+        from unittest.mock import patch
+
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
+        )
+        service = MonthlyBudgetService(db_session)
+        service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=8, year=2026)
+
+        fake_today = date_cls(2026, 10, 15)
+        with patch("backend.services.budget_service.date") as mock_date:
+            mock_date.today.return_value = fake_today
+            mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
+            # Gap fills Sept and Oct 2026 — "Hotels" conflicts with the 2026
+            # yearly rule in both fill iterations.
+            analysis = service.get_monthly_analysis(2026, 10)
+
+        assert analysis["skipped_yearly_conflicts"] == ["Hotels"]
+
+
+class TestProjectCategoryExclusion:
+    """A project can't claim a category already used by monthly/yearly budgets."""
+
+    def test_create_project_on_budget_used_category_raises(self, db_session):
+        """Creating a project on a category with a monthly rule is rejected."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        with pytest.raises(ValueError, match="Food"):
+            ProjectBudgetService(db_session).create_project("Food", 5000.0)
+
+    def test_available_categories_excludes_budget_used(self, db_session):
+        """The new-project picker hides categories that have monthly/yearly rules."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        YearlyBudgetService(db_session).create_rule(
+            "Transport Y", 20000.0, "Transport", ["Gas"], 2026
+        )
+        available = ProjectBudgetService(db_session).get_available_categories_for_new_project()
+        assert "Food" not in available and "Transport" not in available
+
+    def _make_project(self, db_session, category):
+        """Seed a project owning a category (bypasses the config-tag loop)."""
+        ProjectBudgetService(db_session).budget_repository.add(
+            "Total Budget", 5000.0, category, "all_tags", None, None, period_type="project")
+
+    def test_monthly_create_on_project_category_raises(self, db_session):
+        """A monthly rule on a project-owned category is rejected."""
+        self._make_project(db_session, "Renovation")
+        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        with pytest.raises(ValueError, match="project"):
+            MonthlyBudgetService(db_session).create_rule("Reno M", 500.0, "Renovation", ["Materials"], 5, 2026)
+
+    def test_monthly_edit_into_project_category_raises(self, db_session):
+        """Editing a monthly rule to a project-owned category is rejected."""
+        svc = MonthlyBudgetService(db_session)
+        svc.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        svc.create_rule("Food M", 500.0, "Food", ["Groceries"], 5, 2026)
+        self._make_project(db_session, "Renovation")
+        rules = svc.get_all_rules()
+        rid = int(rules.loc[rules[NAME] == "Food M"].iloc[0][ID])
+        with pytest.raises(ValueError, match="project"):
+            svc.update_rule(rid, category="Renovation", tags=["Materials"])
+
+    def test_shared_put_route_blocks_project_edit_into_budget_used_category(self, db_session):
+        """The shared PUT /budget/rules/{id} route (MonthlyBudgetService.update_rule)
+        must reject changing a PROJECT rule's category to one already claimed by a
+        monthly/yearly budget — not just the reverse (monthly-into-project) direction.
+
+        Project rules store ``year = NaN``, so without an explicit guard for the
+        NaN-year branch this edit falls straight through to the base update and
+        creates the exact category-name-used-for-two-purposes-at-once,
+        overlap the feature exists to forbid.
+        """
+        self._make_project(db_session, "Renovation")
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Food M", 500.0, "Food", ["Groceries"], 5, 2026
+        )
+        project_rules = ProjectBudgetService(db_session).get_all_rules()
+        project_rule_id = int(
+            project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
+        )
+
+        with pytest.raises(ValueError, match="Food"):
+            MonthlyBudgetService(db_session).update_rule(
+                project_rule_id, category="Food", tags=["Materials"]
+            )
+
+        # No overlap was created — the project rule's category is unchanged.
+        unchanged = ProjectBudgetService(db_session).get_all_rules()
+        unchanged_rule = unchanged.loc[unchanged[ID] == project_rule_id].iloc[0]
+        assert unchanged_rule[CATEGORY] == "Renovation"
+
+    def test_shared_put_route_allows_project_edit_without_category_change(self, db_session):
+        """A legitimate project-rule edit that doesn't touch category (e.g. amount
+        only) is unaffected by the new NaN-year guard — it must remain a no-op."""
+        self._make_project(db_session, "Renovation")
+        project_rules = ProjectBudgetService(db_session).get_all_rules()
+        project_rule_id = int(
+            project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
+        )
+
+        MonthlyBudgetService(db_session).update_rule(project_rule_id, amount=7500.0)
+
+        updated = ProjectBudgetService(db_session).get_all_rules()
+        updated_rule = updated.loc[updated[ID] == project_rule_id].iloc[0]
+        assert updated_rule[AMOUNT] == 7500.0
+        assert updated_rule[CATEGORY] == "Renovation"

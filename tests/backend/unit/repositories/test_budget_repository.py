@@ -231,3 +231,28 @@ class TestBudgetRepositoryEmptyUpdate:
         result = repo.read_by_id(rule_id)
         assert result.iloc[0]["amount"] == 2000.0
         assert result.iloc[0]["name"] == "Food"
+
+
+class TestBudgetRepositoryPeriodType:
+    """period_type is derived on write and filterable on read."""
+
+    def test_add_derives_period_type(self, db_session):
+        """add() sets monthly/yearly/project from year/month when not passed."""
+        from backend.repositories.budget_repository import BudgetRepository
+        repo = BudgetRepository(db_session)
+        repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026)
+        repo.add("Y", 20.0, "Travel", "Hotels", month=None, year=2026)
+        repo.add("P", 30.0, "Reno", "all_tags", month=None, year=None)
+
+        by_name = {r["name"]: r["period_type"] for r in repo.read_all().to_dict("records")}
+        assert by_name == {"M": "monthly", "Y": "yearly", "P": "project"}
+
+    def test_read_by_period_type_filters(self, db_session):
+        """read_by_period_type returns only rows of that kind."""
+        from backend.repositories.budget_repository import BudgetRepository
+        repo = BudgetRepository(db_session)
+        repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026)
+        repo.add("Y", 20.0, "Travel", "Hotels", month=None, year=2026)
+
+        yearly = repo.read_by_period_type("yearly")
+        assert list(yearly["name"]) == ["Y"]
