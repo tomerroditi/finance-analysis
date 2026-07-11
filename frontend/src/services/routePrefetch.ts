@@ -12,6 +12,7 @@ import {
   taggingApi,
   transactionsApi,
 } from "./api";
+import { makeQueryKeys } from "./queryKeys";
 import { useAppStore } from "../stores/appStore";
 
 /**
@@ -26,8 +27,12 @@ import { useAppStore } from "../stores/appStore";
  * page instead of a loading skeleton.
  *
  * Each entry MUST mirror the exact `queryKey` + fetch call the page uses, or
- * the prefetched data won't be found in the cache when the page mounts. Keep
- * these in sync with the pages when their query keys change.
+ * the prefetched data won't be found in the cache when the page mounts. Factory
+ * -managed keys are built from `makeQueryKeys(isDemoMode)` (the pure function
+ * form of the `useQueryKeys()` hook — prefetch runs outside React, so it can't
+ * call hooks), which makes drift structurally impossible: any change to
+ * `services/queryKeys.ts` propagates here automatically. The `/early-retirement`
+ * keys are still literal arrays (out of scope for the key-factory migration).
  */
 
 export interface PrefetchContext {
@@ -56,61 +61,68 @@ function warm(
 
 const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
   "/": (qc, { isDemoMode }) => {
-    warm(qc, ["net-worth-over-time", isDemoMode], () =>
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.analytics.netWorthOverTime(), () =>
       analyticsApi.getNetWorthOverTime().then((r) => r.data),
     );
-    warm(qc, ["all-transactions", isDemoMode], () =>
+    warm(qc, k.transactions.list(undefined, false), () =>
       transactionsApi.getAll(undefined, false).then((r) => r.data),
     );
-    warm(qc, ["cash-balances", isDemoMode], () =>
-      cashBalancesApi.getAll().then((r) => r.data),
-    );
-    warm(qc, ["bank-balances", isDemoMode], () =>
-      bankBalancesApi.getAll().then((r) => r.data),
-    );
-    warm(qc, ["portfolio-analysis", isDemoMode], () =>
+    warm(qc, k.balances.cash(), () => cashBalancesApi.getAll().then((r) => r.data));
+    warm(qc, k.balances.bank(), () => bankBalancesApi.getAll().then((r) => r.data));
+    warm(qc, k.investments.portfolio(), () =>
       investmentsApi.getPortfolioAnalysis().then((r) => r.data),
     );
-    warm(qc, ["category-icons", isDemoMode], () =>
-      taggingApi.getIcons().then((r) => r.data),
-    );
+    warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
   },
-  "/transactions": (qc) => {
+  "/transactions": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
     const service = useAppStore.getState().selectedService;
     if (service !== "refunds") {
-      warm(qc, ["transactions", service, false], () =>
-        transactionsApi
-          .getAll(service === "all" ? undefined : service, false)
-          .then((r) => r.data),
+      warm(
+        qc,
+        k.transactions.list(service === "all" ? undefined : service, false),
+        () =>
+          transactionsApi
+            .getAll(service === "all" ? undefined : service, false)
+            .then((r) => r.data),
       );
     }
-    warm(qc, ["pendingRefunds", "all"], () =>
+    warm(qc, k.pendingRefunds.all(), () =>
       pendingRefundsApi.getAll().then((r) => r.data),
     );
-    warm(qc, ["categories"], () => taggingApi.getCategories().then((r) => r.data));
+    warm(qc, k.tagging.categories(), () =>
+      taggingApi.getCategories().then((r) => r.data),
+    );
   },
-  "/categories": (qc) => {
-    warm(qc, ["categories"], () => taggingApi.getCategories().then((r) => r.data));
-    warm(qc, ["category-icons"], () => taggingApi.getIcons().then((r) => r.data));
+  "/categories": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.tagging.categories(), () =>
+      taggingApi.getCategories().then((r) => r.data),
+    );
+    warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
   },
-  "/investments": (qc) => {
-    warm(qc, ["investments"], () =>
+  "/investments": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.investments.list(true), () =>
       investmentsApi.getAll(true).then((r) => r.data),
     );
-    warm(qc, ["portfolio-analysis"], () =>
+    warm(qc, k.investments.portfolio(), () =>
       investmentsApi.getPortfolioAnalysis().then((r) => r.data),
     );
   },
-  "/liabilities": (qc) => {
-    warm(qc, ["liabilities"], () =>
+  "/liabilities": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.liabilities.list(true), () =>
       liabilitiesApi.getAll(true).then((r) => r.data),
     );
   },
-  "/insurances": (qc) => {
-    warm(qc, ["insurance-accounts"], () =>
+  "/insurances": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.insurance.accounts(), () =>
       insuranceAccountsApi.getAll().then((r) => r.data),
     );
-    warm(qc, ["transactions", "insurances"], () =>
+    warm(qc, k.transactions.list("insurances", false), () =>
       transactionsApi.getAll("insurances").then((r) => r.data),
     );
   },
@@ -132,9 +144,8 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     // Only the bank balances are safe/worthwhile to warm — credentials,
     // providers and last-scrapes are excluded from the persisted cache and
     // are real-time/scraping-tied, so we leave them to fetch on demand.
-    warm(qc, ["bank-balances", isDemoMode], () =>
-      bankBalancesApi.getAll().then((r) => r.data),
-    );
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.balances.bank(), () => bankBalancesApi.getAll().then((r) => r.data));
   },
 };
 
