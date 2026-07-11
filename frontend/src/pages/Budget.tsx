@@ -4,6 +4,7 @@ import { Layers, Calendar, CalendarRange } from "lucide-react";
 import { MonthlyBudgetView } from "../components/budget/MonthlyBudgetView";
 import { YearlyBudgetView } from "../components/budget/YearlyBudgetView";
 import { ProjectBudgetView } from "../components/budget/ProjectBudgetView";
+import { CategoryConflictBanner } from "../components/budget/CategoryConflictBanner";
 
 type BudgetTab = "monthly" | "yearly" | "projects";
 
@@ -20,6 +21,7 @@ export const Budget: React.FC = () => {
 
   return (
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
+      <CategoryConflictBanner />
       <div className="mb-6">
         <div className="flex w-full gap-1 bg-[var(--surface-light)] p-1 rounded-xl">
           <button onClick={() => setActiveTab("monthly")} className={tabClass("monthly")}>

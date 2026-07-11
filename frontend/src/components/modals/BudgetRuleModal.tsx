@@ -29,6 +29,7 @@ export function BudgetRuleModal({
   const [category, setCategory] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { data: categoriesMap } = useCategories();
 
@@ -40,6 +41,7 @@ export function BudgetRuleModal({
 
   useEffect(() => {
     if (isOpen) {
+      setError(null);
       if (initialData) {
         setName(initialData.name);
         setAmount(initialData.amount.toString());
@@ -74,6 +76,7 @@ export function BudgetRuleModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setIsSubmitting(true);
     try {
       await onSave({
@@ -85,8 +88,12 @@ export function BudgetRuleModal({
         month: selectedMonth === 0 ? null : selectedMonth,
       });
       onClose();
-    } catch (error) {
-      console.error("Failed to save budget rule", error);
+    } catch (err) {
+      console.error("Failed to save budget rule", err);
+      setError(
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          t("budget.categoryConflict.saveFailed"),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -223,6 +230,12 @@ export function BudgetRuleModal({
               </div>
             )}
           </div>
+
+          {error && (
+            <p className="text-xs text-[var(--danger)] mt-2" dir="auto">
+              {error}
+            </p>
+          )}
 
           <div className="pt-4 flex gap-3 shrink-0">
             <button

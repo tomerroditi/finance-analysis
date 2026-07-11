@@ -559,6 +559,10 @@
       "tagsLabel": "Tags",
       "tagsPlaceholder": "Select tags",
       "saveFailed": "Could not save the rule."
+    },
+    "categoryConflict": {
+      "banner": "These categories are in both a project and a monthly/yearly budget: {{names}}. Resolve to avoid double-tracking.",
+      "saveFailed": "Could not save — this category conflicts with another budget."
     }
   },
   "budgetAlerts": {

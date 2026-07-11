@@ -124,7 +124,13 @@ export const budgetApi = {
     api.get(`/budget/yearly/alerts/${year}`, {
       params: threshold !== undefined ? { threshold } : undefined,
     }),
+  getCategoryConflicts: () => api.get("/budget/category-conflicts"),
 };
+
+export interface CategoryConflict {
+  category: string;
+  kinds: ("monthly" | "yearly")[];
+}
 
 export interface BudgetAlert {
   rule_id: number;
