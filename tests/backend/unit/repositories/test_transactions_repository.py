@@ -843,10 +843,25 @@ class TestCountUncategorized:
         assert repo.count_uncategorized() == 0
 
     def test_split_child_uncategorized_is_counted(self, db_session):
-        """An uncategorized split row from a non-insurance source counts."""
+        """An uncategorized split row counts when its parent row still exists."""
+        parent = CreditCardTransaction(
+            id="split-parent-2",
+            date="2025-03-04",
+            provider="isracard",
+            account_name="Main Card",
+            description="split parent",
+            amount=-100.0,
+            category="Groceries",
+            tag="Food",
+            source="credit_card_transactions",
+            type="split_parent",
+            status="completed",
+        )
+        db_session.add(parent)
+        db_session.commit()
         db_session.add(
             SplitTransaction(
-                transaction_id=1,
+                transaction_id=parent.unique_id,
                 source="credit_card_transactions",
                 amount=-10.0,
                 category=None,
@@ -871,3 +886,66 @@ class TestCountUncategorized:
         db_session.commit()
         repo = TransactionsRepository(db_session)
         assert repo.count_uncategorized() == 0
+
+    def test_orphaned_split_row_is_excluded_from_count(
+        self, db_session, seed_base_transactions, seed_untagged_transactions
+    ):
+        """A split row whose parent no longer exists is ignored, matching the
+        merged view, which silently drops orphaned splits via
+        ``_build_split_child`` returning ``None``."""
+        db_session.add(
+            SplitTransaction(
+                transaction_id=999999,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category=None,
+                tag=None,
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        df = repo.get_table(exclude_services=["insurances"])
+        expected = int(
+            (
+                df["category"].isna()
+                | (df["category"] == "")
+                | (df["category"] == "Uncategorized")
+            ).sum()
+        )
+        assert expected > 0
+        assert repo.count_uncategorized() == expected
+
+    def test_count_includes_real_split_via_split_transaction(
+        self, db_session, seed_base_transactions
+    ):
+        """A real split created through split_transaction() contributes exactly
+        its uncategorized slice to the count, matching the merged view."""
+        repo = TransactionsRepository(db_session)
+        parent = (
+            db_session.query(CreditCardTransaction)
+            .filter(CreditCardTransaction.type == "normal")
+            .first()
+        )
+        assert parent is not None
+
+        parent_amount = parent.amount
+        half = round(parent_amount / 2, 2)
+        assert repo.split_transaction(
+            parent.unique_id,
+            "credit_card_transactions",
+            [
+                {"amount": half, "category": None, "tag": None},
+                {"amount": parent_amount - half, "category": "Food", "tag": "Groceries"},
+            ],
+        )
+
+        df = repo.get_table(exclude_services=["insurances"])
+        expected = int(
+            (
+                df["category"].isna()
+                | (df["category"] == "")
+                | (df["category"] == "Uncategorized")
+            ).sum()
+        )
+        assert expected > 0
+        assert repo.count_uncategorized() == expected

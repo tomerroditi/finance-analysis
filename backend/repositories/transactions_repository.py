@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Literal, Optional, Type
 
 import pandas as pd
-from sqlalchemy import cast, delete, func, Integer, or_, select, update
+from sqlalchemy import cast, delete, exists, func, Integer, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import PendingRefund
@@ -1160,8 +1160,15 @@ class TransactionsRepository:
         Counts rows whose category is NULL, empty, or ``"Uncategorized"`` in
         the four non-insurance transaction tables (excluding split parents,
         which the merged view replaces with their children), plus split-child
-        rows from ``split_transactions`` whose parent source is not the
-        insurance table. Pure SQL ``COUNT`` — no full-table DataFrame load.
+        rows from ``split_transactions`` whose parent source is one of those
+        four tables. Split rows are counted per source table via a correlated
+        ``EXISTS`` subquery against that table's parent row — mirroring
+        ``_build_split_child``, which drops any split whose parent row no
+        longer exists (orphaned splits). This means orphaned splits, and
+        splits whose source is the insurance table or an unrecognized table,
+        are excluded, exactly as the pandas merged view
+        (``get_table(exclude_services=["insurances"])``) silently drops them.
+        Pure SQL ``COUNT`` — no full-table DataFrame load.
 
         Returns
         -------
@@ -1189,18 +1196,23 @@ class TransactionsRepository:
             )
             total += int(self.db.execute(stmt).scalar_one())
 
-        split_stmt = (
-            select(func.count())
-            .select_from(SplitTransaction)
-            .where(
-                or_(
-                    SplitTransaction.category.is_(None),
-                    SplitTransaction.category.in_(self.UNCATEGORIZED_VALUES),
-                ),
-                SplitTransaction.source != Tables.INSURANCE.value,
+            split_stmt = (
+                select(func.count())
+                .select_from(SplitTransaction)
+                .where(
+                    or_(
+                        SplitTransaction.category.is_(None),
+                        SplitTransaction.category.in_(self.UNCATEGORIZED_VALUES),
+                    ),
+                    SplitTransaction.source == repo.table,
+                    exists(
+                        select(1).where(
+                            model.unique_id == SplitTransaction.transaction_id
+                        )
+                    ),
+                )
             )
-        )
-        total += int(self.db.execute(split_stmt).scalar_one())
+            total += int(self.db.execute(split_stmt).scalar_one())
         return total
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
