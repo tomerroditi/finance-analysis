@@ -23,6 +23,8 @@ import { useScraping } from "../../hooks/useScraping";
 import { BudgetTrendChart } from "./BudgetTrendChart";
 import { BudgetRuleRow } from "./BudgetRuleRow";
 import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface BudgetRule {
   id: number;
@@ -69,11 +71,12 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const freshness = useBudgetFreshness();
   const { isAnyScraping } = useScraping();
 
   const { data: analysis, isLoading } = useQuery({
-    queryKey: ["budgetAnalysis", year, month, includeSplitParents],
+    queryKey: qk.budget.analysis(year, month, includeSplitParents),
     queryFn: () =>
       budgetApi.getAnalysis(year, month, includeSplitParents).then((res) => res.data),
     placeholderData: keepPreviousData,
@@ -87,12 +90,12 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       const prefetchYear = date.getFullYear();
       const prefetchMonth = date.getMonth() + 1;
       queryClient.prefetchQuery({
-        queryKey: ["budgetAnalysis", prefetchYear, prefetchMonth, includeSplitParents],
+        queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, includeSplitParents),
         queryFn: () =>
           budgetApi.getAnalysis(prefetchYear, prefetchMonth, includeSplitParents).then((res) => res.data),
       });
     }
-  }, [year, month, includeSplitParents, queryClient]);
+  }, [year, month, includeSplitParents, queryClient, qk]);
 
   // When the active month's analysis reports an auto-fill, sibling months
   // may have prefetched in parallel and cached an empty result before the
@@ -101,9 +104,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   useEffect(() => {
     if (!analysis?.copied_from) return;
     queryClient.refetchQueries({
-      queryKey: ["budgetAnalysis"],
+      queryKey: qkPrefix.budgetAnalysis,
       predicate: (query) => {
-        const [, qYear, qMonth] = query.queryKey as [string, number, number, boolean];
+        const [, , qYear, qMonth] = query.queryKey as [string, string, number, number, boolean, boolean];
         return qYear !== year || qMonth !== month;
       },
     });
@@ -111,7 +114,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   // Pending refunds — for transaction badges/links across rule lists.
   const { data: pendingRefunds } = useQuery({
-    queryKey: ["pendingRefunds", "all"],
+    queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
@@ -135,7 +138,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   // Budget month overrides — for the per-row "move to prev/next month" actions.
   const { data: budgetMonthOverrides } = useQuery({
-    queryKey: ["budgetMonthOverrides"],
+    queryKey: qk.budget.monthOverrides(),
     queryFn: () => budgetMonthOverridesApi.getAll().then((res) => res.data),
   });
 
@@ -148,8 +151,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   }, [budgetMonthOverrides]);
 
   const invalidateBudget = () => {
-    queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
-    queryClient.invalidateQueries({ queryKey: ["budgetAlerts"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
   };
 
   const createMutation = useMutation({

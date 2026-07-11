@@ -7,6 +7,7 @@ import { bankBalancesApi } from "../../services/api";
 import { useNotify } from "../../context/DialogContext";
 import { humanizeProvider } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface UpdateBankBalanceModalProps {
   isOpen: boolean;
@@ -42,8 +43,8 @@ export function UpdateBankBalanceModal({
     mutationFn: (data: Parameters<typeof bankBalancesApi.setBalance>[0]) =>
       bankBalancesApi.setBalance(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["bank-balances"] });
-      queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.bankBalances });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
       onClose();
     },
     onError: (error: unknown) => {

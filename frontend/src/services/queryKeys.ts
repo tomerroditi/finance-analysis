@@ -25,6 +25,11 @@ export const qkPrefix = {
   transactionsList: ["transactions", "list"] as const,
   pendingRefunds: ["pending-refunds"] as const,
   budget: ["budget"] as const,
+  // Narrower than `budget` — matches only the monthly-analysis family
+  // (["budget","analysis",year,month,...]), not projects/alerts/overrides.
+  // Used where a predicate assumes the analysis key shape (sibling-month
+  // refetch in MonthlyBudgetView).
+  budgetAnalysis: ["budget", "analysis"] as const,
   analytics: ["analytics"] as const,
   investments: ["investments"] as const,
   liabilities: ["liabilities"] as const,
@@ -36,6 +41,8 @@ export const qkPrefix = {
   savingsGoals: ["savings-goals"] as const,
   insuranceAccounts: ["insurance-accounts"] as const,
   lastScrapes: ["last-scrapes"] as const,
+  credentialsAccounts: ["credentials-accounts"] as const,
+  providers: ["providers"] as const,
 } as const;
 
 export function makeQueryKeys(demo: boolean) {

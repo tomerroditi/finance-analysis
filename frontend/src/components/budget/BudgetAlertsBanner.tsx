@@ -10,6 +10,7 @@ import {
 import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface BudgetAlertsBannerProps {
   year: number;
@@ -33,9 +34,10 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
     year,
     month,
   );
+  const qk = useQueryKeys();
 
   const { data } = useQuery<BudgetAlertsResponse>({
-    queryKey: ["budgetAlerts", year, month, threshold],
+    queryKey: qk.budget.alertsMonth(year, month, threshold),
     queryFn: () =>
       budgetApi.getMonthAlerts(year, month, threshold).then((res) => res.data),
     placeholderData: keepPreviousData,

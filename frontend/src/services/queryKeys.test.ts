@@ -19,9 +19,12 @@ describe("makeQueryKeys", () => {
       [k.transactions.uncategorizedCount(), qkPrefix.transactions],
       [k.analytics.netWorthOverTime(), qkPrefix.analytics],
       [k.budget.monthOverrides(), qkPrefix.budget],
+      [k.budget.analysis(2026, 7, false), qkPrefix.budgetAnalysis],
       [k.investments.portfolio(), qkPrefix.investments],
       [k.liabilities.debtOverTime(), qkPrefix.liabilities],
       [k.pendingRefunds.all(), qkPrefix.pendingRefunds],
+      [k.credentials.accounts(), qkPrefix.credentialsAccounts],
+      [k.credentials.providers(), qkPrefix.providers],
     ];
     for (const [key, prefix] of cases) {
       expect(key.slice(0, prefix.length)).toEqual([...prefix]);

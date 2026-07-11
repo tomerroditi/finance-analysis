@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { budgetApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { Modal } from "../common/Modal";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -21,11 +22,12 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   isEdit = false,
 }) => {
   const { t } = useTranslation();
+  const qk = useQueryKeys();
   const [category, setCategory] = useState("");
   const [totalBudget, setTotalBudget] = useState<number>(0);
 
   const { data: availableCategories = [] } = useQuery({
-    queryKey: ["availableProjects"],
+    queryKey: qk.budget.availableProjects(),
     queryFn: () => budgetApi.getAvailableProjects().then((res) => res.data),
     enabled: isOpen && !isEdit,
   });

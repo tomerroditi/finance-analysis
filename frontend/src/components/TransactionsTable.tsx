@@ -46,6 +46,8 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../utils/numberFormatting";
 import type { Transaction } from "../types/transaction";
 import { useConfirm, useNotify } from "../context/DialogContext";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 
 export interface TransactionsTableProps {
@@ -128,6 +130,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const { createCategory, createTag } = useCategoryTagCreate();
   const confirm = useConfirm();
   const notify = useNotify();
@@ -148,7 +151,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   // Category icons
   const { data: categoryIcons } = useQuery({
-    queryKey: ["category-icons"],
+    queryKey: qk.tagging.icons(),
     queryFn: () => taggingApi.getIcons().then((res) => res.data),
   });
 
@@ -215,21 +218,16 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const { data: cashBalances = [] } = useCashBalances({ enabled: showBulkActions });
 
   const invalidateAnalytics = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
-    queryClient.invalidateQueries({ queryKey: ["analytics-category"] });
-    queryClient.invalidateQueries({ queryKey: ["sankey"] });
-    queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
-    queryClient.invalidateQueries({ queryKey: ["income-by-source"] });
-    queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
-    queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
   }, [queryClient]);
 
   // Bulk tag mutation
   const bulkTagMutation = useMutation({
     mutationFn: (data: Parameters<typeof transactionsApi.bulkTag>[0]) => transactionsApi.bulkTag(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
       invalidateAnalytics();
       setSelectedIds(new Set());
       setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
@@ -247,8 +245,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         expected_amount: Math.abs(tx.amount),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
       invalidateAnalytics();
       onTransactionUpdated?.();
     },
@@ -257,8 +255,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const cancelPendingMutation = useMutation({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
       invalidateAnalytics();
       onTransactionUpdated?.();
     },
@@ -267,8 +265,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const unlinkRefundMutation = useMutation({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
       invalidateAnalytics();
       onTransactionUpdated?.();
     },
@@ -295,8 +293,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         override_month: month,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budgetMonthOverrides"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       onTransactionUpdated?.();
     },
   });
@@ -1262,7 +1259,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
           onClose={() => setEditingTransaction(null)}
           onSuccess={() => {
             setEditingTransaction(null);
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             invalidateAnalytics();
             onTransactionUpdated?.();
           }}
