@@ -39,6 +39,8 @@ export const transactionsApi = {
     api.get("/transactions/", {
       params: { service, include_split_parents: includeSplitParents },
     }),
+  getUncategorizedCount: () =>
+    api.get<{ count: number }>("/transactions/uncategorized-count"),
   getById: (id: number) => api.get(`/transactions/${id}`),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
