@@ -1,3 +1,35 @@
+## v1.43.0 (2026-07-11)
+
+### Feat
+
+- **budget**: category-conflict banner + project-category error surfacing
+- **budget**: category-conflicts endpoint + project-create 400
+- **budget**: block monthly/yearly rules on project-owned categories
+- **budget**: block project on budget-used category + filter project picker
+- **budget**: category-level project/monthly/yearly conflict helpers
+- **budget**: yearly rule modal with MultiSelect tags and inline conflict error
+- **budget**: yearly budget view with roll-up strip and rule rows
+- **budget**: add Yearly tab, YearHeader, and stub view
+- **budget**: yearly budget API client methods and types
+- **budget**: yearly routes + monthly-edit mutual-exclusion guard
+- **budget**: monthly view excludes yearly-claimed tags + blocks/skip conflicts
+- **budget**: yearly auto-carry-forward with conflict skip + analysis bundle
+- **budget**: YearlyBudgetService with view, summary, alerts, validation
+- **budget**: shared monthly/yearly tag-conflict helper
+- **budget**: repository writes derived period_type and reads by it
+- **budget**: add period_type discriminator column + migration
+
+### Fix
+
+- **budget**: guard project-rule category change + surface project-create error
+- **budget**: block yearly-vs-yearly tag overlap within a year
+- **budget**: safe yearly copy (no data loss), render biggest overspend, lint
+- **budget**: use themed confirm dialog + reset yearly alert on year change
+
+### Refactor
+
+- **budget**: monthly/project services filter by period_type
+
 ## v1.42.0 (2026-07-11)
 
 ### Feat
