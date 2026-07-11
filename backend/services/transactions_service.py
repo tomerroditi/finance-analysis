@@ -870,6 +870,17 @@ class TransactionsService:
             else datetime.today() - timedelta(days=365)
         )
 
+    def count_uncategorized(self) -> int:
+        """Count uncategorized transactions in the merged non-insurance view.
+
+        Returns
+        -------
+        int
+            Number of transactions with no category, an empty category, or
+            the literal ``"Uncategorized"`` category.
+        """
+        return self.transactions_repository.count_uncategorized()
+
     def get_earliest_data_date(self) -> datetime:
         """
         Get the earliest transaction date across all tables.

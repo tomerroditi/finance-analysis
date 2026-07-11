@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Literal, Optional, Type
 
 import pandas as pd
-from sqlalchemy import cast, delete, func, Integer, select, update
+from sqlalchemy import cast, delete, func, Integer, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import PendingRefund
@@ -17,6 +17,7 @@ from backend.models.transaction import (
     CreditCardTransaction,
     InsuranceTransaction,
     ManualInvestmentTransaction,
+    SplitTransaction,
     TransactionBase,
 )
 from backend.constants.providers import Services
@@ -366,6 +367,8 @@ class TransactionsRepository:
     ]
 
     unique_columns = ["id", "provider", "date", "amount"]
+
+    UNCATEGORIZED_VALUES = ("", "Uncategorized")
 
     # Services excluded from aggregate cashflow calculations (CC double-counts
     # bank debits; insurance deposits are not regular expenses).
@@ -1150,6 +1153,55 @@ class TransactionsRepository:
             transaction table name strings.
         """
         return self.tables.copy()
+
+    def count_uncategorized(self) -> int:
+        """Count uncategorized transactions across the merged (non-insurance) view.
+
+        Counts rows whose category is NULL, empty, or ``"Uncategorized"`` in
+        the four non-insurance transaction tables (excluding split parents,
+        which the merged view replaces with their children), plus split-child
+        rows from ``split_transactions`` whose parent source is not the
+        insurance table. Pure SQL ``COUNT`` — no full-table DataFrame load.
+
+        Returns
+        -------
+        int
+            Number of uncategorized transactions in the merged view.
+        """
+        total = 0
+        for repo in [
+            self.cc_repo,
+            self.bank_repo,
+            self.cash_repo,
+            self.manual_investments_repo,
+        ]:
+            model = repo.model
+            stmt = (
+                select(func.count())
+                .select_from(model)
+                .where(
+                    or_(
+                        model.category.is_(None),
+                        model.category.in_(self.UNCATEGORIZED_VALUES),
+                    ),
+                    or_(model.type.is_(None), model.type != "split_parent"),
+                )
+            )
+            total += int(self.db.execute(stmt).scalar_one())
+
+        split_stmt = (
+            select(func.count())
+            .select_from(SplitTransaction)
+            .where(
+                or_(
+                    SplitTransaction.category.is_(None),
+                    SplitTransaction.category.in_(self.UNCATEGORIZED_VALUES),
+                ),
+                SplitTransaction.source != Tables.INSURANCE.value,
+            )
+        )
+        total += int(self.db.execute(split_stmt).scalar_one())
+        return total
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
         """Set category and tag to NULL across all transaction tables.

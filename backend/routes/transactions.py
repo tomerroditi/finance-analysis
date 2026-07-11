@@ -72,6 +72,10 @@ class LatestDateResponse(BaseModel):
     latest_date: Optional[str] = None
 
 
+class UncategorizedCountResponse(BaseModel):
+    count: int
+
+
 @router.get("/")
 def get_transactions(
     service: Optional[str] = Query(
@@ -224,6 +228,15 @@ def get_latest_data_date(
     service = TransactionsService(db)
     latest = service.get_latest_data_date()
     return {"latest_date": latest.isoformat() if latest else None}
+
+
+@router.get("/uncategorized-count", response_model=UncategorizedCountResponse)
+def get_uncategorized_count(
+    db: Session = Depends(get_database),
+) -> dict[str, int]:
+    """Count uncategorized transactions (for the sidebar badge)."""
+    service = TransactionsService(db)
+    return {"count": service.count_uncategorized()}
 
 
 @router.get("/{transaction_id}")

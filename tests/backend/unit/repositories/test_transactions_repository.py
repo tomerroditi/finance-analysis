@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
+    CreditCardTransaction,
+    SplitTransaction,
 )
 from backend.repositories.transactions_repository import (
     TransactionsRepository,
@@ -730,3 +732,142 @@ class TestGetTableSessionCache:
         )
         after = len(repo.get_table())
         assert after == before + 1
+
+
+class TestCountUncategorized:
+    """SQL-level uncategorized count matches the merged-view semantics."""
+
+    def test_count_matches_merged_view(
+        self, db_session, seed_base_transactions, seed_untagged_transactions
+    ):
+        """count_uncategorized equals a pandas count over the merged view."""
+        repo = TransactionsRepository(db_session)
+        df = repo.get_table(exclude_services=["insurances"])
+        expected = int(
+            (
+                df["category"].isna()
+                | (df["category"] == "")
+                | (df["category"] == "Uncategorized")
+            ).sum()
+        )
+        assert expected > 0
+        assert repo.count_uncategorized() == expected
+
+    def test_count_empty_db_is_zero(self, db_session):
+        """Fresh database counts zero."""
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 0
+
+    def test_null_category_rows_are_counted(self, db_session):
+        """A NULL-category bank row increments the count."""
+        db_session.add(
+            BankTransaction(
+                id="uncat-1",
+                date="2025-03-01",
+                provider="hapoalim",
+                account_name="main",
+                description="untagged",
+                amount=-50.0,
+                category=None,
+                tag=None,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 1
+
+    def test_empty_string_category_is_counted(self, db_session):
+        """An empty-string category counts as uncategorized."""
+        db_session.add(
+            CashTransaction(
+                id="uncat-2",
+                date="2025-03-02",
+                provider="cash",
+                account_name="Wallet",
+                description="untagged cash",
+                amount=-20.0,
+                category="",
+                tag=None,
+                source="cash_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 1
+
+    def test_literal_uncategorized_category_is_counted(self, db_session):
+        """A category literally set to 'Uncategorized' counts."""
+        db_session.add(
+            CreditCardTransaction(
+                id="uncat-3",
+                date="2025-03-03",
+                provider="isracard",
+                account_name="Main Card",
+                description="untagged cc",
+                amount=-30.0,
+                category="Uncategorized",
+                tag=None,
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 1
+
+    def test_split_parent_row_is_not_double_counted(self, db_session):
+        """A split-parent row in a source table is excluded from the count."""
+        db_session.add(
+            CreditCardTransaction(
+                id="split-parent-1",
+                date="2025-03-04",
+                provider="isracard",
+                account_name="Main Card",
+                description="split parent",
+                amount=-100.0,
+                category=None,
+                tag=None,
+                source="credit_card_transactions",
+                type="split_parent",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 0
+
+    def test_split_child_uncategorized_is_counted(self, db_session):
+        """An uncategorized split row from a non-insurance source counts."""
+        db_session.add(
+            SplitTransaction(
+                transaction_id=1,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category=None,
+                tag=None,
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 1
+
+    def test_insurance_sourced_split_not_counted(self, db_session):
+        """An uncategorized split row sourced from insurance is excluded."""
+        db_session.add(
+            SplitTransaction(
+                transaction_id=1,
+                source="insurance_transactions",
+                amount=-10.0,
+                category=None,
+                tag=None,
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.count_uncategorized() == 0
