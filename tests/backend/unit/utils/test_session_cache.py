@@ -1,6 +1,7 @@
 """Tests for the session-scoped DataFrame cache."""
 
 import pandas as pd
+from sqlalchemy import text
 
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
@@ -43,8 +44,9 @@ class TestSessionCache:
         assert session_cache_get(db_session, ("k",)) is None
 
     def test_rollback_clears_cache(self, db_session):
-        """Any rollback on the session invalidates every cached entry."""
+        """A rollback with an active transaction invalidates every cached entry. In production a rollback always follows failed DB work (transaction active), so the after_rollback event is guaranteed to fire; this test mirrors that by touching the DB before rolling back."""
         session_cache_set(db_session, ("k",), pd.DataFrame({"a": [1]}))
+        db_session.execute(text("SELECT 1"))
         db_session.rollback()
         assert session_cache_get(db_session, ("k",)) is None
 

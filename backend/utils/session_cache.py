@@ -74,16 +74,3 @@ def _clear_on_commit(session: Session) -> None:
 def _clear_on_rollback(session: Session) -> None:
     """Drop the cache after any rollback — in-flight state is discarded."""
     _clear_cache(session)
-
-
-# Override the Session class's rollback method to always clear cache
-_original_rollback = Session.rollback
-
-
-def _patched_rollback(self, *args, **kwargs):
-    """Rollback that clears the cache before delegating to original."""
-    _clear_cache(self)
-    return _original_rollback(self, *args, **kwargs)
-
-
-Session.rollback = _patched_rollback
