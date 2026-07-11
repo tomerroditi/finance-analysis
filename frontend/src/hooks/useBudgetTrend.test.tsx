@@ -4,9 +4,13 @@ import { type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { budgetApi } from "../services/api";
 import { useBudgetTrend } from "./useBudgetTrend";
+import { DemoModeProvider } from "../context/DemoModeContext";
 
 vi.mock("../services/api", () => ({
   budgetApi: { getAnalysis: vi.fn() },
+  testingApi: {
+    getDemoModeStatus: vi.fn().mockResolvedValue({ data: { demo_mode: false } }),
+  },
 }));
 
 const getAnalysis = budgetApi.getAnalysis as Mock;
@@ -16,7 +20,9 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false } },
   });
   return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <DemoModeProvider>{children}</DemoModeProvider>
+    </QueryClientProvider>
   );
 }
 

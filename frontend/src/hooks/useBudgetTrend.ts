@@ -1,5 +1,6 @@
 import { useQueries } from "@tanstack/react-query";
 import { budgetApi } from "../services/api";
+import { useQueryKeys } from "./useQueryKeys";
 
 export interface BudgetTrendPoint {
   /** ISO-ish month key, e.g. "2026-05". */
@@ -19,7 +20,7 @@ interface TrendRuleItem {
  * Build a budget-vs-actual series for the trailing `months` calendar months
  * ending at (and including) the given year/month.
  *
- * Reuses the per-month `["budgetAnalysis", y, m, includeSplitParents]` queries
+ * Reuses the per-month `qk.budget.analysis(y, m, includeSplitParents)` queries
  * — the monthly view already prefetches ±2 months, so most of these are warm
  * cache hits. `budget` and `actual` come from the month's "Total Budget" row —
  * the same single source of truth the monthly gauge uses — so the trend bars
@@ -32,6 +33,7 @@ export function useBudgetTrend(
   months = 6,
   includeSplitParents = false,
 ) {
+  const qk = useQueryKeys();
   const periods = Array.from({ length: months }, (_, i) => {
     const offset = months - 1 - i;
     const date = new Date(year, month - 1 - offset);
@@ -40,7 +42,7 @@ export function useBudgetTrend(
 
   const results = useQueries({
     queries: periods.map((p) => ({
-      queryKey: ["budgetAnalysis", p.year, p.month, includeSplitParents],
+      queryKey: qk.budget.analysis(p.year, p.month, includeSplitParents),
       queryFn: () =>
         budgetApi
           .getAnalysis(p.year, p.month, includeSplitParents)

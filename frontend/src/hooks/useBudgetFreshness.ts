@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
 import { useDemoMode } from "../context/DemoModeContext";
+import { useQueryKeys } from "./useQueryKeys";
 import { daysSince, formatMissingRange } from "../utils/dateFormatting";
 
 /**
@@ -92,9 +93,10 @@ const AGING_THRESHOLD_DAYS = 2;
  */
 export function useBudgetFreshness(): BudgetFreshness {
   const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["last-scrapes", isDemoMode],
+    queryKey: qk.scraping.lastScrapes(),
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
     enabled: !isDemoMode,
   });

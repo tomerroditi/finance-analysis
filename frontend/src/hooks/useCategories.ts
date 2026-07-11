@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { taggingApi } from "../services/api";
+import { useQueryKeys } from "./useQueryKeys";
 
 type CategoriesMap = Record<string, string[]>;
 
@@ -25,8 +26,9 @@ export function sortCategoriesMap(data: CategoriesMap): CategoriesMap {
  * `sortCategoriesMap`, so all consumers render options in a consistent order.
  */
 export function useCategories(options?: { enabled?: boolean }) {
+  const qk = useQueryKeys();
   return useQuery({
-    queryKey: ["categories"],
+    queryKey: qk.tagging.categories(),
     queryFn: () => taggingApi.getCategories().then((res) => res.data),
     enabled: options?.enabled,
     select: sortCategoriesMap,
