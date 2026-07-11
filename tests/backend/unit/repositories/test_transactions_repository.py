@@ -672,3 +672,61 @@ class TestPendingReconciliation:
         assert len(rows) == 2
         assert all(r.status == "completed" for r in rows)
         assert all(r.category == "Cash" and r.tag == "ATM" for r in rows)
+
+
+class TestGetTableSessionCache:
+    """get_table memoizes the merged frame within one session."""
+
+    def test_second_identical_call_skips_base_reads(
+        self, db_session, seed_base_transactions, monkeypatch
+    ):
+        """Two identical get_table calls perform the 5-table read only once."""
+        from backend.repositories import transactions_repository as tr_module
+
+        repo = tr_module.TransactionsRepository(db_session)
+        calls = {"n": 0}
+        original = tr_module.TransactionsRepository._get_base_transactions
+
+        def counting(self, *args, **kwargs):
+            calls["n"] += 1
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(
+            tr_module.TransactionsRepository, "_get_base_transactions", counting
+        )
+
+        first = repo.get_table()
+        second = repo.get_table()
+
+        assert calls["n"] == 1
+        pd.testing.assert_frame_equal(
+            first.reset_index(drop=True), second.reset_index(drop=True)
+        )
+
+    def test_different_params_are_cached_separately(
+        self, db_session, seed_base_transactions
+    ):
+        """exclude_services variants must not collide in the cache."""
+        repo = TransactionsRepository(db_session)
+        all_df = repo.get_table()
+        cashflow_df = repo.get_cashflow_transactions()
+        assert len(cashflow_df) <= len(all_df)
+        assert "credit_card_transactions" not in set(cashflow_df["source"])
+
+    def test_write_invalidates_cache(self, db_session, seed_base_transactions):
+        """A committed write is visible to the next get_table call."""
+        repo = TransactionsRepository(db_session)
+        before = len(repo.get_table())
+        repo.add_transaction(
+            ManualTransactionDTO(
+                date=datetime(2025, 1, 15),
+                account_name="Wallet",
+                description="cache-buster",
+                amount=-10.0,
+                transaction_type="withdrawal",
+                provider="manual",
+            ),
+            service="cash",
+        )
+        after = len(repo.get_table())
+        assert after == before + 1

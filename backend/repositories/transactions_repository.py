@@ -28,6 +28,7 @@ from backend.constants.tables import (
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 DEPOSIT_TYPE = "deposit"
 WITHDRAWAL_TYPE = "withdrawal"
@@ -715,6 +716,16 @@ class TransactionsRepository:
             ``include_split_parents=True``.  Date column is normalized to
             ``YYYY-MM-DD`` string format.
         """
+        cache_key = (
+            "transactions.get_table",
+            service,
+            include_split_parents,
+            tuple(sorted(exclude_services or [])),
+        )
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         df = self._get_base_transactions(service, exclude_services)
 
         if not include_split_parents:
@@ -723,6 +734,7 @@ class TransactionsRepository:
         df = self._add_split_children(df, service, exclude_services)
         df = self._normalize_dates(df)
 
+        session_cache_set(self.db, cache_key, df)
         return df
 
     def _get_base_transactions(
