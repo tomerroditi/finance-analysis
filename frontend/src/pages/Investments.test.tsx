@@ -18,8 +18,9 @@ describe("Investments", () => {
     it("displays investment names from the API", async () => {
       renderWithProviders(<Investments />);
       await waitFor(() => {
-        expect(screen.getByText("S&P 500 ETF")).toBeInTheDocument();
-        expect(screen.getByText("Government Bonds")).toBeInTheDocument();
+        // The name appears in both the allocation-donut legend and the card title.
+        expect(screen.getAllByText("S&P 500 ETF").length).toBeGreaterThan(0);
+        expect(screen.getAllByText("Government Bonds").length).toBeGreaterThan(0);
       });
     });
 
