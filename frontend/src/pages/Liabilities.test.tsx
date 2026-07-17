@@ -8,7 +8,8 @@ describe("Liabilities", () => {
     it("displays liability names from the API", async () => {
       renderWithProviders(<Liabilities />);
       await waitFor(() => {
-        expect(screen.getByText("Home Mortgage")).toBeInTheDocument();
+        // The name appears in both the debt-donut legend and the card title.
+        expect(screen.getAllByText("Home Mortgage").length).toBeGreaterThan(0);
       });
     });
 
