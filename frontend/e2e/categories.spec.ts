@@ -37,7 +37,6 @@ test.describe("Categories", () => {
   }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     const rulesCard = page.getByRole("button", { name: /Auto-Tagging Rules/i });
     const searchBox = page.getByPlaceholder(/Search categories and tags/i);
@@ -64,7 +63,6 @@ test.describe("Categories", () => {
   test("delete button is visible inside the category detail panel", async ({ page }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     // Click the Food card (non-protected) to open the detail panel.
     const foodCard = page.locator('[data-testid="category-card-Food"]');
@@ -100,7 +98,6 @@ test.describe("Categories", () => {
   }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     // Investments is a protected category — it cannot be deleted.
     const protectedCard = page.locator('[data-testid="category-card-Investments"]');

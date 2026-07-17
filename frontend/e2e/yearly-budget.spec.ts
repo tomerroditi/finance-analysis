@@ -58,7 +58,6 @@ test.describe("Yearly budget", () => {
   test.beforeEach(async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.getByRole("button", { name: /^Yearly$/i }).click();
-    await page.waitForLoadState("networkidle");
   });
 
   test("creates a yearly rule, blocks a conflicting tag inline, and deletes the rule", async ({

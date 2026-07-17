@@ -37,8 +37,8 @@ test.describe("Transactions", () => {
   test("text search filters transactions", async ({ page }) => {
     await navigateTo(page, "/transactions");
 
-    // Wait for transactions to load
-    await page.waitForLoadState("networkidle");
+    // Wait for transactions to load (deterministic anchor instead of networkidle).
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
 
     // Open filter panel if not visible
     const filterButton = page.getByRole("button", { name: /filter/i });
@@ -76,7 +76,6 @@ test.describe("Transactions", () => {
     // Wait for the table to populate
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // The eraser button renders on every row but is disabled for rows with no
     // category/tag (so the action column stays aligned). Find the first
@@ -114,7 +113,6 @@ test.describe("Transactions", () => {
     // Wait for the table to populate.
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // Find rows whose per-row eraser is *enabled* — these are the rows with
     // a category or tag assigned (the button renders on every row but is
@@ -201,7 +199,6 @@ test.describe("Transactions", () => {
     // and the table min-width was raised so it can never collapse.
     await navigateTo(page, "/transactions");
     await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // Locate the description column header and measure its rendered width.
     const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();

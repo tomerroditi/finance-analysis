@@ -38,7 +38,6 @@ test.describe("Dashboard bank-balance update chip", () => {
       sessionStorage.setItem("onboardingDismissedAt", String(Date.now())),
     );
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
   });
 
   test("shows an update chip per account; disabled when not scraped today", async ({ page }) => {

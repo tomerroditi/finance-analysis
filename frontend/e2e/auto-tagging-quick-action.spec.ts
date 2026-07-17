@@ -25,7 +25,6 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
 
   test("Categories page hosts the Auto-Tagging Rules section", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // The launcher card opens the full-screen rules manager.
     await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();
@@ -110,7 +109,6 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
 
     // Restrict to credit-card transactions so the selection is rule-applicable.
     await page.getByRole("button", { name: /Credit Card/i }).click();
-    await page.waitForLoadState("networkidle");
 
     await expect(page.locator("table tbody tr").first()).toBeVisible({
       timeout: 10_000,
@@ -153,6 +151,9 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
     // distinct description — three distinct merchants -> three filled
     // Value inputs.
     const valueInputs = modal.locator('input[placeholder="Value"]:visible');
+    // Anchor the count before evaluateAll (which does not auto-wait) so the
+    // read can't race the modal populating its three OR branches.
+    await expect(valueInputs).toHaveCount(3);
     const filled = await valueInputs.evaluateAll((els) =>
       els
         .map((el) => (el as HTMLInputElement).value.trim())

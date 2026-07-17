@@ -54,12 +54,10 @@ test.describe("Retirement snapshot fields", () => {
     page,
   }) => {
     await navigateTo(page, "/early-retirement");
-    await page.waitForLoadState("networkidle");
 
     // The "auto-calculated" label appears twice (once for each computed card)
     const computedLabels = page.getByText("auto-calculated");
-    await expect(computedLabels.first()).toBeVisible();
-    expect(await computedLabels.count()).toBe(2);
+    await expect(computedLabels).toHaveCount(2);
   });
 
   test("editing a snapshot field shows the reset button", async ({ page }) => {

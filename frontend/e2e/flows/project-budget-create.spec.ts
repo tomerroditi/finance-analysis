@@ -19,7 +19,6 @@ test.describe("Project budget flow", () => {
 
     // Switch to Project Budgets tab.
     await page.getByRole("button", { name: /project budgets/i }).first().click();
-    await page.waitForLoadState("networkidle");
 
     // The demo seed ships a "Home Renovation" project — confirm it shows.
     await expect(
