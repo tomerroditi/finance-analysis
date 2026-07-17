@@ -15,6 +15,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // Always reset demo mode after a run — interrupted runs otherwise leave a
+  // long-lived dev backend stuck serving demo data (see global-teardown.ts).
+  globalTeardown: "./e2e/global-teardown.ts",
   fullyParallel: false, // serial by default — demo mode is shared state
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
