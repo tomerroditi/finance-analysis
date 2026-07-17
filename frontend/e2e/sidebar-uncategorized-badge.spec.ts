@@ -30,6 +30,9 @@ test.describe("sidebar uncategorized badge", () => {
     const { count } = await res.json();
 
     await page.goto("/");
+    await page.waitForResponse(
+      (r) => r.url().includes("/api/transactions/uncategorized-count") && r.ok(),
+    );
     await page.waitForLoadState("domcontentloaded");
 
     const transactionsLink = page.getByRole("link", { name: /transactions/i }).first();
