@@ -135,13 +135,29 @@ performs zero backend writes** — one writing spec there corrupts every paralle
 sibling. Add a write to a listed spec? Move it out of the list in the same
 change.
 
+**True parallel speedup on multi-core dev boxes: `npm run test:e2e:isolated`**
+(`.claude/scripts/e2e_parallel_isolated.py`). It starts N isolated
+(backend + frontend) pairs — each its own port + `FAD_USER_DIR` demo DB — and
+runs `--shard=i/N` once per pair, pinned via `BASE_URL` + `E2E_API_BASE`. No
+shared DB → no cross-shard races → every shard runs concurrently. Opt-in local
+only; CI keeps its single-backend `--shard=X/4` matrix. Every direct-to-backend
+API call in a spec must go through the env-driven `API_BASE` exported from
+`frontend/e2e/helpers.ts` (never hardcode `http://localhost:8000`) or that call
+will hit the wrong shard's backend.
+
 **Avoid redundant `waitForLoadState("networkidle")`.** It waits for every
 straggler request + 500 ms quiet (~2 s of dead time warm, more cold), but
 Playwright's `expect().toBeVisible()`/`.click()`/`.fill()`/`.waitFor()` already
 auto-wait for the element the test needs. Drop the `networkidle` — *unless* the
-test then does a non-waiting read (`.count()`, `.evaluate()`, `.inputValue()`,
-`.textContent()`, `.isVisible()`), which can race the render; there keep an
-explicit wait. See `.claude/rules/testing.md`.
+test then does a genuinely non-waiting read (`.count()`, `.all()`,
+`.isVisible()`, `evaluateAll()`, `page.evaluate()`) or a *negative* assertion
+(`toHaveCount(0)`), which can race or pass vacuously against an unrendered page.
+A locator's `.textContent()`/`.getAttribute()`/`.inputValue()`/`.evaluate()`
+*do* auto-wait, so a `networkidle` guarding those is already redundant. Where a
+wait is genuinely needed, prefer a positive anchor
+(`await expect(target.first()).toBeVisible()`) over `networkidle`; keep
+`networkidle` only when zero is a legitimate result. See
+`.claude/rules/testing.md`.
 
 - **Run the whole suite, not just the one test you touched.** Backend `pytest` has a 40 % coverage gate — a targeted run needs `--no-cov` (see Commands), but the pre-PR run is the full suite with coverage on.
 - **e2e is required, not optional** — `npm test` (vitest) and e2e (`playwright test`) are different layers. e2e specs live in `frontend/e2e/` and drive the real UI in Demo Mode; type-checking and unit tests miss the focus-trap / click-outside / query-invalidation bugs UI patches introduce. Every UI patch must add or update an e2e spec (see the CLAUDE.md "UI Testing" section).

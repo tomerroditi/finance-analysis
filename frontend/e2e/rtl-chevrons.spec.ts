@@ -126,7 +126,12 @@ test.describe("RTL chevrons", () => {
     await page.evaluate(() => localStorage.setItem("language", "he"));
     await navigateTo(page, "/data-sources");
 
-    await page.getByRole("button", { name: "חבר חשבון" }).click();
+    // `exact: true`: getByRole's name is a substring match by default, and
+    // three labels share this prefix (connectAccount "חבר חשבון",
+    // connectFirstAccount "חבר חשבון ראשון", connectNewAccount "חבר חשבון חדש").
+    // Without exact matching, a transient second button (e.g. under CPU load in
+    // the parallel harness) makes this resolve to 2 elements and fail strict mode.
+    await page.getByRole("button", { name: "חבר חשבון", exact: true }).click();
 
     // The three service-type buttons each carry a "proceed forward" chevron at
     // the end of the row. (Each button also contains an unrelated category

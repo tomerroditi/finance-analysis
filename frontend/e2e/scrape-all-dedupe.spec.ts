@@ -1,7 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
-
-const API_BASE = "http://localhost:8000/api";
+import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
 
 // Two throwaway accounts seeded into the demo DB so "Scrape All" has more
 // than one card to act on. One (RUNNING_ACCOUNT) is driven into

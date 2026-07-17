@@ -1,7 +1,5 @@
 import { test, expect, request, type APIRequestContext, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
-
-const API_BASE = "http://localhost:8000/api";
+import { enableDemoMode, disableDemoMode, API_BASE } from "./helpers";
 
 /**
  * The Goals card is a "beta" dashboard widget, hidden by default

@@ -1,5 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
+import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle, API_BASE } from "./helpers";
 
 test.describe("DataSources", () => {
   test.beforeAll(async ({ browser }) => {
@@ -37,7 +37,6 @@ test.describe("DataSources", () => {
 
   test("renders provider logos on each connected account card", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // The four demo accounts (Hapoalim, Max, Visa Cal, HaPhoenix) each render
     // a <ProviderLogo> with alt text set to the humanized provider name. We
@@ -82,7 +81,6 @@ test.describe("DataSources", () => {
   });
 
   test("opens the shared balance modal from the $ button and saves", async ({ page }) => {
-    const API_BASE = "http://localhost:8000/api";
     const provider = "onezero";
     const accountName = "E2E Balance Bank";
     const today = new Date().toISOString();

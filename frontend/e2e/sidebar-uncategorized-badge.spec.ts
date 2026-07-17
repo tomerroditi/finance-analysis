@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode, disableDemoMode, API_BASE } from "./helpers";
 
 /**
  * Sidebar.tsx no longer fetches the full transaction list to compute the
@@ -23,9 +23,7 @@ test.describe("sidebar uncategorized badge", () => {
   });
 
   test("badge count matches the backend count endpoint", async ({ page, request }) => {
-    const res = await request.get(
-      "http://localhost:8000/api/transactions/uncategorized-count",
-    );
+    const res = await request.get(`${API_BASE}/transactions/uncategorized-count`);
     expect(res.ok()).toBeTruthy();
     const { count } = await res.json();
 

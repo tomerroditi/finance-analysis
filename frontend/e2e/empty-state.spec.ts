@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { API_BASE } from "./helpers";
 
 /**
  * Empty-database smoke test.
@@ -33,7 +34,7 @@ test.describe("Empty database smoke", () => {
   );
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.get("http://localhost:8000/api/onboarding/status");
+    const res = await request.get(`${API_BASE}/onboarding/status`);
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     if (!body.is_first_run) {

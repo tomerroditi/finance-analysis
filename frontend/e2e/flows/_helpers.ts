@@ -1,6 +1,5 @@
 import { type Page, type APIRequestContext } from "@playwright/test";
-
-const API_BASE = "http://localhost:8000/api";
+import { API_BASE } from "../helpers";
 
 /**
  * Toggle Demo Mode via the testing API rather than the Settings popup.

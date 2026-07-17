@@ -1,7 +1,6 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
 
-const API_BASE = "http://localhost:8000/api";
 const PROCESS_ID = 4242;
 
 // A throwaway OneZero account, seeded into the demo DB so the 2FA resend UI
@@ -113,7 +112,6 @@ test.describe("OneZero resend-in-place 2FA", () => {
     });
 
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // The seeded OneZero account card must be present.
     await expect(

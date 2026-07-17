@@ -298,11 +298,26 @@ endpoint in <1 s, and a demo-DB rebuild is ~0.08 s. On the web sandbox (4
 cores) two concurrent Chromium instances each rendering Plotly saturate the
 CPU, so the parallel read-only phase came in **slower** than serial (measured
 7.3–8.4 m vs ~6.0 m) with flaky timeouts. Client-side parallelism can't beat a
-per-test render cost when the box is already CPU-bound. It *does* help on a
-machine with spare cores; real across-the-board parallel speedup needs
-**per-worker isolated backends** (a separate uvicorn + demo DB per worker via
-`FAD_USER_DIR` + `VITE_BACKEND_URL`). Use `test:e2e:parallel` only where the CPU
-can sustain the concurrency.
+per-test render cost when the box is already CPU-bound, *and* even 2 workers
+against one backend saturate the serialized SQLite path. Use
+`test:e2e:parallel` only where the CPU can sustain the concurrency.
+
+**Real across-the-board parallel speedup — `npm run test:e2e:isolated`.** The
+fix for the shared-backend ceiling is to remove the sharing:
+`.claude/scripts/e2e_parallel_isolated.py` starts **N fully isolated
+(backend + frontend) pairs**, each with its own port and its own
+`FAD_USER_DIR` (hence its own demo SQLite), then runs Playwright `--shard=i/N`
+once per pair — each shard pinned to its backend via `BASE_URL` (browser
+origin) and `E2E_API_BASE` (the env var `frontend/e2e/helpers.ts` reads for
+Node-side API calls). With no shared DB there are **zero cross-shard races**,
+so every shard runs concurrently and the only ceiling is real CPU cores. It
+auto-picks a shard count (~1 per 3 cores, clamped 2–6); override with
+`--shards N`, and forward Playwright args after `--`
+(`… e2e_parallel_isolated.py --shards 4 -- categories`). This is an **opt-in
+local tool** — it does not touch CI, which keeps its proven single-backend
+`--shard=X/4` matrix. It needs the worktree's `.venv` (auto-detected) and
+`npm`; each pair costs a uvicorn + a Vite dev server, so it's for multi-core
+dev boxes, not the 4-core sandbox.
 
 **Prefer auto-waiting assertions over `waitForLoadState("networkidle")`.** A
 bare `networkidle` after navigation waits for *every* straggler request plus a
@@ -310,11 +325,23 @@ bare `networkidle` after navigation waits for *every* straggler request plus a
 cold. Playwright's `expect(...).toBeVisible()`, `.click()`, `.fill()`, and
 `.waitFor()` already auto-wait for the specific element the test needs, so a
 following `networkidle` is usually redundant. Drop it — **unless** the test
-then does a *non-waiting* read (`.count()`, `.evaluate()`, `.inputValue()`,
-`.textContent()`, `.isVisible()`), which can race the render; there, keep an
-explicit wait (`networkidle`, or better, `await expect(target.first())
-.toBeVisible()` before the read). Trimming the redundant ones shaved the
-read-only phase from ~6.8 m to ~6.0 m.
+then does a *genuinely non-waiting* read, which can race the render.
+
+Know which reads auto-wait, because it's narrower than it looks. A `locator`'s
+`.textContent()`, `.getAttribute()`, `.inputValue()`, `.boundingBox()`, and
+`.evaluate()` **do** auto-wait for the element to attach — so a `networkidle`
+guarding one of those is already redundant and safe to drop. The reads that do
+**not** wait are `.count()`, `.all()`, `.isVisible()`/`.isEnabled()`,
+`locator.evaluateAll()`, and `page.evaluate()` — plus **negative** auto-retrying
+assertions (`toHaveCount(0)`, `not.toBeVisible()`), which pass *vacuously*
+against a page that hasn't rendered yet. Before one of those, keep an explicit
+wait — best as a positive anchor (`await expect(target.first()).toBeVisible()`,
+or `await expect(target).toHaveCount(n)`) rather than `networkidle`. The one
+case with no safe substitute is a `.count()`/`.isVisible()` where **zero is a
+legitimate answer** (a loop walking months until one has no rows, an
+"if this optional banner is present" guard) — those must keep `networkidle`.
+Two sweeps have trimmed 60 redundant waits this way (read-only phase ~6.8 m →
+~6.0 m); the survivors are the zero-is-valid guards.
 
 **Adding a spec to `READ_ONLY_SPECS`:** only if it performs *no* backend
 writes — no POST/PUT/DELETE, no form submit, no create/edit/delete/move of
