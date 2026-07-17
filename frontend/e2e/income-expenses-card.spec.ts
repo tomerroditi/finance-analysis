@@ -12,6 +12,11 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, and that the label toggle + tab switches never crash the card.
  * Demo Mode supplies the sample data.
+ *
+ * All checks are client-side interactions on one rendered card, so they run
+ * as a single test on a single dashboard load — the cold dashboard boot is
+ * by far the most expensive step, and it used to be paid once per assertion
+ * group (5×).
  */
 test.describe("Income & Expenses dashboard card", () => {
   test.beforeAll(async ({ browser }) => {
@@ -47,10 +52,10 @@ test.describe("Income & Expenses dashboard card", () => {
     return card;
   }
 
-  test("Totals tab renders the ledger newest-first with a Net column", async ({ page }) => {
+  test("tabs, ledger, KPIs, pager, and label toggles all behave on one load", async ({ page }) => {
     const card = await openCard(page);
 
-    // Header labels for the ledger.
+    // --- Totals tab: ledger renders newest-first with a Net column ---
     await expect(card.getByText("Month", { exact: true }).first()).toBeVisible();
     await expect(card.getByText("Net", { exact: true }).first()).toBeVisible();
 
@@ -64,16 +69,44 @@ test.describe("Income & Expenses dashboard card", () => {
     const lastMonth = await rows.last().getAttribute("data-month");
     expect(firstMonth && lastMonth).toBeTruthy();
     expect(firstMonth! > lastMonth!).toBe(true); // "YYYY-MM" strings sort lexically
-  });
 
-  test("Income Breakdown shows composition rows and the % / ₪ toggle works", async ({ page }) => {
-    const card = await openCard(page);
+    // --- KPI cards summarise income and expenses with period labels ---
+    const income = card.getByTestId("kpi-income");
+    const expenses = card.getByTestId("kpi-expense");
+    await expect(income).toBeVisible();
+    await expect(expenses).toBeVisible();
 
+    // Each card leads with the 3-month average and keeps the 6M/12M windows.
+    await expect(income.getByText("3-mo avg")).toBeVisible();
+    await expect(income.getByText("6M", { exact: true })).toBeVisible();
+    await expect(income.getByText("12M", { exact: true })).toBeVisible();
+
+    // Income averages come straight from the loaded series — a real thousands
+    // figure (e.g. "30,321"), not a zero placeholder. (Currency uses an NBSP
+    // before ₪, so match just the grouped number.)
+    await expect(income).toContainText(/\d,\d{3}/);
+
+    // --- Ledger caps to 12 months; pager reveals more and collapses back ---
+    const initial = await rows.count();
+    expect(initial).toBeLessThanOrEqual(12);
+
+    // The demo history spans well over a year, so the pager must be present.
+    const showMore = card.getByRole("button", { name: /Show earlier months/ });
+    await expect(showMore).toBeVisible();
+
+    await showMore.click();
+    await expect.poll(() => rows.count()).toBeGreaterThan(initial);
+
+    // Collapsing returns to the 12-month window.
+    await card.getByRole("button", { name: "Show less" }).click();
+    await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
+
+    // --- Income Breakdown: composition rows and the % / ₪ toggle ---
     await card.getByRole("button", { name: "Income Breakdown" }).click();
 
-    const rows = card.getByTestId("composition-row");
-    await expect(rows.first()).toBeVisible({ timeout: 45_000 });
-    const before = await rows.count();
+    const compositionRows = card.getByTestId("composition-row");
+    await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
+    const before = await compositionRows.count();
     expect(before).toBeGreaterThan(0);
 
     // The label toggle appears only on breakdown tabs. Default is share (%).
@@ -90,57 +123,14 @@ test.describe("Income & Expenses dashboard card", () => {
     await shareBtn.click();
     await expect(shareBtn).toHaveAttribute("aria-pressed", "true");
     await expect(card.getByTestId("composition-row")).toHaveCount(before);
-  });
 
-  test("Expenses Breakdown renders composition rows", async ({ page }) => {
-    const card = await openCard(page);
-
+    // --- Expenses Breakdown renders composition rows too ---
     await card.getByRole("button", { name: "Expenses Breakdown" }).click();
 
-    const rows = card.getByTestId("composition-row");
-    await expect(rows.first()).toBeVisible({ timeout: 45_000 });
-    expect(await rows.count()).toBeGreaterThan(0);
+    await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
+    expect(await compositionRows.count()).toBeGreaterThan(0);
 
     // Toggle is present here too and defaults to share.
     await expect(card.getByRole("button", { name: "Show amount (₪)" })).toBeVisible();
-  });
-
-  test("KPI cards summarise income and expenses with period labels", async ({ page }) => {
-    const card = await openCard(page);
-
-    const income = card.getByTestId("kpi-income");
-    const expenses = card.getByTestId("kpi-expense");
-    await expect(income).toBeVisible();
-    await expect(expenses).toBeVisible();
-
-    // Each card leads with the 3-month average and keeps the 6M/12M windows.
-    await expect(income.getByText("3-mo avg")).toBeVisible();
-    await expect(income.getByText("6M", { exact: true })).toBeVisible();
-    await expect(income.getByText("12M", { exact: true })).toBeVisible();
-
-    // Income averages come straight from the loaded series — a real thousands
-    // figure (e.g. "30,321"), not a zero placeholder. (Currency uses an NBSP
-    // before ₪, so match just the grouped number.)
-    await expect(income).toContainText(/\d,\d{3}/);
-  });
-
-  test("ledger caps to 12 months; 'Show earlier months' reveals more, 'Show less' collapses", async ({ page }) => {
-    const card = await openCard(page);
-    const rows = card.getByTestId("ledger-row");
-    await expect(rows.first()).toBeVisible({ timeout: 45_000 });
-
-    const initial = await rows.count();
-    expect(initial).toBeLessThanOrEqual(12);
-
-    // The demo history spans well over a year, so the pager must be present.
-    const showMore = card.getByRole("button", { name: /Show earlier months/ });
-    await expect(showMore).toBeVisible();
-
-    await showMore.click();
-    await expect.poll(() => rows.count()).toBeGreaterThan(initial);
-
-    // Collapsing returns to the 12-month window.
-    await card.getByRole("button", { name: "Show less" }).click();
-    await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
   });
 });
