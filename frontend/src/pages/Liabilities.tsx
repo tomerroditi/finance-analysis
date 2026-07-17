@@ -11,8 +11,9 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import { AXIS_DEFAULTS, CHART_COLORS, CHART_TEXT_COLOR, formatAxisNumber } from "../utils/chartStyle";
+import { AXIS_DEFAULTS, CHART_COLORS, formatAxisNumber } from "../utils/chartStyle";
 import { ChartTooltip } from "../components/charts/ChartTooltip";
+import { ChartLegend } from "../components/charts/ChartLegend";
 import { DonutChart } from "../components/charts/DonutChart";
 import {
   Plus,
@@ -598,11 +599,7 @@ export function Liabilities() {
                   <Tooltip
                     content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
                   />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 10, color: CHART_TEXT_COLOR }}
-                  />
+                  <Legend content={<ChartLegend fontSize={10} />} />
                   {debtOverTimeData.map((s, i) => (
                     <Line
                       key={s.name}

@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 
 interface DataPoint {
   age: number;
@@ -71,7 +72,7 @@ export function RetirementIncomeChart({ data }: Props) {
               <ChartTooltip labelFormatter={(age) => `${t("earlyRetirement.charts.age")} ${age}`} />
             }
           />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }} />
+          <Legend content={<ChartLegend />} />
           {bars.map((b) => (
             <Bar
               key={b.dataKey}

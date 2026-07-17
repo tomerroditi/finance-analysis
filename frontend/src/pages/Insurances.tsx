@@ -28,6 +28,7 @@ import {
 } from "recharts";
 import { AXIS_DEFAULTS, BAR_RADIUS, CHART_TEXT_COLOR, formatAxisNumber } from "../utils/chartStyle";
 import { ChartTooltip } from "../components/charts/ChartTooltip";
+import { ChartLegend } from "../components/charts/ChartLegend";
 import { DonutChart } from "../components/charts/DonutChart";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate, formatMonthCompact, formatMonthYear } from "../utils/dateFormatting";
@@ -660,10 +661,8 @@ export function Insurances() {
                 />
                 <Legend
                   verticalAlign="top"
-                  align="left"
-                  iconType="circle"
-                  iconSize={8}
-                  wrapperStyle={{ fontSize: 10, color: CHART_TEXT_COLOR }}
+                  content={<ChartLegend fontSize={10} gapTop={0} />}
+                  wrapperStyle={{ paddingBottom: 6 }}
                 />
                 <Bar
                   yAxisId="left"

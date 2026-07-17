@@ -47,6 +47,10 @@ export const AXIS_DEFAULTS = {
   axisLine: false,
   tickLine: false,
   tick: { fill: CHART_TICK_COLOR, fontSize: 11 },
+  // Breathing room between the plot area and tick labels, and auto-thinning
+  // of dense tick sets (long date axes) — matches the Plotly-era spacing.
+  tickMargin: 6,
+  minTickGap: 24,
 } as const;
 
 /** Convert a `#rrggbb` hex string to an `rgba(...)` string at the given alpha. */

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { ChartTooltip } from "./ChartTooltip";
+import { ChartLegend } from "./ChartLegend";
 import { CHART_COLORS, CHART_SURFACE_COLOR, CHART_TEXT_COLOR } from "../../utils/chartStyle";
 import { formatCurrency } from "../../utils/numberFormatting";
 
@@ -127,13 +128,7 @@ export function DonutChart({
               />
             }
           />
-          {showLegend && (
-            <Legend
-              iconType="circle"
-              iconSize={8}
-              wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}
-            />
-          )}
+          {showLegend && <Legend content={<ChartLegend />} />}
         </PieChart>
       </ResponsiveContainer>
       {centerLabel !== undefined && (

@@ -26,6 +26,7 @@ import {
   hexToRgba,
 } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -35,7 +36,6 @@ const DEBT_COLORS = [
   "#06b6d4", "#ec4899", "#10b981", "#f97316",
 ];
 
-const LEGEND_STYLE = { fontSize: 11, color: CHART_TEXT_COLOR } as const;
 
 /** Net Worth analytics dashboard card (period chips + bank/investments/net-worth/debt toggle). */
 export function NetWorthCard() {
@@ -120,7 +120,7 @@ export function NetWorthCard() {
             <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
             <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
             <Tooltip content={chartTooltip} />
-            <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+            <Legend content={<ChartLegend />} />
             {debtStacked.allTags.map((tag, i) => {
               const color = DEBT_COLORS[i % DEBT_COLORS.length];
               return (
@@ -166,7 +166,7 @@ export function NetWorthCard() {
               }}
             />
             <Tooltip content={chartTooltip} />
-            <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+            <Legend content={<ChartLegend />} />
             {series.map((s) => (
               <Line
                 key={s.dataKey}
@@ -218,7 +218,7 @@ export function NetWorthCard() {
             }}
           />
           <Tooltip content={chartTooltip} />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+          <Legend content={<ChartLegend />} />
           <Bar
             yAxisId="left"
             dataKey={config.deltaKey}

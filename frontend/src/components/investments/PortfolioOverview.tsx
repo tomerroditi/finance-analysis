@@ -12,8 +12,9 @@ import {
   Legend,
 } from "recharts";
 import { investmentsApi } from "../../services/api";
-import { AXIS_DEFAULTS, CHART_COLORS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { AXIS_DEFAULTS, CHART_COLORS, formatAxisNumber } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 import { DonutChart } from "../charts/DonutChart";
 import { formatDate, formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -171,11 +172,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
                   <Tooltip
                     content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
                   />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 10, color: CHART_TEXT_COLOR }}
-                  />
+                  <Legend content={<ChartLegend fontSize={10} />} />
                   {(balanceHistory.series as BalanceSeries[]).map((s, i) => (
                     <Line
                       key={s.name}

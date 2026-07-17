@@ -11,8 +11,9 @@ import {
   Cell,
 } from "recharts";
 import { ChevronDown, ChevronUp, TrendingUp } from "lucide-react";
-import { AXIS_DEFAULTS, BAR_RADIUS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { AXIS_DEFAULTS, BAR_RADIUS, formatAxisNumber } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 
@@ -84,11 +85,7 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
                       <ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />
                     }
                   />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}
-                  />
+                  <Legend content={<ChartLegend />} />
                   <Bar
                     dataKey="budget"
                     name={t("budget.trend.budget")}
