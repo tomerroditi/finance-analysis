@@ -20,7 +20,7 @@ describe("Investments", () => {
       await waitFor(() => {
         // The name appears in both the allocation-donut legend and the card title.
         expect(screen.getAllByText("S&P 500 ETF").length).toBeGreaterThan(0);
-        expect(screen.getByText("Government Bonds")).toBeInTheDocument();
+        expect(screen.getAllByText("Government Bonds").length).toBeGreaterThan(0);
       });
     });
 
