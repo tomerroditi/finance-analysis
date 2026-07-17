@@ -1,3 +1,34 @@
+## v1.44.0 (2026-07-17)
+
+### Feat
+
+- **frontend**: central query-key factory with uniform demo scoping
+- **backend**: add /transactions/uncategorized-count endpoint
+- **backend**: add session-scoped DataFrame cache with commit/rollback invalidation
+
+### Fix
+
+- **scripts**: with_server.py verifies port ownership, kills process groups, logs server output
+- **frontend**: migrate stale snapshot-delete cache patch to factory key
+- **frontend**: scope transaction-list cache patches to list keys, guard non-array data
+- **backend**: exclude orphaned split rows from uncategorized count to mirror merged view
+- **backend**: drop global Session.rollback monkey-patch, rely on after_rollback event
+
+### Refactor
+
+- **frontend**: fold yearly-budget keys from main into query-key factory
+- **frontend**: route prefetch on canonical keys; bump PERSIST_BUSTER to v3
+- **frontend**: all pages and mutation invalidations on canonical query keys
+- **frontend**: dashboard cluster on canonical query keys
+- **frontend**: shared hooks + sidebar on canonical query keys; sidebar badge uses count endpoint
+
+### Perf
+
+- **backend**: share vectorized income source labels, drop row-wise apply
+- **backend**: vectorize get_income_expenses_over_time monthly aggregation
+- **backend**: memoize get_data_for_analysis per session, drop scoped monkey-patch memo
+- **backend**: memoize TransactionsRepository.get_table per session
+
 ## v1.43.1 (2026-07-17)
 
 ### Fix
