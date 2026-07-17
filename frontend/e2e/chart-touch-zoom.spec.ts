@@ -33,12 +33,13 @@ test.describe("Chart double-tap native zoom mode (touch)", () => {
    *
    * The dashboard defers below-the-fold cards (DeferUntilVisible), and the
    * only eager Plotly chart in the default layout is the Income-by-source
-   * donut — a pie, which has no zoomable cartesian axis. The Income vs
-   * Expenses bar chart is a full-width card further down, so it must be
-   * scrolled into view before it exists in the DOM for markChart to find.
+   * donut — a pie, which has no zoomable cartesian axis. The Net Worth Over
+   * Time line chart is a full-width card further down, so it must be scrolled
+   * into view before it exists in the DOM for markChart to find. (The Income &
+   * Expenses card no longer renders a Plotly chart — it's a CSS ledger now.)
    */
   async function revealZoomableChart(page: Page) {
-    const card = page.locator('[data-card-id="income_expenses"]');
+    const card = page.locator('[data-card-id="net_worth"]');
     await card.scrollIntoViewIfNeeded();
     await expect(card.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 45_000 });
   }

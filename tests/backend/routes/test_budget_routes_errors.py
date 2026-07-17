@@ -111,17 +111,20 @@ class TestBudgetRuleNotFoundErrors:
     """Tests for not-found scenarios on budget rule endpoints."""
 
     def test_update_nonexistent_budget_rule(self, test_client):
-        """Verify that ValueError propagates when updating a non-existent budget rule.
+        """Verify updating a non-existent budget rule returns 400.
 
         The budget repository raises a ValueError when no rule is found
-        with the given ID. Since the route has no try/except, the error
-        propagates through the test client.
+        with the given ID. The PUT route (backed by ``MonthlyBudgetService``,
+        shared with project-rule edits) now wraps ``ValueError`` into an
+        HTTP 400, mirroring the create route, instead of letting it
+        propagate uncaught.
         """
-        with pytest.raises(ValueError, match="No rule found"):
-            test_client.put(
-                "/api/budget/rules/99999",
-                json={"amount": 5000.0},
-            )
+        response = test_client.put(
+            "/api/budget/rules/99999",
+            json={"amount": 5000.0},
+        )
+        assert response.status_code == 400
+        assert "No rule found" in response.json()["detail"]
 
     def test_delete_nonexistent_budget_rule(self, test_client):
         """DELETE /api/budget/rules/99999 for a non-existent rule.

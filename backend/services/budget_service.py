@@ -20,6 +20,10 @@ from backend.constants.budget import (
     ID,
     MONTH,
     NAME,
+    PERIOD_MONTHLY,
+    PERIOD_PROJECT,
+    PERIOD_TYPE,
+    PERIOD_YEARLY,
     TAGS,
     TOTAL_BUDGET,
     YEAR,
@@ -43,6 +47,11 @@ from backend.services.transactions_service import TransactionsService
 # source month, duplicating every rule. A single-process lock is sufficient:
 # the app runs one uvicorn process, and the desktop bundle likewise.
 _auto_fill_lock = threading.Lock()
+
+
+def _today() -> date:
+    """Return today's date. Indirection point so tests can monkeypatch the clock."""
+    return date.today()
 
 
 class BudgetService:
@@ -94,9 +103,13 @@ class BudgetService:
         tags: str | list[str],
         month: Optional[int] = None,
         year: Optional[int] = None,
+        period_type: Optional[str] = None,
     ) -> None:
         """
         Add a new budget rule, converting tags to semicolon-separated storage format.
+
+        ``period_type`` is forwarded to the repository, which derives it from
+        ``(year, month)`` when ``None``.
 
         Parameters
         ----------
@@ -112,9 +125,12 @@ class BudgetService:
             Calendar month (1–12). ``None`` for project budgets.
         year : int, optional
             Calendar year. ``None`` for project budgets.
+        period_type : str, optional
+            One of ``"monthly"``, ``"yearly"``, or ``"project"``. When
+            ``None``, the repository derives it from ``(year, month)``.
         """
         tags_str = ";".join(tags) if isinstance(tags, list) else tags
-        self.budget_repository.add(name, amount, category, tags_str, month, year)
+        self.budget_repository.add(name, amount, category, tags_str, month, year, period_type)
 
     def update_rule(self, id_: int, **fields):
         """
@@ -154,6 +170,173 @@ class BudgetService:
             ID of the budget rule to delete.
         """
         self.budget_repository.delete(id_)
+
+    def _rules_of_type_for(
+        self, category: str, year: int, period_type: str
+    ) -> pd.DataFrame:
+        """All rules of ``period_type`` for a given category and year (tags as lists).
+
+        Reads through the base ``BudgetService.get_all_rules`` explicitly
+        (bypassing any subclass override) since ``period_type`` here is a
+        caller-supplied filter that may name a different period than the
+        calling service's own kind (e.g. a ``YearlyBudgetService`` checking
+        for monthly conflicts). A polymorphic ``self.get_all_rules()`` would
+        already be pre-filtered to the calling subclass's period type and
+        could never see rules of any other kind.
+        """
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return rules
+        return rules.loc[
+            (rules[PERIOD_TYPE] == period_type)
+            & (rules[YEAR] == year)
+            & (rules[CATEGORY] == category)
+        ]
+
+    @staticmethod
+    def _is_all_tags(tags: list[str]) -> bool:
+        """True when a tag list is the all-tags sentinel (case-insensitive)."""
+        return [t.lower() for t in tags] == [ALL_TAGS.lower()]
+
+    def find_conflicting_tags(
+        self,
+        category: str,
+        tags: list[str],
+        year: int,
+        other_period_type: str,
+        *,
+        exclude_rule_id: int | None = None,
+    ) -> list[str]:
+        """Return incoming tags that collide with existing ``other_period_type`` rules.
+
+        Two rules conflict when they share ``category`` and ``year`` and at least
+        one tag. An ``all_tags`` sentinel on either side claims the whole category,
+        so every incoming (non-sentinel) tag conflicts.
+
+        Parameters
+        ----------
+        category : str
+            Category of the incoming rule.
+        tags : list[str]
+            Incoming tag list (may be the ``all_tags`` sentinel).
+        year : int
+            Calendar year the incoming rule applies to.
+        other_period_type : str
+            The budget kind to check against (e.g. ``"yearly"`` when validating a
+            monthly rule).
+        exclude_rule_id : int, optional
+            A rule id to ignore (the rule being edited).
+
+        Returns
+        -------
+        list[str]
+            Sorted conflicting tag names. Empty when there is no conflict. When
+            the incoming rule is itself ``all_tags`` and any other rule exists in
+            the category+year, returns ``["all_tags"]`` to signal a whole-category
+            conflict.
+        """
+        others = self._rules_of_type_for(category, year, other_period_type)
+        if exclude_rule_id is not None and not others.empty:
+            others = others.loc[others[ID] != exclude_rule_id]
+        if others.empty:
+            return []
+
+        if self._is_all_tags(tags):
+            # Incoming claims the whole category; any existing rule collides.
+            return [ALL_TAGS]
+
+        conflicts: set[str] = set()
+        for _, other in others.iterrows():
+            other_tags = other[TAGS]
+            if self._is_all_tags(other_tags):
+                conflicts.update(tags)
+            else:
+                conflicts.update(set(tags) & set(other_tags))
+        return sorted(conflicts)
+
+    def is_category_project_owned(self, category: str) -> bool:
+        """True if any project rule uses ``category``.
+
+        Reads through the unfiltered base ``get_all_rules`` so it works from any
+        subclass.
+        """
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return False
+        return not rules.loc[
+            (rules[PERIOD_TYPE] == PERIOD_PROJECT) & (rules[CATEGORY] == category)
+        ].empty
+
+    def category_used_by_monthly_or_yearly(self, category: str) -> bool:
+        """True if any monthly or yearly rule uses ``category`` (excluding the
+        ``Total Budget`` cap category, which is not a real category)."""
+        if category == TOTAL_BUDGET:
+            return False
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return False
+        return not rules.loc[
+            (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY]))
+            & (rules[CATEGORY] == category)
+            & (rules[CATEGORY] != TOTAL_BUDGET)
+        ].empty
+
+    def find_category_overlaps(self) -> list[dict]:
+        """Categories that are BOTH project-owned and budget-used.
+
+        Returns
+        -------
+        list[dict]
+            One entry per overlapping category:
+            ``{"category": str, "kinds": [<"monthly"|"yearly">, ...]}`` — the
+            non-project kinds that collide, sorted. Empty when there is no
+            overlap.
+        """
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            return []
+        project_cats = set(
+            rules.loc[rules[PERIOD_TYPE] == PERIOD_PROJECT, CATEGORY].dropna()
+        )
+        overlaps = []
+        for cat in sorted(project_cats):
+            kinds = sorted(
+                {
+                    pt
+                    for pt in rules.loc[
+                        (rules[CATEGORY] == cat)
+                        & (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY])),
+                        PERIOD_TYPE,
+                    ]
+                }
+            )
+            if kinds:
+                overlaps.append({"category": cat, "kinds": kinds})
+        return overlaps
+
+    def strip_conflicting_tags(
+        self,
+        category: str,
+        tags: list[str],
+        year: int,
+        other_period_type: str,
+    ) -> tuple[list[str], list[str]]:
+        """Split ``tags`` into (kept, skipped) for auto-fill/carry-forward.
+
+        Skipped tags are those that conflict with ``other_period_type`` rules for
+        the same category+year. If the incoming rule is ``all_tags`` and conflicts,
+        all-tags is treated as fully skipped (returns ``([], ["all_tags"])``).
+        """
+        conflicts = set(
+            self.find_conflicting_tags(category, tags, year, other_period_type)
+        )
+        if not conflicts:
+            return list(tags), []
+        if self._is_all_tags(tags):
+            return [], [ALL_TAGS]
+        kept = [t for t in tags if t not in conflicts]
+        skipped = [t for t in tags if t in conflicts]
+        return kept, skipped
 
     @staticmethod
     def validate_rule_inputs(
@@ -314,21 +497,88 @@ class BudgetService:
 
         return True, ""
 
+    def get_filtered_expenses(
+        self,
+        exclude_pending_refunds: bool = True,
+        include_split_parents: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Get expense transactions with budget-style filtering applied.
+
+        Loads all transactions (split-aware), then excludes non-expense
+        categories, project categories, and optionally pending refund
+        transactions. Split parent rows are excluded from the result.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            When ``True``, excludes transactions marked as pending refunds.
+            Default is ``True``.
+        include_split_parents : bool, optional
+            When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered expense transactions with parsed dates. Amounts are
+            negative (raw convention). The caller should negate to get
+            positive expense values.
+        """
+        all_data = self.transactions_service.get_data_for_analysis(
+            include_split_parents
+        )
+
+        if all_data.empty:
+            return all_data
+
+        # Filter to expense categories
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
+                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+            )
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+
+        # Exclude project categories
+        projects = ProjectBudgetService(self.db).get_all_projects_names()
+        if projects:
+            expenses = expenses.loc[
+                ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
+            ]
+
+        # Optionally exclude pending refunds
+        if exclude_pending_refunds:
+            pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
+            tx_ids = pending_refs["transaction_ids"]
+            split_ids = pending_refs["split_ids"]
+
+            expenses = expenses[
+                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
+            ]
+            if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
+                expenses = expenses[
+                    ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
+                ]
+
+        # Exclude split_parent transactions from amounts
+        if "type" in expenses.columns:
+            expenses = expenses[expenses["type"] != "split_parent"]
+
+        return expenses
+
 
 class MonthlyBudgetService(BudgetService):
     """Service for managing monthly budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
-        """
-        Get all monthly budget rules (excludes project rules).
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules where both ``year`` and ``month`` are non-null.
-        """
+        """Get all monthly budget rules (period_type == 'monthly')."""
         rules = super().get_all_rules()
-        return rules.loc[~rules[YEAR].isnull() & ~rules[MONTH].isnull()]
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_MONTHLY]
 
     def delete_rules_by_month(self, year: int, month: int) -> None:
         """
@@ -403,6 +653,7 @@ class MonthlyBudgetService(BudgetService):
             rules were found and copied, or ``None`` if the prior month
             has no rules.
         """
+        self._last_copy_skipped = []
         last_month = month - 1 if month != 1 else 12
         last_year = year if month != 1 else year - 1
 
@@ -415,15 +666,30 @@ class MonthlyBudgetService(BudgetService):
 
         self.delete_rules_by_month(year, month)
 
+        skipped: list[str] = []
         for _, rule in rules_to_copy.iterrows():
+            tags = rule[TAGS]
+            # Only run the conflict check when there are tags to check — a
+            # rule with no tags (e.g. Total Budget, or a legacy rule with
+            # tags=None) always gets copied as-is, matching prior behavior.
+            if rule[CATEGORY] != TOTAL_BUDGET and tags:
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], tags, year, PERIOD_YEARLY
+                )
+            else:
+                kept, dropped = tags, []
+            skipped.extend(dropped)
+            if tags and not kept:
+                continue
             self.add_rule(
                 name=rule[NAME],
                 amount=rule[AMOUNT],
                 category=rule[CATEGORY],
-                tags=rule[TAGS],
+                tags=kept,
                 month=month,
                 year=year,
             )
+        self._last_copy_skipped = skipped
 
         return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
 
@@ -462,6 +728,7 @@ class MonthlyBudgetService(BudgetService):
         snapshot taken before the lock, so we re-read it fresh inside the lock
         to observe rules a request that won the race already committed.
         """
+        self._auto_fill_skipped = []
         with _auto_fill_lock:
             # Drop this session's read snapshot and re-read committed state so a
             # request that lost the race sees the month already filled.
@@ -516,6 +783,7 @@ class MonthlyBudgetService(BudgetService):
         source_rules = self.get_month_rules(source_year, source_month, budget_rules)
 
         # Iterate from source+1 to current month, filling empty months
+        skipped: list[str] = list(getattr(self, "_auto_fill_skipped", []))
         y, m = source_year, source_month
         while True:
             # Advance one month
@@ -529,11 +797,24 @@ class MonthlyBudgetService(BudgetService):
             month_rules = self.get_month_rules(y, m, budget_rules)
             if month_rules.empty:
                 for _, rule in source_rules.iterrows():
+                    tags = rule[TAGS]
+                    # Only run the conflict check when there are tags to
+                    # check — a rule with no tags always gets copied as-is,
+                    # matching prior behavior.
+                    if rule[CATEGORY] != TOTAL_BUDGET and tags:
+                        kept, dropped = self.strip_conflicting_tags(
+                            rule[CATEGORY], tags, y, PERIOD_YEARLY
+                        )
+                    else:
+                        kept, dropped = tags, []
+                    skipped.extend(dropped)
+                    if tags and not kept:
+                        continue
                     self.add_rule(
                         name=rule[NAME],
                         amount=rule[AMOUNT],
                         category=rule[CATEGORY],
-                        tags=rule[TAGS],
+                        tags=kept,
                         month=m,
                         year=y,
                     )
@@ -541,6 +822,7 @@ class MonthlyBudgetService(BudgetService):
             if y == current_year and m == current_month:
                 break
 
+        self._auto_fill_skipped = skipped
         source_month_name = calendar.month_name[source_month]
         return f"{source_month_name} {source_year}"
 
@@ -602,9 +884,26 @@ class MonthlyBudgetService(BudgetService):
         Raises
         ------
         ValueError
-            If validation fails (invalid inputs or budget cap exceeded).
+            If validation fails (invalid inputs or budget cap exceeded), or if
+            any tag is already claimed by a yearly rule for the same ``year``.
         """
         parsed_tags = tags.split(";") if isinstance(tags, str) else tags
+        if category != TOTAL_BUDGET and self.is_category_project_owned(category):
+            raise ValueError(
+                f"The '{category}' category belongs to a project budget. "
+                f"A monthly rule can't target a project category."
+            )
+        if category != TOTAL_BUDGET and year is not None:
+            conflicts = self.find_conflicting_tags(
+                category, parsed_tags, year, PERIOD_YEARLY
+            )
+            if conflicts:
+                joined = ", ".join(conflicts)
+                raise ValueError(
+                    f"{joined} is already used by your yearly budget for {year}. "
+                    f"A tag can't be in both for the same year."
+                )
+
         budget_rules = self.get_all_rules()
         is_valid, msg = self.validate_rule_inputs(
             budget_rules, name, category, parsed_tags, amount, year, month, None
@@ -613,6 +912,79 @@ class MonthlyBudgetService(BudgetService):
             raise ValueError(msg)
 
         self.add_rule(name, amount, category, tags, month, year)
+
+    def update_rule(self, id_: int, **fields):
+        """Update a monthly rule, guarding edits that would claim a yearly-owned tag.
+
+        The ``PUT /budget/rules/{id}`` route is shared between monthly and
+        project rules (both are edited through the same ``rule_id``), so this
+        loads the target row through the base, unfiltered
+        ``BudgetService.get_all_rules`` — ``self.get_all_rules()`` here would
+        be pre-filtered to ``period_type == "monthly"`` and silently miss a
+        project rule's id.
+
+        Runs the monthly-vs-yearly conflict check when the row being edited
+        is itself a monthly rule (non-null ``year``) outside the
+        ``Total Budget`` category — mirroring the guard in
+        :meth:`create_rule`. Also guards the opposite case: this route is
+        the same one project rules are edited through (``year`` is
+        ``NaN`` for a project row), so a category change on a project rule
+        that targets a category already claimed by a monthly/yearly budget
+        is rejected too — otherwise the invariant "a category is never both
+        project-owned and budget-used" could be broken via this shared
+        endpoint alone. Edits that never touch ``category``/``tags`` fall
+        straight through to the base update as a no-op.
+
+        Parameters
+        ----------
+        id_ : int
+            ID of the budget rule to update.
+        **fields
+            Fields to update; see ``BudgetService.update_rule``.
+
+        Raises
+        ------
+        ValueError
+            If the edit would claim a tag already owned by a yearly rule for
+            the same year, or (for a project rule) would move it onto a
+            category already used by a monthly or yearly budget.
+        """
+        all_rules = BudgetService.get_all_rules(self)
+        if not all_rules.empty:
+            row = all_rules.loc[all_rules[ID] == id_]
+            if not row.empty:
+                row = row.iloc[0]
+                year = row[YEAR]
+                category = fields.get(CATEGORY, row[CATEGORY])
+                if pd.notnull(year) and category != TOTAL_BUDGET:
+                    if self.is_category_project_owned(category):
+                        raise ValueError(
+                            f"The '{category}' category belongs to a project "
+                            f"budget. A monthly rule can't target a project category."
+                        )
+                    tags = fields.get(TAGS, row[TAGS])
+                    parsed_tags = (
+                        tags.split(";") if isinstance(tags, str) else list(tags)
+                    )
+                    conflicts = self.find_conflicting_tags(
+                        category, parsed_tags, int(year), PERIOD_YEARLY,
+                        exclude_rule_id=id_,
+                    )
+                    if conflicts:
+                        joined = ", ".join(conflicts)
+                        raise ValueError(
+                            f"{joined} is already used by your yearly budget for "
+                            f"{int(year)}. A tag can't be in both for the same year."
+                        )
+                elif pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]:
+                    if self.category_used_by_monthly_or_yearly(category):
+                        raise ValueError(
+                            f"The '{category}' category is already used by a "
+                            f"monthly or yearly budget and can't be assigned to a "
+                            f"project rule."
+                        )
+
+        BudgetService.update_rule(self, id_, **fields)
 
     def get_monthly_analysis(
         self, year: int, month: int, include_split_parents: bool = False
@@ -643,6 +1015,9 @@ class MonthlyBudgetService(BudgetService):
               ``total_expected`` (sum of expected amounts).
             - ``copied_from`` – source month name if rules were auto-filled,
               or ``None``.
+            - ``skipped_yearly_conflicts`` – tag names dropped from an
+              auto-fill copy because they are claimed by a yearly rule for
+              this year.
         """
         copied_from = None
         today = date.today()
@@ -667,6 +1042,8 @@ class MonthlyBudgetService(BudgetService):
             year, month
         )
 
+        skipped_yearly = sorted(set(getattr(self, "_auto_fill_skipped", [])))
+
         return {
             "rules": view if view else [],
             "project_spending": project_summary,
@@ -675,79 +1052,8 @@ class MonthlyBudgetService(BudgetService):
                 "total_expected": budget_adjustment,
             },
             "copied_from": copied_from,
+            "skipped_yearly_conflicts": skipped_yearly,
         }
-
-    def get_filtered_expenses(
-        self,
-        exclude_pending_refunds: bool = True,
-        include_split_parents: bool = False,
-    ) -> pd.DataFrame:
-        """
-        Get expense transactions with budget-style filtering applied.
-
-        Loads all transactions (split-aware), then excludes non-expense
-        categories, project categories, and optionally pending refund
-        transactions. Split parent rows are excluded from the result.
-
-        Parameters
-        ----------
-        exclude_pending_refunds : bool, optional
-            When ``True``, excludes transactions marked as pending refunds.
-            Default is ``True``.
-        include_split_parents : bool, optional
-            When ``True``, include parent transactions alongside split children.
-            Default is ``False``.
-
-        Returns
-        -------
-        pd.DataFrame
-            Filtered expense transactions with parsed dates. Amounts are
-            negative (raw convention). The caller should negate to get
-            positive expense values.
-        """
-        all_data = self.transactions_service.get_data_for_analysis(
-            include_split_parents
-        )
-
-        if all_data.empty:
-            return all_data
-
-        # Filter to expense categories
-        expenses = all_data.loc[
-            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
-            )
-        ].copy()
-        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
-            expenses[TransactionsTableFields.DATE.value]
-        )
-
-        # Exclude project categories
-        projects = ProjectBudgetService(self.db).get_all_projects_names()
-        if projects:
-            expenses = expenses.loc[
-                ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
-            ]
-
-        # Optionally exclude pending refunds
-        if exclude_pending_refunds:
-            pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
-            tx_ids = pending_refs["transaction_ids"]
-            split_ids = pending_refs["split_ids"]
-
-            expenses = expenses[
-                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
-            ]
-            if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
-                expenses = expenses[
-                    ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
-                ]
-
-        # Exclude split_parent transactions from amounts
-        if "type" in expenses.columns:
-            expenses = expenses[expenses["type"] != "split_parent"]
-
-        return expenses
 
     def _apply_month_overrides(self, expenses: pd.DataFrame) -> pd.DataFrame:
         """
@@ -810,6 +1116,29 @@ class MonthlyBudgetService(BudgetService):
         expenses["budget_month"] = budget_month.astype(int)
         return expenses
 
+    def _exclude_yearly_claimed(self, month_data: pd.DataFrame, year: int) -> pd.DataFrame:
+        """Drop transactions whose (category, tag) is owned by a yearly rule for ``year``.
+
+        Yearly-managed tags are mutually exclusive with monthly rules, so their
+        spend must not leak into the monthly view's per-rule matching or the
+        synthetic "Other Expenses" remainder.
+        """
+        if month_data.empty:
+            return month_data
+        yearly_rules = YearlyBudgetService(self.db).get_year_rules(year)
+        if yearly_rules.empty:
+            return month_data
+        cat_col = TransactionsTableFields.CATEGORY.value
+        tag_col = TransactionsTableFields.TAG.value
+        mask = pd.Series(False, index=month_data.index)
+        for _, rule in yearly_rules.iterrows():
+            in_cat = month_data[cat_col] == rule[CATEGORY]
+            if self._is_all_tags(rule[TAGS]):
+                mask |= in_cat
+            else:
+                mask |= in_cat & month_data[tag_col].isin(rule[TAGS])
+        return month_data.loc[~mask]
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -855,6 +1184,7 @@ class MonthlyBudgetService(BudgetService):
                 (expenses["budget_year"] == year)
                 & (expenses["budget_month"] == month)
             ]
+            month_data = self._exclude_yearly_claimed(month_data, year)
         else:
             month_data = expenses
 
@@ -1120,17 +1450,11 @@ class ProjectBudgetService(BudgetService):
     """Service for managing project-based budget rules."""
 
     def get_all_rules(self) -> pd.DataFrame:
-        """
-        Get all project budget rules (excludes monthly rules).
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules where both ``year`` and ``month`` are null,
-            with those columns dropped.
-        """
+        """Get all project budget rules (period_type == 'project')."""
         rules = super().get_all_rules()
-        return rules.loc[rules[YEAR].isnull() & rules[MONTH].isnull()].drop(
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_PROJECT].drop(
             columns=[YEAR, MONTH]
         )
 
@@ -1173,7 +1497,20 @@ class ProjectBudgetService(BudgetService):
             Project category name (must already exist in categories config).
         total_budget : float
             Overall spending limit for the project.
+
+        Raises
+        ------
+        ValueError
+            If ``category`` already has a monthly or yearly budget rule. A
+            category can't be in both a project and a monthly/yearly budget.
         """
+        if self.category_used_by_monthly_or_yearly(category):
+            raise ValueError(
+                f"The '{category}' category is already used by a monthly or "
+                f"yearly budget. A category can't be in both a project and a "
+                f"monthly/yearly budget."
+            )
+
         self.add_rule(
             name=TOTAL_BUDGET,
             amount=total_budget,
@@ -1277,7 +1614,8 @@ class ProjectBudgetService(BudgetService):
         -------
         list[str]
             Category names from the categories config that are not already
-            used as project budget categories.
+            used as project budget categories, and do not already have a
+            monthly or yearly budget rule.
         """
         current_projects = self.get_all_projects_names()
         new_possible_projects = [
@@ -1286,6 +1624,7 @@ class ProjectBudgetService(BudgetService):
                 copy=True
             ).keys()
             if cat not in current_projects
+            and not self.category_used_by_monthly_or_yearly(cat)
         ]
         return new_possible_projects
 
@@ -1449,3 +1788,373 @@ class ProjectBudgetService(BudgetService):
                 )
 
         return {"name": project, "rules": view, "total_spent": total_spent}
+
+
+class YearlyBudgetService(BudgetService):
+    """Service for managing yearly budget rules.
+
+    A yearly budget is a flat list of independent ``(category, tags)`` rules for
+    a calendar year. Spend accumulates over the whole year. There is no overall
+    cap and no synthetic "Other Expenses" entry. Yearly rules are mutually
+    exclusive with monthly rules on ``(category, tag)`` within the same year.
+    """
+
+    def get_all_rules(self) -> pd.DataFrame:
+        """Get all yearly budget rules (period_type == 'yearly'), MONTH dropped."""
+        rules = super().get_all_rules()
+        if rules.empty:
+            return rules
+        return rules.loc[rules[PERIOD_TYPE] == PERIOD_YEARLY].drop(columns=[MONTH])
+
+    def get_year_rules(self, year: int) -> pd.DataFrame:
+        """Yearly rules scoped to a single calendar year."""
+        rules = self.get_all_rules()
+        if rules.empty:
+            return rules
+        return rules.loc[rules[YEAR] == year]
+
+    def _validate(
+        self,
+        name: str,
+        category: str,
+        tags: list[str],
+        amount: float,
+        year: int,
+        id_: int | None,
+    ) -> None:
+        """Validate a yearly rule; raise ``ValueError`` on failure.
+
+        Checks: non-empty name/category/tags, positive amount, name uniqueness
+        within the year, and mutual exclusion against monthly rules for the year.
+        """
+        if not name:
+            raise ValueError("Please enter a name")
+        if not category:
+            raise ValueError("Please select a category")
+        if not tags:
+            raise ValueError("Please select at least one tag")
+        if amount <= 0:
+            raise ValueError("Amount must be a positive number")
+
+        existing = self.get_year_rules(year)
+        if not existing.empty:
+            dupes = existing.loc[existing[NAME] == name]
+            if id_ is not None:
+                dupes = dupes.loc[dupes[ID] != id_]
+            if not dupes.empty:
+                raise ValueError(
+                    f"A yearly rule with the name '{name}' already exists for {year}."
+                )
+
+        conflicts = self.find_conflicting_tags(
+            category, tags, year, PERIOD_MONTHLY, exclude_rule_id=id_
+        )
+        if conflicts:
+            joined = ", ".join(conflicts)
+            raise ValueError(
+                f"{joined} is already used by your monthly budget for {year}. "
+                f"A tag can't be in both for the same year."
+            )
+
+        # A (category, tag) may not be covered by two yearly rules in the same
+        # year. Unlike monthly rules (bounded by the Total Budget cap), yearly
+        # rules have no overall cap, so a shared tag would double-count in the
+        # roll-up's total_spent/remaining/health.
+        yearly_conflicts = self.find_conflicting_tags(
+            category, tags, year, PERIOD_YEARLY, exclude_rule_id=id_
+        )
+        if yearly_conflicts:
+            if yearly_conflicts == [ALL_TAGS]:
+                raise ValueError(
+                    f"Another yearly rule already covers the '{category}' "
+                    f"category for {year}."
+                )
+            joined = ", ".join(yearly_conflicts)
+            raise ValueError(
+                f"{joined} is already used by another yearly rule for {year}. "
+                f"A tag can't be in two yearly rules for the same year."
+            )
+
+        if self.is_category_project_owned(category):
+            raise ValueError(
+                f"The '{category}' category belongs to a project budget. "
+                f"A yearly rule can't target a project category."
+            )
+
+    def create_rule(
+        self,
+        name: str,
+        amount: float,
+        category: str,
+        tags: str | list[str],
+        year: int,
+    ) -> None:
+        """Create a yearly rule after validation. Raises ``ValueError`` if invalid."""
+        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        self._validate(name, category, parsed_tags, amount, year, None)
+        self.add_rule(name, amount, category, parsed_tags, month=None, year=year,
+                      period_type=PERIOD_YEARLY)
+
+    def update_rule(self, id_: int, **fields):
+        """Update a yearly rule with validation of any category/tags/name/amount change.
+
+        Allowed fields: ``name``, ``amount``, ``category``, ``tags``. The rule's
+        ``year`` is immutable via this method.
+        """
+        valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
+        assert all(k in valid_fields for k in fields), (
+            f"Invalid fields for update. Valid fields: {valid_fields}"
+        )
+        current = self.get_all_rules()
+        row = current.loc[current[ID] == id_]
+        if row.empty:
+            raise ValueError(f"No yearly rule found with ID {id_}.")
+        row = row.iloc[0]
+        year = int(row[YEAR])
+        name = fields.get(NAME, row[NAME])
+        amount = fields.get(AMOUNT, row[AMOUNT])
+        category = fields.get(CATEGORY, row[CATEGORY])
+        tags = fields.get(TAGS, row[TAGS])
+        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        self._validate(name, category, parsed_tags, amount, year, id_)
+
+        if TAGS in fields and isinstance(fields[TAGS], list):
+            fields[TAGS] = ";".join(fields[TAGS])
+        self.budget_repository.update(id_, **fields)
+
+    def get_yearly_budget_view(
+        self, year: int, include_split_parents: bool = False
+    ) -> Optional[list[dict]]:
+        """Compute spend-vs-limit per yearly rule for a calendar year.
+
+        Returns ``None`` when the year has no yearly rules. Otherwise a flat list
+        of ``{rule, current_amount, data, allow_edit, allow_delete}`` — no total
+        rule, no "Other Expenses" remainder.
+        """
+        rules = self.get_year_rules(year)
+        if rules.empty:
+            return None
+
+        expenses = self.get_filtered_expenses(
+            exclude_pending_refunds=True, include_split_parents=include_split_parents
+        )
+        if not expenses.empty:
+            year_data = expenses.loc[
+                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year == year
+            ]
+        else:
+            year_data = expenses
+
+        view = []
+        for _, rule in rules.iterrows():
+            tags = rule[TAGS]
+            if year_data.empty:
+                cat_data = year_data
+            else:
+                cat_data = year_data[
+                    year_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
+                ]
+                if not self._is_all_tags(tags):
+                    cat_data = cat_data[
+                        cat_data[TransactionsTableFields.TAG.value].isin(tags)
+                    ]
+            amt = (
+                cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+                if not cat_data.empty
+                else 0.0
+            )
+            view.append(
+                {
+                    "rule": rule.to_dict(),
+                    "current_amount": amt,
+                    "data": cat_data.to_dict(orient="records"),
+                    "allow_edit": True,
+                    "allow_delete": True,
+                }
+            )
+        return view
+
+    def get_year_summary(self, year: int) -> dict:
+        """Computed, display-only roll-up for the year header.
+
+        Returns
+        -------
+        dict
+            ``total_allocated``, ``total_spent``, ``remaining``, ``on_track``
+            (count of rules at/under budget), ``over`` (count over budget), and
+            ``biggest_overspend`` (``{"name", "percentage"}`` or ``None``).
+        """
+        view = self.get_yearly_budget_view(year) or []
+        total_allocated = sum(float(e["rule"].get(AMOUNT) or 0) for e in view)
+        total_spent = sum(float(e["current_amount"] or 0) for e in view)
+        on_track = 0
+        over = 0
+        biggest = None
+        for e in view:
+            amount = float(e["rule"].get(AMOUNT) or 0)
+            spent = float(e["current_amount"] or 0)
+            pct = spent / amount if amount > 0 else 0.0
+            if amount > 0 and spent > amount:
+                over += 1
+                if biggest is None or pct > biggest["percentage"]:
+                    biggest = {"name": str(e["rule"].get(NAME) or ""), "percentage": pct}
+            else:
+                on_track += 1
+        return {
+            "total_allocated": total_allocated,
+            "total_spent": total_spent,
+            "remaining": total_allocated - total_spent,
+            "on_track": on_track,
+            "over": over,
+            "biggest_overspend": biggest,
+        }
+
+    def get_alerts(self, year: int, warning_threshold: float = 0.8) -> list[dict]:
+        """Yearly rules whose spend reached the warning threshold.
+
+        Mirrors ``MonthlyBudgetService.get_alerts`` — ``percentage = spent/amount``;
+        ``critical`` at ≥ 1.0, ``warning`` in ``[threshold, 1.0)``. There is no
+        Total Budget / Other Expenses row to skip.
+        """
+        view = self.get_yearly_budget_view(year)
+        if view is None:
+            return []
+        alerts = []
+        for entry in view:
+            rule = entry["rule"]
+            amount = float(rule.get(AMOUNT) or 0)
+            if amount <= 0:
+                continue
+            spent = float(entry.get("current_amount") or 0)
+            percentage = spent / amount
+            if percentage < warning_threshold:
+                continue
+            alerts.append(
+                {
+                    "rule_id": int(rule[ID]),
+                    "name": str(rule.get(NAME) or ""),
+                    "category": str(rule.get(CATEGORY) or ""),
+                    "tags": list(rule.get(TAGS) or []),
+                    "amount": amount,
+                    "spent": spent,
+                    "percentage": percentage,
+                    "severity": "critical" if percentage >= 1.0 else "warning",
+                }
+            )
+        alerts.sort(key=lambda a: a["percentage"], reverse=True)
+        return alerts
+
+    def auto_carry_forward(self, year: int) -> Optional[dict]:
+        """Copy the latest prior year's yearly rules into an empty ``year``.
+
+        Only runs for the current or a future year (never rewrites history) and
+        only when ``year`` has no yearly rules yet. Tags that conflict with
+        monthly rules for ``year`` are stripped; a rule left with no tags is
+        skipped entirely.
+
+        Returns
+        -------
+        dict or None
+            ``{"copied_from": <int year>, "skipped": [<tag>, ...]}`` when rules
+            were copied, else ``None``.
+        """
+        if year < _today().year:
+            return None
+        with _auto_fill_lock:
+            self.db.rollback()
+            if not self.get_year_rules(year).empty:
+                return None
+            all_rules = self.get_all_rules()
+            if all_rules.empty:
+                return None
+            prior = all_rules.loc[all_rules[YEAR] < year]
+            if prior.empty:
+                return None
+            source_year = int(prior[YEAR].max())
+            source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+
+            skipped: list[str] = []
+            for _, rule in source_rules.iterrows():
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], rule[TAGS], year, PERIOD_MONTHLY
+                )
+                skipped.extend(dropped)
+                if not kept:
+                    continue
+                self.add_rule(
+                    name=rule[NAME], amount=rule[AMOUNT], category=rule[CATEGORY],
+                    tags=kept, month=None, year=year, period_type=PERIOD_YEARLY,
+                )
+            return {"copied_from": source_year, "skipped": skipped}
+
+    def force_copy_from_prior_year(self, year: int) -> Optional[dict]:
+        """Force-copy the latest prior year's yearly rules into ``year``.
+
+        This is the explicit user-triggered "Copy from previous year" action
+        (the ``/yearly/{year}/copy`` route), distinct from
+        ``auto_carry_forward``: it does not gate on ``year`` being the
+        current/future year, and it does not require ``year`` to already be
+        empty — the user may be intentionally overwriting an existing year.
+
+        To avoid data loss, the source year is resolved *first*. Only once a
+        valid prior year with yearly rules is confirmed does this delete
+        ``year``'s existing rules and copy the source rules forward. If no
+        prior year has any yearly rules, nothing is deleted.
+
+        Returns
+        -------
+        dict or None
+            ``{"copied_from": <int year>, "skipped": [<tag>, ...]}`` when
+            rules were copied. ``None`` when there is no prior year with
+            yearly rules to copy from — in that case ``year``'s existing
+            rules (if any) are left untouched.
+        """
+        all_rules = self.get_all_rules()
+        if all_rules.empty:
+            return None
+        prior = all_rules.loc[all_rules[YEAR] < year]
+        if prior.empty:
+            return None
+        source_year = int(prior[YEAR].max())
+        source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+
+        with _auto_fill_lock:
+            self.db.rollback()
+            existing = self.get_year_rules(year)
+            for _, r in existing.iterrows():
+                self.delete_rule(int(r[ID]))
+
+            skipped: list[str] = []
+            for _, rule in source_rules.iterrows():
+                kept, dropped = self.strip_conflicting_tags(
+                    rule[CATEGORY], rule[TAGS], year, PERIOD_MONTHLY
+                )
+                skipped.extend(dropped)
+                if not kept:
+                    continue
+                self.add_rule(
+                    name=rule[NAME], amount=rule[AMOUNT], category=rule[CATEGORY],
+                    tags=kept, month=None, year=year, period_type=PERIOD_YEARLY,
+                )
+            return {"copied_from": source_year, "skipped": sorted(set(skipped))}
+
+    def get_yearly_analysis(
+        self, year: int, include_split_parents: bool = False
+    ) -> dict:
+        """Bundle the yearly view, computed roll-up, alerts, and carry-forward report."""
+        carried_from = None
+        skipped_conflicts: list[str] = []
+        if self.get_year_rules(year).empty and year >= _today().year:
+            result = self.auto_carry_forward(year)
+            if result is not None:
+                carried_from = result["copied_from"]
+                skipped_conflicts = result["skipped"]
+
+        view = self.get_yearly_budget_view(year, include_split_parents)
+        return {
+            "rules": view if view else [],
+            "summary": self.get_year_summary(year),
+            "alerts": self.get_alerts(year),
+            "carried_from": carried_from,
+            "skipped_conflicts": sorted(set(skipped_conflicts)),
+        }

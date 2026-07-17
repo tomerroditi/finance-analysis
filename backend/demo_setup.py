@@ -63,6 +63,50 @@ def sync_missing_columns(engine: Engine) -> None:
                 conn.commit()
 
 
+def _backfill_budget_rule_period_type(engine: Engine) -> None:
+    """Classify ``budget_rules`` rows that predate the ``period_type`` column.
+
+    Mirrors the backfill in alembic revision ``a7c9e1b3d5f7`` (add
+    period_type to budget_rules), which only runs against the production DB
+    via ``alembic upgrade head`` at app startup. The demo DB is copied from
+    a frozen snapshot and schema-synced via :func:`sync_missing_columns`
+    instead of alembic, so ``sync_missing_columns`` adds the column but
+    leaves every pre-existing row's ``period_type`` NULL. Left unfixed, the
+    Monthly and Yearly budget views (which filter on ``period_type``) see
+    zero rows for a demo dataset that actually has budget rules — this
+    backfill closes that gap. Safe to call repeatedly: it only touches rows
+    still missing a classification.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("budget_rules"):
+        return
+    columns = {col["name"] for col in inspector.get_columns("budget_rules")}
+    if "period_type" not in columns:
+        return
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "UPDATE budget_rules SET period_type = 'monthly' "
+                "WHERE month IS NOT NULL AND (period_type IS NULL OR period_type = '')"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE budget_rules SET period_type = 'project' "
+                "WHERE month IS NULL AND year IS NULL "
+                "AND (period_type IS NULL OR period_type = '')"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE budget_rules SET period_type = 'yearly' "
+                "WHERE month IS NULL AND year IS NOT NULL "
+                "AND (period_type IS NULL OR period_type = '')"
+            )
+        )
+        conn.commit()
+
+
 # Transaction tables an override's source_id can point into.
 _TXN_TABLES = {
     "bank_transactions",
@@ -271,6 +315,7 @@ def prepare_demo_database() -> None:
     engine = database.get_engine()
     Base.metadata.create_all(bind=engine)
     sync_missing_columns(engine)
+    _backfill_budget_rule_period_type(engine)
 
     offset_days = (date.today() - DEMO_REFERENCE_DATE).days
     _shift_dates(engine, offset_days)

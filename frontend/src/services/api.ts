@@ -107,7 +107,32 @@ export const budgetApi = {
     api.get(`/budget/alerts/${year}/${month}`, {
       params: threshold !== undefined ? { threshold } : undefined,
     }),
+  getYearlyAnalysis: (year: number, includeSplitParents = false) =>
+    api.get(`/budget/yearly/${year}/analysis`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
+  createYearlyRule: (rule: {
+    name: string;
+    amount: number;
+    category: string;
+    tags: string[];
+    year: number;
+  }) => api.post("/budget/yearly/rules", rule),
+  updateYearlyRule: (id: number, rule: object) =>
+    api.put(`/budget/yearly/rules/${id}`, rule),
+  deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
+  copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
+  getYearAlerts: (year: number, threshold?: number) =>
+    api.get(`/budget/yearly/alerts/${year}`, {
+      params: threshold !== undefined ? { threshold } : undefined,
+    }),
+  getCategoryConflicts: () => api.get("/budget/category-conflicts"),
 };
+
+export interface CategoryConflict {
+  category: string;
+  kinds: ("monthly" | "yearly")[];
+}
 
 export interface BudgetAlert {
   rule_id: number;
@@ -124,6 +149,36 @@ export interface BudgetAlertsResponse {
   year: number;
   month: number;
   alerts: BudgetAlert[];
+}
+
+export interface YearlyRollup {
+  total_allocated: number;
+  total_spent: number;
+  remaining: number;
+  on_track: number;
+  over: number;
+  biggest_overspend: { name: string; percentage: number } | null;
+}
+
+export interface YearlyAnalysis {
+  rules: {
+    rule: {
+      id: number;
+      name: string;
+      amount: number;
+      category: string;
+      tags: string[];
+      year: number;
+    };
+    current_amount: number;
+    data: unknown[];
+    allow_edit: boolean;
+    allow_delete: boolean;
+  }[];
+  summary: YearlyRollup;
+  alerts: BudgetAlert[];
+  carried_from: number | null;
+  skipped_conflicts: string[];
 }
 
 // Tagging API

@@ -9,7 +9,10 @@ from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
 from backend.models.budget import BudgetRule
-from backend.constants.budget import AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR
+from backend.constants.budget import (
+    AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR,
+    PERIOD_MONTHLY, PERIOD_YEARLY, PERIOD_PROJECT,
+)
 from backend.constants.tables import Tables
 
 
@@ -44,28 +47,29 @@ class BudgetRepository:
         tags: str,
         month: Optional[int],
         year: Optional[int],
+        period_type: Optional[str] = None,
     ) -> None:
         """Create a new budget rule.
 
         Parameters
         ----------
-        name : str
-            Display name for the budget rule.
-        amount : float
-            Budget amount limit.
-        category : str
-            Category the rule applies to.
-        tags : str
-            Semicolon-separated list of tags (e.g. "tag1;tag2;tag3").
+        name, amount, category, tags : see class docstring.
         month : Optional[int]
-            Calendar month (1-12). None for project rules.
+            Calendar month (1-12). None for yearly/project rules.
         year : Optional[int]
             Calendar year. None for project rules.
-
-        Returns
-        -------
-        None
+        period_type : Optional[str]
+            One of ``"monthly"``/``"yearly"``/``"project"``. When ``None`` it is
+            derived: ``month`` set ⇒ monthly, ``year`` set only ⇒ yearly,
+            neither ⇒ project.
         """
+        if period_type is None:
+            if month is not None:
+                period_type = PERIOD_MONTHLY
+            elif year is not None:
+                period_type = PERIOD_YEARLY
+            else:
+                period_type = PERIOD_PROJECT
         new_rule = BudgetRule(
             name=name,
             amount=amount,
@@ -73,6 +77,7 @@ class BudgetRepository:
             tags=tags,
             month=month,
             year=year,
+            period_type=period_type,
         )
         self.db.add(new_rule)
         self.db.commit()
@@ -127,16 +132,30 @@ class BudgetRepository:
         return pd.read_sql(stmt, self.db.bind)
 
     def read_project_rules(self) -> pd.DataFrame:
-        """Read project budget rules (no year/month set).
+        """Read project budget rules (period_type == "project").
 
         Returns
         -------
         pd.DataFrame
-            Budget rules where both year and month are NULL.
+            Budget rules with period_type == "project".
         """
-        stmt = select(BudgetRule).where(
-            BudgetRule.year.is_(None), BudgetRule.month.is_(None)
-        )
+        stmt = select(BudgetRule).where(BudgetRule.period_type == PERIOD_PROJECT)
+        return pd.read_sql(stmt, self.db.bind)
+
+    def read_by_period_type(self, period_type: str) -> pd.DataFrame:
+        """Read all budget rules of a given period_type.
+
+        Parameters
+        ----------
+        period_type : str
+            One of ``"monthly"``/``"yearly"``/``"project"``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching budget rules (raw semicolon ``tags`` string).
+        """
+        stmt = select(BudgetRule).where(BudgetRule.period_type == period_type)
         return pd.read_sql(stmt, self.db.bind)
 
     def update(self, id_: int, **fields) -> None:

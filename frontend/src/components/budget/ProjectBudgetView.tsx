@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { budgetApi, pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
-import { useConfirm } from "../../context/DialogContext";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { ProjectSelectorHeader } from "./ProjectSelectorHeader";
 import { ProjectBudgetList } from "./ProjectBudgetList";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
@@ -37,6 +37,7 @@ function isAllTagsRule(rule: ProjectBudgetRule): boolean {
 export const ProjectBudgetView: React.FC = () => {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const notify = useNotify();
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
@@ -87,6 +88,14 @@ export const ProjectBudgetView: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setSelectedProject(variables.category);
       setIsProjectModalOpen(false);
+    },
+    onError: (error: unknown) => {
+      // ProjectModal closes itself on submit regardless of outcome (see
+      // handleSubmit there), so a 400 from the backend — e.g. the category
+      // picker being bypassed/racing another tab into claiming a category
+      // already used by a monthly/yearly budget — must be surfaced here.
+      const axiosErr = error as { response?: { data?: { detail?: string } } };
+      notify.error(axiosErr.response?.data?.detail || t("budget.failedCreateProject"));
     },
   });
 
