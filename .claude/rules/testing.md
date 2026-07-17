@@ -198,6 +198,24 @@ python .claude/scripts/with_server.py -- bash -c \
   "cd frontend && npx playwright test <file>.spec.ts --reporter=line"
 ```
 
+The orchestrator is hardened against the failure modes that produced
+silently-invalid e2e runs in the past:
+
+- **Port-conflict fail-fast:** before starting each server it checks the
+  port with `lsof -nP -iTCP:<port> -sTCP:LISTEN` and aborts with the
+  owning PID/command if anything is already bound (e.g. a dev server from
+  another checkout / VS Code task). It never kills the other process —
+  stop it yourself and re-run. After readiness it also verifies the
+  listening PID belongs to its own child's process group and aborts if a
+  stale server stole the port mid-startup.
+- **Process-group teardown:** servers start in their own session and are
+  stopped with `killpg` (SIGTERM, then SIGKILL after 5 s), so a
+  `bash -c "cd frontend && npm run dev"` wrapper can't orphan
+  npm/node/vite children.
+- **Server logs:** each server's stdout+stderr goes to a temp file
+  (`$TMPDIR/with_server_port<port>_*.log`); the path is printed at
+  startup, and on startup failure the log tail is echoed for debugging.
+
 **Sandbox browser-version gotcha (Claude Code on the web):** this
 environment ships a Playwright Chromium build that lags the
 `@playwright/test` version in `package.json`, so a bare
