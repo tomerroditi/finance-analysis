@@ -1,33 +1,50 @@
 #!/usr/bin/env bash
-set -e
+#
+# Single entry point for running the app locally.
+#
+#   ./start.sh              # dev: backend (hot-reload) + frontend dev server
+#   ./start.sh prod         # prod: build frontend, serve everything from backend
+#   ./start.sh prod 9000    # positional port still accepted (sets BACKEND_PORT)
+#
+# Ports are env-driven, with the usual defaults:
+#   BACKEND_PORT=8000       # uvicorn port (also wired into the Vite /api proxy)
+#   FRONTEND_PORT=5173      # Vite dev server port (dev mode only)
+#
+# The Python venv is auto-bootstrapped on first run (~90s, idempotent) via
+# .claude/scripts/bootstrap_venv.sh — no manual setup step needed.
+
+set -euo pipefail
 
 cd "$(dirname "$0")"
-source .venv/bin/activate
 
 MODE="${1:-dev}"
-PORT="${2:-8000}"
+BACKEND_PORT="${2:-${BACKEND_PORT:-8000}}"
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+
+./.claude/scripts/bootstrap_venv.sh
 
 case "$MODE" in
   dev)
-    echo "Starting in dev mode (backend :$PORT + frontend :5173)..."
-    # Start backend in background
-    uvicorn backend.main:app --reload --port "$PORT" &
+    echo "Starting in dev mode (backend :$BACKEND_PORT + frontend :$FRONTEND_PORT)..."
+    .venv/bin/uvicorn backend.main:app --reload \
+      --reload-dir backend --reload-dir scraper --port "$BACKEND_PORT" &
     BACKEND_PID=$!
-    # Start frontend
-    trap "kill $BACKEND_PID 2>/dev/null; exit" INT TERM
-    cd frontend && npm run dev
+    trap 'kill $BACKEND_PID 2>/dev/null; exit' INT TERM
+    cd frontend && PORT="$FRONTEND_PORT" BACKEND_PORT="$BACKEND_PORT" npm run dev
     ;;
   prod)
     echo "Building frontend..."
-    cd frontend && npm run build && cd ..
-    echo "Starting server on port $PORT..."
-    uvicorn backend.main:app --host 0.0.0.0 --port "$PORT"
+    (cd frontend && npm run build)
+    echo "Starting server on port $BACKEND_PORT..."
+    .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
     ;;
   *)
-    echo "Usage: ./start.sh [dev|prod] [port]"
+    echo "Usage: ./start.sh [dev|prod] [backend-port]"
     echo ""
     echo "  dev   - Run backend + frontend dev servers (default)"
     echo "  prod  - Build frontend, serve everything from backend"
+    echo ""
+    echo "Ports: BACKEND_PORT (default 8000), FRONTEND_PORT (default 5173)"
     exit 1
     ;;
 esac

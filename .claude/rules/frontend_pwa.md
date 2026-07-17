@@ -33,7 +33,8 @@ Walk through this checklist before assuming it Just Works:
    laptop, route it under `/api/credentials/*`. The SW filter and the
    persister both already exclude that prefix. If you can't put it under
    that prefix, add the new path to **both**:
-   - `src/sw.ts` URL filter (the `urlPattern` that registers `NetworkFirst`).
+   - the SW URL filter in `frontend/vite.config.ts` (the `runtimeCaching`
+     `urlPattern` that registers `NetworkFirst`).
    - `src/queryClient.ts` — either bump the `isCredentialQuery` heuristic
      or add the query-key prefix to `NON_PERSISTABLE_KEY_PREFIXES`.
 2. **Is the response real-time / polling?** Anything where "5-minute-old

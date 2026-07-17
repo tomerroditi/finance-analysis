@@ -136,7 +136,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 ## Environment Setup (New Clone / Worktree)
 1. `python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root`
 2. `cd frontend && npm install`
-3. Worktrees auto-configure unique ports based on directory name to avoid conflicts.
+3. Ports default to 8000 (backend) / 5173 (frontend); override via `BACKEND_PORT` / `FRONTEND_PORT` env vars (see `start.sh`). Running two checkouts side by side needs distinct ports set manually.
 
 ## File Structure
 ```
