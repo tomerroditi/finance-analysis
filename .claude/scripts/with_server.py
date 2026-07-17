@@ -23,6 +23,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -116,13 +117,27 @@ def main():
             where = f" (cwd={cwd})" if cwd else ""
             print(f"Starting server {i + 1}/{len(servers)}: {display_cmd}{where}")
 
+            # Redirect child output to a log file, NOT subprocess.PIPE.
+            # Nothing ever read those pipes, so a chatty server (uvicorn
+            # writes an access-log line per request) filled the 64KB pipe
+            # buffer a few minutes into a long e2e run, blocked on write,
+            # and froze — new connections then got refused, failing every
+            # remaining spec with ERR_CONNECTION_REFUSED.
+            log_file = open(
+                os.path.join(
+                    tempfile.gettempdir(), f"with_server_port{server['port']}.log"
+                ),
+                "w",
+            )
+            print(f"Server output -> {log_file.name}")
             process = subprocess.Popen(
                 argv,
                 cwd=cwd if cwd is None else os.path.abspath(cwd),
                 shell=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
             )
+            process.log_file = log_file
             server_processes.append(process)
 
             # Wait for this server to be ready
@@ -151,6 +166,9 @@ def main():
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            log_file = getattr(process, "log_file", None)
+            if log_file is not None:
+                log_file.close()
             print(f"Server {i + 1} stopped")
         print("All servers stopped")
 
