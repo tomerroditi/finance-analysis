@@ -6,6 +6,7 @@ import Plot from "../common/LazyPlot";
 import { investmentsApi } from "../../services/api";
 import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../../utils/plotlyLocale";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface AllocationItem {
   id: number;
@@ -69,10 +70,11 @@ interface PortfolioOverviewProps {
 
 export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps) {
   const { t } = useTranslation();
+  const qk = useQueryKeys();
   const [chartIncludeClosed, setChartIncludeClosed] = useState(true);
 
   const { data: balanceHistory } = useQuery({
-    queryKey: ["portfolio-balance-history", chartIncludeClosed],
+    queryKey: qk.investments.balanceHistory(chartIncludeClosed),
     queryFn: () =>
       investmentsApi.getPortfolioBalanceHistory(chartIncludeClosed).then((res) => res.data),
   });

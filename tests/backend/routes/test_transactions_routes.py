@@ -221,6 +221,27 @@ class TestTransactionsRoutes:
         # seeded data that is 2024-03-10.
         assert body["latest_date"].startswith("2024-03-10")
 
+    def test_get_uncategorized_count(
+        self, test_client, seed_base_transactions, seed_untagged_transactions
+    ):
+        """GET /api/transactions/uncategorized-count returns a non-zero count.
+
+        The literal ``/uncategorized-count`` route is registered before the
+        ``/{transaction_id}`` path-param route so it is not shadowed (same
+        ordering concern as ``/latest-date``).
+        """
+        response = test_client.get("/api/transactions/uncategorized-count")
+        assert response.status_code == 200
+        body = response.json()
+        assert isinstance(body["count"], int)
+        assert body["count"] == len(seed_untagged_transactions)
+
+    def test_get_uncategorized_count_empty_db(self, test_client):
+        """GET /api/transactions/uncategorized-count returns 0 on a fresh DB."""
+        response = test_client.get("/api/transactions/uncategorized-count")
+        assert response.status_code == 200
+        assert response.json() == {"count": 0}
+
 
 class TestTransactionsRoutesErrors:
     """Tests for error handling in transaction route endpoints."""

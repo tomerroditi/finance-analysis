@@ -1612,6 +1612,48 @@ class TestGetTableForAnalysisSplitExpansion:
         )
 
 
+class TestGetDataForAnalysisSessionCache:
+    """get_data_for_analysis memoizes the merged analysis frame per session."""
+
+    def test_second_call_uses_cache(
+        self, db_session, seed_base_transactions, monkeypatch
+    ):
+        """The expensive merge runs once for two identical calls."""
+        from backend.services import transactions_service as ts_module
+
+        service = ts_module.TransactionsService(db_session)
+        calls = {"n": 0}
+        original = ts_module.TransactionsService.get_table_for_analysis
+
+        def counting(self, *args, **kwargs):
+            calls["n"] += 1
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(
+            ts_module.TransactionsService, "get_table_for_analysis", counting
+        )
+
+        first = service.get_data_for_analysis()
+        second = service.get_data_for_analysis()
+
+        assert calls["n"] == 4  # one pass over the 4 source tables, not two
+        pd.testing.assert_frame_equal(
+            first.reset_index(drop=True), second.reset_index(drop=True)
+        )
+
+    def test_split_parents_variants_cached_separately(
+        self, db_session, seed_base_transactions
+    ):
+        """include_split_parents=True/False must not collide."""
+        from backend.services.transactions_service import TransactionsService
+
+        service = TransactionsService(db_session)
+        without = service.get_data_for_analysis(include_split_parents=False)
+        with_parents = service.get_data_for_analysis(include_split_parents=True)
+        # Contract, not equality: the two variants are independent results.
+        assert len(with_parents) >= len(without)
+
+
 class TestClearCategoryAndTag:
     """Locks in that empty-string category/tag values clear the fields.
 

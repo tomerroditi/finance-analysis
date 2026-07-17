@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { prefetchRoute } from "../../services/routePrefetch";
 import { SettingsPopup } from "./SettingsPopup";
 import { BudgetAlertsBell } from "./BudgetAlertsBell";
@@ -99,21 +100,21 @@ export function Sidebar() {
 
   const isRtl = i18n.language === "he";
 
-  // Count uncategorized transactions
-  const { data: allTransactions } = useQuery({
-    queryKey: ["transactions", "all", false],
-    queryFn: () => transactionsApi.getAll(undefined, false).then((res) => res.data),
+  const qk = useQueryKeys();
+
+  // Uncategorized-count badge — a dedicated count endpoint instead of
+  // downloading the full transaction list to count client-side.
+  const { data: uncategorizedData } = useQuery({
+    queryKey: qk.transactions.uncategorizedCount(),
+    queryFn: () =>
+      transactionsApi.getUncategorizedCount().then((res) => res.data),
     staleTime: 5 * 60 * 1000,
   });
-
-  const uncategorizedCount =
-    allTransactions?.filter(
-      (tx: { category?: string }) => !tx.category || tx.category === "Uncategorized",
-    ).length ?? 0;
+  const uncategorizedCount = uncategorizedData?.count ?? 0;
 
   // Check for stale data sources (>7 days since last scrape)
   const { data: lastScrapes } = useQuery({
-    queryKey: ["last-scrapes"],
+    queryKey: qk.scraping.lastScrapes(),
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
     staleTime: 5 * 60 * 1000,
   });

@@ -8,6 +8,7 @@ import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
+import { qkPrefix } from "../../services/queryKeys";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
 import { useTranslation } from "react-i18next";
@@ -75,13 +76,8 @@ export function RecentTransactionsFeed({
   const { data: categories } = useCategories({ enabled: !!editingTxKey });
 
   const invalidateAnalytics = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["income-outcome"] });
-    queryClient.invalidateQueries({ queryKey: ["analytics-category"] });
-    queryClient.invalidateQueries({ queryKey: ["sankey"] });
-    queryClient.invalidateQueries({ queryKey: ["net-worth-over-time"] });
-    queryClient.invalidateQueries({ queryKey: ["income-by-source"] });
-    queryClient.invalidateQueries({ queryKey: ["monthly-expenses"] });
-    queryClient.invalidateQueries({ queryKey: ["budget-analysis"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
   }, [queryClient]);
 
   // Tag update mutation. We patch every cached transactions list synchronously
@@ -104,10 +100,11 @@ export function RecentTransactionsFeed({
         t.source === tx.source &&
         (t.unique_id ?? t.id) === (tx.unique_id ?? tx.id);
       const patchList = (old: Transaction[] | undefined) =>
-        old?.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t)) ?? old;
-      queryClient.setQueriesData<Transaction[]>({ queryKey: ["all-transactions"] }, patchList);
-      queryClient.setQueriesData<Transaction[]>({ queryKey: ["transactions"] }, patchList);
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+        Array.isArray(old)
+          ? old.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t))
+          : old;
+      queryClient.setQueriesData<Transaction[]>({ queryKey: qkPrefix.transactionsList }, patchList);
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       invalidateAnalytics();
     },
   });
@@ -122,8 +119,8 @@ export function RecentTransactionsFeed({
         expected_amount: Math.abs(tx.amount),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
       invalidateAnalytics();
     },
   });
@@ -430,7 +427,7 @@ export function RecentTransactionsFeed({
           onClose={() => setSplittingTransaction(null)}
           onSuccess={() => {
             setSplittingTransaction(null);
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             invalidateAnalytics();
           }}
         />

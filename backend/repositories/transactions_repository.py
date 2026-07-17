@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Literal, Optional, Type
 
 import pandas as pd
-from sqlalchemy import cast, delete, func, Integer, select, update
+from sqlalchemy import cast, delete, exists, func, Integer, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import PendingRefund
@@ -17,6 +17,7 @@ from backend.models.transaction import (
     CreditCardTransaction,
     InsuranceTransaction,
     ManualInvestmentTransaction,
+    SplitTransaction,
     TransactionBase,
 )
 from backend.constants.providers import Services
@@ -28,6 +29,7 @@ from backend.constants.tables import (
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 DEPOSIT_TYPE = "deposit"
 WITHDRAWAL_TYPE = "withdrawal"
@@ -365,6 +367,8 @@ class TransactionsRepository:
     ]
 
     unique_columns = ["id", "provider", "date", "amount"]
+
+    UNCATEGORIZED_VALUES = ("", "Uncategorized")
 
     # Services excluded from aggregate cashflow calculations (CC double-counts
     # bank debits; insurance deposits are not regular expenses).
@@ -715,6 +719,16 @@ class TransactionsRepository:
             ``include_split_parents=True``.  Date column is normalized to
             ``YYYY-MM-DD`` string format.
         """
+        cache_key = (
+            "transactions.get_table",
+            service,
+            include_split_parents,
+            tuple(sorted(exclude_services or [])),
+        )
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         df = self._get_base_transactions(service, exclude_services)
 
         if not include_split_parents:
@@ -723,6 +737,7 @@ class TransactionsRepository:
         df = self._add_split_children(df, service, exclude_services)
         df = self._normalize_dates(df)
 
+        session_cache_set(self.db, cache_key, df)
         return df
 
     def _get_base_transactions(
@@ -1138,6 +1153,67 @@ class TransactionsRepository:
             transaction table name strings.
         """
         return self.tables.copy()
+
+    def count_uncategorized(self) -> int:
+        """Count uncategorized transactions across the merged (non-insurance) view.
+
+        Counts rows whose category is NULL, empty, or ``"Uncategorized"`` in
+        the four non-insurance transaction tables (excluding split parents,
+        which the merged view replaces with their children), plus split-child
+        rows from ``split_transactions`` whose parent source is one of those
+        four tables. Split rows are counted per source table via a correlated
+        ``EXISTS`` subquery against that table's parent row — mirroring
+        ``_build_split_child``, which drops any split whose parent row no
+        longer exists (orphaned splits). This means orphaned splits, and
+        splits whose source is the insurance table or an unrecognized table,
+        are excluded, exactly as the pandas merged view
+        (``get_table(exclude_services=["insurances"])``) silently drops them.
+        Pure SQL ``COUNT`` — no full-table DataFrame load.
+
+        Returns
+        -------
+        int
+            Number of uncategorized transactions in the merged view.
+        """
+        total = 0
+        for repo in [
+            self.cc_repo,
+            self.bank_repo,
+            self.cash_repo,
+            self.manual_investments_repo,
+        ]:
+            model = repo.model
+            stmt = (
+                select(func.count())
+                .select_from(model)
+                .where(
+                    or_(
+                        model.category.is_(None),
+                        model.category.in_(self.UNCATEGORIZED_VALUES),
+                    ),
+                    or_(model.type.is_(None), model.type != "split_parent"),
+                )
+            )
+            total += int(self.db.execute(stmt).scalar_one())
+
+            split_stmt = (
+                select(func.count())
+                .select_from(SplitTransaction)
+                .where(
+                    or_(
+                        SplitTransaction.category.is_(None),
+                        SplitTransaction.category.in_(self.UNCATEGORIZED_VALUES),
+                    ),
+                    SplitTransaction.source == repo.table,
+                    exists(
+                        select(1).where(
+                            model.unique_id == SplitTransaction.transaction_id
+                        )
+                    ),
+                )
+            )
+            total += int(self.db.execute(split_stmt).scalar_one())
+        return total
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
         """Set category and tag to NULL across all transaction tables.

@@ -19,6 +19,7 @@ import { RuleEditorModal } from "../transactions/RuleEditorModal";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useConfirm } from "../../context/DialogContext";
 import { useScrollLock } from "../../hooks/useScrollLock";
+import { qkPrefix } from "../../services/queryKeys";
 
 /**
  * Categories-page entry point for auto-tagging rules: a launcher card that opens
@@ -86,7 +87,7 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
 
     const deleteMutation = useMutation({
         mutationFn: (id: number) => taggingApi.deleteRule(id),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tagging-rules"] }),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules }),
     });
 
     const askDeleteRule = async (rule: TaggingRule) => {
@@ -104,7 +105,7 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     const applyMutation = useMutation({
         mutationFn: () => taggingApi.applyRules(),
         onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             flash(t("transactions.autoTagging.appliedRules", { count: res.data.tagged_count }));
         },
         onError: (err: unknown) => {
@@ -116,7 +117,7 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     const applySingleMutation = useMutation({
         mutationFn: ({ id, overwrite }: { id: number; overwrite: boolean }) => taggingApi.applyRule(id, overwrite),
         onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             flash(t("transactions.autoTagging.appliedRule", { count: res.data.tagged_count }));
         },
         onError: (err: unknown) => {

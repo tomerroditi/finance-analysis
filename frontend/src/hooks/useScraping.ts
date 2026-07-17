@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
+import { qkPrefix } from "../services/queryKeys";
 
 export interface Account {
   service: string;
@@ -337,8 +338,8 @@ export function useScraping() {
             Date.now() - scraper.last_updated > 5000
           ) {
             if (newStatus === "success" && scraper.status !== "success") {
-              queryClient.invalidateQueries({ queryKey: ["last-scrapes"] });
-              queryClient.invalidateQueries({ queryKey: ["bank-balances"] });
+              queryClient.invalidateQueries({ queryKey: qkPrefix.lastScrapes });
+              queryClient.invalidateQueries({ queryKey: qkPrefix.bankBalances });
             }
             setRunningScrapers((prev) => ({
               ...prev,

@@ -4,7 +4,7 @@ import { PieChart, ChevronDown, ChevronUp } from "lucide-react";
 import Plot from "../common/LazyPlot";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatting";
 import {
@@ -39,7 +39,7 @@ function resolveRange(
 
 export function IncomeBySourceCard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const [preset, setPreset] = useState<RangePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -60,7 +60,7 @@ export function IncomeBySourceCard() {
   const { start, end } = resolveRange(preset, customStart, customEnd);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["income-by-source", start ?? "all", end ?? "all", isDemoMode],
+    queryKey: qk.analytics.incomeBySource(start, end),
     queryFn: async () => {
       const res = await analyticsApi.getIncomeBySource(start, end);
       return res.data;

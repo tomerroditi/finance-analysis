@@ -125,4 +125,6 @@ export function shouldDehydrateQuery(query: Query): boolean {
  */
 // v2: "last-scrapes" and "providers" became non-persistable; discard caches
 // that still hold them.
-export const PERSIST_BUSTER = "v2";
+// v3: query keys were centralized (services/queryKeys.ts) — old persisted
+// entries use retired key shapes and must be discarded, not hydrated.
+export const PERSIST_BUSTER = "v3";

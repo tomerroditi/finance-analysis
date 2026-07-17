@@ -8,6 +8,7 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 import { useCategories } from "../../hooks/useCategories";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface RuleManagerProps {
   onClose: () => void;
@@ -47,7 +48,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
       return taggingApi.createRule(payload);
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
       setIsCreating(false);
       setNewRule({ name: "", description_contains: "", category: "", tag: "" });
       setSuccessMessage(
@@ -73,7 +74,7 @@ export function RuleManager({ onClose }: RuleManagerProps) {
       return taggingApi.updateRule(id, payload);
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
       setEditingRuleId(null);
       setNewRule({ name: "", description_contains: "", category: "", tag: "" });
       setSuccessMessage(
@@ -86,13 +87,13 @@ export function RuleManager({ onClose }: RuleManagerProps) {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => taggingApi.deleteRule(id),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["tagging-rules"] }),
+      queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules }),
   });
 
   const applyMutation = useMutation({
     mutationFn: () => taggingApi.applyRules(),
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
       setSuccessMessage(
         `Success! ${res.data.tagged_count} transactions tagged.`,
       );

@@ -129,6 +129,39 @@ class TestAnalysisServiceTimeSeries:
         cc_total = -(150 + 80 + 60 + 40 + 250 + 180 + 120 + 55 + 45 + 200 + 95 + 70 + 35)
         assert total_net != expected_total + cc_total
 
+    def test_cc_only_month_appears_with_zeros(self, db_session):
+        """A month with only credit-card rows still appears, valued at zero.
+
+        The month index is built before the cashflow source exclusion, so a
+        CC-only month must not vanish from the series (regression guard for
+        the vectorized implementation).
+        """
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-only-1",
+                date="2030-06-15",
+                provider="isracard",
+                account_name="cc",
+                description="cc only month",
+                amount=-500.0,
+                category="Food",
+                tag="Groceries",
+                source="credit_card_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_income_expenses_over_time()
+
+        june = next((r for r in result if r["month"] == "2030-06"), None)
+        assert june is not None
+        assert june["income"] == 0.0
+        assert june["investments"] == 0.0
+        assert june["expenses"] == 0.0
+
     def test_get_net_balance_over_time_empty(self, db_session):
         """Verify empty database returns empty list."""
         service = AnalysisService(db_session)

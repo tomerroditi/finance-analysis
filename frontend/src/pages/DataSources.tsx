@@ -32,7 +32,6 @@ import {
 } from "../services/api";
 import type { BankBalance } from "../services/api";
 
-import { useDemoMode } from "../context/DemoModeContext";
 import { useConfirm } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
@@ -43,6 +42,8 @@ import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
 import { formatRelativeDate } from "../utils/dateFormatting";
 import { formatCurrency } from "../utils/numberFormatting";
 import i18n from "../i18n";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 const SCRAPING_PERIODS = [
   { key: "auto", days: null },
@@ -63,7 +64,7 @@ interface CredentialAccount {
 export function DataSources() {
   const { t, i18n: i18nInstance } = useTranslation();
   const isRtl = i18nInstance.language === "he";
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -92,12 +93,12 @@ export function DataSources() {
   const [tfaCodes, setTfaCodes] = useState<Record<string, string>>({});
 
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ["credentials-accounts", isDemoMode],
+    queryKey: qk.credentials.accounts(),
     queryFn: () => credentialsApi.getAccounts().then((res) => res.data),
   });
 
   const { data: providers } = useQuery({
-    queryKey: ["providers", isDemoMode],
+    queryKey: qk.credentials.providers(),
     queryFn: () => credentialsApi.getProviders().then((res) => res.data),
   });
 
@@ -131,7 +132,7 @@ export function DataSources() {
         credentials: fields,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["credentials-accounts"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
       resetForm();
     },
   });
@@ -140,17 +141,17 @@ export function DataSources() {
     mutationFn: (acc: CredentialAccount) =>
       credentialsApi.delete(acc.service, acc.provider, acc.account_name),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["credentials-accounts"] }),
+      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts }),
   });
 
   // Bank Balances
   const { data: bankBalances } = useQuery({
-    queryKey: ["bank-balances", isDemoMode],
+    queryKey: qk.balances.bank(),
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
   });
 
   const { data: lastScrapes } = useQuery({
-    queryKey: ["last-scrapes", isDemoMode],
+    queryKey: qk.scraping.lastScrapes(),
     queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
   });
 

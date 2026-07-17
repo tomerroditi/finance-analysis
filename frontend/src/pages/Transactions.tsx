@@ -16,6 +16,8 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { TransactionFormModal } from "../components/modals/TransactionFormModal";
 import { formatCurrency } from "../utils/numberFormatting";
 import { useConfirm } from "../context/DialogContext";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const { t } = useTranslation();
@@ -32,7 +34,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
   const migrationMutation = useMutation({
     mutationFn: () => cashBalancesApi.migrate().then((res) => res.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
     },
   });
 
@@ -46,7 +48,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     mutationFn: (data: { account_name: string; balance: number }) =>
       cashBalancesApi.setBalance(data).then((res) => res.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
       setEditingId(null);
     },
   });
@@ -56,7 +58,7 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
     mutationFn: (accountName: string) =>
       cashBalancesApi.delete(accountName),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
     },
   });
 
@@ -246,13 +248,17 @@ export function Transactions() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [filterOnlyUntagged, setFilterOnlyUntagged] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
+  const qk = useQueryKeys();
 
   const {
     data: transactions,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["transactions", selectedService, includeSplitParents],
+    queryKey: qk.transactions.list(
+      selectedService === "all" ? undefined : selectedService,
+      includeSplitParents,
+    ),
     queryFn: () =>
       transactionsApi
         .getAll(
@@ -265,7 +271,7 @@ export function Transactions() {
 
   // Fetch pending refunds to know which transactions are already marked
   const { data: pendingRefunds, refetch: refetchPending } = useQuery({
-    queryKey: ["pendingRefunds", "all"],
+    queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
@@ -301,7 +307,7 @@ export function Transactions() {
     refetch();
     refetchPending();
     // Invalidate cash balances when transactions change (they recalculate on backend)
-    queryClient.invalidateQueries({ queryKey: ["cash-balances"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
   };
 
   const services = [

@@ -26,6 +26,8 @@ import { formatDate } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 interface Liability {
   id: number;
@@ -284,6 +286,7 @@ function LiabilityCard({
 export function Liabilities() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
@@ -346,7 +349,7 @@ export function Liabilities() {
 
   // Queries
   const { data: liabilities, isLoading } = useQuery({
-    queryKey: ["liabilities"],
+    queryKey: qk.liabilities.list(true),
     queryFn: () => liabilitiesApi.getAll(true).then((r) => r.data),
   });
 
@@ -354,7 +357,7 @@ export function Liabilities() {
   const { createTag } = useCategoryTagCreate();
 
   const { data: analysisData } = useQuery<AnalysisData>({
-    queryKey: ["liabilities", analysisModalId, "analysis"],
+    queryKey: qk.liabilities.analysis(analysisModalId ?? 0),
     queryFn: () =>
       liabilitiesApi.getAnalysis(analysisModalId!).then((r) => r.data),
     enabled: !!analysisModalId,
@@ -362,7 +365,7 @@ export function Liabilities() {
 
   // Mutations
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["liabilities"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.liabilities });
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => liabilitiesApi.create(data),
@@ -423,7 +426,7 @@ export function Liabilities() {
     mutationFn: (id: number) => liabilitiesApi.generateTransactions(id),
     onSuccess: () => {
       invalidate();
-      queryClient.invalidateQueries({ queryKey: ["liabilities", analysisModalId, "analysis"] });
+      queryClient.invalidateQueries({ queryKey: qk.liabilities.analysis(analysisModalId ?? 0) });
     },
   });
 
@@ -456,7 +459,7 @@ export function Liabilities() {
 
   // Debt over time chart data from actual transactions
   const { data: debtOverTimeRaw } = useQuery<DebtOverTimeData>({
-    queryKey: ["liabilities", "debt-over-time"],
+    queryKey: qk.liabilities.debtOverTime(),
     queryFn: () => liabilitiesApi.getDebtOverTime().then((r) => r.data),
     enabled: activeLiabilities.length > 0,
   });

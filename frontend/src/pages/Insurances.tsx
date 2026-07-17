@@ -22,6 +22,8 @@ import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "..
 import { formatDate } from "../utils/dateFormatting";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -191,8 +193,8 @@ function AccountCardFull({
     mutationFn: (customName: string | null) =>
       insuranceAccountsApi.rename(account.policy_id, customName),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insurance-accounts"] });
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setIsEditingName(false);
       setDraftName("");
     },
@@ -492,13 +494,14 @@ export function Insurances() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
+  const qk = useQueryKeys();
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
-    queryKey: ["insurance-accounts"],
+    queryKey: qk.insurance.accounts(),
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
   });
 
   const { data: transactionsData, isLoading: txLoading } = useQuery({
-    queryKey: ["transactions", "insurances"],
+    queryKey: qk.transactions.list("insurances", false),
     queryFn: () =>
       transactionsApi.getAll("insurances").then((r) => r.data as InsuranceTransaction[]),
   });

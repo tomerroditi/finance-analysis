@@ -8,11 +8,13 @@ import { YearHeader } from "./YearHeader";
 import { YearlySummaryStrip } from "./YearlySummaryStrip";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
 import { useConfirm } from "../../context/DialogContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 export const YearlyBudgetView: React.FC = () => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [modalOpen, setModalOpen] = useState(false);
@@ -30,13 +32,13 @@ export const YearlyBudgetView: React.FC = () => {
   }, [year]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["yearlyBudget", year],
+    queryKey: qk.budget.yearly(year),
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["yearlyBudget", year] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) }),
   });
 
   const rules = data?.rules ?? [];

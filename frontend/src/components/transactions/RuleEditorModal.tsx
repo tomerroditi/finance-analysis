@@ -12,6 +12,7 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -114,8 +115,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
     const createMutation = useMutation({
         mutationFn: (payload: Omit<TaggingRule, "id">) => taggingApi.createRule(payload),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             onSaved?.();
             onClose();
         },
@@ -129,8 +130,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
         mutationFn: (payload: { id: number; data: Partial<TaggingRule> }) =>
             taggingApi.updateRule(payload.id, payload.data),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tagging-rules"] });
-            queryClient.invalidateQueries({ queryKey: ["transactions"] });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             onSaved?.();
             onClose();
         },

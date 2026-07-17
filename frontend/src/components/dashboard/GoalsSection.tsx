@@ -7,7 +7,8 @@ import {
   type SavingsGoal,
   type SavingsGoalInput,
 } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -15,12 +16,12 @@ import { formatCurrency } from "../../utils/numberFormatting";
 /** Dashboard savings-goals panel: progress tracking + CRUD via a modal editor. */
 export function GoalsSection() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["savings-goals", isDemoMode],
+    queryKey: qk.savingsGoals.all(),
     queryFn: async () => {
       const res = await savingsGoalsApi.getAll();
       return res.data;
@@ -29,7 +30,7 @@ export function GoalsSection() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["savings-goals"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals }),
   });
 
   return (
@@ -149,7 +150,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     mutationFn: (payload: SavingsGoalInput) =>
       goal ? savingsGoalsApi.update(goal.id, payload) : savingsGoalsApi.create(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["savings-goals"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       onClose();
     },
   });

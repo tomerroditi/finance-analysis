@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { budgetApi, type BudgetAlertsResponse } from "../services/api";
 import { useBudgetAlertSettings } from "./useBudgetAlertSettings";
+import { useQueryKeys } from "./useQueryKeys";
 
 /**
  * Fetch the current month's budget alerts (rules at >= the user's threshold).
@@ -10,8 +11,9 @@ import { useBudgetAlertSettings } from "./useBudgetAlertSettings";
  */
 export function useBudgetAlerts() {
   const { enabled, threshold } = useBudgetAlertSettings();
+  const qk = useQueryKeys();
   return useQuery<BudgetAlertsResponse>({
-    queryKey: ["budgetAlerts", "current", threshold],
+    queryKey: qk.budget.alertsCurrent(threshold),
     queryFn: () => budgetApi.getCurrentAlerts(threshold).then((res) => res.data),
     staleTime: 5 * 60 * 1000,
     enabled,

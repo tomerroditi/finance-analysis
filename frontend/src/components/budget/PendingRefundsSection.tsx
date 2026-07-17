@@ -8,6 +8,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -31,8 +32,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
     },
   });
 
@@ -50,8 +51,8 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
     if (!ok) return;
     try {
       await pendingRefundsApi.cancel(id);
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
     } catch {
       notify.error(t("budget.failedCancelRefund"));
     }

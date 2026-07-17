@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Plot from "../common/LazyPlot";
 import { analyticsApi } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../../utils/numberFormatting";
 import { chartTheme, plotlyConfig, barMarker } from "../../utils/plotlyLocale";
@@ -12,16 +12,16 @@ type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt
 /** Net Worth analytics dashboard card (period chips + bank/investments/net-worth/debt toggle). */
 export function NetWorthCard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
 
   const { data: debtPaymentsData } = useQuery({
-    queryKey: ["debt-payments", isDemoMode],
+    queryKey: qk.analytics.debtPayments(),
     queryFn: async () => (await analyticsApi.getDebtPaymentsOverTime()).data,
   });
 
   const { data: netWorthData } = useQuery({
-    queryKey: ["net-worth-over-time", isDemoMode],
+    queryKey: qk.analytics.netWorthOverTime(),
     queryFn: async () => (await analyticsApi.getNetWorthOverTime()).data,
   });
 

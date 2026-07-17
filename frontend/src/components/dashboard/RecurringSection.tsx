@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Repeat } from "lucide-react";
 import { analyticsApi, type RecurringItem } from "../../services/api";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
@@ -17,10 +17,10 @@ const STATUS_STYLES: Record<RecurringItem["status"], string> = {
 /** Dashboard subscriptions / recurring-charges panel from ``/analytics/recurring``. */
 export function RecurringSection() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["recurring", isDemoMode],
+    queryKey: qk.analytics.recurring(),
     queryFn: async () => {
       const res = await analyticsApi.getRecurring();
       return res.data;

@@ -7,6 +7,8 @@ import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import type { Transaction } from "../../types/transaction";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface RefundTransactionInfo {
   id: string | number;
@@ -33,6 +35,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   const { t } = useTranslation();
   useScrollLock(isOpen);
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
     null,
   );
@@ -44,7 +47,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   // Mode 1: Fetch pending refunds if we're linking FROM a refund transaction
   const { data: pendingRefunds, isLoading: isLoadingPending } = useQuery({
-    queryKey: ["pendingRefunds"],
+    queryKey: qk.pendingRefunds.all(),
     queryFn: async () => {
       const [pending, partial] = await Promise.all([
         pendingRefundsApi.getAll("pending").then((res) => res.data),
@@ -57,7 +60,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   // Mode 2: Fetch transactions if we're linking FROM a pending refund (reverse mode)
   const { data: allTransactions, isLoading: isLoadingTransactions } = useQuery({
-    queryKey: ["transactions", "refunds"],
+    queryKey: qk.transactions.list(undefined, false),
     queryFn: () => transactionsApi.getAll().then((res) => res.data),
     enabled: isOpen && isReverseMode,
     select: (data: Transaction[]) =>
@@ -76,9 +79,9 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         amount: params.amount,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
-      queryClient.invalidateQueries({ queryKey: ["pendingRefunds"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
       onClose();
     },
   });

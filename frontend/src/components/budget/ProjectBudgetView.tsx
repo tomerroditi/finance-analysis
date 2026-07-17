@@ -7,6 +7,8 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { ProjectSelectorHeader } from "./ProjectSelectorHeader";
 import { ProjectBudgetList } from "./ProjectBudgetList";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface ProjectBudgetRule {
   id: number;
@@ -45,14 +47,15 @@ export const ProjectBudgetView: React.FC = () => {
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
 
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
 
   const { data: projects = [] } = useQuery({
-    queryKey: ["projects"],
+    queryKey: qk.budget.projects(),
     queryFn: () => budgetApi.getProjects().then((res) => res.data),
   });
 
   const { data: pendingRefunds } = useQuery({
-    queryKey: ["pendingRefunds", "all"],
+    queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
@@ -73,7 +76,7 @@ export const ProjectBudgetView: React.FC = () => {
   }, [projects, selectedProject]);
 
   const { data: projectDetails } = useQuery({
-    queryKey: ["projectDetails", selectedProject, includeSplitParents],
+    queryKey: qk.budget.projectDetails(selectedProject, includeSplitParents),
     queryFn: () =>
       budgetApi.getProjectDetails(selectedProject, includeSplitParents).then((res) => res.data),
     enabled: !!selectedProject,
@@ -82,9 +85,7 @@ export const ProjectBudgetView: React.FC = () => {
   const createMutation = useMutation({
     mutationFn: budgetApi.createProject,
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["availableProjects"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setSelectedProject(variables.category);
       setIsProjectModalOpen(false);
     },
@@ -102,7 +103,7 @@ export const ProjectBudgetView: React.FC = () => {
     mutationFn: ({ name, data }: { name: string; data: { total_budget: number } }) =>
       budgetApi.updateProject(name, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projectDetails", selectedProject] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setIsProjectModalOpen(false);
     },
   });
@@ -110,9 +111,7 @@ export const ProjectBudgetView: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: budgetApi.deleteProject,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.invalidateQueries({ queryKey: ["availableProjects"] });
-      queryClient.invalidateQueries({ queryKey: ["budgetAnalysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setSelectedProject("");
     },
   });
@@ -121,7 +120,7 @@ export const ProjectBudgetView: React.FC = () => {
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projectDetails", selectedProject] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     },
   });
 
@@ -149,7 +148,7 @@ export const ProjectBudgetView: React.FC = () => {
       await updateRuleMutation.mutateAsync({ id: editingRule.id, rule });
     } else {
       await budgetApi.createRule(rule);
-      queryClient.invalidateQueries({ queryKey: ["projectDetails", selectedProject] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     }
   };
 
@@ -194,7 +193,7 @@ export const ProjectBudgetView: React.FC = () => {
             setIsRuleModalOpen(true);
           }}
           onTransactionUpdated={() =>
-            queryClient.invalidateQueries({ queryKey: ["projectDetails", selectedProject] })
+            queryClient.invalidateQueries({ queryKey: qkPrefix.budget })
           }
         />
       )}

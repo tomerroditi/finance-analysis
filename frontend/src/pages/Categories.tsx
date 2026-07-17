@@ -8,10 +8,13 @@ import { Modal } from "../components/common/Modal";
 import { useCategories } from "../hooks/useCategories";
 import { CategoryDetailPanel } from "../components/categories/CategoryDetailPanel";
 import { RulesSection } from "../components/categories/RulesSection";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 export function Categories() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -19,14 +22,14 @@ export function Categories() {
 
   const { data: categories, isLoading } = useCategories();
   const { data: icons } = useQuery({
-    queryKey: ["category-icons"],
+    queryKey: qk.tagging.icons(),
     queryFn: () => taggingApi.getIcons().then((res) => res.data),
   });
 
   const createCategoryMutation = useMutation({
     mutationFn: (name: string) => taggingApi.createCategory(name),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       setIsAddCategoryOpen(false);
     },
   });

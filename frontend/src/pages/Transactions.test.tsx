@@ -43,12 +43,12 @@ describe("Transactions", () => {
         expect(screen.getByText("All")).toBeInTheDocument();
       });
 
-      const cashTab = screen.getByText("Cash");
+      const cashTab = screen.getByRole("button", { name: "Cash" });
       await user.click(cashTab);
 
       // Cash tab should now be active (visual state change)
       await waitFor(() => {
-        expect(cashTab.closest("button")).toHaveClass(/bg-/);
+        expect(cashTab).toHaveClass(/bg-/);
       });
     });
   });

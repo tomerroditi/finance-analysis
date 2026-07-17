@@ -4,7 +4,7 @@ import { TrendingUp, Wallet, CalendarClock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { chartTheme, plotlyConfig, gradientFill, CHART_COLORS } from "../../utils/plotlyLocale";
 
@@ -18,10 +18,10 @@ import { chartTheme, plotlyConfig, gradientFill, CHART_COLORS } from "../../util
  */
 export function CashFlowForecastSection() {
   const { t, i18n } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["cash-flow-forecast", isDemoMode],
+    queryKey: qk.analytics.cashFlowForecast(),
     queryFn: async () => {
       const res = await analyticsApi.getCashFlowForecast();
       return res.data;

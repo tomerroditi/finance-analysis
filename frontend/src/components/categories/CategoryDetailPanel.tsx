@@ -8,6 +8,7 @@ import { IconPickerModal } from "./IconPickerModal";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { PROTECTED_CATEGORIES, PROTECTED_TAGS } from "./constants";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface CategoryDetailPanelProps {
   category: string;
@@ -47,7 +48,7 @@ export function CategoryDetailPanel({
   const deleteCategoryMutation = useMutation({
     mutationFn: (name: string) => taggingApi.deleteCategory(name),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       onClose();
     },
   });
@@ -55,21 +56,21 @@ export function CategoryDetailPanel({
   const createTagMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => taggingApi.createTag(category, tag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       setIsAddTagOpen(false);
     },
   });
 
   const deleteTagMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => taggingApi.deleteTag(category, tag),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.categories }),
   });
 
   const relocateTagMutation = useMutation({
     mutationFn: ({ tag, newCategory }: { tag: string; newCategory: string }) =>
       taggingApi.relocateTag(category, newCategory, tag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       setIsRelocateOpen(null);
     },
   });
@@ -77,7 +78,7 @@ export function CategoryDetailPanel({
   const updateIconMutation = useMutation({
     mutationFn: ({ icon: newIcon }: { icon: string }) => taggingApi.updateIcon(category, newIcon),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["category-icons"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categoryIcons });
       setIsIconPickerOpen(false);
     },
   });
@@ -86,8 +87,8 @@ export function CategoryDetailPanel({
     mutationFn: ({ newName }: { newName: string }) =>
       taggingApi.renameCategory(category, newName),
     onSuccess: (_, { newName }) => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["category-icons"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categoryIcons });
       setEditingCategory(false);
       onRenameCategory(newName);
     },
@@ -98,7 +99,7 @@ export function CategoryDetailPanel({
     mutationFn: ({ oldTag, newTag }: { oldTag: string; newTag: string }) =>
       taggingApi.renameTag(category, oldTag, newTag),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       setEditingTag(null);
     },
     onError: () => notify.error(t("categories.renameError")),

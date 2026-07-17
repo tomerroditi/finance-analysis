@@ -27,6 +27,8 @@ import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
+import { useQueryKeys } from "../hooks/useQueryKeys";
+import { qkPrefix } from "../services/queryKeys";
 
 interface Investment {
   id: number;
@@ -312,6 +314,7 @@ function InvestmentCard({
 export function Investments() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const navigate = useNavigate();
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -358,7 +361,7 @@ export function Investments() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["investments"],
+    queryKey: qk.investments.list(true),
     queryFn: () => investmentsApi.getAll(true).then((res) => res.data),
   });
 
@@ -366,7 +369,7 @@ export function Investments() {
   const { createTag } = useCategoryTagCreate();
 
   const { data: portfolioAnalysis } = useQuery({
-    queryKey: ["portfolio-analysis"],
+    queryKey: qk.investments.portfolio(),
     queryFn: () =>
       investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
@@ -377,10 +380,8 @@ export function Investments() {
     mutationFn: ({ id, data }: { id: number; data: object }) =>
       investmentsApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["insurance-accounts"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
       setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" });
     },
   });
@@ -388,8 +389,7 @@ export function Investments() {
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => investmentsApi.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setIsAddOpen(false);
       setNewInvestment({
         name: "",
@@ -406,10 +406,7 @@ export function Investments() {
     mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
       investmentsApi.close(id, closedDate),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
     },
   });
@@ -418,9 +415,7 @@ export function Investments() {
     mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
       investmentsApi.update(id, { closed_date: closedDate }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
     },
   });
@@ -428,16 +423,14 @@ export function Investments() {
   const reopenMutation = useMutation({
     mutationFn: (id: number) => investmentsApi.reopen(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => investmentsApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
     },
   });
 
@@ -448,10 +441,7 @@ export function Investments() {
         balance: data.balance,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investments"] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-      queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setBalanceForm({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
     },
   });

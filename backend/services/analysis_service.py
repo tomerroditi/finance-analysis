@@ -121,23 +121,43 @@ class AnalysisService:
             df = df[df[TransactionsTableFields.CATEGORY.value] != LIABILITIES_CATEGORY]
 
         df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        # Month index from the *pre-exclusion* frame: a CC-only month must
+        # still appear (with zeros), matching the historical per-month loop.
+        months = sorted(df["month"].unique())
 
-        monthly_data = []
-        for month in sorted(df["month"].unique()):
-            month_df = df[df["month"] == month]
-            income, investments, expenses = self.get_income_investments_and_expenses(
-                month_df, exclude_refunds=exclude_refunds
-            )
-            monthly_data.append(
+        flow = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
+        masks = self.get_transactions_masks(flow)
+
+        income_amounts = flow["amount"].where(masks["income"], 0.0)
+        expense_amounts = flow["amount"].where(masks["expenses"], 0.0)
+        if exclude_refunds:
+            income_amounts = income_amounts.where(flow["amount"] > 0, 0.0)
+            expense_amounts = expense_amounts.where(flow["amount"] < 0, 0.0)
+        investment_amounts = flow["amount"].where(masks["investments"], 0.0)
+
+        grouped = (
+            pd.DataFrame(
                 {
-                    "month": month,
-                    "income": income,
-                    "investments": investments,
-                    "expenses": expenses,
+                    "month": flow["month"],
+                    "income": income_amounts,
+                    "investments": investment_amounts,
+                    "expenses": expense_amounts,
                 }
             )
+            .groupby("month")
+            .sum()
+            .reindex(months, fill_value=0.0)
+        )
 
-        return monthly_data
+        return [
+            {
+                "month": month,
+                "income": float(row["income"]),
+                "investments": float(row["investments"]) * -1,
+                "expenses": float(row["expenses"]) * -1,
+            }
+            for month, row in grouped.iterrows()
+        ]
 
     def get_avg_monthly_salary(self, months: int = 6) -> float | None:
         """Compute average monthly salary income over the last N months.
@@ -316,6 +336,41 @@ class AnalysisService:
             Boolean Series aligned with ``df`` — ``True`` for investment rows.
         """
         return df["category"] == INVESTMENTS_CATEGORY
+
+    def _add_source_label_column(self, income_df: pd.DataFrame) -> pd.DataFrame:
+        """Add a vectorized ``source_label`` column to an income frame.
+
+        Vectorized equivalent of the per-row ``_income_source_label``:
+        loan receipts label as ``"Loans[ / tag]"``, everything else as
+        ``"<category>[ / <tag>]"``.
+
+        Parameters
+        ----------
+        income_df : pd.DataFrame
+            Income-only transactions with ``category``, ``tag``, ``amount``.
+
+        Returns
+        -------
+        pd.DataFrame
+            The same frame with ``source_label`` added.
+        """
+        import numpy as np
+
+        category = income_df["category"]
+        tag = income_df["tag"]
+        amount = income_df["amount"]
+        tag_present = tag.notna() & (tag != "")
+        tag_str = tag.astype(object)
+
+        is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
+        loan_label = np.where(
+            tag_present, "Loans / " + tag_str.astype(str), "Loans"
+        )
+        non_loan_label = np.where(
+            tag_present, category.astype(str) + " / " + tag_str.astype(str), category
+        )
+        income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
+        return income_df
 
     def get_net_balance_over_time(self) -> list[dict]:
         """
@@ -606,25 +661,7 @@ class AnalysisService:
         if income_df.empty:
             return []
 
-        # Build source labels (vectorized equivalent of _income_source_label)
-        import numpy as np
-
-        category = income_df["category"]
-        tag = income_df["tag"]
-        amount = income_df["amount"]
-        # A "truthy" tag mirrors the per-row checks: not NaN/None and not empty string.
-        tag_present = tag.notna() & (tag != "")
-        tag_str = tag.astype(object)
-
-        is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
-
-        loan_label = np.where(
-            tag_present, "Loans / " + tag_str.astype(str), "Loans"
-        )
-        non_loan_label = np.where(
-            tag_present, category.astype(str) + " / " + tag_str.astype(str), category
-        )
-        income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
+        income_df = self._add_source_label_column(income_df)
 
         income_df["month"] = pd.to_datetime(income_df["date"]).dt.strftime("%Y-%m")
 
@@ -690,7 +727,7 @@ class AnalysisService:
         if income_df.empty:
             return empty
 
-        income_df["source_label"] = income_df.apply(self._income_source_label, axis=1)
+        income_df = self._add_source_label_column(income_df)
         grouped = income_df.groupby("source_label")["amount"].sum()
         total = float(grouped.sum())
 
@@ -710,35 +747,6 @@ class AnalysisService:
             "start": start.isoformat() if start else None,
             "end": end.isoformat() if end else None,
         }
-
-    @staticmethod
-    def _income_source_label(row: pd.Series) -> str:
-        """
-        Build a human-readable label for an income source.
-
-        Parameters
-        ----------
-        row : pd.Series
-            A transaction row with 'category', 'tag', and 'amount' fields.
-
-        Returns
-        -------
-        str
-            Label like "Salary", "Other Income / Freelance", or "Loans".
-        """
-        category = row["category"]
-
-        # Positive liabilities = loans
-        if category == LIABILITIES_CATEGORY and row["amount"] > 0:
-            tag = row.get("tag")
-            if pd.notna(tag) and tag:
-                return f"Loans / {tag}"
-            return "Loans"
-
-        tag = row.get("tag")
-        if pd.isna(tag) or tag is None or tag == "":
-            return category
-        return f"{category} / {tag}"
 
     def get_net_worth_over_time(self) -> list[dict]:
         """

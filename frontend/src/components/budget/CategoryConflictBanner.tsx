@@ -3,13 +3,15 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, X } from "lucide-react";
 import { budgetApi, type CategoryConflict } from "../../services/api";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 /** Warns when a category is used by both a project and a monthly/yearly budget. */
 export const CategoryConflictBanner: React.FC = () => {
   const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(false);
+  const qk = useQueryKeys();
   const { data } = useQuery({
-    queryKey: ["categoryConflicts"],
+    queryKey: qk.budget.categoryConflicts(),
     queryFn: () =>
       budgetApi.getCategoryConflicts().then((r) => r.data.conflicts as CategoryConflict[]),
   });

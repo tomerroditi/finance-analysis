@@ -15,6 +15,11 @@ from sqlalchemy.pool import NullPool
 
 from backend.config import AppConfig
 
+# Importing for side effect: registers the Session event listeners that
+# clear the per-session DataFrame cache on commit/rollback. Everything that
+# opens a session imports this module, so registration is guaranteed.
+import backend.utils.session_cache  # noqa: F401  (side-effect import)
+
 
 def get_database_url(db_path: str = None) -> str:
     """

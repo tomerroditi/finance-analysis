@@ -19,6 +19,8 @@ import { chartTheme, plotlyConfig, gradientFill } from "../../utils/plotlyLocale
 import { formatCurrency } from "../../utils/numberFormatting";
 import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface Investment {
   id: number;
@@ -102,6 +104,7 @@ export function InvestmentAnalysisModal({
 }: InvestmentAnalysisModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   useScrollLock(true);
 
   const [editingSnapshotId, setEditingSnapshotId] = useState<number | null>(null);
@@ -111,7 +114,7 @@ export function InvestmentAnalysisModal({
   });
 
   const { data: selectedAnalysis, isLoading: isLoadingAnalysis } = useQuery({
-    queryKey: ["investment-analysis", investmentId],
+    queryKey: qk.investments.analysis(investmentId),
     queryFn: () =>
       investmentsApi
         .getInvestmentAnalysis(investmentId)
@@ -119,7 +122,7 @@ export function InvestmentAnalysisModal({
   });
 
   const { data: selectedSnapshots } = useQuery({
-    queryKey: ["investment-snapshots", investmentId],
+    queryKey: qk.investments.snapshots(investmentId),
     queryFn: () =>
       investmentsApi
         .getBalanceSnapshots(investmentId)
@@ -127,10 +130,7 @@ export function InvestmentAnalysisModal({
   });
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["investments"] });
-    queryClient.invalidateQueries({ queryKey: ["investment-snapshots"] });
-    queryClient.invalidateQueries({ queryKey: ["investment-analysis"] });
-    queryClient.invalidateQueries({ queryKey: ["portfolio-analysis"] });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
   };
 
   const deleteSnapshotMutation = useMutation({
@@ -141,7 +141,7 @@ export function InvestmentAnalysisModal({
       // MutationCache.onSuccess in queryClient.ts handles refreshing the
       // heavier portfolio/analysis queries after a 200 ms debounce.
       queryClient.setQueryData<Snapshot[]>(
-        ["investment-snapshots", investmentId],
+        qk.investments.snapshots(investmentId),
         (old) => old?.filter((s) => s.id !== snapshotId),
       );
     },

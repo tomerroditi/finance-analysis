@@ -2,16 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { analyticsApi } from "../../services/api";
 import { SankeyChart } from "../SankeyChart";
 import { Skeleton } from "../common/Skeleton";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 
 /** Cash Flow (Sankey) dashboard card. */
 export function CashFlowCard() {
   const { t } = useTranslation();
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const { data: sankeyData, isLoading: sankeyLoading } = useQuery({
-    queryKey: ["sankey", isDemoMode],
+    queryKey: qk.analytics.sankey(),
     queryFn: async () => (await analyticsApi.getSankeyData()).data,
   });
 

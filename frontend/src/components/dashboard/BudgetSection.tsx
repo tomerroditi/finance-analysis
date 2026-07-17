@@ -8,7 +8,8 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { SemiGauge } from "../common/SemiGauge";
 import { Skeleton } from "../common/Skeleton";
 import { ProjectModal } from "../modals/ProjectModal";
-import { useDemoMode } from "../../context/DemoModeContext";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 import { formatMonthYear } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 
@@ -118,7 +119,7 @@ export function BudgetSpendingGauge({
   const [viewMode, setViewMode] = useState<BudgetViewMode>("monthly");
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const { isDemoMode } = useDemoMode();
+  const qk = useQueryKeys();
 
   const isCurrentMonth = year === currentYear && month === currentMonth;
   const monthDate = new Date(year, month - 1);
@@ -153,18 +154,18 @@ export function BudgetSpendingGauge({
       const prefetchYear = d.getFullYear();
       const prefetchMonth = d.getMonth() + 1;
       queryClient.prefetchQuery({
-        queryKey: ["budget-analysis", prefetchYear, prefetchMonth, isDemoMode],
+        queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, false),
         queryFn: async () => {
           const res = await budgetApi.getAnalysis(prefetchYear, prefetchMonth, false);
           return res.data;
         },
       });
     }
-  }, [isDemoMode, currentYear, currentMonth, queryClient]);
+  }, [qk, currentYear, currentMonth, queryClient]);
 
   // --- Monthly budget data ---
   const { data: rawBudgetAnalysis, isLoading: monthlyLoading } = useQuery({
-    queryKey: ["budget-analysis", year, month, isDemoMode],
+    queryKey: qk.budget.analysis(year, month, false),
     queryFn: async () => {
       const res = await budgetApi.getAnalysis(year, month, false);
       return res.data;
@@ -192,7 +193,7 @@ export function BudgetSpendingGauge({
 
   // --- Project budget data ---
   const { data: projects } = useQuery({
-    queryKey: ["budget-projects", isDemoMode],
+    queryKey: qk.budget.projects(),
     queryFn: async () => {
       const res = await budgetApi.getProjects();
       return res.data as string[];
@@ -203,8 +204,7 @@ export function BudgetSpendingGauge({
   const createProjectMutation = useMutation({
     mutationFn: budgetApi.createProject,
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["budget-projects"] });
-      queryClient.invalidateQueries({ queryKey: ["availableProjects"] });
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setSelectedProject(variables.category);
       setIsProjectModalOpen(false);
     },
@@ -220,7 +220,7 @@ export function BudgetSpendingGauge({
   }, [projects, selectedProject]);
 
   const { data: rawProjectDetails, isLoading: projectLoading } = useQuery({
-    queryKey: ["budget-project-details", selectedProject, isDemoMode],
+    queryKey: qk.budget.projectDetails(selectedProject ?? "", false),
     queryFn: async () => {
       const res = await budgetApi.getProjectDetails(selectedProject!, false);
       return res.data;

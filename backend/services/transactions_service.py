@@ -34,6 +34,7 @@ from backend.repositories.transactions_repository import (
     ManualTransactionDTO,
     TransactionsRepository,
 )
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class TransactionsService:
@@ -262,6 +263,11 @@ class TransactionsService:
             Merged DataFrame with all transaction sources and prior-wealth rows.
             Returns an empty DataFrame if no data exists.
         """
+        cache_key = ("transactions.data_for_analysis", include_split_parents)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         cc_data = self.get_table_for_analysis(Services.CREDIT_CARD.value, include_split_parents)
         bank_data = self.get_table_for_analysis(Services.BANK.value, include_split_parents)
         cash_data = self.get_table_for_analysis(Services.CASH.value, include_split_parents)
@@ -280,8 +286,12 @@ class TransactionsService:
 
         dfs = [df for df in dfs if not df.empty]
         if not dfs:
-            return pd.DataFrame(columns=self.ANALYSIS_COLUMNS)
-        return pd.concat(dfs, ignore_index=True)
+            empty = pd.DataFrame(columns=self.ANALYSIS_COLUMNS)
+            session_cache_set(self.db, cache_key, empty)
+            return empty
+        merged = pd.concat(dfs, ignore_index=True)
+        session_cache_set(self.db, cache_key, merged)
+        return merged
 
     def _build_bank_prior_wealth_rows(self) -> pd.DataFrame:
         """Build synthetic prior wealth rows from bank balance records."""
@@ -859,6 +869,17 @@ class TransactionsService:
             if latest_dates
             else datetime.today() - timedelta(days=365)
         )
+
+    def count_uncategorized(self) -> int:
+        """Count uncategorized transactions in the merged non-insurance view.
+
+        Returns
+        -------
+        int
+            Number of transactions with no category, an empty category, or
+            the literal ``"Uncategorized"`` category.
+        """
+        return self.transactions_repository.count_uncategorized()
 
     def get_earliest_data_date(self) -> datetime:
         """
