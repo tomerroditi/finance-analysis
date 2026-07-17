@@ -1,17 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
-
+import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 test.describe("Categories", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
   });
 
   test("loads the categories page with category list", async ({ page }) => {
@@ -24,7 +18,6 @@ test.describe("Categories", () => {
 
   test("categories have tags nested inside", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Food category should have tags visible
     const foodSection = page.getByText("Food").first();
@@ -33,7 +26,6 @@ test.describe("Categories", () => {
 
   test("protected categories are displayed", async ({ page }) => {
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Protected categories should be visible
     await expect(page.getByText("Salary").first()).toBeVisible();
@@ -45,7 +37,6 @@ test.describe("Categories", () => {
   }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     const rulesCard = page.getByRole("button", { name: /Auto-Tagging Rules/i });
     const searchBox = page.getByPlaceholder(/Search categories and tags/i);
@@ -72,7 +63,6 @@ test.describe("Categories", () => {
   test("delete button is visible inside the category detail panel", async ({ page }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     // Click the Food card (non-protected) to open the detail panel.
     const foodCard = page.locator('[data-testid="category-card-Food"]');
@@ -108,7 +98,6 @@ test.describe("Categories", () => {
   }) => {
     await navigateTo(page, "/categories");
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.waitForLoadState("networkidle");
 
     // Investments is a protected category — it cannot be deleted.
     const protectedCard = page.locator('[data-testid="category-card-Investments"]');

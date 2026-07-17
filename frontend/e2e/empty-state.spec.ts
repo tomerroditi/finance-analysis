@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { API_BASE } from "./helpers";
 
 /**
  * Empty-database smoke test.
@@ -33,7 +34,7 @@ test.describe("Empty database smoke", () => {
   );
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.get("http://localhost:8000/api/onboarding/status");
+    const res = await request.get(`${API_BASE}/onboarding/status`);
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     if (!body.is_first_run) {
@@ -47,7 +48,6 @@ test.describe("Empty database smoke", () => {
   test("onboarding wizard renders for fresh users", async ({ page }) => {
     const errors = collectPageErrors(page);
     await page.goto("/onboarding");
-    await page.waitForLoadState("networkidle");
 
     await expect(
       page.getByRole("heading", { level: 1 }).first(),
@@ -90,7 +90,6 @@ test.describe("Empty database smoke", () => {
     }) => {
       const errors = collectPageErrors(page);
       await page.goto(route);
-      await page.waitForLoadState("networkidle");
 
       // The Layout shell mounted — Sidebar's <nav> proves React got
       // past the top-level page component without throwing. Most

@@ -13,8 +13,7 @@
  * nothing to clean up.
  */
 import { request } from "@playwright/test";
-
-const API_BASE = "http://localhost:8000/api";
+import { API_BASE } from "./helpers";
 
 export default async function globalTeardown() {
   const ctx = await request.newContext();

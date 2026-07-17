@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode } from "./helpers";
 
 // A compact "MM.yy" month-row label, e.g. "07.26" — rendered only inside the
 // expanded Net Worth card's per-month change breakdown. Currency deltas and
@@ -8,16 +8,11 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
 const MONTH_ROW = /\b\d{2}\.\d{2}\b/;
 
 test.describe("Dashboard net worth monthly change", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
   });
 
   test("expanding the KPI cards reveals the last-3-months net worth change with percent", async ({ page }) => {

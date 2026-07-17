@@ -28,7 +28,6 @@ test.describe("Transactions", () => {
 
     // Click the Credit Card tab
     await page.getByRole("button", { name: /Credit Card/i }).click();
-    await page.waitForLoadState("networkidle");
 
     // The tab should be visually active
     const ccTab = page.getByRole("button", { name: /Credit Card/i });
@@ -38,8 +37,8 @@ test.describe("Transactions", () => {
   test("text search filters transactions", async ({ page }) => {
     await navigateTo(page, "/transactions");
 
-    // Wait for transactions to load
-    await page.waitForLoadState("networkidle");
+    // Wait for transactions to load (deterministic anchor instead of networkidle).
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
 
     // Open filter panel if not visible
     const filterButton = page.getByRole("button", { name: /filter/i });
@@ -77,7 +76,6 @@ test.describe("Transactions", () => {
     // Wait for the table to populate
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // The eraser button renders on every row but is disabled for rows with no
     // category/tag (so the action column stays aligned). Find the first
@@ -99,7 +97,6 @@ test.describe("Transactions", () => {
     // The global MutationCache.onSuccess debounced invalidator fires ~200 ms
     // after the mutation succeeds, then React Query refetches the transactions.
     // Wait for the network to settle so the re-render completes.
-    await page.waitForLoadState("networkidle");
 
     // Re-locate the same row by its stable data-testid. The eraser is still
     // present (kept for alignment) but now disabled — the category and tag
@@ -116,7 +113,6 @@ test.describe("Transactions", () => {
     // Wait for the table to populate.
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // Find rows whose per-row eraser is *enabled* — these are the rows with
     // a category or tag assigned (the button renders on every row but is
@@ -163,7 +159,6 @@ test.describe("Transactions", () => {
     // The global MutationCache.onSuccess debounced invalidator fires ~200 ms
     // after the mutation succeeds, then React Query refetches the transactions.
     // Wait for the network to settle so the re-render completes.
-    await page.waitForLoadState("networkidle");
 
     // Both rows now have a disabled per-row eraser — the category and tag have
     // been cleared, so the button stays (for alignment) but `disabled` is true.
@@ -204,7 +199,6 @@ test.describe("Transactions", () => {
     // and the table min-width was raised so it can never collapse.
     await navigateTo(page, "/transactions");
     await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
 
     // Locate the description column header and measure its rendered width.
     const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();

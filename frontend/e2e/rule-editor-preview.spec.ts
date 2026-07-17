@@ -18,7 +18,6 @@ test.describe("Rule editor matching transactions preview", () => {
     // Auto-tagging rules now live in a full-screen manager opened from the
     // Auto-Tagging Rules launcher on the Categories page.
     await navigateTo(page, "/categories");
-    await page.waitForLoadState("networkidle");
 
     // Open the rules manager, then click "New Rule".
     await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();

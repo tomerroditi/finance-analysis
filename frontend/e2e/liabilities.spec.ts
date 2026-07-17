@@ -1,17 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
-
+import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 test.describe("Liabilities", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
   });
 
   test("loads the liabilities page", async ({ page }) => {
@@ -21,7 +15,6 @@ test.describe("Liabilities", () => {
 
   test("displays liability cards or empty state", async ({ page }) => {
     await navigateTo(page, "/liabilities");
-    await page.waitForLoadState("networkidle");
 
     // Should show liability cards OR an empty state
     const content = page.locator("main");
@@ -30,7 +23,6 @@ test.describe("Liabilities", () => {
 
   test("shows debt over time chart", async ({ page }) => {
     await navigateTo(page, "/liabilities");
-    await page.waitForLoadState("networkidle");
 
     // Debt over time section should be present
     await expect(page.getByText(/Debt Over Time/i)).toBeVisible({ timeout: 10_000 });

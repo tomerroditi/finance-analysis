@@ -1,17 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
-
+import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 test.describe("Investments", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
   });
 
   test("loads the investments page", async ({ page }) => {
@@ -21,7 +15,6 @@ test.describe("Investments", () => {
 
   test("displays investment cards", async ({ page }) => {
     await navigateTo(page, "/investments");
-    await page.waitForLoadState("networkidle");
 
     // Should show investment cards with names
     const cards = page.locator("[class*='rounded-2xl']");
@@ -30,7 +23,6 @@ test.describe("Investments", () => {
 
   test("shows portfolio overview section", async ({ page }) => {
     await navigateTo(page, "/investments");
-    await page.waitForLoadState("networkidle");
 
     // Portfolio section should be visible
     await expect(page.getByText(/Portfolio/i).first()).toBeVisible();

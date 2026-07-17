@@ -240,6 +240,117 @@ this; the env var is harmless when unset. **Verified green is the only
 "verified"** — if the browser failed to launch, the spec did not run, no
 matter what the exit summary scrolls past.
 
+### Projects & parallelism (why the suite isn't one flat run)
+
+Demo Mode is a **process-global backend singleton** — one shared SQLite DB
+for the whole backend process. That's why the suite can't naively run at
+`workers > 1`: parallel workers would race on the same rows, and any spec
+that flips the global demo toggle would pull the DB out from under a
+concurrently-running spec. The config (`frontend/playwright.config.ts`)
+handles this with four projects sequenced by a shared setup:
+
+```
+demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
+```
+
+- **`demo-setup`** enables Demo Mode once. This replaced the old per-file
+  `beforeAll(enableDemoMode)` / `afterAll(disableDemoMode)` pattern, which
+  toggled the global demo state at *every* file boundary and forced a full
+  demo-DB rebuild (file copy + date-shift over every table) each time.
+- **`read-only`** holds specs that do **zero backend writes** (the
+  `READ_ONLY_SPECS` list). They share the one demo snapshot safely, so they
+  fan out across workers (`fullyParallel`). This is the main speedup — it
+  overlaps the slow cold-cache page loads (13–25 s each) instead of paying
+  them back to back.
+- **`mutating`** holds everything else and runs **serially**. Each mutating
+  spec still owns its `beforeAll`/`afterAll` demo lifecycle for per-file DB
+  isolation, so its writes never leak into a sibling.
+- **`demo-teardown`** disables Demo Mode at the very end.
+
+Run it with the npm script:
+
+```bash
+python .claude/scripts/with_server.py -- bash -c \
+  "cd frontend && PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/opt/pw-browsers/chromium-<NNNN>/chrome-linux/chrome \
+   npm run test:e2e"
+```
+
+`npm run test:e2e` is a bare `playwright test` — it runs every project
+**serially** and is always safe. read-only and mutating are both plain,
+shardable projects (CI runs `playwright test --shard=X/4` across 4 jobs); each
+spec self-heals Demo Mode in its own `beforeAll` (a no-op once `demo-setup` has
+enabled it), so they can run in any order or interleave within a shard without
+one spec's teardown pulling demo out from under another. The `demo-setup`
+project enables Demo Mode once up front, which also lets the `read-only` project
+fan out across workers safely (no worker races to rebuild the demo DB).
+
+**Do not make `read-only` a dependency of `mutating`.** Playwright never shards
+dependency projects — they run in full in every shard — so a `mutating ->
+read-only` dependency makes CI run the entire (slow, chart-heavy) read-only
+project 4× (once per shard) instead of sharding it. Self-healing `beforeAll`s
+are what keep interleaving safe, not a project dependency.
+
+**Why not parallel by default?** `npm run test:e2e:parallel` runs
+`--project=read-only --workers=50%` then `--project=mutating --workers=1
+--no-deps`. Profiling showed the suite is **CPU-bound on browser-side Plotly
+rendering**, not the servers — the backend answers even the heaviest analytics
+endpoint in <1 s, and a demo-DB rebuild is ~0.08 s. On the web sandbox (4
+cores) two concurrent Chromium instances each rendering Plotly saturate the
+CPU, so the parallel read-only phase came in **slower** than serial (measured
+7.3–8.4 m vs ~6.0 m) with flaky timeouts. Client-side parallelism can't beat a
+per-test render cost when the box is already CPU-bound, *and* even 2 workers
+against one backend saturate the serialized SQLite path. Use
+`test:e2e:parallel` only where the CPU can sustain the concurrency.
+
+**Real across-the-board parallel speedup — `npm run test:e2e:isolated`.** The
+fix for the shared-backend ceiling is to remove the sharing:
+`.claude/scripts/e2e_parallel_isolated.py` starts **N fully isolated
+(backend + frontend) pairs**, each with its own port and its own
+`FAD_USER_DIR` (hence its own demo SQLite), then runs Playwright `--shard=i/N`
+once per pair — each shard pinned to its backend via `BASE_URL` (browser
+origin) and `E2E_API_BASE` (the env var `frontend/e2e/helpers.ts` reads for
+Node-side API calls). With no shared DB there are **zero cross-shard races**,
+so every shard runs concurrently and the only ceiling is real CPU cores. It
+auto-picks a shard count (~1 per 3 cores, clamped 2–6); override with
+`--shards N`, and forward Playwright args after `--`
+(`… e2e_parallel_isolated.py --shards 4 -- categories`). This is an **opt-in
+local tool** — it does not touch CI, which keeps its proven single-backend
+`--shard=X/4` matrix. It needs the worktree's `.venv` (auto-detected) and
+`npm`; each pair costs a uvicorn + a Vite dev server, so it's for multi-core
+dev boxes, not the 4-core sandbox.
+
+**Prefer auto-waiting assertions over `waitForLoadState("networkidle")`.** A
+bare `networkidle` after navigation waits for *every* straggler request plus a
+500 ms quiet window — measured ~2 s of dead wait on a warm dashboard, far more
+cold. Playwright's `expect(...).toBeVisible()`, `.click()`, `.fill()`, and
+`.waitFor()` already auto-wait for the specific element the test needs, so a
+following `networkidle` is usually redundant. Drop it — **unless** the test
+then does a *genuinely non-waiting* read, which can race the render.
+
+Know which reads auto-wait, because it's narrower than it looks. A `locator`'s
+`.textContent()`, `.getAttribute()`, `.inputValue()`, `.boundingBox()`, and
+`.evaluate()` **do** auto-wait for the element to attach — so a `networkidle`
+guarding one of those is already redundant and safe to drop. The reads that do
+**not** wait are `.count()`, `.all()`, `.isVisible()`/`.isEnabled()`,
+`locator.evaluateAll()`, and `page.evaluate()` — plus **negative** auto-retrying
+assertions (`toHaveCount(0)`, `not.toBeVisible()`), which pass *vacuously*
+against a page that hasn't rendered yet. Before one of those, keep an explicit
+wait — best as a positive anchor (`await expect(target.first()).toBeVisible()`,
+or `await expect(target).toHaveCount(n)`) rather than `networkidle`. The one
+case with no safe substitute is a `.count()`/`.isVisible()` where **zero is a
+legitimate answer** (a loop walking months until one has no rows, an
+"if this optional banner is present" guard) — those must keep `networkidle`.
+Two sweeps have trimmed 60 redundant waits this way (read-only phase ~6.8 m →
+~6.0 m); the survivors are the zero-is-valid guards.
+
+**Adding a spec to `READ_ONLY_SPECS`:** only if it performs *no* backend
+writes — no POST/PUT/DELETE, no form submit, no create/edit/delete/move of
+data. Opening a popover, toggling a view, switching a chart tab, and
+navigation are all fine. One writing spec in that list corrupts every
+sibling running in parallel, so when in doubt leave it out (unlisted specs
+run serially, which is always safe). If you add a write to a spec that's
+already in the list, move it out in the same change.
+
 **Authoring gotchas that cost a debugging loop here:**
 - The **Auto Tagging "New Rule" / "Apply Rules" buttons live inside a
   collapsed side panel** — click `getByRole("button", { name: /^Auto

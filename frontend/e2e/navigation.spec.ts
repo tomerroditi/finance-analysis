@@ -47,7 +47,6 @@ test.describe("Navigation", () => {
 
   test("global search opens with Cmd+K", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // Press Cmd+K (Ctrl+K on non-Mac)
     await page.keyboard.press("Control+k");

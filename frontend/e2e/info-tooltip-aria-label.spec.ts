@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
-
+import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * Regression coverage for InfoTooltip.tsx.
  *
@@ -15,16 +14,11 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * he.json common.moreInfo = "מידע נוסף"
  */
 test.describe("InfoTooltip aria-label i18n", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
+  // project turns it on once), so this is safe under parallel workers and
+  // makes the spec order-independent when sharded alongside mutating specs.
+  test.beforeAll(async () => {
+    await enableDemoMode();
   });
 
   test.afterEach(async ({ page }) => {

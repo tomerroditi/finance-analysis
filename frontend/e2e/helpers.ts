@@ -1,6 +1,14 @@
 import { type Page, type APIRequestContext, expect, request } from "@playwright/test";
 
-const API_BASE = "http://localhost:8000/api";
+/**
+ * Backend API base. Defaults to the single shared dev backend on :8000, but
+ * the isolated-parallel harness (`test:e2e:isolated`) overrides it per shard
+ * via `E2E_API_BASE` so each shard's Node-side API calls (demo toggle, seeding)
+ * target that shard's own isolated backend. Exported so every spec that talks
+ * to the backend directly shares one env-driven source instead of hardcoding
+ * the URL.
+ */
+export const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8000/api";
 
 /**
  * Toggle Demo Mode via the testing API. Faster and more reliable than

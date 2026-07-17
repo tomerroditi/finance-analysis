@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { setDemoMode, gotoAndWait } from "./_helpers";
+import { API_BASE } from "../helpers";
 
 /**
  * Verifies Demo Mode actually swaps the database underneath the UI.
@@ -22,7 +23,7 @@ test.describe("Demo Mode toggle flow", () => {
 
     // Verify backend reports demo_mode=false before we touch the UI.
     const before = await request.get(
-      "http://localhost:8000/api/testing/demo_mode_status",
+      `${API_BASE}/testing/demo_mode_status`,
     );
     expect((await before.json()).demo_mode).toBe(false);
 
@@ -53,7 +54,7 @@ test.describe("Demo Mode toggle flow", () => {
 
     // Sanity: backend reflects the new demo mode state.
     const status = await request.get(
-      "http://localhost:8000/api/testing/demo_mode_status",
+      `${API_BASE}/testing/demo_mode_status`,
     );
     expect((await status.json()).demo_mode).toBe(true);
   });

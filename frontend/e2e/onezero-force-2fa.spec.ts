@@ -1,7 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
-
-const API_BASE = "http://localhost:8000/api";
+import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
 
 // A throwaway OneZero account, seeded into the demo DB so the
 // OneZero-only "Re-authenticate (force 2FA)" button has an account to
@@ -55,7 +53,6 @@ test.describe("OneZero force-2FA (Re-authenticate)", () => {
     page,
   }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // The seeded OneZero account card must be present.
     await expect(page.getByText(ONEZERO_ACCOUNT, { exact: false })).toBeVisible();

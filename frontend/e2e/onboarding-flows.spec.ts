@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { API_BASE } from "./helpers";
 
 /**
  * End-to-end coverage for the onboarding wizard flows.
@@ -24,8 +25,8 @@ import { test, expect, type APIRequestContext } from "@playwright/test";
 
 const SHOULD_RUN = process.env.E2E_EMPTY_DB === "1";
 
-const DEMO_TOGGLE_URL = "http://localhost:8000/api/testing/toggle_demo_mode";
-const DEMO_STATUS_URL = "http://localhost:8000/api/testing/demo_mode_status";
+const DEMO_TOGGLE_URL = `${API_BASE}/testing/toggle_demo_mode`;
+const DEMO_STATUS_URL = `${API_BASE}/testing/demo_mode_status`;
 
 test.describe("Onboarding flows", () => {
   test.skip(
@@ -163,7 +164,6 @@ test.describe("Onboarding flows", () => {
     // the gate must respect the dismissal flag and let the dashboard
     // render.
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // Give the gate's effect a tick to run; assert we did NOT bounce.
     expect(page.url()).toMatch(/\/$/);

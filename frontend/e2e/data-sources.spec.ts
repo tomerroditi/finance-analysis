@@ -1,5 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
+import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle, API_BASE } from "./helpers";
 
 test.describe("DataSources", () => {
   test.beforeAll(async ({ browser }) => {
@@ -21,7 +21,6 @@ test.describe("DataSources", () => {
 
   test("displays connected accounts in demo mode", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // In demo mode, there should be demo accounts listed
     const content = page.locator("main");
@@ -30,7 +29,6 @@ test.describe("DataSources", () => {
 
   test("shows bank balance section", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // Bank balance section should show account balances
     const content = page.locator("main");
@@ -39,7 +37,6 @@ test.describe("DataSources", () => {
 
   test("renders provider logos on each connected account card", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // The four demo accounts (Hapoalim, Max, Visa Cal, HaPhoenix) each render
     // a <ProviderLogo> with alt text set to the humanized provider name. We
@@ -59,7 +56,6 @@ test.describe("DataSources", () => {
 
   test("shows provider logos in the connect-account modal grid", async ({ page }) => {
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     // Step 1: open the connect-account modal and pick the Bank Account flow.
     await page.getByRole("button", { name: "Connect Account", exact: true }).click();
@@ -85,7 +81,6 @@ test.describe("DataSources", () => {
   });
 
   test("opens the shared balance modal from the $ button and saves", async ({ page }) => {
-    const API_BASE = "http://localhost:8000/api";
     const provider = "onezero";
     const accountName = "E2E Balance Bank";
     const today = new Date().toISOString();
@@ -150,7 +145,6 @@ test.describe("DataSources", () => {
         sessionStorage.setItem("onboardingDismissedAt", String(Date.now())),
       );
       await page.goto("/data-sources");
-      await page.waitForLoadState("networkidle");
 
       // The seeded bank row's amber "$" button (enabled because scraped today).
       const setBtn = page.getByRole("button", { name: /^Set Balance$/ }).first();

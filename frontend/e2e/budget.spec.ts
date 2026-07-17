@@ -27,7 +27,6 @@ test.describe("Budget", () => {
     await navigateTo(page, "/budget");
 
     // Wait for budget data to load
-    await page.waitForLoadState("networkidle");
 
     // Should show budget rules or "no rules" state
     const content = page.locator("main");
@@ -65,7 +64,6 @@ test.describe("Budget", () => {
 
   test("budget-vs-actual trend chart toggles", async ({ page }) => {
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     const trend = page.getByRole("button", { name: /Budget vs Actual/i });
     await expect(trend).toBeVisible();
@@ -175,7 +173,6 @@ test.describe("Budget", () => {
 
   test("budget alerts can be disabled from settings", async ({ page }) => {
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     // Open Settings and toggle Budget Alerts off (the settings control is a
     // <label>; the mobile drawer tile uses a <span>, so scope to the label).

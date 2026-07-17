@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:parallel": "playwright test --project=read-only --workers=50% && playwright test --project=mutating --workers=1 --no-deps",
+    "test:e2e:isolated": "python ../.claude/scripts/e2e_parallel_isolated.py",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
   },

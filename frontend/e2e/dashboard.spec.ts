@@ -25,7 +25,6 @@ test.describe("Dashboard", () => {
 
   test("displays charts and visualizations", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // Check for chart containers (Plotly renders into div.js-plotly-plot)
     await expect(page.locator(".js-plotly-plot").first()).toBeVisible({

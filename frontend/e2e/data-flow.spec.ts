@@ -3,7 +3,6 @@ import { test, expect } from "@playwright/test";
 test.describe("DataFlow diagram", () => {
   test("hovering over diagram without clicking does not scroll it", async ({ page }) => {
     await page.goto("/data-flow");
-    await page.waitForLoadState("networkidle");
 
     const container = page.locator('[class*="cursor-grab"]').first();
     await expect(container).toBeVisible();
@@ -33,9 +32,9 @@ test.describe("DataFlow diagram", () => {
 
   test("diagram does not scroll after mouse button is released", async ({ page }) => {
     await page.goto("/data-flow");
-    await page.waitForLoadState("networkidle");
 
     const container = page.locator('[class*="cursor-grab"]').first();
+    await expect(container).toBeVisible();
     const box = await container.boundingBox();
     if (!box) throw new Error("container not found");
 
@@ -68,7 +67,6 @@ test.describe("DataFlow diagram", () => {
 
   test("diagram nodes are visible and clickable", async ({ page }) => {
     await page.goto("/data-flow");
-    await page.waitForLoadState("networkidle");
 
     // Column headers should render
     await expect(page.getByText(/Data Sources/i).first()).toBeVisible();

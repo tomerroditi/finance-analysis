@@ -1,7 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
-
-const API_BASE = "http://localhost:8000/api";
+import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
 
 // Two throwaway accounts seeded into the demo DB so "Scrape All" has more
 // than one card to act on. One (RUNNING_ACCOUNT) is driven into
@@ -111,7 +109,6 @@ test.describe("Scrape All burst guard", () => {
     });
 
     await navigateTo(page, "/data-sources");
-    await page.waitForLoadState("networkidle");
 
     await expect(page.getByText(RUNNING_ACCOUNT, { exact: false })).toBeVisible();
     await expect(page.getByText(IDLE_ACCOUNT, { exact: false })).toBeVisible();
@@ -189,7 +186,6 @@ test.describe("Scrape All burst guard", () => {
       });
 
       await navigateTo(page, "/data-sources");
-      await page.waitForLoadState("networkidle");
 
       const card = page
         .getByRole("heading", { name: FAILED_ACCOUNT, exact: true })

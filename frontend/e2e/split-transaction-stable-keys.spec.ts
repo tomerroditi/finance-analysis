@@ -30,7 +30,6 @@ test.describe("Split transaction modal stable keys", () => {
     // Wait for the table to populate.
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 30_000 });
-    await page.waitForLoadState("networkidle");
 
     // The split action button carries title="Split transaction"
     // (t("tooltips.splitTransaction")). Open the modal for the first row.
