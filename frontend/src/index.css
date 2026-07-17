@@ -54,7 +54,7 @@ button, a, [role="button"], input, select, textarea, label {
    heuristics for role="application" SVGs are inconsistent across versions;
    keyboard tooltip navigation itself keeps working). */
 .recharts-wrapper:focus,
-.recharts-wrapper svg:focus {
+.recharts-wrapper :focus {
   outline: none;
 }
 

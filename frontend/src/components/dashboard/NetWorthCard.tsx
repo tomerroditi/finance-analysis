@@ -223,6 +223,8 @@ export function NetWorthCard() {
             yAxisId="left"
             dataKey={config.deltaKey}
             name={t("dashboard.monthlyChange")}
+            // Legend swatch colour; per-bar Cells below override the render.
+            fill="#10b981"
             radius={BAR_RADIUS}
             isAnimationActive={false}
           >

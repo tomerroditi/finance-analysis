@@ -36,7 +36,9 @@ export function ChartLegend({ payload, fontSize = 11, gapTop = 6 }: ChartLegendP
         <li key={`${entry.value}-${i}`} className="flex items-center gap-1.5 whitespace-nowrap">
           <span
             className="inline-block h-2 w-2 shrink-0 rounded-full"
-            style={{ backgroundColor: entry.color }}
+            // Multi-colour series (per-Cell bars) have no single colour —
+            // fall back to a neutral dot instead of an invisible one.
+            style={{ backgroundColor: entry.color ?? "#64748b" }}
           />
           {entry.value}
         </li>
