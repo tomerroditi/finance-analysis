@@ -68,7 +68,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     name: E2E (Playwright, shard ${{ matrix.shard }}/4)
-    if: github.base_ref == 'main'
+    # Feature PRs target dev; dev → main is the release gate. Both get the
+    # full e2e suite. Only the Schemathesis fuzz job below stays main-only.
+    if: github.base_ref == 'main' || github.base_ref == 'dev'
     timeout-minutes: 15
     strategy:
       # Run 4 parallel shards. Wall time drops from ~7 min to ~2-3 min.
