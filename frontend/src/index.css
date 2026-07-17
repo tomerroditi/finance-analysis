@@ -189,30 +189,3 @@ body.modal-open {
   transition-delay: 0.5s;
 }
 
-/* Touch chart zoom mode (utils/chartTouchZoom.ts): a chart entered via
-   double-tap shows a ring + a hint pill while Plotly's native rectangle
-   zoom is active. */
-.chart-zoom-active {
-  box-shadow: 0 0 0 2px var(--primary);
-  border-radius: 10px;
-}
-.chart-zoom-hint {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-  pointer-events: none;
-  max-width: calc(100% - 16px);
-  padding: 3px 10px;
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--background) 88%, transparent);
-  border: 1px solid var(--surface-light);
-  color: var(--text);
-  font-size: 11px;
-  line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-}

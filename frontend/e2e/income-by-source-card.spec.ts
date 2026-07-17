@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, navigateTo } from "./helpers";
 /**
  * The "Income by source" dashboard card (id `income_by_source`) renders a
- * Plotly donut + a breakdown table with a Total row, plus range-preset
+ * donut chart + a breakdown table with a Total row, plus range-preset
  * buttons (All time / This year / Last 12 months / Custom). It's visible by
  * default on the dashboard route; Demo Mode supplies sample income data so the
  * donut + table render. This spec guards that the card mounts and that
@@ -19,14 +19,14 @@ test.describe("Income by source dashboard card", () => {
   /**
    * Locate the card container by its title, then climb to the enclosing
    * card div so we can scope the donut/table lookups (the dashboard renders
-   * several other Plotly charts). The dashboard ships mobile + desktop layout
+   * several other charts). The dashboard ships mobile + desktop layout
    * variants simultaneously, so we filter to the visible instance.
    */
   function cardContainer(page: Page) {
     return page
       .locator("div")
       .filter({ has: page.getByText("Income by source", { exact: true }) })
-      .filter({ has: page.locator(".js-plotly-plot") })
+      .filter({ has: page.locator(".recharts-wrapper") })
       .filter({ visible: true })
       .last();
   }
@@ -42,7 +42,7 @@ test.describe("Income by source dashboard card", () => {
     const card = cardContainer(page);
 
     // Donut renders inside the card.
-    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
+    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
 
@@ -58,7 +58,7 @@ test.describe("Income by source dashboard card", () => {
     ).toBeVisible({ timeout: 45_000 });
 
     const card = cardContainer(page);
-    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
+    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
 
@@ -69,7 +69,7 @@ test.describe("Income by source dashboard card", () => {
       .click();
 
     // The card must still render its donut after the range change (no crash).
-    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
+    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
     await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
@@ -83,7 +83,7 @@ test.describe("Income by source dashboard card", () => {
     ).toBeVisible({ timeout: 45_000 });
 
     const card = cardContainer(page);
-    await expect(card.locator(".js-plotly-plot").first()).toBeVisible({
+    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
 
@@ -95,7 +95,7 @@ test.describe("Income by source dashboard card", () => {
     // Collapse: the table is removed but the donut stays.
     await toggle.click();
     await expect(card.locator("table")).toHaveCount(0);
-    await expect(card.locator(".js-plotly-plot").first()).toBeVisible();
+    await expect(card.locator(".recharts-wrapper").first()).toBeVisible();
 
     // Expand again: the table comes back.
     await toggle.click();

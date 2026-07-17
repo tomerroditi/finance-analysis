@@ -1,9 +1,19 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Cell,
+} from "recharts";
 import { ChevronDown, ChevronUp, TrendingUp } from "lucide-react";
-import i18n from "../../i18n";
-import { chartTheme, plotlyConfig, barMarker } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, BAR_RADIUS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 
 interface BudgetTrendChartProps {
@@ -30,10 +40,10 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
   );
   const { data, hasData } = useBudgetTrend(year, month, months, includeSplitParents);
 
-  const locale = i18n.language === "he" ? "he-IL" : "en-US";
-  const labels = data.map((d) =>
-    new Date(d.year, d.month - 1).toLocaleString(locale, { month: "short" }),
-  );
+  const rows = data.map((d) => ({
+    ...d,
+    monthKey: `${d.year}-${String(d.month).padStart(2, "0")}`,
+  }));
   const actualColors = data.map((d) =>
     d.budget > 0 && d.actual > d.budget ? "#f43f5e" : "#10b981",
   );
@@ -65,41 +75,40 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
         <div className="px-2 pb-3 animate-in fade-in duration-300">
           {hasData ? (
             <div className="w-full h-[240px] md:h-[300px]">
-              <Plot
-                data={[
-                  {
-                    x: labels,
-                    y: data.map((d) => d.budget),
-                    type: "bar" as const,
-                    name: t("budget.trend.budget"),
-                    marker: barMarker("rgba(148, 163, 184, 0.35)"),
-                  },
-                  {
-                    x: labels,
-                    y: data.map((d) => d.actual),
-                    type: "bar" as const,
-                    name: t("budget.trend.actual"),
-                    marker: barMarker(actualColors),
-                  },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  autosize: true,
-                  barmode: "group",
-                  bargap: 0.3,
-                  margin: { t: 10, b: 40, l: 50, r: 16 },
-                  legend: {
-                    orientation: "h",
-                    y: -0.2,
-                    x: 0.5,
-                    xanchor: "center",
-                    font: { size: 11 },
-                  },
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={plotlyConfig()}
-                useResizeHandler
-              />
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} barCategoryGap="30%" margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+                  <XAxis dataKey="monthKey" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
+                  <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
+                  <Tooltip
+                    content={
+                      <ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />
+                    }
+                  />
+                  <Legend
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}
+                  />
+                  <Bar
+                    dataKey="budget"
+                    name={t("budget.trend.budget")}
+                    fill="rgba(148, 163, 184, 0.35)"
+                    radius={BAR_RADIUS}
+                    isAnimationActive={false}
+                  />
+                  <Bar
+                    dataKey="actual"
+                    name={t("budget.trend.actual")}
+                    fill="#10b981"
+                    radius={BAR_RADIUS}
+                    isAnimationActive={false}
+                  >
+                    {rows.map((row, i) => (
+                      <Cell key={row.monthKey} fill={actualColors[i]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           ) : (
             <p className="text-sm text-[var(--text-muted)] text-center py-8">

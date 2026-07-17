@@ -148,5 +148,6 @@ These aren't features but unblock the features above:
   schema lives in the lifespan handler (`backend/main.py`) doing manual
   `ALTER TABLE` on startup. Move those into migrations so a fresh DB and an
   upgraded DB end up bit-identical.
-- **Frontend bundle splitting.** Plotly is huge; lazy-load it from the
-  dashboard route only.
+- ~~**Frontend bundle splitting.** Plotly is huge; lazy-load it from the
+  dashboard route only.~~ Resolved by removing Plotly entirely — charts now
+  render with Recharts (~5 MB of minified JS dropped from the build).

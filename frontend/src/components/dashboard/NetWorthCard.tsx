@@ -1,13 +1,41 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  LineChart,
+  AreaChart,
+  Line,
+  Bar,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  Cell,
+} from "recharts";
 import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../../utils/numberFormatting";
-import { chartTheme, plotlyConfig, barMarker } from "../../utils/plotlyLocale";
+import {
+  AXIS_DEFAULTS,
+  BAR_RADIUS,
+  CHART_TEXT_COLOR,
+  formatAxisNumber,
+  hexToRgba,
+} from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
+
+const DEBT_COLORS = [
+  "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6",
+  "#06b6d4", "#ec4899", "#10b981", "#f97316",
+];
+
+const LEGEND_STYLE = { fontSize: 11, color: CHART_TEXT_COLOR } as const;
 
 /** Net Worth analytics dashboard card (period chips + bank/investments/net-worth/debt toggle). */
 export function NetWorthCard() {
@@ -38,6 +66,24 @@ export function NetWorthCard() {
     }));
   }, [netWorthData]);
 
+  // Stacked cumulative debt payments: one row per month, one key per tag.
+  const debtStacked = useMemo(() => {
+    if (!debtPaymentsData || debtPaymentsData.length === 0) return null;
+    const allTags = Array.from(
+      new Set(debtPaymentsData.flatMap((d: { tags: Record<string, number> }) => Object.keys(d.tags))),
+    ).sort() as string[];
+    const running: Record<string, number> = {};
+    const rows = debtPaymentsData.map((d: { month: string; tags: Record<string, number> }) => {
+      const row: Record<string, number | string> = { month: d.month };
+      for (const tag of allTags) {
+        running[tag] = (running[tag] ?? 0) + (d.tags[tag] || 0);
+        row[tag] = running[tag];
+      }
+      return row;
+    });
+    return { allTags, rows };
+  }, [debtPaymentsData]);
+
   const seriesConfig = {
     bank_balance: {
       label: t("dashboard.bankBalance"),
@@ -59,64 +105,147 @@ export function NetWorthCard() {
     },
   };
 
-  const getNetWorthTraces = (): Plotly.Data[] => {
-    if (!netWorthData || netWorthData.length === 0) return [];
-    if (netWorthView === "debt_payments") return [];
+  const chartTooltip = (
+    <ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />
+  );
 
-    if (netWorthView === "all") {
-      return [
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.bank_balance),
-          name: t("dashboard.bankBalance"),
-          type: "scatter",
-          mode: "lines",
-          line: { color: "#f59e0b", width: 2.5, shape: "spline" },
-        },
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.investment_value),
-          name: t("dashboard.investmentValue"),
-          type: "scatter",
-          mode: "lines",
-          line: { color: "#6366f1", width: 2.5, shape: "spline" },
-        },
-        {
-          x: netWorthData.map((d) => d.month),
-          y: netWorthData.map((d) => d.net_worth),
-          name: t("dashboard.netWorth"),
-          type: "scatter",
-          mode: "lines",
-          line: { color: "#10b981", width: 3, shape: "spline" },
-        },
-      ];
+  const renderChart = () => {
+    if (netWorthView === "debt_payments") {
+      if (!debtStacked) {
+        return <p className="text-[var(--text-muted)]">{t("dashboard.noData")}</p>;
+      }
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={debtStacked.rows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+            <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
+            <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
+            <Tooltip content={chartTooltip} />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+            {debtStacked.allTags.map((tag, i) => {
+              const color = DEBT_COLORS[i % DEBT_COLORS.length];
+              return (
+                <Area
+                  key={tag}
+                  dataKey={tag}
+                  name={tag}
+                  stackId="debt"
+                  type="monotone"
+                  stroke={color}
+                  strokeWidth={2}
+                  fill={hexToRgba(color, 0.25)}
+                  isAnimationActive={false}
+                />
+              );
+            })}
+          </AreaChart>
+        </ResponsiveContainer>
+      );
     }
 
-    if (!netWorthDeltas) return [];
-    const config = seriesConfig[netWorthView];
+    if (!netWorthData || netWorthData.length === 0) return null;
 
-    return [
-      {
-        x: netWorthDeltas.map((d) => d.month),
-        y: netWorthDeltas.map((d) => d[config.deltaKey]),
-        name: t("dashboard.monthlyChange"),
-        type: "bar",
-        marker: barMarker(
-          netWorthDeltas.map((d) =>
-            d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444",
-          ),
-        ),
-      },
-      {
-        x: netWorthDeltas.map((d) => d.month),
-        y: netWorthDeltas.map((d) => d[config.dataKey]),
-        name: config.label,
-        type: "scatter",
-        mode: "lines",
-        line: { color: config.color, width: 3, shape: "spline" },
-        yaxis: "y2",
-      },
-    ];
+    if (netWorthView === "all") {
+      const series = [
+        { dataKey: "bank_balance", name: t("dashboard.bankBalance"), color: "#f59e0b", width: 2.5 },
+        { dataKey: "investment_value", name: t("dashboard.investmentValue"), color: "#6366f1", width: 2.5 },
+        { dataKey: "net_worth", name: t("dashboard.netWorth"), color: "#10b981", width: 3 },
+      ];
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={netWorthData} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+            <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
+            <YAxis
+              {...AXIS_DEFAULTS}
+              tickFormatter={formatAxisNumber}
+              width={56}
+              label={{
+                value: t("dashboard.amountILS"),
+                angle: -90,
+                position: "insideLeft",
+                style: { fill: CHART_TEXT_COLOR, fontSize: 11 },
+              }}
+            />
+            <Tooltip content={chartTooltip} />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+            {series.map((s) => (
+              <Line
+                key={s.dataKey}
+                dataKey={s.dataKey}
+                name={s.name}
+                type="monotone"
+                stroke={s.color}
+                strokeWidth={s.width}
+                dot={false}
+                isAnimationActive={false}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    if (!netWorthDeltas) return null;
+    const config = seriesConfig[netWorthView];
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={netWorthDeltas} margin={{ top: 8, bottom: 4, left: 0, right: 0 }}>
+          <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
+          <YAxis
+            yAxisId="left"
+            {...AXIS_DEFAULTS}
+            tickFormatter={formatAxisNumber}
+            width={56}
+            label={{
+              value: t("dashboard.monthlyChange"),
+              angle: -90,
+              position: "insideLeft",
+              style: { fill: CHART_TEXT_COLOR, fontSize: 11 },
+            }}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: config.color, fontSize: 11 }}
+            tickFormatter={formatAxisNumber}
+            width={56}
+            label={{
+              value: config.label,
+              angle: 90,
+              position: "insideRight",
+              style: { fill: config.color, fontSize: 11 },
+            }}
+          />
+          <Tooltip content={chartTooltip} />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={LEGEND_STYLE} />
+          <Bar
+            yAxisId="left"
+            dataKey={config.deltaKey}
+            name={t("dashboard.monthlyChange")}
+            radius={BAR_RADIUS}
+            isAnimationActive={false}
+          >
+            {netWorthDeltas.map((d) => (
+              <Cell
+                key={d.month}
+                fill={d[config.deltaKey] >= 0 ? "#10b981" : "#ef4444"}
+              />
+            ))}
+          </Bar>
+          <Line
+            yAxisId="right"
+            dataKey={config.dataKey}
+            name={config.label}
+            type="monotone"
+            stroke={config.color}
+            strokeWidth={3}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    );
   };
 
   return (
@@ -188,78 +317,8 @@ export function NetWorthCard() {
                   ))}
                 </div>
               </div>
-              <div className="flex-1 min-h-0">
-                {netWorthView === "debt_payments" ? (
-                  debtPaymentsData && debtPaymentsData.length > 0 ? (() => {
-                    const allTags = Array.from(
-                      new Set(debtPaymentsData.flatMap((d) => Object.keys(d.tags))),
-                    ).sort();
-                    const colors = [
-                      "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6",
-                      "#06b6d4", "#ec4899", "#10b981", "#f97316",
-                    ];
-                    return (
-                      <Plot
-                        data={allTags.map((tag, i) => ({
-                          x: debtPaymentsData.map((d) => d.month),
-                          y: debtPaymentsData.reduce((acc: number[], d) => {
-                            acc.push((acc.length > 0 ? acc[acc.length - 1] : 0) + (d.tags[tag] || 0));
-                            return acc;
-                          }, []),
-                          type: "scatter" as const,
-                          mode: "lines" as const,
-                          line: { color: colors[i % colors.length], width: 2, shape: "spline" as const },
-                          name: tag,
-                          stackgroup: "debt",
-                        }))}
-                        layout={{
-                          ...chartTheme,
-                          autosize: true,
-                          xaxis: { ...chartTheme.xaxis, type: "category" },
-                          legend: { orientation: "h", y: -0.15, x: 0.5, xanchor: "center" },
-                        }}
-                        style={{ width: "100%", height: "100%" }}
-                        config={plotlyConfig()}
-                      />
-                    );
-                  })() : (
-                    <p className="text-[var(--text-muted)]">{t("dashboard.noData")}</p>
-                  )
-                ) : (
-                  <Plot
-                    data={getNetWorthTraces()}
-                    layout={{
-                      ...chartTheme,
-                      autosize: true,
-                      xaxis: { ...chartTheme.xaxis, type: "date" },
-                      yaxis: {
-                        ...chartTheme.yaxis,
-                        title: {
-                          text: netWorthView === "all" ? t("dashboard.amountILS") : t("dashboard.monthlyChange"),
-                          font: { color: "#94a3b8" },
-                        },
-                        tickfont: { color: "#94a3b8" },
-                        automargin: true,
-                      },
-                      ...(netWorthView !== "all" && {
-                        yaxis2: {
-                          title: {
-                            text: seriesConfig[netWorthView].label,
-                            font: { color: seriesConfig[netWorthView].color },
-                          },
-                          tickfont: { color: seriesConfig[netWorthView].color },
-                          overlaying: "y" as const,
-                          side: "right" as const,
-                          showgrid: false,
-                          automargin: true,
-                        },
-                      }),
-                      legend: { orientation: "h", y: -0.15, x: 0.5, xanchor: "center" },
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={plotlyConfig()}
-                  />
-                )}
+              <div className="flex-1 min-h-0" data-testid="net-worth-chart">
+                {renderChart()}
               </div>
             </>
           ) : (

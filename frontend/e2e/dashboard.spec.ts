@@ -26,8 +26,8 @@ test.describe("Dashboard", () => {
   test("displays charts and visualizations", async ({ page }) => {
     await page.goto("/");
 
-    // Check for chart containers (Plotly renders into div.js-plotly-plot)
-    await expect(page.locator(".js-plotly-plot").first()).toBeVisible({
+    // Check for chart containers (Recharts renders into div.recharts-wrapper)
+    await expect(page.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 10_000,
     });
   });

@@ -142,17 +142,14 @@ persisted React Query cache.
 
 ## Build size & precache budget
 
-Workbox refuses to precache assets larger than 2 MiB by default. Plotly
-inflates the main bundle past that, so we set
-`maximumFileSizeToCacheInBytes: 10 MiB` in the `workbox` config block.
-**Do not keep raising that limit** — it's there to stop us shipping a
-50 MB SW cache. The right fix is route-level code splitting (lazy-load
-Plotly off the dashboard route). The bundle is already on the
-engineering-debt list in `docs/next-features.md`.
-
-If you add a heavy dependency that pushes a single chunk past 10 MiB,
-the build will fail with a Workbox error. Fix it by code-splitting, not
-by bumping the limit.
+Workbox refuses to precache assets larger than 2 MiB by default. The main
+chunk sits at ~1.6 MiB minified (post-Plotly-removal; charts are Recharts
+now), so we set `maximumFileSizeToCacheInBytes: 3 MiB` in the `workbox`
+config block for headroom. **Do not raise that limit** — it's there to
+stop us shipping a huge SW cache again (the Plotly era needed 10 MiB).
+If you add a heavy dependency that pushes a single chunk past 3 MiB, the
+build will fail with a Workbox error. Fix it by code-splitting, not by
+bumping the limit.
 
 ## Lockfile hygiene
 

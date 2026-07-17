@@ -162,12 +162,12 @@ All dropdowns that use `createPortal` or `absolute` positioning MUST:
 2. **Clamp to viewport:** `Math.min(width, window.innerWidth - 16)` and `Math.max(8, left)`
 3. **Fixed-width popovers:** Use `w-full max-w-[calc(100vw-2rem)] sm:max-w-80` instead of `w-80`
 
-### Charts (Plotly)
-- `plotlyConfig()` sets `responsive: true` — charts auto-resize
-- Use `style={{ width: "100%", height: "100%" }}` with `useResizeHandler`
-- **Legends:** Always horizontal (`orientation: "h"`). Default in `chartTheme`: `font: { size: 11 }, itemwidth: 30` — packs items into rows to save vertical space
-- **Hover:** `chartTheme` uses `hovermode: "closest"` on touch devices (vs `"x unified"` on desktop). On touch, tapping a different point moves the tooltip; tapping empty area dismisses it. For charts that override hovermode, use: `hovermode: isTouchDevice ? "closest" : "y unified"`
-- Reduce chart margins: `margin: { l: 80, r: 20 }` instead of large values
+### Charts (Recharts)
+- Wrap every chart in `<ResponsiveContainer width="100%" height="100%">` inside a sized div — charts auto-resize with their container
+- Shared style lives in `utils/chartStyle.ts` (spread `{...AXIS_DEFAULTS}` into every axis) and `components/charts/` (`ChartTooltip`, `DonutChart`, `AreaGradientDef`)
+- **Legends:** horizontal by default; use `iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}`
+- **Hover/touch:** Recharts tooltips follow taps natively; SVG charts never hijack page scroll, so no dragmode/touch workarounds are needed
+- Keep chart margins tight: `margin: { top: 8, bottom: 4, left: 0, right: 8 }`-style, YAxis `width` 48–56
 - Container height: use `min-h-[400px] md:h-[600px]`
 
 ## Required Patterns
@@ -288,12 +288,12 @@ useScrollLock(isOpen);
 ```
 Also add `modal-overlay` CSS class to the outermost `fixed inset-0` div for `overscroll-behavior: contain`.
 
-### Chart Hover on Touch (`plotlyLocale.ts`)
-`chartTheme.hovermode` switches to `"closest"` on touch devices automatically. For charts that override hovermode, import and use:
+### Touch Detection (`chartStyle.ts`)
+For UI that needs to branch on touch capability (e.g. dropdown behavior), import the shared constant:
 ```tsx
-import { isTouchDevice } from "../utils/plotlyLocale";
-hovermode: isTouchDevice ? "closest" : "y unified",
+import { isTouchDevice } from "../utils/chartStyle";
 ```
+Recharts tooltips handle taps natively — charts need no touch-specific configuration.
 
 ## Anti-Patterns (Do NOT)
 

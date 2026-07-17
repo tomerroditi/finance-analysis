@@ -1,9 +1,19 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
-import Plot from "../components/common/LazyPlot";
-import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../utils/plotlyLocale";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { AXIS_DEFAULTS, CHART_COLORS, CHART_TEXT_COLOR, formatAxisNumber } from "../utils/chartStyle";
+import { ChartTooltip } from "../components/charts/ChartTooltip";
+import { DonutChart } from "../components/charts/DonutChart";
 import {
   Plus,
   Landmark,
@@ -22,7 +32,7 @@ import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { formatCurrency } from "../utils/numberFormatting";
-import { formatDate } from "../utils/dateFormatting";
+import { formatDate, formatShortDate } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
@@ -464,7 +474,29 @@ export function Liabilities() {
     enabled: activeLiabilities.length > 0,
   });
   const debtOverTimeData = debtOverTimeRaw?.series || [];
-  const debtTotalLine = debtOverTimeRaw?.total || [];
+
+  // Unified rows keyed by date: one key per liability series + "__total",
+  // so every line renders on a single shared x-axis.
+  const debtRows = useMemo(() => {
+    const byDate = new Map<string, Record<string, number | string>>();
+    const ensure = (date: string) => {
+      let row = byDate.get(date);
+      if (!row) {
+        row = { date };
+        byDate.set(date, row);
+      }
+      return row;
+    };
+    for (const s of debtOverTimeRaw?.series ?? []) {
+      for (const p of s.points) ensure(p.date)[s.name] = p.balance;
+    }
+    for (const p of debtOverTimeRaw?.total ?? []) {
+      ensure(p.date).__total = p.balance;
+    }
+    return [...byDate.values()].sort((a, b) =>
+      String(a.date).localeCompare(String(b.date)),
+    );
+  }, [debtOverTimeRaw]);
 
   // Shared card callbacks
   const handleEdit = useCallback((l: Liability) => {
@@ -555,46 +587,49 @@ export function Liabilities() {
               {t("liabilities.debtOverTime")}
             </h3>
             <div className="h-[300px]">
-              <Plot
-                data={[
-                  ...debtOverTimeData.map(
-                    (
-                      s: { name: string; points: { date: string; balance: number }[] },
-                      i: number,
-                    ) => ({
-                      x: s.points.map((p) => p.date),
-                      y: s.points.map((p) => p.balance),
-                      name: s.name,
-                      type: "scatter" as const,
-                      mode: "lines" as const,
-                      line: {
-                        color: CHART_COLORS[i % CHART_COLORS.length],
-                        width: 2,
-                        shape: "spline" as const,
-                      },
-                    }),
-                  ),
-                  ...(debtOverTimeData.length > 1
-                    ? [
-                        {
-                          x: debtTotalLine.map((p) => p.date),
-                          y: debtTotalLine.map((p) => p.balance),
-                          name: t("liabilities.totalDebt"),
-                          type: "scatter" as const,
-                          mode: "lines" as const,
-                          line: { color: "#ffffff", width: 3, shape: "spline" as const },
-                        },
-                      ]
-                    : []),
-                ]}
-                layout={{
-                  ...chartTheme,
-                  showlegend: true,
-                  legend: { orientation: "h", y: -0.12, font: { size: 10 } },
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={plotlyConfig()}
-              />
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={debtRows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+                  <XAxis
+                    dataKey="date"
+                    {...AXIS_DEFAULTS}
+                    tickFormatter={(d) => formatShortDate(String(d))}
+                  />
+                  <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
+                  <Tooltip
+                    content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
+                  />
+                  <Legend
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: 10, color: CHART_TEXT_COLOR }}
+                  />
+                  {debtOverTimeData.map((s, i) => (
+                    <Line
+                      key={s.name}
+                      dataKey={s.name}
+                      name={s.name}
+                      type="monotone"
+                      stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  ))}
+                  {debtOverTimeData.length > 1 && (
+                    <Line
+                      dataKey="__total"
+                      name={t("liabilities.totalDebt")}
+                      type="monotone"
+                      stroke="#f8fafc"
+                      strokeWidth={3}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
@@ -604,40 +639,19 @@ export function Liabilities() {
               {t("liabilities.debtAllocation")}
             </h3>
             <div className="h-[300px]">
-              <Plot
-                data={[
-                  {
-                    values: activeLiabilities.map(
-                      (l: Liability) => l.remaining_balance,
-                    ),
-                    labels: activeLiabilities.map((l: Liability) => l.name),
-                    type: "pie",
-                    hole: 0.62,
-                    sort: true,
-                    direction: "clockwise",
-                    textinfo: "percent",
-                    textposition: "inside",
-                    insidetextorientation: "horizontal",
-                    marker: donutMarker(),
-                  },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  margin: { t: 0, b: 0, l: 0, r: 0 },
-                  showlegend: true,
-                  legend: { orientation: "h" },
-                  annotations: [
-                    {
-                      text: formatCurrency(totalDebt),
-                      showarrow: false,
-                      font: { size: 16, color: "#f8fafc", family: "Inter, sans-serif" },
-                      x: 0.5,
-                      y: 0.5,
-                    },
-                  ],
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={plotlyConfig()}
+              <DonutChart
+                data={activeLiabilities.map((l: Liability) => ({
+                  name: l.name,
+                  value: l.remaining_balance,
+                }))}
+                sorted
+                showLegend
+                labelMode="percent"
+                centerLabel={
+                  <span className="text-base font-semibold text-[#f8fafc]">
+                    {formatCurrency(totalDebt)}
+                  </span>
+                }
               />
             </div>
           </div>

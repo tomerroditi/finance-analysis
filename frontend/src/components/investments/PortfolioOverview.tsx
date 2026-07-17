@@ -1,10 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, DollarSign, Percent } from "lucide-react";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
 import { investmentsApi } from "../../services/api";
-import { chartTheme, plotlyConfig, donutMarker, CHART_COLORS } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, CHART_COLORS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { DonutChart } from "../charts/DonutChart";
+import { formatDate, formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 
@@ -79,6 +90,29 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
       investmentsApi.getPortfolioBalanceHistory(chartIncludeClosed).then((res) => res.data),
   });
 
+  // Unified rows keyed by date: one key per investment series + "__total",
+  // so every line renders on a single shared x-axis.
+  const balanceRows = useMemo(() => {
+    const byDate = new Map<string, Record<string, number | string>>();
+    const ensure = (date: string) => {
+      let row = byDate.get(date);
+      if (!row) {
+        row = { date };
+        byDate.set(date, row);
+      }
+      return row;
+    };
+    for (const s of (balanceHistory?.series ?? []) as BalanceSeries[]) {
+      for (const p of s.data) ensure(p.date)[s.name] = p.balance;
+    }
+    for (const p of (balanceHistory?.total ?? []) as BalancePoint[]) {
+      ensure(p.date).__total = p.balance;
+    }
+    return [...byDate.values()].sort((a, b) =>
+      String(a.date).localeCompare(String(b.date)),
+    );
+  }, [balanceHistory]);
+
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
@@ -126,37 +160,47 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
           </div>
           <div className="h-[300px]">
             {balanceHistory?.series?.length > 0 ? (
-              <Plot
-                data={[
-                  ...balanceHistory.series.map((s: BalanceSeries, i: number) => ({
-                    x: s.data.map((d: BalancePoint) => d.date),
-                    y: s.data.map((d: BalancePoint) => d.balance),
-                    name: s.name,
-                    type: "scatter" as const,
-                    mode: "lines" as const,
-                    line: {
-                      color: CHART_COLORS[i % CHART_COLORS.length],
-                      width: 2,
-                      shape: "spline" as const,
-                    },
-                  })),
-                  {
-                    x: balanceHistory.total.map((d: BalancePoint) => d.date),
-                    y: balanceHistory.total.map((d: BalancePoint) => d.balance),
-                    name: "Total",
-                    type: "scatter" as const,
-                    mode: "lines" as const,
-                    line: { color: "#ffffff", width: 3, shape: "spline" as const },
-                  },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  showlegend: true,
-                  legend: { orientation: "h", y: -0.12, font: { size: 10 } },
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={plotlyConfig()}
-              />
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={balanceRows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+                  <XAxis
+                    dataKey="date"
+                    {...AXIS_DEFAULTS}
+                    tickFormatter={(d) => formatShortDate(String(d))}
+                  />
+                  <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
+                  <Tooltip
+                    content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
+                  />
+                  <Legend
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: 10, color: CHART_TEXT_COLOR }}
+                  />
+                  {(balanceHistory.series as BalanceSeries[]).map((s, i) => (
+                    <Line
+                      key={s.name}
+                      dataKey={s.name}
+                      name={s.name}
+                      type="monotone"
+                      stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  ))}
+                  <Line
+                    dataKey="__total"
+                    name="Total"
+                    type="monotone"
+                    stroke="#f8fafc"
+                    strokeWidth={3}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-[var(--text-muted)] text-sm">
                 {t("investments.noBalanceHistory")}
@@ -172,42 +216,18 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
               {t("investments.portfolioAllocation")}
             </h3>
             <div className="h-[300px]">
-              <Plot
-                data={[
-                  {
-                    values: portfolioAnalysis.allocation.filter((d) => d.balance > 0).map(
-                      (d) => d.balance,
-                    ),
-                    labels: portfolioAnalysis.allocation.filter((d) => d.balance > 0).map(
-                      (d) => d.name,
-                    ),
-                    type: "pie",
-                    hole: 0.62,
-                    sort: true,
-                    direction: "clockwise",
-                    textinfo: "percent",
-                    textposition: "inside",
-                    insidetextorientation: "horizontal",
-                    marker: donutMarker(),
-                  },
-                ]}
-                layout={{
-                  ...chartTheme,
-                  margin: { t: 0, b: 0, l: 0, r: 0 },
-                  showlegend: true,
-                  legend: { orientation: "h" },
-                  annotations: [
-                    {
-                      text: formatCurrency(portfolioAnalysis.total_value),
-                      showarrow: false,
-                      font: { size: 16, color: "#f8fafc", family: "Inter, sans-serif" },
-                      x: 0.5,
-                      y: 0.5,
-                    },
-                  ],
-                }}
-                style={{ width: "100%", height: "100%" }}
-                config={plotlyConfig()}
+              <DonutChart
+                data={portfolioAnalysis.allocation
+                  .filter((d) => d.balance > 0)
+                  .map((d) => ({ name: d.name, value: d.balance }))}
+                sorted
+                showLegend
+                labelMode="percent"
+                centerLabel={
+                  <span className="text-base font-semibold text-[#f8fafc]">
+                    {formatCurrency(portfolioAnalysis.total_value)}
+                  </span>
+                }
               />
             </div>
           </div>

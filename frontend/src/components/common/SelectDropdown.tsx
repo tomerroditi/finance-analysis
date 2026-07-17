@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
-import { isTouchDevice } from "../../utils/plotlyLocale";
+import { isTouchDevice } from "../../utils/chartStyle";
 
 interface SelectDropdownProps {
   options: { label: string; value: string }[];

@@ -1,6 +1,18 @@
-import Plot from "../common/LazyPlot";
+import { useMemo } from "react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ReferenceLine,
+} from "recharts";
 import { useTranslation } from "react-i18next";
-import { plotlyConfig, chartTheme, isTouchDevice } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
 
 interface DataPoint {
   age: number;
@@ -18,146 +30,127 @@ interface Props {
 export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) {
   const { t } = useTranslation();
 
+  const rows = useMemo(
+    () =>
+      data.map((d) => ({
+        ...d,
+        // Conservative→optimistic range rendered as a band area.
+        band: [d.net_worth_conservative, d.net_worth_optimistic] as [number, number],
+      })),
+    [data],
+  );
+
   const ages = data.map((d) => d.age);
-
-  const traces: Plotly.Data[] = [
-    // Conservative-optimistic band
-    {
-      x: [...ages, ...ages.slice().reverse()],
-      y: [
-        ...data.map((d) => d.net_worth_optimistic),
-        ...data
-          .slice()
-          .reverse()
-          .map((d) => d.net_worth_conservative),
-      ],
-      fill: "toself",
-      fillcolor: "rgba(59, 130, 246, 0.1)",
-      line: { color: "transparent" },
-      showlegend: false,
-      hoverinfo: "skip" as const,
-      type: "scatter" as const,
-    },
-    // Baseline line
-    {
-      x: ages,
-      y: data.map((d) => d.net_worth_baseline),
-      name: t("earlyRetirement.charts.baseline"),
-      line: { color: "#3b82f6", width: 3 },
-      type: "scatter" as const,
-      mode: "lines" as const,
-    },
-    // Optimistic
-    {
-      x: ages,
-      y: data.map((d) => d.net_worth_optimistic),
-      name: t("earlyRetirement.charts.optimistic"),
-      line: { color: "#10b981", width: 1.5, dash: "dot" },
-      type: "scatter" as const,
-      mode: "lines" as const,
-    },
-    // Conservative
-    {
-      x: ages,
-      y: data.map((d) => d.net_worth_conservative),
-      name: t("earlyRetirement.charts.conservative"),
-      line: { color: "#f59e0b", width: 1.5, dash: "dot" },
-      type: "scatter" as const,
-      mode: "lines" as const,
-    },
-  ];
-
-  const shapes: Partial<Plotly.Shape>[] = [
-    // FIRE number threshold
-    {
-      type: "line",
-      x0: ages[0],
-      x1: ages[ages.length - 1],
-      y0: fireNumber,
-      y1: fireNumber,
-      line: { color: "#ef4444", width: 2, dash: "dash" },
-    },
-    // Target retirement age
-    {
-      type: "line",
-      x0: targetAge,
-      x1: targetAge,
-      y0: 0,
-      y1: Math.max(...data.map((d) => d.net_worth_optimistic)) * 1.1,
-      line: { color: "#a855f7", width: 2, dash: "dashdot" },
-    },
-    // Age 67 - Bituach Leumi
-    {
-      type: "line",
-      x0: 67,
-      x1: 67,
-      y0: 0,
-      y1: Math.max(...data.map((d) => d.net_worth_optimistic)) * 1.1,
-      line: { color: "#6b7280", width: 1, dash: "dot" },
-    },
-  ];
-
-  const annotations: Partial<Plotly.Annotations>[] = [
-    {
-      x: ages[ages.length - 1],
-      y: fireNumber,
-      text: t("earlyRetirement.charts.fireTarget"),
-      showarrow: false,
-      font: { color: "#ef4444", size: 11 },
-      xanchor: "right" as const,
-      yshift: 15,
-    },
-    {
-      x: targetAge,
-      y: 0,
-      text: t("earlyRetirement.charts.retirementAge"),
-      showarrow: false,
-      font: { color: "#a855f7", size: 11 },
-      textangle: "-90",
-      xshift: -15,
-      yshift: 60,
-    },
-    {
-      x: 67,
-      y: 0,
-      text: t("earlyRetirement.charts.pensionAge"),
-      showarrow: false,
-      font: { color: "#6b7280", size: 10 },
-      textangle: "-90",
-      xshift: -12,
-      yshift: 50,
-    },
-  ];
+  const minAge = ages[0] ?? 0;
+  const maxAge = ages[ages.length - 1] ?? 0;
+  const ageTicks = useMemo(() => {
+    const ticks: number[] = [];
+    for (let a = Math.ceil(minAge / 5) * 5; a <= maxAge; a += 5) ticks.push(a);
+    return ticks;
+  }, [minAge, maxAge]);
 
   return (
-    <Plot
-      data={traces}
-      layout={{
-        ...chartTheme,
-        margin: { ...chartTheme.margin, l: 80 },
-        xaxis: {
-          ...chartTheme.xaxis,
-          title: { text: t("earlyRetirement.charts.age") },
-          dtick: 5,
-        },
-        yaxis: {
-          ...chartTheme.yaxis,
-          tickformat: ",.0f",
-          automargin: true,
-        },
-        legend: {
-          orientation: "h" as const,
-          y: -0.2,
-          x: 0.5,
-          xanchor: "center" as const,
-        },
-        shapes,
-        annotations,
-        hovermode: isTouchDevice ? "closest" : ("x unified" as const),
-      }}
-      config={plotlyConfig()}
-      useResizeHandler
-      style={{ width: "100%", minHeight: "300px", height: "400px" }}
-    />
+    <div className="w-full" style={{ minHeight: 300, height: 400 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={rows} margin={{ top: 16, bottom: 4, left: 8, right: 8 }}>
+          <XAxis
+            dataKey="age"
+            type="number"
+            domain={[minAge, maxAge]}
+            ticks={ageTicks}
+            {...AXIS_DEFAULTS}
+            label={{
+              value: t("earlyRetirement.charts.age"),
+              position: "insideBottom",
+              offset: -2,
+              style: { fill: CHART_TEXT_COLOR, fontSize: 11 },
+            }}
+          />
+          <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
+          <Tooltip
+            content={
+              <ChartTooltip labelFormatter={(age) => `${t("earlyRetirement.charts.age")} ${age}`} />
+            }
+          />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }} />
+          <Area
+            dataKey="band"
+            stroke="none"
+            fill="rgba(59, 130, 246, 0.1)"
+            legendType="none"
+            tooltipType="none"
+            isAnimationActive={false}
+            activeDot={false}
+          />
+          <Line
+            dataKey="net_worth_baseline"
+            name={t("earlyRetirement.charts.baseline")}
+            stroke="#3b82f6"
+            strokeWidth={3}
+            type="monotone"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            dataKey="net_worth_optimistic"
+            name={t("earlyRetirement.charts.optimistic")}
+            stroke="#10b981"
+            strokeWidth={1.5}
+            strokeDasharray="2 3"
+            type="monotone"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            dataKey="net_worth_conservative"
+            name={t("earlyRetirement.charts.conservative")}
+            stroke="#f59e0b"
+            strokeWidth={1.5}
+            strokeDasharray="2 3"
+            type="monotone"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <ReferenceLine
+            y={fireNumber}
+            stroke="#ef4444"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            label={{
+              value: t("earlyRetirement.charts.fireTarget"),
+              position: "insideTopRight",
+              fill: "#ef4444",
+              fontSize: 11,
+            }}
+          />
+          <ReferenceLine
+            x={targetAge}
+            stroke="#a855f7"
+            strokeWidth={2}
+            strokeDasharray="8 4 2 4"
+            label={{
+              value: t("earlyRetirement.charts.retirementAge"),
+              angle: -90,
+              position: "insideBottomLeft",
+              fill: "#a855f7",
+              fontSize: 11,
+            }}
+          />
+          <ReferenceLine
+            x={67}
+            stroke="#6b7280"
+            strokeWidth={1}
+            strokeDasharray="2 3"
+            label={{
+              value: t("earlyRetirement.charts.pensionAge"),
+              angle: -90,
+              position: "insideBottomLeft",
+              fill: "#6b7280",
+              fontSize: 10,
+            }}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
   );
 }

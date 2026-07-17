@@ -32,8 +32,8 @@ Don't merge them into one workflow. The duplicate-CI-step is intentional.
 **All of these are required checks.** After you push, don't assume green just
 because your own new spec passed locally — the e2e job runs every spec, so a
 change that removes or restructures shared UI can break a spec you never
-touched (e.g. removing a Plotly chart from a card breaks
-`chart-touch-zoom.spec.ts`, which looks for `.js-plotly-plot` on that card).
+touched (e.g. removing a chart from a card breaks `charts-render.spec.ts`,
+which looks for `.recharts-wrapper` on that page).
 Before pushing a change to a shared component, grep `frontend/e2e/` for the
 `data-card-id` / testid / selector you're changing. After pushing, run
 `gh pr checks <PR#>` and fix any red check — that's part of the task, not

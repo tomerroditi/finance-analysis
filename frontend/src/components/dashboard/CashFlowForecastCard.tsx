@@ -1,12 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 import { TrendingUp, Wallet, CalendarClock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
-import { chartTheme, plotlyConfig, gradientFill, CHART_COLORS } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, CHART_COLORS, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { AreaGradientDef } from "../charts/AreaGradientDef";
+import { formatDate } from "../../utils/dateFormatting";
 
 /**
  * "This Month" cash-flow forecast hero.
@@ -45,8 +56,12 @@ export function CashFlowForecastSection() {
     ? Math.round((data.day_of_month / data.days_in_month) * 100)
     : 0;
 
-  const actualDays = data.daily.filter((d) => d.actual_balance !== null);
-  const projectedDays = data.daily.filter((d) => d.projected_balance !== null);
+  // Unified rows so both series share one x-axis; missing keys render as gaps.
+  const dailyRows = data.daily.map((d) => ({
+    date: d.date,
+    actual: d.actual_balance ?? undefined,
+    projected: d.projected_balance ?? undefined,
+  }));
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6">
@@ -115,37 +130,39 @@ export function CashFlowForecastSection() {
         {/* Right: trajectory chart + projected income/expenses */}
         <div className="flex flex-col">
           <div className="h-36 md:h-40 min-h-0">
-            <Plot
-              data={[
-                {
-                  x: actualDays.map((d) => d.date),
-                  y: actualDays.map((d) => d.actual_balance as number),
-                  name: t("dashboard.forecast.actual"),
-                  type: "scatter",
-                  mode: "lines",
-                  line: { color: CHART_COLORS[0], width: 3, shape: "spline" },
-                  ...gradientFill(CHART_COLORS[0]),
-                },
-                {
-                  x: projectedDays.map((d) => d.date),
-                  y: projectedDays.map((d) => d.projected_balance as number),
-                  name: t("dashboard.forecast.projected"),
-                  type: "scatter",
-                  mode: "lines",
-                  line: { color: netPositive ? "#10b981" : "#f43f5e", width: 2, dash: "dash", shape: "spline" },
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                autosize: true,
-                showlegend: false,
-                margin: { l: 50, r: 12, t: 8, b: 24 },
-                xaxis: { ...chartTheme.xaxis, type: "date", tickformat: "%d" },
-                yaxis: { ...chartTheme.yaxis, automargin: true },
-              }}
-              style={{ width: "100%", height: "100%" }}
-              config={plotlyConfig()}
-            />
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={dailyRows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+                <AreaGradientDef id="cashflow-actual" color={CHART_COLORS[0]} />
+                <XAxis
+                  dataKey="date"
+                  {...AXIS_DEFAULTS}
+                  tickFormatter={(d) => String(new Date(d).getDate())}
+                />
+                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
+                <Tooltip
+                  content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
+                />
+                <Area
+                  dataKey="actual"
+                  name={t("dashboard.forecast.actual")}
+                  type="monotone"
+                  stroke={CHART_COLORS[0]}
+                  strokeWidth={3}
+                  fill="url(#cashflow-actual)"
+                  isAnimationActive={false}
+                />
+                <Line
+                  dataKey="projected"
+                  name={t("dashboard.forecast.projected")}
+                  type="monotone"
+                  stroke={netPositive ? "#10b981" : "#f43f5e"}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-3 gap-2 mt-3">
             <div className="bg-[var(--surface-light)] rounded-lg px-2.5 py-2">

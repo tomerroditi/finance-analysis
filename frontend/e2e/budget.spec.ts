@@ -85,26 +85,25 @@ test.describe("Budget", () => {
     // Make sure the chart is expanded (collapsed by default on narrow viewports).
     const trend = page.getByRole("button", { name: /Budget vs Actual/i });
     await expect(trend).toBeVisible();
-    const plot = page.locator(".js-plotly-plot").last();
+    const plot = page.locator(".recharts-wrapper").last();
     if (!(await plot.isVisible().catch(() => false))) {
       await trend.click();
     }
     await expect(plot).toBeVisible({ timeout: 15_000 });
 
-    // Read the Plotly traces straight off the DOM. The budget series comes
+    // Read the rendered bar series off the SVG. The budget series comes
     // from each month's "Total Budget" row; if the old per-category-rule sum
     // had crept back, the budget bars would be smaller than the gauge's cap.
-    const traces = await plot.evaluate(
-      (el) =>
-        (el as unknown as { data: { name: string; y: number[] }[] }).data.map(
-          (d) => ({ name: d.name, y: d.y }),
-        ),
-    );
-    expect(traces.length).toBe(2);
-    const budget = traces[0];
-    // The first trace is the budget series and the demo data defines a
-    // Total Budget, so at least one month must plot a positive budget cap.
-    expect(budget.y.some((v) => v > 0)).toBe(true);
+    const barSeries = plot.locator(".recharts-bar");
+    await expect(barSeries).toHaveCount(2);
+    // The first series is the budget bars and the demo data defines a
+    // Total Budget, so at least one month must plot a positive budget cap
+    // (a bar with non-zero rendered height).
+    const heights = await barSeries
+      .first()
+      .locator(".recharts-rectangle")
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    expect(heights.some((h) => h > 0)).toBe(true);
   });
 
 
