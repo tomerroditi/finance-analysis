@@ -19,6 +19,8 @@ describe("makeQueryKeys", () => {
       [k.transactions.uncategorizedCount(), qkPrefix.transactions],
       [k.analytics.netWorthOverTime(), qkPrefix.analytics],
       [k.budget.monthOverrides(), qkPrefix.budget],
+      [k.budget.yearly(2026), qkPrefix.budget],
+      [k.budget.categoryConflicts(), qkPrefix.budget],
       [k.budget.analysis(2026, 7, false), qkPrefix.budgetAnalysis],
       [k.investments.portfolio(), qkPrefix.investments],
       [k.liabilities.debtOverTime(), qkPrefix.liabilities],

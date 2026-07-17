@@ -67,6 +67,8 @@ export function makeQueryKeys(demo: boolean) {
       alertsMonth: (year: number, month: number, threshold: number) =>
         ["budget", "alerts", year, month, threshold, demo] as const,
       monthOverrides: () => ["budget", "month-overrides", demo] as const,
+      yearly: (year: number) => ["budget", "yearly", year, demo] as const,
+      categoryConflicts: () => ["budget", "category-conflicts", demo] as const,
     },
     tagging: {
       categories: () => ["categories", demo] as const,

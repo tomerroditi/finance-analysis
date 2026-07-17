@@ -7,6 +7,7 @@ import { MultiSelect } from "../common/MultiSelect";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategories } from "../../hooks/useCategories";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface Props {
   isOpen: boolean;
@@ -25,6 +26,7 @@ interface Props {
 export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRule }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const { data: categoriesMap } = useCategories();
 
   const [name, setName] = useState("");
@@ -66,7 +68,7 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
         : budgetApi.createYearlyRule(payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["yearlyBudget", year] });
+      queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) });
       onClose();
     },
     onError: (err: unknown) => {
