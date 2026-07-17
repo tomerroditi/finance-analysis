@@ -79,6 +79,10 @@ export default defineConfig(({ mode }) => {
               //                      browser cache would suppress new
               //                      version notifications for hours
               //   /api/uninstall     destructive, one-shot, never cached
+              //   /api/testing/*     demo-mode toggle/status is real-time
+              //                      process state; a stale cached
+              //                      demo_mode:true resurrects demo mode in
+              //                      the UI when the backend is slow to boot
               urlPattern: ({ url, request }) =>
                 request.method === "GET" &&
                 url.pathname.startsWith("/api/") &&
@@ -87,7 +91,8 @@ export default defineConfig(({ mode }) => {
                 !url.pathname.startsWith("/api/backups") &&
                 !url.pathname.startsWith("/api/onboarding/") &&
                 !url.pathname.startsWith("/api/updates/") &&
-                !url.pathname.startsWith("/api/uninstall"),
+                !url.pathname.startsWith("/api/uninstall") &&
+                !url.pathname.startsWith("/api/testing/"),
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get",
