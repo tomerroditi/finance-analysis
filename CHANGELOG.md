@@ -1,3 +1,10 @@
+## v1.43.1 (2026-07-17)
+
+### Fix
+
+- **scripts**: stop with_server.py freezing servers mid-e2e-run
+- **e2e**: always reset demo mode after Playwright runs
+
 ## v1.43.0 (2026-07-11)
 
 ### Feat
