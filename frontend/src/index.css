@@ -47,6 +47,15 @@ button, a, [role="button"], input, select, textarea, label {
   touch-action: manipulation;
 }
 
+/* Recharts' accessibility layer makes chart SVGs focusable (keyboard nav).
+   Tapping a chart on mobile focuses it and the browser paints its default
+   focus ring — a white frame around the chart. Suppress the ring for
+   pointer/tap focus only; keyboard focus (:focus-visible) keeps it. */
+.recharts-wrapper:focus:not(:focus-visible),
+.recharts-wrapper svg:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Prevent accidental text selection on interactive UI elements */
 button, [role="button"], nav, .select-none {
   -webkit-user-select: none;

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { ResponsiveContainer, Sankey, Tooltip, Rectangle } from "recharts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Sankey, Tooltip, Rectangle } from "recharts";
 import { useTranslation } from "react-i18next";
 import { ChartTooltip } from "./charts/ChartTooltip";
 import { CHART_COLORS } from "../utils/chartStyle";
@@ -20,23 +20,26 @@ interface SankeyChartProps {
   height?: number;
 }
 
+// Mirror the Plotly-era layout: room for outside labels on the left (source
+// column) and right (destination column).
+const MARGIN = { top: 20, bottom: 20, left: 90, right: 140 };
+
 interface SankeyNodeProps {
   x?: number;
   y?: number;
   width?: number;
   height?: number;
   index?: number;
-  containerWidth?: number;
   payload?: { name: string; value: number };
 }
 
 /**
- * Node renderer: coloured bar + label beside it. Labels sit to the right of
- * left-half nodes and to the left of right-half nodes so the outermost
- * columns' labels stay inside the chart bounds.
+ * Node renderer: coloured bar + label beside it, Plotly-style — first-column
+ * nodes (laid out at the left margin) get their label outside to the left;
+ * every other column's label sits to the right of the node.
  */
-function SankeyNode({ x = 0, y = 0, width = 0, height = 0, index = 0, containerWidth = 0, payload }: SankeyNodeProps) {
-  const isRightHalf = x + width / 2 > containerWidth / 2;
+function SankeyNode({ x = 0, y = 0, width = 0, height = 0, index = 0, payload }: SankeyNodeProps) {
+  const isLeftColumn = x <= MARGIN.left + 4;
   return (
     <g>
       <Rectangle
@@ -48,9 +51,9 @@ function SankeyNode({ x = 0, y = 0, width = 0, height = 0, index = 0, containerW
         fillOpacity={0.9}
       />
       <text
-        x={isRightHalf ? x - 6 : x + width + 6}
+        x={isLeftColumn ? x - 6 : x + width + 6}
         y={y + height / 2}
-        textAnchor={isRightHalf ? "end" : "start"}
+        textAnchor={isLeftColumn ? "end" : "start"}
         dominantBaseline="central"
         fontSize={11}
         fill="#cbd5e1"
@@ -64,6 +67,21 @@ function SankeyNode({ x = 0, y = 0, width = 0, height = 0, index = 0, containerW
 
 export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
   const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+
+  // Recharts' Sankey needs explicit pixel dimensions (its ResponsiveContainer
+  // interplay is unreliable for custom node renderers), so measure the
+  // container ourselves and re-render on resize.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setWidth(el.getBoundingClientRect().width);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const sankeyData = useMemo(() => {
     if (!data || data.nodes.length === 0) return null;
@@ -86,19 +104,21 @@ export function SankeyChart({ data, height = 500 }: SankeyChartProps) {
   }
 
   return (
-    <div style={{ height }} className="w-full" data-testid="sankey-chart">
-      <ResponsiveContainer width="100%" height="100%">
+    <div ref={containerRef} style={{ height }} className="w-full" data-testid="sankey-chart">
+      {width > 0 && (
         <Sankey
+          width={width}
+          height={height}
           data={sankeyData}
           node={<SankeyNode />}
           nodePadding={28}
           nodeWidth={20}
           link={{ stroke: "rgba(148, 163, 184, 0.3)" }}
-          margin={{ top: 20, bottom: 20, left: 10, right: 120 }}
+          margin={MARGIN}
         >
           <Tooltip content={<ChartTooltip />} />
         </Sankey>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }
