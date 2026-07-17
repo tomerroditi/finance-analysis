@@ -66,5 +66,10 @@ test.describe("Dashboard per-chart cards", () => {
     await page.keyboard.press("Escape");
 
     await expect(page.locator('[data-card-id="cash_flow"]')).toBeVisible({ timeout: 30_000 });
+    // The card must render the actual Sankey flow SVG (guards the Recharts
+    // Sankey against silently falling into the error boundary / no-data path).
+    await expect(
+      page.locator('[data-card-id="cash_flow"] [data-testid="sankey-chart"] svg').first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
