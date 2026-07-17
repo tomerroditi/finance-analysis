@@ -19,6 +19,7 @@ npm run lint                                           # ESLint
 
 # Both servers
 ./start.sh                                             # Dev: backend + frontend together (auto-bootstraps venv; BACKEND_PORT / FRONTEND_PORT env to override ports)
+./start.sh prod                                        # Prod: build frontend, serve everything from backend on :8080 (won't clash with a running dev backend)
 python .claude/scripts/with_server.py -- <command>     # Start both, run command, tear down
 
 # Scaffolding

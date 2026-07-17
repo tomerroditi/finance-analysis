@@ -6,9 +6,14 @@
 #   ./start.sh prod         # prod: build frontend, serve everything from backend
 #   ./start.sh prod 9000    # positional port still accepted (sets BACKEND_PORT)
 #
-# Ports are env-driven, with the usual defaults:
-#   BACKEND_PORT=8000       # uvicorn port (also wired into the Vite /api proxy)
+# Ports are env-driven, with mode-dependent defaults:
+#   BACKEND_PORT            # uvicorn port (also wired into the Vite /api proxy)
+#                           #   dev default: 8000, prod default: 8080 — so a
+#                           #   prod build can run beside a dev backend
 #   FRONTEND_PORT=5173      # Vite dev server port (dev mode only)
+#
+# (The VS Code Tailscale remote tasks use 8001/5174 for the same reason —
+# see .vscode/tasks.json.)
 #
 # The Python venv is auto-bootstrapped on first run (~90s, idempotent) via
 # .claude/scripts/bootstrap_venv.sh — no manual setup step needed.
@@ -18,7 +23,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MODE="${1:-dev}"
-BACKEND_PORT="${2:-${BACKEND_PORT:-8000}}"
+if [ "$MODE" = "prod" ]; then
+  DEFAULT_BACKEND_PORT=8080
+else
+  DEFAULT_BACKEND_PORT=8000
+fi
+BACKEND_PORT="${2:-${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 ./.claude/scripts/bootstrap_venv.sh
@@ -44,7 +54,8 @@ case "$MODE" in
     echo "  dev   - Run backend + frontend dev servers (default)"
     echo "  prod  - Build frontend, serve everything from backend"
     echo ""
-    echo "Ports: BACKEND_PORT (default 8000), FRONTEND_PORT (default 5173)"
+    echo "Ports: BACKEND_PORT (dev default 8000, prod default 8080),"
+    echo "       FRONTEND_PORT (default 5173)"
     exit 1
     ;;
 esac
