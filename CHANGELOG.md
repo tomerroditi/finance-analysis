@@ -1,3 +1,9 @@
+## v1.44.1 (2026-07-17)
+
+### Fix
+
+- keep read-only e2e project shardable in CI
+
 ## v1.44.0 (2026-07-17)
 
 ### Feat
