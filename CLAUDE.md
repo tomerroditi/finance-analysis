@@ -123,13 +123,15 @@ projects (CI runs `playwright test --shard=X/4`); each spec self-heals Demo
 Mode in its own `beforeAll`, so any order or per-shard interleaving is safe.
 
 **Default is serial (`npm run test:e2e`).** The `read-only` project *can* fan
-out across workers (`npm run test:e2e:parallel`), but profiling showed the suite
-is **CPU-bound on browser-side Plotly rendering** (the backend answers in <1 s;
-a demo-DB rebuild is ~0.08 s). On a resource-constrained box (e.g. the web
-sandbox, 4 cores) two concurrent Chromium instances rendering Plotly saturate
-the CPU, so parallel came in *slower* than serial (~7.3–8.4 m vs ~6.0 m) with
-flaky timeouts. Parallel helps only where the CPU has spare cores; broad
-speedup needs per-worker isolated backends. Keep the default serial. **A spec
+out across workers (`npm run test:e2e:parallel`), but profiling (in the Plotly
+era — charts are now lightweight Recharts SVG, so re-profile before relying on
+these numbers) showed the suite is **CPU-bound on browser-side chart
+rendering** (the backend answers in <1 s; a demo-DB rebuild is ~0.08 s). On a
+resource-constrained box (e.g. the web sandbox, 4 cores) two concurrent
+Chromium instances rendering charts saturated the CPU, so parallel came in
+*slower* than serial (~7.3–8.4 m vs ~6.0 m) with flaky timeouts. Parallel
+helps only where the CPU has spare cores; broad speedup needs per-worker
+isolated backends. Keep the default serial. **A spec
 may only join the `READ_ONLY_SPECS` list in `playwright.config.ts` if it
 performs zero backend writes** — one writing spec there corrupts every parallel
 sibling. Add a write to a listed spec? Move it out of the list in the same

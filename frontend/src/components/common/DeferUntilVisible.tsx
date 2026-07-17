@@ -23,9 +23,9 @@ interface DeferUntilVisibleProps {
  *
  * On first open the dashboard mounts ~a dozen cards, each firing its own
  * analytics request. Letting the below-the-fold chart cards wait until they're
- * about to be seen keeps the initial request burst (and the Plotly bundle
- * parse) focused on the content the user is actually looking at — the pinned
- * KPI header and the top cards — so the dashboard becomes interactive sooner.
+ * about to be seen keeps the initial request burst focused on the content the
+ * user is actually looking at — the pinned KPI header and the top cards — so
+ * the dashboard becomes interactive sooner.
  *
  * Once a card becomes visible it stays mounted: the observer disconnects and
  * the card never unmounts on scroll-away, so its queries don't refetch.

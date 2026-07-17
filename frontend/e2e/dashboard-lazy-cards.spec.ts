@@ -5,7 +5,7 @@ import { enableDemoMode } from "./helpers";
  * Below-the-fold dashboard cards defer mounting (and their analytics requests)
  * until scrolled near the viewport, so the pinned KPI header and the top cards
  * own the first paint. Eager (above-the-fold) cards must still render on load;
- * a deferred chart card must mount its Plotly chart only after it scrolls in.
+ * a deferred chart card must mount its chart only after it scrolls in.
  */
 test.describe("Dashboard lazy card mounting", () => {
   // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
@@ -37,18 +37,18 @@ test.describe("Dashboard lazy card mounting", () => {
     // The first eager chart card (Income by source, row 2) renders its plot
     // without any scrolling.
     await expect(
-      page.locator('[data-card-id="income_by_source"] .js-plotly-plot').first(),
+      page.locator('[data-card-id="income_by_source"] .recharts-wrapper').first(),
     ).toBeVisible({ timeout: 45_000 });
 
     // The trailing Net Worth card exists (placeholder reserves its height) but
     // has NOT mounted its chart yet — it's far below the fold.
     const netWorthCard = page.locator('[data-card-id="net_worth"]');
     await expect(netWorthCard).toBeVisible();
-    await expect(netWorthCard.locator(".js-plotly-plot")).toHaveCount(0);
+    await expect(netWorthCard.locator(".recharts-wrapper")).toHaveCount(0);
 
-    // Scroll it into view — now it mounts and renders its Plotly chart.
+    // Scroll it into view — now it mounts and renders its chart.
     await netWorthCard.scrollIntoViewIfNeeded();
-    await expect(netWorthCard.locator(".js-plotly-plot").first()).toBeVisible({
+    await expect(netWorthCard.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
   });

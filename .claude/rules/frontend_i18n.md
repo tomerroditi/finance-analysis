@@ -140,7 +140,7 @@ Only when logical properties aren't sufficient:
 
 - **Dates:** `frontend/src/utils/dateFormatting.ts` — uses `date-fns` with Hebrew locale (`he`) when language is Hebrew
 - **Currency:** Always use `formatCurrency()` from `utils/numberFormatting.ts` — never inline `new Intl.NumberFormat()`
-- **Plotly charts:** Hebrew locale registered in `frontend/src/utils/plotlyLocale.ts` (day/month names, date format)
+- **Charts (Recharts):** axis ticks and tooltip labels go through the `date-fns` helpers in `dateFormatting.ts` (e.g. `formatMonthCompact`, `formatMonthYear`), which already switch to the Hebrew locale
 
 ## Provider/Service Name Localization
 

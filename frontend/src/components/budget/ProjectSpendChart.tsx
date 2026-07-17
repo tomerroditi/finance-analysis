@@ -1,9 +1,17 @@
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 import { BarChart3 } from "lucide-react";
-import i18n from "../../i18n";
-import { chartTheme, plotlyConfig, barMarker, CHART_COLORS } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, BAR_RADIUS, CHART_COLORS, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 import type { Transaction } from "../../types/transaction";
 
 interface ProjectSpendChartProps {
@@ -20,7 +28,6 @@ export const ProjectSpendChart: React.FC<ProjectSpendChartProps> = ({
   transactions,
 }) => {
   const { t } = useTranslation();
-  const locale = i18n.language === "he" ? "he-IL" : "en-US";
 
   const points = useMemo(() => {
     const byMonth = new Map<number, number>(); // months-since-epoch -> spend
@@ -35,16 +42,15 @@ export const ProjectSpendChart: React.FC<ProjectSpendChartProps> = ({
       if (max === null || m > max) max = m;
     }
     if (min === null || max === null) return [];
-    const out: { label: string; amount: number }[] = [];
+    const out: { month: string; amount: number }[] = [];
     for (let m = min; m <= max; m++) {
-      const date = new Date(Math.floor(m / 12), m % 12, 1);
       out.push({
-        label: date.toLocaleString(locale, { month: "short", year: "2-digit" }),
+        month: `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`,
         amount: byMonth.get(m) || 0,
       });
     }
     return out;
-  }, [transactions, locale]);
+  }, [transactions]);
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm overflow-hidden">
@@ -60,26 +66,24 @@ export const ProjectSpendChart: React.FC<ProjectSpendChartProps> = ({
       <div className="px-2 pb-3 pt-1">
         {points.length > 0 ? (
           <div className="w-full h-[240px] md:h-[300px]">
-            <Plot
-              data={[
-                {
-                  x: points.map((p) => p.label),
-                  y: points.map((p) => p.amount),
-                  type: "bar" as const,
-                  marker: barMarker(CHART_COLORS[0]),
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                autosize: true,
-                bargap: 0.3,
-                showlegend: false,
-                margin: { t: 10, b: 40, l: 56, r: 16 },
-              }}
-              style={{ width: "100%", height: "100%" }}
-              config={plotlyConfig()}
-              useResizeHandler
-            />
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={points} barCategoryGap="30%" margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+                <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
+                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
+                <Tooltip
+                  content={
+                    <ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />
+                  }
+                />
+                <Bar
+                  dataKey="amount"
+                  name={t("budget.spendOverTime")}
+                  fill={CHART_COLORS[0]}
+                  radius={BAR_RADIUS}
+                  isAnimationActive={false}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         ) : (
           <p className="text-sm text-[var(--text-muted)] text-center py-8">

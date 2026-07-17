@@ -33,7 +33,7 @@ Pure helper functions — stateless, no React, no side effects.
 | `dateFormatting.ts` | Date display (date-fns, Hebrew locale) | `formatDate()`, `formatMonth()` |
 | `textFormatting.ts` | Provider/service labels (bilingual) | `humanizeProvider()`, `humanizeService()`, `PROVIDER_LABELS`, `PROVIDER_LABELS_HE` |
 | `taggingRuleEval.ts` | Evaluate tagging rule conditions against transactions | `findMatchingRule()`, `evalConditionTree()` |
-| `plotlyLocale.ts` | Plotly chart theme, Hebrew locale, touch detection | `chartTheme`, `plotlyConfig()`, `isTouchDevice` |
+| `chartStyle.ts` | Recharts chart style constants, touch detection | `CHART_COLORS`, `AXIS_DEFAULTS`, `BAR_RADIUS`, `formatAxisNumber()`, `hexToRgba()`, `isTouchDevice` |
 
 **Rules:**
 - Always use `formatCurrency()` / `formatCompactCurrency()` / `formatChange()` from `numberFormatting.ts` — never inline `new Intl.NumberFormat()`. Inline calls skip the LRI/PDI wrapper and emit ₪ on the wrong side under RTL.

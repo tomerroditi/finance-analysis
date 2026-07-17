@@ -1,18 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PieChart, ChevronDown, ChevronUp } from "lucide-react";
-import Plot from "../common/LazyPlot";
 import { analyticsApi } from "../../services/api";
 import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatting";
-import {
-  chartTheme,
-  plotlyConfig,
-  CHART_COLORS,
-  CHART_SURFACE_COLOR,
-} from "../../utils/plotlyLocale";
+import { CHART_COLORS } from "../../utils/chartStyle";
+import { DonutChart } from "../charts/DonutChart";
 
 type RangePreset = "all" | "year" | "last12m" | "custom";
 
@@ -144,40 +139,14 @@ export function IncomeBySourceCard() {
         <div className="flex flex-col gap-4">
           {/* Donut */}
           <div className="w-full min-h-[240px]">
-            <Plot
-              data={[
-                {
-                  type: "pie",
-                  hole: 0.62,
-                  labels: sources.map((s) => s.label),
-                  values: sources.map((s) => s.amount),
-                  sort: false,
-                  marker: {
-                    colors: sources.map(
-                      (_, i) => CHART_COLORS[i % CHART_COLORS.length],
-                    ),
-                    line: { color: CHART_SURFACE_COLOR, width: 2 },
-                  },
-                  textinfo: "none",
-                  hovertemplate: "%{label}: %{value:,.0f} ₪ (%{percent})<extra></extra>",
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                showlegend: false,
-                height: 240,
-                margin: { l: 10, r: 10, t: 10, b: 10 },
-                annotations: [
-                  {
-                    text: formatCompactCurrency(total),
-                    showarrow: false,
-                    font: { size: 18, color: "var(--text-default)" },
-                  },
-                ],
-              }}
-              useResizeHandler
-              style={{ width: "100%", height: "100%" }}
-              config={plotlyConfig()}
+            <DonutChart
+              data={sources.map((s) => ({ name: s.label, value: s.amount }))}
+              height={240}
+              centerLabel={
+                <span className="text-base font-semibold text-[#f8fafc]">
+                  {formatCompactCurrency(total)}
+                </span>
+              }
             />
           </div>
 
