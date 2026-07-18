@@ -579,6 +579,54 @@ class TransactionsService:
                 from backend.services.investments_service import InvestmentsService
                 InvestmentsService(self.db).recalculate_prior_wealth_by_tag(category, tag)
 
+    def _filter_updates_for_source(self, source: str, updates: dict) -> dict:
+        """Apply per-source permission rules and normalization to an update dict.
+
+        Manual sources (cash, manual investments) may edit date/account_name/
+        description/amount (and provider — forced to "CASH" for cash rows);
+        scraped sources may only edit category/tag. Empty category/tag strings
+        are normalised to ``None``.
+
+        Parameters
+        ----------
+        source : str
+            Source table name.
+        updates : dict
+            Raw requested updates.
+
+        Returns
+        -------
+        dict
+            The subset of ``updates`` this source is allowed to write.
+        """
+        is_manual = source in [
+            Tables.CASH.value,
+            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+        ]
+        filtered_updates: dict = {}
+        if is_manual:
+            if updates.get("date") is not None:
+                filtered_updates["date"] = updates["date"]
+            if updates.get("account_name") is not None:
+                filtered_updates["account_name"] = updates["account_name"]
+            if updates.get("description") is not None:
+                filtered_updates["description"] = updates["description"]
+            if updates.get("amount") is not None:
+                filtered_updates["amount"] = updates["amount"]
+            # For cash transactions, always set provider to "CASH"
+            if source == Tables.CASH.value:
+                filtered_updates["provider"] = "CASH"
+            elif updates.get("provider") is not None:
+                filtered_updates["provider"] = updates["provider"]
+
+        if updates.get("category") is not None:
+            filtered_updates["category"] = self._normalize_empty_string(
+                updates["category"]
+            )
+        if updates.get("tag") is not None:
+            filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
+        return filtered_updates
+
     def update_transaction(
         self, unique_id: int, source: str, updates: dict
     ) -> bool:
@@ -612,7 +660,6 @@ class TransactionsService:
         from sqlalchemy import select
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-        is_manual = source in [Tables.CASH.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value]
 
         # Capture old account_name before updating — needed to recalculate the
         # old account's balance when account_name changes on a cash transaction.
@@ -626,28 +673,7 @@ class TransactionsService:
             if tx_before:
                 old_account_name = getattr(tx_before, "account_name", None)
 
-        filtered_updates = {}
-        if is_manual:
-            if updates.get("date") is not None:
-                filtered_updates["date"] = updates["date"]
-            if updates.get("account_name") is not None:
-                filtered_updates["account_name"] = updates["account_name"]
-            if updates.get("description") is not None:
-                filtered_updates["description"] = updates["description"]
-            if updates.get("amount") is not None:
-                filtered_updates["amount"] = updates["amount"]
-            # For cash transactions, always set provider to "CASH"
-            if source == Tables.CASH.value:
-                filtered_updates["provider"] = "CASH"
-            elif updates.get("provider") is not None:
-                filtered_updates["provider"] = updates["provider"]
-
-        if updates.get("category") is not None:
-            filtered_updates["category"] = self._normalize_empty_string(
-                updates["category"]
-            )
-        if updates.get("tag") is not None:
-            filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
+        filtered_updates = self._filter_updates_for_source(source, updates)
 
         if not filtered_updates:
             return False
@@ -833,6 +859,8 @@ class TransactionsService:
         amount : float or None, optional
             Amount to apply. Only written for manual sources.
         """
+        from sqlalchemy import select, update
+
         updates: dict = {
             "category": category,
             "tag": tag,
@@ -846,8 +874,48 @@ class TransactionsService:
         if amount is not None:
             updates["amount"] = amount
 
-        for uid in transaction_ids:
-            self.update_transaction(uid, source, updates)
+        repo = self.transactions_repository.get_repo_by_source(source)
+        if repo is None:
+            raise ValueError(f"Invalid source: '{source}'")
+
+        filtered_updates = self._filter_updates_for_source(source, updates)
+        if not filtered_updates or not transaction_ids:
+            return
+
+        ids = [int(uid) for uid in transaction_ids]
+
+        # Collect affected cash accounts BEFORE the update — the old account
+        # names matter when account_name itself is being changed.
+        affected_accounts: set[str] = set()
+        if source == Tables.CASH.value:
+            rows = (
+                self.db.execute(
+                    select(repo.model.account_name).where(
+                        repo.model.unique_id.in_(ids)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            affected_accounts.update(a for a in rows if a)
+            if filtered_updates.get("account_name"):
+                affected_accounts.add(filtered_updates["account_name"])
+
+        # One UPDATE ... WHERE unique_id IN (...) and one commit instead of a
+        # commit (plus a cash-balance recalculation) per row.
+        self.db.execute(
+            update(repo.model)
+            .where(repo.model.unique_id.in_(ids))
+            .values(**filtered_updates)
+        )
+        self.db.commit()
+
+        if affected_accounts:
+            from backend.services.cash_balance_service import CashBalanceService
+
+            cash_balance_svc = CashBalanceService(self.db)
+            for account in sorted(affected_accounts):
+                cash_balance_svc.recalculate_current_balance(account)
 
     def get_untagged_transactions(
         self,
