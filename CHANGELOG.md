@@ -1,3 +1,41 @@
+## v1.45.2 (2026-07-18)
+
+### Fix
+
+- **ops**: logging config, restore migrations, env-read timing, scraper hardening
+- **api**: reject NaN/Infinity in numeric request fields
+- **scraper**: report typed scraper errors with their real error_type
+- **budget**: guard missing Total Budget rule; 404 missing rules; drop asserts
+- **backend**: stop swallowing DB errors in the transactions repository
+- **api**: global BadRequestException handler; stop leaking internals in 500s
+- **scraper**: stop the Playwright driver on unexpected launch failure
+- **scraper**: never leave an account locked when the history write fails
+- **api**: scope transaction-by-id lookup to its source table
+- **frontend**: route retirement and rule-preview queries through the key registry
+- **frontend**: route transaction deletes through useMutation
+- **i18n**: correct broken translation key paths
+- **security**: fail closed on the shared Vercel deployment
+- **security**: mask stored secrets in credentials API responses
+
+### Refactor
+
+- **frontend**: convention fixes, typed APIs, and page decomposition
+- **backend**: decompose investments/analysis services and transactions repository
+- **budget**: split budget_service into a package by budget kind
+- **scraper**: consolidate provider parsing helpers; add 163 parsing tests
+- **backend**: remove dead TransactionsService methods
+- **backend**: route transaction reads through the service layer
+- **backend**: move prior-wealth data migration from lifespan to Alembic
+- **backend**: extract shared transaction classification module
+
+### Perf
+
+- **frontend**: hoist SortIcon/SortableHeader to module scope
+- **backend**: memoize hot per-investment reads; batch pending-refund links
+- **backend**: single-statement bulk tagging with one recalc per account
+- **budget**: batch the per-category and per-tag full-table re-reads
+- **backend**: batch split-children queries per source table
+
 ## v1.45.1 (2026-07-18)
 
 ### Fix
