@@ -833,52 +833,6 @@ class TransactionsRepository:
             return df
         return df[df["type"] != "split_parent"]
 
-    def _build_split_child(self, split: pd.Series) -> dict | None:
-        """Construct a split-child row dict from a split record and its parent.
-
-        Parameters
-        ----------
-        split : pd.Series
-            A row from the split_transactions table.
-
-        Returns
-        -------
-        dict | None
-            Row dict with parent transaction fields overridden by split-specific
-            values (unique_id, amount, category, tag, type="split_child").
-            Returns None if the parent transaction cannot be found.
-        """
-        parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
-        source = split[SplitTransactionsTableFields.SOURCE.value]
-
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            logger.warning(
-                "Split %s references unknown source %s — skipping",
-                split[SplitTransactionsTableFields.ID.value], source,
-            )
-            return None
-        parent = self.db.execute(
-            select(repo.model).where(repo.model.unique_id == int(parent_id))
-        ).scalar_one_or_none()
-
-        if not parent:
-            return None
-
-        parent_dict = {
-            c.name: getattr(parent, c.name) for c in parent.__table__.columns
-        }
-
-        return {
-            **parent_dict,
-            "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
-            "amount": split[SplitTransactionsTableFields.AMOUNT.value],
-            "category": split[SplitTransactionsTableFields.CATEGORY.value],
-            "tag": split[SplitTransactionsTableFields.TAG.value],
-            "type": "split_child",
-            "source": source,
-        }
-
     def _get_split_children(
         self,
         service: T_service | None,
@@ -903,11 +857,52 @@ class TransactionsRepository:
         if splits_df.empty:
             return pd.DataFrame()
 
+        src_col = SplitTransactionsTableFields.SOURCE.value
+        tid_col = SplitTransactionsTableFields.TRANSACTION_ID.value
+
+        # Batch: one SELECT ... WHERE unique_id IN (...) per source table
+        # instead of one query per split row — this runs inside get_table(),
+        # i.e. on essentially every analytics/budget/transactions request.
+        parents_by_key: dict[tuple[str, int], dict] = {}
+        for source, group in splits_df.groupby(src_col):
+            repo = self.get_repo_by_source(source)
+            if repo is None:
+                logger.warning(
+                    "Splits reference unknown source %s — skipping", source
+                )
+                continue
+            ids = [int(v) for v in group[tid_col].unique()]
+            rows = (
+                self.db.execute(
+                    select(repo.model).where(repo.model.unique_id.in_(ids))
+                )
+                .scalars()
+                .all()
+            )
+            for parent in rows:
+                parents_by_key[(source, parent.unique_id)] = {
+                    c.name: getattr(parent, c.name)
+                    for c in parent.__table__.columns
+                }
+
         children = []
         for _, split in splits_df.iterrows():
-            child = self._build_split_child(split)
-            if child:
-                children.append(child)
+            parent_dict = parents_by_key.get(
+                (split[src_col], int(split[tid_col]))
+            )
+            if parent_dict is None:
+                continue
+            children.append(
+                {
+                    **parent_dict,
+                    "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
+                    "amount": split[SplitTransactionsTableFields.AMOUNT.value],
+                    "category": split[SplitTransactionsTableFields.CATEGORY.value],
+                    "tag": split[SplitTransactionsTableFields.TAG.value],
+                    "type": "split_child",
+                    "source": split[src_col],
+                }
+            )
 
         if not children:
             return pd.DataFrame()
@@ -1187,7 +1182,7 @@ class TransactionsRepository:
         rows from ``split_transactions`` whose parent source is one of those
         four tables. Split rows are counted per source table via a correlated
         ``EXISTS`` subquery against that table's parent row — mirroring
-        ``_build_split_child``, which drops any split whose parent row no
+        ``_get_split_children``, which drops any split whose parent row no
         longer exists (orphaned splits). This means orphaned splits, and
         splits whose source is the insurance table or an unrecognized table,
         are excluded, exactly as the pandas merged view
