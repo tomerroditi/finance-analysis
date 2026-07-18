@@ -329,6 +329,30 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (tx: Transaction) =>
+      transactionsApi.delete(tx.unique_id || "", tx.source || ""),
+    // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (txs: Transaction[]) => {
+      // Let all deletes settle so one failure doesn't abort the rest, and
+      // resolve (not reject) on partial failure so the global
+      // MutationCache.onSuccess invalidator still refreshes the rows that
+      // WERE deleted. The caller reads failedCount to surface the error.
+      const results = await Promise.allSettled(
+        txs.map((tx) =>
+          transactionsApi.delete(tx.unique_id || "", tx.source || ""),
+        ),
+      );
+      return {
+        failedCount: results.filter((r) => r.status === "rejected").length,
+        total: results.length,
+      };
+    },
+  });
+
   // Reset page when transactions or filter changes
   useEffect(() => {
     setCurrentPage(1);
@@ -471,7 +495,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const confirmDelete = async () => {
     if (!deletingTransaction) return;
     try {
-      await transactionsApi.delete(deletingTransaction.unique_id || "", deletingTransaction.source || "");
+      await deleteMutation.mutateAsync(deletingTransaction);
       onTransactionUpdated?.();
     } catch {
       notify.error(t("transactions.failedDelete"));
@@ -539,8 +563,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     );
 
     try {
-      for (const tx of manualTxs) {
-        await transactionsApi.delete(tx.unique_id || "", tx.source || "");
+      const { failedCount } = await bulkDeleteMutation.mutateAsync(manualTxs);
+      if (failedCount > 0) {
+        notify.error(t("transactions.bulkDeletePartialFailure"));
       }
       setSelectedIds(new Set());
       onTransactionUpdated?.();
