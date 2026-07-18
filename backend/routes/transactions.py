@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
 
 
-class TransactionCreate(BaseModel):
+class TransactionCreate(ApiRequestModel):
     date: date
     description: str
     amount: float
@@ -31,7 +32,7 @@ class TransactionCreate(BaseModel):
     service: str  # 'cash' or 'manual_investments'
 
 
-class TransactionUpdate(BaseModel):
+class TransactionUpdate(ApiRequestModel):
     date: Optional[str] = None
     account_name: Optional[str] = None
     description: Optional[str] = None
@@ -42,7 +43,7 @@ class TransactionUpdate(BaseModel):
     source: str
 
 
-class BulkTagUpdate(BaseModel):
+class BulkTagUpdate(ApiRequestModel):
     transaction_ids: List[int]
     source: str
     category: Optional[str] = None
@@ -53,13 +54,13 @@ class BulkTagUpdate(BaseModel):
     amount: Optional[float] = None
 
 
-class SplitItem(BaseModel):
+class SplitItem(ApiRequestModel):
     amount: float
     category: str
     tag: str
 
 
-class SplitRequest(BaseModel):
+class SplitRequest(ApiRequestModel):
     source: str
     splits: List[SplitItem]
 

@@ -219,3 +219,27 @@ class TestTransactionNotFoundErrors:
             )
             assert response.status_code == 400
             assert "not found" in response.json()["detail"]
+
+
+class TestNaNRejection:
+    """Tests for NaN/Infinity rejection in money request fields."""
+
+    def test_create_transaction_rejects_nan_amount(self, test_client):
+        """Verify a NaN amount is rejected with a 422 validation error."""
+        response = test_client.post(
+            "/api/transactions/",
+            content='{"date": "2024-01-01", "description": "x", "amount": NaN,'
+            ' "account_name": "Wallet", "service": "cash"}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+
+    def test_create_transaction_rejects_infinity_amount(self, test_client):
+        """Verify an Infinity amount is rejected with a 422 validation error."""
+        response = test_client.post(
+            "/api/transactions/",
+            content='{"date": "2024-01-01", "description": "x", "amount": Infinity,'
+            ' "account_name": "Wallet", "service": "cash"}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422

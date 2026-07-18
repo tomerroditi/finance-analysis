@@ -9,12 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.cash_balance_service import CashBalanceService
 
 router = APIRouter()
 
 
-class SetBalanceRequest(BaseModel):
+class SetBalanceRequest(ApiRequestModel):
     account_name: str
     balance: float
 

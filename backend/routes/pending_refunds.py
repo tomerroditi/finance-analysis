@@ -11,12 +11,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.pending_refunds_service import PendingRefundsService
 
 router = APIRouter(tags=["pending-refunds"])
 
 
-class CreatePendingRefundRequest(BaseModel):
+class CreatePendingRefundRequest(ApiRequestModel):
     """Request to mark a transaction/split as pending refund."""
 
     source_type: Literal["transaction", "split"]
@@ -26,7 +27,7 @@ class CreatePendingRefundRequest(BaseModel):
     notes: Optional[str] = None
 
 
-class LinkRefundRequest(BaseModel):
+class LinkRefundRequest(ApiRequestModel):
     """Request to link a refund transaction to a pending refund."""
 
     refund_transaction_id: int

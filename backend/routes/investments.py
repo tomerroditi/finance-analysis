@@ -11,12 +11,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.investments_service import InvestmentsService
 
 router = APIRouter()
 
 
-class InvestmentCreate(BaseModel):
+class InvestmentCreate(ApiRequestModel):
     category: str
     tag: str
     type: str
@@ -31,7 +32,7 @@ class InvestmentCreate(BaseModel):
     notes: Optional[str] = None
 
 
-class InvestmentUpdate(BaseModel):
+class InvestmentUpdate(ApiRequestModel):
     name: Optional[str] = None
     interest_rate: Optional[float] = None
     interest_rate_type: Optional[str] = None
@@ -39,12 +40,12 @@ class InvestmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class BalanceSnapshotCreate(BaseModel):
+class BalanceSnapshotCreate(ApiRequestModel):
     date: str
     balance: float
 
 
-class BalanceSnapshotUpdate(BaseModel):
+class BalanceSnapshotUpdate(ApiRequestModel):
     date: Optional[str] = None
     balance: Optional[float] = None
 
