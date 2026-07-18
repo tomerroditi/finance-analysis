@@ -1,3 +1,26 @@
+## v1.45.0 (2026-07-18)
+
+### Feat
+
+- shared ChartLegend content component (Plotly-style muted legend)
+
+### Fix
+
+- **e2e**: wait for snapshot pre-population before editing in save-plan test
+- **e2e**: scroll Cash Flow card into view before asserting its Sankey SVG
+- cover all focusable chart descendants in tap focus-ring fix
+- suppress chart focus ring unconditionally on tap
+- Sankey column labels + mobile tap focus ring on charts
+
+### Refactor
+
+- replace Plotly with Recharts, dropping ~5MB from the bundle
+
+### Perf
+
+- **e2e**: merge same-page test groups to cut redundant dashboard boots
+- **e2e**: drop hidden dashboard boot from navigateTo helper
+
 ## v1.44.1 (2026-07-17)
 
 ### Fix
