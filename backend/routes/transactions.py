@@ -241,12 +241,16 @@ def get_uncategorized_count(
 
 @router.get("/{transaction_id}")
 def get_transaction(
-    transaction_id: int, db: Session = Depends(get_database)
+    transaction_id: int,
+    source: str = Query(
+        ..., description="Source table (unique_id is per-table), e.g. bank_transactions"
+    ),
+    db: Session = Depends(get_database),
 ) -> dict[str, Any]:
-    """Get a specific transaction by ID."""
+    """Get a specific transaction by its per-table ID and source table."""
     repo = TransactionsRepository(db)
     try:
-        transaction = repo.get_transaction_by_id(transaction_id)
+        transaction = repo.get_transaction_by_id(transaction_id, source)
         return transaction.to_dict()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

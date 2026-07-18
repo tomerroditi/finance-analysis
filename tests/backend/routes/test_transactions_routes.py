@@ -105,7 +105,9 @@ class TestTransactionsRoutes:
         assert response.json()["status"] == "success"
 
         # Verify the update was applied
-        get_resp2 = test_client.get(f"/api/transactions/{uid}")
+        get_resp2 = test_client.get(
+            f"/api/transactions/{uid}", params={"source": "cash_transactions"}
+        )
         assert get_resp2.status_code == 200
         updated_tx = get_resp2.json()
         assert updated_tx["account_name"] == "Wallet B"
@@ -181,28 +183,29 @@ class TestTransactionsRoutes:
         assert response.status_code == 200
 
     def test_get_transaction_by_id(self, test_client, seed_base_transactions):
-        """GET /api/transactions/{id} returns single transaction.
-
-        Uses a unique_id from the credit_cards service to avoid collisions
-        across tables (each table has its own autoincrement sequence).
-        """
+        """GET /api/transactions/{id} returns the row from the requested source table."""
         cc_txns = test_client.get("/api/transactions/?service=credit_cards").json()
-        # Pick the last credit card transaction whose unique_id is higher
-        # than the count of bank/cash records, so it only exists in one table.
-        uid = max(t["unique_id"] for t in cc_txns)
-        response = test_client.get(f"/api/transactions/{uid}")
+        uid = min(t["unique_id"] for t in cc_txns)
+        response = test_client.get(
+            f"/api/transactions/{uid}", params={"source": "credit_card_transactions"}
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["unique_id"] == uid
+        assert data["source"] == "credit_card_transactions"
+
+    def test_get_transaction_by_id_requires_source(self, test_client, seed_base_transactions):
+        """GET /api/transactions/{id} without a source param is a validation error."""
+        response = test_client.get("/api/transactions/1")
+        assert response.status_code == 422
 
     def test_get_transaction_not_found(self, test_client, seed_base_transactions):
         """GET /api/transactions/{id} for non-existent ID returns 404.
 
-        Seed data is required so the merged DataFrame is non-empty and the
-        repository can filter by unique_id without hitting an empty-frame
-        KeyError.
         """
-        response = test_client.get("/api/transactions/99999")
+        response = test_client.get(
+            "/api/transactions/99999", params={"source": "bank_transactions"}
+        )
         assert response.status_code == 404
 
     def test_get_latest_date(self, test_client, seed_base_transactions):
@@ -462,7 +465,9 @@ class TestTransactionsRoutesAdditional:
             mock_repo.get_transaction_by_id.side_effect = ValueError(
                 "Transaction 99999 not found"
             )
-            response = test_client.get("/api/transactions/99999")
+            response = test_client.get(
+                "/api/transactions/99999", params={"source": "bank_transactions"}
+            )
             assert response.status_code == 404
             assert "not found" in response.json()["detail"]
 

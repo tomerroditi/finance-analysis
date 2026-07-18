@@ -464,23 +464,50 @@ class TestGetTransactionById:
         db_session.refresh(tx)
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_transaction_by_id(tx.unique_id)
+        result = repo.get_transaction_by_id(tx.unique_id, "cash_transactions")
         assert result["description"] == "Test"
+        assert result["source"] == "cash_transactions"
 
     def test_get_transaction_by_id_not_found_raises(self, db_session):
         """Verify get_transaction_by_id raises ValueError when not found."""
-        # Need at least one row so the merged DF has columns
-        tx = CashTransaction(
-            id="1", date="2024-01-01", amount=-10.0,
-            description="Existing", account_name="Cash",
-            provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
-        db_session.commit()
-
         repo = TransactionsRepository(db_session)
         with pytest.raises(ValueError, match="not found"):
-            repo.get_transaction_by_id(99999)
+            repo.get_transaction_by_id(99999, "cash_transactions")
+
+    def test_get_transaction_by_id_scoped_to_source_table(self, db_session):
+        """Verify the same integer id resolves per-table, not across tables.
+
+        unique_id is a per-table auto-increment: cash #N and bank #N are
+        unrelated rows, and the lookup must return the row from the
+        requested table only.
+        """
+        cash_tx = CashTransaction(
+            id="1", date="2024-01-01", amount=-10.0,
+            description="Cash row", account_name="Cash",
+            provider="manual", source="cash_transactions",
+        )
+        bank_tx = BankTransaction(
+            id="1", date="2024-01-02", amount=-20.0,
+            description="Bank row", account_name="Checking",
+            provider="hapoalim", source="bank_transactions",
+        )
+        db_session.add_all([cash_tx, bank_tx])
+        db_session.commit()
+        db_session.refresh(cash_tx)
+        db_session.refresh(bank_tx)
+        assert cash_tx.unique_id == bank_tx.unique_id
+
+        repo = TransactionsRepository(db_session)
+        cash_row = repo.get_transaction_by_id(cash_tx.unique_id, "cash_transactions")
+        bank_row = repo.get_transaction_by_id(bank_tx.unique_id, "bank_transactions")
+        assert cash_row["description"] == "Cash row"
+        assert bank_row["description"] == "Bank row"
+
+    def test_get_transaction_by_id_invalid_source_raises(self, db_session):
+        """Verify an unknown source name raises ValueError."""
+        repo = TransactionsRepository(db_session)
+        with pytest.raises(ValueError, match="Invalid source"):
+            repo.get_transaction_by_id(1, "bogus_table")
 
 
 class TestPendingReconciliation:

@@ -401,33 +401,6 @@ class TransactionsService:
         else:
             raise ValueError(f"Invalid table name: {table_name}")
 
-    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
-        """
-        Update a transaction by ID, searching across CC, bank, and cash tables.
-
-        Parameters
-        ----------
-        transaction_id : str
-            Transaction ID to search for across tables.
-        updates : dict
-            Field names and new values to apply.
-
-        Returns
-        -------
-        bool
-            ``True`` if the transaction was found and updated in at least one table.
-        """
-        cc_res = self.transactions_repository.cc_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        bank_res = self.transactions_repository.bank_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        cash_res = self.transactions_repository.cash_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        return cc_res or bank_res or cash_res
-
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
     ) -> pd.DataFrame:

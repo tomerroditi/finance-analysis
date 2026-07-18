@@ -327,9 +327,6 @@ export const handlers = [
   http.get("/api/transactions/", () =>
     HttpResponse.json(mockTransactions),
   ),
-  http.get("/api/transactions/:id", () =>
-    HttpResponse.json(mockTransactions[0]),
-  ),
   http.post("/api/transactions/", () =>
     HttpResponse.json({ status: "ok" }),
   ),

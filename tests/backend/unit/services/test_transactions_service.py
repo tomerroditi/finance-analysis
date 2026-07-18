@@ -1164,47 +1164,6 @@ class TestUpdateTaggingByIdInvalidTable:
             service.update_tagging_by_id("bogus_table", 1, "Food", "Coffee")
 
 
-class TestUpdateTransactionByIdMultiTable:
-    """Tests for update_transaction_by_id searching across multiple tables."""
-
-    def test_update_transaction_by_id_finds_cc(self, db_session, seed_base_transactions):
-        """Verify update_transaction_by_id locates and updates a CC transaction."""
-        service = TransactionsService(db_session)
-        cc_df = service.get_all_transactions("credit_cards")
-        uid = int(cc_df.iloc[0]["unique_id"])
-
-        result = service.update_transaction_by_id(uid, {"category": "NewCat"})
-        assert result is True
-
-        updated = service.get_all_transactions("credit_cards")
-        row = updated[updated["unique_id"] == uid].iloc[0]
-        assert row["category"] == "NewCat"
-
-    def test_update_transaction_by_id_finds_bank(self, db_session, seed_base_transactions):
-        """Verify update_transaction_by_id locates and updates a bank transaction."""
-        service = TransactionsService(db_session)
-        bank_df = service.get_all_transactions("banks")
-        uid = int(bank_df.iloc[0]["unique_id"])
-
-        result = service.update_transaction_by_id(uid, {"category": "Updated"})
-        assert result is True
-
-    def test_update_transaction_by_id_finds_cash(self, db_session, seed_base_transactions):
-        """Verify update_transaction_by_id locates and updates a cash transaction."""
-        service = TransactionsService(db_session)
-        cash_df = service.get_all_transactions("cash")
-        uid = int(cash_df.iloc[0]["unique_id"])
-
-        result = service.update_transaction_by_id(uid, {"category": "Updated"})
-        assert result is True
-
-    def test_update_transaction_by_id_returns_false_for_nonexistent(self, db_session):
-        """Verify update_transaction_by_id returns False when ID not found anywhere."""
-        service = TransactionsService(db_session)
-        result = service.update_transaction_by_id(999999, {"category": "Nope"})
-        assert result is False
-
-
 class TestCreateTransactionFailure:
     """Tests for create_transaction validation and error paths."""
 
@@ -1696,7 +1655,7 @@ class TestClearCategoryAndTag:
         )
         assert updated is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            tx.unique_id
+            tx.unique_id, "bank_transactions"
         )
         assert pd.isna(refreshed.category)
         assert pd.isna(refreshed.tag)
@@ -1714,7 +1673,7 @@ class TestClearCategoryAndTag:
         )
         assert updated is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            tx.unique_id
+            tx.unique_id, "bank_transactions"
         )
         assert refreshed.category == original_category
         assert pd.isna(refreshed.tag)
@@ -1759,7 +1718,7 @@ class TestClearCategoryAndTag:
             tag="",
         )
         for tx in [tx1, tx2]:
-            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id)
+            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id, "bank_transactions")
             assert pd.isna(refreshed.category)
             assert pd.isna(refreshed.tag)
 
@@ -1784,5 +1743,5 @@ class TestClearCategoryAndTag:
             tag=None,
         )
         for tx, original_cat in zip([tx1, tx2], original_categories):
-            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id)
+            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id, "bank_transactions")
             assert refreshed.category == original_cat  # unchanged

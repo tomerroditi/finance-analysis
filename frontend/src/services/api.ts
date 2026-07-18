@@ -41,7 +41,6 @@ export const transactionsApi = {
     }),
   getUncategorizedCount: () =>
     api.get<{ count: number }>("/transactions/uncategorized-count"),
-  getById: (id: number) => api.get(`/transactions/${id}`),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
     api.put(`/transactions/${encodeURIComponent(uniqueId)}`, data),

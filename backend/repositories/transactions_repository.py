@@ -1296,29 +1296,43 @@ class TransactionsRepository:
         self.manual_investments_repo.rename_tag(category, old_tag, new_tag)
         self.insurance_repo.rename_tag(category, old_tag, new_tag)
 
-    def get_transaction_by_id(self, transaction_id: int) -> pd.Series:
-        """Retrieve a single transaction row by its unique_id.
+    def get_transaction_by_id(self, transaction_id: int, source: str) -> pd.Series:
+        """Retrieve a single transaction row by its per-table unique_id.
+
+        ``unique_id`` is a per-table auto-increment, so the source table is
+        required — the same integer identifies unrelated transactions in
+        different tables (see backend_repositories.md → "unique_id Is
+        Per-Table").
 
         Parameters
         ----------
         transaction_id : int
-            The unique_id to look up.
+            The unique_id to look up within ``source``.
+        source : str
+            Source table or service name (e.g. ``"bank_transactions"``).
 
         Returns
         -------
         pd.Series
-            The matching transaction row.
+            The matching transaction row, with a ``source`` entry naming the
+            table it came from.
 
         Raises
         ------
         ValueError
-            If no transaction with that unique_id is found, or if multiple rows
-            match (which should not happen in practice).
+            If ``source`` is not a known table/service name, or no
+            transaction with that unique_id exists in it.
         """
-        df = self.get_table()
-        transaction = df[df["unique_id"] == transaction_id]
-        if transaction.empty:
-            raise ValueError(f"Transaction with ID {transaction_id} not found.")
-        elif len(transaction) > 1:
-            raise ValueError(f"Multiple transactions found with ID {transaction_id}.")
-        return transaction.iloc[0]
+        repo = self.repo_map.get(source)
+        if repo is None:
+            raise ValueError(f"Invalid source: {source}")
+        record = self.db.get(repo.model, int(transaction_id))
+        if record is None:
+            raise ValueError(
+                f"Transaction with ID {transaction_id} not found in {source}."
+            )
+        row = {
+            k: v for k, v in record.__dict__.items() if k != "_sa_instance_state"
+        }
+        row["source"] = repo.model.__tablename__
+        return pd.Series(row)

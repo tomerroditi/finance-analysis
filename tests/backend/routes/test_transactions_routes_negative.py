@@ -178,7 +178,9 @@ class TestTransactionNotFoundErrors:
             mock_repo.get_transaction_by_id.side_effect = ValueError(
                 "Transaction 99999 not found"
             )
-            response = test_client.get("/api/transactions/99999")
+            response = test_client.get(
+                "/api/transactions/99999", params={"source": "bank_transactions"}
+            )
             assert response.status_code == 404
             assert "not found" in response.json()["detail"]
 
