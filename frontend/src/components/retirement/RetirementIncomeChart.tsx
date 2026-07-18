@@ -1,6 +1,18 @@
-import Plot from "../common/LazyPlot";
+import { useMemo } from "react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
 import { useTranslation } from "react-i18next";
-import { plotlyConfig, chartTheme, isTouchDevice, barMarker } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 
 interface DataPoint {
   age: number;
@@ -21,81 +33,68 @@ export function RetirementIncomeChart({ data }: Props) {
   const { t } = useTranslation();
 
   const ages = data.map((d) => d.age);
+  const minAge = ages[0] ?? 0;
+  const maxAge = ages[ages.length - 1] ?? 0;
+  const ageTicks = useMemo(() => {
+    const ticks: number[] = [];
+    for (let a = Math.ceil(minAge / 5) * 5; a <= maxAge; a += 5) ticks.push(a);
+    return ticks;
+  }, [minAge, maxAge]);
 
-  const traces: Plotly.Data[] = [
-    {
-      x: ages,
-      y: data.map((d) => d.salary_savings),
-      name: t("earlyRetirement.income.salarySavings"),
-      type: "bar" as const,
-      marker: barMarker("#06b6d4"),
-    },
-    {
-      x: ages,
-      y: data.map((d) => d.portfolio_withdrawal),
-      name: t("earlyRetirement.income.portfolioWithdrawal"),
-      type: "bar" as const,
-      marker: barMarker("#3b82f6"),
-    },
-    {
-      x: ages,
-      y: data.map((d) => d.pension),
-      name: t("earlyRetirement.income.pension"),
-      type: "bar" as const,
-      marker: barMarker("#10b981"),
-    },
-    {
-      x: ages,
-      y: data.map((d) => d.bituach_leumi),
-      name: t("earlyRetirement.income.bituachLeumi"),
-      type: "bar" as const,
-      marker: barMarker("#a855f7"),
-    },
-    {
-      x: ages,
-      y: data.map((d) => d.passive_income),
-      name: t("earlyRetirement.income.passiveIncome"),
-      type: "bar" as const,
-      marker: barMarker("#f59e0b"),
-    },
-    {
-      x: ages,
-      y: data.map((d) => d.expenses),
-      name: t("earlyRetirement.income.expenses"),
-      type: "scatter" as const,
-      mode: "lines" as const,
-      line: { color: "#ef4444", width: 2.5, dash: "dash" },
-    },
+  const bars = [
+    { dataKey: "salary_savings", name: t("earlyRetirement.income.salarySavings"), color: "#06b6d4" },
+    { dataKey: "portfolio_withdrawal", name: t("earlyRetirement.income.portfolioWithdrawal"), color: "#3b82f6" },
+    { dataKey: "pension", name: t("earlyRetirement.income.pension"), color: "#10b981" },
+    { dataKey: "bituach_leumi", name: t("earlyRetirement.income.bituachLeumi"), color: "#a855f7" },
+    { dataKey: "passive_income", name: t("earlyRetirement.income.passiveIncome"), color: "#f59e0b" },
   ];
 
   return (
-    <Plot
-      data={traces}
-      layout={{
-        ...chartTheme,
-        margin: { ...chartTheme.margin, l: 80 },
-        barmode: "stack" as const,
-        xaxis: {
-          ...chartTheme.xaxis,
-          title: { text: t("earlyRetirement.charts.age") },
-          dtick: 5,
-        },
-        yaxis: {
-          ...chartTheme.yaxis,
-          tickformat: ",.0f",
-          automargin: true,
-        },
-        legend: {
-          orientation: "h" as const,
-          y: -0.2,
-          x: 0.5,
-          xanchor: "center" as const,
-        },
-        hovermode: isTouchDevice ? "closest" : ("x unified" as const),
-      }}
-      config={plotlyConfig()}
-      useResizeHandler
-      style={{ width: "100%", minHeight: "300px", height: "400px" }}
-    />
+    <div className="w-full" style={{ minHeight: 300, height: 400 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 16, bottom: 4, left: 8, right: 8 }}>
+          <XAxis
+            dataKey="age"
+            type="number"
+            domain={[minAge, maxAge]}
+            ticks={ageTicks}
+            {...AXIS_DEFAULTS}
+            label={{
+              value: t("earlyRetirement.charts.age"),
+              position: "insideBottom",
+              offset: -2,
+              style: { fill: CHART_TEXT_COLOR, fontSize: 11 },
+            }}
+          />
+          <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
+          <Tooltip
+            content={
+              <ChartTooltip labelFormatter={(age) => `${t("earlyRetirement.charts.age")} ${age}`} />
+            }
+          />
+          <Legend content={<ChartLegend />} />
+          {bars.map((b) => (
+            <Bar
+              key={b.dataKey}
+              dataKey={b.dataKey}
+              name={b.name}
+              stackId="income"
+              fill={b.color}
+              isAnimationActive={false}
+            />
+          ))}
+          <Line
+            dataKey="expenses"
+            name={t("earlyRetirement.income.expenses")}
+            stroke="#ef4444"
+            strokeWidth={2.5}
+            strokeDasharray="6 4"
+            type="monotone"
+            dot={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
   );
 }

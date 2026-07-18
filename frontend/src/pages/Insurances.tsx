@@ -16,10 +16,22 @@ import {
   X,
   RotateCcw,
 } from "lucide-react";
-import Plot from "../components/common/LazyPlot";
-import { chartTheme, plotlyConfig, barMarker, donutMarker } from "../utils/plotlyLocale";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { AXIS_DEFAULTS, BAR_RADIUS, CHART_TEXT_COLOR, formatAxisNumber } from "../utils/chartStyle";
+import { ChartTooltip } from "../components/charts/ChartTooltip";
+import { ChartLegend } from "../components/charts/ChartLegend";
+import { DonutChart } from "../components/charts/DonutChart";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
-import { formatDate } from "../utils/dateFormatting";
+import { formatDate, formatMonthCompact, formatMonthYear } from "../utils/dateFormatting";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useQueryKeys } from "../hooks/useQueryKeys";
@@ -601,53 +613,79 @@ export function Insurances() {
         <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5">
           <h3 className="text-white font-bold mb-1">{t("insurance.depositTrends")}</h3>
           <p className="text-[var(--text-muted)] text-xs mb-4">{t("insurance.depositTrendsDesc")}</p>
-          <Plot
-            data={[
-              {
-                type: "bar",
-                x: months.map((m) => m + "-01"),
-                y: monthlyValues,
-                name: t("insurance.chartMonthly"),
-                marker: barMarker("#10b981", { opacity: 0.85 }),
-              },
-              {
-                type: "scatter",
-                x: months.map((m) => m + "-01"),
-                y: cumulativeValues,
-                name: t("insurance.chartCumulative"),
-                yaxis: "y2",
-                line: { color: "#3b82f6", width: 2.5, shape: "spline" },
-                mode: "lines",
-              },
-            ]}
-            layout={{
-              ...chartTheme,
-              height: 280,
-              margin: { t: 20, b: 40, l: 50, r: 50 },
-              xaxis: { ...chartTheme.xaxis, tickfont: { size: 10, color: "#64748b" } },
-              yaxis: {
-                ...chartTheme.yaxis,
-                tickfont: { size: 10, color: "#64748b" },
-                title: { text: t("insurance.chartMonthly"), font: { size: 10, color: "#94a3b8" } },
-              },
-              yaxis2: {
-                color: "#94a3b8",
-                overlaying: "y",
-                side: "right",
-                showgrid: false,
-                zeroline: false,
-                showline: false,
-                ticks: "",
-                tickfont: { size: 10, color: "#64748b" },
-                title: { text: t("insurance.chartCumulative"), font: { size: 10, color: "#94a3b8" } },
-              },
-              legend: { font: { color: "#94a3b8", size: 10 }, x: 0, y: 1.15, orientation: "h" },
-              showlegend: true,
-            }}
-            config={plotlyConfig()}
-            useResizeHandler
-            style={{ width: "100%" }}
-          />
+          <div style={{ height: 280 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={months.map((m, i) => ({
+                  month: m,
+                  monthly: monthlyValues[i],
+                  cumulative: cumulativeValues[i],
+                }))}
+                margin={{ top: 8, bottom: 4, left: 0, right: 0 }}
+              >
+                <XAxis
+                  dataKey="month"
+                  {...AXIS_DEFAULTS}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  tickFormatter={formatMonthCompact}
+                />
+                <YAxis
+                  yAxisId="left"
+                  {...AXIS_DEFAULTS}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  tickFormatter={formatAxisNumber}
+                  width={48}
+                  label={{
+                    value: t("insurance.chartMonthly"),
+                    angle: -90,
+                    position: "insideLeft",
+                    style: { fill: CHART_TEXT_COLOR, fontSize: 10 },
+                  }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  {...AXIS_DEFAULTS}
+                  tick={{ fill: "#64748b", fontSize: 10 }}
+                  tickFormatter={formatAxisNumber}
+                  width={48}
+                  label={{
+                    value: t("insurance.chartCumulative"),
+                    angle: 90,
+                    position: "insideRight",
+                    style: { fill: CHART_TEXT_COLOR, fontSize: 10 },
+                  }}
+                />
+                <Tooltip
+                  content={<ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />}
+                />
+                <Legend
+                  verticalAlign="top"
+                  content={<ChartLegend fontSize={10} gapTop={0} />}
+                  wrapperStyle={{ paddingBottom: 6 }}
+                />
+                <Bar
+                  yAxisId="left"
+                  dataKey="monthly"
+                  name={t("insurance.chartMonthly")}
+                  fill="#10b981"
+                  fillOpacity={0.85}
+                  radius={BAR_RADIUS}
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId="right"
+                  dataKey="cumulative"
+                  name={t("insurance.chartCumulative")}
+                  type="monotone"
+                  stroke="#3b82f6"
+                  strokeWidth={2.5}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Allocation pie */}
@@ -655,40 +693,14 @@ export function Insurances() {
           <h3 className="text-white font-bold mb-1">{t("insurance.investmentAllocation")}</h3>
           <p className="text-[var(--text-muted)] text-xs mb-4">{t("insurance.investmentAllocationDesc")}</p>
           {tracksWithSum.length > 0 ? (
-            <Plot
-              data={[
-                {
-                  type: "pie",
-                  values: trackSums,
-                  labels: trackNames,
-                  hole: 0.62,
-                  sort: true,
-                  direction: "clockwise",
-                  marker: donutMarker(),
-                  textinfo: "label+percent",
-                  textfont: { color: "#f8fafc", size: 10 },
-                  textposition: "outside",
-                  automargin: true,
-                },
-              ]}
-              layout={{
-                ...chartTheme,
-                height: 280,
-                margin: { t: 20, b: 20, l: 20, r: 20 },
-                showlegend: false,
-                annotations: [
-                  {
-                    text: fmt(totalBalance),
-                    showarrow: false,
-                    font: { size: 16, color: "#f8fafc", family: "Inter, sans-serif" },
-                    x: 0.5,
-                    y: 0.5,
-                  },
-                ],
-              }}
-              config={plotlyConfig()}
-              useResizeHandler
-              style={{ width: "100%" }}
+            <DonutChart
+              data={trackNames.map((name, i) => ({ name, value: trackSums[i] }))}
+              sorted
+              height={280}
+              labelMode="label-percent-outside"
+              centerLabel={
+                <span className="text-base font-semibold text-[#f8fafc]">{fmt(totalBalance)}</span>
+              }
             />
           ) : (
             <div className="flex items-center justify-center h-[280px] text-[var(--text-muted)] text-sm">

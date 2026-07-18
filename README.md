@@ -51,9 +51,9 @@ pip install poetry && poetry install --no-root
 # 2. Frontend
 cd frontend && npm install && cd ..
 
-# 3. Run
-poetry run uvicorn backend.main:app --reload   # http://localhost:8000
-cd frontend && npm run dev                      # http://localhost:5173
+# 3. Run — backend on http://localhost:8000, frontend on http://localhost:5173
+#    (override ports with BACKEND_PORT / FRONTEND_PORT env vars)
+./start.sh
 ```
 
 > **Try demo mode first.** Toggle it in the sidebar to explore all features with sample data — the "Cohen family" — without connecting real accounts.

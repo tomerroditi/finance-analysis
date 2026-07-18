@@ -6,7 +6,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatCompactCurrency, formatChange } from "../../utils/numberFormatting";
 import { formatMonthShort } from "../../utils/dateFormatting";
-import { CHART_COLORS } from "../../utils/plotlyLocale";
+import { CHART_COLORS } from "../../utils/chartStyle";
 
 const INCOME_COLOR = "#10b981";
 const EXPENSE_COLOR = "#f43f5e";

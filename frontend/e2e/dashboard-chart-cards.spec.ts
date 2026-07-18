@@ -66,5 +66,15 @@ test.describe("Dashboard per-chart cards", () => {
     await page.keyboard.press("Escape");
 
     await expect(page.locator('[data-card-id="cash_flow"]')).toBeVisible({ timeout: 30_000 });
+    // The newly enabled card is appended below the fold, where cards defer
+    // their mount until scrolled near — scroll it in first (the placeholder is
+    // "visible" to Playwright even off-screen, but the Sankey only renders
+    // after mount, once its container measures a non-zero width).
+    await page.locator('[data-card-id="cash_flow"]').scrollIntoViewIfNeeded();
+    // The card must render the actual Sankey flow SVG (guards the Recharts
+    // Sankey against silently falling into the error boundary / no-data path).
+    await expect(
+      page.locator('[data-card-id="cash_flow"] [data-testid="sankey-chart"] svg').first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

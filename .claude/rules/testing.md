@@ -292,12 +292,14 @@ are what keep interleaving safe, not a project dependency.
 
 **Why not parallel by default?** `npm run test:e2e:parallel` runs
 `--project=read-only --workers=50%` then `--project=mutating --workers=1
---no-deps`. Profiling showed the suite is **CPU-bound on browser-side Plotly
-rendering**, not the servers — the backend answers even the heaviest analytics
-endpoint in <1 s, and a demo-DB rebuild is ~0.08 s. On the web sandbox (4
-cores) two concurrent Chromium instances each rendering Plotly saturate the
-CPU, so the parallel read-only phase came in **slower** than serial (measured
-7.3–8.4 m vs ~6.0 m) with flaky timeouts. Client-side parallelism can't beat a
+--no-deps`. Profiling (from the Plotly era — charts are now much lighter
+Recharts SVG, so these numbers are stale and worth re-measuring) showed the
+suite was **CPU-bound on browser-side chart rendering**, not the servers —
+the backend answers even the heaviest analytics endpoint in <1 s, and a
+demo-DB rebuild is ~0.08 s. On the web sandbox (4 cores) two concurrent
+Chromium instances each rendering Plotly saturated the CPU, so the parallel
+read-only phase came in **slower** than serial (measured 7.3–8.4 m vs
+~6.0 m) with flaky timeouts. Client-side parallelism can't beat a
 per-test render cost when the box is already CPU-bound, *and* even 2 workers
 against one backend saturate the serialized SQLite path. Use
 `test:e2e:parallel` only where the CPU can sustain the concurrency.

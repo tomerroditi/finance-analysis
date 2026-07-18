@@ -13,9 +13,19 @@ import {
   Check,
   BarChart2,
 } from "lucide-react";
-import Plot from "../common/LazyPlot";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 import { investmentsApi } from "../../services/api";
-import { chartTheme, plotlyConfig, gradientFill } from "../../utils/plotlyLocale";
+import { AXIS_DEFAULTS, formatAxisNumber } from "../../utils/chartStyle";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { AreaGradientDef } from "../charts/AreaGradientDef";
+import { formatDate, formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
@@ -262,25 +272,32 @@ export function InvestmentAnalysisModal({
               <div className="bg-[var(--surface-base)] rounded-2xl p-6 border border-[var(--surface-light)]">
                 <h3 className="text-lg font-bold mb-6">{t("investments.balanceHistory")}</h3>
                 <div className="h-[400px]">
-                  <Plot
-                    data={[
-                      {
-                        x: selectedAnalysis.history.map((d: BalancePoint) => d.date),
-                        y: selectedAnalysis.history.map(
-                          (d: BalancePoint) => d.balance,
-                        ),
-                        type: "scatter",
-                        mode: "lines",
-                        line: { color: "#3b82f6", width: 3, shape: "spline" },
-                        ...gradientFill("#3b82f6"),
-                      },
-                    ]}
-                    layout={{
-                      ...chartTheme,
-                    }}
-                    style={{ width: "100%", height: "100%" }}
-                    config={plotlyConfig()}
-                  />
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={selectedAnalysis.history as BalancePoint[]}
+                      margin={{ top: 8, bottom: 4, left: 0, right: 8 }}
+                    >
+                      <AreaGradientDef id="investment-balance" color="#3b82f6" />
+                      <XAxis
+                        dataKey="date"
+                        {...AXIS_DEFAULTS}
+                        tickFormatter={(d) => formatShortDate(String(d))}
+                      />
+                      <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
+                      <Tooltip
+                        content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
+                      />
+                      <Area
+                        dataKey="balance"
+                        name={t("investments.balance")}
+                        type="monotone"
+                        stroke="#3b82f6"
+                        strokeWidth={3}
+                        fill="url(#investment-balance)"
+                        isAnimationActive={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 

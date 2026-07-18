@@ -10,6 +10,12 @@ export default defineConfig(({ mode }) => {
   // client bundle or logged via this config.
   const viteEnv = loadEnv(mode, process.cwd(), "VITE_");
   const port = parseInt(process.env.PORT || "", 10) || 5173;
+  // /api proxy target: an explicit VITE_BACKEND_URL wins (used by the
+  // isolated-e2e orchestrator); otherwise derive it from BACKEND_PORT so
+  // `./start.sh` can move both servers with two env vars.
+  const backendUrl =
+    viteEnv.VITE_BACKEND_URL ||
+    `http://127.0.0.1:${process.env.BACKEND_PORT || "8000"}`;
 
   return {
     plugins: [
@@ -63,7 +69,10 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+          // The main chunk is ~1.6 MiB minified (Workbox's default cap is
+          // 2 MiB). 3 MiB gives headroom for normal growth while still
+          // failing the build if a Plotly-sized dependency sneaks back in.
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi/],
           cleanupOutdatedCaches: true,
@@ -115,17 +124,10 @@ export default defineConfig(({ mode }) => {
       port,
       proxy: {
         "/api": {
-          target: viteEnv.VITE_BACKEND_URL || "http://127.0.0.1:8000",
+          target: backendUrl,
           changeOrigin: true,
         },
       },
-    },
-    optimizeDeps: {
-      // Plotly is only reached through a dynamic import (LazyPlot), so the
-      // dev server's dependency scanner doesn't see it at startup. Without
-      // this, the first chart render triggers on-demand optimization and a
-      // full page reload mid-session.
-      include: ["react-plotly.js", "plotly.js/dist/plotly"],
     },
   };
 });

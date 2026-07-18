@@ -92,10 +92,19 @@ test.describe("Retirement snapshot fields", () => {
   }) => {
     await navigateTo(page, "/early-retirement");
 
-    // Set a custom net worth
     const netWorthInput = page
       .locator(".p-3.rounded-xl input[type='number']")
       .first();
+    // Anchor on the calculated status having pre-populated the field before
+    // typing. Filling inside the pre-populate window is racy — the form is
+    // still syncing from the status/goal queries, so the typed value can be
+    // lost or Save Plan can stay disabled, and the save request never fires
+    // (surfaces as a waitForResponse timeout under CPU load).
+    await expect
+      .poll(async () => Number(await netWorthInput.inputValue()), { timeout: 30_000 })
+      .toBeGreaterThan(0);
+
+    // Set a custom net worth
     await netWorthInput.fill("1234567");
 
     // Save plan and verify the API receives the override
