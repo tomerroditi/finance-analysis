@@ -30,13 +30,21 @@ test.describe("Investments", () => {
 
   test("closed investments toggle works", async ({ page }) => {
     await navigateTo(page, "/investments");
-    await page.waitForLoadState("networkidle");
 
-    // Find the include/hide closed toggle button
-    const closedToggle = page.getByRole("button", { name: /closed/i });
-    if (await closedToggle.isVisible().catch(() => false)) {
-      await closedToggle.click();
-      await page.waitForTimeout(500);
-    }
+    // Assert the toggle exists instead of skipping the whole body when the
+    // button is missing or renamed (the old conditional passed vacuously).
+    const closedToggle = page
+      .getByRole("button", { name: /closed/i })
+      .first();
+    await expect(closedToggle).toBeVisible();
+
+    // Demo data includes closed investments: toggling on must reveal the
+    // Closed Investments section, toggling off must hide it.
+    await closedToggle.click();
+    const closedSection = page.getByText(/Closed Investments/i).first();
+    await expect(closedSection).toBeVisible();
+
+    await closedToggle.click();
+    await expect(closedSection).toBeHidden();
   });
 });
