@@ -136,7 +136,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 ## Environment Setup (New Clone / Worktree)
 1. `python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root`
 2. `cd frontend && npm install`
-3. Ports are env-driven (`BACKEND_PORT` / `FRONTEND_PORT`, see `start.sh`) with non-clashing per-mode defaults: dev 8000/5173, `./start.sh prod` 8080, VS Code Tailscale remote tasks 8001/5174. Running two checkouts side by side still needs distinct ports set manually.
+3. Ports are env-driven (`BACKEND_PORT` / `FRONTEND_PORT`) with non-clashing per-mode defaults owned by `start.sh`: dev 8000/5173, `./start.sh remote` (Tailscale, 0.0.0.0 + tailnet CORS) 8001/5174, `./start.sh prod` 8080. The VS Code tasks call these modes rather than repeating port numbers. Running two checkouts side by side still needs distinct ports set manually.
 
 ## File Structure
 ```

@@ -2,36 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Backend (Remote)",
-      "type": "shell",
-      "command": "CORS_ORIGINS=\"http://localhost:5174,http://127.0.0.1:5174,http://$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4):5174\" BACKEND_PORT=8001 npm run backend -- --host 0.0.0.0",
-      "isBackground": true,
-      "problemMatcher": [],
-      "presentation": {
-        "group": "dev-remote",
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Frontend (Remote)",
-      "type": "shell",
-      "command": "PORT=5174 BACKEND_PORT=8001 npm run dev -- --host 0.0.0.0",
-      "options": {
-        "cwd": "${workspaceFolder}/frontend"
-      },
-      "isBackground": true,
-      "problemMatcher": [],
-      "presentation": {
-        "group": "dev-remote",
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
       "label": "Dev Remote (Backend + Frontend)",
-      "dependsOn": ["Backend (Remote)", "Frontend (Remote)"],
-      "problemMatcher": []
+      "type": "shell",
+      "command": "./start.sh remote",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev-remote",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
     },
     {
       "label": "Backend",

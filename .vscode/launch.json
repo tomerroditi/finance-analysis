@@ -12,7 +12,7 @@
       "name": "Dev Remote (Tailscale)",
       "request": "launch",
       "type": "node-terminal",
-      "command": "echo \"Access at: http://$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4):5174\"",
+      "command": "echo 'Remote dev starting — tailnet URL is printed by start.sh in the task panel.'",
       "preLaunchTask": "Dev Remote (Backend + Frontend)"
     },
     {
