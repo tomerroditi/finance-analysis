@@ -2,12 +2,14 @@
 Transactions repository with SQLAlchemy ORM.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Optional, Type
 
 import pandas as pd
 from sqlalchemy import cast, delete, exists, func, Integer, or_, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import PendingRefund
@@ -30,6 +32,8 @@ from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
 from backend.utils.session_cache import session_cache_get, session_cache_set
+
+logger = logging.getLogger(__name__)
 
 DEPOSIT_TYPE = "deposit"
 WITHDRAWAL_TYPE = "withdrawal"
@@ -127,26 +131,25 @@ class ServiceRepository:
         Returns
         -------
         bool
-            True if the transaction was deleted, False if not found or on error.
+            True if the transaction was deleted, False if not found.
+
+        Raises
+        ------
+        SQLAlchemyError
+            On database failure (after rollback) — not swallowed into the
+            ``False`` return, which is reserved for "row not found".
         """
         try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"Attempting to delete unique_id={unique_id} from table={self.model.__tablename__}"
-            )
             stmt = delete(self.model).where(self.model.unique_id == int(unique_id))
             result = self.db.execute(stmt)
             self.db.commit()
-            logger.info(f"Delete rowcount={result.rowcount}")
             return result.rowcount > 0
-        except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).error(f"Delete failed: {e}")
+        except SQLAlchemyError:
+            logger.exception(
+                "Delete failed for unique_id=%s in %s", unique_id, self.model.__tablename__
+            )
             self.db.rollback()
-            return False
+            raise
 
     def update_transaction_by_unique_id(self, unique_id: int, updates: dict) -> bool:
         """Update arbitrary fields of a transaction by unique_id.
@@ -161,7 +164,13 @@ class ServiceRepository:
         Returns
         -------
         bool
-            True if the transaction was updated, False if not found or on error.
+            True if the transaction was updated, False if not found.
+
+        Raises
+        ------
+        SQLAlchemyError
+            On database failure (after rollback) — not swallowed into the
+            ``False`` return, which is reserved for "row not found".
         """
         if not updates:
             return True
@@ -175,9 +184,12 @@ class ServiceRepository:
             result = self.db.execute(stmt)
             self.db.commit()
             return result.rowcount > 0
-        except Exception:
+        except SQLAlchemyError:
+            logger.exception(
+                "Update failed for unique_id=%s in %s", unique_id, self.model.__tablename__
+            )
             self.db.rollback()
-            return False
+            raise
 
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for all transactions with the given category.
@@ -300,9 +312,12 @@ class ServiceRepository:
             self.db.add(new_tx)
             self.db.commit()
             return True
-        except Exception:
+        except SQLAlchemyError:
+            logger.exception(
+                "Insert failed in %s", self.model.__tablename__
+            )
             self.db.rollback()
-            return False
+            raise
 
 
 class CreditCardRepository(ServiceRepository):
@@ -836,30 +851,33 @@ class TransactionsRepository:
         parent_id = split[SplitTransactionsTableFields.TRANSACTION_ID.value]
         source = split[SplitTransactionsTableFields.SOURCE.value]
 
-        try:
-            repo = self.get_repo_by_source(source)
-            parent = self.db.execute(
-                select(repo.model).where(repo.model.unique_id == int(parent_id))
-            ).scalar_one_or_none()
-
-            if not parent:
-                return None
-
-            parent_dict = {
-                c.name: getattr(parent, c.name) for c in parent.__table__.columns
-            }
-
-            return {
-                **parent_dict,
-                "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
-                "amount": split[SplitTransactionsTableFields.AMOUNT.value],
-                "category": split[SplitTransactionsTableFields.CATEGORY.value],
-                "tag": split[SplitTransactionsTableFields.TAG.value],
-                "type": "split_child",
-                "source": source,
-            }
-        except Exception:
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            logger.warning(
+                "Split %s references unknown source %s — skipping",
+                split[SplitTransactionsTableFields.ID.value], source,
+            )
             return None
+        parent = self.db.execute(
+            select(repo.model).where(repo.model.unique_id == int(parent_id))
+        ).scalar_one_or_none()
+
+        if not parent:
+            return None
+
+        parent_dict = {
+            c.name: getattr(parent, c.name) for c in parent.__table__.columns
+        }
+
+        return {
+            **parent_dict,
+            "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
+            "amount": split[SplitTransactionsTableFields.AMOUNT.value],
+            "category": split[SplitTransactionsTableFields.CATEGORY.value],
+            "tag": split[SplitTransactionsTableFields.TAG.value],
+            "type": "split_child",
+            "source": source,
+        }
 
     def _get_split_children(
         self,
@@ -1016,9 +1034,12 @@ class TransactionsRepository:
             return True
         except ValueError:
             raise
-        except Exception:
+        except SQLAlchemyError:
+            logger.exception(
+                "Split failed for unique_id=%s in %s", unique_id, source
+            )
             self.db.rollback()
-            return False
+            raise
 
     def revert_split(self, unique_id: int, source: str) -> bool:
         """Revert a split transaction back to a normal transaction.
@@ -1046,9 +1067,12 @@ class TransactionsRepository:
 
             self.split_repo.delete_all_splits_for_transaction(unique_id, source)
             return True
-        except Exception:
+        except SQLAlchemyError:
+            logger.exception(
+                "Revert split failed for unique_id=%s in %s", unique_id, source
+            )
             self.db.rollback()
-            return False
+            raise
 
     def get_repo_by_source(self, source: str) -> ServiceRepository | None:
         """Look up the sub-repository for a given source/service name.

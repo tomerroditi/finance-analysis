@@ -176,8 +176,10 @@ class TestDeleteTransactionExceptionHandler:
         result = repo.delete_transaction_by_unique_id(99999)
         assert result is False
 
-    def test_delete_rollback_on_error(self, db_session):
-        """Verify delete_transaction_by_unique_id returns False on exception."""
+    def test_delete_reraises_db_error_after_rollback(self, db_session):
+        """Verify delete re-raises SQLAlchemyError instead of returning False."""
+        from sqlalchemy.exc import SQLAlchemyError
+
         tx = CashTransaction(
             id="1", date="2024-01-01", amount=-10.0,
             description="Test", account_name="Cash",
@@ -190,10 +192,12 @@ class TestDeleteTransactionExceptionHandler:
 
         repo = CashRepository(db_session)
 
-        with patch.object(db_session, "commit", side_effect=RuntimeError("DB error")):
-            result = repo.delete_transaction_by_unique_id(uid)
+        with patch.object(db_session, "commit", side_effect=SQLAlchemyError("DB error")):
+            with pytest.raises(SQLAlchemyError):
+                repo.delete_transaction_by_unique_id(uid)
 
-        assert result is False
+        # The rollback preserved the row.
+        assert db_session.get(CashTransaction, uid) is not None
 
 
 class TestUpdateTransactionByUniqueId:
@@ -222,8 +226,10 @@ class TestUpdateTransactionByUniqueId:
         )
         assert result is True
 
-    def test_update_rollback_on_error(self, db_session):
-        """Verify update returns False on exception and rolls back."""
+    def test_update_reraises_db_error_after_rollback(self, db_session):
+        """Verify update re-raises SQLAlchemyError instead of returning False."""
+        from sqlalchemy.exc import SQLAlchemyError
+
         tx = CashTransaction(
             id="1", date="2024-01-01", amount=-10.0,
             description="Test", account_name="Cash",
@@ -236,19 +242,21 @@ class TestUpdateTransactionByUniqueId:
 
         repo = CashRepository(db_session)
 
-        with patch.object(db_session, "commit", side_effect=RuntimeError("DB error")):
-            result = repo.update_transaction_by_unique_id(
-                uid, {"description": "Fail"}
-            )
+        with patch.object(db_session, "commit", side_effect=SQLAlchemyError("DB error")):
+            with pytest.raises(SQLAlchemyError):
+                repo.update_transaction_by_unique_id(uid, {"description": "Fail"})
 
-        assert result is False
+        # The rollback preserved the original value.
+        assert db_session.get(CashTransaction, uid).description == "Test"
 
 
 class TestAddTransactionExceptionHandler:
     """Tests for ServiceRepository.add_transaction exception handling."""
 
-    def test_add_transaction_rollback_on_error(self, db_session):
-        """Verify add_transaction returns False on exception."""
+    def test_add_transaction_reraises_db_error(self, db_session):
+        """Verify add_transaction re-raises SQLAlchemyError instead of returning False."""
+        from sqlalchemy.exc import SQLAlchemyError
+
         repo = CashRepository(db_session)
         dto = ManualTransactionDTO(
             date=datetime(2024, 1, 1),
@@ -258,10 +266,9 @@ class TestAddTransactionExceptionHandler:
             provider="manual",
         )
 
-        with patch.object(db_session, "execute", side_effect=RuntimeError("DB error")):
-            result = repo.add_transaction(dto)
-
-        assert result is False
+        with patch.object(db_session, "execute", side_effect=SQLAlchemyError("DB error")):
+            with pytest.raises(SQLAlchemyError):
+                repo.add_transaction(dto)
 
 
 class TestBulkUpdateTagging:
