@@ -64,5 +64,11 @@ def restore_from_backup(request: RestoreRequest):
         from backend.errors import EntityNotFoundException
 
         raise EntityNotFoundException(str(e))
+    except ValueError as e:
+        # Invalid/traversal filenames and non-SQLite files are client input
+        # problems — surface them as 400s, not sanitized 500s.
+        from backend.errors import BadRequestException
+
+        raise BadRequestException(str(e))
 
     return {"status": "restored", "filename": request.filename}

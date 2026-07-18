@@ -408,6 +408,9 @@ class TestInvestmentsServicePriorWealth:
         # Should not raise — silent no-op when investment does not exist
         service.recalculate_prior_wealth_by_tag("Investments", "Nonexistent Fund")
 
+        # The no-op created nothing.
+        assert db_session.query(InvestmentModel).count() == 0
+
 
 class TestInvestmentsServiceEdgeCases:
     """Tests for edge cases and early exits in InvestmentsService."""
@@ -468,6 +471,9 @@ class TestInvestmentsServiceEdgeCases:
         service = InvestmentsService(db_session)
         service.calculate_fixed_rate_snapshots(inv.id)  # Should not raise
 
+        # Early exit: no calculated snapshots were generated.
+        assert service.get_balance_snapshots(inv.id) == []
+
     def test_calculate_fixed_rate_no_transactions_exits_early(self, db_session):
         """Verify calculate_fixed_rate_snapshots exits early when no transactions exist."""
         inv = InvestmentModel(
@@ -481,6 +487,9 @@ class TestInvestmentsServiceEdgeCases:
 
         service = InvestmentsService(db_session)
         service.calculate_fixed_rate_snapshots(inv.id)  # Should not raise
+
+        # Early exit: no snapshots without transactions to anchor them.
+        assert service.get_balance_snapshots(inv.id) == []
 
     def test_recalculate_prior_wealth_no_matching_transactions(self, db_session):
         """Verify prior_wealth set to 0 when investment has no matching manual_investment txns."""

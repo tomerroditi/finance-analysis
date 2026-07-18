@@ -2000,7 +2000,14 @@ class TestMonthlyYearlyIntegration:
         """The Total Budget category is exempt from the yearly-conflict check."""
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
         # Must not raise even though "all_tags" would otherwise "conflict" with everything.
-        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+
+        # The rule was actually created, not silently skipped.
+        rules = service.get_month_rules(2026, 3)
+        total_rule = rules.loc[rules[NAME] == "Total Budget"]
+        assert len(total_rule) == 1
+        assert total_rule.iloc[0][AMOUNT] == 9999.0
 
     def test_copy_last_month_rules_skips_yearly_conflicting_tag(self, db_session):
         """copy_last_month_rules drops tags claimed by a yearly rule for the target year.
@@ -2134,6 +2141,11 @@ class TestMonthlyUpdateRuleYearlyConflict:
         )
         # Must not raise even though "all_tags" would otherwise "conflict" with everything.
         service.update_rule(total_rule_id, amount=12000.0)
+
+        # The edit actually applied.
+        updated = service.get_month_rules(2026, 5)
+        total_rule = updated.loc[updated[NAME] == "Total Budget"].iloc[0]
+        assert total_rule[AMOUNT] == 12000.0
 
     def test_edit_project_rule_is_noop_for_guard(self, db_session):
         """Project rules (year is None) skip the yearly-conflict guard entirely.

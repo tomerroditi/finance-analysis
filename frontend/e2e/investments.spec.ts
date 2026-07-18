@@ -31,20 +31,22 @@ test.describe("Investments", () => {
   test("closed investments toggle works", async ({ page }) => {
     await navigateTo(page, "/investments");
 
-    // Assert the toggle exists instead of skipping the whole body when the
-    // button is missing or renamed (the old conditional passed vacuously).
-    const closedToggle = page
-      .getByRole("button", { name: /closed/i })
-      .first();
-    await expect(closedToggle).toBeVisible();
+    // Demo data always includes closed investments, so the section renders
+    // unconditionally — assert it instead of skipping (the old conditional
+    // body passed vacuously when the button was missing).
+    await expect(
+      page.getByText(/Closed Investments/i).first(),
+    ).toBeVisible();
 
-    // Demo data includes closed investments: toggling on must reveal the
-    // Closed Investments section, toggling off must hide it.
-    await closedToggle.click();
-    const closedSection = page.getByText(/Closed Investments/i).first();
-    await expect(closedSection).toBeVisible();
+    // The balance-over-time chart's closed toggle defaults ON ("Hide
+    // Closed") and flips its label per state.
+    const hideToggle = page.getByRole("button", { name: "Hide Closed" });
+    await expect(hideToggle).toBeVisible();
+    await hideToggle.click();
 
-    await closedToggle.click();
-    await expect(closedSection).toBeHidden();
+    const includeToggle = page.getByRole("button", { name: "Include Closed" });
+    await expect(includeToggle).toBeVisible();
+    await includeToggle.click();
+    await expect(hideToggle).toBeVisible();
   });
 });
