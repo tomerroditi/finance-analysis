@@ -1632,15 +1632,26 @@ class ProjectBudgetService(BudgetService):
             monthly or yearly budget rule.
         """
         current_projects = self.get_all_projects_names()
-        new_possible_projects = [
+        # One rules read + set membership instead of a full budget_rules read
+        # per candidate category (category_used_by_monthly_or_yearly re-reads
+        # the table on every call).
+        rules = BudgetService.get_all_rules(self)
+        if rules.empty:
+            claimed: set[str] = set()
+        else:
+            claimed = set(
+                rules.loc[
+                    rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY]),
+                    CATEGORY,
+                ]
+            ) - {TOTAL_BUDGET}
+        return [
             cat
             for cat in self.categories_tags_service.get_categories_and_tags(
                 copy=True
             ).keys()
-            if cat not in current_projects
-            and not self.category_used_by_monthly_or_yearly(cat)
+            if cat not in current_projects and cat not in claimed
         ]
-        return new_possible_projects
 
     def get_project_budget_view(
         self, project: str, include_split_parents: bool = False
@@ -1749,7 +1760,12 @@ class ProjectBudgetService(BudgetService):
         ]
 
         if not unmatched_txns.empty:
-            for tag, group in unmatched_txns.groupby(TransactionsTableFields.TAG.value):
+            groups = list(
+                unmatched_txns.groupby(TransactionsTableFields.TAG.value)
+            )
+            # Create all missing zero-amount rules first, then re-read the
+            # rules table once — instead of a full read after every insert.
+            for tag, _group in groups:
                 self.add_rule(
                     name=tag,
                     amount=0,
@@ -1758,7 +1774,9 @@ class ProjectBudgetService(BudgetService):
                     month=None,
                     year=None,
                 )
+            new_rule_df = self.budget_repository.read_all()
 
+            for tag, group in groups:
                 if "type" in group.columns:
                     group_for_calc = group[group["type"] != "split_parent"]
                 else:
@@ -1768,7 +1786,6 @@ class ProjectBudgetService(BudgetService):
 
                 group_display = transactions_processed.loc[group.index]
 
-                new_rule_df = self.budget_repository.read_all()
                 new_rule = new_rule_df[
                     (new_rule_df[CATEGORY] == project)
                     & (new_rule_df[YEAR].isnull())
