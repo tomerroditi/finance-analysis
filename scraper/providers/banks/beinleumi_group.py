@@ -24,6 +24,9 @@ from scraper.utils import (
     wait_until_element_found,
 )
 
+# Pagination safety cap — pages beyond this indicate a stuck "next page" control.
+_MAX_PAGINATION_PAGES = 200
+
 logger = logging.getLogger(__name__)
 
 DATE_FORMAT = "%d/%m/%Y"
@@ -388,7 +391,8 @@ async def _scrape_transactions(
     txns: list[dict] = []
     has_next_page = False
 
-    while True:
+    # Hard cap: a site that keeps reporting a next page must not spin forever.
+    for _page_num in range(_MAX_PAGINATION_PAGES):
         current_page_txns = await _extract_transactions(
             page_or_frame, table_locator, transaction_status
         )

@@ -187,4 +187,37 @@ def restore_backup(filename: str) -> None:
     except OSError:
         logger.debug("Unable to chmod restored DB %s", db_path)
 
+    # Bring a pre-migration backup up to the current schema — Alembic
+    # otherwise only runs at startup, so restoring an old backup produced
+    # "no such column" errors until the app was restarted.
+    _upgrade_restored_db()
+
     logger.info("Database restored from %s", filename)
+
+
+def _upgrade_restored_db() -> None:
+    """Run Alembic upgrade head against the freshly restored database.
+
+    Mirrors the startup migration path in ``backend/main.py``. Failures are
+    logged, not raised — the restore itself succeeded, and the migrations
+    will run again on next startup.
+    """
+    import sys
+
+    from alembic import command
+    from alembic.config import Config
+
+    if getattr(sys, "frozen", False):
+        alembic_ini = Path(getattr(sys, "_MEIPASS", "")) / "alembic.ini"
+    else:
+        alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
+
+    if not alembic_ini.is_file():
+        logger.warning(
+            "alembic.ini not found at %s — restored DB not migrated", alembic_ini
+        )
+        return
+    try:
+        command.upgrade(Config(str(alembic_ini)), "head")
+    except Exception:
+        logger.exception("Failed to migrate restored database")

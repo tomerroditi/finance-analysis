@@ -53,6 +53,13 @@ from backend.utils.version import get_app_version
 
 load_dotenv()
 
+# Dev/uvicorn runs previously had no logging config at all — app loggers fell
+# through to Python's last-resort WARNING handler and every logger.info was
+# silently dropped. The packaged binary configures its own rotating file
+# handler (build/app_entry.py), so only configure when not frozen.
+if not getattr(sys, "frozen", False):
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +93,7 @@ async def lifespan(app: FastAPI):
     )
 
     # Startup
-    print("Starting Finance Analysis API...")
+    logger.info("Starting Finance Analysis API...")
     Base.metadata.create_all(bind=get_engine())
 
     # Apply pending Alembic migrations. ``create_all`` only creates missing
@@ -131,7 +138,7 @@ async def lifespan(app: FastAPI):
 
     yield
     # Shutdown
-    print("Shutting down Finance Analysis API...")
+    logger.info("Shutting down Finance Analysis API...")
 
 
 # Only expose OpenAPI/Swagger docs outside of production. ``ENVIRONMENT=production``

@@ -12,7 +12,7 @@ class ProviderConfig:
     required_fields : list[str]
         Required credential field names (keys expected in the credentials dict).
     service : str
-        Service type: "banks" or "credit_cards".
+        Service type: "banks", "credit_cards", or "insurances".
     requires_2fa : bool
         Whether the provider requires two-factor authentication.
     """

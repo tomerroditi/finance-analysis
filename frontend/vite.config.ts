@@ -100,6 +100,7 @@ export default defineConfig(({ mode }) => {
                 !url.pathname.startsWith("/api/backups") &&
                 !url.pathname.startsWith("/api/onboarding/") &&
                 !url.pathname.startsWith("/api/updates/") &&
+                !url.pathname.startsWith("/api/version") &&
                 !url.pathname.startsWith("/api/uninstall") &&
                 !url.pathname.startsWith("/api/testing/"),
               handler: "NetworkFirst",

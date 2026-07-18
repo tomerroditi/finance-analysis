@@ -18,7 +18,7 @@ async def wait_until(
     spent inside ``async_test`` itself (e.g. a slow page evaluation or network
     probe), not just the sleeps between polls.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while loop.time() < deadline:
         result = await async_test()
