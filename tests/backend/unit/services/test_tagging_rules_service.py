@@ -61,6 +61,23 @@ class TestTaggingRulesService:
         }
         service.validate_rule_integrity(conditions)
 
+        # The validator actually inspected the tree: the same shape with a
+        # type mismatch must fail (guards against a no-op validator).
+        invalid = {
+            "type": "AND",
+            "subconditions": [
+                conditions["subconditions"][0],
+                {
+                    "type": "CONDITION",
+                    "field": "amount",
+                    "operator": "lt",
+                    "value": "not_a_number",
+                },
+            ],
+        }
+        with pytest.raises(BadRequestException):
+            service.validate_rule_integrity(invalid)
+
     def test_validate_rule_integrity_invalid_operator(self, service):
         """Test numeric operator on text field fails."""
         conditions = {
@@ -113,6 +130,20 @@ class TestTaggingRulesService:
             "Dev",
         )
         # Should pass
+
+        # The conflict machinery is live: matching the SAME transaction as
+        # the AWS rule with a different tag is still detected.
+        with pytest.raises(BadRequestException, match="Conflict detected"):
+            service.check_conflicts(
+                {
+                    "type": "CONDITION",
+                    "field": "description",
+                    "operator": "contains",
+                    "value": "AWS",
+                },
+                "Software",
+                "Dev",
+            )
 
     def test_check_conflicts_detected(self, service, setup_transactions):
         """Test adding a conflicting rule raises error."""
@@ -167,6 +198,15 @@ class TestTaggingRulesService:
             "Dev",
         )
         # Should pass (redundant but safe)
+
+        # Only the tag equality made it pass: the identical conditions with a
+        # DIFFERENT tag are rejected (guards against a no-op checker).
+        with pytest.raises(BadRequestException, match="Conflict detected"):
+            service.check_conflicts(
+                {"type": "CONDITION", "field": "amount", "operator": "lt", "value": -10},
+                "Entertainment",
+                "Fun",
+            )
 
     def test_check_conflicts_no_false_positive_on_shared_source_id(
         self, service, db_session
@@ -236,6 +276,20 @@ class TestTaggingRulesService:
             "Subscriptions",
             "Streaming",
         )
+
+        # Sanity: a rule that DOES match the same ATM transaction with a
+        # different tag is still flagged — the pass above wasn't a no-op.
+        with pytest.raises(BadRequestException, match="Conflict detected"):
+            service.check_conflicts(
+                {
+                    "type": "CONDITION",
+                    "field": "description",
+                    "operator": "contains",
+                    "value": "ATM",
+                },
+                "Cash",
+                "Withdrawals",
+            )
 
     def test_update_conflicts_excluding_self(self, service, setup_transactions):
         """Test updating a rule checks conflicts but ignores itself."""
@@ -962,6 +1016,11 @@ class TestValidateRuleIntegrityEdgeCases:
 
         service.validate_rule_integrity(conditions)
 
+        # The validator actually checked the value: a malformed variant of
+        # the same condition fails (guards against a no-op validator).
+        with pytest.raises(BadRequestException):
+            service.validate_rule_integrity({**conditions, "value": [-100]})
+
     def test_non_numeric_value_for_amount_raises(self, service):
         """Verify non-numeric value for amount field raises BadRequestException."""
         conditions = {
@@ -1017,6 +1076,15 @@ class TestCheckConflictsEdgeCases:
         # This should return early without raising, even though an existing rule exists
         service.check_conflicts(conditions, "Different", "Tag")
 
+        # Only the empty match set made it pass: conditions that DO match the
+        # seeded transaction with a different tag are still flagged.
+        with pytest.raises(BadRequestException, match="Conflict detected"):
+            service.check_conflicts(
+                {"type": "CONDITION", "field": "description", "operator": "contains", "value": "Test Store"},
+                "Different",
+                "Tag",
+            )
+
     def test_stored_conditions_json_string_parsed(self, service, db_session, seed_transactions):
         """Verify check_conflicts can parse stored conditions that are JSON strings."""
         import json
@@ -1065,6 +1133,28 @@ class TestCheckConflictsEdgeCases:
             "Electronics",
             "Gadgets",
         )
+
+        # The broken rule was skipped, not deleted — and a rule with
+        # parseable conditions still triggers detection on the same tx.
+        assert "Broken Rule" in service.get_all_rules()["name"].tolist()
+        db_session.add(TaggingRule(
+            name="Parseable Rule",
+            conditions={
+                "type": "CONDITION",
+                "field": "description",
+                "operator": "contains",
+                "value": "Test Store",
+            },
+            category="Shopping",
+            tag="General",
+        ))
+        db_session.commit()
+        with pytest.raises(BadRequestException, match="Conflict detected"):
+            service.check_conflicts(
+                {"type": "CONDITION", "field": "description", "operator": "contains", "value": "Test Store"},
+                "Electronics",
+                "Gadgets",
+            )
 
 
 class TestBuildSingleFilterUnrecognizedOperator:

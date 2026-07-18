@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException
 from backend.models.budget import BudgetRule
 from backend.constants.budget import (
     AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR,
@@ -170,7 +171,7 @@ class BudgetRepository:
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If no rule with the given ID exists.
         """
         if not fields:
@@ -179,7 +180,10 @@ class BudgetRepository:
         stmt = update(BudgetRule).where(BudgetRule.id == id_).values(**fields)
         result = self.db.execute(stmt)
         if result.rowcount == 0:
-            raise ValueError(f"No rule found with ID {id_}. Update failed.")
+            self.db.rollback()
+            raise EntityNotFoundException(
+                f"No rule found with ID {id_}. Update failed."
+            )
         self.db.commit()
 
     def delete(self, id_: int) -> None:
@@ -189,9 +193,17 @@ class BudgetRepository:
         ----------
         id_ : int
             Primary key of the budget rule to delete.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no budget rule with that ID exists.
         """
         stmt = delete(BudgetRule).where(BudgetRule.id == id_)
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
+        if result.rowcount == 0:
+            self.db.rollback()
+            raise EntityNotFoundException(f"No rule found with ID {id_}.")
         self.db.commit()
 
     def delete_by_month(self, year: int, month: int) -> None:

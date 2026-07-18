@@ -234,7 +234,13 @@ async def run_scraper(args: argparse.Namespace) -> int:
     if is_2fa_required(provider):
         scraper.on_otp_request = handle_otp
 
-    result = await scraper.scrape()
+    # Overall ceiling so a hung provider can't wedge the CLI forever (the
+    # backend adapter applies its own 300s wait_for; the CLI had none).
+    try:
+        result = await asyncio.wait_for(scraper.scrape(), timeout=600)
+    except asyncio.TimeoutError:
+        print("Error: scrape exceeded the 600-second limit", file=sys.stderr)
+        return 1
 
     if not result.success:
         print(

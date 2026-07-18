@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   useMutation,
@@ -32,6 +32,7 @@ import {
   type RetirementStatus,
 } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface PendingAdjust {
   field: string;
@@ -45,12 +46,6 @@ interface Props {
   pendingAdjust?: PendingAdjust | null;
   onAdjustApplied?: () => void;
 }
-
-const ILS_FORMAT = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  maximumFractionDigits: 0,
-});
 
 function formToPayload(form: ReturnType<typeof goalToForm>) {
   return {
@@ -127,6 +122,7 @@ export function RetirementGoalForm({
 }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [form, setForm] = useState(() => goalToForm(goal, status));
@@ -161,7 +157,7 @@ export function RetirementGoalForm({
   }
 
   const { data: scrapedDefaults } = useQuery({
-    queryKey: ["retirement", "scraped-defaults"],
+    queryKey: qk.retirement.scrapedDefaults(),
     queryFn: () =>
       retirementApi.getScrapedDefaults().then((r) => r.data),
   });
@@ -187,28 +183,39 @@ export function RetirementGoalForm({
     }));
   }
 
-  // Calculate: preview projections without saving
-  const calculateMutation = useMutation({
-    mutationFn: (overrideForm?: ReturnType<typeof goalToForm>) => {
-      const payload = formToPayload(overrideForm ?? form);
+  // Preview projections + suggestions for the given form values and push
+  // both results into the query cache. Shared by Calculate, Reset, and the
+  // pending-adjust flow.
+  const previewPlan = useCallback(
+    (formValues: ReturnType<typeof goalToForm>) => {
+      const payload = formToPayload(formValues);
       return Promise.all([
         retirementApi.previewProjections(payload),
         retirementApi.previewSuggestions(payload),
-      ]);
+      ]).then(([projectionsRes, suggestionsRes]) => {
+        queryClient.setQueryData(
+          qk.retirement.projections(),
+          projectionsRes.data,
+        );
+        queryClient.setQueryData(
+          qk.retirement.suggestions(),
+          suggestionsRes.data,
+        );
+      });
     },
-    onSuccess: ([projectionsRes, suggestionsRes]) => {
-      queryClient.setQueryData(
-        ["retirement", "projections"],
-        projectionsRes.data,
-      );
-      queryClient.setQueryData(
-        ["retirement", "suggestions"],
-        suggestionsRes.data,
-      );
-    },
+    [queryClient, qk],
+  );
+
+  // Calculate: preview projections without saving
+  const calculateMutation = useMutation({
+    mutationFn: (overrideForm?: ReturnType<typeof goalToForm>) =>
+      previewPlan(overrideForm ?? form),
   });
 
-  // Handle pending adjustment from projections "Adjust Plan" buttons
+  // Handle pending adjustment from projections "Adjust Plan" buttons.
+  // The form update uses the render-phase adjust-state-on-prop-change
+  // pattern (same as the blocks above); the API preview itself is a side
+  // effect and runs in the useEffect below, after the commit.
   const [lastAppliedKey, setLastAppliedKey] = useState("");
   const adjustKey = pendingAdjust
     ? `${pendingAdjust.field}:${pendingAdjust.value}`
@@ -221,34 +228,27 @@ export function RetirementGoalForm({
       field === "expected_return_rate"
         ? Math.round(value * 10000) / 100
         : value;
-    const updated = { ...form, [field]: formValue };
-    setForm(updated);
+    setForm((prev) => ({ ...prev, [field]: formValue }));
     setHasUnsavedChanges(true);
-    // Schedule preview after render completes
-    setTimeout(() => {
-      const payload = formToPayload(updated);
-      Promise.all([
-        retirementApi.previewProjections(payload),
-        retirementApi.previewSuggestions(payload),
-      ]).then(([projectionsRes, suggestionsRes]) => {
-        queryClient.setQueryData(
-          ["retirement", "projections"],
-          projectionsRes.data,
-        );
-        queryClient.setQueryData(
-          ["retirement", "suggestions"],
-          suggestionsRes.data,
-        );
-        onAdjustApplied?.();
-      });
-    }, 0);
   }
+
+  // Fire the preview for a newly applied adjustment once its form update
+  // has committed. `previewedKeyRef` ensures one preview per adjustment —
+  // later form edits re-run the effect but bail out on the guard.
+  const previewedKeyRef = useRef("");
+  useEffect(() => {
+    if (!lastAppliedKey || previewedKeyRef.current === lastAppliedKey) return;
+    previewedKeyRef.current = lastAppliedKey;
+    previewPlan(form).then(() => {
+      onAdjustApplied?.();
+    });
+  }, [lastAppliedKey, form, previewPlan, onAdjustApplied]);
 
   // Save Plan: persist to DB
   const saveMutation = useMutation({
     mutationFn: () => retirementApi.upsertGoal(formToPayload(form)),
     onSuccess: (response) => {
-      queryClient.setQueryData(["retirement", "goal"], response.data);
+      queryClient.setQueryData(qk.retirement.goal(), response.data);
       setHasUnsavedChanges(false);
     },
   });
@@ -272,20 +272,7 @@ export function RetirementGoalForm({
     setForm(goalToForm(goal, status));
     setHasUnsavedChanges(false);
     // Re-preview with saved values
-    const payload = formToPayload(goalToForm(goal, status));
-    Promise.all([
-      retirementApi.previewProjections(payload),
-      retirementApi.previewSuggestions(payload),
-    ]).then(([projectionsRes, suggestionsRes]) => {
-      queryClient.setQueryData(
-        ["retirement", "projections"],
-        projectionsRes.data,
-      );
-      queryClient.setQueryData(
-        ["retirement", "suggestions"],
-        suggestionsRes.data,
-      );
-    });
+    previewPlan(goalToForm(goal, status));
   };
 
   const applyScrapedKhBalance = () => {
@@ -365,7 +352,7 @@ export function RetirementGoalForm({
                     )
                   }
                   label={t("earlyRetirement.form.useSalaryAvg", {
-                    amount: ILS_FORMAT.format(
+                    amount: formatCurrency(
                       scrapedDefaults.avg_monthly_salary,
                     ),
                   })}
@@ -567,7 +554,7 @@ export function RetirementGoalForm({
                 <ScrapedHint
                   onClick={applyScrapedPension}
                   label={t("earlyRetirement.form.useScrapedPension", {
-                    amount: ILS_FORMAT.format(
+                    amount: formatCurrency(
                       scrapedDefaults.pension_monthly_deposit,
                     ),
                   })}
@@ -588,7 +575,7 @@ export function RetirementGoalForm({
                 <ScrapedHint
                   onClick={applyScrapedKhBalance}
                   label={t("earlyRetirement.form.useScrapedKh", {
-                    amount: ILS_FORMAT.format(
+                    amount: formatCurrency(
                       scrapedDefaults.keren_hishtalmut_balance,
                     ),
                   })}
@@ -611,7 +598,7 @@ export function RetirementGoalForm({
                 <ScrapedHint
                   onClick={applyScrapedKhMonthly}
                   label={t("earlyRetirement.form.useScrapedKhMonthly", {
-                    amount: ILS_FORMAT.format(
+                    amount: formatCurrency(
                       scrapedDefaults.keren_hishtalmut_monthly_contribution,
                     ),
                   })}

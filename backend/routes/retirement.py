@@ -12,12 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.retirement_service import RetirementService
 
 router = APIRouter()
 
 
-class RetirementGoalUpsert(BaseModel):
+class RetirementGoalUpsert(ApiRequestModel):
     """Request body for creating or updating the retirement goal."""
 
     current_age: int = Field(..., ge=18, le=100)

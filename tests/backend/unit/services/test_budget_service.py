@@ -77,12 +77,14 @@ class TestBudgetServiceBase:
         assert updated[AMOUNT] == 2500.0
 
     def test_update_rule_invalid_field_raises(self, db_session, seed_budget_rules):
-        """Verify AssertionError is raised for invalid field names."""
+        """Verify ValidationException is raised for invalid field names."""
+        from backend.errors import ValidationException
+
         service = BudgetService(db_session)
         rules = service.get_all_rules()
         rule_id = int(rules.iloc[0][ID])
 
-        with pytest.raises(AssertionError, match="Invalid fields"):
+        with pytest.raises(ValidationException, match="Invalid fields"):
             service.update_rule(rule_id, invalid_field="value")
 
     def test_validate_rule_inputs_empty_name(self, db_session, seed_budget_rules):
@@ -138,6 +140,24 @@ class TestBudgetServiceBase:
         )
         assert valid is False
         assert "already exists" in msg.lower()
+
+    def test_validate_rule_without_total_budget_fails_gracefully(self, db_session):
+        """Verify creating the first non-total rule of a month returns a validation
+        message instead of raising IndexError when no Total Budget rule exists."""
+        service = BudgetService(db_session)
+
+        valid, msg = service.validate_rule_inputs(
+            service.get_all_rules(),
+            name="Food",
+            category="Food",
+            tags=["Groceries"],
+            amount=500.0,
+            year=2024,
+            month=6,
+            id_=None,
+        )
+        assert valid is False
+        assert "Total Budget" in msg
 
     def test_validate_rule_inputs_exceeds_total(self, db_session):
         """Verify validation rejects when rules exceed total budget."""
@@ -1594,7 +1614,7 @@ class TestGetMonthlyAnalysisAutoFill:
 
         # Patch date.today() to return March 2026 (the current month for the test)
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
 
@@ -1616,7 +1636,7 @@ class TestGetMonthlyAnalysisAutoFill:
         service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 2, 2026)
 
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # A month later than "today" should still auto-fill from prior rules.
@@ -1636,7 +1656,7 @@ class TestGetMonthlyAnalysisAutoFill:
         service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2026)
 
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # January 2026 is before today and has no rules — must stay empty.
@@ -1980,7 +2000,14 @@ class TestMonthlyYearlyIntegration:
         """The Total Budget category is exempt from the yearly-conflict check."""
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
         # Must not raise even though "all_tags" would otherwise "conflict" with everything.
-        MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+
+        # The rule was actually created, not silently skipped.
+        rules = service.get_month_rules(2026, 3)
+        total_rule = rules.loc[rules[NAME] == "Total Budget"]
+        assert len(total_rule) == 1
+        assert total_rule.iloc[0][AMOUNT] == 9999.0
 
     def test_copy_last_month_rules_skips_yearly_conflicting_tag(self, db_session):
         """copy_last_month_rules drops tags claimed by a yearly rule for the target year.
@@ -2041,7 +2068,7 @@ class TestMonthlyYearlyIntegration:
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
 
         fake_today = date_cls(2026, 1, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             analysis = service.get_monthly_analysis(2026, 1)
@@ -2115,6 +2142,11 @@ class TestMonthlyUpdateRuleYearlyConflict:
         # Must not raise even though "all_tags" would otherwise "conflict" with everything.
         service.update_rule(total_rule_id, amount=12000.0)
 
+        # The edit actually applied.
+        updated = service.get_month_rules(2026, 5)
+        total_rule = updated.loc[updated[NAME] == "Total Budget"].iloc[0]
+        assert total_rule[AMOUNT] == 12000.0
+
     def test_edit_project_rule_is_noop_for_guard(self, db_session):
         """Project rules (year is None) skip the yearly-conflict guard entirely.
 
@@ -2167,7 +2199,7 @@ class TestMonthlySkippedYearlyConflictsDedup:
         service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=8, year=2026)
 
         fake_today = date_cls(2026, 10, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # Gap fills Sept and Oct 2026 — "Hotels" conflicts with the 2026

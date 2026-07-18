@@ -41,8 +41,12 @@ export const qkPrefix = {
   savingsGoals: ["savings-goals"] as const,
   insuranceAccounts: ["insurance-accounts"] as const,
   lastScrapes: ["last-scrapes"] as const,
+  // PWA note: excluded from IndexedDB persistence (queryClient.ts) — the
+  // backup list is cheap to refetch and stale entries are misleading.
+  backups: ["backups"] as const,
   credentialsAccounts: ["credentials-accounts"] as const,
   providers: ["providers"] as const,
+  retirement: ["retirement"] as const,
 } as const;
 
 export function makeQueryKeys(demo: boolean) {
@@ -74,6 +78,17 @@ export function makeQueryKeys(demo: boolean) {
       categories: () => ["categories", demo] as const,
       icons: () => ["category-icons", demo] as const,
       rules: () => ["tagging-rules", demo] as const,
+      // Head "rule-preview" is load-bearing: queryClient.ts excludes it from
+      // IndexedDB persistence by key head.
+      rulePreview: (conditions: unknown) =>
+        ["rule-preview", conditions, demo] as const,
+    },
+    retirement: {
+      goal: () => ["retirement", "goal", demo] as const,
+      status: () => ["retirement", "status", demo] as const,
+      projections: () => ["retirement", "projections", demo] as const,
+      suggestions: () => ["retirement", "suggestions", demo] as const,
+      scrapedDefaults: () => ["retirement", "scraped-defaults", demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,
@@ -81,6 +96,9 @@ export function makeQueryKeys(demo: boolean) {
     },
     scraping: {
       lastScrapes: () => ["last-scrapes", demo] as const,
+    },
+    backups: {
+      list: () => ["backups", demo] as const,
     },
     credentials: {
       accounts: () => ["credentials-accounts", demo] as const,

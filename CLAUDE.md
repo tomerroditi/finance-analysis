@@ -195,7 +195,7 @@ install` can't fetch a browser).
 
 The `scraper/` package at the project root is a pure-Python scraper framework using Playwright and httpx, replacing the old Node.js integration. It provides:
 
-- **18 provider scrapers** (11 banks + 7 credit cards) in `scraper/providers/`
+- **19 provider scrapers** (12 banks + 6 credit cards + 1 insurance) in `scraper/providers/`
 - **Base classes:** `BrowserScraper` (Playwright lifecycle + login), `ApiScraper` (API-via-browser)
 - **Backend integration:** `backend/scraper/adapter.py` bridges async scrapers to the sync pipeline
 - **Demo mode:** Automatically redirects to dummy scrapers that generate fake data

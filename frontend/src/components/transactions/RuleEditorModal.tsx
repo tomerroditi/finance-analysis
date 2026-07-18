@@ -13,6 +13,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { qkPrefix } from "../../services/queryKeys";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -38,6 +39,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
     const { t, i18n } = useTranslation();
     const isRtl = i18n.language === "he";
     const queryClient = useQueryClient();
+    const qk = useQueryKeys();
     useScrollLock(isOpen);
     const { createCategory, createTag } = useCategoryTagCreate();
 
@@ -105,7 +107,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
 
     // Preview query
     const { data: preview, isLoading: previewLoading } = useQuery({
-        queryKey: ["rule-preview", debouncedConditions],
+        queryKey: qk.tagging.rulePreview(debouncedConditions),
         queryFn: () => taggingApi.previewRule(debouncedConditions).then(res => res.data),
         enabled: isOpen && hasValidCondition(debouncedConditions),
         staleTime: 5000,
@@ -467,7 +469,7 @@ function RuleForm({
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">{t("common.tag")}</label>
                         <div className="mt-1">
                         <SelectDropdown
-                            options={availableTags.map((t: string) => ({ label: t, value: t }))}
+                            options={availableTags.map((tagName: string) => ({ label: tagName, value: tagName }))}
                             value={tag}
                             onChange={(val) => setTag(val)}
                             placeholder={t("common.select")}

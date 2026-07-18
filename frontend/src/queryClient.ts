@@ -19,6 +19,10 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   // exclusion; the key itself doesn't contain "credential" so the heuristic
   // below misses it.
   "providers",
+  // Backup listing mirrors the SW's /api/backups exclusion — never
+  // persisted (it was previously plain useState, so no stale cache exists
+  // and no PERSIST_BUSTER bump is needed).
+  "backups",
   "rule-preview",
   "rule-conflicts",
   "retirement-preview",

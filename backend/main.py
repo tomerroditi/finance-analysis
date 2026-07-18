@@ -6,6 +6,7 @@ This module sets up the FastAPI application with CORS, routes, and exception han
 
 import asyncio
 import logging
+import math
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -13,6 +14,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import AppConfig
 from backend.database import get_db_context, get_engine
 from backend.errors import (
+    BadRequestException,
     EntityAlreadyExistsException,
     EntityNotFoundException,
     ValidationException,
@@ -48,6 +52,13 @@ from backend.routes import (
 from backend.utils.version import get_app_version
 
 load_dotenv()
+
+# Dev/uvicorn runs previously had no logging config at all — app loggers fell
+# through to Python's last-resort WARNING handler and every logger.info was
+# silently dropped. The packaged binary configures its own rotating file
+# handler (build/app_entry.py), so only configure when not frozen.
+if not getattr(sys, "frozen", False):
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +93,7 @@ async def lifespan(app: FastAPI):
     )
 
     # Startup
-    print("Starting Finance Analysis API...")
+    logger.info("Starting Finance Analysis API...")
     Base.metadata.create_all(bind=get_engine())
 
     # Apply pending Alembic migrations. ``create_all`` only creates missing
@@ -125,98 +136,9 @@ async def lifespan(app: FastAPI):
         creds_repo = CredentialsRepository(db)
         creds_repo.migrate_from_yaml(config.get_credentials_path())
 
-    # Migrate: seed Investment.prior_wealth_amount from transactions
-    # and clean up legacy manual_investments prior wealth offset transactions
-    with get_db_context() as db:
-        from sqlalchemy import text, update, delete
-        from backend.repositories.investments_repository import InvestmentsRepository
-        from backend.repositories.transactions_repository import TransactionsRepository
-        from backend.models.investment import Investment
-        from backend.models.transaction import ManualInvestmentTransaction
-        from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
-        from backend.constants.providers import Services
-        from backend.constants.tables import TransactionsTableFields
-
-        engine = get_engine()
-
-        # 1. Add the column if not present (SQLite doesn't auto-add columns)
-        with engine.connect() as conn:
-            cols = [
-                row[1]
-                for row in conn.execute(text("PRAGMA table_info(investments)")).fetchall()
-            ]
-            if "prior_wealth_amount" not in cols:
-                conn.execute(
-                    text(
-                        "ALTER TABLE investments ADD COLUMN prior_wealth_amount REAL NOT NULL DEFAULT 0.0"
-                    )
-                )
-                conn.commit()
-
-        investments_repo = InvestmentsRepository(db)
-        txns_repo = TransactionsRepository(db)
-
-        # 2. Seed prior_wealth_amount for every investment from its transactions.
-        #    Vectorize the per-investment sum with a single pandas groupby over
-        #    (category, tag), then apply all updates in one executemany instead
-        #    of one UPDATE per investment (N+1).
-        investments_df = investments_repo.get_all_investments(include_closed=True)
-        if not investments_df.empty:
-            txns_df = txns_repo.get_table(Services.MANUAL_INVESTMENTS.value)
-            if not txns_df.empty:
-                prior_by_key = (
-                    txns_df.groupby(["category", "tag"])["amount"].sum().mul(-1)
-                )
-            else:
-                prior_by_key = None
-
-            bulk_updates = []
-            for _, inv in investments_df.iterrows():
-                if prior_by_key is not None:
-                    key = (inv["category"], inv["tag"])
-                    prior_wealth = (
-                        float(prior_by_key[key]) if key in prior_by_key.index else 0.0
-                    )
-                else:
-                    prior_wealth = 0.0
-                bulk_updates.append(
-                    {"id": int(inv["id"]), "prior_wealth_amount": prior_wealth}
-                )
-
-            if bulk_updates:
-                db.execute(update(Investment), bulk_updates)
-                db.commit()
-
-        # 3. Remove legacy manual_investments prior wealth offset transactions
-        manual_inv_repo = txns_repo.manual_investments_repo
-        inv_all_df = manual_inv_repo.get_table()
-        if not inv_all_df.empty:
-            tag_col = TransactionsTableFields.TAG.value
-            cat_col = TransactionsTableFields.CATEGORY.value
-            acct_col = TransactionsTableFields.ACCOUNT_NAME.value
-            uid_col = TransactionsTableFields.UNIQUE_ID.value
-
-            pw_mask = (
-                (inv_all_df[tag_col] == PRIOR_WEALTH_TAG)
-                & (inv_all_df[cat_col] == IncomeCategories.OTHER_INCOME.value)
-                & (inv_all_df[acct_col] == PRIOR_WEALTH_TAG)
-            )
-            # Collect the matching unique_ids and remove them in a single bulk
-            # DELETE instead of one DELETE per row (N+1).
-            unique_ids = [
-                int(uid) for uid in inv_all_df.loc[pw_mask, uid_col].tolist()
-            ]
-            if unique_ids:
-                db.execute(
-                    delete(ManualInvestmentTransaction).where(
-                        ManualInvestmentTransaction.unique_id.in_(unique_ids)
-                    )
-                )
-                db.commit()
-
     yield
     # Shutdown
-    print("Shutting down Finance Analysis API...")
+    logger.info("Shutting down Finance Analysis API...")
 
 
 # Only expose OpenAPI/Swagger docs outside of production. ``ENVIRONMENT=production``
@@ -421,6 +343,42 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     return JSONResponse(
         status_code=400,
         content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(BadRequestException)
+async def bad_request_exception_handler(request: Request, exc: BadRequestException):
+    """Return a 400 JSON response for BadRequestException."""
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """422 handler that survives non-finite floats in the invalid input.
+
+    Request models reject ``NaN``/``Infinity`` (``allow_inf_nan=False`` on
+    ``ApiRequestModel``), but the default handler echoes the offending input
+    back in the error body — and ``json.dumps`` cannot serialize a non-finite
+    float, turning the 422 into a 500. Stringify those values instead.
+    """
+
+    def sanitize(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            return repr(value)
+        if isinstance(value, dict):
+            return {k: sanitize(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [sanitize(v) for v in value]
+        return value
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": sanitize(jsonable_encoder(exc.errors()))},
     )
 
 

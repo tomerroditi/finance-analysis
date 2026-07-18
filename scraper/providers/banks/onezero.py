@@ -744,7 +744,9 @@ class OneZeroScraper(ApiScraper):
         )
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
-        logger.debug("Sending OTP to phone number %s", phone_number)
+        logger.debug(
+            "Sending OTP to phone number ending in %s", str(phone_number)[-4:]
+        )
         try:
             otp_prepare_response = await fetch_post(
                 f"{IDENTITY_SERVER_URL}/otp/prepare",
@@ -958,7 +960,8 @@ class OneZeroScraper(ApiScraper):
 
         auth_headers = {"authorization": f"Bearer {self._access_token}"}
 
-        while True:
+        # Hard cap: a cursor that never terminates must not spin forever.
+        for _page_num in range(200):
             logger.debug(
                 "Fetching transactions for account %s...",
                 portfolio["portfolioNum"],

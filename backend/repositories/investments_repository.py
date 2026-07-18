@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 from backend.errors import EntityNotFoundException
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 from backend.models.investment import Investment
 from backend.constants.tables import InvestmentsTableFields, Tables
@@ -152,12 +153,21 @@ class InvestmentsRepository:
         EntityNotFoundException
             If no investment with the given ID exists.
         """
+        cache_key = ("investments.get_by_id", investment_id)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         stmt = select(Investment).where(Investment.id == investment_id)
         df = pd.read_sql(stmt, self.db.bind)
         if df.empty:
             raise EntityNotFoundException(
                 f"No investment found with ID {investment_id}"
             )
+        # Request-scoped memoization: portfolio endpoints re-read the same
+        # investment row 3-4x per request (profit/loss + balance history +
+        # linkage checks). Auto-invalidated on any commit/rollback.
+        session_cache_set(self.db, cache_key, df)
         return df
 
     def get_by_category_tag(self, category: str, tag: str) -> pd.DataFrame:

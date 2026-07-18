@@ -19,10 +19,9 @@ class AppConfig:
     _instance = None
     _demo_mode = False
 
-    # Base user directory
-    _base_user_dir = os.environ.get(
-        "FAD_USER_DIR", os.path.join(os.path.expanduser("~"), ".finance-analysis")
-    )
+    # Base user directory override (tests / callers may assign
+    # ``_base_user_dir`` directly; None means "resolve from env at call time")
+    _base_user_dir_override = None
 
     def __new__(cls):
         """Return the shared singleton instance, creating it on first call."""
@@ -50,6 +49,25 @@ class AppConfig:
         # Ensure demo directory exists if entering demo mode
         if enabled:
             os.makedirs(self.get_user_dir(), exist_ok=True)
+
+    @property
+    def _base_user_dir(self) -> str:
+        """Base user directory, resolving ``FAD_USER_DIR`` at call time.
+
+        Previously this was read once at class-definition time, so any
+        caller that set the env var after importing the module silently got
+        the wrong directory.
+        """
+        if self._base_user_dir_override is not None:
+            return self._base_user_dir_override
+        return os.environ.get(
+            "FAD_USER_DIR",
+            os.path.join(os.path.expanduser("~"), ".finance-analysis"),
+        )
+
+    @_base_user_dir.setter
+    def _base_user_dir(self, value) -> None:
+        self._base_user_dir_override = value
 
     def get_user_dir(self) -> str:
         """Get the current user directory based on mode."""

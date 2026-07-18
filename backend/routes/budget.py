@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.budget_service import (
     BudgetService,
     MonthlyBudgetService,
@@ -22,7 +23,7 @@ from backend.services.budget_service import (
 router = APIRouter()
 
 
-class BudgetRuleCreate(BaseModel):
+class BudgetRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
@@ -31,14 +32,14 @@ class BudgetRuleCreate(BaseModel):
     year: Optional[int] = None
 
 
-class BudgetRuleUpdate(BaseModel):
+class BudgetRuleUpdate(ApiRequestModel):
     name: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
     tags: Optional[str | List[str]] = None
 
 
-class YearlyRuleCreate(BaseModel):
+class YearlyRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
@@ -46,19 +47,19 @@ class YearlyRuleCreate(BaseModel):
     year: int
 
 
-class YearlyRuleUpdate(BaseModel):
+class YearlyRuleUpdate(ApiRequestModel):
     name: Optional[str] = None
     amount: Optional[float] = None
     category: Optional[str] = None
     tags: Optional[str | List[str]] = None
 
 
-class ProjectCreate(BaseModel):
+class ProjectCreate(ApiRequestModel):
     category: str
     total_budget: float
 
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdate(ApiRequestModel):
     total_budget: float
 
 

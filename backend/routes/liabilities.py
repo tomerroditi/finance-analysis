@@ -12,12 +12,13 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.liabilities_service import LiabilitiesService
 
 router = APIRouter()
 
 
-class LiabilityCreate(BaseModel):
+class LiabilityCreate(ApiRequestModel):
     name: str
     tag: str
     principal_amount: float
@@ -35,7 +36,7 @@ class LiabilityCreate(BaseModel):
         return v
 
 
-class LiabilityUpdate(BaseModel):
+class LiabilityUpdate(ApiRequestModel):
     name: Optional[str] = None
     lender: Optional[str] = None
     interest_rate: Optional[float] = None
@@ -140,7 +141,7 @@ def update_liability(
     return {"status": "success"}
 
 
-class PayOffRequest(BaseModel):
+class PayOffRequest(ApiRequestModel):
     paid_off_date: str
 
 

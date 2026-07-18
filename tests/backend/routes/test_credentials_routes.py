@@ -28,12 +28,9 @@ def mock_credentials_deps(monkeypatch):
         "credit_cards": ["isracard", "max", "visa cal"],
         "banks": ["hapoalim", "leumi", "discount"],
     }
-    mock_service.get_scraper_credentials.return_value = {
-        "banks": {
-            "hapoalim": {
-                "Checking": {"username": "test_user", "password": "test_password"}
-            }
-        }
+    mock_service.get_masked_credentials.return_value = {
+        "username": "test_user",
+        "password": "__unchanged__",
     }
     mock_service.save_credentials.return_value = None
     mock_service.delete_credential.return_value = None
@@ -91,17 +88,17 @@ class TestCredentialsRoutes:
         assert "password" in data["fields"]
 
     def test_get_credential_details(self, test_client):
-        """GET /api/credentials/{service}/{provider}/{account_name} returns credential details."""
+        """GET /api/credentials/{service}/{provider}/{account_name} returns masked details."""
         response = test_client.get("/api/credentials/banks/hapoalim/Checking")
         assert response.status_code == 200
         data = response.json()
         assert data["username"] == "test_user"
-        assert data["password"] == "test_password"
+        assert data["password"] == "__unchanged__"
 
     def test_get_credential_details_not_found(self, test_client, monkeypatch):
         """GET returns 404 for non-existent credentials."""
         mock_service = MagicMock()
-        mock_service.get_scraper_credentials.return_value = {}
+        mock_service.get_masked_credentials.return_value = {}
         mock_cls = MagicMock()
         mock_cls.return_value = mock_service
         monkeypatch.setattr(

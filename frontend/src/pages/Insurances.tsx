@@ -32,6 +32,7 @@ import { ChartLegend } from "../components/charts/ChartLegend";
 import { DonutChart } from "../components/charts/DonutChart";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate, formatMonthCompact, formatMonthYear } from "../utils/dateFormatting";
+import { formatCurrency } from "../utils/numberFormatting";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useQueryKeys } from "../hooks/useQueryKeys";
@@ -68,14 +69,6 @@ interface InsuranceCost {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
-function fmt(amount: number): string {
-  return new Intl.NumberFormat("he-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 function fmtPct(val: number | null | undefined): string {
   if (val === null || val === undefined) return "—";
   return `${val.toFixed(2)}%`;
@@ -321,7 +314,7 @@ function AccountCardFull({
           </p>
         </div>
         <div className="text-start sm:text-end shrink-0">
-          <p className="text-2xl font-black text-white">{fmt(account.balance ?? 0)}</p>
+          <p className="text-2xl font-black text-white">{formatCurrency(account.balance ?? 0)}</p>
           <p className="text-xs text-[var(--text-muted)]">{t("insurance.currentBalance")}</p>
         </div>
       </div>
@@ -381,11 +374,11 @@ function AccountCardFull({
         {/* Deposit Summary */}
         <div className="bg-[var(--background)]/50 rounded-xl p-3">
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
-          <p className="text-emerald-400 font-black text-lg" dir="ltr">{fmt(deposits.reduce((s, dep) => s + dep.amount, 0))}</p>
+          <p className="text-emerald-400 font-black text-lg" dir="ltr">{formatCurrency(deposits.reduce((s, dep) => s + dep.amount, 0))}</p>
           <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
           {totalCosts > 0 && (
             <p className="text-rose-400 text-[10px] mt-1 font-bold">
-              <span dir="ltr">{fmt(-totalCosts)}</span> {t("insurance.insuranceCostsLabel")}
+              <span dir="ltr">{formatCurrency(-totalCosts)}</span> {t("insurance.insuranceCostsLabel")}
             </p>
           )}
         </div>
@@ -401,7 +394,7 @@ function AccountCardFull({
                 <div key={i} className="flex flex-col">
                   <span className="text-[var(--text-muted)] text-[10px] leading-tight">{c.title}</span>
                   <span className="text-white font-mono font-bold text-xs leading-tight" dir="ltr">
-                    {fmt(unwrapAmount(c.sum))}
+                    {formatCurrency(unwrapAmount(c.sum))}
                   </span>
                 </div>
               ))}
@@ -470,13 +463,13 @@ function AccountCardFull({
                       {breakdown !== null && (
                         <>
                           <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
-                            {breakdown.employee !== null ? fmt(breakdown.employee) : "—"}
+                            {breakdown.employee !== null ? formatCurrency(breakdown.employee) : "—"}
                           </td>
                           <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
-                            {breakdown.employer !== null ? fmt(breakdown.employer) : "—"}
+                            {breakdown.employer !== null ? formatCurrency(breakdown.employer) : "—"}
                           </td>
                           <td className="px-4 sm:px-6 py-2 text-end font-mono text-xs text-[var(--text-muted)]">
-                            {breakdown.compensation !== null ? fmt(breakdown.compensation) : "—"}
+                            {breakdown.compensation !== null ? formatCurrency(breakdown.compensation) : "—"}
                           </td>
                         </>
                       )}
@@ -486,7 +479,7 @@ function AccountCardFull({
                           dir="ltr"
                         >
                           {tx.amount >= 0 ? "+" : ""}
-                          {fmt(tx.amount)}
+                          {formatCurrency(tx.amount)}
                         </span>
                       </td>
                     </tr>
@@ -554,8 +547,8 @@ export function Insurances() {
   }
 
   const totalBalance = accounts.reduce((s, a) => s + (a.balance ?? 0), 0);
-  const allDeposits = transactions.filter((t) => t.amount > 0);
-  const totalDeposits = allDeposits.reduce((s, t) => s + t.amount, 0);
+  const allDeposits = transactions.filter((tx) => tx.amount > 0);
+  const totalDeposits = allDeposits.reduce((s, tx) => s + tx.amount, 0);
   // Insurance costs come from metadata, not transactions
   const totalCosts = accounts.reduce((s, a) => {
     const costs = parseCosts(a.insurance_costs);
@@ -566,9 +559,9 @@ export function Insurances() {
 
   // Monthly deposit aggregation for chart
   const monthlyDeposits: Record<string, number> = {};
-  allDeposits.forEach((t) => {
-    const month = t.date.substring(0, 7);
-    monthlyDeposits[month] = (monthlyDeposits[month] || 0) + t.amount;
+  allDeposits.forEach((tx) => {
+    const month = tx.date.substring(0, 7);
+    monthlyDeposits[month] = (monthlyDeposits[month] || 0) + tx.amount;
   });
   const months = Object.keys(monthlyDeposits).sort();
   const monthlyValues = months.map((m) => monthlyDeposits[m]);
@@ -580,25 +573,25 @@ export function Insurances() {
   // Allocation across all accounts
   const allTracks = accounts.flatMap((a) => {
     const tracks = parseTracks(a.investment_tracks);
-    return tracks.map((t) => ({ ...t, account: a.account_name }));
+    return tracks.map((track) => ({ ...track, account: a.account_name }));
   });
   // Filter to tracks with a non-zero sum for the pie chart
-  const tracksWithSum = allTracks.filter((t) => (t.sum ?? 0) > 0);
-  const trackNames = tracksWithSum.map((t) => t.name);
-  const trackSums = tracksWithSum.map((t) => t.sum ?? 0);
+  const tracksWithSum = allTracks.filter((track) => (track.sum ?? 0) > 0);
+  const trackNames = tracksWithSum.map((track) => track.name);
+  const trackSums = tracksWithSum.map((track) => track.sum ?? 0);
 
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <StatCard title={t("insurance.totalBalance")} value={fmt(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
+        <StatCard title={t("insurance.totalBalance")} value={formatCurrency(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
         <StatCard
           title={t("insurance.totalDeposits")}
-          value={fmt(totalDeposits)}
+          value={formatCurrency(totalDeposits)}
           icon={ArrowUpRight}
           color="bg-emerald-500/10 text-emerald-400"
         />
-        <StatCard title={t("insurance.insuranceCosts")} value={fmt(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
+        <StatCard title={t("insurance.insuranceCosts")} value={formatCurrency(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
         <StatCard
           title={t("insurance.avgCommission")}
           value={fmtPct(avgCommission)}
@@ -699,7 +692,7 @@ export function Insurances() {
               height={280}
               labelMode="label-percent-outside"
               centerLabel={
-                <span className="text-base font-semibold text-[#f8fafc]">{fmt(totalBalance)}</span>
+                <span className="text-base font-semibold text-[#f8fafc]">{formatCurrency(totalBalance)}</span>
               }
             />
           ) : (

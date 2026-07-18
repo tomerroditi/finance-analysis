@@ -71,14 +71,17 @@ describe("TransactionsTable", () => {
     it("sorts by a different column on click", async () => {
       const user = userEvent.setup();
       renderTable();
-      // Click Amount header to sort by amount ascending
+      // Click Amount header to sort by amount ascending.
       const amountHeader = screen.getByRole("columnheader", { name: /Amount/ });
       await user.click(amountHeader);
-      // After sorting by amount ascending, the order should change from the default date sort.
-      // Raw ascending: -300 (Fuel), -200 (Supermarket), -150 (Restaurant), -15 (Bus fare), 8000 (Salary)
+      // Amount sorting compares ABSOLUTE values (expenses and income mixed),
+      // so ascending is: -15 (Bus fare), -150, -200, -300, 8000.
+      // (Before SortableHeader was hoisted to module scope this click was
+      // silently eaten by a header remount and the assertion passed on the
+      // default date-desc order by coincidence.)
       const rows = screen.getAllByRole("row");
       const firstDataRow = rows[1];
-      expect(within(firstDataRow).getByText("Fuel")).toBeInTheDocument();
+      expect(within(firstDataRow).getByText("Bus fare")).toBeInTheDocument();
     });
   });
 

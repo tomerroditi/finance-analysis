@@ -9,6 +9,7 @@ import {
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -18,6 +19,7 @@ export function GoalsSection() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -62,10 +64,14 @@ export function GoalsSection() {
               key={goal.id}
               goal={goal}
               onEdit={() => setEditing(goal)}
-              onDelete={() => {
-                if (window.confirm(t("dashboard.goals.confirmDelete", { name: goal.name }))) {
-                  deleteMutation.mutate(goal.id);
-                }
+              onDelete={async () => {
+                const ok = await confirm({
+                  title: t("common.deleteTitle"),
+                  message: t("dashboard.goals.confirmDelete", { name: goal.name }),
+                  confirmLabel: t("common.delete"),
+                  isDestructive: true,
+                });
+                if (ok) deleteMutation.mutate(goal.id);
               }}
             />
           ))}

@@ -1,315 +1,24 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useScrollLock } from "../hooks/useScrollLock";
-import {
-  Plus,
-  Trash2,
-  Power,
-  PowerOff,
-  TrendingUp,
-  BarChart2,
-  DollarSign,
-  Pencil,
-  Settings,
-} from "lucide-react";
+import { Plus, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { investmentsApi } from "../services/api";
+import { investmentsApi, type Investment } from "../services/api";
+import { Modal } from "../components/common/Modal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
-import { Sparkline } from "../components/common/Sparkline";
-import { InfoTooltip } from "../components/common/InfoTooltip";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { PortfolioOverview } from "../components/investments/PortfolioOverview";
 import { InvestmentAnalysisModal } from "../components/investments/InvestmentAnalysisModal";
+import { InvestmentCard, type AllocationItem } from "../components/investments/InvestmentCard";
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
-import { useConfirm } from "../context/DialogContext";
-import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
+import { todayISO } from "../utils/dateFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
-interface Investment {
-  id: number;
-  name: string;
-  category: string;
-  tag: string;
-  type: string;
-  is_closed: boolean;
-  closed_date?: string;
-  interest_rate?: number;
-  interest_rate_type?: string;
-  notes?: string;
-  latest_snapshot_date?: string;
-  latest_snapshot_balance?: number;
-  current_balance?: number;
-  sparkline?: number[];
-  first_transaction_date?: string;
-  created_date?: string;
-}
-
-interface AllocationItem {
-  id: number;
-  name: string;
-  balance: number;
-  percentage: number;
-  profit_loss?: number;
-  roi?: number;
-  history?: number[];
-  total_deposits?: number;
-  total_withdrawals?: number;
-  cagr?: number;
-}
-
-
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
-
-const TYPE_KEY_MAP: Record<string, string> = {
-  stocks: "stocks",
-  crypto: "crypto",
-  bonds: "bonds",
-  real_estate: "realEstate",
-  pension: "pension",
-  brokerage_account: "brokerageAccount",
-  p2p_lending: "p2pLending",
-  other: "other",
-};
-
-function InvestmentCard({
-  inv,
-  onViewAnalysis,
-  onClose,
-  onReopen,
-  onDelete,
-  onUpdateBalance,
-  onEditCloseDate,
-  onEdit,
-  analysisData,
-}: {
-  inv: Investment;
-  onViewAnalysis: (id: number) => void;
-  onClose: (id: number) => void;
-  onReopen: (id: number) => void;
-  onDelete: (id: number) => void;
-  onUpdateBalance: (id: number) => void;
-  onEditCloseDate: (id: number, closedDate?: string) => void;
-  onEdit: (inv: Investment) => void;
-  analysisData?: AllocationItem;
-}) {
-  const { t } = useTranslation();
-  const confirm = useConfirm();
-  const snapshotAgeDays = inv.latest_snapshot_date
-    ? Math.floor(
-        (new Date().getTime() - new Date(inv.latest_snapshot_date).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    : 0;
-
-  return (
-    <div
-      className={`group bg-[var(--surface)] rounded-2xl border ${inv.is_closed ? "border-red-500/10" : "border-[var(--surface-light)]"} p-4 md:p-6 shadow-sm hover:shadow-xl transition-all flex flex-col`}
-    >
-      <div className="flex items-start justify-between mb-3 md:mb-4">
-        <div className="flex items-center gap-2 md:gap-4">
-          <div
-            className={`p-3 rounded-xl ${inv.is_closed ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}
-          >
-            <TrendingUp size={24} />
-          </div>
-          <div>
-            <h3 className="font-bold text-lg text-white">{inv.name}</h3>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
-                {t(`investments.types.${TYPE_KEY_MAP[inv.type] || "other"}`)}
-              </span>
-              <span className="text-[var(--text-muted)]">•</span>
-              <span className="text-xs text-[var(--text-muted)] font-medium">
-                {inv.tag}
-              </span>
-            </div>
-          </div>
-        </div>
-        {!!inv.is_closed && (
-          <div className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter bg-red-500/20 text-red-400">
-            {t("investments.closed")}
-          </div>
-        )}
-      </div>
-
-      {/* Balance + Sparkline */}
-      <div className="flex items-center justify-between mb-3 md:mb-4 p-3 md:p-4 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-        <div>
-          {analysisData ? (
-            inv.is_closed ? (
-              <>
-                <p
-                  className={`text-2xl font-black ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-                  dir="ltr"
-                >
-                  {formatChange(analysisData.profit_loss ?? 0, { compact: false })}
-                </p>
-                <p className="text-sm font-semibold mt-1 text-[var(--text-muted)]" dir="ltr">
-                  {analysisData.roi != null &&
-                    `ROI: ${formatPercentChange(analysisData.roi)}`}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-black text-white" dir="ltr">
-                  {formatCurrency(analysisData.balance)}
-                </p>
-                <p
-                  className={`text-sm font-semibold mt-1 ${(analysisData.profit_loss ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-                  dir="ltr"
-                >
-                  {formatChange(analysisData.profit_loss ?? 0, { compact: false })}
-                  {analysisData.roi != null &&
-                    ` (${formatPercentChange(analysisData.roi)})`}
-                </p>
-              </>
-            )
-          ) : (
-            <div className="space-y-2">
-              <Skeleton variant="card" className="h-7 w-28" />
-              <Skeleton variant="card" className="h-4 w-20" />
-            </div>
-          )}
-        </div>
-        <div className="flex-shrink-0 ms-4">
-          {(analysisData?.history?.length ?? 0) >= 2 ? (
-            <Sparkline
-              data={analysisData!.history!}
-              width={100}
-              height={40}
-              color={(analysisData!.profit_loss ?? 0) >= 0 ? "#10b981" : "#f43f5e"}
-            />
-          ) : !analysisData ? (
-            <Skeleton variant="card" className="w-[100px] h-[40px]" />
-          ) : null}
-        </div>
-      </div>
-
-      {/* Metrics Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
-        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.deposits")}</p>
-          <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCurrency(analysisData.total_deposits ?? 0) : "—"}
-          </p>
-        </div>
-        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.withdrawals")}</p>
-          <p className="text-sm font-bold text-white mt-0.5">
-            {analysisData ? formatCurrency(analysisData.total_withdrawals ?? 0) : "—"}
-          </p>
-        </div>
-        <div className="text-center p-2 rounded-lg bg-[var(--surface-base)]">
-          <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">{t("investments.cagr")}</p>
-          <p className="text-sm font-bold text-white mt-0.5" dir="ltr">
-            {analysisData?.cagr != null ? formatPercentChange(analysisData.cagr) : "—"}
-          </p>
-        </div>
-      </div>
-
-      {/* Metadata */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)] font-medium mb-4 px-1">
-        <span>{t("investments.opened")} {inv.first_transaction_date || inv.created_date}</span>
-        {inv.latest_snapshot_date && (
-          <>
-            <span>·</span>
-            <span className={snapshotAgeDays > 30 ? "text-amber-400" : ""}>
-              {t("investments.updated")} {inv.latest_snapshot_date}
-              {snapshotAgeDays > 30 ? ` (${t("investments.daysAgo", { count: snapshotAgeDays })})` : ""}
-            </span>
-          </>
-        )}
-        {!!inv.is_closed && inv.closed_date && (
-          <>
-            <span>·</span>
-            <span className="text-red-400 inline-flex items-center gap-1">
-              {t("investments.closed")} {inv.closed_date}
-              <button
-                onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
-                className="hover:text-white transition-all"
-                title={t("tooltips.editCloseDate")}
-              >
-                <Pencil size={10} />
-              </button>
-            </span>
-          </>
-        )}
-      </div>
-
-      <div className="mt-auto flex items-center justify-between pt-4 border-t border-[var(--surface-light)]">
-        <div className="flex gap-2">
-          {!inv.is_closed ? (
-            <button
-              onClick={() => onClose(inv.id)}
-              className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-              title={t("common.close")}
-            >
-              <PowerOff size={16} />
-            </button>
-          ) : (
-            <button
-              onClick={() => onReopen(inv.id)}
-              className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-              title={t("investments.reopen")}
-            >
-              <Power size={16} />
-            </button>
-          )}
-          <button
-            onClick={async () => {
-              const ok = await confirm({
-                title: t("common.deleteTitle"),
-                message: t("investments.confirmDelete"),
-                confirmLabel: t("common.delete"),
-                isDestructive: true,
-              });
-              if (ok) onDelete(inv.id);
-            }}
-            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
-            title={t("common.delete")}
-          >
-            <Trash2 size={16} />
-          </button>
-          {inv.notes && (
-            <div className="p-2 rounded-lg bg-[var(--surface-light)] flex items-center">
-              <InfoTooltip text={inv.notes} iconSize={16} width={192} />
-            </div>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onEdit(inv)}
-            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-            title={t("common.edit")}
-          >
-            <Settings size={16} />
-          </button>
-          {!inv.is_closed && (
-            <button
-              onClick={() => onUpdateBalance(inv.id)}
-              className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all"
-              title={t("investments.updateBalance")}
-            >
-              <DollarSign size={16} />
-            </button>
-          )}
-          <button
-            onClick={() => onViewAnalysis(inv.id)}
-            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-            title={t("investments.viewAnalysis")}
-          >
-            <BarChart2 size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function Investments() {
   const { t } = useTranslation();
@@ -345,15 +54,13 @@ export function Investments() {
     investmentId: number | null;
     date: string;
     balance: string;
-  }>({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
+  }>({ investmentId: null, date: todayISO(), balance: "" });
 
   const [closeForm, setCloseForm] = useState<{
     investmentId: number | null;
     date: string;
     mode: "close" | "edit";
-  }>({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
-
-  useScrollLock(isAddOpen || !!selectedAnalysisId || !!editForm.investmentId || !!balanceForm.investmentId || !!closeForm.investmentId);
+  }>({ investmentId: null, date: todayISO(), mode: "close" });
 
   // Queries
   const {
@@ -407,7 +114,7 @@ export function Investments() {
       investmentsApi.close(id, closedDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-      setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
+      setCloseForm({ investmentId: null, date: todayISO(), mode: "close" });
     },
   });
 
@@ -416,7 +123,7 @@ export function Investments() {
       investmentsApi.update(id, { closed_date: closedDate }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-      setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" });
+      setCloseForm({ investmentId: null, date: todayISO(), mode: "close" });
     },
   });
 
@@ -442,7 +149,7 @@ export function Investments() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-      setBalanceForm({ investmentId: null, date: new Date().toISOString().split("T")[0], balance: "" });
+      setBalanceForm({ investmentId: null, date: todayISO(), balance: "" });
     },
   });
 
@@ -542,14 +249,14 @@ export function Investments() {
                   inv={inv}
                   onViewAnalysis={setSelectedAnalysisId}
                   onClose={(id: number) =>
-                    setCloseForm({ investmentId: id, date: new Date().toISOString().split("T")[0], mode: "close" })
+                    setCloseForm({ investmentId: id, date: todayISO(), mode: "close" })
                   }
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
                   onUpdateBalance={(id: number) =>
                     setBalanceForm({
                       investmentId: id,
-                      date: new Date().toISOString().split("T")[0],
+                      date: todayISO(),
                       balance: "",
                     })
                   }
@@ -623,14 +330,14 @@ export function Investments() {
                 inv={inv}
                 onViewAnalysis={setSelectedAnalysisId}
                 onClose={(id: number) =>
-                  setCloseForm({ investmentId: id, date: new Date().toISOString().split("T")[0], mode: "close" })
+                  setCloseForm({ investmentId: id, date: todayISO(), mode: "close" })
                 }
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
                 onUpdateBalance={(id: number) =>
                   setBalanceForm({
                     investmentId: id,
-                    date: new Date().toISOString().split("T")[0],
+                    date: todayISO(),
                     balance: "",
                   })
                 }
@@ -653,7 +360,7 @@ export function Investments() {
       )}
 
       {/* Analysis Modal */}
-      {selectedAnalysisId && (
+      {selectedAnalysisId != null && (
         <InvestmentAnalysisModal
           investmentId={selectedAnalysisId}
           investment={investments?.find((i: Investment) => i.id === selectedAnalysisId)}
@@ -662,10 +369,15 @@ export function Investments() {
       )}
 
       {/* Update Balance Modal */}
-      {balanceForm.investmentId && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">{t("investments.updateBalance")}</h3>
+      <Modal
+        isOpen={balanceForm.investmentId != null}
+        onClose={() =>
+          setBalanceForm({ investmentId: null, date: todayISO(), balance: "" })
+        }
+        title={t("investments.updateBalance")}
+        maxWidth="sm"
+      >
+        <div className="p-4 md:p-6 overflow-y-auto">
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -701,7 +413,7 @@ export function Investments() {
                 onClick={() =>
                   setBalanceForm({
                     investmentId: null,
-                    date: new Date().toISOString().split("T")[0],
+                    date: todayISO(),
                     balance: "",
                   })
                 }
@@ -723,17 +435,23 @@ export function Investments() {
                 {balanceSnapshotMutation.isPending ? t("investments.saving") : t("common.save")}
               </button>
             </div>
-          </div>
         </div>
-      )}
+      </Modal>
 
       {/* Close / Edit Close Date Modal */}
-      {closeForm.investmentId && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">
-              {closeForm.mode === "close" ? t("investments.closeInvestment") : t("investments.editCloseDate")}
-            </h3>
+      <Modal
+        isOpen={closeForm.investmentId != null}
+        onClose={() =>
+          setCloseForm({ investmentId: null, date: todayISO(), mode: "close" })
+        }
+        title={
+          closeForm.mode === "close"
+            ? t("investments.closeInvestment")
+            : t("investments.editCloseDate")
+        }
+        maxWidth="sm"
+      >
+        <div className="p-4 md:p-6 overflow-y-auto">
             <div>
               <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
                 {t("investments.closeDate")}
@@ -750,7 +468,7 @@ export function Investments() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() =>
-                  setCloseForm({ investmentId: null, date: new Date().toISOString().split("T")[0], mode: "close" })
+                  setCloseForm({ investmentId: null, date: todayISO(), mode: "close" })
                 }
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
@@ -774,15 +492,19 @@ export function Investments() {
                     : t("investments.updateDate")}
               </button>
             </div>
-          </div>
         </div>
-      )}
+      </Modal>
 
       {/* Edit Investment Modal */}
-      {editForm.investmentId && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-6 shadow-2xl w-full max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">{t("investments.editInvestment")}</h3>
+      <Modal
+        isOpen={editForm.investmentId != null}
+        onClose={() =>
+          setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" })
+        }
+        title={t("investments.editInvestment")}
+        maxWidth="sm"
+      >
+        <div className="p-4 md:p-6 overflow-y-auto">
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -861,22 +583,18 @@ export function Investments() {
                 {editMutation.isPending ? t("investments.saving") : t("common.save")}
               </button>
             </div>
-          </div>
         </div>
-      )}
+      </Modal>
 
-      {/* Add Modal (Existing) */}
-      {isAddOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-8 shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200">
-            {/* ... Existing Add Modal Code ... */}
-            <div className="flex items-center gap-3 mb-4 md:mb-6">
-              <div className="p-3 rounded-2xl bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/20">
-                <TrendingUp size={24} />
-              </div>
-              <h2 className="text-xl md:text-2xl font-bold">{t("investments.newInvestment")}</h2>
-            </div>
-
+      {/* Add Modal */}
+      <Modal
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        title={t("investments.newInvestment")}
+        titleIcon={<TrendingUp size={20} />}
+        maxWidth="lg"
+      >
+        <div className="p-4 md:p-8 overflow-y-auto">
             {createMutation.isError && (
               <div className="mb-4 md:mb-6 p-3 md:p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium animate-in slide-in-from-top-2">
                 {(createMutation.error as unknown as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -1012,9 +730,8 @@ export function Investments() {
                 {createMutation.isPending ? t("investments.creating") : t("investments.createInvestment")}
               </button>
             </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

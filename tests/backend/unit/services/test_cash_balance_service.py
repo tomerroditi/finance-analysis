@@ -408,3 +408,6 @@ class TestDeletePriorWealthTransaction:
         """Verify no error when there's nothing to delete."""
         service = CashBalanceService(db_session)
         service._delete_prior_wealth_transaction()  # Should not raise
+
+        # The no-op neither created nor deleted anything.
+        assert db_session.query(CashTransaction).count() == 0

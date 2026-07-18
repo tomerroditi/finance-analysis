@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../hooks/useScrollLock";
 import {
   Plus,
-  Trash2,
   Globe,
   Landmark,
   CreditCard,
@@ -12,17 +11,10 @@ import {
   ChevronRight,
   X,
   AlertCircle,
-  Edit2,
   Eye,
   EyeOff,
-  DollarSign,
   RefreshCw,
-  PlayCircle,
   ChevronDown,
-  Smartphone,
-  XCircle,
-  CheckCircle2,
-  Clock,
   Shield,
 } from "lucide-react";
 import {
@@ -30,20 +22,20 @@ import {
   bankBalancesApi,
   scrapingApi,
 } from "../services/api";
-import type { BankBalance } from "../services/api";
+import type { BankBalance, CredentialAccount } from "../services/api";
 
-import { useConfirm } from "../context/DialogContext";
 import { useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
-import { ScrapeErrorTooltip } from "../components/common/ScrapeErrorTooltip";
 import { Skeleton } from "../components/common/Skeleton";
 import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
-import { humanizeAccountType, humanizeProvider } from "../utils/textFormatting";
-import { formatRelativeDate } from "../utils/dateFormatting";
-import { formatCurrency } from "../utils/numberFormatting";
-import i18n from "../i18n";
+import { AccountCard } from "../components/dataSources/AccountCard";
+import { humanizeProvider } from "../utils/textFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+
+// Sentinel the backend returns in place of stored secrets; sending it back
+// on save keeps the stored value (see backend CredentialsService.MASK_SENTINEL).
+const MASKED_VALUE = "__unchanged__";
 
 const SCRAPING_PERIODS = [
   { key: "auto", days: null },
@@ -55,18 +47,11 @@ const SCRAPING_PERIODS = [
   { key: "months12", days: 365 },
 ] as const;
 
-interface CredentialAccount {
-  service: string;
-  provider: string;
-  account_name: string;
-}
-
 export function DataSources() {
   const { t, i18n: i18nInstance } = useTranslation();
   const isRtl = i18nInstance.language === "he";
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
-  const confirm = useConfirm();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<
@@ -315,292 +300,52 @@ export function DataSources() {
 
             const renderAccountCard = (acc: CredentialAccount, idx: number) => {
               const scraper = getScraperForAccount(acc);
-              const isActive = scraper && (scraper.status === "in_progress" || scraper.status === "waiting_for_2fa");
               const lastScrape = lastScrapes?.find(
-                (s: { service: string; provider: string; account_name: string }) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
+                (s) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
               );
               const tfaKey = `${acc.service}_${acc.provider}_${acc.account_name}`;
+              const bal = getAccountBalance(acc.provider, acc.account_name);
 
               return (
-              <div
-                key={`${acc.service}-${acc.provider}-${acc.account_name}-${idx}`}
-                className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-3 md:p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all"
-              >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
-                <div className="flex items-center gap-3 md:gap-5">
-                  <div className="w-14 h-14 shrink-0 rounded-2xl bg-white flex items-center justify-center p-2 text-gray-700">
-                    <ProviderLogo
-                      provider={acc.provider}
-                      service={acc.service}
-                      size={40}
-                      alt={humanizeProvider(acc.provider)}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <h3 className="font-bold text-lg text-white capitalize">
-                        {acc.account_name}
-                      </h3>
-                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
-                        {humanizeProvider(acc.provider)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-[var(--text-muted)] font-medium">
-                      {humanizeAccountType(acc.service)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 md:gap-4">
-                  <div className="md:w-[160px] flex items-center md:justify-end">
-                  {acc.service === "banks" &&
-                    (() => {
-                      const bal = getAccountBalance(acc.provider, acc.account_name);
-                      const canSetBalance = isScrapedToday(acc.provider, acc.account_name);
-                      return (
-                        <div className="flex items-center gap-2">
-                          {bal ? (
-                            <span className="text-sm font-semibold text-amber-400">
-                              {formatCurrency(bal.balance)}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[var(--text-muted)] italic">
-                              {t("dataSources.noBalanceSet")}
-                            </span>
-                          )}
-                          <button
-                            onClick={() =>
-                              setBalanceModalAccount({
-                                provider: acc.provider,
-                                account_name: acc.account_name,
-                                balance: bal ? bal.balance : null,
-                              })
-                            }
-                            disabled={!canSetBalance}
-                            className={`p-1.5 rounded-lg transition-all ${
-                              canSetBalance
-                                ? "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-                                : "bg-[var(--surface-light)] text-[var(--text-muted)] cursor-not-allowed opacity-50"
-                            }`}
-                            title={
-                              canSetBalance
-                                ? t("dataSources.setBalance")
-                                : t("dataSources.scrapeFirstToSetBalance")
-                            }
-                          >
-                            <DollarSign size={16} />
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Scraping Status */}
-                  <div className="flex items-center gap-2 min-w-[100px] justify-end">
-                    {scraper?.status === "in_progress" && (
-                      <div className="flex items-center gap-1.5">
-                        <RefreshCw size={14} className="animate-spin text-blue-400 shrink-0" />
-                        <span className="text-xs font-semibold text-blue-400">
-                          {t("dataSources.scraping")}
-                        </span>
-                      </div>
-                    )}
-                    {scraper?.status === "waiting_for_2fa" && (
-                      <div className="flex items-center gap-1.5">
-                        <Smartphone size={14} className="text-amber-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-amber-400">{t("dataSources.tfaRequired")}</span>
-                      </div>
-                    )}
-                    {scraper?.status === "success" && (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                        <CheckCircle2 size={12} className="text-emerald-400" />
-                        <span className="text-[10px] font-semibold text-emerald-400">{t("dataSources.synced")}</span>
-                      </div>
-                    )}
-                    {scraper?.status === "failed" && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-red-400">{t("dataSources.failed")}</span>
-                        {!!scraper.error_message && (
-                          <ScrapeErrorTooltip message={scraper.error_message} />
-                        )}
-                      </div>
-                    )}
-                    {(!scraper || !["in_progress", "waiting_for_2fa", "success", "failed"].includes(scraper.status)) && (
-                      <>
-                        {!lastScrape?.last_scrape_date ? (
-                          <span className="text-[10px] text-[var(--text-muted)] italic">{t("dataSources.neverSynced")}</span>
-                        ) : isScrapedToday(acc.provider, acc.account_name) ? (
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                            <CheckCircle2 size={12} className="text-emerald-400" />
-                            <span className="text-[10px] font-semibold text-emerald-400">{t("dataSources.synced")}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 text-[var(--text-muted)]">
-                            <Clock size={12} />
-                            <span className="text-[10px]">{formatRelativeDate(lastScrape.last_scrape_date)}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    {/* Scrape / Abort Button */}
-                    {isActive ? (
-                      <button
-                        onClick={() => abortScraper(scraper!)}
-                        className="p-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all"
-                        title={t("dataSources.abortScraping")}
-                      >
-                        <XCircle size={20} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => startScraper(acc, scrapingPeriodDays)}
-                        disabled={isAnyScraping}
-                        className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={t("dataSources.scrapeThisSource")}
-                      >
-                        <PlayCircle size={20} />
-                      </button>
-                    )}
-                    {acc.provider === "onezero" && (
-                      <button
-                        onClick={() =>
-                          startScraper(acc, scrapingPeriodDays, { force2fa: true })
-                        }
-                        disabled={isAnyScraping}
-                        className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={t("dataSources.forceTfaTitle")}
-                        aria-label={t("dataSources.forceTfa")}
-                      >
-                        <span className="relative inline-flex">
-                          <Smartphone size={20} />
-                          <RefreshCw
-                            size={11}
-                            className="absolute -bottom-1 -end-1.5 rounded-full bg-[var(--surface-light)] p-[1px] text-amber-400"
-                          />
-                        </span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleView(acc)}
-                      className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-                      title={t("dataSources.viewDetails")}
-                    >
-                      <Eye size={20} />
-                    </button>
-                    <button
-                      onClick={() => handleEdit(acc)}
-                      className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all"
-                      title={t("dataSources.editAccount")}
-                    >
-                      <Edit2 size={20} />
-                    </button>
-                    <button
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: t("dataSources.disconnectAccount"),
-                          message: t("dataSources.confirmDisconnect", { name: acc.account_name }),
-                          confirmLabel: t("dataSources.disconnectAccount"),
-                          isDestructive: true,
-                        });
-                        if (ok) deleteMutation.mutate(acc);
-                      }}
-                      className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
-                      title={t("dataSources.disconnectAccount")}
-                    >
-                      <Trash2 size={20} />
-                    </button>
-                  </div>
-                </div>
-                </div>
-
-                {/* 2FA Inline Section */}
-                {scraper?.status === "waiting_for_2fa" && (() => {
-                  const cooldownRemaining = resendCooldownRemaining(scraper.process_id);
-                  const resendErrorInfo = resendErrors[scraper.process_id];
-                  // Rate-limit detail is the backend's own actionable
-                  // wait-and-retry hint — show it verbatim. Everything else
-                  // gets a translated message (backend strings are
-                  // English-only and not meant for direct display).
-                  const resendError = resendErrorInfo
-                    ? resendErrorInfo.kind === "rate_limited" && resendErrorInfo.detail
-                      ? resendErrorInfo.detail
-                      : resendErrorInfo.kind === "expired"
-                        ? t("dataSources.resendProcessExpired")
-                        : t("dataSources.resendFailed")
-                    : undefined;
-                  return (
-                  <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-amber-500/20">
-                    <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
-                      <Smartphone className="text-amber-400 shrink-0" size={18} />
-                      <span className="text-xs text-amber-100/70">
-                        {t("dataSources.enter2faCode")} <span className="text-white font-bold">{humanizeProvider(acc.provider)}</span>
-                      </span>
-                      <div className="flex items-center gap-2 ms-auto">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          placeholder={t("dataSources.enter2faCodePlaceholder")}
-                          maxLength={10}
-                          className="w-28 bg-black/40 border border-amber-500/30 rounded-lg px-3 py-1.5 text-sm font-mono text-center outline-none focus:border-amber-400 text-white"
-                          value={tfaCodes[tfaKey] || ""}
-                          onChange={(e) =>
-                            setTfaCodes((prev) => ({
-                              ...prev,
-                              [tfaKey]: e.target.value,
-                            }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              const code = tfaCodes[tfaKey];
-                              if (code) {
-                                submitTfa(scraper, code);
-                                setTfaCodes((prev) => ({
-                                  ...prev,
-                                  [tfaKey]: "",
-                                }));
-                              }
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={() => {
-                            const code = tfaCodes[tfaKey];
-                            if (code) {
-                              submitTfa(scraper, code);
-                              setTfaCodes((prev) => ({
-                                ...prev,
-                                [tfaKey]: "",
-                              }));
-                            }
-                          }}
-                          disabled={!tfaCodes[tfaKey] || tfaIsPending}
-                          className="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-xs font-bold hover:bg-amber-400 transition-all disabled:opacity-50"
-                        >
-                          {t("dataSources.verify")}
-                        </button>
-                        <button
-                          onClick={() => resendTfa(scraper)}
-                          disabled={tfaIsPending || cooldownRemaining > 0}
-                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                        >
-                          {cooldownRemaining > 0
-                            ? t("dataSources.resendIn", { seconds: cooldownRemaining })
-                            : t("dataSources.resend")}
-                        </button>
-                      </div>
-                    </div>
-                    {!!resendError && (
-                      <p className="mt-2 text-xs text-red-400 font-medium" dir="auto">
-                        {resendError}
-                      </p>
-                    )}
-                  </div>
-                  );
-                })()}
-              </div>
+                <AccountCard
+                  key={`${acc.service}-${acc.provider}-${acc.account_name}-${idx}`}
+                  acc={acc}
+                  scraper={scraper}
+                  lastScrapeDate={lastScrape?.last_scrape_date}
+                  balance={bal}
+                  scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
+                  isAnyScraping={isAnyScraping}
+                  tfaIsPending={tfaIsPending}
+                  tfaCode={tfaCodes[tfaKey] || ""}
+                  onTfaCodeChange={(code) =>
+                    setTfaCodes((prev) => ({ ...prev, [tfaKey]: code }))
+                  }
+                  onSubmitTfa={(code) => {
+                    submitTfa(scraper!, code);
+                    setTfaCodes((prev) => ({ ...prev, [tfaKey]: "" }));
+                  }}
+                  onResendTfa={() => resendTfa(scraper!)}
+                  resendCooldownRemaining={
+                    scraper ? resendCooldownRemaining(scraper.process_id) : 0
+                  }
+                  resendErrorInfo={
+                    scraper ? resendErrors[scraper.process_id] : undefined
+                  }
+                  onStartScrape={(opts) =>
+                    startScraper(acc, scrapingPeriodDays, opts)
+                  }
+                  onAbortScrape={() => abortScraper(scraper!)}
+                  onOpenBalanceModal={() =>
+                    setBalanceModalAccount({
+                      provider: acc.provider,
+                      account_name: acc.account_name,
+                      balance: bal ? bal.balance : null,
+                    })
+                  }
+                  onView={() => handleView(acc)}
+                  onEdit={() => handleEdit(acc)}
+                  onDelete={() => deleteMutation.mutate(acc)}
+                />
               );
             };
 
@@ -810,31 +555,39 @@ export function DataSources() {
                     const isSensitive =
                       field.toLowerCase().includes("password") ||
                       field.toLowerCase().includes("secret");
+                    const isMasked = fields[field] === MASKED_VALUE;
                     return (
                       <div key={field} className="relative group/field">
                         <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                          {field.replace(/([A-Z])/g, " $1")}
+                          {/* Known credential fields get a translated label;
+                              unknown fields fall back to humanized camelCase. */}
+                          {t(`dataSources.fields.${field}`, {
+                            defaultValue: field.replace(/([A-Z])/g, " $1"),
+                          })}
                         </label>
                         <div className="relative">
                           <input
                             type={
-                              isSensitive && !showPasswords[field]
+                              isSensitive && (isMasked || !showPasswords[field])
                                 ? "password"
                                 : "text"
                             }
                             disabled={isViewOnly}
                             className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50 pe-12"
                             value={fields[field] || ""}
+                            onFocus={(e) => {
+                              if (isSensitive && isMasked) e.target.select();
+                            }}
                             onChange={(e) =>
                               setFields({ ...fields, [field]: e.target.value })
                             }
                           />
-                          {isSensitive && (
+                          {isSensitive && !isMasked && (
                             <button
                               type="button"
                               onClick={() => togglePasswordVisibility(field)}
                               className="absolute end-4 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-white transition-colors"
-                              title={showPasswords[field] ? i18n.t("common.hide") : i18n.t("common.show")}
+                              title={showPasswords[field] ? t("common.hide") : t("common.show")}
                             >
                               {showPasswords[field] ? (
                                 <EyeOff size={16} />

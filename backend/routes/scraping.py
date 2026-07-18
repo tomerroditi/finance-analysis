@@ -7,12 +7,11 @@ automated scraping of Israeli financial institutions.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.errors import BadRequestException, EntityNotFoundException
 from backend.services.scraping_service import ScrapingService
 
 router = APIRouter()
@@ -175,14 +174,9 @@ async def resend_2fa(
         400 if the resend is rate-limited (with a wait-and-retry message).
     """
     service = ScrapingService(db)
-    try:
-        return await service.resend_2fa_code(
-            data.service, data.provider, data.account
-        )
-    except EntityNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except BadRequestException as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return await service.resend_2fa_code(
+        data.service, data.provider, data.account
+    )
 
 
 @router.get("/last-scrapes")

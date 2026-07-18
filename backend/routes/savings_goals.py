@@ -10,12 +10,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import ApiRequestModel
 from backend.services.savings_goal_service import SavingsGoalService
 
 router = APIRouter()
 
 
-class SavingsGoalCreate(BaseModel):
+class SavingsGoalCreate(ApiRequestModel):
     """Request body for creating a savings goal."""
 
     name: str = Field(..., min_length=1, max_length=120)
@@ -25,7 +26,7 @@ class SavingsGoalCreate(BaseModel):
     notes: Optional[str] = None
 
 
-class SavingsGoalUpdate(BaseModel):
+class SavingsGoalUpdate(ApiRequestModel):
     """Request body for updating a savings goal (all fields optional)."""
 
     name: Optional[str] = Field(None, min_length=1, max_length=120)

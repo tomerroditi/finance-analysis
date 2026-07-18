@@ -112,7 +112,7 @@ export function NetWorthCard() {
   const renderChart = () => {
     if (netWorthView === "debt_payments") {
       if (!debtStacked) {
-        return <p className="text-[var(--text-muted)]">{t("dashboard.noData")}</p>;
+        return <p className="text-[var(--text-muted)]">{t("common.noData")}</p>;
       }
       return (
         <ResponsiveContainer width="100%" height="100%">

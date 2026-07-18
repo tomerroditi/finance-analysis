@@ -36,30 +36,41 @@ test.describe("Budget", () => {
   test("switches between monthly and project tabs", async ({ page }) => {
     await navigateTo(page, "/budget");
 
-    // Click Project Budgets tab
+    // Click Project Budgets tab and anchor on its content instead of a
+    // fixed sleep (the demo DB always seeds project budgets).
     await page.getByText(/Project Budgets/i).click();
-    await page.waitForTimeout(300);
+    await expect(
+      page.getByRole("button", { name: "Previous" }).first(),
+    ).toBeHidden();
 
-    // Click back to Monthly Budget
+    // Click back to Monthly Budget — the month header returns.
     await page.getByText(/Monthly Budget/i).click();
-    await page.waitForTimeout(300);
+    await expect(
+      page.getByRole("button", { name: "Previous" }).first(),
+    ).toBeVisible();
   });
 
   test("month navigation works", async ({ page }) => {
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
-    // Find month navigation buttons (chevron left/right)
-    const prevMonth = page.locator("button .lucide-chevron-left").first();
-    if (await prevMonth.isVisible().catch(() => false)) {
-      await prevMonth.click();
-      await page.waitForTimeout(500);
+    // MonthHeader always renders prev/next buttons (aria-labels from
+    // common.previous / common.next) around the month label. Assert
+    // unconditionally — a vanished header must fail, not silently skip.
+    const prevMonth = page.getByRole("button", { name: "Previous" }).first();
+    const nextMonth = page.getByRole("button", { name: "Next" }).first();
+    await expect(prevMonth).toBeVisible();
 
-      // Navigate forward
-      const nextMonth = page.locator("button .lucide-chevron-right").first();
-      await nextMonth.click();
-      await page.waitForTimeout(500);
-    }
+    const monthLabel = page
+      .locator("h2")
+      .filter({ hasText: /\w+ \d{4}/ })
+      .first();
+    const initialMonth = await monthLabel.textContent();
+
+    await prevMonth.click();
+    await expect(monthLabel).not.toHaveText(initialMonth ?? "");
+
+    await nextMonth.click();
+    await expect(monthLabel).toHaveText(initialMonth ?? "");
   });
 
   test("budget-vs-actual trend chart toggles", async ({ page }) => {

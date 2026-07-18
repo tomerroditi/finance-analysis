@@ -134,9 +134,11 @@ class TestBudgetRepository:
         assert updated.iloc[0]["category"] == "Food"
 
     def test_update_nonexistent_rule_raises(self, db_session: Session):
-        """Verify update raises ValueError for nonexistent rule ID."""
+        """Verify update raises EntityNotFoundException for nonexistent rule ID."""
+        from backend.errors import EntityNotFoundException
+
         repo = BudgetRepository(db_session)
-        with pytest.raises(ValueError, match="No rule found with ID 999"):
+        with pytest.raises(EntityNotFoundException, match="No rule found with ID 999"):
             repo.update(999, amount=5000.0)
 
     def test_delete_rule(self, db_session: Session):

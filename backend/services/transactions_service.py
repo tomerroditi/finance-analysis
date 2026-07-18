@@ -17,11 +17,15 @@ from backend.constants.categories import (
     LIABILITIES_CATEGORY,
     IncomeCategories
 )
-from backend.constants.providers import Banks, CreditCards, Services
+from backend.constants.providers import Services
 from backend.constants.tables import (
     SplitTransactionsTableFields,
     Tables,
     TransactionsTableFields,
+)
+from backend.services.transaction_classification import (
+    INCOME_CATEGORY_VALUES,
+    NON_EXPENSE_BASE_CATEGORIES,
 )
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
@@ -76,144 +80,6 @@ class TransactionsService:
         self.split_transactions_repository = SplitTransactionsRepository(db)
         self.balance_repo = BankBalanceRepository(db)
         self.investments_repo = InvestmentsRepository(db)
-
-    def add_transaction(
-        self, transaction: dict, service: Literal["cash", "manual_investments"]
-    ) -> bool:
-        """
-        Add a new transaction to the specified service table.
-
-        Parameters
-        ----------
-        transaction : dict
-            A dictionary representing the transaction to add.
-        service : Literal['cash', 'manual_investments']
-            The service to which the transaction belongs.
-
-        Returns
-        -------
-        bool
-            True if the transaction was added successfully, False otherwise.
-        """
-        if service == Services.CASH.value:
-            tx = CashTransaction(**transaction)
-        elif service == Services.MANUAL_INVESTMENTS.value:
-            tx = ManualInvestmentTransaction(**transaction)
-        else:
-            raise ValueError(
-                "Only 'cash' and 'manual_investments' services are supported."
-            )
-
-        return self.transactions_repository.add_transaction(tx, service)
-
-    def sync_prior_wealth_offset(
-        self, target_service: Literal["cash"] | None = None
-    ) -> None:
-        """
-        Synchronize the prior wealth offset transaction for the cash service.
-
-        Tracks manual deposits (negative amounts) for cash and maintains a single
-        consolidated "Prior Wealth" transaction in the cash table.
-        Investment prior wealth is handled separately via Investment.prior_wealth_amount
-        and _build_investment_prior_wealth_rows().
-
-        Logic per service:
-        1. Calculate total offset needed = sum(abs(manual_deposits)) for that service
-        2. Find existing offset transaction in that service's table
-        3. If total > 0: Update or Create single offset transaction
-        4. If total == 0: Delete existing offset transaction(s)
-        """
-        services_to_sync = (
-            [target_service]
-            if target_service
-            else [Services.CASH.value]
-        )
-
-        for service in services_to_sync:
-            # 1. Get transactions for this service
-            df = self.transactions_repository.get_table(service=service)
-
-            # 2. Calculate offset needed (sum of manual negative amounts)
-            offset_needed = 0.0
-            if not df.empty:
-                # Filter: Amount < 0 AND Tag != PRIOR_WEALTH_TAG (to exclude the offset itself)
-                amount_col = TransactionsTableFields.AMOUNT.value
-                tag_col = TransactionsTableFields.TAG.value
-
-                mask = df[amount_col] < 0
-                if tag_col in df.columns:
-                    mask = mask & (df[tag_col] != PRIOR_WEALTH_TAG)
-
-                offset_needed = abs(df.loc[mask, amount_col].sum())
-
-            # 3. Handle offset transaction in the specific service table
-            if service == Services.CASH.value:
-                repo = self.transactions_repository.cash_repo
-            else:
-                raise ValueError(
-                    f"Service '{service}' not supported for prior wealth offset"
-                )
-
-            current_data = repo.get_table()
-            existing_offsets = pd.DataFrame()
-
-            if not current_data.empty:
-                offset_mask = (
-                    (
-                        current_data[TransactionsTableFields.TAG.value]
-                        == PRIOR_WEALTH_TAG
-                    )
-                    & (
-                        current_data[TransactionsTableFields.CATEGORY.value]
-                        == IncomeCategories.OTHER_INCOME.value
-                    )
-                    & (
-                        current_data[TransactionsTableFields.ACCOUNT_NAME.value]
-                        == PRIOR_WEALTH_TAG
-                    )
-                )
-                existing_offsets = current_data[offset_mask]
-
-            if offset_needed > 0:
-                if not existing_offsets.empty:
-                    # Update first existing one
-                    first_id = existing_offsets.iloc[0][
-                        TransactionsTableFields.UNIQUE_ID.value
-                    ]
-                    target_date = self.get_earliest_data_date()
-                    repo.update_transaction_by_unique_id(
-                        first_id,
-                        {
-                            "amount": offset_needed,
-                            "date": target_date.strftime("%Y-%m-%d"),
-                        },
-                    )
-                    # Delete duplicates if any
-                    if len(existing_offsets) > 1:
-                        for _, row in existing_offsets.iloc[1:].iterrows():
-                            repo.delete_transaction_by_unique_id(
-                                str(row[TransactionsTableFields.UNIQUE_ID.value])
-                            )
-                else:
-                    target_date = self.get_earliest_data_date()
-                    offset_tx = ManualTransactionDTO(
-                        date=target_date,
-                        account_name=PRIOR_WEALTH_TAG,
-                        description=f"Prior Wealth Offset ({service})",
-                        amount=offset_needed,
-                        provider="MANUAL",
-                        account_number="prior_wealth",
-                        category=IncomeCategories.OTHER_INCOME.value,
-                        tag=PRIOR_WEALTH_TAG,
-                    )
-                    self.transactions_repository.add_transaction(offset_tx, service)
-            else:
-                # Delete all existing offsets if amount needed is 0
-                if not existing_offsets.empty:
-                    for _, row in existing_offsets.iterrows():
-                        repo.delete_transaction_by_unique_id(
-                            str(row[TransactionsTableFields.UNIQUE_ID.value])
-                        )
 
     def get_table_columns_for_display(self) -> List[str]:
         """
@@ -401,33 +267,6 @@ class TransactionsService:
         else:
             raise ValueError(f"Invalid table name: {table_name}")
 
-    def update_transaction_by_id(self, transaction_id: str, updates: dict) -> bool:
-        """
-        Update a transaction by ID, searching across CC, bank, and cash tables.
-
-        Parameters
-        ----------
-        transaction_id : str
-            Transaction ID to search for across tables.
-        updates : dict
-            Field names and new values to apply.
-
-        Returns
-        -------
-        bool
-            ``True`` if the transaction was found and updated in at least one table.
-        """
-        cc_res = self.transactions_repository.cc_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        bank_res = self.transactions_repository.bank_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        cash_res = self.transactions_repository.cash_repo.update_transaction_by_unique_id(
-            transaction_id, updates
-        )
-        return cc_res or bank_res or cash_res
-
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
     ) -> pd.DataFrame:
@@ -485,6 +324,68 @@ class TransactionsService:
             )
         return self.transactions_repository.get_table(service)
 
+    def get_merged_transactions(
+        self,
+        service: Optional[str] = None,
+        include_split_parents: bool = False,
+        exclude_services: Optional[list[str]] = None,
+    ) -> pd.DataFrame:
+        """
+        Get the merged multi-table transactions frame.
+
+        Thin passthrough to :meth:`TransactionsRepository.get_table` so routes
+        never instantiate repositories directly.
+
+        Parameters
+        ----------
+        service : str, optional
+            Restrict to a single service/table.
+        include_split_parents : bool, optional
+            Keep split-parent rows (marked ``type="split_parent"``).
+        exclude_services : list[str], optional
+            Services/tables to exclude from the merge.
+
+        Returns
+        -------
+        pd.DataFrame
+            Merged transactions with splits expanded.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` is not a recognized service/table name.
+        """
+        return self.transactions_repository.get_table(
+            service=service,
+            include_split_parents=include_split_parents,
+            exclude_services=exclude_services,
+        )
+
+    def get_transaction(self, transaction_id: int, source: str) -> pd.Series:
+        """
+        Get a single transaction by per-table id and source table.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The unique_id within ``source``.
+        source : str
+            Source table or service name.
+
+        Returns
+        -------
+        pd.Series
+            The matching transaction row.
+
+        Raises
+        ------
+        ValueError
+            If the source is unknown or no transaction matches.
+        """
+        return self.transactions_repository.get_transaction_by_id(
+            transaction_id, source
+        )
+
     @staticmethod
     def _normalize_empty_string(value: str | None) -> str | None:
         """Convert empty strings to None for category/tag fields."""
@@ -540,6 +441,54 @@ class TransactionsService:
                 from backend.services.investments_service import InvestmentsService
                 InvestmentsService(self.db).recalculate_prior_wealth_by_tag(category, tag)
 
+    def _filter_updates_for_source(self, source: str, updates: dict) -> dict:
+        """Apply per-source permission rules and normalization to an update dict.
+
+        Manual sources (cash, manual investments) may edit date/account_name/
+        description/amount (and provider — forced to "CASH" for cash rows);
+        scraped sources may only edit category/tag. Empty category/tag strings
+        are normalised to ``None``.
+
+        Parameters
+        ----------
+        source : str
+            Source table name.
+        updates : dict
+            Raw requested updates.
+
+        Returns
+        -------
+        dict
+            The subset of ``updates`` this source is allowed to write.
+        """
+        is_manual = source in [
+            Tables.CASH.value,
+            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+        ]
+        filtered_updates: dict = {}
+        if is_manual:
+            if updates.get("date") is not None:
+                filtered_updates["date"] = updates["date"]
+            if updates.get("account_name") is not None:
+                filtered_updates["account_name"] = updates["account_name"]
+            if updates.get("description") is not None:
+                filtered_updates["description"] = updates["description"]
+            if updates.get("amount") is not None:
+                filtered_updates["amount"] = updates["amount"]
+            # For cash transactions, always set provider to "CASH"
+            if source == Tables.CASH.value:
+                filtered_updates["provider"] = "CASH"
+            elif updates.get("provider") is not None:
+                filtered_updates["provider"] = updates["provider"]
+
+        if updates.get("category") is not None:
+            filtered_updates["category"] = self._normalize_empty_string(
+                updates["category"]
+            )
+        if updates.get("tag") is not None:
+            filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
+        return filtered_updates
+
     def update_transaction(
         self, unique_id: int, source: str, updates: dict
     ) -> bool:
@@ -573,7 +522,6 @@ class TransactionsService:
         from sqlalchemy import select
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-        is_manual = source in [Tables.CASH.value, Tables.MANUAL_INVESTMENT_TRANSACTIONS.value]
 
         # Capture old account_name before updating — needed to recalculate the
         # old account's balance when account_name changes on a cash transaction.
@@ -587,28 +535,7 @@ class TransactionsService:
             if tx_before:
                 old_account_name = getattr(tx_before, "account_name", None)
 
-        filtered_updates = {}
-        if is_manual:
-            if updates.get("date") is not None:
-                filtered_updates["date"] = updates["date"]
-            if updates.get("account_name") is not None:
-                filtered_updates["account_name"] = updates["account_name"]
-            if updates.get("description") is not None:
-                filtered_updates["description"] = updates["description"]
-            if updates.get("amount") is not None:
-                filtered_updates["amount"] = updates["amount"]
-            # For cash transactions, always set provider to "CASH"
-            if source == Tables.CASH.value:
-                filtered_updates["provider"] = "CASH"
-            elif updates.get("provider") is not None:
-                filtered_updates["provider"] = updates["provider"]
-
-        if updates.get("category") is not None:
-            filtered_updates["category"] = self._normalize_empty_string(
-                updates["category"]
-            )
-        if updates.get("tag") is not None:
-            filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
+        filtered_updates = self._filter_updates_for_source(source, updates)
 
         if not filtered_updates:
             return False
@@ -794,6 +721,8 @@ class TransactionsService:
         amount : float or None, optional
             Amount to apply. Only written for manual sources.
         """
+        from sqlalchemy import select, update
+
         updates: dict = {
             "category": category,
             "tag": tag,
@@ -807,8 +736,48 @@ class TransactionsService:
         if amount is not None:
             updates["amount"] = amount
 
-        for uid in transaction_ids:
-            self.update_transaction(uid, source, updates)
+        repo = self.transactions_repository.get_repo_by_source(source)
+        if repo is None:
+            raise ValueError(f"Invalid source: '{source}'")
+
+        filtered_updates = self._filter_updates_for_source(source, updates)
+        if not filtered_updates or not transaction_ids:
+            return
+
+        ids = [int(uid) for uid in transaction_ids]
+
+        # Collect affected cash accounts BEFORE the update — the old account
+        # names matter when account_name itself is being changed.
+        affected_accounts: set[str] = set()
+        if source == Tables.CASH.value:
+            rows = (
+                self.db.execute(
+                    select(repo.model.account_name).where(
+                        repo.model.unique_id.in_(ids)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            affected_accounts.update(a for a in rows if a)
+            if filtered_updates.get("account_name"):
+                affected_accounts.add(filtered_updates["account_name"])
+
+        # One UPDATE ... WHERE unique_id IN (...) and one commit instead of a
+        # commit (plus a cash-balance recalculation) per row.
+        self.db.execute(
+            update(repo.model)
+            .where(repo.model.unique_id.in_(ids))
+            .values(**filtered_updates)
+        )
+        self.db.commit()
+
+        if affected_accounts:
+            from backend.services.cash_balance_service import CashBalanceService
+
+            cash_balance_svc = CashBalanceService(self.db)
+            for account in sorted(affected_accounts):
+                cash_balance_svc.recalculate_current_balance(account)
 
     def get_untagged_transactions(
         self,
@@ -959,13 +928,8 @@ class TransactionsService:
                 df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
             )
 
-        _service_to_source_table = {
-            Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
-            Services.BANK.value: Tables.BANK.value,
-            Services.CASH.value: Tables.CASH.value,
-            Services.MANUAL_INVESTMENTS.value: Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
-        }
-        source_table = _service_to_source_table.get(service, "")
+        _repo = self.transactions_repository.get_repo_by_source(service)
+        source_table = _repo.model.__tablename__ if _repo is not None else ""
         split_df = split_df[
             (split_df[SplitTransactionsTableFields.SOURCE.value] == source_table)
             & split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
@@ -1023,209 +987,3 @@ class TransactionsService:
             else result_df
         )
 
-    def get_kpis(self, df: pd.DataFrame) -> dict:
-        """
-        Calculate key financial KPIs from a transactions DataFrame.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame (typically from ``get_data_for_analysis``).
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-
-            - ``income`` – total income.
-            - ``expenses`` – total expenses (absolute value).
-            - ``savings_and_investments`` – total invested (absolute value).
-            - ``bank_balance_increase`` – income minus expenses minus debt payments minus investments.
-            - ``savings_rate`` – ``(bank_balance_increase + investments) / income * 100``.
-            - ``liabilities_paid`` – absolute value of outgoing liability payments.
-            - ``liabilities_received`` – incoming liability amounts (loans).
-            - ``largest_expense_cat_name`` – category name with highest spend.
-            - ``largest_expense_cat_val`` – spend amount for that category.
-        """
-        data = self.split_data_by_category_types(df)
-        amount_col = TransactionsTableFields.AMOUNT.value
-        category_col = TransactionsTableFields.CATEGORY.value
-
-        period_income = data["income"][amount_col].sum()
-        period_expenses = data["expenses"][amount_col].sum() * -1 + 0
-        period_investments = data["investments"][amount_col].sum() * -1 + 0
-        period_liabilities_paid = (
-            data["liabilities"][data["liabilities"][amount_col] < 0][amount_col].sum()
-            * -1
-            + 0
-        )
-        period_liabilities_received = data["liabilities"][
-            data["liabilities"][amount_col] > 0
-        ][amount_col].sum()
-        bank_balance_increase = (
-            period_income
-            - period_expenses
-            - period_liabilities_paid
-            - period_investments
-        )
-        total_savings = bank_balance_increase + period_investments
-        actual_savings_rate = (
-            (total_savings / period_income * 100) if period_income != 0 else 0
-        )
-        largest_expense_cat = (
-            data["expenses"]
-            .groupby(category_col)[amount_col]
-            .sum()
-            .abs()
-            .sort_values(ascending=False)
-        )
-        largest_expense_cat_name = (
-            largest_expense_cat.index[0] if not largest_expense_cat.empty else "-"
-        )
-        largest_expense_cat_val = (
-            largest_expense_cat.iloc[0] if not largest_expense_cat.empty else 0
-        )
-
-        return {
-            "income": period_income,
-            "expenses": period_expenses,
-            "savings_and_investments": period_investments,
-            "bank_balance_increase": bank_balance_increase,
-            "savings_rate": actual_savings_rate,
-            "liabilities_paid": period_liabilities_paid,
-            "liabilities_received": period_liabilities_received,
-            "largest_expense_cat_name": largest_expense_cat_name,
-            "largest_expense_cat_val": largest_expense_cat_val,
-        }
-
-    @staticmethod
-    def split_data_by_category_types(df: pd.DataFrame) -> dict:
-        """
-        Partition a transactions DataFrame into category-type groups.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame with a ``category`` column.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys ``expenses``, ``investments``, ``income``,
-            and ``liabilities``, each containing the relevant subset of ``df``.
-            The ``expenses`` group includes all rows not in any special category.
-        """
-        category_col = TransactionsTableFields.CATEGORY.value
-        income_categories = [e.value for e in IncomeCategories]
-        non_expenses_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY] + income_categories
-
-        return {
-            "expenses": df[~df[category_col].isin(non_expenses_categories)],
-            "investments": df[df[category_col] == INVESTMENTS_CATEGORY].copy(),
-            "income": df[df[category_col].isin(income_categories)],
-            "liabilities": df[df[category_col] == LIABILITIES_CATEGORY].copy(),
-        }
-
-    def get_liabilities_summary(self, filtered_df: pd.DataFrame) -> dict:
-        """
-        Get a liabilities summary with all-time totals and per-tag breakdown.
-
-        All-time totals are computed from the full dataset regardless of
-        the date filter applied to ``filtered_df``.
-
-        Parameters
-        ----------
-        filtered_df : pd.DataFrame
-            Date-filtered transactions DataFrame used for the per-tag breakdown.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-
-            - ``total_received`` – all-time total of incoming liability amounts (loans).
-            - ``total_paid`` – all-time total paid on liabilities.
-            - ``outstanding_balance`` – ``total_received - total_paid``.
-            - ``tag_summary`` – DataFrame with columns ``Name``, ``Received``,
-              ``Paid``, ``Outstanding Balance`` grouped by tag (from ``filtered_df``).
-            - ``filtered_liabilities`` – liability rows from ``filtered_df``.
-        """
-        amount_col = TransactionsTableFields.AMOUNT.value
-        category_col = TransactionsTableFields.CATEGORY.value
-        tag_col = TransactionsTableFields.TAG.value
-
-        all_data = self.get_data_for_analysis()
-        all_liabilities = all_data[all_data[category_col] == LIABILITIES_CATEGORY]
-        filtered_liabilities = filtered_df[filtered_df[category_col] == LIABILITIES_CATEGORY]
-
-        total_received = all_liabilities[all_liabilities[amount_col] > 0][
-            amount_col
-        ].sum()
-        total_paid = abs(
-            all_liabilities[all_liabilities[amount_col] < 0][amount_col].sum()
-        )
-        net_change = total_received - total_paid
-
-        tag_summary = (
-            filtered_liabilities.groupby(tag_col)[amount_col]
-            .agg(
-                [
-                    lambda x: abs(x[x > 0].sum()),
-                    lambda x: abs(x[x < 0].sum()),
-                    lambda x: abs(x.sum()),
-                ]
-            )
-            .reset_index()
-        )
-        tag_summary.columns = ["Name", "Received", "Paid", "Outstanding Balance"]
-
-        return {
-            "total_received": abs(total_received),
-            "total_paid": abs(total_paid),
-            "outstanding_balance": abs(net_change),
-            "tag_summary": tag_summary,
-            "filtered_liabilities": filtered_liabilities,
-        }
-
-    @staticmethod
-    def get_providers_for_service(
-        service: Literal["credit_cards", "banks"],
-    ) -> List[str]:
-        """
-        Get the list of provider identifiers for the specified service.
-
-        Parameters
-        ----------
-        service : {"credit_cards", "banks"}
-            Service type to query.
-
-        Returns
-        -------
-        list[str]
-            Provider enum values for the requested service.
-
-        Raises
-        ------
-        ValueError
-            If ``service`` is not ``"credit_cards"`` or ``"banks"``.
-        """
-        if service == Services.CREDIT_CARD.value:
-            return [e.value for e in CreditCards]
-        elif service == Services.BANK.value:
-            return [e.value for e in Banks]
-        else:
-            raise ValueError(
-                f"Service must be 'credit_cards' or 'banks'. Got '{service}'"
-            )
-
-    @staticmethod
-    def get_all_providers() -> List[str]:
-        """
-        Get the combined list of all provider identifiers across credit cards and banks.
-
-        Returns
-        -------
-        list[str]
-            All credit card provider values followed by all bank provider values.
-        """
-        return [e.value for e in CreditCards] + [e.value for e in Banks]

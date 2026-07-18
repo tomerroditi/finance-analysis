@@ -114,6 +114,17 @@ class BrowserScraper(BaseScraper):
                     logger.info("channel=%s not available: %s", channel, exc)
                     last_exc = exc
                     continue
+                # Unexpected launch failure: the Playwright driver process is
+                # already running and no caller will terminate us (scrape()
+                # only cleans up after initialize() returns) — stop it before
+                # re-raising or the driver process leaks.
+                try:
+                    await self._playwright.stop()
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to stop playwright during launch cleanup: %s",
+                        cleanup_exc,
+                    )
                 raise
         else:
             await self._playwright.stop()

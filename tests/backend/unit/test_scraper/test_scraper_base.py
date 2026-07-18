@@ -179,3 +179,45 @@ class TestLoginErrorDetail:
         """A successful login maps to None so the caller proceeds to fetch."""
         scraper = self._scraper()
         assert scraper._login_result_to_scraping_result(LoginResult.SUCCESS) is None
+
+
+class TestScraperErrorClassification:
+    """Tests for mapping typed ScraperErrors to ScrapingResult.error_type."""
+
+    def _make_scraper(self):
+        """Build a stub scraper with default options."""
+        return _StubScraper(
+            "test_provider", DUMMY_CREDENTIALS, ScraperOptions(start_date=DUMMY_START_DATE)
+        )
+
+    def test_wait_until_timeout_maps_to_timeout(self):
+        """Verify the custom scraper TimeoutError is reported as TIMEOUT, not GENERAL_ERROR."""
+        import asyncio
+
+        from scraper.exceptions import TimeoutError as ScraperTimeoutError
+
+        scraper = self._make_scraper()
+
+        async def failing_login():
+            raise ScraperTimeoutError("Timed out waiting for redirect")
+
+        scraper.login = failing_login
+        result = asyncio.run(scraper.scrape())
+        assert result.success is False
+        assert result.error_type == "TIMEOUT"
+
+    def test_credentials_error_maps_to_invalid_password(self):
+        """Verify CredentialsError is reported as INVALID_PASSWORD."""
+        import asyncio
+
+        from scraper.exceptions import CredentialsError
+
+        scraper = self._make_scraper()
+
+        async def failing_fetch():
+            raise CredentialsError("Wrong password")
+
+        scraper.fetch_data = failing_fetch
+        result = asyncio.run(scraper.scrape())
+        assert result.success is False
+        assert result.error_type == "INVALID_PASSWORD"

@@ -81,6 +81,15 @@ export function formatMonthShort(month: string | Date): string {
 }
 
 /**
+ * Today's date as an ISO calendar date string ("YYYY-MM-DD").
+ * Shared default for date inputs and "as of today" API payloads.
+ * @returns Today's date in ISO YYYY-MM-DD format
+ */
+export function todayISO(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+/**
  * Whole calendar-agnostic days elapsed between `date` and now.
  * @param date - Date string (ISO format) or Date object
  * @returns Number of full days since the given date (0 = today)

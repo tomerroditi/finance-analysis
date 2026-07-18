@@ -6,6 +6,7 @@ import {
   retirementApi,
   type RetirementSuggestions,
 } from "../services/api";
+import { useQueryKeys } from "../hooks/useQueryKeys";
 import { RetirementGoalForm } from "../components/retirement/RetirementGoalForm";
 import { RetirementProjections } from "../components/retirement/RetirementProjections";
 
@@ -13,18 +14,19 @@ type SuggestionField = keyof RetirementSuggestions;
 
 export function EarlyRetirement() {
   const { t } = useTranslation();
+  const qk = useQueryKeys();
   const [pendingAdjust, setPendingAdjust] = useState<{
     field: string;
     value: number;
   } | null>(null);
 
   const { data: goal, isLoading: goalLoading } = useQuery({
-    queryKey: ["retirement", "goal"],
+    queryKey: qk.retirement.goal(),
     queryFn: () => retirementApi.getGoal().then((r) => r.data),
   });
 
   const { data: status } = useQuery({
-    queryKey: ["retirement", "status"],
+    queryKey: qk.retirement.status(),
     queryFn: () => retirementApi.getStatus().then((r) => r.data),
   });
 
@@ -34,13 +36,13 @@ export function EarlyRetirement() {
     isLoading: projectionsLoading,
     isFetching: projectionsFetching,
   } = useQuery({
-    queryKey: ["retirement", "projections"],
+    queryKey: qk.retirement.projections(),
     queryFn: () => retirementApi.getProjections().then((r) => r.data),
     enabled: !!goal && goal.id !== -1,
   });
 
   const { data: suggestions } = useQuery({
-    queryKey: ["retirement", "suggestions"],
+    queryKey: qk.retirement.suggestions(),
     queryFn: () => retirementApi.getSuggestions().then((r) => r.data),
     enabled:
       !!goal &&

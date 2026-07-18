@@ -341,16 +341,18 @@ class PendingRefundsService:
             )
             p.update(details)
 
-        # Fetch linked transactions details
+        # Fetch linked transactions details — one batched query for every
+        # pending item instead of one query per item.
+        missing_link_ids = [p["id"] for p in pending_list if "links" not in p]
+        all_links_df = self.repo.get_links_for_pendings(missing_link_ids)
+        links_by_pending: dict[int, list[dict]] = {}
+        if not all_links_df.empty:
+            for pending_id, group in all_links_df.groupby("pending_refund_id"):
+                links_by_pending[int(pending_id)] = group.to_dict(orient="records")
+
         for p in pending_list:
             if "links" not in p:
-                # Fetch links if not already present (repo might not fetch relation if I used get_all_pending_refunds which does distinct?)
-                # Actually repo methods separate links. get_pending_by_id fetches links. get_all_pending_refunds returns just pending table.
-                # So we need to fetch links for all these items.
-                links_df = self.repo.get_links_for_pending(p["id"])
-                p["links"] = (
-                    links_df.to_dict(orient="records") if not links_df.empty else []
-                )
+                p["links"] = links_by_pending.get(int(p["id"]), [])
 
             # Compute totals from links
             total_refunded = sum(link["amount"] for link in p["links"])

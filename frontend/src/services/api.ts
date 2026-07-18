@@ -41,7 +41,6 @@ export const transactionsApi = {
     }),
   getUncategorizedCount: () =>
     api.get<{ count: number }>("/transactions/uncategorized-count"),
-  getById: (id: number) => api.get(`/transactions/${id}`),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
     api.put(`/transactions/${encodeURIComponent(uniqueId)}`, data),
@@ -75,8 +74,6 @@ export const transactionsApi = {
 // Budget API
 export const budgetApi = {
   getRules: () => api.get("/budget/rules"),
-  getRulesByMonth: (year: number, month: number) =>
-    api.get(`/budget/rules/${year}/${month}`),
   createRule: (rule: object) => api.post("/budget/rules", rule),
   updateRule: (id: number, rule: object) =>
     api.put(`/budget/rules/${id}`, rule),
@@ -122,10 +119,6 @@ export const budgetApi = {
     api.put(`/budget/yearly/rules/${id}`, rule),
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
-  getYearAlerts: (year: number, threshold?: number) =>
-    api.get(`/budget/yearly/alerts/${year}`, {
-      params: threshold !== undefined ? { threshold } : undefined,
-    }),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
 };
 
@@ -254,13 +247,6 @@ export const taggingApi = {
     api.post(`/tagging-rules/rules/${id}/apply`, null, {
       params: { overwrite },
     }),
-  checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>
-    api.post("/tagging-rules/rules/validate", {
-      conditions,
-      category,
-      tag,
-      rule_id: ruleId
-    }),
   previewRule: (conditions: ConditionNode, limit?: number) =>
     api.post<{ matches: Record<string, unknown>[]; count: number }>("/tagging-rules/rules/preview", {
       conditions,
@@ -269,12 +255,18 @@ export const taggingApi = {
 };
 
 // Credentials API
+export interface CredentialAccount {
+  service: string;
+  provider: string;
+  account_name: string;
+}
+
 export const credentialsApi = {
   getAll: () => api.get("/credentials/"),
-  getAccounts: () => api.get("/credentials/accounts"),
-  getProviders: () => api.get("/credentials/providers"),
+  getAccounts: () => api.get<CredentialAccount[]>("/credentials/accounts"),
+  getProviders: () => api.get<Record<string, string[]>>("/credentials/providers"),
   getFields: (provider: string) =>
-    api.get(`/credentials/fields/${encodeURIComponent(provider)}`),
+    api.get<{ fields: string[] }>(`/credentials/fields/${encodeURIComponent(provider)}`),
   create: (data: {
     service: string;
     provider: string;
@@ -357,9 +349,28 @@ export const insuranceAccountsApi = {
 };
 
 // Investments API
+export interface Investment {
+  id: number;
+  name: string;
+  category: string;
+  tag: string;
+  type: string;
+  is_closed: boolean;
+  closed_date?: string;
+  interest_rate?: number;
+  interest_rate_type?: string;
+  notes?: string;
+  latest_snapshot_date?: string;
+  latest_snapshot_balance?: number;
+  current_balance?: number;
+  sparkline?: number[];
+  first_transaction_date?: string;
+  created_date?: string;
+}
+
 export const investmentsApi = {
   getAll: (includeClosed = false) =>
-    api.get("/investments/", { params: { include_closed: includeClosed } }),
+    api.get<Investment[]>("/investments/", { params: { include_closed: includeClosed } }),
   getById: (id: number) => api.get(`/investments/${id}`),
   create: (investment: object) => api.post("/investments/", investment),
   update: (id: number, investment: object) =>
@@ -395,9 +406,31 @@ export const investmentsApi = {
 };
 
 // Liabilities API
+export interface Liability {
+  id: number;
+  name: string;
+  lender?: string;
+  category: string;
+  tag: string;
+  principal_amount: number;
+  interest_rate: number;
+  term_months: number;
+  start_date: string;
+  is_paid_off: number;
+  paid_off_date?: string;
+  notes?: string;
+  created_date: string;
+  monthly_payment: number;
+  total_interest: number;
+  remaining_balance: number;
+  total_paid: number;
+  percent_paid: number;
+  payments_made: number;
+}
+
 export const liabilitiesApi = {
   getAll: (includePaidOff = false) =>
-    api.get("/liabilities/", { params: { include_paid_off: includePaidOff } }),
+    api.get<Liability[]>("/liabilities/", { params: { include_paid_off: includePaidOff } }),
   getById: (id: number) => api.get(`/liabilities/${id}`),
   getDebtOverTime: () => api.get("/liabilities/debt-over-time"),
   create: (liability: object) => api.post("/liabilities/", liability),
@@ -724,18 +757,12 @@ export const retirementApi = {
     api.get<RetirementProjections>("/retirement/projections"),
   previewProjections: (data: Omit<RetirementGoal, "id">) =>
     api.post<RetirementProjections>("/retirement/projections", data),
-  getKerenHishtalmutBalance: () =>
-    api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
   getScrapedDefaults: () =>
     api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
   previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
     api.post<RetirementSuggestions>("/retirement/suggestions", data),
-  solveForField: (field: string) =>
-    api.get<{ field: string; value: number; unit: string }>(
-      `/retirement/solve/${encodeURIComponent(field)}`,
-    ),
 };
 
 export interface SavingsGoal {

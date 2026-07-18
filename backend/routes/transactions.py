@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
 from backend.dependencies import get_database
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.routes.schemas import ApiRequestModel
 from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
 
 
-class TransactionCreate(BaseModel):
+class TransactionCreate(ApiRequestModel):
     date: date
     description: str
     amount: float
@@ -31,7 +31,7 @@ class TransactionCreate(BaseModel):
     service: str  # 'cash' or 'manual_investments'
 
 
-class TransactionUpdate(BaseModel):
+class TransactionUpdate(ApiRequestModel):
     date: Optional[str] = None
     account_name: Optional[str] = None
     description: Optional[str] = None
@@ -42,7 +42,7 @@ class TransactionUpdate(BaseModel):
     source: str
 
 
-class BulkTagUpdate(BaseModel):
+class BulkTagUpdate(ApiRequestModel):
     transaction_ids: List[int]
     source: str
     category: Optional[str] = None
@@ -53,13 +53,13 @@ class BulkTagUpdate(BaseModel):
     amount: Optional[float] = None
 
 
-class SplitItem(BaseModel):
+class SplitItem(ApiRequestModel):
     amount: float
     category: str
     tag: str
 
 
-class SplitRequest(BaseModel):
+class SplitRequest(ApiRequestModel):
     source: str
     splits: List[SplitItem]
 
@@ -87,9 +87,9 @@ def get_transactions(
     db: Session = Depends(get_database),
 ) -> list[dict[str, Any]]:
     """Get all transactions, optionally filtered by service."""
-    repo = TransactionsRepository(db)
+    txn_service = TransactionsService(db)
     try:
-        df = repo.get_table(
+        df = txn_service.get_merged_transactions(
             service=service,
             include_split_parents=include_split_parents,
             exclude_services=[Services.INSURANCE.value],
@@ -241,12 +241,16 @@ def get_uncategorized_count(
 
 @router.get("/{transaction_id}")
 def get_transaction(
-    transaction_id: int, db: Session = Depends(get_database)
+    transaction_id: int,
+    source: str = Query(
+        ..., description="Source table (unique_id is per-table), e.g. bank_transactions"
+    ),
+    db: Session = Depends(get_database),
 ) -> dict[str, Any]:
-    """Get a specific transaction by ID."""
-    repo = TransactionsRepository(db)
+    """Get a specific transaction by its per-table ID and source table."""
+    txn_service = TransactionsService(db)
     try:
-        transaction = repo.get_transaction_by_id(transaction_id)
+        transaction = txn_service.get_transaction(transaction_id, source)
         return transaction.to_dict()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

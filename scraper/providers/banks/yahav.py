@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import re
 from datetime import date, datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
@@ -10,12 +8,15 @@ from dateutil.relativedelta import relativedelta
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
-from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
+from scraper.models.transaction import Transaction, TransactionStatus
 from scraper.utils import (
     click_button,
+    convert_credit_debit_rows,
     element_present_on_page,
     page_eval,
     page_eval_all,
+    parse_digits_identifier,
+    wait_for_first,
     wait_for_navigation,
     wait_until_element_disappear,
     wait_until_element_found,
@@ -54,45 +55,6 @@ NATIONALID_ELEM = "#pinno"
 SUBMIT_LOGIN_SELECTOR = ".btn"
 
 
-def _get_amount_data(amount_str: str) -> float:
-    """Parse amount string to float, handling commas.
-
-    Parameters
-    ----------
-    amount_str : str
-        Amount string potentially containing commas.
-
-    Returns
-    -------
-    float
-        Parsed amount, or 0.0 if unparseable.
-    """
-    try:
-        return float(amount_str.replace(",", ""))
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _get_txn_amount(credit: str, debit: str) -> float:
-    """Calculate transaction amount from credit and debit strings.
-
-    Parameters
-    ----------
-    credit : str
-        Credit amount string.
-    debit : str
-        Debit amount string.
-
-    Returns
-    -------
-    float
-        Net amount (credit - debit).
-    """
-    credit_val = _get_amount_data(credit)
-    debit_val = _get_amount_data(debit)
-    return credit_val - debit_val
-
-
 def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     """Convert raw scraped Yahav transactions to Transaction objects.
 
@@ -106,39 +68,12 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     list[Transaction]
         Parsed transaction objects.
     """
-    results: list[Transaction] = []
-    for txn in txns:
-        date_str = txn.get("date", "")
-        try:
-            txn_date = datetime.strptime(date_str, "%d/%m/%Y")
-            date_iso = txn_date.isoformat()
-        except (ValueError, TypeError):
-            date_iso = date_str
-
-        amount = _get_txn_amount(
-            txn.get("credit", ""), txn.get("debit", "")
-        )
-
-        reference = txn.get("reference", "")
-        # Remove non-digit characters from reference
-        clean_ref = re.sub(r"\D+", "", reference)
-        identifier = clean_ref if clean_ref else None
-
-        results.append(
-            Transaction(
-                type=TransactionType.NORMAL,
-                status=txn.get("status", TransactionStatus.COMPLETED),
-                date=date_iso,
-                processed_date=date_iso,
-                original_amount=amount,
-                original_currency=SHEKEL_CURRENCY,
-                charged_amount=amount,
-                description=txn.get("description", ""),
-                identifier=identifier,
-                memo=txn.get("memo") or None,
-            )
-        )
-    return results
+    return convert_credit_debit_rows(
+        txns,
+        date_format=DATE_FORMAT,
+        parse_identifier=parse_digits_identifier,
+        currency=SHEKEL_CURRENCY,
+    )
 
 
 def _get_possible_login_results(page) -> dict[LoginResult, list]:
@@ -201,23 +136,10 @@ async def _redirect_or_dialog(page) -> None:
     if has_message:
         await click_button(page, ".link-1")
 
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                page.wait_for_selector(
-                    ACCOUNT_DETAILS_SELECTOR, timeout=30000
-                )
-            ),
-            asyncio.create_task(
-                page.wait_for_selector(
-                    CHANGE_PASSWORD_OLD_PASS, timeout=30000
-                )
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        page.wait_for_selector(ACCOUNT_DETAILS_SELECTOR, timeout=30000),
+        page.wait_for_selector(CHANGE_PASSWORD_OLD_PASS, timeout=30000),
     )
-    for task in pending:
-        task.cancel()
 
     await wait_until_element_disappear(page, ".loading-bar-spinner")
 
@@ -239,21 +161,10 @@ async def _get_portfolio_ids(page) -> list[str]:
     list[str]
         Portfolio IDs, selected portfolio first. Empty if none found.
     """
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                page.wait_for_selector(ACCOUNT_ID_SELECTOR_MULTI, timeout=10000)
-            ),
-            asyncio.create_task(
-                page.wait_for_selector(ACCOUNT_ID_SELECTOR_SINGLE, timeout=10000)
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        page.wait_for_selector(ACCOUNT_ID_SELECTOR_MULTI, timeout=10000),
+        page.wait_for_selector(ACCOUNT_ID_SELECTOR_SINGLE, timeout=10000),
     )
-    for task in pending:
-        task.cancel()
-    for task in done:
-        task.exception()  # consume any exception so it isn't logged as unretrieved
 
     selected_el = await page.query_selector(ACCOUNT_ID_SELECTOR_MULTI)
     if selected_el:

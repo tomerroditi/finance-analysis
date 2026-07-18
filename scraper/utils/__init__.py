@@ -27,11 +27,16 @@ from scraper.utils.navigation import (
     wait_for_url,
 )
 from scraper.utils.transactions import (
+    convert_credit_debit_rows,
+    credit_debit_amount,
     filter_old_transactions,
     fix_installments,
+    parse_amount,
+    parse_digits_identifier,
+    parse_int_identifier,
     sort_transactions_by_date,
 )
-from scraper.utils.waiting import sleep, wait_until
+from scraper.utils.waiting import sleep, wait_for_first, wait_until
 
 __all__ = [
     "click_button",
@@ -56,9 +61,15 @@ __all__ = [
     "wait_for_navigation",
     "wait_for_redirect",
     "wait_for_url",
+    "convert_credit_debit_rows",
+    "credit_debit_amount",
     "filter_old_transactions",
     "fix_installments",
+    "parse_amount",
+    "parse_digits_identifier",
+    "parse_int_identifier",
     "sort_transactions_by_date",
     "sleep",
+    "wait_for_first",
     "wait_until",
 ]

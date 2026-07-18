@@ -59,6 +59,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: i18n key check
+        run: python3 ../.claude/scripts/check_i18n_keys.py
+
       - name: Type-check + build
         run: npm run build
 
