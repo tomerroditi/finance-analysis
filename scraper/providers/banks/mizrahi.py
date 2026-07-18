@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -13,6 +12,7 @@ from scraper.models.transaction import Transaction, TransactionStatus, Transacti
 from scraper.utils import (
     fetch_post_within_page,
     page_eval_all,
+    wait_for_first,
     wait_for_url,
     wait_until_element_disappear,
     wait_until_element_found,
@@ -252,20 +252,11 @@ async def _post_login(page) -> None:
     page : Page
         Playwright page instance.
     """
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                wait_until_element_found(page, AFTER_LOGIN_SELECTOR)
-            ),
-            asyncio.create_task(
-                wait_until_element_found(page, INVALID_PASSWORD_SELECTOR)
-            ),
-            asyncio.create_task(wait_for_url(page, CHANGE_PASSWORD_URL)),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        wait_until_element_found(page, AFTER_LOGIN_SELECTOR),
+        wait_until_element_found(page, INVALID_PASSWORD_SELECTOR),
+        wait_for_url(page, CHANGE_PASSWORD_URL),
     )
-    for task in pending:
-        task.cancel()
 
 
 class MizrahiScraper(BrowserScraper):

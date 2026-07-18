@@ -18,6 +18,7 @@ from scraper.utils import (
     page_eval,
     page_eval_all,
     sleep,
+    wait_for_first,
     wait_for_navigation,
     wait_until_element_found,
 )
@@ -139,31 +140,20 @@ async def _wait_for_post_login(page) -> None:
     page : Page
         Playwright page instance.
     """
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                wait_until_element_found(
-                    page,
-                    'a[title="\u05d3\u05dc\u05d2 \u05dc\u05d7\u05e9\u05d1\u05d5\u05df"]',
-                    only_visible=True,
-                    timeout=60000,
-                )
-            ),
-            asyncio.create_task(
-                wait_until_element_found(
-                    page, "div.main-content", only_visible=False, timeout=60000
-                )
-            ),
-            asyncio.create_task(
-                wait_until_element_found(
-                    page, CHANGE_PASSWORD_MODAL_SELECTOR, only_visible=True, timeout=60000
-                )
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        wait_until_element_found(
+            page,
+            'a[title="\u05d3\u05dc\u05d2 \u05dc\u05d7\u05e9\u05d1\u05d5\u05df"]',
+            only_visible=True,
+            timeout=60000,
+        ),
+        wait_until_element_found(
+            page, "div.main-content", only_visible=False, timeout=60000
+        ),
+        wait_until_element_found(
+            page, CHANGE_PASSWORD_MODAL_SELECTOR, only_visible=True, timeout=60000
+        ),
     )
-    for task in pending:
-        task.cancel()
 
 
 def _get_possible_login_results(page) -> dict[LoginResult, list]:

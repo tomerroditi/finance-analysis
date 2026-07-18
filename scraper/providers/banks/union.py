@@ -1,21 +1,23 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
-from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
+from scraper.models.transaction import Transaction, TransactionStatus
 from scraper.utils import (
     click_button,
+    convert_credit_debit_rows,
     dropdown_elements,
     dropdown_select,
     element_present_on_page,
     fill_input,
     page_eval_all,
+    parse_int_identifier,
+    wait_for_first,
     wait_for_navigation,
     wait_until_element_found,
 )
@@ -46,49 +48,6 @@ ERROR_MESSAGE_CLASS = "errInfo"
 ACCOUNTS_DROPDOWN_SELECTOR = "select#ddlAccounts_m_ddl"
 
 
-def _get_amount_data(amount_str: str) -> float:
-    """Parse amount string to float.
-
-    Parameters
-    ----------
-    amount_str : str
-        Amount string with optional commas.
-
-    Returns
-    -------
-    float
-        Parsed amount, or NaN if unparseable.
-    """
-    try:
-        return float(amount_str.replace(",", ""))
-    except (ValueError, TypeError):
-        return float("nan")
-
-
-def _get_txn_amount(credit: str, debit: str) -> float:
-    """Calculate net transaction amount.
-
-    Parameters
-    ----------
-    credit : str
-        Credit amount string.
-    debit : str
-        Debit amount string.
-
-    Returns
-    -------
-    float
-        Net amount (credit - debit).
-    """
-    import math
-
-    credit_val = _get_amount_data(credit)
-    debit_val = _get_amount_data(debit)
-    return (0 if math.isnan(credit_val) else credit_val) - (
-        0 if math.isnan(debit_val) else debit_val
-    )
-
-
 def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     """Convert raw Union Bank transactions to Transaction objects.
 
@@ -102,40 +61,12 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     list[Transaction]
         Converted transaction objects.
     """
-    results: list[Transaction] = []
-    for txn in txns:
-        date_str = txn.get("date", "")
-        try:
-            txn_date = datetime.strptime(date_str, "%d/%m/%y")
-            date_iso = txn_date.isoformat()
-        except (ValueError, TypeError):
-            date_iso = date_str
-
-        amount = _get_txn_amount(
-            txn.get("credit", ""), txn.get("debit", "")
-        )
-
-        reference = txn.get("reference", "")
-        try:
-            identifier = str(int(reference)) if reference else None
-        except (ValueError, TypeError):
-            identifier = reference if reference else None
-
-        results.append(
-            Transaction(
-                type=TransactionType.NORMAL,
-                status=txn.get("status", TransactionStatus.COMPLETED),
-                date=date_iso,
-                processed_date=date_iso,
-                original_amount=amount,
-                original_currency=SHEKEL_CURRENCY,
-                charged_amount=amount,
-                description=txn.get("description", ""),
-                identifier=identifier,
-                memo=txn.get("memo") or None,
-            )
-        )
-    return results
+    return convert_credit_debit_rows(
+        txns,
+        date_format=DATE_FORMAT,
+        parse_identifier=parse_int_identifier,
+        currency=SHEKEL_CURRENCY,
+    )
 
 
 def _get_possible_login_results() -> dict[LoginResult, list]:
@@ -357,21 +288,10 @@ async def _get_account_transactions(page) -> list[Transaction]:
     list[Transaction]
         All transactions (pending + completed).
     """
-    done, pending_tasks = await asyncio.wait(
-        [
-            asyncio.create_task(
-                wait_until_element_found(
-                    page, f"#{COMPLETED_TRANSACTIONS_TABLE_ID}"
-                )
-            ),
-            asyncio.create_task(
-                wait_until_element_found(page, f".{ERROR_MESSAGE_CLASS}")
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        wait_until_element_found(page, f"#{COMPLETED_TRANSACTIONS_TABLE_ID}"),
+        wait_until_element_found(page, f".{ERROR_MESSAGE_CLASS}"),
     )
-    for task in pending_tasks:
-        task.cancel()
 
     if await _is_no_transaction_in_date_range(page):
         return []
@@ -464,19 +384,10 @@ async def _wait_for_post_login(page) -> None:
     page : Page
         Playwright page instance.
     """
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                wait_until_element_found(page, "#signoff", only_visible=True)
-            ),
-            asyncio.create_task(
-                wait_until_element_found(page, "#restore", only_visible=True)
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
+    await wait_for_first(
+        wait_until_element_found(page, "#signoff", only_visible=True),
+        wait_until_element_found(page, "#restore", only_visible=True),
     )
-    for task in pending:
-        task.cancel()
 
 
 class UnionBankScraper(BrowserScraper):

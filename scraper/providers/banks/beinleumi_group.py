@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from playwright.async_api import Frame, Page
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
-from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
+from scraper.models.transaction import Transaction, TransactionStatus
 from scraper.utils import (
     click_button,
+    convert_credit_debit_rows,
     element_present_on_page,
     fill_input,
     page_eval,
     page_eval_all,
+    parse_amount,
+    parse_int_identifier,
     sleep,
     wait_for_navigation,
     wait_until_element_found,
@@ -86,46 +89,9 @@ def _create_login_fields(credentials: dict) -> list[dict[str, str]]:
     ]
 
 
-def _get_amount_data(amount_str: str) -> float:
-    """Parse a formatted amount string into a float.
-
-    Parameters
-    ----------
-    amount_str : str
-        Amount string potentially containing shekel symbol and commas.
-
-    Returns
-    -------
-    float
-        Parsed numeric value, or NaN if unparseable.
-    """
-    cleaned = amount_str.replace(SHEKEL_CURRENCY_SYMBOL, "").replace(",", "")
-    try:
-        return float(cleaned)
-    except ValueError:
-        return float("nan")
-
-
-def _get_txn_amount(credit: str, debit: str) -> float:
-    """Calculate net transaction amount from credit and debit strings.
-
-    Parameters
-    ----------
-    credit : str
-        Credit amount string.
-    debit : str
-        Debit amount string.
-
-    Returns
-    -------
-    float
-        Net amount (credit - debit).
-    """
-    credit_val = _get_amount_data(credit)
-    debit_val = _get_amount_data(debit)
-    credit_num = 0.0 if credit_val != credit_val else credit_val  # NaN check
-    debit_num = 0.0 if debit_val != debit_val else debit_val
-    return credit_num - debit_num
+def _parse_identifier(reference: str) -> str | None:
+    """Normalize a Beinleumi reference string into an identifier."""
+    return parse_int_identifier(reference, strip=True)
 
 
 def _convert_transactions(txns: list[dict]) -> list[Transaction]:
@@ -142,43 +108,14 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     list[Transaction]
         Parsed transaction objects.
     """
-    results = []
-    for txn in txns:
-        date_str = txn.get("date", "")
-        if not date_str:
-            continue
-
-        try:
-            converted_date = datetime.strptime(date_str, DATE_FORMAT).isoformat()
-        except ValueError:
-            converted_date = date_str
-
-        amount = _get_txn_amount(txn.get("credit", ""), txn.get("debit", ""))
-
-        reference = txn.get("reference", "").strip()
-        identifier = None
-        if reference:
-            try:
-                identifier = str(int(reference))
-            except ValueError:
-                identifier = reference
-
-        results.append(
-            Transaction(
-                type=TransactionType.NORMAL,
-                identifier=identifier,
-                date=converted_date,
-                processed_date=converted_date,
-                original_amount=amount,
-                original_currency=SHEKEL_CURRENCY,
-                charged_amount=amount,
-                description=txn.get("description", ""),
-                memo=txn.get("memo"),
-                status=txn.get("status", TransactionStatus.COMPLETED),
-            )
-        )
-
-    return results
+    return convert_credit_debit_rows(
+        txns,
+        date_format=DATE_FORMAT,
+        parse_identifier=_parse_identifier,
+        strip_symbols=(SHEKEL_CURRENCY_SYMBOL,),
+        skip_empty_date=True,
+        currency=SHEKEL_CURRENCY,
+    )
 
 
 async def _get_transactions_cols_type_classes(
@@ -393,7 +330,7 @@ async def _get_current_balance(page_or_frame: Page | Frame) -> float:
     balance_str = await page_eval(
         page_or_frame, CURRENT_BALANCE, "el => el.innerText", "0"
     )
-    return _get_amount_data(balance_str)
+    return parse_amount(balance_str, strip_symbols=(SHEKEL_CURRENCY_SYMBOL,))
 
 
 async def _check_if_has_next_page(page_or_frame: Page | Frame) -> bool:
