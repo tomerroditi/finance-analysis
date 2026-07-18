@@ -26,6 +26,12 @@ else:
         "http://localhost:5173,http://127.0.0.1:5173",
     )
 os.environ.setdefault("VERCEL", "1")
+# Fail closed: without this, ENVIRONMENT defaults to "development" and the
+# public deployment would expose /docs and /openapi.json. The testing router
+# (demo-mode status/toggle) must stay mounted — the demo UI uses it — so it is
+# explicitly re-enabled; the toggle route itself is a no-op on Vercel.
+os.environ.setdefault("ENVIRONMENT", "production")
+os.environ.setdefault("ENABLE_TESTING_ROUTES", "1")
 
 from backend.config import AppConfig  # noqa: E402
 from backend.demo_setup import prepare_demo_database  # noqa: E402

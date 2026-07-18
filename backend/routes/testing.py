@@ -6,6 +6,8 @@ to an isolated environment (separate DB, credentials, and categories) to
 allow safe testing without affecting production data.
 """
 
+import os
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -50,6 +52,12 @@ def toggle_demo_mode(
         ``{"status": "success", "demo_mode": bool}`` reflecting the new state.
     """
     config = AppConfig()
+
+    # On the shared Vercel deployment demo mode is forced on at cold start and
+    # must never be toggled — the instance is shared by every visitor. Report
+    # the current (forced) state so the demo UI keeps working.
+    if os.environ.get("VERCEL"):
+        return {"status": "success", "demo_mode": config.is_demo_mode}
 
     # Only perform actions if the mode is actually changing
     if config.is_demo_mode != request.enabled:
