@@ -32,6 +32,7 @@ import {
   type RetirementStatus,
 } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface PendingAdjust {
   field: string;
@@ -127,6 +128,7 @@ export function RetirementGoalForm({
 }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [form, setForm] = useState(() => goalToForm(goal, status));
@@ -161,7 +163,7 @@ export function RetirementGoalForm({
   }
 
   const { data: scrapedDefaults } = useQuery({
-    queryKey: ["retirement", "scraped-defaults"],
+    queryKey: qk.retirement.scrapedDefaults(),
     queryFn: () =>
       retirementApi.getScrapedDefaults().then((r) => r.data),
   });
@@ -198,11 +200,11 @@ export function RetirementGoalForm({
     },
     onSuccess: ([projectionsRes, suggestionsRes]) => {
       queryClient.setQueryData(
-        ["retirement", "projections"],
+        qk.retirement.projections(),
         projectionsRes.data,
       );
       queryClient.setQueryData(
-        ["retirement", "suggestions"],
+        qk.retirement.suggestions(),
         suggestionsRes.data,
       );
     },
@@ -232,11 +234,11 @@ export function RetirementGoalForm({
         retirementApi.previewSuggestions(payload),
       ]).then(([projectionsRes, suggestionsRes]) => {
         queryClient.setQueryData(
-          ["retirement", "projections"],
+          qk.retirement.projections(),
           projectionsRes.data,
         );
         queryClient.setQueryData(
-          ["retirement", "suggestions"],
+          qk.retirement.suggestions(),
           suggestionsRes.data,
         );
         onAdjustApplied?.();
@@ -248,7 +250,7 @@ export function RetirementGoalForm({
   const saveMutation = useMutation({
     mutationFn: () => retirementApi.upsertGoal(formToPayload(form)),
     onSuccess: (response) => {
-      queryClient.setQueryData(["retirement", "goal"], response.data);
+      queryClient.setQueryData(qk.retirement.goal(), response.data);
       setHasUnsavedChanges(false);
     },
   });
@@ -278,11 +280,11 @@ export function RetirementGoalForm({
       retirementApi.previewSuggestions(payload),
     ]).then(([projectionsRes, suggestionsRes]) => {
       queryClient.setQueryData(
-        ["retirement", "projections"],
+        qk.retirement.projections(),
         projectionsRes.data,
       );
       queryClient.setQueryData(
-        ["retirement", "suggestions"],
+        qk.retirement.suggestions(),
         suggestionsRes.data,
       );
     });

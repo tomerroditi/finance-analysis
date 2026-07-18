@@ -43,6 +43,7 @@ export const qkPrefix = {
   lastScrapes: ["last-scrapes"] as const,
   credentialsAccounts: ["credentials-accounts"] as const,
   providers: ["providers"] as const,
+  retirement: ["retirement"] as const,
 } as const;
 
 export function makeQueryKeys(demo: boolean) {
@@ -74,6 +75,17 @@ export function makeQueryKeys(demo: boolean) {
       categories: () => ["categories", demo] as const,
       icons: () => ["category-icons", demo] as const,
       rules: () => ["tagging-rules", demo] as const,
+      // Head "rule-preview" is load-bearing: queryClient.ts excludes it from
+      // IndexedDB persistence by key head.
+      rulePreview: (conditions: unknown) =>
+        ["rule-preview", conditions, demo] as const,
+    },
+    retirement: {
+      goal: () => ["retirement", "goal", demo] as const,
+      status: () => ["retirement", "status", demo] as const,
+      projections: () => ["retirement", "projections", demo] as const,
+      suggestions: () => ["retirement", "suggestions", demo] as const,
+      scrapedDefaults: () => ["retirement", "scraped-defaults", demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,
