@@ -5,6 +5,35 @@ concerns) conducted on 2026-07-18. Findings are grouped into phases by priority;
 item lists the affected files and a concrete fix. Line numbers refer to the tree at the
 time of review.
 
+## Status: EXECUTED (2026-07-18, this branch)
+
+All six phases were implemented on `claude/app-code-review-plan-uxxi18`. Deliberate
+scope adjustments from the original plan:
+
+- **2.4 (exception standardization):** done at the repository layer (budget repo 404s,
+  transactions repo re-raises); the service-wide ValueError → ValidationException
+  migration across budget/transactions services was deferred — the ~20 route-level
+  `except ValueError` blocks still stand and can be removed opportunistically.
+- **3.2 (split-merge consolidation):** the repo-side N+1 was batched and the duplicated
+  service→table map removed, but the two read-side merge implementations were kept —
+  they serve different contracts (`split_id` column vs synthetic `unique_id`) with
+  different consumers (budget refund exclusion vs analytics).
+- **3.4 (budget composition):** decomposed into a package with one shared `_copy_rules`
+  helper; the inheritance → composition conversion and the `_auto_fill_skipped` /
+  `_last_copy_skipped` side channels were left for a future pass (tests read them).
+- **3.5:** `transactions_service.py` was left whole (~990 lines after dead-code
+  removal); the other three modules were decomposed into packages with shims.
+- **3.8 (unit-of-work commits):** not done — repositories still commit eagerly; only
+  bulk tagging was made single-commit (4.3).
+- **3.9/5.1 (scraper):** the genuinely shareable helpers were consolidated
+  (~230 lines); the 10 per-provider login-result tables and 8 provider-specific
+  converters were left as-is (different field vocabularies). 163 parsing tests added.
+- **6.3:** Investments, Liabilities, and DataSources decomposed; TransactionsTable was
+  partially addressed (SortIcon/SortableHeader hoist, delete mutations) — the
+  RowActionsCell/useTableSort extraction remains open, as do the
+  RetirementGoalForm/Insurances/IncomeExpensesCard splits.
+- **DI-2/DI-3 (money rounding, timezone conventions):** documented, not changed.
+
 **Suggested execution:** each phase is a natural PR (or small PR series) into `dev`.
 Phases 1–2 are quick, high-value fixes. Phases 3–5 are structural and can proceed
 incrementally. Phase 6 is opportunistic cleanup to fold into whichever PR touches the
