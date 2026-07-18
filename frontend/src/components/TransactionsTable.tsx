@@ -988,10 +988,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 return (
                                   <button
                                     className="p-1.5 rounded-md bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
-                                    title={`${t("tooltips.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("tooltips.clickToCancel")}`}
+                                    title={`${t("transactions.refunds.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("transactions.refunds.clickToCancel")}`}
                                     onClick={async () => {
                                       const ok = await confirm({
-                                        title: t("tooltips.partiallyRefunded"),
+                                        title: t("transactions.refunds.partiallyRefunded"),
                                         message: t("transactions.confirmRemovePartialRefund"),
                                         confirmLabel: t("common.remove"),
                                         isDestructive: true,
