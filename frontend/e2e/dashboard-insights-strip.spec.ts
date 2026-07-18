@@ -44,10 +44,17 @@ test.describe("Dashboard strip cards", () => {
     return box;
   }
 
-  test("strip cards collapse to content well under the cap (>=lg)", async ({ page }) => {
+  // All three scenarios are pure geometry assertions against one rendered
+  // dashboard — the responsive layout is CSS-driven, so the below-lg case is
+  // covered by resizing the viewport mid-test instead of paying a second
+  // (expensive) dashboard load per scenario.
+  test("strips collapse to content, leave no tall gap (>=lg), and stack full-width below lg", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/");
 
+    // --- >=lg: strip cards collapse to content well under the cap ---
     // The content-heavy `budget` card stays within the cap (taller content
     // scrolls inside instead of growing the row).
     const budget = await boxOf(page, "budget");
@@ -59,14 +66,8 @@ test.describe("Dashboard strip cards", () => {
       const strip = await boxOf(page, id);
       expect(strip.height, `${id} should collapse to content`).toBeLessThan(CAP * 0.8);
     }
-  });
 
-  test("the card after a strip follows immediately, with no tall empty gap (>=lg)", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto("/");
-
+    // --- >=lg: the card after a strip follows immediately, no tall empty gap ---
     // forecast -> insights and insights -> budget are both strip->next pairs.
     const pairs: [string, string][] = [
       ["forecast", "insights"],
@@ -81,18 +82,16 @@ test.describe("Dashboard strip cards", () => {
       expect(gap, `gap below ${stripId}`).toBeGreaterThanOrEqual(0);
       expect(gap, `gap below ${stripId}`).toBeLessThan(64);
     }
-  });
 
-  test("below lg the strips stack full-width above the next card", async ({ page }) => {
+    // --- below lg: the strips stack full-width above the next card ---
     await page.setViewportSize({ width: 800, height: 1000 });
-    await page.goto("/");
 
     const forecast = await boxOf(page, "forecast");
     const insights = await boxOf(page, "insights");
-    const budget = await boxOf(page, "budget");
+    const budgetNarrow = await boxOf(page, "budget");
 
     expect(insights.y).toBeGreaterThan(forecast.y + forecast.height - 4);
-    expect(budget.y).toBeGreaterThan(insights.y + insights.height - 4);
-    expect(Math.abs(insights.width - budget.width)).toBeLessThan(8);
+    expect(budgetNarrow.y).toBeGreaterThan(insights.y + insights.height - 4);
+    expect(Math.abs(insights.width - budgetNarrow.width)).toBeLessThan(8);
   });
 });

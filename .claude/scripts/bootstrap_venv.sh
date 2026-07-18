@@ -2,10 +2,9 @@
 # Bootstrap a Python venv with project dependencies if missing.
 #
 # Idempotent: exits 0 silently when the venv is already set up. Used by
-# `npm run backend` to auto-heal worktrees that haven't been bootstrapped
-# yet — the worktree creation flow only copies source files, not the
-# .venv, so a freshly created worktree's `npm run backend` would otherwise
-# fail with "sh: .venv/bin/activate: No such file or directory".
+# `npm run backend` and `./start.sh` to auto-heal checkouts/worktrees that
+# haven't been bootstrapped yet — the worktree creation flow only copies
+# source files, not the .venv.
 #
 # Manual equivalent (per CLAUDE.md "Environment Setup"):
 #   python3.12 -m venv .venv && source .venv/bin/activate \
@@ -55,4 +54,4 @@ pip install --quiet --upgrade pip
 pip install --quiet poetry
 poetry install --no-root
 
-echo "[bootstrap] Done. Starting backend..."
+echo "[bootstrap] Done."

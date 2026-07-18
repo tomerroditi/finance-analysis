@@ -1,5 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, navigateTo } from "./helpers";
+
 test.describe("RTL chevrons", () => {
   // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
   // project turns it on once), so this is safe under parallel workers and
@@ -8,17 +9,20 @@ test.describe("RTL chevrons", () => {
     await enableDemoMode();
   });
 
-  test.afterEach(async ({ page }) => {
-    if (page.url().startsWith("http")) {
-      await page.evaluate(() => localStorage.setItem("language", "en"));
-    }
-  });
+  /**
+   * Seed the i18n language into localStorage before the app boots, so a
+   * single navigation lands directly in the right locale (the old
+   * navigate → set language → navigate-again dance paid two page loads
+   * per test).
+   */
+  async function setLanguage(page: Page, lang: "en" | "he") {
+    await page.addInitScript((l) => localStorage.setItem("language", l), lang);
+  }
 
-  test("flips pagination chevron icons in Hebrew so arrows point the way the user navigates", async ({
+  test("Hebrew pagination flips chevron icons and the next-page button advances", async ({
     page,
   }) => {
-    await navigateTo(page, "/transactions");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
+    await setLanguage(page, "he");
     await navigateTo(page, "/transactions");
 
     await expect(page.getByText(/עמוד\s+\d+\s+מתוך/)).toBeVisible({ timeout: 30_000 });
@@ -46,15 +50,9 @@ test.describe("RTL chevrons", () => {
     expect(icons![2]).toContain("lucide-chevron-left");
     expect(icons![2]).not.toContain("lucide-chevrons");
     expect(icons![3]).toContain("lucide-chevrons-left");
-  });
 
-  test("Hebrew next-page button (chevron-left) advances the page", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
-    await navigateTo(page, "/transactions");
-
-    await expect(page.getByText("עמוד 1 מתוך", { exact: false })).toBeVisible({ timeout: 30_000 });
-
+    // The next-page button (chevron-left in RTL) advances the page.
+    await expect(page.getByText("עמוד 1 מתוך", { exact: false })).toBeVisible();
     const nextBtn = page
       .locator("span.px-4.text-sm.whitespace-nowrap", { hasText: /עמוד/ })
       .locator("..")
@@ -66,8 +64,7 @@ test.describe("RTL chevrons", () => {
   });
 
   test("English pagination still uses LTR chevrons", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-    await page.evaluate(() => localStorage.setItem("language", "en"));
+    await setLanguage(page, "en");
     await navigateTo(page, "/transactions");
 
     await expect(page.getByText(/Page\s+\d+\s+of/)).toBeVisible({ timeout: 30_000 });
@@ -98,8 +95,7 @@ test.describe("RTL chevrons", () => {
   });
 
   test("dashboard monthly-budget month switcher flips chevrons in Hebrew", async ({ page }) => {
-    await navigateTo(page, "/");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
+    await setLanguage(page, "he");
     await navigateTo(page, "/");
 
     const monthLabel = page.locator("p.w-36").first();
@@ -122,8 +118,7 @@ test.describe("RTL chevrons", () => {
   });
 
   test("DataSources connect-account flow flips proceed chevrons in Hebrew", async ({ page }) => {
-    await navigateTo(page, "/data-sources");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
+    await setLanguage(page, "he");
     await navigateTo(page, "/data-sources");
 
     // `exact: true`: getByRole's name is a substring match by default, and

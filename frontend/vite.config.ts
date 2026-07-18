@@ -10,6 +10,12 @@ export default defineConfig(({ mode }) => {
   // client bundle or logged via this config.
   const viteEnv = loadEnv(mode, process.cwd(), "VITE_");
   const port = parseInt(process.env.PORT || "", 10) || 5173;
+  // /api proxy target: an explicit VITE_BACKEND_URL wins (used by the
+  // isolated-e2e orchestrator); otherwise derive it from BACKEND_PORT so
+  // `./start.sh` can move both servers with two env vars.
+  const backendUrl =
+    viteEnv.VITE_BACKEND_URL ||
+    `http://127.0.0.1:${process.env.BACKEND_PORT || "8000"}`;
 
   return {
     plugins: [
@@ -118,7 +124,7 @@ export default defineConfig(({ mode }) => {
       port,
       proxy: {
         "/api": {
-          target: viteEnv.VITE_BACKEND_URL || "http://127.0.0.1:8000",
+          target: backendUrl,
           changeOrigin: true,
         },
       },

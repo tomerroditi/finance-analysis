@@ -1,6 +1,6 @@
 {
   "private": true,
   "scripts": {
-    "backend": "./.claude/scripts/bootstrap_venv.sh && source .venv/bin/activate && uvicorn backend.main:app --reload --reload-dir backend --reload-dir scraper"
+    "backend": "./.claude/scripts/bootstrap_venv.sh && .venv/bin/uvicorn backend.main:app --reload --reload-dir backend --reload-dir scraper --port ${BACKEND_PORT:-8000}"
   }
 }

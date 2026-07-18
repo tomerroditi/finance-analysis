@@ -14,34 +14,30 @@ test.describe("Dashboard", () => {
     await page.close();
   });
 
-  test("loads the dashboard with KPI cards", async ({ page }) => {
+  // Pure read-only assertions against one rendered dashboard — a single load
+  // covers all of them (the cold dashboard boot is the expensive step).
+  test("loads with KPI cards, charts, recent transactions, and budget section", async ({
+    page,
+  }) => {
     await page.goto("/");
     await expectPageTitle(page, /Dashboard/);
 
     // KPI cards should be visible
     await expect(page.getByText(/Net Worth/i).first()).toBeVisible();
     await expect(page.getByText(/Bank Balance/i).first()).toBeVisible();
-  });
 
-  test("displays charts and visualizations", async ({ page }) => {
-    await page.goto("/");
-
-    // Check for chart containers (Recharts renders into div.recharts-wrapper)
+    // Chart containers render (Recharts renders into div.recharts-wrapper)
     await expect(page.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 10_000,
     });
-  });
 
-  test("shows recent transactions feed", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.getByText(/Recent Transactions/i)).toBeVisible();
-  });
+    // Recent transactions feed
+    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 45_000 });
 
-  test("shows budget progress section", async ({ page }) => {
-    await page.goto("/");
-    // The section's "Budget" header is too generic to locate uniquely (the
-    // sidebar nav link has the same text). Assert on the segmented control
-    // inside the section instead — those labels live only in BudgetSection.
+    // Budget progress section. The section's "Budget" header is too generic
+    // to locate uniquely (the sidebar nav link has the same text). Assert on
+    // the segmented control inside the section instead — those labels live
+    // only in BudgetSection.
     await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
   });
 

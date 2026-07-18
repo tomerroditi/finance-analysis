@@ -3,22 +3,24 @@
 How GitHub Actions are wired up. Read this before touching anything in
 `.github/workflows/`.
 
-## Two workflows, two responsibilities
+## Three workflows, three responsibilities
 
 | Workflow                 | Trigger                | Purpose                                          |
 |--------------------------|------------------------|--------------------------------------------------|
-| `.github/workflows/ci.yml`     | `pull_request` to main, manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest, **and the full Playwright e2e suite across 4 parallel shards**. Fails the PR if anything breaks. |
-| `.github/workflows/release.yml`| `push` to main         | Re-run CI checks, then `commitizen` bump, build the Windows installer + macOS DMG, attach to the GitHub release. |
+| `.github/workflows/ci.yml`     | `pull_request` (any base), manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest on all PRs; **the full Playwright e2e suite across 4 parallel shards** additionally runs on PRs targeting `dev` or `main`; the Schemathesis API-fuzz job runs only on PRs targeting `main`. Fails the PR if anything breaks. |
+| `.github/workflows/build-smoke.yml` | `pull_request` to main touching `build/`, `backend/`, `scraper/`, deps, or the workflow itself; manual | Build the Windows bundle on `windows-latest` and run its in-bundle smoke test + `--uninstall-cleanup` CLI + bundle-size cap. Green/red signal only — no artifacts uploaded. |
+| `.github/workflows/release.yml`| `push` to main         | `commitizen` bump, build the Windows installer (**no macOS artifact** — see `installation_and_updates.md`), smoke-test it, attach to the GitHub release. |
 
 The split exists because:
 
-1. **PRs need fast feedback.** `release.yml` drags installer/DMG steps that
+1. **PRs need fast feedback.** `release.yml` drags installer steps that
    PRs don't care about, so PRs run the lighter `ci.yml` instead.
-2. **Releases must be gated by a green test run.** The `ci-checks` job at the
-   top of `release.yml` mirrors the PR validation so a flaky main commit
-   can't sneak through.
+2. **Releases must be gated by a green test run.** `release.yml` itself
+   runs no tests — the gate is the PR that landed the commit on `main`
+   (`ci.yml`'s e2e job runs on every PR targeting `dev` or `main`; the
+   fuzz job on every PR targeting `main`).
 
-Don't merge them into one workflow. The duplicate-CI-step is intentional.
+Don't merge them into one workflow.
 
 ## What runs on a PR (`ci.yml`)
 
@@ -55,18 +57,32 @@ for semver bumps based on commit messages:
 | `BREAKING CHANGE:` (in body) or `!:` | major |
 | `chore:`, `docs:`, `refactor:`, `test:`, `style:` | none  |
 
-The bump commit `bump: version X.Y.Z → A.B.C [skip ci]` is excluded from CI
-re-runs by the `if: !startsWith(... 'bump:')` check on the `ci-checks` job.
+The bump commit `bump: version X.Y.Z → A.B.C [skip ci]` is excluded from
+re-triggering the release pipeline by the `if: !startsWith(... 'bump:')`
+check on release.yml's `get-version` job.
 
 ## Branch & PR workflow
 
 Feature branches must target **`dev`**, not `main`.
 
-- Open a PR against `dev`. Let `ci.yml` run (pytest + lint + build + vitest).
+- Open a PR against `dev`. Let `ci.yml` run (pytest + lint + build + vitest
+  + the 4-shard Playwright e2e suite).
 - Merge with a conventional-commit subject.
-- When `dev` is ready to ship, open a `dev → main` PR. That merge triggers
-  `release.yml`: CI re-runs, commitizen bumps the version, and the installer
-  + DMG are built and attached to the GitHub release.
+- When `dev` is ready to ship, open a `dev → main` PR. The PR runs the full
+  `ci.yml` gate (including e2e + fuzz); the merge then triggers `release.yml`:
+  commitizen bumps the version, and the Windows installer is built and
+  attached to the GitHub release.
+
+**`dev` is a long-lived branch — never delete it.** GitHub's "Automatically
+delete head branches" setting (Settings → General → Pull Requests) deletes
+the head branch of every merged PR, which silently kills `dev` after each
+`dev → main` release merge. Either keep that setting off, or (better) protect
+`dev` with a branch ruleset that restricts deletion (Settings → Rules →
+Rulesets → target `dev` → "Restrict deletions") — protected branches survive
+auto-delete, so feature branches still get cleaned up. If `dev` ever
+disappears again, re-create it from `main` (`git push origin main:dev` or the
+GitHub UI) — losing it only loses the pointer, not history, as long as it was
+fully merged.
 
 Never open a feature PR directly to `main`. The only PRs that should target
 `main` are `dev → main` release merges.

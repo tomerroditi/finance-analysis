@@ -44,14 +44,15 @@ export async function disableDemoMode(_page?: Page) {
 /**
  * Navigate to a page and wait for it to load.
  *
- * Sets the OnboardingGate's session-storage flag before navigation so a
- * fresh-user redirect (is_first_run=true) doesn't bounce us off the
- * target page when demo mode hasn't been toggled yet.
+ * Sets the OnboardingGate's session-storage flag before the document loads
+ * (via addInitScript) so a fresh-user redirect (is_first_run=true) doesn't
+ * bounce us off the target page when demo mode hasn't been toggled yet.
+ * Using an init script instead of a warm-up `goto("/")` avoids booting the
+ * dashboard (the most expensive page) as a side effect of every navigation —
+ * that hidden extra load used to dominate suite runtime.
  */
 export async function navigateTo(page: Page, path: string) {
-  await page.goto("about:blank");
-  await page.goto("/");
-  await page.evaluate(() => {
+  await page.addInitScript(() => {
     sessionStorage.setItem("onboardingDismissedAt", String(Date.now()));
   });
   await page.goto(path);

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, navigateTo } from "./helpers";
+
 /**
  * The "Income by source" dashboard card (id `income_by_source`) renders a
  * donut chart + a breakdown table with a Total row, plus range-preset
@@ -7,6 +8,10 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * default on the dashboard route; Demo Mode supplies sample income data so the
  * donut + table render. This spec guards that the card mounts and that
  * switching range presets doesn't crash it.
+ *
+ * All checks are client-side interactions on one rendered card, so they run
+ * as a single test on a single dashboard load (the cold dashboard boot is the
+ * expensive step — it used to be paid once per assertion group, 4×).
  */
 test.describe("Income by source dashboard card", () => {
   // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
@@ -31,65 +36,32 @@ test.describe("Income by source dashboard card", () => {
       .last();
   }
 
-  test("renders the title, donut, and Total row", async ({ page }) => {
+  test("renders donut + Total row; range preset, Breakdown toggle, and label reveal all work", async ({
+    page,
+  }) => {
     await navigateTo(page, "/");
 
-    // Card title.
+    // --- Card mounts: title, donut, and a Total row in the table ---
     await expect(
       page.getByText("Income by source", { exact: true }).first(),
     ).toBeVisible({ timeout: 45_000 });
 
     const card = cardContainer(page);
 
-    // Donut renders inside the card.
-    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
-      timeout: 45_000,
-    });
-
-    // Breakdown table has a Total row.
-    await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
-  });
-
-  test("switching to Last 12 months keeps the card rendered", async ({ page }) => {
-    await navigateTo(page, "/");
-
-    await expect(
-      page.getByText("Income by source", { exact: true }).first(),
-    ).toBeVisible({ timeout: 45_000 });
-
-    const card = cardContainer(page);
-    await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
-      timeout: 45_000,
-    });
-
-    // Click the "Last 12 months" range preset (scoped to the card).
-    await card
-      .getByRole("button", { name: "Last 12 months" })
-      .first()
-      .click();
-
-    // The card must still render its donut after the range change (no crash).
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
     await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
-  });
 
-  test("Breakdown toggle collapses and restores the table", async ({ page }) => {
-    await navigateTo(page, "/");
-
-    await expect(
-      page.getByText("Income by source", { exact: true }).first(),
-    ).toBeVisible({ timeout: 45_000 });
-
-    const card = cardContainer(page);
+    // --- Switching to "Last 12 months" keeps the card rendered (no crash) ---
+    await card.getByRole("button", { name: "Last 12 months" }).first().click();
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
+    await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
 
-    // Table starts expanded.
+    // --- Breakdown toggle collapses and restores the table ---
     await expect(card.locator("table").first()).toBeVisible();
-
     const toggle = card.getByRole("button", { name: "Breakdown" }).first();
 
     // Collapse: the table is removed but the donut stays.
@@ -100,26 +72,13 @@ test.describe("Income by source dashboard card", () => {
     // Expand again: the table comes back.
     await toggle.click();
     await expect(card.locator("table").first()).toBeVisible();
-  });
 
-  /**
-   * Source names are truncated to fit the column. Tapping a name toggles a
-   * full-name reveal (the label switches from `truncate` to a wrapped,
-   * `whitespace-normal` display). This is the mobile affordance for reading
-   * long source labels like "Salary / Corr…". Each row's source cell is a
-   * button carrying `aria-expanded`; the Breakdown toggle lives outside the
-   * table, so scoping to `table button` isolates the source-name buttons.
-   */
-  test("tapping a source name reveals and hides the full label", async ({ page }) => {
-    await navigateTo(page, "/");
-
-    await expect(
-      page.getByText("Income by source", { exact: true }).first(),
-    ).toBeVisible({ timeout: 45_000 });
-
-    const card = cardContainer(page);
-    await expect(card.locator("table").first()).toBeVisible({ timeout: 45_000 });
-
+    // --- Tapping a source name reveals and hides the full label ---
+    // Source names are truncated to fit the column. Tapping a name toggles a
+    // full-name reveal (the label switches from `truncate` to a wrapped,
+    // `whitespace-normal` display). Each row's source cell is a button
+    // carrying `aria-expanded`; the Breakdown toggle lives outside the table,
+    // so scoping to `table button` isolates the source-name buttons.
     const sourceButton = card.locator("table button[aria-expanded]").first();
     const label = sourceButton.locator("span").last();
 
