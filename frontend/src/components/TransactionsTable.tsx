@@ -105,6 +105,66 @@ const getDescription = (tx: Transaction): string => {
   return tx.description || tx.desc || "";
 };
 
+
+interface SortHeaderProps {
+  label: string;
+  sortKey: string;
+  align?: "left" | "right" | "center";
+  width?: string;
+  compact: boolean;
+  sortConfig: SortConfig;
+  onSort: (key: string) => void;
+}
+
+// Hoisted to module scope: defined inside the component body their identity
+// changed every render, unmounting/remounting every header cell on each
+// keystroke in the filter box.
+function SortIcon({ columnKey, sortConfig }: { columnKey: string; sortConfig: SortConfig }) {
+  if (sortConfig.key !== columnKey || !sortConfig.direction) {
+    return (
+      <ArrowUpDown
+        size={14}
+        className="ms-1 opacity-20 group-hover:opacity-50"
+      />
+    );
+  }
+  return sortConfig.direction === "asc" ? (
+    <ArrowUp size={14} className="ms-1 text-[var(--primary)]" />
+  ) : (
+    <ArrowDown size={14} className="ms-1 text-[var(--primary)]" />
+  );
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  align = "left",
+  width,
+  compact,
+  sortConfig,
+  onSort,
+}: SortHeaderProps) {
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      style={{ width }}
+      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
+        ? "text-end"
+        : align === "center"
+          ? "text-center"
+          : "text-start"
+        }`}
+    >
+      <div
+        className={`flex items-center ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"}`}
+      >
+        <span className="truncate">{label}</span>
+        <SortIcon columnKey={sortKey} sortConfig={sortConfig} />
+      </div>
+    </th>
+  );
+}
+
 export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   transactions,
   showSelection = false,
@@ -598,53 +658,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   };
 
   // Sort icon component
-  const SortIcon = ({ columnKey }: { columnKey: string }) => {
-    if (sortConfig.key !== columnKey || !sortConfig.direction) {
-      return (
-        <ArrowUpDown
-          size={14}
-          className="ms-1 opacity-20 group-hover:opacity-50"
-        />
-      );
-    }
-    return sortConfig.direction === "asc" ? (
-      <ArrowUp size={14} className="ms-1 text-[var(--primary)]" />
-    ) : (
-      <ArrowDown size={14} className="ms-1 text-[var(--primary)]" />
-    );
-  };
-
-  // Header component
-  const SortableHeader = ({
-    label,
-    sortKey,
-    align = "left",
-    width,
-  }: {
-    label: string;
-    sortKey: string;
-    align?: "left" | "right" | "center";
-    width?: string;
-  }) => (
-    <th
-      onClick={() => handleSort(sortKey)}
-      style={{ width }}
-      className={`px-4 ${compact ? "py-2" : "py-3"} text-sm font-medium text-[var(--text-muted)] cursor-pointer group hover:text-white transition-colors ${align === "right"
-        ? "text-end"
-        : align === "center"
-          ? "text-center"
-          : "text-start"
-        }`}
-    >
-      <div
-        className={`flex items-center ${align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"}`}
-      >
-        <span className="truncate">{label}</span>
-        <SortIcon columnKey={sortKey} />
-      </div>
-    </th>
-  );
-
   // Calculate column count for empty state
   const columnCount = visibleColumns.size + (showSelection ? 1 : 0) + (showActions ? 1 : 0);
 
@@ -816,13 +829,16 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 </th>
               )}
               {visibleColumns.has("date") && (
-                <SortableHeader label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
+                <SortableHeader compact={compact} sortConfig={sortConfig} onSort={handleSort} label={t("transactions.table.date")} sortKey="date" align="center" width="120px" />
               )}
               {visibleColumns.has("description") && (
-                <SortableHeader label={t("transactions.table.description")} sortKey="desc" align="center" width="150px" />
+                <SortableHeader compact={compact} sortConfig={sortConfig} onSort={handleSort} label={t("transactions.table.description")} sortKey="desc" align="center" width="150px" />
               )}
               {visibleColumns.has("category") && (
                 <SortableHeader
+                  compact={compact}
+                  sortConfig={sortConfig}
+                  onSort={handleSort}
                   label={t("transactions.table.category")}
                   sortKey="category"
                   align="center"
@@ -831,6 +847,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
               )}
               {visibleColumns.has("amount") && (
                 <SortableHeader
+                  compact={compact}
+                  sortConfig={sortConfig}
+                  onSort={handleSort}
                   label={t("transactions.table.amount")}
                   sortKey="amount"
                   align="center"
@@ -838,7 +857,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 />
               )}
               {visibleColumns.has("account") && (
-                <SortableHeader label={t("transactions.table.account")} sortKey="account" align="center" width="180px" />
+                <SortableHeader compact={compact} sortConfig={sortConfig} onSort={handleSort} label={t("transactions.table.account")} sortKey="account" align="center" width="180px" />
               )}
               {showActions && (
                 <th
