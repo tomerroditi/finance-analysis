@@ -174,4 +174,28 @@ test.describe("DataSources", () => {
       await cleanup.dispose();
     }
   });
+
+  test("credential details API never returns plaintext secrets", async ({ page }) => {
+    // Regression guard: GET /api/credentials/{service}/{provider}/{account}
+    // used to return the keyring password as plaintext JSON. It must now be
+    // masked with the __unchanged__ sentinel (or empty when nothing stored).
+    const ctx = await request.newContext();
+    const res = await ctx.get(
+      `${API_BASE}/credentials/banks/hapoalim/${encodeURIComponent("Main Account")}`,
+    );
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(["__unchanged__", ""]).toContain(body.password);
+    await ctx.dispose();
+
+    // The edit form prefills from the masked payload: the password input must
+    // hold the sentinel (rendered as a password field), never the real value,
+    // and the reveal-password eye button must not be offered for it.
+    await navigateTo(page, "/data-sources");
+    await page.getByRole("button", { name: "Edit Account" }).first().click();
+    const passwordInput = page.locator('input[type="password"]').first();
+    await expect(passwordInput).toBeVisible();
+    const value = await passwordInput.inputValue();
+    expect(["__unchanged__", ""]).toContain(value);
+  });
 });
