@@ -469,7 +469,7 @@ function RuleForm({
                         <label className="text-xs text-[var(--text-muted)] uppercase font-bold">{t("common.tag")}</label>
                         <div className="mt-1">
                         <SelectDropdown
-                            options={availableTags.map((t: string) => ({ label: t, value: t }))}
+                            options={availableTags.map((tagName: string) => ({ label: tagName, value: tagName }))}
                             value={tag}
                             onChange={(val) => setTag(val)}
                             placeholder={t("common.select")}

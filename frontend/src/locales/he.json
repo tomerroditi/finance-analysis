@@ -865,6 +865,18 @@
       "months3": "3 חודשים",
       "months6": "6 חודשים",
       "months12": "12 חודשים"
+    },
+    "fields": {
+      "username": "שם משתמש",
+      "password": "סיסמה",
+      "id": "תעודת זהות",
+      "card6Digits": "6 ספרות אחרונות של הכרטיס",
+      "userCode": "קוד משתמש",
+      "num": "קוד מזהה",
+      "nationalID": "תעודת זהות",
+      "email": "אימייל",
+      "phoneNumber": "מספר טלפון",
+      "otpLongTermToken": "אסימון התחברות ארוך טווח"
     }
   },
   "liabilities": {

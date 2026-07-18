@@ -54,8 +54,8 @@ export function BudgetRuleModal({
         } else if (typeof initialData.tags === "string") {
           parsedTags = initialData.tags
             .split(";")
-            .map((t: string) => t.trim())
-            .filter((t: string) => t !== "");
+            .map((tagName: string) => tagName.trim())
+            .filter((tagName: string) => tagName !== "");
         }
         setSelectedTags(parsedTags);
       } else {
@@ -70,7 +70,7 @@ export function BudgetRuleModal({
 
   const handleTagToggle = (tag: string) => {
     setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+      prev.includes(tag) ? prev.filter((tagName) => tagName !== tag) : [...prev, tag],
     );
   };
 

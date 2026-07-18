@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { backupApi } from "../../services/api";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 import { AboutPanel } from "../settings/AboutPanel";
 import { UninstallSection } from "../settings/UninstallSection";
 import { DashboardLayoutManager } from "../settings/DashboardLayoutManager";
@@ -12,12 +15,6 @@ import { DashboardLayoutManager } from "../settings/DashboardLayoutManager";
 interface SettingsPopupProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-interface BackupEntry {
-  filename: string;
-  created_at: string;
-  size_bytes: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -41,8 +38,8 @@ export function SettingsPopup({
   } = useBudgetAlertSettings();
   const confirm = useConfirm();
   const notify = useNotify();
-  const [backups, setBackups] = useState<BackupEntry[]>([]);
-  const [creating, setCreating] = useState(false);
+  const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
   const [tab, setTab] = useState<"general" | "dashboard">("general");
 
@@ -57,29 +54,23 @@ export function SettingsPopup({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (isOpen) {
-      backupApi.list().then((res) => setBackups(res.data));
-    }
-  }, [isOpen]);
+  const { data: backups = [] } = useQuery({
+    queryKey: qk.backups.list(),
+    queryFn: () => backupApi.list().then((res) => res.data),
+    enabled: isOpen,
+  });
+
+  const createBackupMutation = useMutation({
+    mutationFn: () => backupApi.create(),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: qkPrefix.backups }),
+    onError: () => notify.error(t("settings.backupFailed")),
+  });
 
   if (!isOpen) return null;
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
-  };
-
-  const handleCreateBackup = async () => {
-    setCreating(true);
-    try {
-      await backupApi.create();
-      const res = await backupApi.list();
-      setBackups(res.data);
-    } catch {
-      notify.error(t("settings.backupFailed"));
-    } finally {
-      setCreating(false);
-    }
   };
 
   const handleRestore = async (filename: string) => {
@@ -267,11 +258,13 @@ export function SettingsPopup({
               {t("settings.backup")}
             </label>
             <button
-              onClick={handleCreateBackup}
-              disabled={creating}
+              onClick={() => createBackupMutation.mutate()}
+              disabled={createBackupMutation.isPending}
               className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
             >
-              {creating ? t("settings.creatingBackup") : t("settings.createBackup")}
+              {createBackupMutation.isPending
+                ? t("settings.creatingBackup")
+                : t("settings.createBackup")}
             </button>
           </div>
 

@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useScrollLock } from "../hooks/useScrollLock";
 import {
   ResponsiveContainer,
   LineChart,
@@ -24,72 +23,28 @@ import {
   BarChart2,
   Pencil,
   Info,
-  AlertTriangle,
-  CheckCircle,
 } from "lucide-react";
-import { liabilitiesApi } from "../services/api";
-import { SelectDropdown } from "../components/common/SelectDropdown";
+import { liabilitiesApi, type Liability } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { formatCurrency } from "../utils/numberFormatting";
-import { formatDate, formatShortDate } from "../utils/dateFormatting";
+import { formatDate, formatShortDate, todayISO } from "../utils/dateFormatting";
 import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
-
-interface Liability {
-  id: number;
-  name: string;
-  lender?: string;
-  category: string;
-  tag: string;
-  principal_amount: number;
-  interest_rate: number;
-  term_months: number;
-  start_date: string;
-  is_paid_off: number;
-  paid_off_date?: string;
-  notes?: string;
-  created_date: string;
-  monthly_payment: number;
-  total_interest: number;
-  remaining_balance: number;
-  total_paid: number;
-  percent_paid: number;
-  payments_made: number;
-}
-
-interface AnalysisData {
-  schedule: Array<{
-    payment_number: number;
-    date: string;
-    payment: number;
-    principal_portion: number;
-    interest_portion: number;
-    remaining_balance: number;
-  }>;
-  transactions: Array<Record<string, unknown>>;
-  actual_vs_expected: Array<{
-    date: string;
-    expected_payment: number;
-    actual_payment: number;
-    difference: number;
-  }>;
-  summary: {
-    total_receipts: number;
-    total_payments: number;
-    total_interest_cost: number;
-    interest_paid: number;
-    interest_remaining: number;
-    monthly_payment: number;
-    remaining_balance: number;
-    percent_paid: number;
-    payments_made: number;
-  };
-}
+import {
+  LiabilityCreateModal,
+  type TagDetection,
+} from "../components/liabilities/LiabilityCreateModal";
+import { LiabilityEditModal } from "../components/liabilities/LiabilityEditModal";
+import { LiabilityPayOffModal } from "../components/liabilities/LiabilityPayOffModal";
+import {
+  LiabilityAnalysisModal,
+  type AnalysisData,
+} from "../components/liabilities/LiabilityAnalysisModal";
 
 interface DebtPoint {
   date: string;
@@ -305,7 +260,7 @@ export function Liabilities() {
   const [payOffForm, setPayOffForm] = useState<{
     id: number | null;
     date: string;
-  }>({ id: null, date: new Date().toISOString().split("T")[0] });
+  }>({ id: null, date: todayISO() });
 
   // Create form
   const [newLiability, setNewLiability] = useState({
@@ -320,11 +275,7 @@ export function Liabilities() {
   });
 
   // Detection result for tag transactions
-  const [tagDetection, setTagDetection] = useState<{
-    has_receipt: boolean;
-    receipt: { date: string; amount: number } | null;
-    payments: Array<{ date: string; amount: number }>;
-  } | null>(null);
+  const [tagDetection, setTagDetection] = useState<TagDetection | null>(null);
 
   const handleTagChange = useCallback(async (tag: string) => {
     setNewLiability((prev) => ({ ...prev, tag }));
@@ -356,7 +307,6 @@ export function Liabilities() {
     interest_rate: string;
     notes: string;
   }>({ id: null, name: "", lender: "", interest_rate: "", notes: "" });
-  useScrollLock(isAddOpen || !!editForm.id || !!analysisModalId || !!payOffForm.id);
 
   // Queries
   const { data: liabilities, isLoading } = useQuery({
@@ -423,7 +373,7 @@ export function Liabilities() {
       invalidate();
       setPayOffForm({
         id: null,
-        date: new Date().toISOString().split("T")[0],
+        date: todayISO(),
       });
     },
   });
@@ -513,14 +463,9 @@ export function Liabilities() {
   const handlePayOff = useCallback((id: number) => {
     setPayOffForm({
       id,
-      date: new Date().toISOString().split("T")[0],
+      date: todayISO(),
     });
   }, []);
-
-  // Analysis modal tab
-  const [analysisTab, setAnalysisTab] = useState<"schedule" | "actual">(
-    "schedule",
-  );
 
   if (isLoading)
     return (
@@ -725,574 +670,78 @@ export function Liabilities() {
         </div>
       )}
 
-      {/* Create Modal */}
-      {isAddOpen && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">
-              {t("liabilities.addLiability")}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.name")} *
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.name}
-                  onChange={(e) =>
-                    setNewLiability({ ...newLiability, name: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.lender")}
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.lender}
-                  onChange={(e) =>
-                    setNewLiability({ ...newLiability, lender: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.tag")} *
-                </label>
-                <SelectDropdown
-                  options={availableTags.map((tag: string) => ({ label: tag, value: tag }))}
-                  value={newLiability.tag}
-                  onChange={handleTagChange}
-                  placeholder={t("liabilities.selectTag")}
-                  onCreateNew={async (name) => {
-                    const formatted = await createTag("Liabilities", name);
-                    await handleTagChange(formatted);
-                  }}
-                />
-                {tagDetection && !tagDetection.has_receipt && (
-                  <div className="flex items-start gap-2 mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm">
-                    <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                    <span className="text-amber-300">
-                      {t("liabilities.noReceiptWarning")}
-                    </span>
-                  </div>
-                )}
-                {tagDetection?.has_receipt && (
-                  <div className="flex items-start gap-2 mt-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-sm">
-                    <CheckCircle size={16} className="text-emerald-400 shrink-0 mt-0.5" />
-                    <span className="text-emerald-300">
-                      {t("liabilities.receiptDetected", {
-                        amount: tagDetection.receipt?.amount.toLocaleString(),
-                        date: tagDetection.receipt ? formatDate(tagDetection.receipt.date) : "",
-                        payments: tagDetection.payments.length,
-                      })}
-                    </span>
-                  </div>
-                )}
-              </div>
-              {tagDetection && !tagDetection.has_receipt && (
-                <>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      {t("liabilities.principalAmount")} *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                      value={newLiability.principal_amount}
-                      onChange={(e) =>
-                        setNewLiability({
-                          ...newLiability,
-                          principal_amount: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      {t("liabilities.startDate")} *
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                      value={newLiability.start_date}
-                      onChange={(e) =>
-                        setNewLiability({
-                          ...newLiability,
-                          start_date: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.interestRate")} (%) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.interest_rate}
-                  onChange={(e) =>
-                    setNewLiability({
-                      ...newLiability,
-                      interest_rate: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.termMonths")} *
-                </label>
-                <input
-                  type="number"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newLiability.term_months}
-                  onChange={(e) =>
-                    setNewLiability({
-                      ...newLiability,
-                      term_months: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.notes")}
-                </label>
-                <textarea
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium resize-none"
-                  rows={3}
-                  value={newLiability.notes}
-                  onChange={(e) =>
-                    setNewLiability({ ...newLiability, notes: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setIsAddOpen(false)}
-                className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                disabled={
-                  !newLiability.name ||
-                  !newLiability.tag ||
-                  !tagDetection ||
-                  (!tagDetection.has_receipt &&
-                    (!newLiability.principal_amount ||
-                      !newLiability.start_date)) ||
-                  !newLiability.interest_rate ||
-                  !newLiability.term_months ||
-                  createMutation.isPending
-                }
-                onClick={() =>
-                  createMutation.mutate({
-                    name: newLiability.name,
-                    lender: newLiability.lender || undefined,
-                    tag: newLiability.tag,
-                    principal_amount: Number(newLiability.principal_amount),
-                    interest_rate: Number(newLiability.interest_rate),
-                    term_months: Number(newLiability.term_months),
-                    start_date: newLiability.start_date,
-                    notes: newLiability.notes || undefined,
-                  })
-                }
-                className="flex-1 py-3 text-sm font-bold bg-[var(--primary)] text-white rounded-xl hover:bg-[var(--primary-dark)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {createMutation.isPending ? "..." : t("common.save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LiabilityCreateModal
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        form={newLiability}
+        setForm={setNewLiability}
+        tagDetection={tagDetection}
+        availableTags={availableTags}
+        onTagChange={handleTagChange}
+        onCreateTag={async (name) => {
+          const formatted = await createTag("Liabilities", name);
+          await handleTagChange(formatted);
+        }}
+        isPending={createMutation.isPending}
+        onSubmit={() =>
+          createMutation.mutate({
+            name: newLiability.name,
+            lender: newLiability.lender || undefined,
+            tag: newLiability.tag,
+            principal_amount: Number(newLiability.principal_amount),
+            interest_rate: Number(newLiability.interest_rate),
+            term_months: Number(newLiability.term_months),
+            start_date: newLiability.start_date,
+            notes: newLiability.notes || undefined,
+          })
+        }
+      />
 
-      {/* Edit Modal */}
-      {editForm.id && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">
-              {t("liabilities.editLiability")}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.name")}
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={editForm.name}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, name: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.lender")}
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={editForm.lender}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, lender: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.interestRate")} (%)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={editForm.interest_rate}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, interest_rate: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("liabilities.notes")}
-                </label>
-                <textarea
-                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium resize-none"
-                  rows={3}
-                  value={editForm.notes}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, notes: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() =>
-                  setEditForm({
-                    id: null,
-                    name: "",
-                    lender: "",
-                    interest_rate: "",
-                    notes: "",
-                  })
-                }
-                className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                disabled={!editForm.name || updateMutation.isPending}
-                onClick={() =>
-                  updateMutation.mutate({
-                    id: editForm.id!,
-                    data: {
-                      name: editForm.name,
-                      lender: editForm.lender || undefined,
-                      interest_rate: editForm.interest_rate
-                        ? Number(editForm.interest_rate)
-                        : undefined,
-                      notes: editForm.notes || undefined,
-                    },
-                  })
-                }
-                className="flex-1 py-3 text-sm font-bold bg-[var(--primary)] text-white rounded-xl hover:bg-[var(--primary-dark)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {updateMutation.isPending ? "..." : t("common.save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LiabilityEditModal
+        form={editForm}
+        setForm={setEditForm}
+        onClose={() =>
+          setEditForm({
+            id: null,
+            name: "",
+            lender: "",
+            interest_rate: "",
+            notes: "",
+          })
+        }
+        isPending={updateMutation.isPending}
+        onSubmit={() =>
+          updateMutation.mutate({
+            id: editForm.id!,
+            data: {
+              name: editForm.name,
+              lender: editForm.lender || undefined,
+              interest_rate: editForm.interest_rate
+                ? Number(editForm.interest_rate)
+                : undefined,
+              notes: editForm.notes || undefined,
+            },
+          })
+        }
+      />
 
-      {/* Pay Off Modal */}
-      {payOffForm.id && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-sm animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold mb-4">
-              {t("liabilities.payOff")}
-            </h3>
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                {t("liabilities.paidOffDate")}
-              </label>
-              <input
-                type="date"
-                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                value={payOffForm.date}
-                onChange={(e) =>
-                  setPayOffForm({ ...payOffForm, date: e.target.value })
-                }
-              />
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() =>
-                  setPayOffForm({
-                    id: null,
-                    date: new Date().toISOString().split("T")[0],
-                  })
-                }
-                className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                disabled={!payOffForm.date || payOffMutation.isPending}
-                onClick={() =>
-                  payOffMutation.mutate({
-                    id: payOffForm.id!,
-                    date: payOffForm.date,
-                  })
-                }
-                className="flex-1 py-3 text-sm font-bold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {payOffMutation.isPending ? "..." : t("liabilities.payOff")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LiabilityPayOffModal
+        form={payOffForm}
+        setForm={setPayOffForm}
+        onClose={() => setPayOffForm({ id: null, date: todayISO() })}
+        isPending={payOffMutation.isPending}
+        onSubmit={() =>
+          payOffMutation.mutate({ id: payOffForm.id!, date: payOffForm.date })
+        }
+      />
 
-      {/* Analysis Modal */}
-      {analysisModalId && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6 shadow-2xl w-full max-w-[calc(100vw-2rem)] md:max-w-4xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold">{t("liabilities.analysis")}</h3>
-              <button
-                onClick={() => setAnalysisModalId(null)}
-                className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
-              >
-                &times;
-              </button>
-            </div>
-
-            {analysisData ? (
-              <>
-                {/* Summary */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.totalReceipts")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.total_receipts)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.totalPaymentsMade")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.total_payments)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.totalInterestCost")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.total_interest_cost)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.interestPaid")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.interest_paid)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.interestRemaining")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.interest_remaining)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.monthlyPayment")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.monthly_payment)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.remainingBalance")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {formatCurrency(analysisData.summary.remaining_balance)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)]">
-                    <p className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">
-                      {t("liabilities.percentPaid")}
-                    </p>
-                    <p className="text-lg font-bold text-white mt-1" dir="ltr">
-                      {analysisData.summary.percent_paid.toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-
-                {/* Tabs + Generate Button */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setAnalysisTab("schedule")}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "schedule" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-                    >
-                      {t("liabilities.amortizationSchedule")}
-                    </button>
-                    <button
-                      onClick={() => setAnalysisTab("actual")}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${analysisTab === "actual" ? "bg-[var(--primary)] text-white" : "bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white"}`}
-                    >
-                      {t("liabilities.actualVsExpected")}
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => generateMutation.mutate(analysisModalId)}
-                    disabled={generateMutation.isPending}
-                    className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
-                  >
-                    {generateMutation.isPending ? "..." : t("liabilities.generateMissing")}
-                  </button>
-                </div>
-
-                {/* Amortization Schedule Table */}
-                {analysisTab === "schedule" && (
-                  <div className="overflow-x-auto max-h-96">
-                    <table className="min-w-[500px] w-full text-sm">
-                      <thead className="sticky top-0 bg-[var(--surface)]">
-                        <tr className="text-[9px] md:text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                          <th className="py-2 text-start ps-2 whitespace-nowrap">
-                            {t("liabilities.paymentNumber")}
-                          </th>
-                          <th className="py-2 text-start whitespace-nowrap">
-                            {t("common.date")}
-                          </th>
-                          <th className="py-2 text-end whitespace-nowrap">
-                            {t("liabilities.payment")}
-                          </th>
-                          <th className="py-2 text-end whitespace-nowrap">
-                            {t("liabilities.principalPortion")}
-                          </th>
-                          <th className="py-2 text-end whitespace-nowrap">
-                            {t("liabilities.interestPortion")}
-                          </th>
-                          <th className="py-2 text-end pe-2 whitespace-nowrap">
-                            {t("liabilities.remainingBalance")}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {analysisData.schedule.map((row) => (
-                          <tr
-                            key={row.payment_number}
-                            className="border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30"
-                          >
-                            <td className="py-2 ps-2 text-[var(--text-muted)]">
-                              {row.payment_number}
-                            </td>
-                            <td className="py-2 whitespace-nowrap" dir="ltr">{formatDate(row.date)}</td>
-                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
-                              {formatCurrency(row.payment)}
-                            </td>
-                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
-                              {formatCurrency(row.principal_portion)}
-                            </td>
-                            <td className="py-2 text-end whitespace-nowrap" dir="ltr">
-                              {formatCurrency(row.interest_portion)}
-                            </td>
-                            <td className="py-2 text-end pe-2 whitespace-nowrap" dir="ltr">
-                              {formatCurrency(row.remaining_balance)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Actual vs Expected Table */}
-                {analysisTab === "actual" && (
-                  <div className="overflow-x-auto max-h-96">
-                    <table className="min-w-[400px] w-full text-sm">
-                      <thead className="sticky top-0 bg-[var(--surface)]">
-                        <tr className="text-[9px] md:text-[10px] uppercase font-black tracking-wider text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                          <th className="py-2 text-start ps-2 whitespace-nowrap">
-                            {t("common.date")}
-                          </th>
-                          <th className="py-2 text-end whitespace-nowrap">
-                            {t("liabilities.expectedPayment")}
-                          </th>
-                          <th className="py-2 text-end whitespace-nowrap">
-                            {t("liabilities.actualPayment")}
-                          </th>
-                          <th className="py-2 text-end pe-2 whitespace-nowrap">
-                            {t("liabilities.difference")}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {analysisData.actual_vs_expected.map((row, i) => (
-                          <tr
-                            key={i}
-                            className={`border-b border-[var(--surface-light)]/50 hover:bg-[var(--surface-light)]/30 ${row.difference !== 0 ? (row.difference > 0 ? "bg-emerald-500/5" : "bg-rose-500/5") : ""}`}
-                          >
-                            <td className="py-2 ps-2" dir="ltr">{formatDate(row.date)}</td>
-                            <td className="py-2 text-end" dir="ltr">
-                              {formatCurrency(row.expected_payment)}
-                            </td>
-                            <td className="py-2 text-end" dir="ltr">
-                              {formatCurrency(row.actual_payment)}
-                            </td>
-                            <td
-                              className={`py-2 text-end pe-2 font-bold ${row.difference > 0 ? "text-emerald-400" : row.difference < 0 ? "text-rose-400" : ""}`}
-                              dir="ltr"
-                            >
-                              {row.difference !== 0 &&
-                                (row.difference > 0 ? "+" : "")}
-                              {formatCurrency(row.difference)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Skeleton variant="card" className="h-20" />
-                  <Skeleton variant="card" className="h-20" />
-                  <Skeleton variant="card" className="h-20" />
-                </div>
-                <Skeleton variant="card" className="h-64" />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <LiabilityAnalysisModal
+        isOpen={analysisModalId != null}
+        onClose={() => setAnalysisModalId(null)}
+        analysisData={analysisData}
+        onGenerate={() => generateMutation.mutate(analysisModalId!)}
+        isGenerating={generateMutation.isPending}
+      />
     </div>
   );
 }

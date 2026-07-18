@@ -865,6 +865,18 @@
       "months3": "3 Months",
       "months6": "6 Months",
       "months12": "12 Months"
+    },
+    "fields": {
+      "username": "Username",
+      "password": "Password",
+      "id": "ID Number",
+      "card6Digits": "Card Last 6 Digits",
+      "userCode": "User Code",
+      "num": "Identification Code",
+      "nationalID": "National ID",
+      "email": "Email",
+      "phoneNumber": "Phone Number",
+      "otpLongTermToken": "OTP Long-Term Token"
     }
   },
   "liabilities": {

@@ -41,6 +41,9 @@ export const qkPrefix = {
   savingsGoals: ["savings-goals"] as const,
   insuranceAccounts: ["insurance-accounts"] as const,
   lastScrapes: ["last-scrapes"] as const,
+  // PWA note: excluded from IndexedDB persistence (queryClient.ts) — the
+  // backup list is cheap to refetch and stale entries are misleading.
+  backups: ["backups"] as const,
   credentialsAccounts: ["credentials-accounts"] as const,
   providers: ["providers"] as const,
   retirement: ["retirement"] as const,
@@ -93,6 +96,9 @@ export function makeQueryKeys(demo: boolean) {
     },
     scraping: {
       lastScrapes: () => ["last-scrapes", demo] as const,
+    },
+    backups: {
+      list: () => ["backups", demo] as const,
     },
     credentials: {
       accounts: () => ["credentials-accounts", demo] as const,

@@ -255,12 +255,18 @@ export const taggingApi = {
 };
 
 // Credentials API
+export interface CredentialAccount {
+  service: string;
+  provider: string;
+  account_name: string;
+}
+
 export const credentialsApi = {
   getAll: () => api.get("/credentials/"),
-  getAccounts: () => api.get("/credentials/accounts"),
-  getProviders: () => api.get("/credentials/providers"),
+  getAccounts: () => api.get<CredentialAccount[]>("/credentials/accounts"),
+  getProviders: () => api.get<Record<string, string[]>>("/credentials/providers"),
   getFields: (provider: string) =>
-    api.get(`/credentials/fields/${encodeURIComponent(provider)}`),
+    api.get<{ fields: string[] }>(`/credentials/fields/${encodeURIComponent(provider)}`),
   create: (data: {
     service: string;
     provider: string;
@@ -343,9 +349,28 @@ export const insuranceAccountsApi = {
 };
 
 // Investments API
+export interface Investment {
+  id: number;
+  name: string;
+  category: string;
+  tag: string;
+  type: string;
+  is_closed: boolean;
+  closed_date?: string;
+  interest_rate?: number;
+  interest_rate_type?: string;
+  notes?: string;
+  latest_snapshot_date?: string;
+  latest_snapshot_balance?: number;
+  current_balance?: number;
+  sparkline?: number[];
+  first_transaction_date?: string;
+  created_date?: string;
+}
+
 export const investmentsApi = {
   getAll: (includeClosed = false) =>
-    api.get("/investments/", { params: { include_closed: includeClosed } }),
+    api.get<Investment[]>("/investments/", { params: { include_closed: includeClosed } }),
   getById: (id: number) => api.get(`/investments/${id}`),
   create: (investment: object) => api.post("/investments/", investment),
   update: (id: number, investment: object) =>
@@ -381,9 +406,31 @@ export const investmentsApi = {
 };
 
 // Liabilities API
+export interface Liability {
+  id: number;
+  name: string;
+  lender?: string;
+  category: string;
+  tag: string;
+  principal_amount: number;
+  interest_rate: number;
+  term_months: number;
+  start_date: string;
+  is_paid_off: number;
+  paid_off_date?: string;
+  notes?: string;
+  created_date: string;
+  monthly_payment: number;
+  total_interest: number;
+  remaining_balance: number;
+  total_paid: number;
+  percent_paid: number;
+  payments_made: number;
+}
+
 export const liabilitiesApi = {
   getAll: (includePaidOff = false) =>
-    api.get("/liabilities/", { params: { include_paid_off: includePaidOff } }),
+    api.get<Liability[]>("/liabilities/", { params: { include_paid_off: includePaidOff } }),
   getById: (id: number) => api.get(`/liabilities/${id}`),
   getDebtOverTime: () => api.get("/liabilities/debt-over-time"),
   create: (liability: object) => api.post("/liabilities/", liability),
