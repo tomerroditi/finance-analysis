@@ -7,12 +7,11 @@ in priority order (highest first); the first matching rule wins.
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.errors import BadRequestException, EntityNotFoundException
 from backend.services.tagging_rules_service import TaggingRulesService
 
 router = APIRouter()
@@ -64,18 +63,13 @@ def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
         400 if the rule conditions conflict with an existing rule.
     """
     service = TaggingRulesService(db)
-    try:
-        rule_id, n_tagged = service.add_rule(
-            name=rule.name,
-            conditions=rule.conditions,
-            category=rule.category,
-            tag=rule.tag,
-        )
-        return {"status": "success", "id": rule_id, "tagged_count": n_tagged}
-    except BadRequestException as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    rule_id, n_tagged = service.add_rule(
+        name=rule.name,
+        conditions=rule.conditions,
+        category=rule.category,
+        tag=rule.tag,
+    )
+    return {"status": "success", "id": rule_id, "tagged_count": n_tagged}
 
 
 @router.put("/rules/{rule_id}")
@@ -97,26 +91,16 @@ def update_tagging_rule(
         400 if updated conditions conflict with another rule.
     """
     service = TaggingRulesService(db)
-    try:
-        n_tagged = service.update_rule(rule_id, **rule.model_dump(exclude_none=True))
-        return {"status": "success", "tagged_count": n_tagged}
-    except EntityNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except BadRequestException as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    n_tagged = service.update_rule(rule_id, **rule.model_dump(exclude_none=True))
+    return {"status": "success", "tagged_count": n_tagged}
 
 
 @router.delete("/rules/{rule_id}")
 def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
     """Delete a tagging rule."""
     service = TaggingRulesService(db)
-    try:
-        service.delete_rule(rule_id)
-        return {"status": "success"}
-    except EntityNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    service.delete_rule(rule_id)
+    return {"status": "success"}
 
 
 @router.post("/rules/apply")
@@ -137,11 +121,8 @@ def apply_tagging_rules(
         ``{"status": "success", "tagged_count": int}``.
     """
     service = TaggingRulesService(db)
-    try:
-        count = service.apply_rules(overwrite=overwrite)
-        return {"status": "success", "tagged_count": count}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    count = service.apply_rules(overwrite=overwrite)
+    return {"status": "success", "tagged_count": count}
 
 
 @router.post("/rules/{rule_id}/apply")
@@ -164,13 +145,8 @@ def apply_single_tagging_rule(
         404 if the rule does not exist.
     """
     service = TaggingRulesService(db)
-    try:
-        count = service.apply_rule_by_id(rule_id, overwrite=overwrite)
-        return {"status": "success", "tagged_count": count}
-    except EntityNotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    count = service.apply_rule_by_id(rule_id, overwrite=overwrite)
+    return {"status": "success", "tagged_count": count}
 
 
 @router.post("/rules/validate")
@@ -199,19 +175,13 @@ def validate_rule_conflicts(
         400 if a conflicting rule exists.
     """
     service = TaggingRulesService(db)
-    try:
-        service.check_conflicts(
-            conditions=rule.conditions,
-            category=rule.category,
-            tag=rule.tag,
-            exclude_rule_id=rule.rule_id,
-        )
-        return {"status": "valid"}
-    except BadRequestException as e:
-        # Conflict is returned as 400
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    service.check_conflicts(
+        conditions=rule.conditions,
+        category=rule.category,
+        tag=rule.tag,
+        exclude_rule_id=rule.rule_id,
+    )
+    return {"status": "valid"}
 
 
 class RulePreview(BaseModel):
@@ -240,13 +210,8 @@ def preview_rule_matches(
         ``{"matches": list[dict], "count": int}``.
     """
     service = TaggingRulesService(db)
-    try:
-        matches = service.preview_rule(preview.conditions, preview.limit)
-        return {"matches": matches, "count": len(matches)}
-    except BadRequestException as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    matches = service.preview_rule(preview.conditions, preview.limit)
+    return {"matches": matches, "count": len(matches)}
 
 
 @router.post("/rules/auto-tag-credit-cards-bills")
@@ -266,8 +231,5 @@ def auto_tag_credit_cards_bills(db: Session = Depends(get_database)):
         bank transactions successfully tagged.
     """
     service = TaggingRulesService(db)
-    try:
-        count = service.auto_tag_credit_cards_bills()
-        return {"status": "success", "tagged_count": count}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    count = service.auto_tag_credit_cards_bills()
+    return {"status": "success", "tagged_count": count}

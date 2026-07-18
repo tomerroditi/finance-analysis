@@ -6,6 +6,7 @@ This module sets up the FastAPI application with CORS, routes, and exception han
 
 import asyncio
 import logging
+import math
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -13,6 +14,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import AppConfig
 from backend.database import get_db_context, get_engine
 from backend.errors import (
+    BadRequestException,
     EntityAlreadyExistsException,
     EntityNotFoundException,
     ValidationException,
@@ -421,6 +425,42 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
     return JSONResponse(
         status_code=400,
         content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(BadRequestException)
+async def bad_request_exception_handler(request: Request, exc: BadRequestException):
+    """Return a 400 JSON response for BadRequestException."""
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.message},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
+    """422 handler that survives non-finite floats in the invalid input.
+
+    Request models reject ``NaN``/``Infinity`` (``allow_inf_nan=False`` on
+    ``ApiRequestModel``), but the default handler echoes the offending input
+    back in the error body — and ``json.dumps`` cannot serialize a non-finite
+    float, turning the 422 into a 500. Stringify those values instead.
+    """
+
+    def sanitize(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            return repr(value)
+        if isinstance(value, dict):
+            return {k: sanitize(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [sanitize(v) for v in value]
+        return value
+
+    return JSONResponse(
+        status_code=422,
+        content={"detail": sanitize(jsonable_encoder(exc.errors()))},
     )
 
 

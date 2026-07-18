@@ -56,3 +56,21 @@ def test_client(db_session):
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+def test_client_no_raise(db_session):
+    """TestClient that routes unhandled exceptions through the app's handlers.
+
+    The default ``test_client`` re-raises server exceptions into the test.
+    Use this fixture to assert on the sanitized global 500 response instead.
+    """
+
+    def override_get_database():
+        yield db_session
+
+    app.dependency_overrides[get_database] = override_get_database
+    app.dependency_overrides[get_db] = override_get_database
+    client = TestClient(app, raise_server_exceptions=False)
+    yield client
+    app.dependency_overrides.clear()
