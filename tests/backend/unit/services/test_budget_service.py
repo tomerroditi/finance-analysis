@@ -1614,7 +1614,7 @@ class TestGetMonthlyAnalysisAutoFill:
 
         # Patch date.today() to return March 2026 (the current month for the test)
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
 
@@ -1636,7 +1636,7 @@ class TestGetMonthlyAnalysisAutoFill:
         service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 2, 2026)
 
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # A month later than "today" should still auto-fill from prior rules.
@@ -1656,7 +1656,7 @@ class TestGetMonthlyAnalysisAutoFill:
         service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2026)
 
         fake_today = date_cls(2026, 3, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # January 2026 is before today and has no rules — must stay empty.
@@ -2061,7 +2061,7 @@ class TestMonthlyYearlyIntegration:
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
 
         fake_today = date_cls(2026, 1, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             analysis = service.get_monthly_analysis(2026, 1)
@@ -2187,7 +2187,7 @@ class TestMonthlySkippedYearlyConflictsDedup:
         service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=8, year=2026)
 
         fake_today = date_cls(2026, 10, 15)
-        with patch("backend.services.budget_service.date") as mock_date:
+        with patch("backend.services.budget.monthly.date") as mock_date:
             mock_date.today.return_value = fake_today
             mock_date.side_effect = lambda *args, **kw: date_cls(*args, **kw)
             # Gap fills Sept and Oct 2026 — "Hotels" conflicts with the 2026

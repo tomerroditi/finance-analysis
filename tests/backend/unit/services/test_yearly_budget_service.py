@@ -131,7 +131,7 @@ class TestYearlyCarryForward:
     def test_carries_prior_year_rules(self, db_session, monkeypatch):
         """An empty 2026 inherits 2025's yearly rules."""
         from backend.services.budget_service import YearlyBudgetService
-        import backend.services.budget_service as mod
+        import backend.services.budget.yearly as mod
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2025)
 
@@ -144,7 +144,7 @@ class TestYearlyCarryForward:
     def test_skips_tags_conflicting_with_monthly(self, db_session, monkeypatch):
         """A carried tag that a 2026 monthly rule owns is skipped and reported."""
         from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
-        import backend.services.budget_service as mod
+        import backend.services.budget.yearly as mod
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Trips", 20000.0, "Travel", ["Flights", "Hotels"], 2025)
         MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
@@ -164,7 +164,7 @@ class TestYearlyAnalysisSkippedConflictsDedup:
     def test_skipped_conflicts_deduped_across_rules(self, db_session, monkeypatch):
         """Two prior-year rules skipping the same tag report it only once."""
         from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
-        import backend.services.budget_service as mod
+        import backend.services.budget.yearly as mod
 
         svc = YearlyBudgetService(db_session)
         # Two independent 2025 yearly rules in DIFFERENT categories both carry a
