@@ -64,12 +64,17 @@ def get_credential_details(
     account_name: str,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
-    """Get details for a specific credential."""
+    """Get details for a specific credential, with secret values masked.
+
+    Sensitive fields (password, OTP tokens) are replaced with a sentinel —
+    plaintext secrets are never returned by the API. Sending the sentinel
+    back on save keeps the stored value.
+    """
     creds_service = CredentialsService(db)
-    filtered = creds_service.get_scraper_credentials(service, provider, account_name)
-    if not filtered or service not in filtered or provider not in filtered[service]:
+    fields = creds_service.get_masked_credentials(service, provider, account_name)
+    if not fields:
         raise HTTPException(status_code=404, detail="Credential not found")
-    return filtered[service][provider][account_name]
+    return fields
 
 
 @router.get("/providers")

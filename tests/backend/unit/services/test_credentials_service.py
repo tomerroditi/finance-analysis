@@ -353,3 +353,81 @@ class TestClearCache:
         CredentialsService.clear_cache()
         service.load_credentials()
         mock_repo.get_all_credentials.assert_called_once()
+
+
+class TestMaskedCredentials:
+    """Tests for secret masking on the API read path and sentinel round-trip on save."""
+
+    def test_get_masked_credentials_masks_password(self, mock_repo):
+        """Verify sensitive fields are replaced with the mask sentinel."""
+        service = CredentialsService(MagicMock())
+        fields = service.get_masked_credentials("banks", "hapoalim", "Main Account")
+
+        assert fields["userCode"] == "test_code"
+        assert fields["password"] == cs.MASK_SENTINEL
+
+    def test_get_masked_credentials_keeps_empty_password_empty(self, mock_repo):
+        """Verify an empty stored password is returned empty, not masked."""
+        creds = deepcopy(SAMPLE_CREDENTIALS)
+        creds["banks"]["hapoalim"]["Main Account"]["password"] = ""
+        mock_repo.get_all_credentials.return_value = creds
+
+        service = CredentialsService(MagicMock())
+        fields = service.get_masked_credentials("banks", "hapoalim", "Main Account")
+
+        assert fields["password"] == ""
+
+    def test_get_masked_credentials_unknown_account_returns_empty(self, mock_repo):
+        """Verify an unknown account yields an empty dict."""
+        service = CredentialsService(MagicMock())
+        assert service.get_masked_credentials("banks", "hapoalim", "Nope") == {}
+
+    def test_save_credentials_skips_sentinel_fields(self, mock_repo):
+        """Verify sentinel-valued fields are stripped so stored secrets are kept."""
+        service = CredentialsService(MagicMock())
+        service.save_credentials({
+            "banks": {
+                "hapoalim": {
+                    "Main Account": {
+                        "userCode": "new_code",
+                        "password": cs.MASK_SENTINEL,
+                    }
+                }
+            }
+        })
+
+        mock_repo.save_credentials.assert_called_once_with(
+            "banks", "hapoalim", "Main Account", {"userCode": "new_code"}
+        )
+
+    def test_save_credentials_all_sentinel_skips_account(self, mock_repo):
+        """Verify an account whose every field is the sentinel is not saved."""
+        service = CredentialsService(MagicMock())
+        service.save_credentials({
+            "banks": {
+                "hapoalim": {
+                    "Main Account": {"password": cs.MASK_SENTINEL}
+                }
+            }
+        })
+
+        mock_repo.save_credentials.assert_not_called()
+
+    def test_save_credentials_new_password_still_saved(self, mock_repo):
+        """Verify a genuinely new password value is passed through to the repo."""
+        service = CredentialsService(MagicMock())
+        service.save_credentials({
+            "banks": {
+                "hapoalim": {
+                    "Main Account": {
+                        "userCode": "new_code",
+                        "password": "brand-new-secret",
+                    }
+                }
+            }
+        })
+
+        mock_repo.save_credentials.assert_called_once_with(
+            "banks", "hapoalim", "Main Account",
+            {"userCode": "new_code", "password": "brand-new-secret"},
+        )

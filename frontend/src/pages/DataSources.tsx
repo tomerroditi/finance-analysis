@@ -45,6 +45,10 @@ import i18n from "../i18n";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
+// Sentinel the backend returns in place of stored secrets; sending it back
+// on save keeps the stored value (see backend CredentialsService.MASK_SENTINEL).
+const MASKED_VALUE = "__unchanged__";
+
 const SCRAPING_PERIODS = [
   { key: "auto", days: null },
   { key: "weeks2", days: 14 },
@@ -810,6 +814,7 @@ export function DataSources() {
                     const isSensitive =
                       field.toLowerCase().includes("password") ||
                       field.toLowerCase().includes("secret");
+                    const isMasked = fields[field] === MASKED_VALUE;
                     return (
                       <div key={field} className="relative group/field">
                         <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -818,18 +823,21 @@ export function DataSources() {
                         <div className="relative">
                           <input
                             type={
-                              isSensitive && !showPasswords[field]
+                              isSensitive && (isMasked || !showPasswords[field])
                                 ? "password"
                                 : "text"
                             }
                             disabled={isViewOnly}
                             className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-50 pe-12"
                             value={fields[field] || ""}
+                            onFocus={(e) => {
+                              if (isSensitive && isMasked) e.target.select();
+                            }}
                             onChange={(e) =>
                               setFields({ ...fields, [field]: e.target.value })
                             }
                           />
-                          {isSensitive && (
+                          {isSensitive && !isMasked && (
                             <button
                               type="button"
                               onClick={() => togglePasswordVisibility(field)}

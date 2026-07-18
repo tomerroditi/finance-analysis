@@ -9,10 +9,14 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
-from backend.repositories.credentials_repository import CredentialsRepository
+from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
 
 # In-memory cache for credentials
 _credentials_cache: Optional[Dict] = None
+
+# Sentinel returned by the API in place of stored secret values. Clients send
+# it back unchanged on save to mean "keep the stored value".
+MASK_SENTINEL = "__unchanged__"
 
 
 class CredentialsService:
@@ -87,8 +91,16 @@ class CredentialsService:
                         continue
                     if not fields or all(not v for v in fields.values()):
                         continue
+                    # Fields carrying the mask sentinel mean "keep the stored
+                    # value" — drop them so the repository leaves the Keyring
+                    # entry untouched.
+                    cleaned = {
+                        k: v for k, v in fields.items() if v != MASK_SENTINEL
+                    }
+                    if not cleaned:
+                        continue
                     self.repository.save_credentials(
-                        service, provider, account_name, dict(fields)
+                        service, provider, account_name, cleaned
                     )
 
         _credentials_cache = None
@@ -199,6 +211,42 @@ class CredentialsService:
                         filtered[svc][prov][acc] = credentials[svc][prov][acc]
 
         return filtered
+
+    def get_masked_credentials(self, service: str, provider: str, account: str) -> Dict:
+        """
+        Fetch a single account's credential fields with secrets masked.
+
+        Intended for the HTTP API: sensitive values (password, OTP tokens)
+        are replaced with :data:`MASK_SENTINEL` so plaintext secrets never
+        leave the backend. :meth:`save_credentials` recognizes the sentinel
+        and keeps the stored value, so a masked payload round-trips safely
+        through an edit form.
+
+        Parameters
+        ----------
+        service : str
+            Service type (e.g. ``"banks"``).
+        provider : str
+            Provider identifier.
+        account : str
+            Account name.
+
+        Returns
+        -------
+        dict
+            The account's credential fields with every non-empty sensitive
+            field replaced by :data:`MASK_SENTINEL`. Empty if not found.
+        """
+        filtered = self.get_scraper_credentials(service, provider, account)
+        fields = (
+            filtered.get(service, {}).get(provider, {}).get(account)
+        )
+        if fields is None:
+            return {}
+        return {
+            k: (MASK_SENTINEL if k in _SENSITIVE_FIELDS and v else v)
+            for k, v in fields.items()
+        }
 
     def get_safe_credentials(self) -> Dict:
         """
