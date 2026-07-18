@@ -6,6 +6,8 @@ from typing import Optional
 
 import pandas as pd
 from sqlalchemy import delete, func, select, update
+
+from backend.utils.session_cache import session_cache_get, session_cache_set
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -102,12 +104,21 @@ class InvestmentSnapshotsRepository:
         pd.DataFrame
             All snapshot records for the investment, sorted by date.
         """
+        cache_key = ("investment_snapshots.for_investment", investment_id)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         stmt = (
             select(InvestmentBalanceSnapshot)
             .where(InvestmentBalanceSnapshot.investment_id == investment_id)
             .order_by(InvestmentBalanceSnapshot.date.asc())
         )
-        return pd.read_sql(stmt, self.db.bind)
+        df = pd.read_sql(stmt, self.db.bind)
+        # Request-scoped memoization (auto-invalidated on commit/rollback) —
+        # the portfolio overview fetches each investment's snapshots twice.
+        session_cache_set(self.db, cache_key, df)
+        return df
 
     def get_latest_snapshot_dates(self, target_date: str) -> dict[int, str]:
         """Get the most recent snapshot date on or before a target date, per investment.

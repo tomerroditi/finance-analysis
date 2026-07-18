@@ -178,6 +178,28 @@ class PendingRefundsRepository:
         stmt = select(RefundLink).where(RefundLink.pending_refund_id == pending_id)
         return pd.read_sql(stmt, self.db.bind)
 
+    def get_links_for_pendings(self, pending_ids: list[int]) -> pd.DataFrame:
+        """
+        Get all refund links for a batch of pending refunds in one query.
+
+        Parameters
+        ----------
+        pending_ids : list[int]
+            IDs of the pending refunds.
+
+        Returns
+        -------
+        pd.DataFrame
+            All matching refund links (with ``pending_refund_id`` column for
+            grouping); empty when ``pending_ids`` is empty.
+        """
+        if not pending_ids:
+            return pd.DataFrame()
+        stmt = select(RefundLink).where(
+            RefundLink.pending_refund_id.in_(pending_ids)
+        )
+        return pd.read_sql(stmt, self.db.bind)
+
     def update_status(self, pending_id: int, status: str) -> None:
         """
         Update the status of a pending refund.
