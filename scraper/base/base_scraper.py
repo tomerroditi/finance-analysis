@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Awaitable, Callable, Optional
 
+from scraper.exceptions import ScraperError
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult, ScrapingResult
 
@@ -105,6 +106,14 @@ class BaseScraper(ABC):
                 error_type="TIMEOUT",
                 error_message=f"Login timed out for {self.provider}",
             )
+        except ScraperError as e:
+            logger.error("Login failed for %s: %s", self.provider, e)
+            await self._safe_terminate(False)
+            return ScrapingResult(
+                success=False,
+                error_type=e.error_type.value,
+                error_message=str(e) or f"Login failed for {self.provider}",
+            )
         except Exception as e:
             logger.error("Login failed for %s: %s", self.provider, e)
             await self._safe_terminate(False)
@@ -129,6 +138,14 @@ class BaseScraper(ABC):
                 success=False,
                 error_type="TIMEOUT",
                 error_message=f"Data fetch timed out for {self.provider}",
+            )
+        except ScraperError as e:
+            logger.error("Data fetch failed for %s: %s", self.provider, e)
+            await self._safe_terminate(False)
+            return ScrapingResult(
+                success=False,
+                error_type=e.error_type.value,
+                error_message=str(e) or f"Data fetch failed for {self.provider}",
             )
         except Exception as e:
             logger.error("Data fetch failed for %s: %s", self.provider, e)
