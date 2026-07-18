@@ -273,8 +273,18 @@ class ScraperAdapter:
                 self.provider_name, self.account_name, self._error,
             )
         finally:
-            self._record_scraping_attempt(self.process_id)
+            # Unregister FIRST: _record_scraping_attempt is a DB write that
+            # can raise, and a raise before unregistering would leave this
+            # adapter stuck in _active_scrapers — permanently blocking new
+            # scrapes for the account until process restart.
             self._unregister_from_2fa_waiting()
+            try:
+                self._record_scraping_attempt(self.process_id)
+            except Exception:
+                logger.exception(
+                    "%s: %s: Failed to record scraping attempt",
+                    self.provider_name, self.account_name,
+                )
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
