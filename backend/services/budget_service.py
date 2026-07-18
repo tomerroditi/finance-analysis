@@ -31,6 +31,7 @@ from backend.constants.budget import (
 from backend.constants.categories import INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
+from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import PendingRefundsService
@@ -548,7 +549,7 @@ class BudgetService:
         # Filter to expense categories
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+                EXPENSE_EXCLUDED_CATEGORIES
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
@@ -1310,7 +1311,7 @@ class MonthlyBudgetService(BudgetService):
         # Only expenses (exclude income, liabilities, etc.)
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, CREDIT_CARDS, *IncomeCategories._value2member_map_.keys()]
+                EXPENSE_EXCLUDED_CATEGORIES
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(

@@ -23,6 +23,10 @@ from backend.constants.tables import (
     Tables,
     TransactionsTableFields,
 )
+from backend.services.transaction_classification import (
+    INCOME_CATEGORY_VALUES,
+    NON_EXPENSE_BASE_CATEGORIES,
+)
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.split_transactions_repository import (
@@ -932,13 +936,8 @@ class TransactionsService:
                 df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
             )
 
-        _service_to_source_table = {
-            Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
-            Services.BANK.value: Tables.BANK.value,
-            Services.CASH.value: Tables.CASH.value,
-            Services.MANUAL_INVESTMENTS.value: Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
-        }
-        source_table = _service_to_source_table.get(service, "")
+        _repo = self.transactions_repository.get_repo_by_source(service)
+        source_table = _repo.model.__tablename__ if _repo is not None else ""
         split_df = split_df[
             (split_df[SplitTransactionsTableFields.SOURCE.value] == source_table)
             & split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
@@ -1089,13 +1088,11 @@ class TransactionsService:
             The ``expenses`` group includes all rows not in any special category.
         """
         category_col = TransactionsTableFields.CATEGORY.value
-        income_categories = [e.value for e in IncomeCategories]
-        non_expenses_categories = [INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY] + income_categories
 
         return {
-            "expenses": df[~df[category_col].isin(non_expenses_categories)],
+            "expenses": df[~df[category_col].isin(NON_EXPENSE_BASE_CATEGORIES)],
             "investments": df[df[category_col] == INVESTMENTS_CATEGORY].copy(),
-            "income": df[df[category_col].isin(income_categories)],
+            "income": df[df[category_col].isin(INCOME_CATEGORY_VALUES)],
             "liabilities": df[df[category_col] == LIABILITIES_CATEGORY].copy(),
         }
 

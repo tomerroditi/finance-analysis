@@ -12,6 +12,11 @@ from backend.constants.categories import (
     IncomeCategories,
 )
 from backend.constants.tables import Tables, TransactionsTableFields
+from backend.services.transaction_classification import (
+    income_mask,
+    investment_mask,
+    transactions_masks,
+)
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions_repository import TransactionsRepository
@@ -286,15 +291,7 @@ class AnalysisService:
             Dictionary with keys "income", "investments", and "expenses" mapping to
             boolean Series aligned with ``df``.
         """
-        income_mask = self._get_income_mask(df)
-        investment_mask = self._get_investment_mask(df)
-        expenses_mask = ~income_mask & ~investment_mask
-
-        return {
-            "income": income_mask,
-            "investments": investment_mask,
-            "expenses": expenses_mask,
-        }
+        return transactions_masks(df)
 
     def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
         """
@@ -314,10 +311,7 @@ class AnalysisService:
         pd.Series
             Boolean Series aligned with ``df`` — ``True`` for income rows.
         """
-        return df["category"].isin([c.value for c in IncomeCategories]) | (
-            (df["category"] == LIABILITIES_CATEGORY)
-            & (df["amount"] > 0)
-        )
+        return income_mask(df)
     
     def _get_investment_mask(self, df: pd.DataFrame) -> pd.Series:
         """
@@ -335,7 +329,7 @@ class AnalysisService:
         pd.Series
             Boolean Series aligned with ``df`` — ``True`` for investment rows.
         """
-        return df["category"] == INVESTMENTS_CATEGORY
+        return investment_mask(df)
 
     def _add_source_label_column(self, income_df: pd.DataFrame) -> pd.DataFrame:
         """Add a vectorized ``source_label`` column to an income frame.
