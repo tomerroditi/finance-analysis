@@ -171,11 +171,11 @@ class TestTransactionNotFoundErrors:
         that the route maps to a 404 response.
         """
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.routes.transactions.TransactionsService"
         ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.get_transaction_by_id.side_effect = ValueError(
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.get_transaction.side_effect = ValueError(
                 "Transaction 99999 not found"
             )
             response = test_client.get(

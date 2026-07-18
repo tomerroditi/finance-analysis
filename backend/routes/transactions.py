@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 from backend.constants.providers import Services
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
-from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
@@ -88,9 +87,9 @@ def get_transactions(
     db: Session = Depends(get_database),
 ) -> list[dict[str, Any]]:
     """Get all transactions, optionally filtered by service."""
-    repo = TransactionsRepository(db)
+    txn_service = TransactionsService(db)
     try:
-        df = repo.get_table(
+        df = txn_service.get_merged_transactions(
             service=service,
             include_split_parents=include_split_parents,
             exclude_services=[Services.INSURANCE.value],
@@ -249,9 +248,9 @@ def get_transaction(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get a specific transaction by its per-table ID and source table."""
-    repo = TransactionsRepository(db)
+    txn_service = TransactionsService(db)
     try:
-        transaction = repo.get_transaction_by_id(transaction_id, source)
+        transaction = txn_service.get_transaction(transaction_id, source)
         return transaction.to_dict()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

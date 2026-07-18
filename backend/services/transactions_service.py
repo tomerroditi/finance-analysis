@@ -462,6 +462,68 @@ class TransactionsService:
             )
         return self.transactions_repository.get_table(service)
 
+    def get_merged_transactions(
+        self,
+        service: Optional[str] = None,
+        include_split_parents: bool = False,
+        exclude_services: Optional[list[str]] = None,
+    ) -> pd.DataFrame:
+        """
+        Get the merged multi-table transactions frame.
+
+        Thin passthrough to :meth:`TransactionsRepository.get_table` so routes
+        never instantiate repositories directly.
+
+        Parameters
+        ----------
+        service : str, optional
+            Restrict to a single service/table.
+        include_split_parents : bool, optional
+            Keep split-parent rows (marked ``type="split_parent"``).
+        exclude_services : list[str], optional
+            Services/tables to exclude from the merge.
+
+        Returns
+        -------
+        pd.DataFrame
+            Merged transactions with splits expanded.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` is not a recognized service/table name.
+        """
+        return self.transactions_repository.get_table(
+            service=service,
+            include_split_parents=include_split_parents,
+            exclude_services=exclude_services,
+        )
+
+    def get_transaction(self, transaction_id: int, source: str) -> pd.Series:
+        """
+        Get a single transaction by per-table id and source table.
+
+        Parameters
+        ----------
+        transaction_id : int
+            The unique_id within ``source``.
+        source : str
+            Source table or service name.
+
+        Returns
+        -------
+        pd.Series
+            The matching transaction row.
+
+        Raises
+        ------
+        ValueError
+            If the source is unknown or no transaction matches.
+        """
+        return self.transactions_repository.get_transaction_by_id(
+            transaction_id, source
+        )
+
     @staticmethod
     def _normalize_empty_string(value: str | None) -> str | None:
         """Convert empty strings to None for category/tag fields."""

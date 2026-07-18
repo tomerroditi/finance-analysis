@@ -458,11 +458,11 @@ class TestTransactionsRoutesAdditional:
     def test_get_transaction_by_id_not_found_via_mock(self, test_client):
         """Verify 404 when repository raises ValueError for missing transaction."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.routes.transactions.TransactionsService"
         ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.get_transaction_by_id.side_effect = ValueError(
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.get_transaction.side_effect = ValueError(
                 "Transaction 99999 not found"
             )
             response = test_client.get(
@@ -515,10 +515,10 @@ class TestTransactionsRoutesAdditional:
     def test_get_transactions_internal_error(self, test_client):
         """Verify unexpected exceptions propagate out of the GET route (no try/except)."""
         with patch(
-            "backend.routes.transactions.TransactionsRepository"
+            "backend.routes.transactions.TransactionsService"
         ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.get_table.side_effect = RuntimeError("Read failed")
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.get_merged_transactions.side_effect = RuntimeError("Read failed")
             with pytest.raises(RuntimeError, match="Read failed"):
                 test_client.get("/api/transactions/")
