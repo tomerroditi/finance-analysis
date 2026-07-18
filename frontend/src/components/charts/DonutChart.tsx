@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartTooltip } from "./ChartTooltip";
 import { ChartLegend } from "./ChartLegend";
 import { CHART_COLORS, CHART_SURFACE_COLOR, CHART_TEXT_COLOR } from "../../utils/chartStyle";
@@ -89,57 +89,65 @@ export function DonutChart({
 
   return (
     <div
-      className="relative h-full w-full"
+      className="flex h-full w-full flex-col"
       style={height ? { height } : undefined}
       data-testid="donut-chart"
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart margin={hasOutsideLabels ? { top: 16, bottom: 16, left: 16, right: 16 } : undefined}>
-          <Pie
-            data={slices}
-            dataKey="value"
-            nameKey="name"
-            innerRadius="62%"
-            outerRadius={hasOutsideLabels ? "78%" : "92%"}
-            stroke={CHART_SURFACE_COLOR}
-            strokeWidth={2}
-            isAnimationActive={false}
-            labelLine={false}
-            label={
-              labelMode === "percent"
-                ? percentInsideLabel
-                : hasOutsideLabels
-                  ? outsideLabel
-                  : undefined
-            }
-          >
-            {slices.map((slice, i) => (
-              <Cell key={slice.name} fill={colors[i % colors.length]} />
-            ))}
-          </Pie>
-          <Tooltip
-            content={
-              <ChartTooltip
-                valueFormatter={(value) =>
-                  total > 0
-                    ? `${formatCurrency(value)} (${Math.round((value / total) * 100)}%)`
-                    : formatCurrency(value)
-                }
-              />
-            }
-          />
-          {showLegend && <Legend content={<ChartLegend />} />}
-        </PieChart>
-      </ResponsiveContainer>
-      {centerLabel !== undefined && (
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center justify-center"
-          // The legend strip sits below the pie; offset the overlay so the
-          // label stays centered on the ring itself.
-          style={{ bottom: showLegend ? 28 : 0 }}
-        >
-          {centerLabel}
-        </div>
+      {/* The legend renders as a plain row *below* this box (not inside the
+          chart), so the pie always fills its own area and the center overlay
+          stays centered on the ring no matter how many rows the legend wraps
+          into on narrow screens. */}
+      <div className="relative min-h-0 w-full flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart margin={hasOutsideLabels ? { top: 16, bottom: 16, left: 16, right: 16 } : undefined}>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="name"
+              innerRadius="62%"
+              outerRadius={hasOutsideLabels ? "78%" : "92%"}
+              stroke={CHART_SURFACE_COLOR}
+              strokeWidth={2}
+              isAnimationActive={false}
+              labelLine={false}
+              label={
+                labelMode === "percent"
+                  ? percentInsideLabel
+                  : hasOutsideLabels
+                    ? outsideLabel
+                    : undefined
+              }
+            >
+              {slices.map((slice, i) => (
+                <Cell key={slice.name} fill={colors[i % colors.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              content={
+                <ChartTooltip
+                  valueFormatter={(value) =>
+                    total > 0
+                      ? `${formatCurrency(value)} (${Math.round((value / total) * 100)}%)`
+                      : formatCurrency(value)
+                  }
+                />
+              }
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        {centerLabel !== undefined && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            {centerLabel}
+          </div>
+        )}
+      </div>
+      {showLegend && (
+        <ChartLegend
+          payload={slices.map((slice, i) => ({
+            value: slice.name,
+            color: colors[i % colors.length],
+          }))}
+        />
       )}
     </div>
   );
