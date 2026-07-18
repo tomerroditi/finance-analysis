@@ -1,3 +1,9 @@
+## v1.45.1 (2026-07-18)
+
+### Fix
+
+- center donut label on the ring regardless of legend height
+
 ## v1.45.0 (2026-07-18)
 
 ### Feat
