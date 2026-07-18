@@ -74,8 +74,6 @@ export const transactionsApi = {
 // Budget API
 export const budgetApi = {
   getRules: () => api.get("/budget/rules"),
-  getRulesByMonth: (year: number, month: number) =>
-    api.get(`/budget/rules/${year}/${month}`),
   createRule: (rule: object) => api.post("/budget/rules", rule),
   updateRule: (id: number, rule: object) =>
     api.put(`/budget/rules/${id}`, rule),
@@ -121,10 +119,6 @@ export const budgetApi = {
     api.put(`/budget/yearly/rules/${id}`, rule),
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
-  getYearAlerts: (year: number, threshold?: number) =>
-    api.get(`/budget/yearly/alerts/${year}`, {
-      params: threshold !== undefined ? { threshold } : undefined,
-    }),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
 };
 
@@ -252,13 +246,6 @@ export const taggingApi = {
   applyRule: (id: number, overwrite = false) =>
     api.post(`/tagging-rules/rules/${id}/apply`, null, {
       params: { overwrite },
-    }),
-  checkConflicts: (conditions: ConditionNode, category: string, tag: string, ruleId?: number) =>
-    api.post("/tagging-rules/rules/validate", {
-      conditions,
-      category,
-      tag,
-      rule_id: ruleId
     }),
   previewRule: (conditions: ConditionNode, limit?: number) =>
     api.post<{ matches: Record<string, unknown>[]; count: number }>("/tagging-rules/rules/preview", {
@@ -723,18 +710,12 @@ export const retirementApi = {
     api.get<RetirementProjections>("/retirement/projections"),
   previewProjections: (data: Omit<RetirementGoal, "id">) =>
     api.post<RetirementProjections>("/retirement/projections", data),
-  getKerenHishtalmutBalance: () =>
-    api.get<{ balance: number | null }>("/retirement/keren-hishtalmut-balance"),
   getScrapedDefaults: () =>
     api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
   previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
     api.post<RetirementSuggestions>("/retirement/suggestions", data),
-  solveForField: (field: string) =>
-    api.get<{ field: string; value: number; unit: string }>(
-      `/retirement/solve/${encodeURIComponent(field)}`,
-    ),
 };
 
 export interface SavingsGoal {
