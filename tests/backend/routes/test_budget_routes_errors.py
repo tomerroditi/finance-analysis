@@ -111,29 +111,27 @@ class TestBudgetRuleNotFoundErrors:
     """Tests for not-found scenarios on budget rule endpoints."""
 
     def test_update_nonexistent_budget_rule(self, test_client):
-        """Verify updating a non-existent budget rule returns 400.
+        """Verify updating a non-existent budget rule returns 404.
 
-        The budget repository raises a ValueError when no rule is found
-        with the given ID. The PUT route (backed by ``MonthlyBudgetService``,
-        shared with project-rule edits) now wraps ``ValueError`` into an
-        HTTP 400, mirroring the create route, instead of letting it
-        propagate uncaught.
+        The budget repository raises EntityNotFoundException when no rule
+        matches the given ID; the global handler maps it to a 404.
         """
         response = test_client.put(
             "/api/budget/rules/99999",
             json={"amount": 5000.0},
         )
-        assert response.status_code == 400
+        assert response.status_code == 404
         assert "No rule found" in response.json()["detail"]
 
     def test_delete_nonexistent_budget_rule(self, test_client):
-        """DELETE /api/budget/rules/99999 for a non-existent rule.
+        """DELETE /api/budget/rules/99999 for a non-existent rule returns 404.
 
-        The repository's delete_rule either silently succeeds (no matching
-        row) or raises. We verify the endpoint handles it.
+        The repository raises EntityNotFoundException (mapped to 404 by the
+        global handler) instead of silently succeeding.
         """
         response = test_client.delete("/api/budget/rules/99999")
-        assert response.status_code == 200
+        assert response.status_code == 404
+        assert "No rule found" in response.json()["detail"]
 
     def test_copy_rules_no_previous_month(self, test_client):
         """POST /api/budget/rules/2024/1/copy returns 404 when no previous month.

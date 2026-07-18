@@ -30,7 +30,7 @@ from backend.constants.budget import (
 )
 from backend.constants.categories import INVESTMENTS_CATEGORY, LIABILITIES_CATEGORY, IncomeCategories
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import PendingRefundsService
@@ -147,13 +147,14 @@ class BudgetService:
 
         Raises
         ------
-        AssertionError
+        ValidationException
             If any key in ``fields`` is not one of the allowed field names.
         """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
-        assert all(k in valid_fields for k in fields), (
-            f"Invalid fields for update. Valid fields: {valid_fields}"
-        )
+        if not all(k in valid_fields for k in fields):
+            raise ValidationException(
+                f"Invalid fields for update. Valid fields: {valid_fields}"
+            )
 
         if TAGS in fields and isinstance(fields[TAGS], list):
             fields[TAGS] = ";".join(fields[TAGS])
@@ -451,9 +452,15 @@ class BudgetService:
                         "The total budget must be greater than the sum of all other rules",
                     )
             else:
-                total_budget = budget_rules.loc[
+                total_budget_rows = budget_rules.loc[
                     budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT
-                ].values[0]
+                ]
+                if total_budget_rows.empty:
+                    return (
+                        False,
+                        "Create the project's total budget rule before adding tag rules",
+                    )
+                total_budget = total_budget_rows.values[0]
                 new_total_rules_amount = total_rules_amount - existing_amount + amount
                 if new_total_rules_amount > total_budget:
                     return False, "The total budget is exceeded"
@@ -478,9 +485,15 @@ class BudgetService:
             total_rules_amount -= budget_rules.loc[budget_rules[ID] == id_][
                 AMOUNT
             ].values[0]
-        total_budget = budget_rules.loc[budget_rules[CATEGORY] == TOTAL_BUDGET][
+        total_budget_rows = budget_rules.loc[budget_rules[CATEGORY] == TOTAL_BUDGET][
             AMOUNT
-        ].values[0]
+        ]
+        if total_budget_rows.empty:
+            return (
+                False,
+                "Create a Total Budget rule for this month before adding category rules",
+            )
+        total_budget = total_budget_rows.values[0]
         new_total_rules_amount = total_rules_amount + amount
         if new_total_rules_amount > total_budget:
             return False, "The total budget is exceeded"
@@ -1902,9 +1915,10 @@ class YearlyBudgetService(BudgetService):
         ``year`` is immutable via this method.
         """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
-        assert all(k in valid_fields for k in fields), (
-            f"Invalid fields for update. Valid fields: {valid_fields}"
-        )
+        if not all(k in valid_fields for k in fields):
+            raise ValidationException(
+                f"Invalid fields for update. Valid fields: {valid_fields}"
+            )
         current = self.get_all_rules()
         row = current.loc[current[ID] == id_]
         if row.empty:

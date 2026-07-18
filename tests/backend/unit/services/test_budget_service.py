@@ -77,12 +77,14 @@ class TestBudgetServiceBase:
         assert updated[AMOUNT] == 2500.0
 
     def test_update_rule_invalid_field_raises(self, db_session, seed_budget_rules):
-        """Verify AssertionError is raised for invalid field names."""
+        """Verify ValidationException is raised for invalid field names."""
+        from backend.errors import ValidationException
+
         service = BudgetService(db_session)
         rules = service.get_all_rules()
         rule_id = int(rules.iloc[0][ID])
 
-        with pytest.raises(AssertionError, match="Invalid fields"):
+        with pytest.raises(ValidationException, match="Invalid fields"):
             service.update_rule(rule_id, invalid_field="value")
 
     def test_validate_rule_inputs_empty_name(self, db_session, seed_budget_rules):
@@ -138,6 +140,24 @@ class TestBudgetServiceBase:
         )
         assert valid is False
         assert "already exists" in msg.lower()
+
+    def test_validate_rule_without_total_budget_fails_gracefully(self, db_session):
+        """Verify creating the first non-total rule of a month returns a validation
+        message instead of raising IndexError when no Total Budget rule exists."""
+        service = BudgetService(db_session)
+
+        valid, msg = service.validate_rule_inputs(
+            service.get_all_rules(),
+            name="Food",
+            category="Food",
+            tags=["Groceries"],
+            amount=500.0,
+            year=2024,
+            month=6,
+            id_=None,
+        )
+        assert valid is False
+        assert "Total Budget" in msg
 
     def test_validate_rule_inputs_exceeds_total(self, db_session):
         """Verify validation rejects when rules exceed total budget."""
