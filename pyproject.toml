@@ -13,6 +13,10 @@ numpy = "==1.26.4"
 PyYAML = "==6.0.1"
 SQLAlchemy = "==2.0.29"
 keyring = ">=24.0.0"
+# At-rest encryption of credential fields (backend/utils/crypto.py). Already
+# a transitive dep of keyring on Linux; pinned explicitly so Windows/macOS
+# installs get it too.
+cryptography = ">=42.0"
 # Backend API dependencies
 fastapi = ">=0.109.0"
 uvicorn = { version = ">=0.27.0", extras = ["standard"] }

@@ -7,6 +7,38 @@ const api = axios.create({
   },
 });
 
+// Remote-access API token. When the backend is exposed beyond localhost
+// (./start.sh prod with BIND_HOST set), non-local clients must send
+// `Authorization: Bearer <token>` on /api requests. The token is handed
+// over once via a `?apiToken=` URL parameter, persisted to localStorage,
+// and stripped from the URL so it doesn't linger in the address bar or
+// browser history. Local (loopback) clients never need it — the backend
+// trusts same-machine connections.
+const API_TOKEN_STORAGE_KEY = "fad_api_token";
+
+export function captureApiTokenFromUrl(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get("apiToken");
+  if (!token) return;
+  localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+  url.searchParams.delete("apiToken");
+  window.history.replaceState(null, "", url.toString());
+}
+
+captureApiTokenFromUrl();
+
+api.interceptors.request.use((config) => {
+  const token =
+    typeof window !== "undefined"
+      ? localStorage.getItem(API_TOKEN_STORAGE_KEY)
+      : null;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 // Response interceptor: log only safe metadata about failures so raw server
 // payloads (which may include stack traces, SQL fragments, or file paths)
 // never land in the browser console where browser extensions or screenshots

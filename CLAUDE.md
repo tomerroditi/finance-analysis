@@ -222,7 +222,9 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 ## Gotchas
 
 - **`unique_id` is a per-table auto-increment** — bank #5 and credit-card #5 are different transactions. Never key merged/cross-table data by bare `unique_id`; always pair it with the table (`source` / `source_table`). See `.claude/rules/backend_repositories.md` → "unique_id Is Per-Table"
-- Passwords stored in OS Keyring, never in YAML or code
+- Passwords stored in OS Keyring, never in YAML or code. Non-sensitive credential fields (usernames, ID numbers, card digits) are Fernet-encrypted in the DB (`backend/utils/crypto.py`, key in the OS Keyring); the legacy `credentials.yaml` is deleted on startup after migration
+- Insecure keyring backends (null/plaintext) are rejected on credential writes — CI/sandboxes opt in via `PYTHON_KEYRING_BACKEND` or `FAD_ALLOW_INSECURE_KEYRING=1`
+- **API access control** (`backend/utils/auth.py` + middlewares in `main.py`): every request needs an allowlisted `Host` header (DNS-rebinding guard; extend via `ALLOWED_HOSTS` env, `*` disables); non-loopback clients need `Authorization: Bearer <token>` on `/api/*` (token from `FAD_API_TOKEN` or `~/.finance-analysis/api_token`; frontend picks it up once via `?apiToken=` URL param). `./start.sh prod` now binds 127.0.0.1 — expose with `BIND_HOST=0.0.0.0`, which auto-generates the token and prints the tokenized URL
 - SQLite uses `NullPool` and `check_same_thread=False` for FastAPI compatibility
 - SQLite stores booleans as `0`/`1` integers — in React JSX, `{0 && <Component />}` renders "0". Always use `!!value &&` or `value > 0 &&` for SQLite boolean fields in JSX conditionals
 - Frontend `TransactionsTable.tsx` changes require updating all consumers: `Transactions.tsx` and `TransactionCollapsibleList.tsx`

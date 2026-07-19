@@ -7,6 +7,7 @@ fixtures they need.
 """
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 
 from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT
@@ -23,6 +24,24 @@ from backend.models.transaction import (
     ManualInvestmentTransaction,
     SplitTransaction,
 )
+
+
+# ---------------------------------------------------------------------------
+# 0. Global isolation: credential field encryption never touches the OS
+#    keyring in tests — a fixed in-memory Fernet key is injected instead.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _test_field_encryption_key(monkeypatch):
+    """Give every test a deterministic Fernet key without keyring access."""
+    from backend.utils import crypto
+
+    monkeypatch.setattr(crypto, "_fernet", Fernet(Fernet.generate_key()))
+    # Repository writes call ensure_secure_keyring_backend(); the sandbox/CI
+    # backend is intentionally insecure (or absent), so opt in explicitly.
+    monkeypatch.setenv("FAD_ALLOW_INSECURE_KEYRING", "1")
+    yield
 
 
 # ---------------------------------------------------------------------------
