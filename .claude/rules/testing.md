@@ -377,6 +377,70 @@ plus `tsc -b`. The bug, by definition, was something static analysis missed.
   open across mutations when it should, and that the displayed value
   updates after each selection.
 
+### Adding a new e2e test — the cost model, and where the assertions go
+
+The dominant cost of this suite is **cold page navigations**, not
+assertions. Every `test()` gets a fresh browser context, so each test pays
+its page's full cold load — on the dashboard that's ~30 s of queued React
+Query requests; /budget and /investments are similar. A 2024-style suite of
+tiny one-assertion tests spent ~90 % of its wall-clock re-loading the same
+pages; the 2026 consolidation (149 → 84 tests) cut suite time mostly by
+deleting repeat navigations, not assertions. Keep it that way:
+
+**Default: extend an existing journey test, don't add a new `test()`.**
+Every page already has a single-load "journey" test that chains its
+read-only assertions (e.g. `budget.spec.ts` "tabs, month navigation, trend
+chart, …on one load", `transactions.spec.ts` "table, pagination, …",
+`categories.spec.ts`, `investments.spec.ts`, `data-sources.spec.ts`,
+`dashboard-block-sizes.spec.ts`). If your new coverage is a read-only
+check against a page that already has a journey test, append a clearly
+`// --- labeled ---` block to that journey at the point in the flow where
+the UI state matches. Same rule inside a new feature: N related read-only
+checks = one test with N labeled blocks, not N tests.
+
+**When a separate `test()` IS warranted** (any one of these):
+- It **mutates backend state** (POST/PUT/DELETE, form submit). Mutations
+  need their own test so a failure mid-journey can't corrupt unrelated
+  assertions, and so the read-only journey stays eligible for
+  `READ_ONLY_SPECS`.
+- It needs a **different pre-boot environment**: seeded localStorage
+  layout, `language=he` init script, `page.route()` stubs, a different
+  viewport *at load time*. (Post-load viewport changes don't count — the
+  layout is CSS/media-query driven, so resize mid-test instead of paying
+  a second load; see `dashboard-block-sizes.spec.ts`.)
+- Its failure mode is **noisy/flaky in a way you don't want blocking**
+  the journey's clearer signal (e.g. drag-and-drop, timing-sensitive
+  polling).
+- The journey test is already at the size cap (below).
+
+**When a separate FILE is warranted:** a new page/feature area with no
+existing spec, a different demo-lifecycle need (credential seeding like
+`onezero-resend.spec.ts`, opt-in envs like `empty-state.spec.ts`), or the
+existing file has hit the cap.
+
+**The cap — don't build mega-tests or mega-files.** A journey test should
+stay under roughly **~100 lines / ~10 labeled assertion blocks**, and a
+file under **~250 lines**. Past that, debugging a red test means bisecting
+a wall of steps, retries replay the whole chain, and one flaky step blocks
+too much signal. Split by user intent (e.g. "browse/read" journey vs.
+"edit" flows), never by "one assertion per test".
+
+**Ordering inside a journey:** put the assertions least likely to disturb
+state first (pure reads → open/close panels → viewport resize → anything
+that toggles persistent UI state). If a step you're adding could leave the
+page in a state that breaks later blocks, put it last or give it its own
+test.
+
+**Checklist before adding a `test()` / file:**
+1. Does a journey test for this page exist? → append a labeled block.
+2. Does the check need its own pre-boot env or a write? → own `test()` in
+   the page's existing file.
+3. New page or new lifecycle? → new file (and decide `READ_ONLY_SPECS`
+   membership — see above).
+4. Never re-assert what the journey already covers (page loads, nav
+   visible, first chart renders) — that's the duplication the
+   consolidation removed.
+
 ## Verifying RTL & responsive — full coverage matrix
 
 A "single pass at desktop English" is **not** enough. Most of our
