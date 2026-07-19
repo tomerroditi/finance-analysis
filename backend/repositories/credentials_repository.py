@@ -2,21 +2,27 @@
 
 This repository handles DB-based storage for credentials
 and OS keyring for sensitive fields (passwords, OTP tokens).
+Non-sensitive fields are Fernet-encrypted at rest (see
+``backend.utils.crypto``) — the key lives in the OS Keyring, so the
+SQLite file and its backups never contain readable credential data.
+All keyring access goes through ``backend.utils.keyring_store``.
 """
 
+import logging
 import os
 from typing import Dict, List
 
-import keyring
 import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.config import AppConfig
 from backend.errors import EntityNotFoundException
 from backend.models.credential import Credential
+from backend.utils import keyring_store
+from backend.utils.crypto import decrypt_fields, encrypt_fields, is_encrypted
 
-_KEYRING_SERVICE = "finance-analysis-app"
+logger = logging.getLogger(__name__)
+
 _SENSITIVE_FIELDS = ("password", "otpLongTermToken")
 
 
@@ -31,46 +37,6 @@ class CredentialsRepository:
             SQLAlchemy database session used for all ORM operations.
         """
         self.db = db
-
-    @property
-    def keyring_service(self) -> str:
-        """Keyring service name, with demo suffix in demo mode.
-
-        Returns
-        -------
-        str
-            Keyring service identifier used to namespace all stored secrets.
-            Appends "-demo" suffix when the application is running in demo mode
-            to avoid polluting production keyring entries.
-        """
-        service = _KEYRING_SERVICE
-        if AppConfig().is_demo_mode:
-            service += "-demo"
-        return service
-
-    def _keyring_key(
-        self, service: str, provider: str, account_name: str, field: str
-    ) -> str:
-        """Generate a standardized keyring key.
-
-        Parameters
-        ----------
-        service : str
-            Financial service name (e.g. "credit_cards", "banks").
-        provider : str
-            Provider name within the service (e.g. "isracard", "hapoalim").
-        account_name : str
-            Identifier of the account.
-        field : str
-            Credential field name to store (e.g. "password", "otpLongTermToken").
-
-        Returns
-        -------
-        str
-            Underscore-delimited key in the format "service_provider_account_name_field"
-            used as the username argument when reading or writing keyring entries.
-        """
-        return f"{service}_{provider}_{account_name}_{field}"
 
     def _find_credential(
         self, service: str, provider: str, account_name: str
@@ -138,11 +104,13 @@ class CredentialsRepository:
             If no credential row for the given account is found in the database.
         """
         cred = self._find_credential(service, provider, account_name)
-        result = dict(cred.fields)
+        result = decrypt_fields(cred.fields)
         result["password"] = (
-            keyring.get_password(
-                self.keyring_service,
-                self._keyring_key(service, provider, account_name, "password"),
+            keyring_store.get_secret(
+                keyring_store.active_credentials_service(),
+                keyring_store.credential_secret_name(
+                    service, provider, account_name, "password"
+                ),
             )
             or ""
         )
@@ -184,9 +152,11 @@ class CredentialsRepository:
         for sensitive_field in _SENSITIVE_FIELDS:
             value = fields.pop(sensitive_field, None)
             if value is not None:
-                keyring.set_password(
-                    self.keyring_service,
-                    self._keyring_key(service, provider, account_name, sensitive_field),
+                keyring_store.set_secret(
+                    keyring_store.active_credentials_service(),
+                    keyring_store.credential_secret_name(
+                        service, provider, account_name, sensitive_field
+                    ),
                     value or "",
                 )
 
@@ -198,15 +168,16 @@ class CredentialsRepository:
             )
         ).scalar_one_or_none()
 
+        stored_fields = encrypt_fields(fields)
         if existing is not None:
-            existing.fields = fields
+            existing.fields = stored_fields
         else:
             self.db.add(
                 Credential(
                     service=service,
                     provider=provider,
                     account_name=account_name,
-                    fields=fields,
+                    fields=stored_fields,
                 )
             )
         self.db.commit()
@@ -241,13 +212,12 @@ class CredentialsRepository:
         self.db.commit()
 
         for field in ("password", "secret", "otp_key", "otpLongTermToken"):
-            try:
-                keyring.delete_password(
-                    self.keyring_service,
-                    self._keyring_key(service, provider, account_name, field),
-                )
-            except keyring.errors.PasswordDeleteError:
-                pass
+            keyring_store.delete_secret(
+                keyring_store.active_credentials_service(),
+                keyring_store.credential_secret_name(
+                    service, provider, account_name, field
+                ),
+            )
 
     def list_accounts(self) -> List[Dict[str, str]]:
         """Get a flat list of all configured accounts.
@@ -285,11 +255,11 @@ class CredentialsRepository:
         result: Dict = {}
         for row in rows:
             result.setdefault(row.service, {}).setdefault(row.provider, {})
-            fields = dict(row.fields)
+            fields = decrypt_fields(row.fields)
             fields["password"] = (
-                keyring.get_password(
-                    self.keyring_service,
-                    self._keyring_key(
+                keyring_store.get_secret(
+                    keyring_store.active_credentials_service(),
+                    keyring_store.credential_secret_name(
                         row.service, row.provider, row.account_name, "password"
                     ),
                 )
@@ -301,11 +271,16 @@ class CredentialsRepository:
     def migrate_from_yaml(self, credentials_path: str) -> None:
         """One-time migration: import existing YAML credentials into DB.
 
-        Skips if the credentials table already has data.
+        Skips the import if the credentials table already has data.
         Only imports non-sensitive fields; passwords remain in keyring.
+
+        The legacy YAML file is deleted afterwards in either case — old
+        installs may have plaintext secrets sitting in it, and nothing
+        reads it once the DB is populated.
         """
         existing = self.db.execute(select(Credential)).first()
         if existing is not None:
+            self._remove_legacy_yaml(credentials_path)
             return
 
         if not os.path.exists(credentials_path):
@@ -333,7 +308,50 @@ class CredentialsRepository:
                             service=service,
                             provider=provider,
                             account_name=account_name,
-                            fields=clean_fields,
+                            fields=encrypt_fields(clean_fields),
                         )
                     )
         self.db.commit()
+        self._remove_legacy_yaml(credentials_path)
+
+    @staticmethod
+    def _remove_legacy_yaml(credentials_path: str) -> None:
+        """Delete the legacy plaintext credentials YAML, best-effort."""
+        if not os.path.exists(credentials_path):
+            return
+        try:
+            os.remove(credentials_path)
+            logger.info(
+                "Removed legacy credentials file %s (data lives in the DB "
+                "and OS keyring now)",
+                credentials_path,
+            )
+        except OSError as exc:  # pragma: no cover - permissions edge case
+            logger.warning(
+                "Could not remove legacy credentials file %s: %s",
+                credentials_path,
+                exc,
+            )
+
+    def encrypt_plaintext_rows(self) -> int:
+        """Encrypt any credential rows written before at-rest encryption.
+
+        Idempotent startup migration: rows already carrying the encryption
+        envelope are left untouched.
+
+        Returns
+        -------
+        int
+            Number of rows that were rewritten encrypted.
+        """
+        rows = self.db.execute(select(Credential)).scalars().all()
+        migrated = 0
+        for row in rows:
+            if is_encrypted(row.fields):
+                continue
+            row.fields = encrypt_fields(dict(row.fields))
+            migrated += 1
+        if migrated:
+            self.db.commit()
+            logger.info("Encrypted %d legacy plaintext credential rows", migrated)
+        return migrated

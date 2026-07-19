@@ -5,10 +5,12 @@ import yaml
 from unittest.mock import patch
 
 import keyring.errors as _real_keyring_errors
+from sqlalchemy import select
 
 from backend.errors import EntityNotFoundException
 from backend.models.credential import Credential
 from backend.repositories.credentials_repository import CredentialsRepository
+from backend.utils.crypto import ENCRYPTED_MARKER, decrypt_fields, is_encrypted
 
 
 # ---------------------------------------------------------------------------
@@ -18,8 +20,8 @@ from backend.repositories.credentials_repository import CredentialsRepository
 
 @pytest.fixture
 def mock_keyring():
-    """Mock the keyring module to avoid OS keyring access."""
-    with patch("backend.repositories.credentials_repository.keyring") as mk:
+    """Mock the keyring module (inside keyring_store) to avoid OS keyring access."""
+    with patch("backend.utils.keyring_store.keyring") as mk:
         mk.get_password.return_value = "secret123"
         mk.set_password.return_value = None
         mk.delete_password.return_value = None
@@ -230,12 +232,114 @@ class TestCredentialsRepositoryMigrationEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Class 5: Keyring edge cases
+# Class 5: At-rest field encryption
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialsRepositoryEncryption:
+    """Tests for Fernet encryption of the DB fields column."""
+
+    def test_save_stores_encrypted_envelope(self, empty_repo, db_session, mock_keyring):
+        """Verify saved fields hit the DB as ciphertext, not plaintext."""
+        empty_repo.save_credentials(
+            "banks", "hapoalim", "Main",
+            {"userCode": "abc", "id": "123456789", "password": "pw"},
+        )
+
+        row = db_session.execute(select(Credential)).scalar_one()
+        assert set(row.fields.keys()) == {ENCRYPTED_MARKER}
+        assert "123456789" not in str(row.fields)
+
+    def test_get_credentials_decrypts_envelope(self, empty_repo, mock_keyring):
+        """Verify reads transparently decrypt what save encrypted."""
+        empty_repo.save_credentials(
+            "banks", "hapoalim", "Main",
+            {"userCode": "abc", "password": "pw"},
+        )
+
+        result = empty_repo.get_credentials("banks", "hapoalim", "Main")
+        assert result["userCode"] == "abc"
+
+    def test_legacy_plaintext_rows_remain_readable(self, seeded_repo):
+        """Verify rows written before encryption existed still read fine."""
+        result = seeded_repo.get_credentials("banks", "hapoalim", "Main Account")
+        assert result["userCode"] == "test_code"
+
+    def test_encrypt_plaintext_rows_migrates_legacy_rows(
+        self, seeded_repo, db_session
+    ):
+        """Verify the startup migration encrypts plaintext rows in place."""
+        migrated = seeded_repo.encrypt_plaintext_rows()
+
+        assert migrated == 2
+        rows = db_session.execute(select(Credential)).scalars().all()
+        assert all(is_encrypted(row.fields) for row in rows)
+        # Data survives the rewrite.
+        result = seeded_repo.get_credentials("banks", "hapoalim", "Main Account")
+        assert result["userCode"] == "test_code"
+
+    def test_encrypt_plaintext_rows_is_idempotent(self, seeded_repo):
+        """Verify a second migration pass touches nothing."""
+        assert seeded_repo.encrypt_plaintext_rows() == 2
+        assert seeded_repo.encrypt_plaintext_rows() == 0
+
+    def test_migrated_yaml_rows_are_encrypted(self, empty_repo, db_session, tmp_path, mock_keyring):
+        """Verify YAML-imported rows land encrypted."""
+        creds_path = str(tmp_path / "credentials.yaml")
+        with open(creds_path, "w") as f:
+            yaml.dump({"banks": {"hapoalim": {"Main": {"userCode": "x"}}}}, f)
+
+        empty_repo.migrate_from_yaml(creds_path)
+
+        row = db_session.execute(select(Credential)).scalar_one()
+        assert is_encrypted(row.fields)
+        assert decrypt_fields(row.fields) == {"userCode": "x"}
+
+
+# ---------------------------------------------------------------------------
+# Class 6: Legacy YAML removal
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialsRepositoryYamlRemoval:
+    """Tests for deleting the legacy plaintext credentials YAML."""
+
+    def test_yaml_removed_after_migration(self, empty_repo, tmp_path, mock_keyring):
+        """Verify the YAML file is deleted once its data is imported."""
+        creds_path = tmp_path / "credentials.yaml"
+        with open(creds_path, "w") as f:
+            yaml.dump({"banks": {"hapoalim": {"Main": {"userCode": "x"}}}}, f)
+
+        empty_repo.migrate_from_yaml(str(creds_path))
+
+        assert empty_repo.list_accounts()
+        assert not creds_path.exists()
+
+    def test_yaml_removed_when_migration_skipped(
+        self, seeded_repo, tmp_path, mock_keyring
+    ):
+        """Verify a lingering YAML is deleted even on already-migrated installs."""
+        creds_path = tmp_path / "credentials.yaml"
+        with open(creds_path, "w") as f:
+            yaml.dump({"banks": {"leumi": {"Old": {"userCode": "y"}}}}, f)
+
+        seeded_repo.migrate_from_yaml(str(creds_path))
+
+        assert not creds_path.exists()
+
+    def test_missing_yaml_is_a_noop(self, empty_repo):
+        """Verify migration with no YAML file neither raises nor imports."""
+        empty_repo.migrate_from_yaml("/nonexistent/credentials.yaml")
+        assert empty_repo.list_accounts() == []
+
+
+# ---------------------------------------------------------------------------
+# Class 7: Keyring edge cases
 # ---------------------------------------------------------------------------
 
 
 class TestCredentialsRepositoryKeyringEdgeCases:
-    """Tests for keyring error handling and demo mode."""
+    """Tests for keyring error handling via the keyring store."""
 
     def test_delete_credentials_handles_keyring_error(self, seeded_repo, mock_keyring):
         """Verify keyring.PasswordDeleteError is silently caught during delete."""
@@ -248,20 +352,17 @@ class TestCredentialsRepositoryKeyringEdgeCases:
         accounts = seeded_repo.list_accounts()
         assert len(accounts) == 1
 
-    def test_keyring_service_demo_mode(self, db_session, mock_keyring):
-        """Verify keyring service name has '-demo' suffix in demo mode."""
-        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
-            mock_config = MockConfig.return_value
-            mock_config.is_demo_mode = True
+    def test_save_uses_demo_namespace_in_demo_mode(
+        self, empty_repo, mock_keyring
+    ):
+        """Verify passwords land in the '-demo' keyring service in demo mode."""
+        with patch("backend.utils.keyring_store.AppConfig") as MockConfig:
+            MockConfig.return_value.is_demo_mode = True
 
-            repo = CredentialsRepository(db_session)
-            assert repo.keyring_service == "finance-analysis-app-demo"
+            empty_repo.save_credentials(
+                "banks", "hapoalim", "Main", {"userCode": "x", "password": "pw"}
+            )
 
-    def test_keyring_service_normal_mode(self, db_session, mock_keyring):
-        """Verify keyring service name has no suffix in normal mode."""
-        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
-            mock_config = MockConfig.return_value
-            mock_config.is_demo_mode = False
-
-            repo = CredentialsRepository(db_session)
-            assert repo.keyring_service == "finance-analysis-app"
+        service_name, entry_name, _ = mock_keyring.set_password.call_args[0]
+        assert service_name == "finance-analysis-app-demo"
+        assert entry_name == "banks_hapoalim_Main_password"

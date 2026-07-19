@@ -121,9 +121,10 @@ class TestCleanupRun:
 
         report = cleanup.run(wipe_data=False, user_dir=tmp_path)
 
-        # 2 rows × 4 fields × 2 service namespaces = 16 attempts.
-        assert report.keyring_entries_attempted == 16
-        assert fake_keyring.delete_password.call_count == 16
+        # 2 rows × 4 fields × 2 service namespaces = 16 attempts, plus the
+        # service-level field-encryption key in both namespaces = 18.
+        assert report.keyring_entries_attempted == 18
+        assert fake_keyring.delete_password.call_count == 18
 
         # Spot-check a few of the calls.
         called_pairs = set(fake_keyring._deleted)  # type: ignore[attr-defined]
@@ -132,6 +133,7 @@ class TestCleanupRun:
             "finance-analysis-app-demo",
             "credit_cards_isracard_personal_otpLongTermToken",
         ) in called_pairs
+        assert ("finance-analysis-app", "field-encryption-key") in called_pairs
 
     def test_dry_run_makes_no_destructive_calls(
         self, tmp_path: Path, fake_keyring: MagicMock
@@ -145,8 +147,9 @@ class TestCleanupRun:
         assert report.user_dir_removed is True  # would have been removed
         assert tmp_path.exists()  # but actually wasn't
         assert fake_keyring.delete_password.call_count == 0
-        # All 8 attempts (1 row × 4 fields × 2 namespaces) are reported but skipped.
-        assert report.keyring_entries_attempted == 8
+        # All 10 attempts (1 row × 4 fields × 2 namespaces, plus the
+        # field-encryption key in both namespaces) are reported but skipped.
+        assert report.keyring_entries_attempted == 10
         assert report.keyring_entries_deleted == 0
 
     def test_keyring_passworddeleteerror_is_swallowed(

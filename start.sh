@@ -71,14 +71,38 @@ case "$MODE" in
       echo "warning: tailscale CLI not found — remote origin not added to CORS" >&2
     fi
     export CORS_ORIGINS="${CORS_ORIGINS:-$ORIGINS}"
+    # Allow the tailnet address through the backend's Host-header allowlist
+    # (requests proxied by Vite arrive with a localhost Host, but direct
+    # backend calls from another device carry the tailnet IP).
+    if [ -n "${TS_IP:-}" ]; then
+      export ALLOWED_HOSTS="${ALLOWED_HOSTS:-localhost,127.0.0.1,$TS_IP}"
+    fi
     echo "Starting in remote mode (backend :$BACKEND_PORT + frontend :$FRONTEND_PORT, host 0.0.0.0)..."
     run_dev_pair "--host 0.0.0.0" "--host 0.0.0.0"
     ;;
   prod)
     echo "Building frontend..."
     (cd frontend && npm run build)
-    echo "Starting server on port $BACKEND_PORT..."
-    .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
+    # Localhost-only by default. Exposing beyond this machine requires an
+    # explicit BIND_HOST override, which turns on bearer-token auth for
+    # remote clients and a Host-header allowlist (DNS-rebinding guard).
+    BIND_HOST="${BIND_HOST:-127.0.0.1}"
+    export ENVIRONMENT="${ENVIRONMENT:-production}"
+    # The Demo Mode toggle lives in the testing router; keep it mounted.
+    export ENABLE_TESTING_ROUTES="${ENABLE_TESTING_ROUTES:-1}"
+    if [ "$BIND_HOST" != "127.0.0.1" ] && [ "$BIND_HOST" != "localhost" ]; then
+      TOKEN="$(.venv/bin/python -c 'from backend.utils.auth import get_or_create_api_token; print(get_or_create_api_token())')"
+      if [ -z "${ALLOWED_HOSTS:-}" ]; then
+        # Best-effort: allow this machine's own addresses in the Host check.
+        HOST_IPS="$( { hostname -I 2>/dev/null || ipconfig getifaddr en0 2>/dev/null; } | tr ' ' '\n' | grep -v '^$' | paste -sd, - )"
+        export ALLOWED_HOSTS="localhost,127.0.0.1${HOST_IPS:+,$HOST_IPS}"
+      fi
+      echo "Exposed on $BIND_HOST — remote devices need the API token."
+      echo "Open:  http://<this-machine-ip>:$BACKEND_PORT/?apiToken=$TOKEN"
+      echo "Allowed hosts: $ALLOWED_HOSTS (override with ALLOWED_HOSTS env)"
+    fi
+    echo "Starting server on $BIND_HOST:$BACKEND_PORT..."
+    .venv/bin/uvicorn backend.main:app --host "$BIND_HOST" --port "$BACKEND_PORT"
     ;;
   *)
     echo "Usage: ./start.sh [dev|remote|prod] [backend-port]"

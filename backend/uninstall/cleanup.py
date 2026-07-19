@@ -32,6 +32,12 @@ KEYRING_SERVICE_NAMES = (
 
 CREDENTIAL_FIELDS = ("password", "secret", "otp_key", "otpLongTermToken")
 
+# Machine-wide keyring entries that exist once per service (not per
+# credential). ``field-encryption-key`` is the Fernet key that encrypts the
+# credentials table's non-sensitive fields at rest — it must be wiped so an
+# uninstalled machine holds no leftover key material.
+SERVICE_LEVEL_KEYS = ("field-encryption-key",)
+
 
 @dataclass
 class CleanupReport:
@@ -140,6 +146,17 @@ def _delete_keyring_entries(
                     pass
                 except Exception as exc:
                     errors.append(f"{service}/{key}: {exc}")
+        for key in SERVICE_LEVEL_KEYS:
+            attempted += 1
+            if dry_run:
+                continue
+            try:
+                keyring.delete_password(service, key)
+                deleted += 1
+            except keyring.errors.PasswordDeleteError:
+                pass
+            except Exception as exc:
+                errors.append(f"{service}/{key}: {exc}")
     return deleted, attempted, errors
 
 
