@@ -193,10 +193,23 @@ by hand — use the orchestrator, which boots both, waits for readiness,
 runs your command, and tears them down:
 
 ```bash
-# from repo root
+# from repo root. PYTHON_KEYRING_BACKEND is REQUIRED in sandboxes/CI — see below.
+PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring \
 python .claude/scripts/with_server.py -- bash -c \
   "cd frontend && npx playwright test <file>.spec.ts --reporter=line"
 ```
+
+**Keyring gotcha (sandboxes / headless boxes):** the demo-mode toggle's
+`seed_demo_credentials()` writes credentials, and credential writes reject
+null/plaintext keyring backends unless explicitly opted in. Without
+`PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring` in the
+**backend's** environment (CI sets it — see `ci.yml`), the first OFF→ON
+demo toggle 500s: demo mode still flips (the DB copy happens first) so most
+specs appear fine, but the demo accounts never seed. The symptom is every
+credential-dependent spec failing at once — Data Sources shows "No accounts
+connected", `setDemoMode`-asserting specs (`yearly-budget`,
+`project-category-exclusion`) fail on `res.ok()`, and the onezero /
+scrape-all specs can't seed their throwaway accounts.
 
 The orchestrator is hardened against the failure modes that produced
 silently-invalid e2e runs in the past:
