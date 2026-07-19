@@ -1,3 +1,13 @@
+## v1.46.0 (2026-07-19)
+
+### Feat
+
+- harden app security with at-rest credential encryption and remote-access controls
+
+### Refactor
+
+- consolidate all OS-keyring access behind keyring_store
+
 ## v1.45.2 (2026-07-18)
 
 ### Fix
