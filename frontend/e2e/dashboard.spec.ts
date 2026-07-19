@@ -14,9 +14,10 @@ test.describe("Dashboard", () => {
     await page.close();
   });
 
-  // Pure read-only assertions against one rendered dashboard — a single load
-  // covers all of them (the cold dashboard boot is the expensive step).
-  test("loads with KPI cards, charts, recent transactions, and budget section", async ({
+  // The cold dashboard boot is the expensive step (~30 s of queued React
+  // Query requests), so the page smoke and the inline tag-editor flow share
+  // one navigation instead of paying it twice.
+  test("KPIs, charts, budget section render; inline tag editor stages edits and commits on Done", async ({
     page,
   }) => {
     await page.goto("/");
@@ -31,7 +32,9 @@ test.describe("Dashboard", () => {
       timeout: 10_000,
     });
 
-    // Recent transactions feed
+    // Recent transactions feed. Cold-cache navigation queues ~30 React Query
+    // requests behind the browser's HTTP/1.1 connection limit; the slowest
+    // queries can take ~30 s to resolve. 45 s keeps the assertion robust.
     await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 45_000 });
 
     // Budget progress section. The section's "Budget" header is too generic
@@ -39,17 +42,8 @@ test.describe("Dashboard", () => {
     // the segmented control inside the section instead — those labels live
     // only in BudgetSection.
     await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
-  });
 
-  test("inline tag editor stages edits and commits on Done", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("domcontentloaded");
-    // Cold-cache navigation queues ~30 React Query requests behind the
-    // browser's HTTP/1.1 connection limit; the dashboard's slowest
-    // queries (Recent Transactions feed included) can take ~30 s to
-    // resolve. 45 s keeps the assertion robust.
-    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 45_000 });
-
+    // --- Inline tag editor: stages edits, commits on Done ---
     const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });
     await editButtons.first().waitFor();
     const targetRow = editButtons.first().locator("xpath=ancestor::*[contains(@class,'cursor-pointer')][1]");

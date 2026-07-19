@@ -56,7 +56,7 @@ test.describe("Scrape All burst guard", () => {
     // Stub the whole /api/scraping/* surface — Demo Mode's dummy scrapers
     // never enter waiting_for_2fa on their own, and a live scrape here would
     // race disableDemoMode() in afterAll the same way documented in
-    // onezero-force-2fa.spec.ts / onezero-resend.spec.ts.
+    // onezero-resend.spec.ts.
     //
     // Reality check performed while writing this spec: "Scrape All" is
     // disabled the instant *any* account's start() response registers in

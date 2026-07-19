@@ -5,9 +5,10 @@ import { setDemoMode, gotoAndWait } from "./_helpers";
  * Renames the Food category via the panel's click-to-rename heading, verifies
  * the PUT /api/tagging/categories/{name} endpoint is called with the correct
  * payload, and confirms the new name appears in the UI.
- * Renames back to "Food" for cleanup.
+ * Renames back to "Food" for cleanup, then adds a new tag to Food (formerly
+ * flows/categories-add-tag.spec.ts) — both mutations share one page load.
  */
-test.describe("Categories rename flow", () => {
+test.describe("Categories rename + add-tag flow", () => {
   test.beforeAll(async ({ request }) => {
     await setDemoMode(request, true);
   });
@@ -15,7 +16,7 @@ test.describe("Categories rename flow", () => {
     await setDemoMode(request, false);
   });
 
-  test("renames a category by opening the panel and clicking its name", async ({ page }) => {
+  test("renames a category via the panel, then adds a new tag to it", async ({ page }) => {
     // The backend's rename endpoint runs the new name through `to_title_case`,
     // which capitalizes each hyphen-separated segment (e.g. "e2e-cat-123" →
     // "E2e-Cat-123"). The DOM/data-testid reflect the stored (transformed)
@@ -100,5 +101,27 @@ test.describe("Categories rename flow", () => {
     await renamedPanel.getByRole("button", { name: /^close$/i }).click();
     await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
     await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 30_000 });
+
+    // ---- Add a new tag to the (restored) Food category ----
+    const tagName = `e2e-tag-${timestamp}`;
+    await page.getByTestId("category-card-Food").click();
+
+    const tagPanel = page.locator('[data-testid="category-panel"]');
+    await expect(tagPanel).toBeVisible({ timeout: 5_000 });
+
+    // Click the "Add Tag" button inside the panel.
+    const addTagBtn = tagPanel.locator('button[title="Add Tag"]').first();
+    await expect(addTagBtn).toBeVisible({ timeout: 5_000 });
+    await addTagBtn.click();
+
+    // Fill the tag name field in the modal.
+    const addTagDialog = page.getByRole("dialog", { name: /add tag to food/i });
+    await expect(addTagDialog).toBeVisible();
+    await addTagDialog.getByPlaceholder(/tag name/i).fill(tagName);
+    await addTagDialog.getByRole("button", { name: /^add tag$/i }).click();
+    await expect(addTagDialog).toBeHidden({ timeout: 10_000 });
+
+    // The new tag should appear inside the panel.
+    await expect(tagPanel.getByText(tagName)).toBeVisible({ timeout: 10_000 });
   });
 });

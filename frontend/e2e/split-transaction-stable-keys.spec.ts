@@ -83,4 +83,66 @@ test.describe("Split transaction modal stable keys", () => {
     expect(remaining).not.toContain("22");
     expect(remaining).toEqual(["11", "33", "44"]);
   });
+
+  // Formerly flows/transaction-split.spec.ts: splits a transaction into two
+  // halves and verifies the dialog accepts the split when the totals balance.
+  test("splits a transaction into two parts and saves", async ({ page }) => {
+    await navigateTo(page, "/transactions");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Clicking the row's split icon opens the Split Transaction dialog.
+    const splitButton = page
+      .locator('table tbody button[title="Split transaction"]')
+      .first();
+    await expect(splitButton).toBeVisible({ timeout: 10_000 });
+    await splitButton.click();
+
+    const dialog = page.getByRole("dialog", { name: /split transaction/i });
+    await expect(dialog).toBeVisible();
+
+    // Two split rows are pre-populated at half each — fill in the second
+    // category since the second row defaults to "Select Category".
+    const secondCategoryButton = dialog.getByRole("button", {
+      name: /select category/i,
+    });
+    await secondCategoryButton.click();
+
+    // Pick "Food" from the popover. The custom SelectDropdown renders
+    // option items as `<div>` with text — not real `<option>` elements,
+    // so role-based selection doesn't work here.
+    await page.getByText("Food", { exact: true }).first().click();
+
+    // Pick the first available tag — Food's first tag in demo data is
+    // "Groceries". The dropdown is rendered via a portal as a list of
+    // clickable divs (not real `<option>`s).
+    const secondTagButton = dialog.getByRole("button", { name: /select tag/i });
+    if (await secondTagButton.isVisible().catch(() => false)) {
+      await secondTagButton.click();
+      await page.getByText("Groceries", { exact: true }).first().click();
+    }
+
+    // The split totals balance, so the dialog header marker reads
+    // "Balanced" and the Save button enables.
+    await expect(dialog.getByText(/^balanced$/i)).toBeVisible();
+    const saveBtn = dialog.getByRole("button", { name: /^split transaction$/i });
+    await expect(saveBtn).toBeEnabled();
+
+    // Submit and confirm the backend accepted the request. The route is
+    // /api/transactions/{unique_id}/split, and {unique_id} must be the
+    // integer DB primary key — not the source-institution `id` column.
+    // A regression that passes the wrong field returns 422 here.
+    const splitResponse = page.waitForResponse(
+      (res) =>
+        /\/api\/transactions\/\d+\/split$/.test(res.url()) &&
+        res.request().method() === "POST",
+    );
+    await saveBtn.click();
+    const response = await splitResponse;
+    expect(response.status()).toBe(200);
+
+    // Dialog closes on success.
+    await expect(dialog).toBeHidden();
+  });
 });

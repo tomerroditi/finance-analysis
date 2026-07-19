@@ -6,8 +6,10 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * the "This Month" cash-flow forecast hero, insight cards,
  * subscriptions/recurring panel, savings goals, and the spending heatmap.
  *
- * These cards are beta and hidden by default, so each test seeds a layout
- * with every card visible before navigating.
+ * These cards are beta and hidden by default, so the test seeds a layout
+ * with every card visible before navigating. All checks are read-only
+ * assertions (plus opening the add-goal modal) against one rendered
+ * dashboard, so they share a single (expensive) dashboard load.
  */
 test.describe("Dashboard — forecast, recurring, goals", () => {
   test.beforeAll(async ({ browser }) => {
@@ -47,30 +49,27 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     });
   });
 
-  test("shows the This Month cash-flow forecast hero", async ({ page }) => {
+  test("forecast hero, recurring panel, goals panel, calendar, and add-goal modal on one load", async ({
+    page,
+  }) => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
+
+    // The "This Month" cash-flow forecast hero.
     await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
     await expect(page.getByText(/Safe to spend/i).first()).toBeVisible();
     await expect(page.getByText(/Projected end balance/i).first()).toBeVisible();
-  });
 
-  test("shows the subscriptions / recurring panel", async ({ page }) => {
-    await page.goto("/");
+    // The subscriptions / recurring panel.
     await expect(page.getByText(/Subscriptions & Recurring/i).first()).toBeVisible({
       timeout: 45_000,
     });
-  });
 
-  test("shows the savings goals panel and spending calendar", async ({ page }) => {
-    await page.goto("/");
+    // The savings goals panel and spending calendar.
     await expect(page.getByText(/Savings Goals/i).first()).toBeVisible({ timeout: 45_000 });
     await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible();
-  });
 
-  test("can open the add-goal editor modal", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: /Add goal/i }).first().waitFor({ timeout: 45_000 });
+    // The add-goal editor modal opens.
     await page.getByRole("button", { name: /Add goal/i }).first().click();
     await expect(page.getByText(/New savings goal/i)).toBeVisible();
     await expect(page.getByPlaceholder(/Vacation/i)).toBeVisible();

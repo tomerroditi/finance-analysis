@@ -357,7 +357,7 @@ already in the list, move it out in the same change.
 - The **Auto Tagging "New Rule" / "Apply Rules" buttons live inside a
   collapsed side panel** — click `getByRole("button", { name: /^Auto
   Tagging$/ })` to open it *before* the buttons exist. See
-  `rule-editor-preview.spec.ts` for the pattern.
+  `auto-tagging-service-operator.spec.ts` for the pattern.
 - Helper is `navigateTo(page, path)` (not `gotoPage`); demo toggles are
   `enableDemoMode` / `disableDemoMode` from `frontend/e2e/helpers.ts`.
 - Specs go **directly in `frontend/e2e/`**, not a `specs/` subdir.

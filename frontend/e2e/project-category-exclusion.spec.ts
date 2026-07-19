@@ -56,6 +56,12 @@ test.describe("Project-category exclusion", () => {
   test("hides the conflict banner in clean demo data and excludes monthly-rule categories from the new-project picker", async ({
     page,
   }) => {
+    // ---- The demo seed ships a "Home Renovation" project — the Projects tab
+    // renders it (formerly flows/project-budget-create.spec.ts). ----
+    await expect(page.getByText(/home renovation/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+
     // ---- Clean demo data has no project / monthly-yearly overlaps, so the
     // conflict banner must stay hidden. ----
     const conflictsRes = await page.request.get("/api/budget/category-conflicts");

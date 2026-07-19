@@ -60,10 +60,20 @@ test.describe("Yearly budget", () => {
     await page.getByRole("button", { name: /^Yearly$/i }).click();
   });
 
-  test("creates a yearly rule, blocks a conflicting tag inline, and deletes the rule", async ({
+  test("navigates years; creates a yearly rule, blocks a conflicting tag inline, and deletes the rule", async ({
     page,
   }) => {
     const currentYear = new Date().getFullYear();
+
+    // ---- 0. Year navigation changes the displayed year (and returns). ----
+    const yearHeading = page.locator("h2").filter({ hasText: /^\d{4}$/ });
+    await expect(yearHeading).toHaveText(String(currentYear));
+
+    await page.getByRole("button", { name: /^Previous$/i }).click();
+    await expect(yearHeading).toHaveText(String(currentYear - 1));
+
+    await page.getByRole("button", { name: /^Next$/i }).click();
+    await expect(yearHeading).toHaveText(String(currentYear));
 
     // ---- Discover live demo data so the scenario adapts to whatever the
     // seeded dataset actually contains, instead of hardcoding category/tag
@@ -182,17 +192,5 @@ test.describe("Yearly budget", () => {
     await confirmDialog.getByRole("button", { name: /^delete$/i }).click();
 
     await expect(ruleRow(page, ruleName)).toHaveCount(0, { timeout: 10_000 });
-  });
-
-  test("year navigation changes the displayed year", async ({ page }) => {
-    const currentYear = new Date().getFullYear();
-    const yearHeading = page.locator("h2").filter({ hasText: /^\d{4}$/ });
-    await expect(yearHeading).toHaveText(String(currentYear));
-
-    await page.getByRole("button", { name: /^Previous$/i }).click();
-    await expect(yearHeading).toHaveText(String(currentYear - 1));
-
-    await page.getByRole("button", { name: /^Next$/i }).click();
-    await expect(yearHeading).toHaveText(String(currentYear));
   });
 });

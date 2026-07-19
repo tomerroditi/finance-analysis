@@ -2,15 +2,15 @@ import { test, expect } from "@playwright/test";
 import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
 
 /**
- * E2E coverage for the auto-tagging refactor:
+ * E2E coverage for the auto-tagging bulk-actions quick action: while marking
+ * transactions, the bulk actions bar surfaces an "Add Rule" / "View Rule"
+ * quick action. "Add Rule" opens the rule editor pre-filled with a
+ * description condition derived from the selection.
  *
- *  1. Rule management moved off the Transactions side panel into an
- *     "Auto-Tagging Rules" section on the Categories page.
- *  2. While marking transactions, the bulk actions bar surfaces an
- *     "Add Rule" / "View Rule" quick action. "Add Rule" opens the rule editor
- *     pre-filled with a description condition derived from the selection.
+ * (The Categories-page rules manager itself is covered in
+ * auto-tagging-service-operator.spec.ts.)
  */
-test.describe("Auto-tagging quick action + Categories rules section", () => {
+test.describe("Auto-tagging quick action", () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await enableDemoMode(page);
@@ -21,26 +21,6 @@ test.describe("Auto-tagging quick action + Categories rules section", () => {
     const page = await browser.newPage();
     await disableDemoMode(page);
     await page.close();
-  });
-
-  test("Categories page hosts the Auto-Tagging Rules section", async ({ page }) => {
-    await navigateTo(page, "/categories");
-
-    // The launcher card opens the full-screen rules manager.
-    await page.getByRole("button", { name: /Auto-Tagging Rules/i }).click();
-    const manager = page.locator(
-      '[role="dialog"][aria-labelledby="rules-manager-title"]',
-    );
-    await expect(manager).toBeVisible({ timeout: 10_000 });
-
-    // It opens full-screen, not as a cramped inline section.
-    const managerBox = await manager.boundingBox();
-    expect(managerBox?.height ?? 0).toBeGreaterThan(500);
-
-    // The "New Rule" button in the manager opens the rule editor.
-    await manager.getByRole("button", { name: /^New Rule$/ }).click();
-    const modal = page.locator(".modal-overlay").last();
-    await expect(modal).toBeVisible();
   });
 
   test("bulk selection surfaces the Add/View rule quick action", async ({ page }) => {

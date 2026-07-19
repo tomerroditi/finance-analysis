@@ -14,59 +14,67 @@ test.describe("Transactions", () => {
     await page.close();
   });
 
-  test("loads the transactions page with data", async ({ page }) => {
+  // Pure read-only assertions (table smoke, pagination, column sizing, eraser
+  // alignment, service-tab + text-search filtering) against one rendered page
+  // — a single navigation covers all of them.
+  test("table, pagination, column sizing, eraser alignment, and filters on one load", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
     await expectPageTitle(page, /Transactions/);
 
-    // Transaction table should have rows
+    // Transaction table has rows.
     const rows = page.locator("table tbody tr");
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-  });
 
-  test("service tab filtering works", async ({ page }) => {
-    await navigateTo(page, "/transactions");
+    // Pagination summary renders.
+    await expect(page.getByText(/Showing/i)).toBeVisible({ timeout: 10_000 });
 
-    // Click the Credit Card tab
+    // --- Description column width regression ---
+    // The table is `table-fixed` and every column except the description had
+    // an explicit pixel width. With the old `min-w-[800px]` the fixed columns
+    // consumed almost the whole table, collapsing the description column to
+    // ~20px (≈3 characters). It now has a 150px width floor.
+    const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();
+    await expect(descHeader).toBeVisible();
+    const headerBox = await descHeader.boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(headerBox!.width).toBeGreaterThan(110);
+
+    // Sanity-check a body cell in the same column matches the header width,
+    // so the data cell isn't independently squeezed.
+    const firstRow = rows.first();
+    const descCell = firstRow.locator("td").nth(await descHeader.evaluate((th) => {
+      // Column index of the description header among its sibling <th> cells.
+      return Array.from(th.parentElement!.children).indexOf(th);
+    }));
+    const cellBox = await descCell.boundingBox();
+    expect(cellBox).not.toBeNull();
+    expect(cellBox!.width).toBeGreaterThan(110);
+
+    // --- Eraser alignment: every row renders exactly one eraser button so
+    // the action column lines up regardless of whether the row is tagged.
+    // (The disabled-when-untagged behavior is verified deterministically in
+    // the per-row eraser test below.)
+    await page.waitForLoadState("networkidle");
+    const rowCount = await rows.count();
+    const erasers = page.locator('table tbody button[aria-label="Clear category and tag"]');
+    await expect(erasers).toHaveCount(rowCount);
+
+    // --- Service tab + text search narrow the list together ---
     await page.getByRole("button", { name: /Credit Card/i }).click();
+    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
 
-    // The tab should be visually active
-    const ccTab = page.getByRole("button", { name: /Credit Card/i });
-    await expect(ccTab).toBeVisible();
-  });
+    // Type a query that matches a known demo merchant.
+    await page.getByPlaceholder(/search descriptions/i).fill("PAZ");
+    await page.waitForTimeout(500); // debounced filter
 
-  test("text search filters transactions", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-
-    // Wait for transactions to load (deterministic anchor instead of networkidle).
-    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
-
-    // Open filter panel if not visible
-    const filterButton = page.getByRole("button", { name: /filter/i });
-    if (await filterButton.isVisible().catch(() => false)) {
-      await filterButton.click();
-    }
-
-    // Type in the search box
-    const searchInput = page.getByPlaceholder(/search/i).first();
-    if (await searchInput.isVisible().catch(() => false)) {
-      await searchInput.fill("test search");
-      // Wait for filter to apply
-      await page.waitForTimeout(500);
-    }
-  });
-
-  test("pagination works", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-
-    // Check pagination exists
-    const paginationText = page.getByText(/Showing/i);
-    await expect(paginationText).toBeVisible({ timeout: 10_000 });
-
-    // Try navigating to next page if available
-    const nextButton = page.locator("button .lucide-chevron-right").first();
-    if (await nextButton.isVisible().catch(() => false)) {
-      await nextButton.click();
-      await page.waitForTimeout(300);
+    // Every visible row must now mention PAZ (0 rows is acceptable on a
+    // stale dataset; the assertion that matters is no unrelated rows).
+    const visibleRowCount = await rows.count();
+    for (let i = 0; i < visibleRowCount; i++) {
+      const text = (await rows.nth(i).textContent())?.toUpperCase() ?? "";
+      expect(text).toContain("PAZ");
     }
   });
 
@@ -172,53 +180,6 @@ test.describe("Transactions", () => {
         .locator(`[data-testid="${secondRowId}"]`)
         .locator('button[aria-label="Clear category and tag"]'),
     ).toBeDisabled();
-  });
-
-  test("eraser button renders on every row (disabled when untagged) for aligned actions", async ({ page }) => {
-    await navigateTo(page, "/transactions");
-
-    const rows = page.locator("table tbody tr");
-    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForLoadState("networkidle");
-
-    // Every transaction row renders exactly one eraser button so the action
-    // column lines up regardless of whether the row is tagged. (The
-    // disabled-when-untagged behavior is verified deterministically in the
-    // per-row eraser test, which clears a row and asserts the button is then
-    // disabled rather than removed.)
-    const rowCount = await rows.count();
-    const erasers = page.locator('table tbody button[aria-label="Clear category and tag"]');
-    await expect(erasers).toHaveCount(rowCount);
-  });
-
-  test("description column is wide enough to show more than a few characters", async ({ page }) => {
-    // Regression: the table is `table-fixed` and every column except the
-    // description had an explicit pixel width. With the old `min-w-[800px]`
-    // the fixed columns consumed almost the whole table, collapsing the
-    // description column to ~20px (≈3 characters). It now has a 150px width
-    // and the table min-width was raised so it can never collapse.
-    await navigateTo(page, "/transactions");
-    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
-
-    // Locate the description column header and measure its rendered width.
-    const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();
-    await expect(descHeader).toBeVisible();
-    const headerBox = await descHeader.boundingBox();
-    expect(headerBox).not.toBeNull();
-    // 150px floor (flexes wider on a roomy viewport) — comfortably more than
-    // the ~20px / 3-char collapse the bug produced.
-    expect(headerBox!.width).toBeGreaterThan(110);
-
-    // Sanity-check a body cell in the same column matches the header width,
-    // so the data cell isn't independently squeezed.
-    const firstRow = page.locator("table tbody tr").first();
-    const descCell = firstRow.locator("td").nth(await descHeader.evaluate((th) => {
-      // Column index of the description header among its sibling <th> cells.
-      return Array.from(th.parentElement!.children).indexOf(th);
-    }));
-    const cellBox = await descCell.boundingBox();
-    expect(cellBox).not.toBeNull();
-    expect(cellBox!.width).toBeGreaterThan(110);
   });
 
   test("bulk-edit category dropdown does not scroll when hovering visible options", async ({ page }) => {

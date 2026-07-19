@@ -6,6 +6,9 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * dashboard cards. Income & Expenses + Net Worth ship visible; Cash Flow +
  * Categories ship hidden (opt-in) but — unlike beta cards — carry no Beta pill.
  * Each card is reorderable/hideable via Settings → Dashboard like any other.
+ *
+ * One dashboard load covers the default card set, the Hidden-cards badge
+ * rules, and the opt-in flow — the cold dashboard boot is the expensive step.
  */
 test.describe("Dashboard per-chart cards", () => {
   test.beforeAll(async ({ browser }) => {
@@ -21,23 +24,19 @@ test.describe("Dashboard per-chart cards", () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    // Start each test from a clean (default) layout.
+    // Start from a clean (default) layout.
     await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
   });
 
-  test("Income & Expenses and Net Worth render as separate cards by default", async ({ page }) => {
+  test("default cards, Hidden-cards badges, and the Cash Flow opt-in on one load", async ({ page }) => {
     await page.goto("/");
+
+    // Income & Expenses and Net Worth render as separate cards by default;
+    // Cash Flow + Categories are opt-in: not rendered on the default dashboard.
     await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({ timeout: 45_000 });
     await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible();
-
-    // Cash Flow + Categories are opt-in: not rendered on the default dashboard.
     await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
     await expect(page.locator('[data-card-id="category"]')).toHaveCount(0);
-  });
-
-  test("Cash Flow sits in Hidden cards with no Beta badge", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({ timeout: 45_000 });
 
     await page.getByRole("button", { name: /^Settings$/ }).first().click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
@@ -51,17 +50,8 @@ test.describe("Dashboard per-chart cards", () => {
     await expect(cashFlowRow.getByText(/^Beta$/i)).toHaveCount(0);
     const forecastRow = page.getByText("This Month (forecast)", { exact: true }).locator("xpath=..");
     await expect(forecastRow.getByText(/^Beta$/i)).toBeVisible();
-  });
 
-  test("opting Cash Flow in via Settings shows it on the dashboard", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({ timeout: 45_000 });
-    await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
-
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
-    await page.getByRole("button", { name: /^Dashboard$/ }).click();
-
-    const cashFlowRow = page.getByText("Cash Flow", { exact: true }).locator("xpath=..");
+    // Opting Cash Flow in shows it on the dashboard.
     await cashFlowRow.getByRole("button", { name: /Show card/i }).click();
     await page.keyboard.press("Escape");
 
