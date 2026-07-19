@@ -100,7 +100,7 @@ Single transaction can be split across multiple categories/tags. Original remain
 - Account for transaction sign (negative = expense).
 
 ## Security & Credentials
-- **Passwords:** Stored in OS Keyring (never in code/config).
+- **Passwords:** Stored in OS Keyring (never in code/config). All keyring access goes through `backend/utils/keyring_store.py` — service names, demo namespacing, secret get/set/delete, the field-encryption key, and insecure-backend validation live there. No other backend module imports `keyring` directly (exception: `backend/uninstall/cleanup.py` keeps a lazy import so the standalone uninstall CLI stays best-effort; a drift-guard test pins its constants to the store).
 - **Non-sensitive credential fields** (usernames, ID numbers, card digits) are Fernet-encrypted at rest in the `credentials` table (`backend/utils/crypto.py`); the key lives in the OS Keyring under `finance-analysis-app` / `field-encryption-key`. Legacy plaintext rows are encrypted on startup; the legacy `credentials.yaml` is deleted after migration.
 - **Keyring backend validation:** credential writes fail loudly on null/plaintext keyring backends. Opt in explicitly with `PYTHON_KEYRING_BACKEND` (CI) or `FAD_ALLOW_INSECURE_KEYRING=1`.
 - **Network access model** (`backend/utils/auth.py`): loopback clients are trusted; non-loopback clients must send `Authorization: Bearer <token>` on `/api/*` (`FAD_API_TOKEN` env or `<user-dir>/api_token` file, 0600). All requests must carry an allowlisted `Host` header (DNS-rebinding guard) — extend with the `ALLOWED_HOSTS` env var; `*` disables (Vercel). `./start.sh prod` binds 127.0.0.1 by default; setting `BIND_HOST` enables exposure and prints a `?apiToken=` bootstrap URL that the frontend persists to localStorage.

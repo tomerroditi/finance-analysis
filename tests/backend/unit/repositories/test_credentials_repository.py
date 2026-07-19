@@ -20,8 +20,8 @@ from backend.utils.crypto import ENCRYPTED_MARKER, decrypt_fields, is_encrypted
 
 @pytest.fixture
 def mock_keyring():
-    """Mock the keyring module to avoid OS keyring access."""
-    with patch("backend.repositories.credentials_repository.keyring") as mk:
+    """Mock the keyring module (inside keyring_store) to avoid OS keyring access."""
+    with patch("backend.utils.keyring_store.keyring") as mk:
         mk.get_password.return_value = "secret123"
         mk.set_password.return_value = None
         mk.delete_password.return_value = None
@@ -339,7 +339,7 @@ class TestCredentialsRepositoryYamlRemoval:
 
 
 class TestCredentialsRepositoryKeyringEdgeCases:
-    """Tests for keyring error handling and demo mode."""
+    """Tests for keyring error handling via the keyring store."""
 
     def test_delete_credentials_handles_keyring_error(self, seeded_repo, mock_keyring):
         """Verify keyring.PasswordDeleteError is silently caught during delete."""
@@ -352,20 +352,17 @@ class TestCredentialsRepositoryKeyringEdgeCases:
         accounts = seeded_repo.list_accounts()
         assert len(accounts) == 1
 
-    def test_keyring_service_demo_mode(self, db_session, mock_keyring):
-        """Verify keyring service name has '-demo' suffix in demo mode."""
-        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
-            mock_config = MockConfig.return_value
-            mock_config.is_demo_mode = True
+    def test_save_uses_demo_namespace_in_demo_mode(
+        self, empty_repo, mock_keyring
+    ):
+        """Verify passwords land in the '-demo' keyring service in demo mode."""
+        with patch("backend.utils.keyring_store.AppConfig") as MockConfig:
+            MockConfig.return_value.is_demo_mode = True
 
-            repo = CredentialsRepository(db_session)
-            assert repo.keyring_service == "finance-analysis-app-demo"
+            empty_repo.save_credentials(
+                "banks", "hapoalim", "Main", {"userCode": "x", "password": "pw"}
+            )
 
-    def test_keyring_service_normal_mode(self, db_session, mock_keyring):
-        """Verify keyring service name has no suffix in normal mode."""
-        with patch("backend.repositories.credentials_repository.AppConfig") as MockConfig:
-            mock_config = MockConfig.return_value
-            mock_config.is_demo_mode = False
-
-            repo = CredentialsRepository(db_session)
-            assert repo.keyring_service == "finance-analysis-app"
+        service_name, entry_name, _ = mock_keyring.set_password.call_args[0]
+        assert service_name == "finance-analysis-app-demo"
+        assert entry_name == "banks_hapoalim_Main_password"

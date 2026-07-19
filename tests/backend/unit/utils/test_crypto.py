@@ -43,106 +43,46 @@ class TestEncryptDecryptRoundtrip:
 
 
 class TestGetFernetKeyManagement:
-    """Tests for keyring-backed key creation and caching."""
+    """Tests for keyring-store-backed key creation and caching."""
 
     def test_generates_and_stores_key_on_first_use(self, monkeypatch):
-        """Verify a missing keyring key is generated and persisted."""
+        """Verify a missing key is generated and persisted via the store."""
         monkeypatch.setattr(crypto, "_fernet", None)
-        mock_keyring = MagicMock()
-        mock_keyring.get_password.return_value = None
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
+        mock_store = MagicMock()
+        mock_store.get_secret.return_value = None
+        mock_store.PROD_SERVICE = "finance-analysis-app"
+        mock_store.FIELD_ENCRYPTION_KEY_NAME = "field-encryption-key"
+        monkeypatch.setattr(crypto, "keyring_store", mock_store)
 
         fernet = crypto.get_fernet()
 
         assert fernet is not None
-        mock_keyring.set_password.assert_called_once()
-        service, name, key = mock_keyring.set_password.call_args[0]
+        mock_store.set_secret.assert_called_once()
+        service, name, key = mock_store.set_secret.call_args[0]
         assert service == "finance-analysis-app"
         assert name == "field-encryption-key"
         Fernet(key.encode())  # stored key is a valid Fernet key
 
-    def test_reuses_existing_keyring_key(self, monkeypatch):
-        """Verify an existing keyring key is loaded, not regenerated."""
-        existing_key = Fernet.generate_key().decode()
+    def test_reuses_existing_key(self, monkeypatch):
+        """Verify an existing stored key is loaded, not regenerated."""
         monkeypatch.setattr(crypto, "_fernet", None)
-        mock_keyring = MagicMock()
-        mock_keyring.get_password.return_value = existing_key
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
+        mock_store = MagicMock()
+        mock_store.get_secret.return_value = Fernet.generate_key().decode()
+        monkeypatch.setattr(crypto, "keyring_store", mock_store)
 
         crypto.get_fernet()
 
-        mock_keyring.set_password.assert_not_called()
+        mock_store.set_secret.assert_not_called()
 
     def test_fernet_instance_is_cached(self, monkeypatch):
-        """Verify the keyring is only consulted once per process."""
+        """Verify the keyring store is only consulted once per process."""
         monkeypatch.setattr(crypto, "_fernet", None)
-        mock_keyring = MagicMock()
-        mock_keyring.get_password.return_value = Fernet.generate_key().decode()
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
+        mock_store = MagicMock()
+        mock_store.get_secret.return_value = Fernet.generate_key().decode()
+        monkeypatch.setattr(crypto, "keyring_store", mock_store)
 
         first = crypto.get_fernet()
         second = crypto.get_fernet()
 
         assert first is second
-        assert mock_keyring.get_password.call_count == 1
-
-
-class _FakeInsecureBackend:
-    """Stand-in whose module path matches a known-insecure backend."""
-
-
-_FakeInsecureBackend.__module__ = "keyrings.alt.file"
-
-
-class _FakeSecureBackend:
-    """Stand-in whose module path matches a real OS backend."""
-
-
-_FakeSecureBackend.__module__ = "keyring.backends.macOS"
-
-
-class TestEnsureSecureKeyringBackend:
-    """Tests for the insecure-backend guard."""
-
-    @pytest.fixture(autouse=True)
-    def _clear_overrides(self, monkeypatch):
-        """Remove the opt-in env vars the global test fixture sets."""
-        monkeypatch.delenv("FAD_ALLOW_INSECURE_KEYRING", raising=False)
-        monkeypatch.delenv("PYTHON_KEYRING_BACKEND", raising=False)
-
-    def test_insecure_backend_raises(self, monkeypatch):
-        """Verify a plaintext/fail backend is rejected with a clear error."""
-        mock_keyring = MagicMock()
-        mock_keyring.get_keyring.return_value = _FakeInsecureBackend()
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
-
-        with pytest.raises(ValidationException):
-            crypto.ensure_secure_keyring_backend()
-
-    def test_secure_backend_passes(self, monkeypatch):
-        """Verify a real OS backend passes the check."""
-        mock_keyring = MagicMock()
-        mock_keyring.get_keyring.return_value = _FakeSecureBackend()
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
-
-        crypto.ensure_secure_keyring_backend()
-
-    def test_explicit_backend_env_is_respected(self, monkeypatch):
-        """Verify PYTHON_KEYRING_BACKEND counts as deliberate opt-in."""
-        monkeypatch.setenv(
-            "PYTHON_KEYRING_BACKEND", "keyrings.alt.file.PlaintextKeyring"
-        )
-        mock_keyring = MagicMock()
-        mock_keyring.get_keyring.return_value = _FakeInsecureBackend()
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
-
-        crypto.ensure_secure_keyring_backend()
-
-    def test_allow_insecure_env_is_respected(self, monkeypatch):
-        """Verify FAD_ALLOW_INSECURE_KEYRING=1 bypasses the check."""
-        monkeypatch.setenv("FAD_ALLOW_INSECURE_KEYRING", "1")
-        mock_keyring = MagicMock()
-        mock_keyring.get_keyring.return_value = _FakeInsecureBackend()
-        monkeypatch.setattr(crypto, "keyring", mock_keyring)
-
-        crypto.ensure_secure_keyring_backend()
+        assert mock_store.get_secret.call_count == 1
