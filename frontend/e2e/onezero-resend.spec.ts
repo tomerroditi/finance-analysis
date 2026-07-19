@@ -5,7 +5,9 @@ const PROCESS_ID = 4242;
 
 // A throwaway OneZero account, seeded into the demo DB so the 2FA resend UI
 // (OneZero-only "Re-authenticate (force 2FA)" button, then the inline 2FA
-// block) has an account to render against. Mirrors onezero-force-2fa.spec.ts.
+// block) has an account to render against. This spec also owns the forced-2FA
+// wire-contract coverage (the start request must carry force_2fa: true) that
+// used to live in a separate onezero-force-2fa.spec.ts.
 const ONEZERO_ACCOUNT = "E2E OneZero Resend";
 
 /**
@@ -57,10 +59,12 @@ test.describe("OneZero resend-in-place 2FA", () => {
     // real 2FA prompt never fires under demo mode. Stub the whole
     // /api/scraping/* surface so we can drive the UI into
     // "waiting_for_2fa" deterministically and never touch a real scraper
-    // or a real 2FA/otp channel. Also guards against the same leak
-    // documented in onezero-force-2fa.spec.ts: Demo Mode is a
-    // process-global flag, so a live scrape here could leak fake
-    // transactions into the user's real data.db.
+    // or a real 2FA/otp channel. This also guards a real data-leak: Demo
+    // Mode is a process-global flag (backend/config.py), a scrape runs as
+    // an async background task, and afterAll's disableDemoMode() races it
+    // back to the production DB — a live dummy scrape here once leaked 6
+    // fake transactions into the user's real data.db. Do NOT "simplify"
+    // this to waitForRequest + a live click; that reopens the leak.
     let startBody: unknown;
     let abortCalled = false;
     let resendBody: unknown;

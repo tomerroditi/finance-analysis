@@ -40,7 +40,9 @@ test.describe("Dashboard bank-balance update chip", () => {
     await page.goto("/");
   });
 
-  test("shows an update chip per account; disabled when not scraped today", async ({ page }) => {
+  // One dashboard load covers both scenarios: the disabled stale chip and the
+  // save flow on the fresh account's chip.
+  test("per-account chips: stale is disabled; fresh opens the modal, saves, and keeps the card expanded", async ({ page }) => {
     await page.getByText("Bank Balance", { exact: true }).click(); // expand KPI header
     await expect(page.getByText("Fresh Checking")).toBeVisible();
     await expect(page.getByText("Stale Savings")).toBeVisible();
@@ -49,11 +51,6 @@ test.describe("Dashboard bank-balance update chip", () => {
     });
     await expect(staleChip).toBeVisible();
     await expect(staleChip).toBeDisabled();
-  });
-
-  test("opens the modal, saves a balance, and keeps the card expanded", async ({ page }) => {
-    await page.getByText("Bank Balance", { exact: true }).click();
-    await expect(page.getByText("Fresh Checking")).toBeVisible();
 
     await page.getByRole("button", { name: /^Set Balance$/ }).first().click();
 

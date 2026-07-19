@@ -27,10 +27,12 @@ test.describe("Dashboard layout customization", () => {
 
   // One dashboard load covers every settings-popup scenario that starts from
   // the clean default layout: the pinned KPI header, hiding a card, beta
-  // badges, enabling a beta card, and closing the popup with the X button.
-  // Hiding "Spending calendar" and enabling "forecast" touch independent
-  // cards, so both post-conditions can be asserted on the same dashboard.
-  test("settings popup: hide card, beta badges, enable beta, X-close (KPI header stays pinned)", async ({
+  // badges, enabling a beta card, closing the popup with the X button, and
+  // (re-opening the popup) drag-reordering. Hiding "Spending calendar" and
+  // enabling "forecast" touch independent cards, so both post-conditions can
+  // be asserted on the same dashboard, and neither changes the first visible
+  // row ("Budget spending") the drag scenario starts from.
+  test("settings popup: hide card, beta badges, enable beta, X-close, drag-reorder (KPI header stays pinned)", async ({
     page,
   }) => {
     await page.goto("/");
@@ -78,6 +80,38 @@ test.describe("Dashboard layout customization", () => {
     await page.locator('[data-card-id="forecast"]').scrollIntoViewIfNeeded();
     // "Safe to spend" is unique to the forecast card.
     await expect(page.getByText(/Safe to spend/i).first()).toBeVisible();
+
+    // --- Drag-reorder: re-open the popup and drag the first row down ---
+    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page.getByRole("button", { name: /^Dashboard$/ }).click();
+
+    // Visible order still starts with "Budget spending"; drag it down.
+    const firstRow = page.getByText("Budget spending", { exact: true }).locator("xpath=..");
+    await expect(firstRow).toBeVisible();
+
+    // Regression guard before dragging: @dnd-kit spreads role="button" onto
+    // each row; the global `[role="button"] { touch-action: manipulation }`
+    // rule would otherwise win the cascade and break dragging on
+    // touch/trackpad. The inline `touch-action: none` must override it —
+    // a synthetic-mouse drag alone cannot catch that bug.
+    const touchAction = await firstRow.evaluate((el) => getComputedStyle(el).touchAction);
+    expect(touchAction).toBe("none");
+
+    const box = await firstRow.boundingBox();
+    if (!box) throw new Error("no drag handle box");
+
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 20, box.y + 80, { steps: 8 });
+    await page.mouse.move(box.x + 20, box.y + 140, { steps: 8 });
+    await page.mouse.up();
+
+    const order = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("fa.dashboard.layout");
+      return raw ? (JSON.parse(raw).order as string[]) : [];
+    });
+    expect(order[0]).not.toBe("budget");
+    expect(order).toContain("budget");
   });
 
   test("hidden card persists across reload and can be restored", async ({ page }) => {
@@ -108,43 +142,5 @@ test.describe("Dashboard layout customization", () => {
     // its content renders.
     await page.locator('[data-card-id="heatmap"]').scrollIntoViewIfNeeded();
     await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible();
-  });
-
-  test("draggable rows have touch-action none; dragging reorders and persists", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    await expect(page.getByText(/Recent Transactions/i).first()).toBeVisible({ timeout: 45_000 });
-
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
-    await page.getByRole("button", { name: /^Dashboard$/ }).click();
-
-    // Default visible order starts with "Budget spending"; drag it down.
-    const firstRow = page.getByText("Budget spending", { exact: true }).locator("xpath=..");
-    await expect(firstRow).toBeVisible();
-
-    // Regression guard before dragging: @dnd-kit spreads role="button" onto
-    // each row; the global `[role="button"] { touch-action: manipulation }`
-    // rule would otherwise win the cascade and break dragging on
-    // touch/trackpad. The inline `touch-action: none` must override it —
-    // a synthetic-mouse drag alone cannot catch that bug.
-    const touchAction = await firstRow.evaluate((el) => getComputedStyle(el).touchAction);
-    expect(touchAction).toBe("none");
-
-    const box = await firstRow.boundingBox();
-    if (!box) throw new Error("no drag handle box");
-
-    await page.mouse.move(box.x + 20, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + 20, box.y + 80, { steps: 8 });
-    await page.mouse.move(box.x + 20, box.y + 140, { steps: 8 });
-    await page.mouse.up();
-
-    const order = await page.evaluate(() => {
-      const raw = window.localStorage.getItem("fa.dashboard.layout");
-      return raw ? (JSON.parse(raw).order as string[]) : [];
-    });
-    expect(order[0]).not.toBe("budget");
-    expect(order).toContain("budget");
   });
 });

@@ -58,13 +58,9 @@ import { defineConfig, devices } from "@playwright/test";
 const READ_ONLY_SPECS = [
   "**/budget-net-refund.spec.ts",
   "**/categories.spec.ts",
-  "**/chart-styling.spec.ts",
-  "**/charts-render.spec.ts",
   "**/dashboard-block-sizes.spec.ts",
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
-  "**/dashboard-networth-monthly-change.spec.ts",
-  "**/dashboard-spending-calendar.spec.ts",
   "**/data-flow.spec.ts",
   "**/income-by-source-card.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",

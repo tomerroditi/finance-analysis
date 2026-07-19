@@ -7,8 +7,12 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * (`aria-label={t("common.moreInfo")}`), not a hardcoded English string, so
  * it localizes with the rest of the UI. Demo investments carry `notes`
  * (e.g. "Tracking S&P 500 index fund"), which is exactly when the Investments
- * page renders the shared InfoTooltip. We assert the accessible name in both
- * English and Hebrew.
+ * page renders the shared InfoTooltip.
+ *
+ * The English accessible-name check lives in the merged Investments journey
+ * (investments.spec.ts); this spec covers the Hebrew half, including the
+ * absence of the English label after the language switch — proving the
+ * aria-label is driven by i18n and not hardcoded.
  *
  * en.json common.moreInfo = "More info"
  * he.json common.moreInfo = "מידע נוסף"
@@ -27,23 +31,10 @@ test.describe("InfoTooltip aria-label i18n", () => {
     }
   });
 
-  test("info button exposes the localized 'More info' accessible name in English", async ({
-    page,
-  }) => {
-    await page.evaluate(() => localStorage.setItem("language", "en")).catch(() => {});
-    await navigateTo(page, "/investments");
-
-    const infoButton = page.getByRole("button", { name: "More info" }).first();
-    await expect(infoButton).toBeVisible({ timeout: 30_000 });
-
-    // The accessible name must be the i18n value, never empty / a key leak
-    // like "common.moreInfo".
-    await expect(infoButton).toHaveAttribute("aria-label", "More info");
-  });
-
   test("info button localizes the accessible name to Hebrew", async ({ page }) => {
-    await navigateTo(page, "/investments");
-    await page.evaluate(() => localStorage.setItem("language", "he"));
+    // Seed the language before the app boots so a single navigation lands
+    // directly in Hebrew.
+    await page.addInitScript(() => localStorage.setItem("language", "he"));
     await navigateTo(page, "/investments");
 
     // Document direction flips to RTL once Hebrew is active — confirms the

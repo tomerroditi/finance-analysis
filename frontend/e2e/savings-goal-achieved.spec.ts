@@ -27,8 +27,9 @@ async function openDashboardWithGoals(page: Page) {
  * `is_achieved` comes back from the backend as a SQLite-style truthy value.
  * The fix guards the achieved check icon with `!!goal.is_achieved` so a falsy
  * `0` can never leak into the JSX as the literal string "0" next to a goal.
- * These tests seed goals (Demo Mode writes to the isolated demo DB) — one
- * achieved, one in-progress — and assert the rendered list.
+ * The test seeds goals (Demo Mode writes to the isolated demo DB) — one
+ * achieved, one in-progress — and asserts the rendered list on one dashboard
+ * load (both scenarios read the same rendered card).
  */
 test.describe("Savings goal achieved checkmark", () => {
   let ctx: APIRequestContext;
@@ -65,7 +66,7 @@ test.describe("Savings goal achieved checkmark", () => {
     await page.close();
   });
 
-  test("renders both seeded goals without leaking a stray '0'", async ({ page }) => {
+  test("renders both goals without a stray '0'; check icon only on the achieved goal", async ({ page }) => {
     await openDashboardWithGoals(page);
 
     const inProgressName = page.getByText("E2E In Progress Goal");
@@ -85,15 +86,6 @@ test.describe("Savings goal achieved checkmark", () => {
     expect(headerText).toContain("E2E In Progress Goal");
     expect(headerText).not.toMatch(/(^|\s)0E2E In Progress Goal/);
     expect(headerText.replace("E2E In Progress Goal", "").trim()).not.toBe("0");
-  });
-
-  test("shows the check icon only for the achieved goal", async ({ page }) => {
-    await openDashboardWithGoals(page);
-
-    const achievedName = page.getByText("E2E Achieved Goal");
-    const inProgressName = page.getByText("E2E In Progress Goal");
-    await expect(achievedName).toBeVisible({ timeout: 30_000 });
-    await expect(inProgressName).toBeVisible();
 
     // The achieved goal's row header contains the lucide check icon; the
     // in-progress one does not. The check lives in the same flex container

@@ -23,7 +23,10 @@ test.describe("Retirement snapshot fields", () => {
     await page.close();
   });
 
-  test("snapshot section is visible and pre-populated with non-zero values", async ({
+  // All three scenarios are client-side reads/edits against one rendered
+  // page, so they share a single navigation — the page load (and its
+  // status/goal queries) is the expensive step.
+  test("snapshot fields pre-populate, computed cards are read-only, and edits show a reset button", async ({
     page,
   }) => {
     await navigateTo(page, "/early-retirement");
@@ -48,21 +51,11 @@ test.describe("Retirement snapshot fields", () => {
       const val = await snapshotInputs.nth(i).inputValue();
       expect(Number(val)).toBeGreaterThan(0);
     }
-  });
 
-  test("computed cards (Monthly Savings, Savings Rate) are read-only display", async ({
-    page,
-  }) => {
-    await navigateTo(page, "/early-retirement");
-
-    // The "auto-calculated" label appears twice (once for each computed card)
+    // The "auto-calculated" label appears twice (once for each computed
+    // card: Monthly Savings and Savings Rate — read-only display).
     const computedLabels = page.getByText("auto-calculated");
     await expect(computedLabels).toHaveCount(2);
-  });
-
-  test("editing a snapshot field shows the reset button", async ({ page }) => {
-    await navigateTo(page, "/early-retirement");
-    await page.waitForLoadState("networkidle");
 
     // No reset buttons should be visible initially (form = calculated values)
     const resetBtns = page.locator("button[title='Reset to calculated']");

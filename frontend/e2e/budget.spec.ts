@@ -14,52 +14,32 @@ test.describe("Budget", () => {
     await page.close();
   });
 
-  test("loads the budget page with tabs", async ({ page }) => {
+  // Every check here is a read-only interaction (tab switches, month
+  // navigation, collapse/expand toggles), so they run as one journey on a
+  // single navigation — the /budget cold load is the expensive step and it
+  // used to be paid once per assertion group (8×).
+  test("tabs, month navigation, trend chart, card toggles, and projects jump on one load", async ({
+    page,
+  }) => {
     await navigateTo(page, "/budget");
     await expectPageTitle(page, /Budget/);
 
-    // Both tabs should be visible
+    // --- Both tabs visible ---
     await expect(page.getByText(/Monthly Budget/i)).toBeVisible();
     await expect(page.getByText(/Project Budgets/i)).toBeVisible();
-  });
 
-  test("monthly budget view shows spending gauges", async ({ page }) => {
-    await navigateTo(page, "/budget");
-
-    // Wait for budget data to load
-
-    // Should show budget rules or "no rules" state
-    const content = page.locator("main");
-    await expect(content).toBeVisible();
-  });
-
-  test("switches between monthly and project tabs", async ({ page }) => {
-    await navigateTo(page, "/budget");
-
-    // Click Project Budgets tab and anchor on its content instead of a
-    // fixed sleep (the demo DB always seeds project budgets).
+    // --- Tab switching: Projects hides the month header, Monthly restores it ---
     await page.getByText(/Project Budgets/i).click();
     await expect(
       page.getByRole("button", { name: "Previous" }).first(),
     ).toBeHidden();
 
-    // Click back to Monthly Budget — the month header returns.
     await page.getByText(/Monthly Budget/i).click();
-    await expect(
-      page.getByRole("button", { name: "Previous" }).first(),
-    ).toBeVisible();
-  });
-
-  test("month navigation works", async ({ page }) => {
-    await navigateTo(page, "/budget");
-
-    // MonthHeader always renders prev/next buttons (aria-labels from
-    // common.previous / common.next) around the month label. Assert
-    // unconditionally — a vanished header must fail, not silently skip.
     const prevMonth = page.getByRole("button", { name: "Previous" }).first();
     const nextMonth = page.getByRole("button", { name: "Next" }).first();
     await expect(prevMonth).toBeVisible();
 
+    // --- Month navigation ---
     const monthLabel = page
       .locator("h2")
       .filter({ hasText: /\w+ \d{4}/ })
@@ -71,31 +51,13 @@ test.describe("Budget", () => {
 
     await nextMonth.click();
     await expect(monthLabel).toHaveText(initialMonth ?? "");
-  });
 
-  test("budget-vs-actual trend chart toggles", async ({ page }) => {
-    await navigateTo(page, "/budget");
-
+    // --- Budget-vs-actual trend chart plots the Total Budget cap ---
+    await page.waitForLoadState("networkidle");
     const trend = page.getByRole("button", { name: /Budget vs Actual/i });
     await expect(trend).toBeVisible();
-
-    // Toggle collapse/expand — should not throw and stays on the page.
-    await trend.click();
-    await page.waitForTimeout(300);
-    await trend.click();
-    await page.waitForTimeout(300);
-    await expect(trend).toBeVisible();
-  });
-
-  test("budget-vs-actual trend chart plots the Total Budget cap, not the rule sum", async ({
-    page,
-  }) => {
-    await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
     // Make sure the chart is expanded (collapsed by default on narrow viewports).
-    const trend = page.getByRole("button", { name: /Budget vs Actual/i });
-    await expect(trend).toBeVisible();
     const plot = page.locator(".recharts-wrapper").last();
     if (!(await plot.isVisible().catch(() => false))) {
       await trend.click();
@@ -115,13 +77,45 @@ test.describe("Budget", () => {
       .locator(".recharts-rectangle")
       .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
     expect(heights.some((h) => h > 0)).toBe(true);
-  });
 
+    // Collapse/expand the trend chart — should not throw and stays on the page.
+    await trend.click();
+    await page.waitForTimeout(300);
+    await trend.click();
+    await page.waitForTimeout(300);
+    await expect(trend).toBeVisible();
 
-  test("'View all projects' jumps to the Projects tab", async ({ page }) => {
-    await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
+    // --- Total Budget card collapses the rule list and shows month transactions ---
+    const totalBudget = page.getByRole("button", { name: /^\s*Total Budget\s*$/ });
+    if (await totalBudget.first().isVisible().catch(() => false)) {
+      // Collapsing hides the per-rule rows; expanding shows them again.
+      await totalBudget.first().click();
+      await page.waitForTimeout(400);
+      await totalBudget.first().click();
+      await page.waitForTimeout(400);
 
+      // "View month transactions" reveals a transactions table under the card.
+      const viewMonth = page.getByRole("button", { name: /View month transactions/i });
+      if (await viewMonth.first().isVisible().catch(() => false)) {
+        await viewMonth.first().click();
+        await page.waitForTimeout(500);
+        await expect(
+          page.getByRole("button", { name: /Hide Transactions/i }).first(),
+        ).toBeVisible();
+      }
+    }
+
+    // --- Pending Refunds section collapses from its header ---
+    const refundsHeader = page.getByRole("button", { name: /Pending Refunds/i });
+    if (await refundsHeader.first().isVisible().catch(() => false)) {
+      await refundsHeader.first().click();
+      await page.waitForTimeout(300);
+      await refundsHeader.first().click();
+      await page.waitForTimeout(300);
+      await expect(refundsHeader.first()).toBeVisible();
+    }
+
+    // --- 'View all projects' jumps to the Projects tab ---
     const viewAll = page.getByRole("button", { name: /View all projects/i });
     if (await viewAll.isVisible().catch(() => false)) {
       await viewAll.click();
@@ -131,7 +125,7 @@ test.describe("Budget", () => {
     }
   });
 
-  test("alerts banner, when present, can be dismissed", async ({ page }) => {
+  test("alerts banner can be dismissed and alerts disabled from settings", async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");
 
@@ -141,48 +135,6 @@ test.describe("Budget", () => {
       await page.waitForTimeout(300);
       await expect(dismissAll).toHaveCount(0);
     }
-  });
-
-  test("Total Budget card collapses the rule list and shows month transactions", async ({ page }) => {
-    await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
-
-    const totalBudget = page.getByRole("button", { name: /^\s*Total Budget\s*$/ });
-    if (!(await totalBudget.first().isVisible().catch(() => false))) return;
-
-    // Collapsing hides the per-rule rows; expanding shows them again.
-    await totalBudget.first().click();
-    await page.waitForTimeout(400);
-    await totalBudget.first().click();
-    await page.waitForTimeout(400);
-
-    // "View month transactions" reveals a transactions table under the card.
-    const viewMonth = page.getByRole("button", { name: /View month transactions/i });
-    if (await viewMonth.first().isVisible().catch(() => false)) {
-      await viewMonth.first().click();
-      await page.waitForTimeout(500);
-      await expect(
-        page.getByRole("button", { name: /Hide Transactions/i }).first(),
-      ).toBeVisible();
-    }
-  });
-
-  test("Pending Refunds section collapses from its header", async ({ page }) => {
-    await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
-
-    const header = page.getByRole("button", { name: /Pending Refunds/i });
-    if (await header.first().isVisible().catch(() => false)) {
-      await header.first().click();
-      await page.waitForTimeout(300);
-      await header.first().click();
-      await page.waitForTimeout(300);
-      await expect(header.first()).toBeVisible();
-    }
-  });
-
-  test("budget alerts can be disabled from settings", async ({ page }) => {
-    await navigateTo(page, "/budget");
 
     // Open Settings and toggle Budget Alerts off (the settings control is a
     // <label>; the mobile drawer tile uses a <span>, so scope to the label).

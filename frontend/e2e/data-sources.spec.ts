@@ -14,29 +14,12 @@ test.describe("DataSources", () => {
     await page.close();
   });
 
-  test("loads the data sources page", async ({ page }) => {
+  // Read-only page smoke + provider logos + the Connect Account chooser, all
+  // against one rendered page — a single navigation covers all of them.
+  test("page, account-card logos, and the connect-account modal on one load", async ({ page }) => {
     await navigateTo(page, "/data-sources");
     await expectPageTitle(page, /Data Sources/);
-  });
-
-  test("displays connected accounts in demo mode", async ({ page }) => {
-    await navigateTo(page, "/data-sources");
-
-    // In demo mode, there should be demo accounts listed
-    const content = page.locator("main");
-    await expect(content).toBeVisible();
-  });
-
-  test("shows bank balance section", async ({ page }) => {
-    await navigateTo(page, "/data-sources");
-
-    // Bank balance section should show account balances
-    const content = page.locator("main");
-    await expect(content).toBeVisible();
-  });
-
-  test("renders provider logos on each connected account card", async ({ page }) => {
-    await navigateTo(page, "/data-sources");
+    await expect(page.locator("main")).toBeVisible();
 
     // The four demo accounts (Hapoalim, Max, Visa Cal, HaPhoenix) each render
     // a <ProviderLogo> with alt text set to the humanized provider name. We
@@ -52,18 +35,19 @@ test.describe("DataSources", () => {
         .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
         .toBeGreaterThan(0);
     }
-  });
 
-  test("shows provider logos in the connect-account modal grid", async ({ page }) => {
-    await navigateTo(page, "/data-sources");
-
-    // Step 1: open the connect-account modal and pick the Bank Account flow.
+    // Step 1: open the connect-account modal — the chooser surfaces all
+    // three top-level service types.
     await page.getByRole("button", { name: "Connect Account", exact: true }).click();
-    await page.getByRole("button", { name: /Bank Account/ }).click();
+    await expect(page.getByRole("heading", { name: /connect new account/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /bank account/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /credit card/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^insurance/i })).toBeVisible();
 
     // Step 2: a representative subset of banks should appear with their logos.
     // We don't enumerate all 11 — the goal is to lock in that the grid actually
     // renders ProviderLogo and the images aren't broken.
+    await page.getByRole("button", { name: /Bank Account/ }).click();
     for (const provider of ["Hapoalim", "Leumi", "Discount", "Mizrahi"]) {
       const img = page.getByRole("img", { name: provider }).last();
       await expect(img).toBeVisible();
