@@ -81,6 +81,7 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
                   <XAxis dataKey="monthKey" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
                   <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
                   <Tooltip
+                    cursor={false}
                     content={
                       <ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />
                     }

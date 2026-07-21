@@ -650,6 +650,7 @@ export function Insurances() {
                   }}
                 />
                 <Tooltip
+                  cursor={false}
                   content={<ChartTooltip labelFormatter={(m) => formatMonthYear(String(m) + "-01")} />}
                 />
                 <Legend

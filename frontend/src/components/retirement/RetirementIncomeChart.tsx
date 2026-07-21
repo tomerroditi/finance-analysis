@@ -68,6 +68,7 @@ export function RetirementIncomeChart({ data }: Props) {
           />
           <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={56} />
           <Tooltip
+            cursor={false}
             content={
               <ChartTooltip labelFormatter={(age) => `${t("earlyRetirement.charts.age")} ${age}`} />
             }
