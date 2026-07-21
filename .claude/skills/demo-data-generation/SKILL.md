@@ -53,7 +53,7 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 - Multiple bank accounts (hapoalim Main + leumi Savings) and multiple cash envelopes (Petty Cash + Kids Envelope)
 - Untagged CC transactions so auto-tagging and manual-tagging flows can be demoed
 - Splits across 2 sources (CC + cash) — a couple of CC parents converted into different categories
-- 7 pending refunds covering all statuses (pending / partial / resolved / closed) + multi-link + auto-split + one `source_type='split'`
+- 7 pending refunds covering all statuses (pending / partial / resolved / closed) + multi-link + a 150 ILS refund txn with leftover money available for other refunds + one `source_type='split'`
 - Tagging rules exercising 5 different operators (`contains`, `equals`, `starts_with`, `less_than`, `between`)
 - Budget rules: category-only, tag-level, and two project budgets (Home Renovation + Our Wedding) over the last 6 months
 - 5 insurance accounts (see next section) + a `RetirementGoal` tied to them

@@ -421,6 +421,7 @@
     "confirmRemovePartialRefund": "להסיר בקשת החזר חלקית? קישורי החזרים יבוטלו.",
     "confirmRemoveRefundRequest": "להסיר את הבקשה? אם היא מקושרת להחזרים, הקישורים יישברו.",
     "confirmUnlinkRefund": "לבטל את קישור ההחזר לבקשה הממתינה?",
+    "confirmUnlinkRefundMulti": "עסקה זו מממנת {{count}} בקשות החזר. לבטל את הקישור לכולן?",
     "noDescription": "ללא תיאור",
     "refunds": {
       "loading": "טוען החזרים...",
@@ -443,7 +444,34 @@
       "partiallyRefunded": "הוחזר חלקית",
       "clickToCancel": "לחץ לביטול",
       "noExpectations": "לא נמצאו ציפיות להחזרים.",
-      "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן."
+      "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן.",
+      "status": {
+        "pending": "ממתין",
+        "partial": "חלקי",
+        "resolved": "הושלם",
+        "closed": "נסגר"
+      },
+      "outstanding": "צפוי לחזור",
+      "activeCount": "{{count}} בקשות החזר פעילות",
+      "received": "התקבל בחזרה",
+      "availableToAllocate": "כסף החזר שלא שויך",
+      "availableToAllocateHint": "נותר בתנועות מקושרות",
+      "searchPlaceholder": "חיפוש החזרים, הערות, חשבונות...",
+      "filterAll": "הכל",
+      "byExpense": "לפי הוצאה",
+      "bySource": "לפי מקור ההחזר",
+      "noMatches": "אין החזרים התואמים את החיפוש או הסינון.",
+      "noSources": "עדיין לא קושרו תנועות החזר.",
+      "noSourcesHint": "קשרו תנועות נכנסות לבקשות ההחזר שלכם כדי לראות כאן איך הכסף מתחלק.",
+      "transactionAmount": "סכום התנועה",
+      "allocatedOf": "{{allocated}} מתוך {{total}} שויכו",
+      "allocatedOnly": "{{allocated}} שויכו",
+      "availableBadge": "{{amount}} זמין",
+      "fullyAllocated": "שויך במלואו",
+      "linkRemaining": "קשר את היתרה",
+      "ofTransaction": "מתוך {{amount}}",
+      "sharedSource": "+{{count}} נוספים",
+      "sharedSourceTooltip": "תנועה זו מממנת גם {{count}} בקשות החזר נוספות"
     }
   },
   "budget": {
@@ -1014,7 +1042,11 @@
       "searchTransactions": "חפש תנועות החזר...",
       "noTransactions": "לא נמצאו תנועות החזר",
       "expectedRefund": "החזר צפוי",
-      "refundLabel": "החזר"
+      "refundLabel": "החזר",
+      "availableOf": "{{available}} מתוך {{total}} זמינים",
+      "availableShort": "{{amount}} זמין",
+      "maxAmount": "מקסימום {{amount}}",
+      "amountTooHigh": "הסכום חורג מהמקסימום של {{amount}}"
     },
     "project": {
       "title": "תקציב פרויקט",

@@ -287,15 +287,22 @@ export function Transactions() {
     return map;
   }, [pendingRefunds]);
 
+  // A refund transaction may fund multiple pending refunds — collect every
+  // link per transaction key.
   const refundLinksMap = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, RefundLink[]>();
     if (!pendingRefunds) return map;
 
     pendingRefunds.forEach((pr: PendingRefund) => {
       if (pr.links) {
         pr.links.forEach((link: RefundLink) => {
           const key = `${link.refund_source}_${link.refund_transaction_id}`;
-          map.set(key, link.id);
+          const existing = map.get(key);
+          if (existing) {
+            existing.push(link);
+          } else {
+            map.set(key, [link]);
+          }
         });
       }
     });

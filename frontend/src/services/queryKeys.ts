@@ -58,6 +58,11 @@ export function makeQueryKeys(demo: boolean) {
     },
     pendingRefunds: {
       all: () => ["pending-refunds", demo] as const,
+      // Only pending+partial items (the link modal's pick list) — must NOT
+      // share a cache entry with `all`, or opening the modal would overwrite
+      // the full list and drop resolved/closed items from the refunds view.
+      active: () => ["pending-refunds", "active", demo] as const,
+      sources: () => ["pending-refunds", "sources", demo] as const,
     },
     budget: {
       analysis: (year: number, month: number, includeSplitParents: boolean) =>

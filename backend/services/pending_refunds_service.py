@@ -95,6 +95,89 @@ class PendingRefundsService:
             "notes": pending.notes,
         }
 
+    def _get_refund_transaction(self, transaction_id: int, source: str):
+        """
+        Resolve a refund transaction ORM row from its id and source table.
+
+        Parameters
+        ----------
+        transaction_id : int
+            unique_id of the transaction.
+        source : str
+            Table or service name where the transaction lives.
+
+        Returns
+        -------
+        object or None
+            The ORM transaction row, or None when the source/transaction
+            can't be resolved.
+        """
+        from sqlalchemy import select
+
+        from backend.repositories.transactions_repository import (
+            TransactionsRepository,
+        )
+
+        repo = TransactionsRepository(self.db).repo_map.get(source)
+        if not repo:
+            return None
+        return self.db.execute(
+            select(repo.model).where(repo.model.unique_id == transaction_id)
+        ).scalar_one_or_none()
+
+    def get_allocated_for_transaction(
+        self, transaction_id: int, source: str
+    ) -> float:
+        """
+        Total amount of a refund transaction already allocated to refunds.
+
+        Sums link amounts across ALL pending refunds this transaction funds.
+        Source strings are normalized (table vs service name variants), so
+        links recorded as ``"banks"`` and ``"bank_transactions"`` count as
+        the same transaction.
+
+        Parameters
+        ----------
+        transaction_id : int
+            unique_id of the refund transaction.
+        source : str
+            Table or service name where the transaction lives.
+
+        Returns
+        -------
+        float
+            Total allocated amount (0.0 when unlinked).
+        """
+        links = self.repo.get_all_links()
+        if links.empty:
+            return 0.0
+        canonical = self._canonical_source(source)
+        mask = (links["refund_transaction_id"] == transaction_id) & (
+            links["refund_source"].map(self._canonical_source) == canonical
+        )
+        return float(links.loc[mask, "amount"].sum())
+
+    def _canonical_source(self, source: str) -> str:
+        """
+        Normalize a source string to its canonical table name.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name (e.g. ``"banks"`` or ``"bank_transactions"``).
+
+        Returns
+        -------
+        str
+            The table name when resolvable, the input otherwise.
+        """
+        from backend.repositories.transactions_repository import (
+            TransactionsRepository,
+        )
+
+        repo = TransactionsRepository(self.db).repo_map.get(source)
+        return repo.model.__tablename__ if repo else source
+
     def link_refund(
         self,
         pending_refund_id: int,
@@ -104,6 +187,11 @@ class PendingRefundsService:
     ) -> dict:
         """
         Link a refund transaction to a pending refund.
+
+        A single refund transaction may fund multiple pending refunds, as
+        long as the total allocated across all of them does not exceed the
+        transaction's amount. The linked amount is clamped to the pending
+        refund's remaining expectation.
 
         Parameters
         ----------
@@ -125,6 +213,10 @@ class PendingRefundsService:
         ------
         EntityNotFoundException
             If pending refund not found.
+        ValidationException
+            If the amount is not positive, the transaction is already linked
+            to this pending refund, or the amount exceeds what's still
+            available on the transaction.
         """
         pending = self.repo.get_by_id(pending_refund_id)
         if not pending:
@@ -137,55 +229,53 @@ class PendingRefundsService:
                 f"Cannot link a refund to a {pending.status} record"
             )
 
-        # Check if this transaction is already linked to any pending refund
-        existing_link = self.repo.get_link_for_transaction(
-            refund_transaction_id, refund_source
-        )
-        if existing_link:
-            raise ValidationException(
-                "This transaction is already linked to a refund request"
-            )
+        if amount <= 0:
+            raise ValidationException("Refund amount must be positive")
 
-        # Calculate current remaining
+        # The same transaction may fund several pending refunds, but only
+        # once per pending refund.
         existing_links = self.repo.get_links_for_pending(pending_refund_id)
-        already_refunded = existing_links["amount"].sum() if not existing_links.empty else 0
+        if not existing_links.empty:
+            canonical = self._canonical_source(refund_source)
+            duplicate = (
+                (existing_links["refund_transaction_id"] == refund_transaction_id)
+                & (
+                    existing_links["refund_source"].map(self._canonical_source)
+                    == canonical
+                )
+            ).any()
+            if duplicate:
+                raise ValidationException(
+                    "This transaction is already linked to this refund request"
+                )
+
+        # Validate against the money still available on the transaction
+        # (skipped when the transaction can't be resolved, e.g. manual data).
+        txn = self._get_refund_transaction(refund_transaction_id, refund_source)
+        if txn is not None:
+            allocated = self.get_allocated_for_transaction(
+                refund_transaction_id, refund_source
+            )
+            available = float(txn.amount) - allocated
+            if amount > available + 1e-6:
+                raise ValidationException(
+                    f"Only {max(0.0, available):.2f} of this transaction is still "
+                    "available for refund matching"
+                )
+
+        # Clamp to the pending refund's remaining expectation
+        already_refunded = (
+            existing_links["amount"].sum() if not existing_links.empty else 0
+        )
         remaining = max(0, pending.expected_amount - already_refunded)
+        actual_link_amount = min(amount, remaining) if remaining > 0 else amount
 
-        # Auto-split if refund amount exceeds remaining
-        actual_link_amount = amount
-        if amount > remaining and remaining > 0:
-            actual_link_amount = remaining
-            excess = amount - remaining
-
-            from backend.repositories.transactions_repository import TransactionsRepository
-
-            trans_repo = TransactionsRepository(self.db)
-            repo = trans_repo.repo_map.get(refund_source)
-            if repo:
-                from sqlalchemy import select as sa_select
-
-                model = repo.model
-                txn = self.db.execute(
-                    sa_select(model).where(model.unique_id == refund_transaction_id)
-                ).scalar_one_or_none()
-
-                if txn:
-                    category = txn.category or ""
-                    tag = txn.tag or ""
-                    trans_repo.split_transaction(
-                        unique_id=refund_transaction_id,
-                        source=refund_source,
-                        splits=[
-                            {"amount": actual_link_amount, "category": category, "tag": tag},
-                            {"amount": excess, "category": category, "tag": tag},
-                        ],
-                    )
-
-        # Add the link
+        # Add the link (store the canonical table name so links of the same
+        # transaction always group together)
         self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
-            refund_source=refund_source,
+            refund_source=self._canonical_source(refund_source),
             amount=actual_link_amount,
         )
 
@@ -354,6 +444,13 @@ class PendingRefundsService:
             if "links" not in p:
                 p["links"] = links_by_pending.get(int(p["id"]), [])
 
+            # Normalize legacy source-name variants so the frontend can key
+            # links of the same transaction consistently.
+            for link in p["links"]:
+                link["refund_source"] = self._canonical_source(
+                    link["refund_source"]
+                )
+
             # Compute totals from links
             total_refunded = sum(link["amount"] for link in p["links"])
             p["total_refunded"] = total_refunded
@@ -380,12 +477,15 @@ class PendingRefundsService:
                         stmt = select(model).where(model.unique_id.in_(ids))
                         results = self.db.execute(stmt).scalars().all()
                         for tx in results:
+                            # NOTE: the link's own `amount` is the allocated
+                            # portion — never overwrite it with the full
+                            # transaction amount.
                             link_details_map[(table, tx.unique_id)] = {
                                 "date": tx.date,
                                 "description": tx.description,
                                 "account_name": tx.account_name,
                                 "provider": tx.provider,
-                                "amount": tx.amount,
+                                "transaction_amount": tx.amount,
                                 "original_currency": "ILS",
                             }
                 except Exception:
@@ -401,6 +501,74 @@ class PendingRefundsService:
                 link.update(details)
 
         return pending_list
+
+    def get_refund_sources(self) -> list[dict]:
+        """
+        Summarize every refund transaction used as a refund source.
+
+        Groups all refund links by the underlying transaction and reports,
+        per transaction, how much of it is allocated to which pending
+        refunds and how much is still available for further matching.
+
+        Returns
+        -------
+        list[dict]
+            One entry per refund transaction with keys:
+            ``refund_source``, ``refund_transaction_id``, ``description``,
+            ``date``, ``account_name``, ``provider``, ``transaction_amount``
+            (None when the transaction can't be resolved),
+            ``total_allocated``, ``available`` (None when unresolvable) and
+            ``allocations`` — a list of ``{link_id, pending_refund_id,
+            amount, pending_description, pending_status, pending_date,
+            expected_amount}``.
+        """
+        pendings = self.get_all_pending()
+        sources: dict[tuple[str, int], dict] = {}
+        for p in pendings:
+            for link in p.get("links", []):
+                key = (
+                    self._canonical_source(link["refund_source"]),
+                    int(link["refund_transaction_id"]),
+                )
+                entry = sources.setdefault(
+                    key,
+                    {
+                        "refund_source": key[0],
+                        "refund_transaction_id": key[1],
+                        "description": link.get("description"),
+                        "date": link.get("date"),
+                        "account_name": link.get("account_name"),
+                        "provider": link.get("provider"),
+                        "transaction_amount": link.get("transaction_amount"),
+                        "total_allocated": 0.0,
+                        "allocations": [],
+                    },
+                )
+                entry["total_allocated"] += float(link["amount"])
+                entry["allocations"].append(
+                    {
+                        "link_id": link["id"],
+                        "pending_refund_id": p["id"],
+                        "amount": link["amount"],
+                        "pending_description": p.get("description"),
+                        "pending_status": p["status"],
+                        "pending_date": p.get("date"),
+                        "expected_amount": p["expected_amount"],
+                    }
+                )
+
+        result = []
+        for entry in sources.values():
+            txn_amount = entry["transaction_amount"]
+            entry["available"] = (
+                max(0.0, float(txn_amount) - entry["total_allocated"])
+                if txn_amount is not None
+                else None
+            )
+            result.append(entry)
+
+        result.sort(key=lambda e: str(e["date"] or ""), reverse=True)
+        return result
 
     def get_pending_by_id(self, pending_refund_id: int) -> dict:
         """

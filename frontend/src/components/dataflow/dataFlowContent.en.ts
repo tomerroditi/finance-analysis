@@ -156,7 +156,7 @@ const content: DataFlowContent = {
     "refunds-mgmt": {
       title: "Refund Management", tag: "Budget Adjust",
       sections: [
-        { heading: "Workflow", items: ["Mark a transaction or split as \u201cpending refund\u201d with expected amount", "When actual refund arrives, link it to the pending refund", "Supports partial refunds (multiple links to one pending)", "Status tracking: pending \u2192 partial \u2192 resolved \u2192 closed"] },
+        { heading: "Workflow", items: ["Mark a transaction or split as \u201cpending refund\u201d with expected amount", "When actual refund arrives, link it to the pending refund", "Supports partial refunds (multiple links to one pending)", "One refund transaction can fund multiple pending refunds \u2014 leftover money stays available for further matching", "Status tracking: pending \u2192 partial \u2192 resolved \u2192 closed"] },
         { heading: "Budget Impact", text: "Pending refund adjustments are subtracted from budget spent amounts. This prevents temporary overspend alerts for expenses that will be refunded." },
         { heading: "Flow", flow: ["Mark pending", "Link refund txn", "Update status", "Budget recalculates"] },
       ],

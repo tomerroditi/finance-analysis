@@ -118,14 +118,30 @@ class TestPendingRefundsService:
         with pytest.raises(ValidationException):
             service.link_refund(pending["id"], 100, "banks", 50.0)
 
-    def test_link_same_transaction_to_multiple_refunds_rejected(self, db_session):
-        """Cannot link the same transaction to multiple refund requests."""
+    def test_link_same_transaction_to_multiple_refunds_allowed(self, db_session):
+        """The same transaction can fund multiple refund requests."""
         service = PendingRefundsService(db_session)
         pending1 = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
         pending2 = service.mark_as_pending_refund("transaction", 2, "banks", 200.0)
         service.link_refund(pending1["id"], 99, "banks", 50.0)
+        result = service.link_refund(pending2["id"], 99, "banks", 50.0)
+        assert result["status"] == "partial"
+        assert result["total_refunded"] == 50.0
+
+    def test_link_same_transaction_twice_to_same_pending_rejected(self, db_session):
+        """Cannot link the same transaction twice to one refund request."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99, "banks", 30.0)
         with pytest.raises(ValidationException):
-            service.link_refund(pending2["id"], 99, "banks", 50.0)
+            service.link_refund(pending["id"], 99, "banks", 20.0)
+
+    def test_link_refund_non_positive_amount_rejected(self, db_session):
+        """Reject linking a non-positive amount."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        with pytest.raises(ValidationException):
+            service.link_refund(pending["id"], 99, "banks", 0.0)
 
     def test_cancel_pending_refund(self, db_session):
         """Cancel a pending refund."""
@@ -278,15 +294,23 @@ class TestGetAllPendingEnrichment:
         """Verify get_all_pending enriches linked refund transactions with details."""
         from backend.models.transaction import BankTransaction
 
-        bank_txns = db_session.query(BankTransaction).limit(2).all()
-        assert len(bank_txns) >= 2
+        expense_txn = db_session.query(BankTransaction).filter(
+            BankTransaction.amount < 0
+        ).first()
+        income_txn = db_session.query(BankTransaction).filter(
+            BankTransaction.amount > 0
+        ).first()
+        assert expense_txn is not None and income_txn is not None
 
         service = PendingRefundsService(db_session)
         pending = service.mark_as_pending_refund(
-            "transaction", bank_txns[0].unique_id, "banks", 100.0,
+            "transaction", expense_txn.unique_id, "banks", 100.0,
         )
         service.link_refund(
-            pending["id"], bank_txns[1].unique_id, "banks", 50.0,
+            pending["id"],
+            income_txn.unique_id,
+            "banks",
+            min(50.0, income_txn.amount),
         )
 
         result = service.get_all_pending()
@@ -391,25 +415,20 @@ class TestGetBudgetAdjustment:
         assert result == 50.0
 
 
-class TestLinkRefundAutoSplit:
-    """Tests for auto-split when refund amount exceeds pending remaining."""
+class TestLinkRefundAllocation:
+    """Tests for multi-refund allocation of a single refund transaction."""
 
-    def test_auto_split_when_amount_exceeds_remaining(self, db_session, seed_base_transactions):
-        """Auto-split refund transaction when amount > remaining."""
-        from backend.models.transaction import BankTransaction, SplitTransaction
-
-        expense_txn = db_session.query(BankTransaction).filter(
-            BankTransaction.amount < 0
-        ).first()
-        assert expense_txn is not None
+    def _add_refund_txn(self, db_session, amount: float = 150.0):
+        """Insert a real bank refund transaction and return it."""
+        from backend.models.transaction import BankTransaction
 
         refund_txn = BankTransaction(
-            id="test-refund-oversized",
+            id="test-refund-shared",
             date="2024-01-15",
             provider="hapoalim",
             account_name="Main Account",
-            description="Large refund",
-            amount=150.0,
+            description="Shared refund",
+            amount=amount,
             category="Shopping",
             tag="Online",
             source="bank_transactions",
@@ -418,6 +437,18 @@ class TestLinkRefundAutoSplit:
         )
         db_session.add(refund_txn)
         db_session.flush()
+        return refund_txn
+
+    def test_leftover_stays_available_no_split(self, db_session, seed_base_transactions):
+        """Linking more than remaining clamps the link and leaves the rest available — no split."""
+        from backend.models.transaction import BankTransaction, SplitTransaction
+
+        expense_txn = db_session.query(BankTransaction).filter(
+            BankTransaction.amount < 0
+        ).first()
+        assert expense_txn is not None
+
+        refund_txn = self._add_refund_txn(db_session, 150.0)
 
         service = PendingRefundsService(db_session)
         pending = service.mark_as_pending_refund(
@@ -431,29 +462,223 @@ class TestLinkRefundAutoSplit:
         assert result["status"] == "resolved"
         assert result["total_refunded"] == 100.0
 
+        # The refund transaction is untouched — no auto-split
         db_session.refresh(refund_txn)
-        assert refund_txn.type == "split_parent"
-
+        assert refund_txn.type == "normal"
         splits = db_session.query(SplitTransaction).filter(
             SplitTransaction.transaction_id == refund_txn.unique_id,
         ).all()
-        assert len(splits) == 2
-        amounts = sorted([s.amount for s in splits])
-        assert amounts[0] == 50.0
-        assert amounts[1] == 100.0
+        assert len(splits) == 0
 
-    def test_no_split_when_amount_equals_remaining(self, db_session):
-        """No split when refund amount exactly matches remaining."""
+        # The unallocated remainder is reported as available
+        allocated = service.get_allocated_for_transaction(
+            refund_txn.unique_id, "bank_transactions"
+        )
+        assert allocated == 100.0
+
+    def test_shared_transaction_funds_two_refunds(self, db_session, seed_base_transactions):
+        """One refund transaction can settle two pending refunds up to its amount."""
+        from backend.models.transaction import BankTransaction
+
+        expenses = (
+            db_session.query(BankTransaction)
+            .filter(BankTransaction.amount < 0)
+            .limit(2)
+            .all()
+        )
+        assert len(expenses) >= 2
+
+        refund_txn = self._add_refund_txn(db_session, 150.0)
+
+        service = PendingRefundsService(db_session)
+        p1 = service.mark_as_pending_refund(
+            "transaction", expenses[0].unique_id, "banks", 100.0,
+        )
+        p2 = service.mark_as_pending_refund(
+            "transaction", expenses[1].unique_id, "banks", 80.0,
+        )
+
+        r1 = service.link_refund(p1["id"], refund_txn.unique_id, "bank_transactions", 100.0)
+        assert r1["status"] == "resolved"
+
+        r2 = service.link_refund(p2["id"], refund_txn.unique_id, "bank_transactions", 50.0)
+        assert r2["status"] == "partial"
+        assert r2["total_refunded"] == 50.0
+
+    def test_over_allocation_rejected(self, db_session, seed_base_transactions):
+        """Cannot allocate more than the transaction's amount across refunds."""
+        from backend.models.transaction import BankTransaction
+
+        expenses = (
+            db_session.query(BankTransaction)
+            .filter(BankTransaction.amount < 0)
+            .limit(2)
+            .all()
+        )
+        refund_txn = self._add_refund_txn(db_session, 150.0)
+
+        service = PendingRefundsService(db_session)
+        p1 = service.mark_as_pending_refund(
+            "transaction", expenses[0].unique_id, "banks", 100.0,
+        )
+        p2 = service.mark_as_pending_refund(
+            "transaction", expenses[1].unique_id, "banks", 80.0,
+        )
+        service.link_refund(p1["id"], refund_txn.unique_id, "bank_transactions", 100.0)
+
+        with pytest.raises(ValidationException):
+            service.link_refund(p2["id"], refund_txn.unique_id, "bank_transactions", 80.0)
+
+    def test_source_name_variants_count_as_same_transaction(self, db_session, seed_base_transactions):
+        """Allocation tracking normalizes 'banks' vs 'bank_transactions' source names."""
+        from backend.models.transaction import BankTransaction
+
+        expenses = (
+            db_session.query(BankTransaction)
+            .filter(BankTransaction.amount < 0)
+            .limit(2)
+            .all()
+        )
+        refund_txn = self._add_refund_txn(db_session, 150.0)
+
+        service = PendingRefundsService(db_session)
+        p1 = service.mark_as_pending_refund(
+            "transaction", expenses[0].unique_id, "banks", 100.0,
+        )
+        p2 = service.mark_as_pending_refund(
+            "transaction", expenses[1].unique_id, "banks", 80.0,
+        )
+        # Link with the table-name variant, then try to over-allocate with
+        # the service-name variant — must be recognized as the same money.
+        service.link_refund(p1["id"], refund_txn.unique_id, "bank_transactions", 100.0)
+        with pytest.raises(ValidationException):
+            service.link_refund(p2["id"], refund_txn.unique_id, "banks", 80.0)
+        # Within the remaining 50 it's fine
+        result = service.link_refund(p2["id"], refund_txn.unique_id, "banks", 50.0)
+        assert result["total_refunded"] == 50.0
+
+    def test_no_clamp_when_amount_equals_remaining(self, db_session):
+        """Linking exactly the remaining amount resolves the refund."""
         service = PendingRefundsService(db_session)
         pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
         result = service.link_refund(pending["id"], 99, "banks", 100.0)
         assert result["status"] == "resolved"
         assert result["total_refunded"] == 100.0
 
-    def test_no_split_when_amount_less_than_remaining(self, db_session):
-        """No split when refund amount is less than remaining."""
+    def test_no_clamp_when_amount_less_than_remaining(self, db_session):
+        """Linking less than remaining keeps the refund partial."""
         service = PendingRefundsService(db_session)
         pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
         result = service.link_refund(pending["id"], 99, "banks", 50.0)
         assert result["status"] == "partial"
         assert result["total_refunded"] == 50.0
+
+
+class TestGetRefundSources:
+    """Tests for the refund-sources allocation summary."""
+
+    def test_empty_when_no_links(self, db_session):
+        """No links yields an empty summary."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        assert service.get_refund_sources() == []
+
+    def test_groups_links_by_transaction(self, db_session, seed_base_transactions):
+        """Links of the same transaction group into one source entry."""
+        from backend.models.transaction import BankTransaction
+
+        expenses = (
+            db_session.query(BankTransaction)
+            .filter(BankTransaction.amount < 0)
+            .limit(2)
+            .all()
+        )
+        refund_txn = BankTransaction(
+            id="test-refund-sources",
+            date="2024-02-10",
+            provider="hapoalim",
+            account_name="Main Account",
+            description="Insurance payout",
+            amount=200.0,
+            category="Other Income",
+            tag="",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(refund_txn)
+        db_session.flush()
+
+        service = PendingRefundsService(db_session)
+        p1 = service.mark_as_pending_refund(
+            "transaction", expenses[0].unique_id, "banks", 120.0,
+        )
+        p2 = service.mark_as_pending_refund(
+            "transaction", expenses[1].unique_id, "banks", 90.0,
+        )
+        service.link_refund(p1["id"], refund_txn.unique_id, "bank_transactions", 120.0)
+        service.link_refund(p2["id"], refund_txn.unique_id, "bank_transactions", 60.0)
+
+        sources = service.get_refund_sources()
+        assert len(sources) == 1
+        src = sources[0]
+        assert src["refund_transaction_id"] == refund_txn.unique_id
+        assert src["transaction_amount"] == 200.0
+        assert src["total_allocated"] == 180.0
+        assert src["available"] == 20.0
+        assert len(src["allocations"]) == 2
+        pending_ids = {a["pending_refund_id"] for a in src["allocations"]}
+        assert pending_ids == {p1["id"], p2["id"]}
+
+    def test_unresolvable_transaction_has_null_available(self, db_session):
+        """Links to unknown transactions report null amounts, not crashes."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+        service.link_refund(pending["id"], 99999, "banks", 50.0)
+
+        sources = service.get_refund_sources()
+        assert len(sources) == 1
+        assert sources[0]["transaction_amount"] is None
+        assert sources[0]["available"] is None
+        assert sources[0]["total_allocated"] == 50.0
+
+
+class TestLinkEnrichmentAmounts:
+    """Regression tests for link enrichment preserving allocated amounts."""
+
+    def test_link_amount_not_overwritten_by_transaction_amount(
+        self, db_session, seed_base_transactions
+    ):
+        """The link's allocated amount survives enrichment; the txn amount is separate."""
+        from backend.models.transaction import BankTransaction
+
+        expense_txn = db_session.query(BankTransaction).filter(
+            BankTransaction.amount < 0
+        ).first()
+        refund_txn = BankTransaction(
+            id="test-refund-enrich",
+            date="2024-01-20",
+            provider="hapoalim",
+            account_name="Main Account",
+            description="Big refund",
+            amount=500.0,
+            category="Other Income",
+            tag="",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(refund_txn)
+        db_session.flush()
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", expense_txn.unique_id, "banks", 80.0,
+        )
+        service.link_refund(pending["id"], refund_txn.unique_id, "bank_transactions", 80.0)
+
+        result = service.get_all_pending()
+        item = next(p for p in result if p["id"] == pending["id"])
+        link = item["links"][0]
+        assert link["amount"] == 80.0
+        assert link["transaction_amount"] == 500.0

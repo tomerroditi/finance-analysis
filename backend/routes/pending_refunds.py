@@ -92,6 +92,20 @@ def get_budget_adjustment(
     return {"adjustment": adjustment}
 
 
+@router.get("/refund-sources")
+def get_refund_sources(
+    db: Session = Depends(get_database),
+):
+    """Summarize refund transactions used as refund sources.
+
+    Returns one entry per refund transaction with its total amount, the
+    portion already allocated to pending refunds (and to which ones), and
+    the amount still available for further matching.
+    """
+    service = PendingRefundsService(db)
+    return service.get_refund_sources()
+
+
 @router.get("/{pending_id}")
 def get_pending_refund(
     pending_id: int,

@@ -2123,7 +2123,9 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     3. Resolved refund (fully linked) - duplicate charge
     4. Closed refund (user accepted partial) - restaurant dispute
     5. Partial refund with multiple links - expensive item with 2 refund txns
-    6. Partial refund for auto-split testing - 80 ILS remaining, 150 ILS refund available
+    6. Partial refund with a larger refund txn available - 80 ILS remaining,
+       150 ILS refund available (linking covers the 80 and leaves 70 of the
+       transaction available to fund other refunds)
     """
     used = set()  # Track used CC transaction unique_ids
 
@@ -2349,32 +2351,33 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             amount=link2_amount,
         ))
 
-    # 6. Pending refund with small remaining (test auto-split linking)
+    # 6. Pending refund with small remaining (test linking an oversized refund)
     # Source: any CC transaction. We set expected=200, link 120, leaving 80 remaining.
-    # A 150 ILS bank refund is available — linking it should auto-split to 80 + 70.
-    autosplit_candidates = [
+    # A 150 ILS bank refund is available — linking it covers the remaining 80
+    # and leaves 70 of the transaction available to fund other refunds.
+    leftover_candidates = [
         t for t in cc_txns
         if t.type == "normal" and t.amount < -100 and t.unique_id not in used
     ]
-    if autosplit_candidates:
-        source_txn = autosplit_candidates[-1]
+    if leftover_candidates:
+        source_txn = leftover_candidates[-1]
         used.add(source_txn.unique_id)
         expected = 200.0
         first_link = 120.0
 
-        autosplit_refund = PendingRefund(
+        leftover_refund = PendingRefund(
             source_type="transaction",
             source_id=source_txn.unique_id,
             source_table="credit_card_transactions",
             expected_amount=expected,
             status="partial",
-            notes="Overcharged ride fare - link the 150 ILS refund to test auto-split (remaining: 80)",
+            notes="Overcharged ride fare - link the 150 ILS refund (covers the remaining 80, leaves 70 available)",
         )
-        session.add(autosplit_refund)
+        session.add(leftover_refund)
         session.flush()
 
         first_refund_txn = BankTransaction(
-            id="demo-bank-refund-autosplit-1",
+            id="demo-bank-refund-leftover-1",
             date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 5, 10),
             provider="hapoalim",
             account_name="Main Account",
@@ -2390,19 +2393,20 @@ def create_pending_refunds(session, cc_txns, bank_txns):
         session.flush()
 
         session.add(RefundLink(
-            pending_refund_id=autosplit_refund.id,
+            pending_refund_id=leftover_refund.id,
             refund_transaction_id=first_refund_txn.unique_id,
             refund_source="bank_transactions",
             amount=first_link,
         ))
 
-        # This 150 ILS refund is available for linking — should auto-split to 80 + 70
-        autosplit_candidate = BankTransaction(
-            id="demo-bank-refund-autosplit-candidate",
+        # This 150 ILS refund is available for linking — it covers the
+        # remaining 80 and keeps 70 available for other refund requests.
+        leftover_candidate = BankTransaction(
+            id="demo-bank-refund-leftover-candidate",
             date=rand_date_in_month(REFERENCE_DATE.year, REFERENCE_DATE.month, 18, 25),
             provider="hapoalim",
             account_name="Main Account",
-            description="RIDE REFUND - REMAINING (150, will auto-split to 80+70)",
+            description="RIDE REFUND - REMAINING",
             amount=150.0,
             category="Transportation",
             tag="Taxi",
@@ -2410,7 +2414,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
             type="normal",
             status="completed",
         )
-        session.add(autosplit_candidate)
+        session.add(leftover_candidate)
 
     # 7. Pending refund on a SPLIT (source_type='split') — exercises refund tracking
     # against a sub-portion of a split parent rather than a raw transaction.

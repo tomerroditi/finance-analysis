@@ -657,6 +657,32 @@ export interface RefundLink {
   // Enriched fields
   date?: string;
   description?: string;
+  account_name?: string;
+  provider?: string;
+  transaction_amount?: number;
+}
+
+export interface RefundSourceAllocation {
+  link_id: number;
+  pending_refund_id: number;
+  amount: number;
+  pending_description?: string;
+  pending_status: PendingRefund["status"];
+  pending_date?: string;
+  expected_amount: number;
+}
+
+export interface RefundSource {
+  refund_source: string;
+  refund_transaction_id: number;
+  description?: string;
+  date?: string;
+  account_name?: string;
+  provider?: string;
+  transaction_amount: number | null;
+  total_allocated: number;
+  available: number | null;
+  allocations: RefundSourceAllocation[];
 }
 
 export const pendingRefundsApi = {
@@ -682,6 +708,8 @@ export const pendingRefundsApi = {
   unlinkRefund: (linkId: number) =>
     api.delete(`/pending-refunds/links/${linkId}`),
   close: (id: number) => api.post(`/pending-refunds/${id}/close`),
+  getRefundSources: () =>
+    api.get<RefundSource[]>("/pending-refunds/refund-sources"),
 };
 
 export interface BudgetMonthOverride {

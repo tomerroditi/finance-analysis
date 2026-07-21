@@ -31,6 +31,7 @@ import {
   pendingRefundsApi,
   budgetMonthOverridesApi,
   type PendingRefund,
+  type RefundLink,
   type BudgetMonthOverride,
 } from "../services/api";
 import { formatDate } from "../utils/dateFormatting";
@@ -74,7 +75,7 @@ export interface TransactionsTableProps {
   onSelectionChange?: (ids: Set<string>) => void;
   onAddTransaction?: () => void;
   pendingRefundsMap?: Map<string, PendingRefund>;
-  refundLinksMap?: Map<string, number>;
+  refundLinksMap?: Map<string, RefundLink[]>;
 
   // Monthly-budget month override (only set on the monthly budget page).
   // When budgetViewYear/budgetViewMonth are provided, per-row "move to
@@ -1083,29 +1084,56 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                           })()}
                         {tx.amount > 0 &&
                           (() => {
-                            // Check if this transaction is linked as a refund
-                            const linkId = refundLinksMap?.get(
+                            // A refund transaction may fund multiple pending
+                            // refunds; show its linked state plus a "link the
+                            // remainder" action while money is still available.
+                            const links = refundLinksMap?.get(
                               getTransactionId(tx),
                             );
 
-                            if (linkId) {
+                            if (links && links.length > 0) {
+                              const totalLinked = links.reduce(
+                                (sum, l) => sum + l.amount,
+                                0,
+                              );
+                              const available = tx.amount - totalLinked;
                               return (
-                                <button
-                                  className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
-                                  title={t("tooltips.linkedToPending")}
-                                  onClick={async () => {
-                                    const ok = await confirm({
-                                      title: t("transactions.refunds.unlink"),
-                                      message: t("transactions.confirmUnlinkRefund"),
-                                      confirmLabel: t("transactions.refunds.unlink"),
-                                      isDestructive: true,
-                                    });
-                                    if (ok) unlinkRefundMutation.mutate(linkId);
-                                  }}
-                                  disabled={unlinkRefundMutation.isPending}
-                                >
-                                  <Link2 size={14} />
-                                </button>
+                                <>
+                                  <button
+                                    className="p-1.5 rounded-md bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
+                                    title={`${t("tooltips.linkedToPending")} (${formatCurrency(totalLinked)})`}
+                                    onClick={async () => {
+                                      const ok = await confirm({
+                                        title: t("transactions.refunds.unlink"),
+                                        message:
+                                          links.length > 1
+                                            ? t("transactions.confirmUnlinkRefundMulti", {
+                                                count: links.length,
+                                              })
+                                            : t("transactions.confirmUnlinkRefund"),
+                                        confirmLabel: t("transactions.refunds.unlink"),
+                                        isDestructive: true,
+                                      });
+                                      if (ok) {
+                                        links.forEach((l) =>
+                                          unlinkRefundMutation.mutate(l.id),
+                                        );
+                                      }
+                                    }}
+                                    disabled={unlinkRefundMutation.isPending}
+                                  >
+                                    <Link2 size={14} />
+                                  </button>
+                                  {available > 0.005 && (
+                                    <button
+                                      className="p-1.5 rounded-md hover:bg-emerald-500/10 text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                                      title={`${t("tooltips.linkAsRefund")} (${formatCurrency(available)})`}
+                                      onClick={() => setLinkingTransaction(tx)}
+                                    >
+                                      <Link2 size={14} />
+                                    </button>
+                                  )}
+                                </>
                               );
                             }
 
