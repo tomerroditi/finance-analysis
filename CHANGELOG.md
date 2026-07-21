@@ -1,3 +1,9 @@
+## v1.46.1 (2026-07-21)
+
+### Fix
+
+- free project category on delete and drop bar-chart hover cursor
+
 ## v1.46.0 (2026-07-19)
 
 ### Feat
