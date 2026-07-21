@@ -770,6 +770,53 @@ class TestProjectBudgetService:
         wedding_after = rules_after.loc[rules_after[CATEGORY] == "Wedding"]
         assert wedding_after.empty
 
+    def test_delete_project_not_resurrected_by_view(self, db_session):
+        """Verify a deleted project's rules are not recreated when its view is
+        fetched while other projects still exist and its transactions remain.
+
+        Regression: after deleting a project, ``get_project_budget_view`` used
+        to re-create zero-amount project rules for every still-categorized
+        transaction (via the unmatched-transaction side-effect), because
+        ``get_rules_for_project`` returned an empty frame instead of raising
+        when other projects existed. The category then reappeared in the
+        projects list and stayed excluded from the available-categories list.
+        """
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 10000.0)
+        # A second project keeps the overall project-rules table non-empty,
+        # which is what previously suppressed the "not found" raise.
+        service.create_project("Renovation", 5000.0)
+
+        # Wedding transactions are still categorized under it after deletion.
+        wedding_txns = pd.DataFrame(
+            [
+                {
+                    TransactionsTableFields.DATE.value: pd.Timestamp("2023-01-01"),
+                    TransactionsTableFields.CATEGORY.value: "Wedding",
+                    TransactionsTableFields.TAG.value: "Venue",
+                    TransactionsTableFields.AMOUNT.value: -1000.0,
+                    TransactionsTableFields.UNIQUE_ID.value: "tx1",
+                    "type": "credit_card",
+                },
+            ]
+        )
+        service.transactions_service.get_data_for_analysis = (
+            lambda include_split_parents: wedding_txns
+        )
+
+        service.delete_project("Wedding")
+
+        # Fetching the deleted project's view must raise (route maps to 404),
+        # not silently recreate its rules.
+        with pytest.raises(ValueError):
+            service.get_project_budget_view("Wedding")
+
+        # No Wedding rules were resurrected, and it's gone from the projects
+        # list so its category is available for a new project again.
+        rules_after = service.get_all_rules()
+        assert rules_after.loc[rules_after[CATEGORY] == "Wedding"].empty
+        assert "Wedding" not in service.get_all_projects_names()
+
     def test_get_project_transactions(
         self, db_session, seed_project_transactions
     ):

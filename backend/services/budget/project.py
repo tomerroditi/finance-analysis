@@ -54,10 +54,11 @@ class ProjectBudgetService(BudgetService):
             If no rules exist for the given project category.
         """
         rules = self.get_all_rules()
+        if not rules.empty:
+            rules = rules.loc[rules[CATEGORY] == category]
         if rules.empty:
             raise ValueError(f"Project {category} not found")
 
-        rules = rules.loc[rules[CATEGORY] == category]
         return rules
 
     def create_project(self, category: str, total_budget: float) -> None:

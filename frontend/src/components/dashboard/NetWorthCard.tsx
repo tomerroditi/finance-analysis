@@ -217,7 +217,7 @@ export function NetWorthCard() {
               style: { fill: config.color, fontSize: 11 },
             }}
           />
-          <Tooltip content={chartTooltip} />
+          <Tooltip cursor={false} content={chartTooltip} />
           <Legend content={<ChartLegend />} />
           <Bar
             yAxisId="left"
