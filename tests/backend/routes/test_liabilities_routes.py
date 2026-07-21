@@ -40,6 +40,74 @@ class TestLiabilitiesRoutes:
         names = [item["name"] for item in list_resp.json()]
         assert "Personal Loan" in names
 
+    def test_create_prime_linked_liability(self, test_client):
+        """POST /api/liabilities/ accepts a prime-linked loan and derives its rate."""
+        payload = {
+            "name": "Prime Mortgage",
+            "tag": "Mortgage",
+            "principal_amount": 500000.0,
+            "term_months": 240,
+            "start_date": "2024-06-01",
+            "loan_type": "prime_linked",
+            "rate_spread": -0.5,
+        }
+        response = test_client.post("/api/liabilities/", json=payload)
+        assert response.status_code == 200
+
+        list_resp = test_client.get("/api/liabilities/")
+        record = next(i for i in list_resp.json() if i["name"] == "Prime Mortgage")
+        assert record["loan_type"] == "prime_linked"
+        assert record["rate_spread"] == -0.5
+        # Rate derived from seeded prime history (BoI 4.5 + 1.5 - 0.5 = 5.5)
+        assert abs(record["interest_rate"] - 5.5) < 0.001
+        assert "current_rate" in record
+
+    def test_create_prime_linked_without_spread_returns_400(self, test_client):
+        """POST /api/liabilities/ rejects a prime-linked loan without a spread."""
+        payload = {
+            "name": "Bad Prime Loan",
+            "tag": "Mortgage",
+            "principal_amount": 100000.0,
+            "term_months": 120,
+            "start_date": "2024-01-01",
+            "loan_type": "prime_linked",
+        }
+        response = test_client.post("/api/liabilities/", json=payload)
+        assert response.status_code == 400
+
+    def test_create_fixed_without_rate_returns_400(self, test_client):
+        """POST /api/liabilities/ rejects a fixed loan without an interest rate."""
+        payload = {
+            "name": "Bad Fixed Loan",
+            "tag": "Car Loan",
+            "principal_amount": 10000.0,
+            "term_months": 24,
+            "start_date": "2024-01-01",
+        }
+        response = test_client.post("/api/liabilities/", json=payload)
+        assert response.status_code == 400
+
+    def test_create_balloon_liability(self, test_client):
+        """POST /api/liabilities/ accepts a balloon loan whose payments are interest-only."""
+        payload = {
+            "name": "Bridge Loan",
+            "tag": "Bridge",
+            "principal_amount": 100000.0,
+            "interest_rate": 6.0,
+            "term_months": 12,
+            "start_date": "2024-01-01",
+            "amortization_method": "balloon",
+        }
+        response = test_client.post("/api/liabilities/", json=payload)
+        assert response.status_code == 200
+
+        list_resp = test_client.get("/api/liabilities/")
+        record = next(i for i in list_resp.json() if i["name"] == "Bridge Loan")
+        analysis = test_client.get(f"/api/liabilities/{record['id']}/analysis").json()
+        schedule = analysis["schedule"]
+        assert schedule[0]["principal_portion"] == 0.0
+        assert abs(schedule[-1]["principal_portion"] - 100000.0) < 0.01
+
     def test_get_liability_by_id(self, test_client, seed_liabilities):
         """GET /api/liabilities/{id} returns single liability with monthly_payment field."""
         list_resp = test_client.get("/api/liabilities/")

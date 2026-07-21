@@ -1,9 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, CheckCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, TrendingUp } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
+import type { CurrentRates } from "../../services/api";
+import { AMORTIZATION_METHODS, LOAN_TYPES, isPrimeBased } from "./loanTypes";
 
 export interface NewLiabilityForm {
   name: string;
@@ -11,6 +13,10 @@ export interface NewLiabilityForm {
   tag: string;
   principal_amount: string;
   interest_rate: string;
+  loan_type: string;
+  amortization_method: string;
+  rate_spread: string;
+  rate_reset_months: string;
   term_months: string;
   start_date: string;
   notes: string;
@@ -31,6 +37,7 @@ interface Props {
   availableTags: string[];
   onTagChange: (tag: string) => Promise<void>;
   onCreateTag: (name: string) => Promise<void>;
+  currentRates: CurrentRates | null;
   isPending: boolean;
   onSubmit: () => void;
 }
@@ -45,10 +52,17 @@ export function LiabilityCreateModal({
   availableTags,
   onTagChange,
   onCreateTag,
+  currentRates,
   isPending,
   onSubmit,
 }: Props) {
   const { t } = useTranslation();
+
+  const primeBased = isPrimeBased(form.loan_type);
+  const isVariable = form.loan_type === "variable_unlinked";
+  const rateFieldsValid = primeBased
+    ? !!form.rate_spread && (!isVariable || !!form.rate_reset_months)
+    : !!form.interest_rate;
 
   return (
     <Modal
@@ -142,18 +156,95 @@ export function LiabilityCreateModal({
               </div>
             </>
           )}
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-              {t("liabilities.interestRate")} (%) *
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-              value={form.interest_rate}
-              onChange={(e) => setForm({ ...form, interest_rate: e.target.value })}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                {t("liabilities.loanType")} *
+              </label>
+              <SelectDropdown
+                options={LOAN_TYPES.map((value) => ({
+                  label: t(`liabilities.loanTypes.${value}`),
+                  value,
+                }))}
+                value={form.loan_type}
+                onChange={(loan_type: string) => setForm({ ...form, loan_type })}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                {t("liabilities.amortizationMethod")} *
+              </label>
+              <SelectDropdown
+                options={AMORTIZATION_METHODS.map((value) => ({
+                  label: t(`liabilities.amortizationMethods.${value}`),
+                  value,
+                }))}
+                value={form.amortization_method}
+                onChange={(amortization_method: string) =>
+                  setForm({ ...form, amortization_method })
+                }
+              />
+            </div>
           </div>
+          {primeBased && !!currentRates?.prime && (
+            <div className="flex items-start gap-2 p-3 bg-sky-500/10 border border-sky-500/30 rounded-xl text-sm">
+              <TrendingUp size={16} className="text-sky-400 shrink-0 mt-0.5" />
+              <span className="text-sky-300">
+                {t("liabilities.currentPrimeHint", {
+                  prime: currentRates.prime,
+                  boi: currentRates.boi_rate,
+                  date: currentRates.as_of ? formatDate(currentRates.as_of) : "",
+                })}
+              </span>
+            </div>
+          )}
+          {!primeBased && (
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                {t("liabilities.interestRate")} (%) *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                value={form.interest_rate}
+                onChange={(e) => setForm({ ...form, interest_rate: e.target.value })}
+              />
+            </div>
+          )}
+          {primeBased && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                  {t("liabilities.rateSpread")} (%) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder={t("liabilities.spreadPlaceholder")}
+                  className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                  value={form.rate_spread}
+                  onChange={(e) => setForm({ ...form, rate_spread: e.target.value })}
+                />
+              </div>
+              {isVariable && (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                    {t("liabilities.rateResetMonths")} *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                    value={form.rate_reset_months}
+                    onChange={(e) =>
+                      setForm({ ...form, rate_reset_months: e.target.value })
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
               {t("liabilities.termMonths")} *
@@ -191,7 +282,7 @@ export function LiabilityCreateModal({
               !tagDetection ||
               (!tagDetection.has_receipt &&
                 (!form.principal_amount || !form.start_date)) ||
-              !form.interest_rate ||
+              !rateFieldsValid ||
               !form.term_months ||
               isPending
             }

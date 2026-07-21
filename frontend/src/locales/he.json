@@ -928,7 +928,6 @@
     "editLiability": "ערוך התחייבות",
     "transactions": "תנועות",
     "selectTag": "בחר תגית",
-    "fixedRate": "ריבית קבועה",
     "interest": "ריבית",
     "noReceiptWarning": "לא נמצאה תנועת קבלת הלוואה עבור תגית זו. יש להזין את סכום ההלוואה ותאריך ההתחלה ידנית.",
     "receiptDetected": "זוהתה קבלת הלוואה: {{amount}} בתאריך {{date}} עם {{payments}} תשלום(ים).",
@@ -936,7 +935,24 @@
     "activeLiabilities": "הלוואות פעילות",
     "paidOffLiabilities": "הלוואות שנפרעו",
     "debtOverTime": "חוב לאורך זמן",
-    "debtAllocation": "חוב נוכחי"
+    "debtAllocation": "חוב נוכחי",
+    "loanType": "סוג הלוואה",
+    "amortizationMethod": "מבנה תשלומים",
+    "loanTypes": {
+      "fixed_unlinked": "ריבית קבועה",
+      "prime_linked": "צמוד פריים",
+      "variable_unlinked": "ריבית משתנה"
+    },
+    "amortizationMethods": {
+      "shpitzer": "שפיצר (אנונה)",
+      "equal_principal": "קרן שווה",
+      "balloon": "בלון (ריבית בלבד)"
+    },
+    "rateSpread": "מרווח מהפריים",
+    "rateResetMonths": "עדכון ריבית (חודשים)",
+    "spreadPlaceholder": "לדוגמה -0.5",
+    "primeLabel": "פריים",
+    "currentPrimeHint": "ריבית הפריים הנוכחית: {{prime}}% (ריבית בנק ישראל {{boi}}%, נכון ל-{{date}})"
   },
   "insurance": {
     "title": "ביטוח",

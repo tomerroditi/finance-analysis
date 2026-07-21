@@ -1,11 +1,14 @@
 import { useTranslation } from "react-i18next";
 import { Modal } from "../common/Modal";
+import { isPrimeBased } from "./loanTypes";
 
 export interface EditLiabilityForm {
   id: number | null;
   name: string;
   lender: string;
+  loan_type: string;
   interest_rate: string;
+  rate_spread: string;
   notes: string;
 }
 
@@ -58,18 +61,34 @@ export function LiabilityEditModal({
               onChange={(e) => setForm({ ...form, lender: e.target.value })}
             />
           </div>
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-              {t("liabilities.interestRate")} (%)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-              value={form.interest_rate}
-              onChange={(e) => setForm({ ...form, interest_rate: e.target.value })}
-            />
-          </div>
+          {isPrimeBased(form.loan_type) ? (
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                {t("liabilities.rateSpread")} (%)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder={t("liabilities.spreadPlaceholder")}
+                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                value={form.rate_spread}
+                onChange={(e) => setForm({ ...form, rate_spread: e.target.value })}
+              />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                {t("liabilities.interestRate")} (%)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                value={form.interest_rate}
+                onChange={(e) => setForm({ ...form, interest_rate: e.target.value })}
+              />
+            </div>
+          )}
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
               {t("liabilities.notes")}

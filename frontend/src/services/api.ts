@@ -438,6 +438,9 @@ export const investmentsApi = {
 };
 
 // Liabilities API
+export type LoanType = "fixed_unlinked" | "prime_linked" | "variable_unlinked";
+export type AmortizationMethod = "shpitzer" | "equal_principal" | "balloon";
+
 export interface Liability {
   id: number;
   name: string;
@@ -446,6 +449,10 @@ export interface Liability {
   tag: string;
   principal_amount: number;
   interest_rate: number;
+  loan_type: LoanType;
+  amortization_method: AmortizationMethod;
+  rate_spread?: number | null;
+  rate_reset_months?: number | null;
   term_months: number;
   start_date: string;
   is_paid_off: number;
@@ -458,6 +465,7 @@ export interface Liability {
   total_paid: number;
   percent_paid: number;
   payments_made: number;
+  current_rate: number;
 }
 
 export const liabilitiesApi = {
@@ -480,6 +488,22 @@ export const liabilitiesApi = {
     api.get("/liabilities/detect-transactions", { params: { tag } }),
   generateTransactions: (id: number) =>
     api.post(`/liabilities/${id}/generate-transactions`),
+};
+
+// Interest rates API
+export interface CurrentRates {
+  boi_rate: number | null;
+  prime: number | null;
+  as_of: string | null;
+}
+
+export const ratesApi = {
+  getCurrent: () => api.get<CurrentRates>("/rates/current"),
+  getHistory: (series: "boi_rate" | "prime" = "boi_rate") =>
+    api.get<{ date: string; value: number }[]>("/rates/history", {
+      params: { series },
+    }),
+  refresh: () => api.post("/rates/refresh"),
 };
 
 // Analytics API

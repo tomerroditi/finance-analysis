@@ -24,7 +24,7 @@ import {
   Pencil,
   Info,
 } from "lucide-react";
-import { liabilitiesApi, type Liability } from "../services/api";
+import { liabilitiesApi, ratesApi, type Liability } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
@@ -106,9 +106,31 @@ function LiabilityCard({
 
       {/* Metadata */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-muted)] font-medium mb-4 px-1">
-        <span>{t("liabilities.fixedRate")}</span>
+        <span>{t(`liabilities.loanTypes.${liability.loan_type}`)}</span>
+        {liability.amortization_method !== "shpitzer" && (
+          <>
+            <span>·</span>
+            <span>
+              {t(`liabilities.amortizationMethods.${liability.amortization_method}`)}
+            </span>
+          </>
+        )}
         <span>·</span>
-        <span dir="ltr">{liability.interest_rate}% {t("liabilities.interest")}</span>
+        <span dir="ltr">
+          {liability.current_rate ?? liability.interest_rate}%{" "}
+          {t("liabilities.interest")}
+        </span>
+        {liability.loan_type !== "fixed_unlinked" &&
+          liability.rate_spread != null && (
+            <>
+              <span>·</span>
+              <span dir="ltr">
+                {t("liabilities.primeLabel")}
+                {liability.rate_spread >= 0 ? "+" : ""}
+                {liability.rate_spread}%
+              </span>
+            </>
+          )}
         <span>·</span>
         <span>
           {t("liabilities.termMonthsCount", { count: liability.term_months })}
@@ -269,6 +291,10 @@ export function Liabilities() {
     tag: "",
     principal_amount: "",
     interest_rate: "",
+    loan_type: "fixed_unlinked",
+    amortization_method: "shpitzer",
+    rate_spread: "",
+    rate_reset_months: "",
     term_months: "",
     start_date: "",
     notes: "",
@@ -304,9 +330,19 @@ export function Liabilities() {
     id: number | null;
     name: string;
     lender: string;
+    loan_type: string;
     interest_rate: string;
+    rate_spread: string;
     notes: string;
-  }>({ id: null, name: "", lender: "", interest_rate: "", notes: "" });
+  }>({
+    id: null,
+    name: "",
+    lender: "",
+    loan_type: "fixed_unlinked",
+    interest_rate: "",
+    rate_spread: "",
+    notes: "",
+  });
 
   // Queries
   const { data: liabilities, isLoading } = useQuery({
@@ -316,6 +352,12 @@ export function Liabilities() {
 
   const { data: categories } = useCategories();
   const { createTag } = useCategoryTagCreate();
+
+  const { data: currentRates } = useQuery({
+    queryKey: qk.rates.current(),
+    queryFn: () => ratesApi.getCurrent().then((r) => r.data),
+    enabled: isAddOpen,
+  });
 
   const { data: analysisData } = useQuery<AnalysisData>({
     queryKey: qk.liabilities.analysis(analysisModalId ?? 0),
@@ -339,6 +381,10 @@ export function Liabilities() {
         tag: "",
         principal_amount: "",
         interest_rate: "",
+        loan_type: "fixed_unlinked",
+        amortization_method: "shpitzer",
+        rate_spread: "",
+        rate_reset_months: "",
         term_months: "",
         start_date: "",
         notes: "",
@@ -355,7 +401,9 @@ export function Liabilities() {
         id: null,
         name: "",
         lender: "",
+        loan_type: "fixed_unlinked",
         interest_rate: "",
+        rate_spread: "",
         notes: "",
       });
     },
@@ -455,7 +503,9 @@ export function Liabilities() {
       id: l.id,
       name: l.name,
       lender: l.lender || "",
+      loan_type: l.loan_type || "fixed_unlinked",
       interest_rate: String(l.interest_rate),
+      rate_spread: l.rate_spread != null ? String(l.rate_spread) : "",
       notes: l.notes || "",
     });
   }, []);
@@ -682,19 +732,35 @@ export function Liabilities() {
           const formatted = await createTag("Liabilities", name);
           await handleTagChange(formatted);
         }}
+        currentRates={currentRates ?? null}
         isPending={createMutation.isPending}
-        onSubmit={() =>
+        onSubmit={() => {
+          const primeBased = newLiability.loan_type !== "fixed_unlinked";
           createMutation.mutate({
             name: newLiability.name,
             lender: newLiability.lender || undefined,
             tag: newLiability.tag,
             principal_amount: Number(newLiability.principal_amount),
-            interest_rate: Number(newLiability.interest_rate),
+            interest_rate:
+              !primeBased && newLiability.interest_rate
+                ? Number(newLiability.interest_rate)
+                : undefined,
+            loan_type: newLiability.loan_type,
+            amortization_method: newLiability.amortization_method,
+            rate_spread:
+              primeBased && newLiability.rate_spread !== ""
+                ? Number(newLiability.rate_spread)
+                : undefined,
+            rate_reset_months:
+              newLiability.loan_type === "variable_unlinked" &&
+              newLiability.rate_reset_months
+                ? Number(newLiability.rate_reset_months)
+                : undefined,
             term_months: Number(newLiability.term_months),
             start_date: newLiability.start_date,
             notes: newLiability.notes || undefined,
-          })
-        }
+          });
+        }}
       />
 
       <LiabilityEditModal
@@ -705,7 +771,9 @@ export function Liabilities() {
             id: null,
             name: "",
             lender: "",
+            loan_type: "fixed_unlinked",
             interest_rate: "",
+            rate_spread: "",
             notes: "",
           })
         }
@@ -716,9 +784,14 @@ export function Liabilities() {
             data: {
               name: editForm.name,
               lender: editForm.lender || undefined,
-              interest_rate: editForm.interest_rate
-                ? Number(editForm.interest_rate)
-                : undefined,
+              interest_rate:
+                editForm.loan_type === "fixed_unlinked" && editForm.interest_rate
+                  ? Number(editForm.interest_rate)
+                  : undefined,
+              rate_spread:
+                editForm.loan_type !== "fixed_unlinked" && editForm.rate_spread !== ""
+                  ? Number(editForm.rate_spread)
+                  : undefined,
               notes: editForm.notes || undefined,
             },
           })

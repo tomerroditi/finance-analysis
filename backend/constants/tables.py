@@ -67,6 +67,7 @@ class Tables(Enum):
     INSURANCE_ACCOUNTS = "insurance_accounts"
     LIABILITIES = "liabilities"
     LIABILITY_TRANSACTIONS = "liability_transactions"
+    INTEREST_RATES = "interest_rates"
     RETIREMENT_GOAL = "retirement_goals"
     SAVINGS_GOALS = "savings_goals"
 
@@ -183,6 +184,10 @@ class LiabilitiesTableFields(Enum):
     TAG = "tag"
     PRINCIPAL_AMOUNT = "principal_amount"
     INTEREST_RATE = "interest_rate"
+    LOAN_TYPE = "loan_type"
+    AMORTIZATION_METHOD = "amortization_method"
+    RATE_SPREAD = "rate_spread"
+    RATE_RESET_MONTHS = "rate_reset_months"
     TERM_MONTHS = "term_months"
     START_DATE = "start_date"
     IS_PAID_OFF = "is_paid_off"
@@ -200,3 +205,13 @@ class LiabilityTransactionsTableFields(Enum):
     AMOUNT = "amount"
     PAYMENT_NUMBER = "payment_number"
     DESCRIPTION = "description"
+
+
+class InterestRatesTableFields(Enum):
+    """Field names for the interest_rates table."""
+
+    ID = "id"
+    SERIES = "series"
+    DATE = "date"
+    VALUE = "value"
+    SOURCE = "source"

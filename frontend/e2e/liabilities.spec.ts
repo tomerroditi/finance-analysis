@@ -20,5 +20,12 @@ test.describe("Liabilities", () => {
     await expect(page.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 30_000,
     });
+
+    // --- loan-type metadata on cards ---
+    // Demo loans predate the loan-type columns and are backfilled as
+    // fixed-rate Shpitzer, so every card shows the Fixed Rate label and an
+    // effective interest-rate line.
+    await expect(page.getByText("Fixed Rate").first()).toBeVisible();
+    await expect(page.getByText(/% interest/).first()).toBeVisible();
   });
 });

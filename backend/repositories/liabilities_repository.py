@@ -36,6 +36,10 @@ class LiabilitiesRepository:
         interest_rate: float,
         term_months: int,
         start_date: str,
+        loan_type: str = "fixed_unlinked",
+        amortization_method: str = "shpitzer",
+        rate_spread: Optional[float] = None,
+        rate_reset_months: Optional[int] = None,
         lender: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> None:
@@ -55,6 +59,15 @@ class LiabilitiesRepository:
             Loan duration in months.
         start_date : str
             Date the loan was taken, in YYYY-MM-DD format.
+        loan_type : str, optional
+            Rate behavior — a ``backend.constants.loans.LoanType`` value.
+        amortization_method : str, optional
+            Payment structure — a
+            ``backend.constants.loans.AmortizationMethod`` value.
+        rate_spread : float, optional
+            Spread over prime in percentage points.
+        rate_reset_months : int, optional
+            Months between rate resets for variable loans.
         lender : str, optional
             Name of the lending institution.
         notes : str, optional
@@ -72,6 +85,10 @@ class LiabilitiesRepository:
             interest_rate=interest_rate,
             term_months=term_months,
             start_date=start_date,
+            loan_type=loan_type,
+            amortization_method=amortization_method,
+            rate_spread=rate_spread,
+            rate_reset_months=rate_reset_months,
             lender=lender,
             notes=notes,
             created_date=datetime.today().strftime("%Y-%m-%d"),

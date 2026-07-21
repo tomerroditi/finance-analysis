@@ -28,7 +28,19 @@ class Liability(Base, TimestampMixin):
     principal_amount : float
         Original loan amount.
     interest_rate : float
-        Annual interest rate as percentage (e.g. 4.5 for 4.5%).
+        Annual interest rate as percentage (e.g. 4.5 for 4.5%). For
+        prime-based loan types this holds the effective rate at creation
+        time and serves as a fallback when the rate series is empty.
+    loan_type : str
+        Rate behavior — one of ``backend.constants.loans.LoanType`` values.
+    amortization_method : str
+        Payment structure — one of
+        ``backend.constants.loans.AmortizationMethod`` values.
+    rate_spread : float, optional
+        Spread over the prime rate in percentage points (may be
+        negative). Required for prime-based loan types.
+    rate_reset_months : int, optional
+        Months between rate resets for variable loans.
     term_months : int
         Loan duration in months.
     start_date : str
@@ -56,6 +68,10 @@ class Liability(Base, TimestampMixin):
 
     principal_amount = Column(Float, nullable=False)
     interest_rate = Column(Float, nullable=False)
+    loan_type = Column(String, nullable=False, default="fixed_unlinked")
+    amortization_method = Column(String, nullable=False, default="shpitzer")
+    rate_spread = Column(Float, nullable=True)
+    rate_reset_months = Column(Integer, nullable=True)
     term_months = Column(Integer, nullable=False)
 
     start_date = Column(String, nullable=False)
