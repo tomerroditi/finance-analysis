@@ -214,3 +214,51 @@ class TestRefundSourcesRoute:
         assert src["available"] == refund_tx["amount"] - link_amount
         assert len(src["allocations"]) == 1
         assert src["allocations"][0]["pending_refund_id"] == pending_id
+
+
+class TestRefundNotesRoutes:
+    """Tests for the note-editing endpoints."""
+
+    def test_patch_pending_refund_notes(self, test_client):
+        """PATCH /pending-refunds/{id} updates the note."""
+        create_resp = test_client.post("/api/pending-refunds/", json={
+            "source_type": "transaction",
+            "source_id": 1,
+            "source_table": "banks",
+            "expected_amount": 100.0,
+        })
+        pending_id = create_resp.json()["id"]
+
+        resp = test_client.patch(
+            f"/api/pending-refunds/{pending_id}", json={"notes": "Store promised refund by Friday"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["notes"] == "Store promised refund by Friday"
+
+        get_resp = test_client.get(f"/api/pending-refunds/{pending_id}")
+        assert get_resp.json()["notes"] == "Store promised refund by Friday"
+
+    def test_patch_pending_refund_notes_not_found(self, test_client):
+        """PATCH on a missing pending refund returns 404."""
+        resp = test_client.patch("/api/pending-refunds/9999", json={"notes": "x"})
+        assert resp.status_code == 404
+
+    def test_put_source_note(self, test_client):
+        """PUT /pending-refunds/refund-sources/note upserts and clears."""
+        resp = test_client.put("/api/pending-refunds/refund-sources/note", json={
+            "refund_source": "banks",
+            "refund_transaction_id": 7,
+            "note": "Payout for the stolen card claim",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["note"] == "Payout for the stolen card claim"
+        assert data["refund_source"] == "bank_transactions"
+
+        resp = test_client.put("/api/pending-refunds/refund-sources/note", json={
+            "refund_source": "bank_transactions",
+            "refund_transaction_id": 7,
+            "note": "",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["note"] is None

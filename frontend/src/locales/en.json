@@ -471,7 +471,23 @@
       "linkRemaining": "Link remaining",
       "ofTransaction": "of {{amount}}",
       "sharedSource": "+{{count}} more",
-      "sharedSourceTooltip": "This transaction also funds {{count}} other refund requests"
+      "sharedSourceTooltip": "This transaction also funds {{count}} other refund requests",
+      "filterOpen": "Open",
+      "openCount": "{{count}} open",
+      "left": "left",
+      "settled": "settled",
+      "linkShort": "Link",
+      "closeShort": "Close",
+      "addNote": "+ note",
+      "notePlaceholder": "Add a short note…",
+      "noteAria": "Refund note",
+      "freeAmount": "{{amount}} free",
+      "freeChipAction": "{{amount}} free → link it",
+      "requestsPanel": "Refund requests",
+      "sourcesPanel": "Refund sources",
+      "sourcesCount": "{{count}} txns",
+      "panelHint": "refunded / expected · remaining",
+      "crossHint": "Hover a source to highlight the requests it funds — and vice-versa."
     }
   },
   "budget": {
@@ -1046,7 +1062,12 @@
       "availableOf": "{{available}} of {{total}} available",
       "availableShort": "{{amount}} available",
       "maxAmount": "Max {{amount}}",
-      "amountTooHigh": "Amount exceeds the maximum of {{amount}}"
+      "amountTooHigh": "Amount exceeds the maximum of {{amount}}",
+      "suggestedHeader": "Suggested — matches the {{amount}} still owed",
+      "suggestedBadge": "Suggested · amount match",
+      "allIncoming": "All incoming transactions",
+      "suggestedPendingHeader": "Suggested — expecting exactly this amount",
+      "allPending": "All pending refunds"
     },
     "project": {
       "title": "Project Budget",

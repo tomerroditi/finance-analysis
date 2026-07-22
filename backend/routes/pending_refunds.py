@@ -35,6 +35,20 @@ class LinkRefundRequest(ApiRequestModel):
     amount: float
 
 
+class UpdatePendingRefundRequest(ApiRequestModel):
+    """Request to update a pending refund's note."""
+
+    notes: Optional[str] = None
+
+
+class SourceNoteRequest(ApiRequestModel):
+    """Request to set or clear the note on a refund source transaction."""
+
+    refund_source: str
+    refund_transaction_id: int
+    note: Optional[str] = None
+
+
 @router.post("/")
 def create_pending_refund(
     request: CreatePendingRefundRequest,
@@ -104,6 +118,31 @@ def get_refund_sources(
     """
     service = PendingRefundsService(db)
     return service.get_refund_sources()
+
+
+@router.put("/refund-sources/note")
+def set_refund_source_note(
+    request: SourceNoteRequest,
+    db: Session = Depends(get_database),
+):
+    """Set or clear the user note on a refund source transaction."""
+    service = PendingRefundsService(db)
+    return service.set_source_note(
+        refund_source=request.refund_source,
+        refund_transaction_id=request.refund_transaction_id,
+        note=request.note,
+    )
+
+
+@router.patch("/{pending_id}")
+def update_pending_refund(
+    pending_id: int,
+    request: UpdatePendingRefundRequest,
+    db: Session = Depends(get_database),
+):
+    """Update the note on a pending refund."""
+    service = PendingRefundsService(db)
+    return service.update_notes(pending_id, request.notes)
 
 
 @router.get("/{pending_id}")

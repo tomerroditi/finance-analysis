@@ -301,6 +301,73 @@ class PendingRefundsService:
             "remaining": remaining,
         }
 
+    def update_notes(self, pending_refund_id: int, notes: Optional[str]) -> dict:
+        """
+        Update the note on a pending refund.
+
+        Parameters
+        ----------
+        pending_refund_id : int
+            ID of the pending refund.
+        notes : str or None
+            New note text; None or empty clears the note.
+
+        Returns
+        -------
+        dict
+            ``{"id": ..., "notes": ...}`` with the stored value.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If pending refund not found.
+        """
+        pending = self.repo.get_by_id(pending_refund_id)
+        if not pending:
+            raise EntityNotFoundException(
+                f"Pending refund {pending_refund_id} not found"
+            )
+
+        cleaned = (notes or "").strip() or None
+        self.repo.update_notes(pending_refund_id, cleaned)
+        return {"id": pending_refund_id, "notes": cleaned}
+
+    def set_source_note(
+        self, refund_source: str, refund_transaction_id: int, note: Optional[str]
+    ) -> dict:
+        """
+        Create, update, or clear the note on a refund source transaction.
+
+        Parameters
+        ----------
+        refund_source : str
+            Table or service name where the transaction lives (normalized to
+            the canonical table name before storing).
+        refund_transaction_id : int
+            unique_id of the refund transaction.
+        note : str or None
+            Note text; None or empty deletes the note.
+
+        Returns
+        -------
+        dict
+            ``{"refund_source", "refund_transaction_id", "note"}`` with the
+            stored (canonicalized) values.
+        """
+        canonical = self._canonical_source(refund_source)
+        cleaned = (note or "").strip()
+        if cleaned:
+            self.repo.upsert_source_note(
+                canonical, refund_transaction_id, cleaned
+            )
+        else:
+            self.repo.delete_source_note(canonical, refund_transaction_id)
+        return {
+            "refund_source": canonical,
+            "refund_transaction_id": refund_transaction_id,
+            "note": cleaned or None,
+        }
+
     def cancel_pending_refund(self, pending_refund_id: int) -> None:
         """
         Cancel a pending refund (remove pending status).
@@ -517,12 +584,25 @@ class PendingRefundsService:
             ``refund_source``, ``refund_transaction_id``, ``description``,
             ``date``, ``account_name``, ``provider``, ``transaction_amount``
             (None when the transaction can't be resolved),
-            ``total_allocated``, ``available`` (None when unresolvable) and
+            ``total_allocated``, ``available`` (None when unresolvable),
+            ``note`` (user note on the source, None when absent) and
             ``allocations`` — a list of ``{link_id, pending_refund_id,
             amount, pending_description, pending_status, pending_date,
             expected_amount}``.
         """
         pendings = self.get_all_pending()
+
+        notes_df = self.repo.get_all_source_notes()
+        notes_map: dict[tuple[str, int], str] = {}
+        if not notes_df.empty:
+            for _, row in notes_df.iterrows():
+                notes_map[
+                    (
+                        self._canonical_source(row["refund_source"]),
+                        int(row["refund_transaction_id"]),
+                    )
+                ] = row["note"]
+
         sources: dict[tuple[str, int], dict] = {}
         for p in pendings:
             for link in p.get("links", []):
@@ -541,6 +621,7 @@ class PendingRefundsService:
                         "provider": link.get("provider"),
                         "transaction_amount": link.get("transaction_amount"),
                         "total_allocated": 0.0,
+                        "note": notes_map.get(key),
                         "allocations": [],
                     },
                 )

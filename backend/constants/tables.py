@@ -32,6 +32,8 @@ class Tables(Enum):
         Name of the table storing pending refunds.
     REFUND_LINKS : str
         Name of the table storing refund links.
+    REFUND_SOURCE_NOTES : str
+        Name of the table storing user notes on refund source transactions.
     BUDGET_MONTH_OVERRIDES : str
         Name of the table storing per-transaction monthly-budget month overrides.
     BANK_BALANCES : str
@@ -58,6 +60,7 @@ class Tables(Enum):
     MANUAL_INVESTMENT_TRANSACTIONS = "manual_investment_transactions"
     PENDING_REFUNDS = "pending_refunds"
     REFUND_LINKS = "refund_links"
+    REFUND_SOURCE_NOTES = "refund_source_notes"
     BUDGET_MONTH_OVERRIDES = "budget_month_overrides"
     BANK_BALANCES = "bank_balances"
     CASH_BALANCES = "cash_balances"

@@ -471,7 +471,23 @@
       "linkRemaining": "קשר את היתרה",
       "ofTransaction": "מתוך {{amount}}",
       "sharedSource": "+{{count}} נוספים",
-      "sharedSourceTooltip": "תנועה זו מממנת גם {{count}} בקשות החזר נוספות"
+      "sharedSourceTooltip": "תנועה זו מממנת גם {{count}} בקשות החזר נוספות",
+      "filterOpen": "פתוחים",
+      "openCount": "{{count}} פתוחים",
+      "left": "נותר",
+      "settled": "הושלם",
+      "linkShort": "קשר",
+      "closeShort": "סגור",
+      "addNote": "+ הערה",
+      "notePlaceholder": "הוסף הערה קצרה…",
+      "noteAria": "הערת החזר",
+      "freeAmount": "{{amount}} פנוי",
+      "freeChipAction": "{{amount}} פנוי ← קשר אותו",
+      "requestsPanel": "בקשות החזר",
+      "sourcesPanel": "מקורות החזר",
+      "sourcesCount": "{{count}} תנועות",
+      "panelHint": "הוחזר / צפוי · נותר",
+      "crossHint": "רחפו מעל מקור כדי להאיר את הבקשות שהוא מממן — ולהפך."
     }
   },
   "budget": {
@@ -1046,7 +1062,12 @@
       "availableOf": "{{available}} מתוך {{total}} זמינים",
       "availableShort": "{{amount}} זמין",
       "maxAmount": "מקסימום {{amount}}",
-      "amountTooHigh": "הסכום חורג מהמקסימום של {{amount}}"
+      "amountTooHigh": "הסכום חורג מהמקסימום של {{amount}}",
+      "suggestedHeader": "מוצע — תואם את {{amount}} שעדיין חסרים",
+      "suggestedBadge": "מוצע · התאמת סכום",
+      "allIncoming": "כל התנועות הנכנסות",
+      "suggestedPendingHeader": "מוצע — מצפה בדיוק לסכום הזה",
+      "allPending": "כל בקשות ההחזר"
     },
     "project": {
       "title": "תקציב פרויקט",

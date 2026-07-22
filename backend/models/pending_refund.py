@@ -37,6 +37,32 @@ class PendingRefund(Base, TimestampMixin):
     notes = Column(String, nullable=True)
 
 
+class RefundSourceNote(Base, TimestampMixin):
+    """
+    User note attached to a refund source transaction.
+
+    Refund sources are ordinary incoming transactions; rather than adding a
+    note column to every transaction table, notes are stored here keyed by
+    the (source table, transaction id) pair.
+
+    Attributes
+    ----------
+    refund_source : str
+        Canonical table where the transaction lives (e.g. 'bank_transactions').
+    refund_transaction_id : int
+        unique_id of the refund transaction within that table.
+    note : str
+        The user's note text.
+    """
+
+    __tablename__ = Tables.REFUND_SOURCE_NOTES.value
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    refund_source = Column(String, nullable=False)
+    refund_transaction_id = Column(Integer, nullable=False)
+    note = Column(String, nullable=False)
+
+
 class RefundLink(Base, TimestampMixin):
     """
     Links pending refunds to actual refund transactions.

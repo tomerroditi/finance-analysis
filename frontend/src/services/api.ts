@@ -682,6 +682,7 @@ export interface RefundSource {
   transaction_amount: number | null;
   total_allocated: number;
   available: number | null;
+  note?: string | null;
   allocations: RefundSourceAllocation[];
 }
 
@@ -710,6 +711,19 @@ export const pendingRefundsApi = {
   close: (id: number) => api.post(`/pending-refunds/${id}/close`),
   getRefundSources: () =>
     api.get<RefundSource[]>("/pending-refunds/refund-sources"),
+  updateNotes: (id: number, notes: string) =>
+    api.patch<{ id: number; notes: string | null }>(`/pending-refunds/${id}`, {
+      notes,
+    }),
+  setSourceNote: (data: {
+    refund_source: string;
+    refund_transaction_id: number;
+    note: string;
+  }) =>
+    api.put<{ refund_source: string; refund_transaction_id: number; note: string | null }>(
+      "/pending-refunds/refund-sources/note",
+      data,
+    ),
 };
 
 export interface BudgetMonthOverride {

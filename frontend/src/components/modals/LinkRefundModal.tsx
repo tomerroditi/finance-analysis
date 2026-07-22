@@ -126,8 +126,14 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   if (!isOpen) return null;
 
+  const EPS = 0.005;
 
-  const filteredPending =
+  /** Amount-match suggestion: a pending refund is suggested for the given
+   *  transaction when its remaining expectation equals what's available. */
+  const isPendingSuggested = (p: PendingRefund) =>
+    !!refundTransaction && Math.abs(pendingRemaining(p) - givenTxnAvailable) < EPS;
+
+  const filteredPending = (
     pendingRefunds?.filter((p: PendingRefund) => {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
@@ -138,12 +144,31 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         p.provider?.toLowerCase().includes(query) ||
         p.source_table.toLowerCase().includes(query)
       );
-    }) || [];
+    }) || []
+  ).sort(
+    (a, b) => Number(isPendingSuggested(b)) - Number(isPendingSuggested(a)),
+  );
 
-  const filteredTransactions =
+  /** Amount-match suggestion: a transaction is suggested for the pending
+   *  refund when its available (or full) amount equals the remaining
+   *  expectation, and it isn't dated before the marked expense. */
+  const isTxnSuggested = (txn: Transaction) => {
+    if (!pendingRefund) return false;
+    const rem = pendingRemaining(pendingRefund);
+    const avail = availableFor(txn.source, txn.unique_id ?? txn.id, txn.amount);
+    const amountMatches =
+      Math.abs(avail - rem) < EPS || Math.abs(txn.amount - rem) < EPS;
+    if (!amountMatches) return false;
+    if (pendingRefund.date && txn.date && txn.date < pendingRefund.date) {
+      return false;
+    }
+    return true;
+  };
+
+  const filteredTransactions = (
     allTransactions?.filter((txn: Transaction) => {
       // Skip transactions whose refund money is fully allocated already
-      if (availableFor(txn.source, txn.unique_id ?? txn.id, txn.amount) <= 0.005) {
+      if (availableFor(txn.source, txn.unique_id ?? txn.id, txn.amount) <= EPS) {
         return false;
       }
       if (!searchQuery) return true;
@@ -155,7 +180,18 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         txn.provider?.toLowerCase().includes(query) ||
         txn.source?.toLowerCase().includes(query)
       );
-    }) || [];
+    }) || []
+  ).sort((a, b) => Number(isTxnSuggested(b)) - Number(isTxnSuggested(a)));
+
+  const suggestedTxnCount = filteredTransactions.filter(isTxnSuggested).length;
+  const suggestedPendingCount = filteredPending.filter(isPendingSuggested).length;
+
+  const groupHeader = (text: string, starred: boolean) => (
+    <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-3 first:mt-0 mb-1.5 px-0.5">
+      {starred && <span className="text-emerald-400">★ </span>}
+      {text}
+    </div>
+  );
 
   const selectedTxnAvailable = selectedTransaction
     ? availableFor(
@@ -269,14 +305,25 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {filteredTransactions.map((txn: Transaction) => {
+                {filteredTransactions.map((txn: Transaction, idx: number) => {
                   const key = txKey(txn.source, txn.unique_id ?? txn.id);
                   const available = availableFor(txn.source, txn.unique_id ?? txn.id, txn.amount);
                   const partiallyUsed = available < txn.amount;
+                  const suggested = isTxnSuggested(txn);
                   const isSelected = selectedTransaction?.unique_id === txn.unique_id && selectedTransaction?.id === txn.id;
                   return (
+                    <React.Fragment key={key}>
+                      {idx === 0 && suggested &&
+                        groupHeader(
+                          t("modals.linkRefund.suggestedHeader", {
+                            amount: formatCurrency(pendingRemaining(pendingRefund)),
+                          }),
+                          true,
+                        )}
+                      {suggestedTxnCount > 0 && idx === suggestedTxnCount &&
+                        groupHeader(t("modals.linkRefund.allIncoming"), false)}
                     <button
-                      key={key}
+                      data-testid={suggested ? "suggested-candidate" : "candidate"}
                       onClick={() => {
                         setSelectedTransaction(txn);
                         setLinkAmount(
@@ -288,13 +335,20 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                       className={`relative w-full p-4 rounded-xl border text-start transition-all ${
                         isSelected
                           ? "border-emerald-500 bg-emerald-500/10"
-                          : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
+                          : suggested
+                            ? "border-emerald-500/45 hover:border-emerald-400 bg-[var(--surface-base)]"
+                            : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                       }`}
                     >
                       <div className={`flex items-start justify-between gap-4 ${isSelected ? "pe-7" : ""}`}>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-white truncate mb-0.5" dir="auto">
                             {txn.description || txn.desc || t("modals.linkRefund.unknownExpense")}
+                            {suggested && (
+                              <span className="ms-2 align-middle inline-block text-[9px] font-bold uppercase tracking-wide text-emerald-400 border border-emerald-500/55 bg-emerald-500/10 rounded-full px-1.5 py-px">
+                                {t("modals.linkRefund.suggestedBadge")}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                             <span>
@@ -329,6 +383,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                         </div>
                       )}
                     </button>
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -341,9 +396,14 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {filteredPending.map((pending: PendingRefund) => (
+                {filteredPending.map((pending: PendingRefund, idx: number) => (
+                  <React.Fragment key={pending.id}>
+                    {idx === 0 && isPendingSuggested(pending) &&
+                      groupHeader(t("modals.linkRefund.suggestedPendingHeader"), true)}
+                    {suggestedPendingCount > 0 && idx === suggestedPendingCount &&
+                      groupHeader(t("modals.linkRefund.allPending"), false)}
                   <button
-                    key={pending.id}
+                    data-testid={isPendingSuggested(pending) ? "suggested-candidate" : "candidate"}
                     onClick={() => {
                       setSelectedPendingId(pending.id);
                       setLinkAmount(
@@ -355,13 +415,20 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                     className={`relative w-full p-4 rounded-xl border text-start transition-all ${
                       selectedPendingId === pending.id
                         ? "border-emerald-500 bg-emerald-500/10"
-                        : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
+                        : isPendingSuggested(pending)
+                          ? "border-emerald-500/45 hover:border-emerald-400 bg-[var(--surface-base)]"
+                          : "border-[var(--surface-light)] hover:border-[var(--text-muted)] bg-[var(--surface-base)]"
                     }`}
                   >
                     <div className={`flex items-start justify-between gap-4 ${selectedPendingId === pending.id ? "pe-7" : ""}`}>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-white truncate mb-0.5" dir="auto">
                           {pending.description || t("modals.linkRefund.unknownExpense")}
+                          {isPendingSuggested(pending) && (
+                            <span className="ms-2 align-middle inline-block text-[9px] font-bold uppercase tracking-wide text-emerald-400 border border-emerald-500/55 bg-emerald-500/10 rounded-full px-1.5 py-px">
+                              {t("modals.linkRefund.suggestedBadge")}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                           <span>
@@ -399,6 +466,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                       </div>
                     )}
                   </button>
+                  </React.Fragment>
                 ))}
               </div>
             )

@@ -682,3 +682,79 @@ class TestLinkEnrichmentAmounts:
         link = item["links"][0]
         assert link["amount"] == 80.0
         assert link["transaction_amount"] == 500.0
+
+
+class TestRefundNotes:
+    """Tests for editable notes on pending refunds and refund sources."""
+
+    def test_update_notes_sets_and_clears(self, db_session):
+        """Notes can be set, replaced, and cleared on a pending refund."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
+
+        result = service.update_notes(pending["id"], "Waiting for store credit")
+        assert result["notes"] == "Waiting for store credit"
+        assert service.get_pending_by_id(pending["id"])["notes"] == "Waiting for store credit"
+
+        result = service.update_notes(pending["id"], "  ")
+        assert result["notes"] is None
+        assert service.get_pending_by_id(pending["id"])["notes"] is None
+
+    def test_update_notes_not_found(self, db_session):
+        """Error when updating notes of a missing pending refund."""
+        service = PendingRefundsService(db_session)
+        with pytest.raises(EntityNotFoundException):
+            service.update_notes(9999, "note")
+
+    def test_source_note_upsert_and_clear(self, db_session):
+        """Source notes upsert on the canonical source and clear on empty."""
+        service = PendingRefundsService(db_session)
+
+        result = service.set_source_note("banks", 42, "Gett support credit")
+        assert result["note"] == "Gett support credit"
+        assert result["refund_source"] == "bank_transactions"
+
+        # Update through the table-name variant hits the same record
+        service.set_source_note("bank_transactions", 42, "Updated note")
+        notes = service.repo.get_all_source_notes()
+        assert len(notes) == 1
+        assert notes.iloc[0]["note"] == "Updated note"
+
+        # Empty note deletes the record
+        result = service.set_source_note("banks", 42, "")
+        assert result["note"] is None
+        assert service.repo.get_all_source_notes().empty
+
+    def test_refund_sources_include_note(self, db_session, seed_base_transactions):
+        """get_refund_sources surfaces the stored note per source."""
+        from backend.models.transaction import BankTransaction
+
+        expense = db_session.query(BankTransaction).filter(
+            BankTransaction.amount < 0
+        ).first()
+        refund_txn = BankTransaction(
+            id="test-refund-note",
+            date="2024-01-22",
+            provider="hapoalim",
+            account_name="Main Account",
+            description="Refund with note",
+            amount=90.0,
+            category="Other Income",
+            tag="",
+            source="bank_transactions",
+            type="normal",
+            status="completed",
+        )
+        db_session.add(refund_txn)
+        db_session.flush()
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            "transaction", expense.unique_id, "banks", 60.0,
+        )
+        service.link_refund(pending["id"], refund_txn.unique_id, "bank_transactions", 60.0)
+        service.set_source_note("bank_transactions", refund_txn.unique_id, "Insurance claim payout")
+
+        sources = service.get_refund_sources()
+        assert len(sources) == 1
+        assert sources[0]["note"] == "Insurance claim payout"

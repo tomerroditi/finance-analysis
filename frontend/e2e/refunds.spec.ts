@@ -7,16 +7,16 @@ import {
 } from "./helpers";
 
 /**
- * Redesigned Refunds experience (Transactions → Refunds tab).
+ * Redesigned Refunds experience — dense two-pane layout.
  *
- * Covers the multi-link refund model end to end through the UI:
- * - summary cards (outstanding / received / unallocated refund money)
- * - search + per-card progress with the ALLOCATED amount (not the full
- *   transaction amount — regression guard for the enrichment overwrite bug)
- * - linking the SAME incoming transaction to a second pending refund via
- *   the link modal (the old model rejected any reuse of a transaction)
- * - the "By Refund Source" view showing per-transaction allocation and the
- *   money still available for further matching
+ * Covers, in one journey:
+ * - toolbar KPIs (owed back / received / unallocated)
+ * - request rows with expandable link lines showing the ALLOCATED amount
+ *   plus the "of <transaction amount>" hint (enrichment regression guard)
+ * - inline note editing on a request (PATCH) and on a refund source (PUT)
+ * - the link dialog's SUGGESTED section (exact amount match pinned on top)
+ *   and linking through it — reusing the multi-link model
+ * - the sources rail: allocation chips, free-amount chip
  *
  * Mutating spec: seeds its own pending refunds via the API in beforeAll and
  * relies on the demo-DB re-copy on the next demo-mode enable for cleanup.
@@ -26,6 +26,7 @@ interface ApiTxn {
   unique_id: number;
   source: string;
   amount: number;
+  date?: string;
   description?: string;
   desc?: string;
 }
@@ -35,7 +36,9 @@ const descOf = (t: ApiTxn) => t.description ?? t.desc ?? "";
 test.describe("Refunds redesign", () => {
   let expense1: ApiTxn;
   let expense2: ApiTxn;
-  let income: ApiTxn;
+  let income1: ApiTxn; // shared source funding p1, with leftover
+  let income2: ApiTxn; // untouched txn whose amount exactly matches p2
+  let p1Id: number;
   let p2Id: number;
 
   test.beforeAll(async ({ request }) => {
@@ -47,24 +50,6 @@ test.describe("Refunds redesign", () => {
     const pendings: { source_table: string; source_id: number }[] = await (
       await request.get(`${API_BASE}/pending-refunds/`)
     ).json();
-    const marked = new Set(
-      pendings.map((p) => `${p.source_table}_${p.source_id}`),
-    );
-
-    const expenses = txns.filter(
-      (t) =>
-        t.amount < -20 &&
-        descOf(t).length > 2 &&
-        !marked.has(`${t.source}_${t.unique_id}`),
-    );
-    expense1 = expenses[0];
-    expense2 = expenses.find((t) => descOf(t) !== descOf(expense1))!;
-    expect(expense1, "demo data must contain expense transactions").toBeTruthy();
-    expect(expense2, "demo data must contain a second expense").toBeTruthy();
-
-    // A distinct incoming transaction big enough to fund both refunds (7 + 5)
-    // with a leftover to show up as "available". Demo data already allocates
-    // some incoming transactions to refunds — account for that.
     const sources: {
       refund_source: string;
       refund_transaction_id: number;
@@ -72,21 +57,52 @@ test.describe("Refunds redesign", () => {
     }[] = await (
       await request.get(`${API_BASE}/pending-refunds/refund-sources`)
     ).json();
+
+    const marked = new Set(
+      pendings.map((p) => `${p.source_table}_${p.source_id}`),
+    );
     const allocated = new Map(
       sources.map((s) => [
         `${s.refund_source}_${s.refund_transaction_id}`,
         s.total_allocated,
       ]),
     );
-    income = txns
+    const availOf = (t: ApiTxn) =>
+      t.amount - (allocated.get(`${t.source}_${t.unique_id}`) ?? 0);
+
+    const incomes = txns.filter(
+      (t) => t.amount >= 20 && descOf(t).length > 2 && t.date,
+    );
+    // income1: has ≥20 available (funds p1's 7 with leftover to spare)
+    income1 = incomes
+      .filter((t) => availOf(t) >= 20)
+      .sort((a, b) => a.amount - b.amount)[0];
+    // income2: completely unallocated, distinct from income1 — its exact
+    // amount becomes p2's expectation so it must surface as SUGGESTED.
+    income2 = incomes
       .filter(
         (t) =>
-          t.amount >= 20 &&
-          descOf(t).length > 2 &&
-          t.amount - (allocated.get(`${t.source}_${t.unique_id}`) ?? 0) >= 20,
+          availOf(t) === t.amount &&
+          t.unique_id !== income1.unique_id &&
+          Math.abs(t.amount - 7) > 1,
       )
       .sort((a, b) => a.amount - b.amount)[0];
-    expect(income, "demo data must contain an incoming transaction").toBeTruthy();
+    expect(income1, "demo data must contain an available income txn").toBeTruthy();
+    expect(income2, "demo data must contain an unallocated income txn").toBeTruthy();
+
+    const expenses = txns.filter(
+      (t) =>
+        t.amount < -20 &&
+        descOf(t).length > 2 &&
+        !marked.has(`${t.source}_${t.unique_id}`) &&
+        // The suggestion date rule only proposes refunds dated on/after the
+        // expense — keep both seeds compatible with our chosen incomes.
+        (!t.date || !income2.date || t.date <= income2.date),
+    );
+    expense1 = expenses[0];
+    expense2 = expenses.find((t) => descOf(t) !== descOf(expense1))!;
+    expect(expense1, "demo data must contain expense transactions").toBeTruthy();
+    expect(expense2, "demo data must contain a second expense").toBeTruthy();
 
     const r1 = await request.post(`${API_BASE}/pending-refunds/`, {
       data: {
@@ -97,24 +113,23 @@ test.describe("Refunds redesign", () => {
       },
     });
     expect(r1.ok()).toBeTruthy();
-    const p1Id = (await r1.json()).id;
+    p1Id = (await r1.json()).id;
 
     const r2 = await request.post(`${API_BASE}/pending-refunds/`, {
       data: {
         source_type: "transaction",
         source_id: expense2.unique_id,
         source_table: expense2.source,
-        expected_amount: 5,
+        expected_amount: income2.amount,
       },
     });
     expect(r2.ok()).toBeTruthy();
     p2Id = (await r2.json()).id;
 
-    // Fully settle refund #1 from the shared income transaction.
     const l1 = await request.post(`${API_BASE}/pending-refunds/${p1Id}/link`, {
       data: {
-        refund_transaction_id: income.unique_id,
-        refund_source: income.source,
+        refund_transaction_id: income1.unique_id,
+        refund_source: income1.source,
         amount: 7,
       },
     });
@@ -125,51 +140,60 @@ test.describe("Refunds redesign", () => {
     await disableDemoMode();
   });
 
-  test("summary, allocation display, reuse of one transaction across refunds, source view", async ({
+  test("KPIs, dense rows, inline notes, suggested source linking, sources rail", async ({
     page,
   }) => {
     await navigateTo(page, "/transactions");
     await page.getByRole("button", { name: /Refunds/ }).click();
 
-    // --- summary cards ---
-    await expect(page.getByText("Expected Back")).toBeVisible();
+    // --- toolbar KPIs ---
+    await expect(page.getByText("Expected Back", { exact: false })).toBeVisible();
     await expect(page.getByText("Received Back")).toBeVisible();
     await expect(page.getByText("Unallocated Refund Money")).toBeVisible();
 
-    // --- refund #1: resolved, link row shows the ALLOCATED 7, not the full txn amount ---
-    const search = page.getByPlaceholder("Search refunds, notes, accounts...");
+    // --- request row for p1: expand, allocated amount + "of <txn>" hint ---
+    const search = page.getByPlaceholder(/Search refunds/);
     await search.fill(descOf(expense1));
-    const card1 = page.getByTestId("refund-card").first();
-    await expect(card1).toBeVisible();
-    await expect(card1.getByText("Resolved").first()).toBeVisible();
-    await expect(card1.getByText(/refunded/).first()).toBeVisible();
-    await expect(card1.getByText(/\+/).first()).toBeVisible();
-    // The "of <transaction amount>" hint proves we show allocation vs txn total
-    await expect(card1.getByText(/^of /).first()).toBeVisible();
+    const row1 = page.getByTestId("refund-row").first();
+    await expect(row1).toBeVisible();
+    await row1.getByRole("button").first().click(); // expand
+    await expect(row1.getByText(/^of\s/).first()).toBeVisible();
 
-    // --- refund #2: link the SAME income transaction through the modal ---
+    // --- inline note on the request (PATCH) ---
+    await row1.hover();
+    await row1.getByTestId("inline-note").first().click();
+    const noteInput = row1.getByPlaceholder(/Add a short note/);
+    await noteInput.fill("e2e recall note");
+    const [patchResp] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes(`/pending-refunds/${p1Id}`) &&
+          r.request().method() === "PATCH",
+      ),
+      noteInput.press("Enter"),
+    ]);
+    expect(patchResp.ok()).toBeTruthy();
+    await expect(row1.getByText('"e2e recall note"')).toBeVisible();
+
+    // --- link p2 through the SUGGESTED candidate ---
     await search.fill(descOf(expense2));
-    const card2 = page.getByTestId("refund-card").first();
-    await expect(card2).toBeVisible();
-    await card2.getByRole("button", { name: "Link Refund" }).click();
+    const row2 = page.getByTestId("refund-row").first();
+    await expect(row2).toBeVisible();
+    await row2.getByRole("button", { name: "Link", exact: true }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await dialog
-      .getByPlaceholder("Search refund transactions...")
-      .fill(descOf(income));
-    // Our shared transaction is the one flagged with an availability hint
-    // (it's already partially allocated to refund #1).
-    const txnBtn = dialog
-      .locator("button")
-      .filter({ hasText: descOf(income) })
-      .filter({ hasText: /available/ })
+    await expect(dialog.getByText(/^★?\s*Suggested/).first()).toBeVisible();
+    const suggested = dialog
+      .getByTestId("suggested-candidate")
+      .filter({ hasText: descOf(income2) })
       .first();
-    await expect(txnBtn).toBeVisible();
-    await txnBtn.click();
+    await expect(suggested).toBeVisible();
+    await expect(suggested.getByText("Suggested · amount match")).toBeVisible();
+    await suggested.click();
 
-    // Amount defaults to the pending refund's remaining expectation (5).
-    await expect(dialog.locator('input[type="number"]')).toHaveValue("5");
+    const expectedDefault = String(Math.round(income2.amount * 100) / 100);
+    await expect(dialog.locator('input[type="number"]')).toHaveValue(expectedDefault);
 
     const [linkResp] = await Promise.all([
       page.waitForResponse(
@@ -180,22 +204,30 @@ test.describe("Refunds redesign", () => {
       dialog.getByRole("button", { name: "Link Refund", exact: true }).click(),
     ]);
     expect(linkResp.ok()).toBeTruthy();
+    await expect(row2.getByText("settled")).toBeVisible();
 
-    // Refund #2 resolves, and the link row flags the shared source.
-    await expect(card2.getByText("Resolved").first()).toBeVisible();
-    await expect(card2.getByText("+1 more")).toBeVisible();
-
-    // --- "By Refund Source" view: one card for the shared transaction ---
+    // --- sources rail: income1 shows free chip; add a source note (PUT) ---
     await search.fill("");
-    await page.getByRole("button", { name: "By Refund Source" }).click();
-    const srcCard = page
-      .getByTestId("refund-source-card")
-      .filter({ hasText: descOf(income) })
+    const srcItem = page
+      .getByTestId("refund-source-item")
+      .filter({ hasText: descOf(income1) })
       .first();
-    await expect(srcCard).toBeVisible();
-    // 12 of <total> allocated across two refunds, remainder still available.
-    await expect(srcCard.getByText(/allocated/).first()).toBeVisible();
-    await expect(srcCard.getByText(/available/).first()).toBeVisible();
-    await expect(srcCard.getByRole("button", { name: "Unlink" })).toHaveCount(2);
+    await expect(srcItem).toBeVisible();
+    await expect(srcItem.getByText(/free → link it/).first()).toBeVisible();
+
+    await srcItem.hover();
+    await srcItem.getByTestId("inline-note").first().click();
+    const srcNoteInput = srcItem.getByPlaceholder(/Add a short note/);
+    await srcNoteInput.fill("shared source note");
+    const [putResp] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/pending-refunds/refund-sources/note") &&
+          r.request().method() === "PUT",
+      ),
+      srcNoteInput.press("Enter"),
+    ]);
+    expect(putResp.ok()).toBeTruthy();
+    await expect(srcItem.getByText('"shared source note"')).toBeVisible();
   });
 });
