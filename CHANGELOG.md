@@ -1,3 +1,12 @@
+## v1.47.0 (2026-07-22)
+
+### Feat
+
+- **refunds**: show remaining amounts out of the expected total
+- **dashboard**: add refunds tracking & overview card
+- **refunds**: dense two-pane layout, suggested sources, inline notes
+- **refunds**: redesign refunds experience with multi-refund transaction linking
+
 ## v1.46.1 (2026-07-21)
 
 ### Fix
