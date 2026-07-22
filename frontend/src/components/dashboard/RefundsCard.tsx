@@ -171,8 +171,18 @@ export function RefundsCard() {
                         />
                       </div>
                     </div>
-                    <span className="text-xs font-semibold text-amber-400 shrink-0">
-                      {formatCurrency(item.remaining ?? item.expected_amount)}
+                    <span
+                      className="text-xs shrink-0 whitespace-nowrap"
+                      dir="ltr"
+                      data-testid="card-refund-remaining"
+                    >
+                      <span className="font-semibold text-amber-400">
+                        {formatCurrency(item.remaining ?? item.expected_amount)}
+                      </span>
+                      <span className="text-[10.5px] text-[var(--text-muted)]">
+                        {" / "}
+                        {formatCurrency(item.expected_amount)}
+                      </span>
                     </span>
                   </button>
                 );

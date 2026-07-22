@@ -48,8 +48,12 @@ test.describe("Dashboard", () => {
     await refundsCard.scrollIntoViewIfNeeded();
     await expect(refundsCard.getByText("Owed back")).toBeVisible({ timeout: 20_000 });
     await expect(refundsCard.getByText(/recovered/)).toBeVisible();
-    // Demo data ships open (pending/partial) refunds, so the list renders.
+    // Demo data ships open (pending/partial) refunds, so the list renders,
+    // with each remaining amount shown out of its expected total.
     await expect(refundsCard.getByText(/open requests/)).toBeVisible();
+    await expect(
+      refundsCard.getByTestId("card-refund-remaining").first(),
+    ).toContainText("/");
 
     // --- Inline tag editor: stages edits, commits on Done ---
     const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });

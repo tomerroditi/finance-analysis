@@ -179,6 +179,8 @@ test.describe("Refunds redesign", () => {
     await search.fill(descOf(expense2));
     const row2 = page.getByTestId("refund-row").first();
     await expect(row2).toBeVisible();
+    // Remaining is shown out of the expected total ("100 / 221 left")
+    await expect(row2.getByTestId("remaining-cell")).toContainText("/");
     await row2.getByRole("button", { name: "Link", exact: true }).click();
 
     const dialog = page.getByRole("dialog");

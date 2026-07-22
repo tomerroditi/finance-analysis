@@ -330,7 +330,7 @@ const RefundsView: React.FC = () => {
               toggleExpanded(item.id);
             }
           }}
-          className="group grid grid-cols-[12px_10px_minmax(0,1fr)_max-content] sm:grid-cols-[12px_10px_minmax(0,1fr)_150px_90px_max-content] gap-2.5 items-center px-3 py-2 cursor-pointer hover:bg-[var(--surface-light)]/30 transition-colors"
+          className="group grid grid-cols-[12px_10px_minmax(0,1fr)_max-content] sm:grid-cols-[12px_10px_minmax(0,1fr)_150px_130px_max-content] gap-2.5 items-center px-3 py-2 cursor-pointer hover:bg-[var(--surface-light)]/30 transition-colors"
         >
           <ChevronRight
             size={12}
@@ -373,11 +373,17 @@ const RefundsView: React.FC = () => {
               />
             </div>
           </div>
-          <div className="text-end text-[12px] font-semibold">
+          <div className="text-end text-[12px] font-semibold" data-testid="remaining-cell">
             {item.status === "closed" ? (
               <span className="text-slate-400 font-normal">—</span>
             ) : isActive ? (
-              <span className="text-amber-400">{formatCurrency(remaining)}</span>
+              <span dir="ltr" className="whitespace-nowrap">
+                <span className="text-amber-400">{formatCurrency(remaining)}</span>
+                <span className="text-[var(--text-muted)] font-normal text-[10.5px]">
+                  {" / "}
+                  {formatCurrency(item.expected_amount)}
+                </span>
+              </span>
             ) : (
               <span className="text-emerald-400">✓</span>
             )}
