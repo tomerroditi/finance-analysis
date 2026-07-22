@@ -287,7 +287,20 @@
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
       "cashFlow": "Cash Flow",
-      "category": "Categories"
+      "category": "Categories",
+      "refunds": "Refunds"
+    },
+    "refundsCard": {
+      "title": "Refunds",
+      "viewAll": "View all",
+      "owed": "Owed back",
+      "received": "Received",
+      "unallocated": "Unallocated",
+      "recoveredOf": "{{received}} of {{total}} recovered",
+      "openRequests": "{{count}} open requests",
+      "allSettled": "All refund requests are settled.",
+      "empty": "Mark expenses as pending refund to track them here.",
+      "moreCount": "+{{count}} more"
     }
   },
   "transactions": {

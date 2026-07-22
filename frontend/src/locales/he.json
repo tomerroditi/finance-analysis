@@ -287,7 +287,20 @@
       "incomeExpenses": "הכנסות והוצאות",
       "netWorth": "שווי נקי",
       "cashFlow": "תזרים מזומנים",
-      "category": "קטגוריות"
+      "category": "קטגוריות",
+      "refunds": "החזרים"
+    },
+    "refundsCard": {
+      "title": "החזרים",
+      "viewAll": "הצג הכל",
+      "owed": "צפוי לחזור",
+      "received": "התקבל",
+      "unallocated": "לא שויך",
+      "recoveredOf": "{{received}} מתוך {{total}} הוחזרו",
+      "openRequests": "{{count}} בקשות פתוחות",
+      "allSettled": "כל בקשות ההחזר הושלמו.",
+      "empty": "סמנו הוצאות כממתינות להחזר כדי לעקוב אחריהן כאן.",
+      "moreCount": "+{{count}} נוספים"
     }
   },
   "transactions": {
