@@ -34,6 +34,8 @@ export const DASHBOARD_CARDS = [
   { id: "net_worth", labelKey: "dashboard.cards.netWorth", size: "full" },
   { id: "cash_flow", labelKey: "dashboard.cards.cashFlow", size: "full", defaultHidden: true },
   { id: "category", labelKey: "dashboard.cards.category", size: "full", defaultHidden: true },
+  // Appended last so the default half-card row pairings above it stay intact.
+  { id: "refunds", labelKey: "dashboard.cards.refunds", size: "half" },
 ] as const;
 
 export type DashboardCardId = (typeof DASHBOARD_CARDS)[number]["id"];

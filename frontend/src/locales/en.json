@@ -287,7 +287,20 @@
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
       "cashFlow": "Cash Flow",
-      "category": "Categories"
+      "category": "Categories",
+      "refunds": "Refunds"
+    },
+    "refundsCard": {
+      "title": "Refunds",
+      "viewAll": "View all",
+      "owed": "Owed back",
+      "received": "Received",
+      "unallocated": "Unallocated",
+      "recoveredOf": "{{received}} of {{total}} recovered",
+      "openRequests": "{{count}} open requests",
+      "allSettled": "All refund requests are settled.",
+      "empty": "Mark expenses as pending refund to track them here.",
+      "moreCount": "+{{count}} more"
     }
   },
   "transactions": {
@@ -421,6 +434,7 @@
     "confirmRemovePartialRefund": "Remove this partial refund request? Linked refunds will be unlinked.",
     "confirmRemoveRefundRequest": "Remove this request? If it is linked to refunds, those links will be broken.",
     "confirmUnlinkRefund": "Unlink this refund from the pending request?",
+    "confirmUnlinkRefundMulti": "This transaction funds {{count}} refund requests. Unlink all of them?",
     "noDescription": "No description",
     "refunds": {
       "loading": "Loading refunds...",
@@ -443,7 +457,50 @@
       "partiallyRefunded": "Partially Refunded",
       "clickToCancel": "Click to Cancel",
       "noExpectations": "No refund expectations found.",
-      "markExpenses": "Mark expenses as \"Pending Refund\" in your transactions list to track them here."
+      "markExpenses": "Mark expenses as \"Pending Refund\" in your transactions list to track them here.",
+      "status": {
+        "pending": "Pending",
+        "partial": "Partial",
+        "resolved": "Resolved",
+        "closed": "Closed"
+      },
+      "outstanding": "Expected Back",
+      "activeCount": "{{count}} active refund requests",
+      "received": "Received Back",
+      "availableToAllocate": "Unallocated Refund Money",
+      "availableToAllocateHint": "Left in linked transactions",
+      "searchPlaceholder": "Search refunds, notes, accounts...",
+      "filterAll": "All",
+      "byExpense": "By Expense",
+      "bySource": "By Refund Source",
+      "noMatches": "No refunds match your search or filter.",
+      "noSources": "No refund transactions linked yet.",
+      "noSourcesHint": "Link incoming transactions to your refund requests to see how their money is split here.",
+      "transactionAmount": "Transaction amount",
+      "allocatedOf": "{{allocated}} of {{total}} allocated",
+      "allocatedOnly": "{{allocated}} allocated",
+      "availableBadge": "{{amount}} available",
+      "fullyAllocated": "Fully allocated",
+      "linkRemaining": "Link remaining",
+      "ofTransaction": "of {{amount}}",
+      "sharedSource": "+{{count}} more",
+      "sharedSourceTooltip": "This transaction also funds {{count}} other refund requests",
+      "filterOpen": "Open",
+      "openCount": "{{count}} open",
+      "left": "left",
+      "settled": "settled",
+      "linkShort": "Link",
+      "closeShort": "Close",
+      "addNote": "+ note",
+      "notePlaceholder": "Add a short note…",
+      "noteAria": "Refund note",
+      "freeAmount": "{{amount}} free",
+      "freeChipAction": "{{amount}} free → link it",
+      "requestsPanel": "Refund requests",
+      "sourcesPanel": "Refund sources",
+      "sourcesCount": "{{count}} txns",
+      "panelHint": "refunded / expected · remaining",
+      "crossHint": "Hover a source to highlight the requests it funds — and vice-versa."
     }
   },
   "budget": {
@@ -1014,7 +1071,16 @@
       "searchTransactions": "Search refund transactions...",
       "noTransactions": "No refund transactions found",
       "expectedRefund": "expected refund",
-      "refundLabel": "refund"
+      "refundLabel": "refund",
+      "availableOf": "{{available}} of {{total}} available",
+      "availableShort": "{{amount}} available",
+      "maxAmount": "Max {{amount}}",
+      "amountTooHigh": "Amount exceeds the maximum of {{amount}}",
+      "suggestedHeader": "Suggested — matches the {{amount}} still owed",
+      "suggestedBadge": "Suggested · amount match",
+      "allIncoming": "All incoming transactions",
+      "suggestedPendingHeader": "Suggested — expecting exactly this amount",
+      "allPending": "All pending refunds"
     },
     "project": {
       "title": "Project Budget",

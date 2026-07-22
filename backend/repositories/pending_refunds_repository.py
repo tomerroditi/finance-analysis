@@ -4,7 +4,11 @@ import pandas as pd
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
-from backend.models.pending_refund import PendingRefund, RefundLink
+from backend.models.pending_refund import (
+    PendingRefund,
+    RefundLink,
+    RefundSourceNote,
+)
 
 
 class PendingRefundsRepository:
@@ -200,6 +204,123 @@ class PendingRefundsRepository:
         )
         return pd.read_sql(stmt, self.db.bind)
 
+    def get_all_links(self) -> pd.DataFrame:
+        """
+        Get every refund link in the system.
+
+        Returns
+        -------
+        pd.DataFrame
+            All refund link records; empty when none exist.
+        """
+        return pd.read_sql(select(RefundLink), self.db.bind)
+
+    def update_notes(self, pending_id: int, notes: str | None) -> None:
+        """
+        Update the notes of a pending refund.
+
+        Parameters
+        ----------
+        pending_id : int
+            ID of the pending refund.
+        notes : str or None
+            New note text; None or empty clears the note.
+        """
+        pending = self.db.get(PendingRefund, pending_id)
+        if pending:
+            pending.notes = notes or None
+            self.db.commit()
+
+    def get_source_note(
+        self, refund_source: str, refund_transaction_id: int
+    ) -> RefundSourceNote | None:
+        """
+        Get the note record for a refund source transaction.
+
+        Parameters
+        ----------
+        refund_source : str
+            Canonical table where the transaction lives.
+        refund_transaction_id : int
+            unique_id of the transaction.
+
+        Returns
+        -------
+        RefundSourceNote or None
+            The note record if one exists.
+        """
+        stmt = (
+            select(RefundSourceNote)
+            .where(RefundSourceNote.refund_source == refund_source)
+            .where(
+                RefundSourceNote.refund_transaction_id == refund_transaction_id
+            )
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_all_source_notes(self) -> pd.DataFrame:
+        """
+        Get every refund source note.
+
+        Returns
+        -------
+        pd.DataFrame
+            All source note records; empty when none exist.
+        """
+        return pd.read_sql(select(RefundSourceNote), self.db.bind)
+
+    def upsert_source_note(
+        self, refund_source: str, refund_transaction_id: int, note: str
+    ) -> RefundSourceNote:
+        """
+        Create or update the note for a refund source transaction.
+
+        Parameters
+        ----------
+        refund_source : str
+            Canonical table where the transaction lives.
+        refund_transaction_id : int
+            unique_id of the transaction.
+        note : str
+            The note text.
+
+        Returns
+        -------
+        RefundSourceNote
+            The created or updated record.
+        """
+        record = self.get_source_note(refund_source, refund_transaction_id)
+        if record:
+            record.note = note
+        else:
+            record = RefundSourceNote(
+                refund_source=refund_source,
+                refund_transaction_id=refund_transaction_id,
+                note=note,
+            )
+            self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
+    def delete_source_note(
+        self, refund_source: str, refund_transaction_id: int
+    ) -> None:
+        """
+        Delete the note for a refund source transaction, if present.
+
+        Parameters
+        ----------
+        refund_source : str
+            Canonical table where the transaction lives.
+        refund_transaction_id : int
+            unique_id of the transaction.
+        """
+        record = self.get_source_note(refund_source, refund_transaction_id)
+        if record:
+            self.db.delete(record)
+            self.db.commit()
+
     def update_status(self, pending_id: int, status: str) -> None:
         """
         Update the status of a pending refund.
@@ -256,31 +377,6 @@ class PendingRefundsRepository:
             self.db.delete(link)
             self.db.commit()
         return link
-
-    def get_link_for_transaction(
-        self, refund_transaction_id: int, refund_source: str
-    ) -> RefundLink | None:
-        """
-        Check if a transaction is already linked to any pending refund.
-
-        Parameters
-        ----------
-        refund_transaction_id : int
-            unique_id of the refund transaction.
-        refund_source : str
-            Table where refund lives.
-
-        Returns
-        -------
-        RefundLink or None
-            The existing link if found, None otherwise.
-        """
-        stmt = (
-            select(RefundLink)
-            .where(RefundLink.refund_transaction_id == refund_transaction_id)
-            .where(RefundLink.refund_source == refund_source)
-        )
-        return self.db.execute(stmt).scalar_one_or_none()
 
     def get_link_by_id(self, link_id: int) -> RefundLink | None:
         """

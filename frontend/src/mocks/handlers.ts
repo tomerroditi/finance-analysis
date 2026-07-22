@@ -638,6 +638,9 @@ export const handlers = [
   http.get("/api/pending-refunds/budget-adjustment", () =>
     HttpResponse.json({ total: 0 }),
   ),
+  http.get("/api/pending-refunds/refund-sources", () =>
+    HttpResponse.json([]),
+  ),
   http.post("/api/pending-refunds/", () =>
     HttpResponse.json({ id: 1, status: "ok" }),
   ),

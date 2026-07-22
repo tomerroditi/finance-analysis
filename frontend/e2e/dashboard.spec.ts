@@ -43,6 +43,18 @@ test.describe("Dashboard", () => {
     // only in BudgetSection.
     await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
 
+    // --- Refunds card: KPIs + open requests render from demo data ---
+    const refundsCard = page.locator('[data-card-id="refunds"]');
+    await refundsCard.scrollIntoViewIfNeeded();
+    await expect(refundsCard.getByText("Owed back")).toBeVisible({ timeout: 20_000 });
+    await expect(refundsCard.getByText(/recovered/)).toBeVisible();
+    // Demo data ships open (pending/partial) refunds, so the list renders,
+    // with each remaining amount shown out of its expected total.
+    await expect(refundsCard.getByText(/open requests/)).toBeVisible();
+    await expect(
+      refundsCard.getByTestId("card-refund-remaining").first(),
+    ).toContainText("/");
+
     // --- Inline tag editor: stages edits, commits on Done ---
     const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });
     await editButtons.first().waitFor();

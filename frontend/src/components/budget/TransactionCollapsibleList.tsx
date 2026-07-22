@@ -1,7 +1,7 @@
 import React from "react";
 import { TransactionsTable } from "../TransactionsTable";
 import type { Transaction } from "../../types/transaction";
-import { type PendingRefund, type BudgetMonthOverride } from "../../services/api";
+import { type PendingRefund, type RefundLink, type BudgetMonthOverride } from "../../services/api";
 
 interface TransactionCollapsibleListProps {
   transactions: Transaction[];
@@ -9,7 +9,7 @@ interface TransactionCollapsibleListProps {
   showActions?: boolean;
   onTransactionUpdated?: () => void;
   pendingRefundsMap?: Map<string, PendingRefund>;
-  refundLinksMap?: Map<string, number>;
+  refundLinksMap?: Map<string, RefundLink[]>;
   // Monthly-budget month override props
   budgetMonthOverridesMap?: Map<string, BudgetMonthOverride>;
   budgetViewYear?: number;

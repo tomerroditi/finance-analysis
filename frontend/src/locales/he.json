@@ -287,7 +287,20 @@
       "incomeExpenses": "הכנסות והוצאות",
       "netWorth": "שווי נקי",
       "cashFlow": "תזרים מזומנים",
-      "category": "קטגוריות"
+      "category": "קטגוריות",
+      "refunds": "החזרים"
+    },
+    "refundsCard": {
+      "title": "החזרים",
+      "viewAll": "הצג הכל",
+      "owed": "צפוי לחזור",
+      "received": "התקבל",
+      "unallocated": "לא שויך",
+      "recoveredOf": "{{received}} מתוך {{total}} הוחזרו",
+      "openRequests": "{{count}} בקשות פתוחות",
+      "allSettled": "כל בקשות ההחזר הושלמו.",
+      "empty": "סמנו הוצאות כממתינות להחזר כדי לעקוב אחריהן כאן.",
+      "moreCount": "+{{count}} נוספים"
     }
   },
   "transactions": {
@@ -421,6 +434,7 @@
     "confirmRemovePartialRefund": "להסיר בקשת החזר חלקית? קישורי החזרים יבוטלו.",
     "confirmRemoveRefundRequest": "להסיר את הבקשה? אם היא מקושרת להחזרים, הקישורים יישברו.",
     "confirmUnlinkRefund": "לבטל את קישור ההחזר לבקשה הממתינה?",
+    "confirmUnlinkRefundMulti": "עסקה זו מממנת {{count}} בקשות החזר. לבטל את הקישור לכולן?",
     "noDescription": "ללא תיאור",
     "refunds": {
       "loading": "טוען החזרים...",
@@ -443,7 +457,50 @@
       "partiallyRefunded": "הוחזר חלקית",
       "clickToCancel": "לחץ לביטול",
       "noExpectations": "לא נמצאו ציפיות להחזרים.",
-      "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן."
+      "markExpenses": "סמן הוצאות כ\"ממתין להחזר\" ברשימת התנועות שלך כדי לעקוב אחריהן כאן.",
+      "status": {
+        "pending": "ממתין",
+        "partial": "חלקי",
+        "resolved": "הושלם",
+        "closed": "נסגר"
+      },
+      "outstanding": "צפוי לחזור",
+      "activeCount": "{{count}} בקשות החזר פעילות",
+      "received": "התקבל בחזרה",
+      "availableToAllocate": "כסף החזר שלא שויך",
+      "availableToAllocateHint": "נותר בתנועות מקושרות",
+      "searchPlaceholder": "חיפוש החזרים, הערות, חשבונות...",
+      "filterAll": "הכל",
+      "byExpense": "לפי הוצאה",
+      "bySource": "לפי מקור ההחזר",
+      "noMatches": "אין החזרים התואמים את החיפוש או הסינון.",
+      "noSources": "עדיין לא קושרו תנועות החזר.",
+      "noSourcesHint": "קשרו תנועות נכנסות לבקשות ההחזר שלכם כדי לראות כאן איך הכסף מתחלק.",
+      "transactionAmount": "סכום התנועה",
+      "allocatedOf": "{{allocated}} מתוך {{total}} שויכו",
+      "allocatedOnly": "{{allocated}} שויכו",
+      "availableBadge": "{{amount}} זמין",
+      "fullyAllocated": "שויך במלואו",
+      "linkRemaining": "קשר את היתרה",
+      "ofTransaction": "מתוך {{amount}}",
+      "sharedSource": "+{{count}} נוספים",
+      "sharedSourceTooltip": "תנועה זו מממנת גם {{count}} בקשות החזר נוספות",
+      "filterOpen": "פתוחים",
+      "openCount": "{{count}} פתוחים",
+      "left": "נותר",
+      "settled": "הושלם",
+      "linkShort": "קשר",
+      "closeShort": "סגור",
+      "addNote": "+ הערה",
+      "notePlaceholder": "הוסף הערה קצרה…",
+      "noteAria": "הערת החזר",
+      "freeAmount": "{{amount}} פנוי",
+      "freeChipAction": "{{amount}} פנוי ← קשר אותו",
+      "requestsPanel": "בקשות החזר",
+      "sourcesPanel": "מקורות החזר",
+      "sourcesCount": "{{count}} תנועות",
+      "panelHint": "הוחזר / צפוי · נותר",
+      "crossHint": "רחפו מעל מקור כדי להאיר את הבקשות שהוא מממן — ולהפך."
     }
   },
   "budget": {
@@ -1014,7 +1071,16 @@
       "searchTransactions": "חפש תנועות החזר...",
       "noTransactions": "לא נמצאו תנועות החזר",
       "expectedRefund": "החזר צפוי",
-      "refundLabel": "החזר"
+      "refundLabel": "החזר",
+      "availableOf": "{{available}} מתוך {{total}} זמינים",
+      "availableShort": "{{amount}} זמין",
+      "maxAmount": "מקסימום {{amount}}",
+      "amountTooHigh": "הסכום חורג מהמקסימום של {{amount}}",
+      "suggestedHeader": "מוצע — תואם את {{amount}} שעדיין חסרים",
+      "suggestedBadge": "מוצע · התאמת סכום",
+      "allIncoming": "כל התנועות הנכנסות",
+      "suggestedPendingHeader": "מוצע — מצפה בדיוק לסכום הזה",
+      "allPending": "כל בקשות ההחזר"
     },
     "project": {
       "title": "תקציב פרויקט",

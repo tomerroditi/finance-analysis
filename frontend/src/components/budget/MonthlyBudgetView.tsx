@@ -127,10 +127,16 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   }, [pendingRefunds]);
 
   const refundLinksMap = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, RefundLink[]>();
     pendingRefunds?.forEach((pr: PendingRefund) => {
       pr.links?.forEach((link: RefundLink) => {
-        map.set(`${link.refund_source}_${link.refund_transaction_id}`, link.id);
+        const key = `${link.refund_source}_${link.refund_transaction_id}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.push(link);
+        } else {
+          map.set(key, [link]);
+        }
       });
     });
     return map;
