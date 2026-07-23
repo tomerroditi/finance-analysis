@@ -33,14 +33,24 @@ export function ChartLegend({ payload, fontSize = 11, gapTop = 6 }: ChartLegendP
       style={{ paddingTop: gapTop, fontSize, color: CHART_TEXT_COLOR }}
     >
       {entries.map((entry, i) => (
-        <li key={`${entry.value}-${i}`} className="flex items-center gap-1.5 whitespace-nowrap">
+        <li
+          key={`${entry.value}-${i}`}
+          className="flex items-center gap-1.5 whitespace-nowrap"
+          title={String(entry.value)}
+        >
           <span
             className="inline-block h-2 w-2 shrink-0 rounded-full"
             // Multi-colour series (per-Cell bars) have no single colour —
             // fall back to a neutral dot instead of an invisible one.
             style={{ backgroundColor: entry.color ?? "#64748b" }}
           />
-          {entry.value}
+          {/* Series labels are user data (investment/account names) and can be
+              long — cap them so a handful of verbose names can't push the
+              legend into eating the plot area. `dir="auto"` keeps the ellipsis
+              on the reading-end under RTL; the full text stays in `title`. */}
+          <span className="max-w-[14rem] truncate" dir="auto">
+            {entry.value}
+          </span>
         </li>
       ))}
     </ul>

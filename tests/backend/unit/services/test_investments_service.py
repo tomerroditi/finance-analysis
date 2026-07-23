@@ -306,6 +306,70 @@ class TestInvestmentsServiceCalculations:
         assert "Migdal S&P 500 Fund" in names
         assert "Psagot Government Bond" in names
 
+    def test_get_portfolio_balance_history_duplicate_names_stay_distinct(
+        self, db_session, seed_investments
+    ):
+        """Verify same-named investments get distinct ids so series can't collide.
+
+        Several real accounts share one display name (three Keren Hishtalmut
+        accounts, for example). Consumers key the chart series by ``id``; if the
+        payload only carried ``name`` they would merge into a single line that
+        alternates between accounts.
+        """
+        service = InvestmentsService(db_session)
+        for tag in ("KH Account A", "KH Account B"):
+            service.create_investment(
+                category="Investments",
+                tag=tag,
+                type_="keren_hishtalmut",
+                name="קרן השתלמות",
+                interest_rate=4.0,
+                interest_rate_type="variable",
+            )
+        db_session.add_all(
+            ManualInvestmentTransaction(
+                id=f"kh_txn_{tag}",
+                date=date,
+                provider="manual_investments",
+                account_name="KH",
+                description="deposit",
+                amount=amount,
+                category="Investments",
+                tag=tag,
+                source="manual_investment_transactions",
+                type="normal",
+                status="completed",
+            )
+            for tag, date, amount in (
+                ("KH Account A", "2024-03-05", -1000.0),
+                ("KH Account B", "2024-03-19", -7000.0),
+            )
+        )
+        db_session.commit()
+
+        result = service.get_portfolio_balance_history(include_closed=True)
+
+        duplicates = [s for s in result["series"] if s["name"] == "קרן השתלמות"]
+        assert len(duplicates) == 2
+        assert len({s["id"] for s in duplicates}) == 2
+        assert {s["tag"] for s in duplicates} == {"KH Account A", "KH Account B"}
+        # Each series keeps its own balances rather than overwriting the other.
+        by_tag = {s["tag"]: [p["balance"] for p in s["data"]] for s in duplicates}
+        assert max(by_tag["KH Account A"]) == 1000.0
+        assert max(by_tag["KH Account B"]) == 7000.0
+
+    def test_get_portfolio_balance_history_series_ids_are_unique(
+        self, db_session, seed_investments
+    ):
+        """Verify every balance-history series carries a unique investment id."""
+        service = InvestmentsService(db_session)
+
+        result = service.get_portfolio_balance_history(include_closed=True)
+
+        ids = [s["id"] for s in result["series"]]
+        assert len(ids) == len(set(ids))
+        assert all(isinstance(i, int) for i in ids)
+
     def test_get_portfolio_balance_history_empty(self, db_session):
         """Verify empty portfolio returns empty series and total."""
         service = InvestmentsService(db_session)

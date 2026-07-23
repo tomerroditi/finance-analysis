@@ -493,8 +493,12 @@ class ValuationMixin:
         dict
             Dictionary with keys:
 
-            - ``series`` – list of per-investment dicts with ``name`` and
-              ``data`` (list of ``{"date": str, "balance": float}``).
+            - ``series`` – list of per-investment dicts with ``id``, ``name``,
+              ``tag`` and ``data`` (list of ``{"date": str, "balance": float}``).
+              ``id`` is the stable series key: investment names are not unique
+              (e.g. several Keren Hishtalmut accounts share one name), so
+              consumers must key by ``id`` and use ``name``/``tag`` for display
+              only.
             - ``total`` – aggregated balance across all investments per month.
         """
         investments = self.investments_repo.get_all_investments(
@@ -523,7 +527,9 @@ class ValuationMixin:
 
             all_series.append(
                 {
+                    "id": int(inv["id"]),
                     "name": inv["name"],
+                    "tag": inv["tag"],
                     "data": monthly.to_dict(orient="records"),
                 }
             )

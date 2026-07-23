@@ -501,16 +501,22 @@ export const handlers = [
   ),
   http.get("/api/investments/analysis/balance-history", () =>
     HttpResponse.json({
-      investments: [
+      series: [
         {
           id: 1,
           name: "S&P 500 ETF",
+          tag: "Stocks",
           data: [
             { date: "2026-01-01", balance: 20000 },
             { date: "2026-02-01", balance: 22000 },
             { date: "2026-03-01", balance: 25000 },
           ],
         },
+      ],
+      total: [
+        { date: "2026-01-01", balance: 20000 },
+        { date: "2026-02-01", balance: 22000 },
+        { date: "2026-03-01", balance: 25000 },
       ],
     }),
   ),

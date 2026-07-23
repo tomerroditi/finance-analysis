@@ -35,7 +35,9 @@ interface BalancePoint {
 }
 
 interface BalanceSeries {
+  id: number;
   name: string;
+  tag?: string | null;
   data: BalancePoint[];
 }
 
@@ -91,6 +93,25 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
       investmentsApi.getPortfolioBalanceHistory(chartIncludeClosed).then((res) => res.data),
   });
 
+  const series = useMemo(
+    () => (balanceHistory?.series ?? []) as BalanceSeries[],
+    [balanceHistory],
+  );
+
+  // Investment names are not unique (several Keren Hishtalmut accounts share
+  // one name), so series are keyed by investment id and only the visible label
+  // is disambiguated — with the account tag when a name repeats.
+  const seriesLabels = useMemo(() => {
+    const nameCounts = new Map<string, number>();
+    for (const s of series) nameCounts.set(s.name, (nameCounts.get(s.name) ?? 0) + 1);
+    return new Map(
+      series.map((s) => [
+        s.id,
+        (nameCounts.get(s.name) ?? 0) > 1 && s.tag ? `${s.name} · ${s.tag}` : s.name,
+      ]),
+    );
+  }, [series]);
+
   // Unified rows keyed by date: one key per investment series + "__total",
   // so every line renders on a single shared x-axis.
   const balanceRows = useMemo(() => {
@@ -103,8 +124,8 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
       }
       return row;
     };
-    for (const s of (balanceHistory?.series ?? []) as BalanceSeries[]) {
-      for (const p of s.data) ensure(p.date)[s.name] = p.balance;
+    for (const s of series) {
+      for (const p of s.data) ensure(p.date)[String(s.id)] = p.balance;
     }
     for (const p of (balanceHistory?.total ?? []) as BalancePoint[]) {
       ensure(p.date).__total = p.balance;
@@ -112,7 +133,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
     return [...byDate.values()].sort((a, b) =>
       String(a.date).localeCompare(String(b.date)),
     );
-  }, [balanceHistory]);
+  }, [series, balanceHistory]);
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -160,7 +181,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
             </button>
           </div>
           <div className="h-[300px]">
-            {balanceHistory?.series?.length > 0 ? (
+            {series.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={balanceRows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
                   <XAxis
@@ -173,11 +194,11 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
                     content={<ChartTooltip labelFormatter={(d) => formatDate(String(d))} />}
                   />
                   <Legend content={<ChartLegend fontSize={10} />} />
-                  {(balanceHistory.series as BalanceSeries[]).map((s, i) => (
+                  {series.map((s, i) => (
                     <Line
-                      key={s.name}
-                      dataKey={s.name}
-                      name={s.name}
+                      key={s.id}
+                      dataKey={String(s.id)}
+                      name={seriesLabels.get(s.id) ?? s.name}
                       type="monotone"
                       stroke={CHART_COLORS[i % CHART_COLORS.length]}
                       strokeWidth={2}
