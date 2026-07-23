@@ -1,3 +1,9 @@
+## v1.48.1 (2026-07-23)
+
+### Fix
+
+- **investments**: key balance-history series by id, not name
+
 ## v1.48.0 (2026-07-23)
 
 ### Feat
