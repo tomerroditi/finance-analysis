@@ -1,3 +1,11 @@
+## v1.48.0 (2026-07-23)
+
+### Feat
+
+- **investments**: prime-linked rate type priced off the BoI series
+- **liabilities**: support prime-linked and variable loans with new amortization methods
+- **rates**: add Bank of Israel interest-rate series with seeded history
+
 ## v1.47.0 (2026-07-22)
 
 ### Feat
