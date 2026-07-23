@@ -12,6 +12,7 @@ from backend.models.category import Category
 from backend.models.credential import Credential
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.budget import BudgetRule
+from backend.models.interest_rate import InterestRate
 from backend.models.investment import Investment
 from backend.models.liability import Liability, LiabilityTransaction
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot

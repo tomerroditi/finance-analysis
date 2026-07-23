@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { investmentsApi, type Investment } from "../services/api";
+import { investmentsApi, ratesApi, type Investment } from "../services/api";
 import { Modal } from "../components/common/Modal";
 import { SelectDropdown } from "../components/common/SelectDropdown";
 import { Skeleton } from "../components/common/Skeleton";
@@ -38,6 +38,8 @@ export function Investments() {
     tag: "",
     type: "stocks",
     interest_rate: 0,
+    interest_rate_type: "fixed",
+    rate_spread: 0,
     notes: "",
   });
 
@@ -47,8 +49,9 @@ export function Investments() {
     type: string;
     interest_rate: number;
     interest_rate_type: string;
+    rate_spread: number;
     notes: string;
-  }>({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" });
+  }>({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" });
 
   const [balanceForm, setBalanceForm] = useState<{
     investmentId: number | null;
@@ -75,6 +78,12 @@ export function Investments() {
   const { data: categories } = useCategories();
   const { createTag } = useCategoryTagCreate();
 
+  const { data: currentRates } = useQuery({
+    queryKey: qk.rates.current(),
+    queryFn: () => ratesApi.getCurrent().then((res) => res.data),
+    enabled: isAddOpen || editForm.investmentId != null,
+  });
+
   const { data: portfolioAnalysis } = useQuery({
     queryKey: qk.investments.portfolio(),
     queryFn: () =>
@@ -89,7 +98,7 @@ export function Investments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
-      setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" });
+      setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" });
     },
   });
 
@@ -104,6 +113,8 @@ export function Investments() {
         tag: "",
         type: "stocks",
         interest_rate: 0,
+        interest_rate_type: "fixed",
+        rate_spread: 0,
         notes: "",
       });
     },
@@ -267,6 +278,7 @@ export function Investments() {
                     type: inv.type || "",
                     interest_rate: inv.interest_rate || 0,
                     interest_rate_type: inv.interest_rate_type || "variable",
+                    rate_spread: inv.rate_spread ?? 0,
                     notes: inv.notes || "",
                   })}
                   analysisData={getAllocationData(inv.id)}
@@ -350,6 +362,7 @@ export function Investments() {
                   type: inv.type || "",
                   interest_rate: inv.interest_rate || 0,
                   interest_rate_type: inv.interest_rate_type || "variable",
+                  rate_spread: inv.rate_spread ?? 0,
                   notes: inv.notes || "",
                 })}
                 analysisData={getAllocationData(inv.id)}
@@ -499,7 +512,7 @@ export function Investments() {
       <Modal
         isOpen={editForm.investmentId != null}
         onClose={() =>
-          setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" })
+          setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" })
         }
         title={t("investments.editInvestment")}
         maxWidth="sm"
@@ -518,33 +531,57 @@ export function Investments() {
                 />
               </div>
               {RATE_TYPES.has(editForm.type) && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      {t("investments.interestRatePct")}
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                      value={editForm.interest_rate}
-                      onChange={(e) => setEditForm({ ...editForm, interest_rate: parseFloat(e.target.value) || 0 })}
-                    />
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {editForm.interest_rate_type === "prime_linked" ? (
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                          {t("investments.spreadVsPrime")}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder={t("investments.spreadPlaceholder")}
+                          className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                          value={editForm.rate_spread}
+                          onChange={(e) => setEditForm({ ...editForm, rate_spread: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                          {t("investments.interestRatePct")}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                          value={editForm.interest_rate}
+                          onChange={(e) => setEditForm({ ...editForm, interest_rate: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                        {t("investments.rateType")}
+                      </label>
+                      <select
+                        className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                        value={editForm.interest_rate_type}
+                        onChange={(e) => setEditForm({ ...editForm, interest_rate_type: e.target.value })}
+                      >
+                        <option value="variable">{t("investments.variableRate")}</option>
+                        <option value="fixed">{t("investments.fixedRate")}</option>
+                        <option value="prime_linked">{t("investments.primeLinkedRate")}</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                      {t("investments.rateType")}
-                    </label>
-                    <select
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                      value={editForm.interest_rate_type}
-                      onChange={(e) => setEditForm({ ...editForm, interest_rate_type: e.target.value })}
-                    >
-                      <option value="variable">{t("investments.variableRate")}</option>
-                      <option value="fixed">{t("investments.fixedRate")}</option>
-                    </select>
-                  </div>
-                </div>
+                  {editForm.interest_rate_type === "prime_linked" && !!currentRates?.prime && (
+                    <p className="text-xs text-sky-400 font-medium">
+                      {t("investments.currentPrimeHint", { prime: currentRates.prime })}
+                    </p>
+                  )}
+                </>
               )}
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -560,7 +597,7 @@ export function Investments() {
             </div>
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", notes: "" })}
+                onClick={() => setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" })}
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
                 {t("common.cancel")}
@@ -574,6 +611,7 @@ export function Investments() {
                       name: editForm.name,
                       interest_rate: editForm.interest_rate,
                       interest_rate_type: editForm.interest_rate_type,
+                      rate_spread: editForm.rate_spread,
                       notes: editForm.notes,
                     },
                   })
@@ -674,24 +712,72 @@ export function Investments() {
                 />
               </div>
               {RATE_TYPES.has(newInvestment.type) && (
+              <>
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
-                  {t("investments.intRate")}
+                  {t("investments.rateType")}
                 </label>
-                <input
-                  type="number"
-                  step="0.1"
+                <select
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
-                  value={newInvestment.interest_rate}
+                  value={newInvestment.interest_rate_type}
                   onChange={(e) =>
                     setNewInvestment({
                       ...newInvestment,
-                      interest_rate:
-                        e.target.value === "" ? 0 : parseFloat(e.target.value),
+                      interest_rate_type: e.target.value,
                     })
                   }
-                />
+                >
+                  <option value="fixed">{t("investments.fixedRate")}</option>
+                  <option value="variable">{t("investments.variableRate")}</option>
+                  <option value="prime_linked">{t("investments.primeLinkedRate")}</option>
+                </select>
               </div>
+              {newInvestment.interest_rate_type === "prime_linked" ? (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                    {t("investments.spreadVsPrime")}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder={t("investments.spreadPlaceholder")}
+                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                    value={newInvestment.rate_spread}
+                    onChange={(e) =>
+                      setNewInvestment({
+                        ...newInvestment,
+                        rate_spread:
+                          e.target.value === "" ? 0 : parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                  {!!currentRates?.prime && (
+                    <p className="mt-2 text-xs text-sky-400 font-medium">
+                      {t("investments.currentPrimeHint", { prime: currentRates.prime })}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                    {t("investments.intRate")}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                    value={newInvestment.interest_rate}
+                    onChange={(e) =>
+                      setNewInvestment({
+                        ...newInvestment,
+                        interest_rate:
+                          e.target.value === "" ? 0 : parseFloat(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              )}
+              </>
               )}
               <div className="sm:col-span-2">
                 <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">

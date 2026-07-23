@@ -22,9 +22,13 @@ class LiabilityCreate(ApiRequestModel):
     name: str
     tag: str
     principal_amount: float
-    interest_rate: float
     term_months: int
     start_date: str
+    interest_rate: Optional[float] = None
+    loan_type: str = "fixed_unlinked"
+    amortization_method: str = "shpitzer"
+    rate_spread: Optional[float] = None
+    rate_reset_months: Optional[int] = None
     lender: Optional[str] = None
     notes: Optional[str] = None
 
@@ -40,6 +44,8 @@ class LiabilityUpdate(ApiRequestModel):
     name: Optional[str] = None
     lender: Optional[str] = None
     interest_rate: Optional[float] = None
+    rate_spread: Optional[float] = None
+    rate_reset_months: Optional[int] = None
     paid_off_date: Optional[str] = None
     notes: Optional[str] = None
 
@@ -122,6 +128,10 @@ def create_liability(
         interest_rate=liability.interest_rate,
         term_months=liability.term_months,
         start_date=liability.start_date,
+        loan_type=liability.loan_type,
+        amortization_method=liability.amortization_method,
+        rate_spread=liability.rate_spread,
+        rate_reset_months=liability.rate_reset_months,
         lender=liability.lender,
         notes=liability.notes,
     )

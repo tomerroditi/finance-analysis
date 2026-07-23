@@ -107,6 +107,36 @@ def _backfill_budget_rule_period_type(engine: Engine) -> None:
         conn.commit()
 
 
+def _backfill_liability_loan_type(engine: Engine) -> None:
+    """Classify ``liabilities`` rows that predate the loan-type columns.
+
+    Mirrors the backfill in alembic revision ``c9d1e3f5a7b9`` (add loan type
+    fields to liabilities): every pre-existing liability was a fixed-rate
+    Shpitzer loan — the only behavior that existed before the feature. Safe
+    to call repeatedly: it only touches rows still missing a classification.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("liabilities"):
+        return
+    columns = {col["name"] for col in inspector.get_columns("liabilities")}
+    if "loan_type" not in columns:
+        return
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "UPDATE liabilities SET loan_type = 'fixed_unlinked' "
+                "WHERE loan_type IS NULL OR loan_type = ''"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE liabilities SET amortization_method = 'shpitzer' "
+                "WHERE amortization_method IS NULL OR amortization_method = ''"
+            )
+        )
+        conn.commit()
+
+
 # Transaction tables an override's source_id can point into.
 _TXN_TABLES = {
     "bank_transactions",
@@ -316,6 +346,7 @@ def prepare_demo_database() -> None:
     Base.metadata.create_all(bind=engine)
     sync_missing_columns(engine)
     _backfill_budget_rule_period_type(engine)
+    _backfill_liability_loan_type(engine)
 
     offset_days = (date.today() - DEMO_REFERENCE_DATE).days
     _shift_dates(engine, offset_days)

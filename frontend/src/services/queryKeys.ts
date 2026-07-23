@@ -122,6 +122,9 @@ export function makeQueryKeys(demo: boolean) {
       analysis: (id: number) => ["liabilities", "analysis", id, demo] as const,
       debtOverTime: () => ["liabilities", "debt-over-time", demo] as const,
     },
+    rates: {
+      current: () => ["rates", "current", demo] as const,
+    },
     insurance: {
       accounts: () => ["insurance-accounts", demo] as const,
     },

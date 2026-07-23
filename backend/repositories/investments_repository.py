@@ -51,6 +51,7 @@ class InvestmentsRepository:
         name: str,
         interest_rate: float = None,
         interest_rate_type: str = "fixed",
+        rate_spread: float = None,
         commission_deposit: float = None,
         commission_management: float = None,
         commission_withdrawal: float = None,
@@ -72,9 +73,11 @@ class InvestmentsRepository:
         name : str
             Human-readable display name for the investment.
         interest_rate : float, optional
-            Annual interest rate expressed as a decimal.
+            Annual interest rate as a percentage.
         interest_rate_type : str
-            Whether the rate is "fixed" or "variable". Defaults to "fixed".
+            "fixed", "variable", or "prime_linked". Defaults to "fixed".
+        rate_spread : float, optional
+            Spread over prime in percentage points (prime-linked only).
         commission_deposit : float, optional
             Commission rate applied on deposits.
         commission_management : float, optional
@@ -102,6 +105,7 @@ class InvestmentsRepository:
             name=name,
             interest_rate=interest_rate,
             interest_rate_type=interest_rate_type,
+            rate_spread=rate_spread,
             commission_deposit=commission_deposit,
             commission_management=commission_management,
             commission_withdrawal=commission_withdrawal,

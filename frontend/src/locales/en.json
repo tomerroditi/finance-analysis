@@ -787,7 +787,12 @@
       "brokerageAccount": "Brokerage Account",
       "p2pLending": "P2P Lending",
       "other": "Other"
-    }
+    },
+    "primeLinkedRate": "Prime-Linked",
+    "spreadVsPrime": "Spread vs Prime (%)",
+    "spreadPlaceholder": "e.g. -1.5",
+    "currentPrimeHint": "Current prime rate: {{prime}}%",
+    "calculatePrimeLinked": "Calculate Prime-Linked Balances"
   },
   "emptyStates": {
     "connectStep": {
@@ -985,7 +990,6 @@
     "editLiability": "Edit Liability",
     "transactions": "Transactions",
     "selectTag": "Select tag",
-    "fixedRate": "Fixed Rate",
     "interest": "interest",
     "noReceiptWarning": "No loan receipt transaction found for this tag. The principal amount and start date must be entered manually.",
     "receiptDetected": "Detected loan receipt: {{amount}} on {{date}} with {{payments}} payment(s) found.",
@@ -993,7 +997,24 @@
     "activeLiabilities": "Active Liabilities",
     "paidOffLiabilities": "Paid Off Liabilities",
     "debtOverTime": "Debt Over Time",
-    "debtAllocation": "Current Debt"
+    "debtAllocation": "Current Debt",
+    "loanType": "Loan Type",
+    "amortizationMethod": "Payment Structure",
+    "loanTypes": {
+      "fixed_unlinked": "Fixed Rate",
+      "prime_linked": "Prime-Linked",
+      "variable_unlinked": "Variable Rate"
+    },
+    "amortizationMethods": {
+      "shpitzer": "Shpitzer (Annuity)",
+      "equal_principal": "Equal Principal",
+      "balloon": "Balloon (Interest-Only)"
+    },
+    "rateSpread": "Spread vs Prime",
+    "rateResetMonths": "Rate Reset (Months)",
+    "spreadPlaceholder": "e.g. -0.5",
+    "primeLabel": "Prime",
+    "currentPrimeHint": "Current prime rate: {{prime}}% (Bank of Israel rate {{boi}}%, as of {{date}})"
   },
   "insurance": {
     "title": "Insurance",
