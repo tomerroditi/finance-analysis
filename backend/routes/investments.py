@@ -24,6 +24,7 @@ class InvestmentCreate(ApiRequestModel):
     name: str
     interest_rate: Optional[float] = None
     interest_rate_type: str = "fixed"
+    rate_spread: Optional[float] = None
     commission_deposit: Optional[float] = None
     commission_management: Optional[float] = None
     commission_withdrawal: Optional[float] = None
@@ -36,6 +37,7 @@ class InvestmentUpdate(ApiRequestModel):
     name: Optional[str] = None
     interest_rate: Optional[float] = None
     interest_rate_type: Optional[str] = None
+    rate_spread: Optional[float] = None
     closed_date: Optional[str] = None
     notes: Optional[str] = None
 
@@ -129,6 +131,7 @@ def create_investment(
         name=investment.name,
         interest_rate=investment.interest_rate,
         interest_rate_type=investment.interest_rate_type,
+        rate_spread=investment.rate_spread,
         commission_deposit=investment.commission_deposit,
         commission_management=investment.commission_management,
         commission_withdrawal=investment.commission_withdrawal,

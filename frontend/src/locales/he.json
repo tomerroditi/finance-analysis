@@ -730,7 +730,12 @@
       "brokerageAccount": "חשבון ברוקר",
       "p2pLending": "הלוואות P2P",
       "other": "אחר"
-    }
+    },
+    "primeLinkedRate": "צמוד פריים",
+    "spreadVsPrime": "מרווח מהפריים (%)",
+    "spreadPlaceholder": "לדוגמה -1.5",
+    "currentPrimeHint": "ריבית הפריים הנוכחית: {{prime}}%",
+    "calculatePrimeLinked": "חישוב יתרות צמודות פריים"
   },
   "emptyStates": {
     "connectStep": {

@@ -730,7 +730,12 @@
       "brokerageAccount": "Brokerage Account",
       "p2pLending": "P2P Lending",
       "other": "Other"
-    }
+    },
+    "primeLinkedRate": "Prime-Linked",
+    "spreadVsPrime": "Spread vs Prime (%)",
+    "spreadPlaceholder": "e.g. -1.5",
+    "currentPrimeHint": "Current prime rate: {{prime}}%",
+    "calculatePrimeLinked": "Calculate Prime-Linked Balances"
   },
   "emptyStates": {
     "connectStep": {

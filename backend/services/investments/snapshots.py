@@ -84,17 +84,27 @@ class SnapshotsMixin:
         investment_id: int,
         end_date: Optional[str] = None,
     ) -> None:
-        """Generate calculated balance snapshots for a fixed-rate investment.
+        """Generate calculated balance snapshots for a rate-bearing investment.
 
         Replays the transaction timeline with daily compounding to produce
         monthly snapshots. Existing ``"calculated"`` snapshots are cleared first;
         manual/scraped snapshots are preserved.
 
+        Supports two rate types:
+
+        - ``fixed`` — constant ``interest_rate`` for the whole timeline.
+        - ``prime_linked`` — the rate is the Israeli prime rate plus
+          ``rate_spread`` and follows every Bank of Israel decision; the
+          daily rate is re-derived whenever the walk crosses a rate step.
+          Falls back to the flat ``interest_rate`` when the rate series
+          is empty.
+
         Parameters
         ----------
         investment_id : int
-            ID of the investment (must have ``interest_rate_type == "fixed"``
-            and a non-null ``interest_rate``).
+            ID of the investment (``interest_rate_type == "fixed"`` with a
+            non-null ``interest_rate``, or ``"prime_linked"`` with a
+            non-null ``rate_spread``).
         end_date : str, optional
             End date for calculation in ``YYYY-MM-DD`` format.
             Defaults to today.
@@ -102,11 +112,13 @@ class SnapshotsMixin:
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
 
-        if not inv.get("interest_rate") or inv.get("interest_rate_type") != "fixed":
+        rate_type = inv.get("interest_rate_type")
+        spread = inv.get("rate_spread")
+        spread = None if pd.isna(spread) else float(spread)
+        is_fixed = rate_type == "fixed" and bool(inv.get("interest_rate"))
+        is_prime = rate_type == "prime_linked" and spread is not None
+        if not is_fixed and not is_prime:
             return
-
-        annual_rate = float(inv["interest_rate"]) / 100.0
-        daily_rate = (1 + annual_rate) ** (1 / 365) - 1
 
         transactions_df = self._get_all_transactions_for_investment(
             inv["category"], inv["tag"], investment_id=investment_id
@@ -127,6 +139,33 @@ class SnapshotsMixin:
             if end_date
             else date.today()
         )
+
+        # Piecewise-constant daily-rate curve: [(effective_date, daily_rate)],
+        # ascending. Fixed investments get a single step; prime-linked ones
+        # get one step per Bank of Israel decision (prime + spread).
+        def _daily(annual_pct: float) -> float:
+            return (1 + annual_pct / 100.0) ** (1 / 365) - 1
+
+        rate_curve: List[tuple] = []
+        if is_prime:
+            from backend.services.rates_service import RatesService
+
+            prime_steps = RatesService(self.db).get_prime_steps(
+                start.strftime("%Y-%m-%d")
+            )
+            rate_curve = [
+                (
+                    datetime.strptime(s["date"], "%Y-%m-%d").date(),
+                    _daily(s["value"] + spread),
+                )
+                for s in prime_steps
+            ]
+        if not rate_curve:
+            # Fixed rate, or prime-linked with an empty rate series.
+            flat_rate = inv.get("interest_rate")
+            if not flat_rate:
+                return
+            rate_curve = [(start, _daily(float(flat_rate)))]
 
         # Build a dict of date -> total transaction amount for that day.
         # ``date`` is a datetime dtype here (parsed via ``pd.to_datetime`` above),
@@ -150,11 +189,18 @@ class SnapshotsMixin:
         if not existing_df.empty:
             protected_dates = set(existing_df["date"].tolist())
 
-        # Simulate daily compounding
+        # Simulate daily compounding, advancing along the rate curve
         balance = 0.0
         current = start
+        daily_rate = rate_curve[0][1]
+        next_step = 1
 
         while current <= end:
+            # Pick up rate steps that have come into effect
+            while next_step < len(rate_curve) and rate_curve[next_step][0] <= current:
+                daily_rate = rate_curve[next_step][1]
+                next_step += 1
+
             # Apply transactions for this day (negative = deposit adds to balance)
             if current in txn_by_date:
                 balance -= txn_by_date[current]  # negate: deposit(-1000) -> +1000
@@ -174,3 +220,24 @@ class SnapshotsMixin:
                 )
 
             current += timedelta(days=1)
+
+    def recalculate_prime_linked_snapshots(self) -> int:
+        """Regenerate calculated snapshots for every open prime-linked investment.
+
+        Called after a Bank of Israel rate refresh appends a new decision,
+        so prime-linked balances pick up the change without waiting for the
+        next manual recalculation.
+
+        Returns
+        -------
+        int
+            Number of investments recalculated.
+        """
+        df = self.investments_repo.get_all_investments(include_closed=False)
+        if df.empty or "interest_rate_type" not in df.columns:
+            return 0
+
+        prime_linked = df[df["interest_rate_type"] == "prime_linked"]
+        for _, row in prime_linked.iterrows():
+            self.calculate_fixed_rate_snapshots(int(row["id"]))
+        return len(prime_linked)

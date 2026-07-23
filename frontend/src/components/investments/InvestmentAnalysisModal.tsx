@@ -37,6 +37,7 @@ interface Investment {
   name: string;
   interest_rate?: number;
   interest_rate_type?: string;
+  rate_spread?: number | null;
 }
 
 interface BalancePoint {
@@ -332,9 +333,11 @@ export function InvestmentAnalysisModal({
                 </div>
               </div>
 
-              {/* Fixed-Rate Calculation */}
-              {investment?.interest_rate_type === "fixed" &&
-                !!investment?.interest_rate && (
+              {/* Rate-based balance calculation (fixed or prime-linked) */}
+              {((investment?.interest_rate_type === "fixed" &&
+                !!investment?.interest_rate) ||
+                (investment?.interest_rate_type === "prime_linked" &&
+                  investment?.rate_spread != null)) && (
                 <div className="flex justify-end">
                   <button
                     onClick={() => calculateMutation.mutate()}
@@ -343,7 +346,9 @@ export function InvestmentAnalysisModal({
                   >
                     {calculateMutation.isPending
                       ? t("investments.calculating")
-                      : t("investments.calculateFixedRate")}
+                      : investment?.interest_rate_type === "prime_linked"
+                        ? t("investments.calculatePrimeLinked")
+                        : t("investments.calculateFixedRate")}
                   </button>
                 </div>
               )}

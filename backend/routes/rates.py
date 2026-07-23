@@ -43,7 +43,16 @@ def refresh_rates(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Fetch the current key rate from the BoI public API.
 
     Never fails on network errors — returns ``status: unavailable``
-    with the last known rates instead.
+    with the last known rates instead. When a new rate lands,
+    prime-linked investment balances are recalculated so they pick up
+    the change immediately.
     """
     service = RatesService(db)
-    return service.refresh_from_boi()
+    result = service.refresh_from_boi()
+    if result.get("status") == "updated":
+        from backend.services.investments_service import InvestmentsService
+
+        result["investments_recalculated"] = InvestmentsService(
+            db
+        ).recalculate_prime_linked_snapshots()
+    return result

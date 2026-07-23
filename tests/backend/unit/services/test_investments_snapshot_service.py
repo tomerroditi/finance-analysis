@@ -203,3 +203,128 @@ class TestSnapshotAwareProfitLoss:
         metrics = service.calculate_profit_loss(inv_id)
         assert metrics["current_balance"] == 100000.0
         assert metrics["absolute_profit_loss"] == 0.0
+
+
+class TestPrimeLinkedCalculation:
+    """Tests for prime-linked auto-calculation of snapshots."""
+
+    @staticmethod
+    def _seed_rates(db_session, points):
+        """Insert BoI rate points so ensure_seeded skips the bundled YAML."""
+        from backend.repositories.interest_rates_repository import (
+            InterestRatesRepository,
+        )
+
+        InterestRatesRepository(db_session).upsert_points(
+            "boi_rate", points, source="seed"
+        )
+
+    def test_prime_linked_follows_rate_steps(self, db_session: Session):
+        """Verify prime-linked balances compound at prime + spread and pick up rate steps."""
+        # BoI 3.0 (prime 4.5) until Jul 2025, then BoI 8.5 (prime 10.0)
+        self._seed_rates(
+            db_session,
+            [
+                {"date": "2024-01-01", "value": 3.0},
+                {"date": "2025-07-01", "value": 8.5},
+            ],
+        )
+        inv_id = _create_investment(
+            db_session,
+            tag="Prime Savings",
+            interest_rate_type="prime_linked",
+        )
+        # Effective rate: prime - 1.5 => 3.0% first half, 8.5% second half
+        db_session.get(Investment, inv_id).rate_spread = -1.5
+        db_session.commit()
+
+        txn_df = pd.DataFrame(
+            [{"date": "2025-01-01", "amount": -100000, "description": "Deposit"}]
+        )
+        service = _make_service(db_session, transactions_df=txn_df)
+
+        service.calculate_fixed_rate_snapshots(inv_id, end_date="2026-01-01")
+
+        snapshots = service.get_balance_snapshots(inv_id)
+        assert len(snapshots) > 0
+
+        # Mid-year snapshot grew at ~3% only (half a year: ~1.49%)
+        mid = next(s for s in snapshots if s["date"] == "2025-07-01")
+        assert 101_200 < mid["balance"] < 101_800
+
+        # Final balance sits between flat-3% and flat-8.5% full-year growth
+        last = snapshots[-1]
+        assert 103_000 < last["balance"] < 108_500
+        # And clearly above what flat 3% alone would produce
+        assert last["balance"] > 105_000
+
+    def test_prime_linked_falls_back_to_flat_rate_without_series(
+        self, db_session: Session
+    ):
+        """Verify an empty rate series falls back to the stored flat interest_rate."""
+        from unittest.mock import patch
+
+        inv_id = _create_investment(
+            db_session,
+            tag="Prime No Series",
+            interest_rate=10.0,
+            interest_rate_type="prime_linked",
+        )
+        db_session.get(Investment, inv_id).rate_spread = -1.5
+        db_session.commit()
+
+        txn_df = pd.DataFrame(
+            [{"date": "2025-01-01", "amount": -100000, "description": "Deposit"}]
+        )
+        service = _make_service(db_session, transactions_df=txn_df)
+
+        with patch(
+            "backend.services.rates_service.RatesService.get_prime_steps",
+            return_value=[],
+        ):
+            service.calculate_fixed_rate_snapshots(inv_id, end_date="2026-01-01")
+
+        snapshots = service.get_balance_snapshots(inv_id)
+        # Flat 10% fallback, same expectation as the fixed-rate test
+        assert abs(snapshots[-1]["balance"] - 110000) < 500
+
+    def test_prime_linked_without_spread_exits_early(self, db_session: Session):
+        """Verify a prime-linked investment with no spread generates nothing."""
+        inv_id = _create_investment(
+            db_session,
+            tag="Prime Missing Spread",
+            interest_rate_type="prime_linked",
+        )
+        txn_df = pd.DataFrame(
+            [{"date": "2025-01-01", "amount": -100000, "description": "Deposit"}]
+        )
+        service = _make_service(db_session, transactions_df=txn_df)
+
+        service.calculate_fixed_rate_snapshots(inv_id, end_date="2026-01-01")
+
+        assert service.get_balance_snapshots(inv_id) == []
+
+    def test_recalculate_prime_linked_targets_only_prime_investments(
+        self, db_session: Session
+    ):
+        """Verify the bulk recalc touches prime-linked investments only."""
+        self._seed_rates(db_session, [{"date": "2024-01-01", "value": 4.0}])
+        fixed_id = _create_investment(
+            db_session, tag="Fixed A", interest_rate=5.0, interest_rate_type="fixed"
+        )
+        prime_id = _create_investment(
+            db_session, tag="Prime B", interest_rate_type="prime_linked"
+        )
+        db_session.get(Investment, prime_id).rate_spread = -1.5
+        db_session.commit()
+
+        txn_df = pd.DataFrame(
+            [{"date": "2025-01-01", "amount": -1000, "description": "Deposit"}]
+        )
+        service = _make_service(db_session, transactions_df=txn_df)
+
+        count = service.recalculate_prime_linked_snapshots()
+
+        assert count == 1
+        assert len(service.get_balance_snapshots(prime_id)) > 0
+        assert service.get_balance_snapshots(fixed_id) == []

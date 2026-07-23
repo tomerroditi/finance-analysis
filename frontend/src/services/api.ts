@@ -391,6 +391,7 @@ export interface Investment {
   closed_date?: string;
   interest_rate?: number;
   interest_rate_type?: string;
+  rate_spread?: number | null;
   notes?: string;
   latest_snapshot_date?: string;
   latest_snapshot_balance?: number;

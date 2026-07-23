@@ -27,9 +27,14 @@ class Investment(Base, TimestampMixin):
     name : str
         Human-readable name of the investment.
     interest_rate : float, optional
-        Annual interest/return rate as a decimal (e.g. ``0.05`` for 5 %).
+        Annual interest/return rate as a percentage (e.g. ``5`` for 5 %).
     interest_rate_type : str
-        Rate type: ``fixed`` or ``variable``.
+        Rate type: ``fixed``, ``variable``, or ``prime_linked`` (rate =
+        Israeli prime + ``rate_spread``, tracks Bank of Israel decisions).
+    rate_spread : float, optional
+        Spread over the prime rate in percentage points (may be
+        negative, e.g. ``-1.5`` for a savings account paying prime − 1.5).
+        Only meaningful for ``prime_linked`` investments.
     commission_deposit : float, optional
         Commission charged on deposits (percentage).
     commission_management : float, optional
@@ -63,6 +68,7 @@ class Investment(Base, TimestampMixin):
     # Financial details
     interest_rate = Column(Float, nullable=True)
     interest_rate_type = Column(String, default="fixed")
+    rate_spread = Column(Float, nullable=True)
     commission_deposit = Column(Float, nullable=True)
     commission_management = Column(Float, nullable=True)
     commission_withdrawal = Column(Float, nullable=True)
