@@ -2393,3 +2393,53 @@ class TestIgnoreCategoryExcludedFromBudget:
         view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
         total = next(e for e in view if e["rule"][CATEGORY] == TOTAL_BUDGET)
         assert total["current_amount"] == 300.0
+
+
+class TestPendingRefundOnSplitSlice:
+    """A refund marked on one slice must drop only that slice from spend."""
+
+    def test_pending_split_slice_is_excluded(self, db_session):
+        """Marking a slice as awaiting refund removes it from filtered expenses.
+
+        Split children reach analysis through the repository, which sets
+        ``split_id``; the service then blanket-assigned ``None`` over it, so
+        the exclusion keyed on ``split_id`` never matched and a refunded
+        slice kept counting as budget spend.
+        """
+        from backend.models.transaction import CashTransaction
+        from backend.repositories.split_transactions_repository import (
+            SplitTransactionsRepository,
+        )
+        from backend.services.pending_refunds_service import (
+            PendingRefundsService,
+        )
+        from backend.services.transactions_service import TransactionsService
+
+        db_session.add(
+            CashTransaction(
+                id="slice-refund-1", date="2026-03-10", account_name="Wallet",
+                description="mixed", amount=-100.0, category="Food",
+                tag="Groceries", source="cash_transactions", type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        unique_id = db_session.query(CashTransaction).one().unique_id
+
+        TransactionsService(db_session).split_transaction(
+            unique_id,
+            "cash_transactions",
+            [
+                {"amount": -60.0, "category": "Food", "tag": "Groceries"},
+                {"amount": -40.0, "category": "Other", "tag": "Misc"},
+            ],
+        )
+
+        splits = SplitTransactionsRepository(db_session).get_data()
+        slice_id = int(splits.iloc[0]["id"])
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "split", slice_id, "cash", 60.0
+        )
+
+        expenses = BudgetService(db_session).get_filtered_expenses()
+        assert expenses["amount"].sum() == -40.0

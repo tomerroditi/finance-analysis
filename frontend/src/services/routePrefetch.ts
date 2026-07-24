@@ -31,8 +31,13 @@ import { useAppStore } from "../stores/appStore";
  * -managed keys are built from `makeQueryKeys(isDemoMode)` (the pure function
  * form of the `useQueryKeys()` hook — prefetch runs outside React, so it can't
  * call hooks), which makes drift structurally impossible: any change to
- * `services/queryKeys.ts` propagates here automatically. The `/early-retirement`
- * keys are still literal arrays (out of scope for the key-factory migration).
+ * `services/queryKeys.ts` propagates here automatically.
+ *
+ * NEVER hand-write a literal key array here. `/early-retirement` used to,
+ * and drifted: the literals lacked the trailing demo-mode segment every
+ * factory key carries, so the four prefetched responses landed under keys no
+ * page ever read — four wasted requests, four orphan IndexedDB entries, and
+ * a page that still booted cold.
  */
 
 export interface PrefetchContext {
@@ -126,17 +131,18 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
       transactionsApi.getAll("insurances").then((r) => r.data),
     );
   },
-  "/early-retirement": (qc) => {
-    warm(qc, ["retirement", "goal"], () =>
+  "/early-retirement": (qc, { isDemoMode }) => {
+    const k = makeQueryKeys(isDemoMode);
+    warm(qc, k.retirement.goal(), () =>
       retirementApi.getGoal().then((r) => r.data),
     );
-    warm(qc, ["retirement", "status"], () =>
+    warm(qc, k.retirement.status(), () =>
       retirementApi.getStatus().then((r) => r.data),
     );
-    warm(qc, ["retirement", "projections"], () =>
+    warm(qc, k.retirement.projections(), () =>
       retirementApi.getProjections().then((r) => r.data),
     );
-    warm(qc, ["retirement", "suggestions"], () =>
+    warm(qc, k.retirement.suggestions(), () =>
       retirementApi.getSuggestions().then((r) => r.data),
     );
   },

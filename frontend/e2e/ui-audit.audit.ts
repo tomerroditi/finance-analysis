@@ -82,38 +82,41 @@ async function auditPage(page: Page, cell: string, path: string) {
 
     const all = Array.from(document.body.querySelectorAll("*"));
 
-    // 2. Elements wider than the viewport (the usual cause of doc overflow).
+    // True when ANY ancestor scrolls horizontally. Checking only the direct
+    // parent produced thousands of false positives: a wide table row's
+    // parent is <tbody>, while the `overflow-x: auto` sits several levels up
+    // on the wrapper, and a by-design scrollable diagram looked like a bug.
+    const insideScroller = (el: Element) => {
+      let p = el.parentElement;
+      while (p && p !== document.body) {
+        if (["auto", "scroll"].includes(getComputedStyle(p).overflowX)) {
+          return true;
+        }
+        p = p.parentElement;
+      }
+      return false;
+    };
+
     for (const el of all) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      const style = getComputedStyle(el);
-      if (style.position === "fixed") continue;
+      if (getComputedStyle(el).position === "fixed") continue;
+      if (insideScroller(el)) continue;
+
+      // 2. Elements wider than the viewport (the usual cause of doc overflow).
       if (r.width > vw + 1) {
-        // Ignore elements that are themselves horizontally scrollable —
-        // those are intentional (wide tables in an overflow-x container).
-        const parent = el.parentElement;
-        const parentScrolls =
-          parent &&
-          ["auto", "scroll"].includes(getComputedStyle(parent).overflowX);
-        if (!parentScrolls) {
-          out.push({
-            kind: "element-wider-than-viewport",
-            detail: `${describe(el)} width=${Math.round(r.width)} vw=${vw}`,
-          });
-        }
+        out.push({
+          kind: "element-wider-than-viewport",
+          detail: `${describe(el)} width=${Math.round(r.width)} vw=${vw}`,
+        });
       }
-      // 3. Element visually escaping the right/left edge of the viewport.
+      // 3. Element escaping the right edge. With no scroll container above
+      // it, the content is clipped rather than reachable.
       if (r.right > vw + 1 && r.left >= 0 && r.width < vw) {
-        const parent = el.parentElement;
-        const parentScrolls =
-          parent &&
-          ["auto", "scroll"].includes(getComputedStyle(parent).overflowX);
-        if (!parentScrolls) {
-          out.push({
-            kind: "element-past-right-edge",
-            detail: `${describe(el)} right=${Math.round(r.right)} vw=${vw}`,
-          });
-        }
+        out.push({
+          kind: "element-past-right-edge",
+          detail: `${describe(el)} right=${Math.round(r.right)} vw=${vw}`,
+        });
       }
     }
 

@@ -8,6 +8,8 @@ import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
 import type { Transaction } from "../../types/transaction";
 import { useNotify } from "../../context/DialogContext";
+import { parseAmountInput } from "../../utils/numberFormatting";
+import { todayISO } from "../../utils/dateFormatting";
 
 export type { Transaction };
 
@@ -37,8 +39,20 @@ export function TransactionFormModal({
         transaction?.source?.includes("manual_investment")
         : true; // Creating is always manual
 
-    const [formData, setFormData] = useState({
-        date: new Date().toISOString().split("T")[0],
+    // `amount` is `number | ""` so clearing the field is representable. A
+    // bare `parseFloat(e.target.value)` stored NaN, React rendered "NaN"
+    // back into the controlled input, and submit serialised
+    // `"amount": null` → backend 422 → a generic "failed" toast that named
+    // no field.
+    const [formData, setFormData] = useState<{
+        date: string;
+        description: string;
+        amount: number | "";
+        category: string;
+        tag: string;
+        account_name: string;
+    }>({
+        date: todayISO(),
         description: "",
         amount: 0,
         category: "",
@@ -65,7 +79,7 @@ export function TransactionFormModal({
         } else if (isOpen) {
             // Reset for create mode
             setFormData({
-                date: new Date().toISOString().split("T")[0],
+                date: todayISO(),
                 description: "",
                 amount: 0,
                 category: "",
@@ -91,10 +105,16 @@ export function TransactionFormModal({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        const enteredAmount = Number(formData.amount);
+        if (formData.amount === "" || Number.isNaN(enteredAmount)) {
+            notify.error(t("transactions.invalidAmount"));
+            return;
+        }
+
         // Calculate final amount based on type override users manual input sign
         const finalAmount = transactionType === "expense"
-            ? -Math.abs(formData.amount)
-            : Math.abs(formData.amount);
+            ? -Math.abs(enteredAmount)
+            : Math.abs(enteredAmount);
 
         try {
             if (isEditMode && transaction) {
@@ -243,7 +263,7 @@ export function TransactionFormModal({
                                         onChange={(e) =>
                                             setFormData({
                                                 ...formData,
-                                                amount: parseFloat(e.target.value),
+                                                amount: parseAmountInput(e.target.value),
                                             })
                                         }
                                         className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl ps-10 pe-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"

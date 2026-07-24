@@ -347,3 +347,148 @@ describe("useScraping.resendTfa restarted — stale process cleanup (regression)
     expect(calledIds).not.toContain(oldProcessId);
   });
 });
+
+describe("useScraping — cache invalidation on scrape completion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("invalidates everything a new batch of transactions changes", async () => {
+    // Completion is detected by POLLING, so the global MutationCache sweep
+    // in queryClient.ts never runs for it. Before this list existed only
+    // last-scrapes + bank-balances were invalidated, so freshly scraped
+    // transactions stayed invisible on Transactions / Dashboard / Budget for
+    // the full 5-minute staleTime.
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const localWrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 77,
+    });
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "success" },
+    });
+
+    const { result } = renderHook(() => useScraping(), {
+      wrapper: localWrapper,
+    });
+    await act(async () => {
+      await result.current.startScraper(acc, 30);
+    });
+    invalidate.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    const invalidatedHeads = invalidate.mock.calls.map(
+      ([arg]) => (arg?.queryKey as readonly unknown[])[0],
+    );
+    expect(invalidatedHeads).toEqual(
+      expect.arrayContaining([
+        "transactions",
+        "analytics",
+        "budget",
+        "pending-refunds",
+        "insurance-accounts",
+        "bank-balances",
+        "last-scrapes",
+      ]),
+    );
+    // Narrow keys only — never a blanket invalidateQueries() sweep.
+    expect(
+      invalidate.mock.calls.every(([arg]) => arg?.queryKey !== undefined),
+    ).toBe(true);
+  });
+
+  it("does not invalidate while a scrape is still in progress", async () => {
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const localWrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children);
+
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 78,
+    });
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "in_progress" },
+    });
+
+    const { result } = renderHook(() => useScraping(), {
+      wrapper: localWrapper,
+    });
+    await act(async () => {
+      await result.current.startScraper(acc, 30);
+    });
+    invalidate.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000 * 3);
+    });
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("useScraping — resend cooldown timer lifecycle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stops ticking once the cooldown expires", async () => {
+    // The 1 s tick interval's only dep is `resendCooldownEnd`, which does NOT
+    // change when a deadline merely passes — so nothing used to clear it and
+    // the hook re-rendered once a second for the rest of the page's life
+    // after a single Resend.
+    (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: { status: "resent", process_id: 1 },
+    });
+
+    let renders = 0;
+    const { result } = renderHook(
+      () => {
+        renders += 1;
+        return useScraping();
+      },
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.resendTfa(waitingScraper);
+    });
+    expect(result.current.resendCooldownRemaining(1)).toBeGreaterThan(0);
+
+    // Mid-cooldown the countdown must still tick (that's what the interval
+    // is for).
+    const beforeTicks = renders;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(renders).toBeGreaterThan(beforeTicks);
+
+    // Run out the cooldown, then let a lot more time pass: no further
+    // renders may happen.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RESEND_COOLDOWN_SECONDS * 1000);
+    });
+    expect(result.current.resendCooldownRemaining(1)).toBe(0);
+
+    const afterExpiry = renders;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(renders).toBe(afterExpiry);
+  });
+});

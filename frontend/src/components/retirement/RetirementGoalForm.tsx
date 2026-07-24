@@ -29,7 +29,9 @@ import {
 import {
   retirementApi,
   type RetirementGoal,
+  type RetirementProjections,
   type RetirementStatus,
+  type RetirementSuggestions,
 } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
@@ -39,12 +41,25 @@ interface PendingAdjust {
   value: number;
 }
 
+/**
+ * Result of an unsaved "what if" calculation. Deliberately plain component
+ * state owned by the page rather than a React Query entry: a preview is
+ * client-side, ephemeral, and must never be persisted to IndexedDB or
+ * confused with the saved plan.
+ */
+export interface RetirementPreview {
+  projections: RetirementProjections;
+  suggestions: RetirementSuggestions;
+}
+
 interface Props {
   goal: RetirementGoal | null;
   status: RetirementStatus | null;
   isCalculating?: boolean;
   pendingAdjust?: PendingAdjust | null;
   onAdjustApplied?: () => void;
+  /** Publishes a fresh preview to the page, or `null` to drop it. */
+  onPreview: (preview: RetirementPreview | null) => void;
 }
 
 function formToPayload(form: ReturnType<typeof goalToForm>) {
@@ -119,6 +134,7 @@ export function RetirementGoalForm({
   isCalculating,
   pendingAdjust,
   onAdjustApplied,
+  onPreview,
 }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -183,9 +199,18 @@ export function RetirementGoalForm({
     }));
   }
 
-  // Preview projections + suggestions for the given form values and push
-  // both results into the query cache. Shared by Calculate, Reset, and the
+  // Preview projections + suggestions for the given form values and hand
+  // both results to the page. Shared by Calculate, Reset, and the
   // pending-adjust flow.
+  //
+  // These results deliberately do NOT go into the saved-plan query keys
+  // (`qk.retirement.projections()` / `.suggestions()`). They used to, from
+  // inside a `useMutation` — and the global `MutationCache.onSuccess` in
+  // queryClient.ts then ran `invalidateQueries()` 200 ms later, refetching
+  // GET /retirement/projections and overwriting the preview with the saved
+  // plan. Anyone who had ever saved a goal saw their new numbers flash, then
+  // a skeleton, then the OLD numbers. Preview state lives in the page now,
+  // where nothing can invalidate it.
   const previewPlan = useCallback(
     (formValues: ReturnType<typeof goalToForm>) => {
       const payload = formToPayload(formValues);
@@ -193,24 +218,27 @@ export function RetirementGoalForm({
         retirementApi.previewProjections(payload),
         retirementApi.previewSuggestions(payload),
       ]).then(([projectionsRes, suggestionsRes]) => {
-        queryClient.setQueryData(
-          qk.retirement.projections(),
-          projectionsRes.data,
-        );
-        queryClient.setQueryData(
-          qk.retirement.suggestions(),
-          suggestionsRes.data,
-        );
+        onPreview({
+          projections: projectionsRes.data,
+          suggestions: suggestionsRes.data,
+        });
       });
     },
-    [queryClient, qk],
+    [onPreview],
   );
 
-  // Calculate: preview projections without saving
-  const calculateMutation = useMutation({
-    mutationFn: (overrideForm?: ReturnType<typeof goalToForm>) =>
-      previewPlan(overrideForm ?? form),
-  });
+  // Calculate: preview projections without saving. Intentionally NOT a
+  // `useMutation` — a preview changes no server state, and registering it as
+  // a mutation is exactly what triggered the global invalidation sweep that
+  // wiped the preview.
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const runPreview = useCallback(
+    (formValues: ReturnType<typeof goalToForm>) => {
+      setIsPreviewing(true);
+      return previewPlan(formValues).finally(() => setIsPreviewing(false));
+    },
+    [previewPlan],
+  );
 
   // Handle pending adjustment from projections "Adjust Plan" buttons.
   // The form update uses the render-phase adjust-state-on-prop-change
@@ -239,6 +267,9 @@ export function RetirementGoalForm({
   useEffect(() => {
     if (!lastAppliedKey || previewedKeyRef.current === lastAppliedKey) return;
     previewedKeyRef.current = lastAppliedKey;
+    // `previewPlan`, not `runPreview`: the latter flips `isPreviewing`
+    // synchronously, which is a cascading-render setState inside an effect
+    // body (and the page already renders its own busy state for adjusts).
     previewPlan(form).then(() => {
       onAdjustApplied?.();
     });
@@ -250,6 +281,9 @@ export function RetirementGoalForm({
     onSuccess: (response) => {
       queryClient.setQueryData(qk.retirement.goal(), response.data);
       setHasUnsavedChanges(false);
+      // The preview and the saved plan now agree; drop the preview so the
+      // page goes back to the (about to be refetched) server truth.
+      onPreview(null);
     },
   });
 
@@ -260,7 +294,7 @@ export function RetirementGoalForm({
 
   const handleCalculate = (e: React.FormEvent) => {
     e.preventDefault();
-    calculateMutation.mutate(undefined);
+    void runPreview(form);
   };
 
   const handleSave = () => {
@@ -272,7 +306,7 @@ export function RetirementGoalForm({
     setForm(goalToForm(goal, status));
     setHasUnsavedChanges(false);
     // Re-preview with saved values
-    previewPlan(goalToForm(goal, status));
+    void runPreview(goalToForm(goal, status));
   };
 
   const applyScrapedKhBalance = () => {
@@ -294,7 +328,7 @@ export function RetirementGoalForm({
   };
 
   const isBusy =
-    calculateMutation.isPending ||
+    isPreviewing ||
     saveMutation.isPending ||
     !!isCalculating;
 
@@ -672,7 +706,7 @@ export function RetirementGoalForm({
           className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           <Calculator size={16} />
-          {calculateMutation.isPending || isCalculating
+          {isPreviewing || isCalculating
             ? t("common.loading")
             : t("earlyRetirement.form.calculate")}
         </button>

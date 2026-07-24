@@ -18,9 +18,27 @@ const DemoModeContext = createContext<DemoModeContextType | undefined>(
   undefined,
 );
 
-export function DemoModeProvider({ children }: { children: ReactNode }) {
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+interface DemoModeProviderProps {
+  children: ReactNode;
+  /**
+   * Pre-resolved demo flag. When supplied, children render immediately and
+   * the initial-status gate is skipped (the status request still runs and
+   * corrects the value if the backend disagrees).
+   *
+   * This exists for the unit-test harness (`test-utils.tsx`), which renders
+   * components synchronously and would otherwise have to await the status
+   * round-trip in every test. The app itself never passes it — `App.tsx`
+   * mounts the gated provider, which is the whole point of the gate.
+   */
+  initialDemoMode?: boolean;
+}
+
+export function DemoModeProvider({
+  children,
+  initialDemoMode,
+}: DemoModeProviderProps) {
+  const [isDemoMode, setIsDemoMode] = useState(initialDemoMode ?? false);
+  const [isResolved, setIsResolved] = useState(initialDemoMode !== undefined);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -34,7 +52,7 @@ export function DemoModeProvider({ children }: { children: ReactNode }) {
         console.error("Failed to fetch demo mode status:", err);
       })
       .finally(() => {
-        setIsLoading(false);
+        setIsResolved(true);
       });
   }, []);
 
@@ -51,8 +69,23 @@ export function DemoModeProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Nothing below this provider may render until the real flag is known.
+  //
+  // Every key from `useQueryKeys()` carries the demo flag as its last
+  // segment. Rendering children while the flag is still at its `false`
+  // placeholder made the whole app fetch once under `[..., false]` and then
+  // refetch everything under `[..., true]` when the status resolved — and,
+  // worse, the *demo* response for that first pass was cached (and
+  // persisted to IndexedDB, since it passes `shouldDehydrateQuery`) under
+  // the REAL-mode key, where it could later hydrate as the user's own data
+  // with demo mode off. Gating on resolution makes the flag correct before
+  // the first fetch, so that mix-up is structurally impossible.
+  if (!isResolved) return null;
+
   return (
-    <DemoModeContext.Provider value={{ isDemoMode, toggleDemoMode, isLoading }}>
+    <DemoModeContext.Provider
+      value={{ isDemoMode, toggleDemoMode, isLoading: false }}
+    >
       {children}
     </DemoModeContext.Provider>
   );

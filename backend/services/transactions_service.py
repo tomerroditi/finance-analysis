@@ -989,16 +989,26 @@ class TransactionsService:
         split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
         mask = df[TransactionsTableFields.UNIQUE_ID.value].isin(split_ids)
 
+        # NOTE: the repository already expanded splits, so `df` normally
+        # arrives holding the split children (with `split_id` set) and no
+        # parents. Blanket-assigning None here wiped that id, which silently
+        # disabled every consumer keyed on `split_id` — most visibly the
+        # pending-refund exclusion in BudgetService, so a slice marked as
+        # awaiting a refund still counted as budget spend.
+        def _ensure_split_id(frame: pd.DataFrame) -> pd.DataFrame:
+            if TransactionsTableFields.SPLIT_ID.value not in frame.columns:
+                frame[TransactionsTableFields.SPLIT_ID.value] = None
+            return frame
+
         if include_split_parents:
             # Include parent transactions alongside split children
-            base_df = df.copy()
-            base_df[TransactionsTableFields.SPLIT_ID.value] = None
+            base_df = _ensure_split_id(df.copy())
             # Mark parent transactions with type 'split_parent' for identification
             base_df.loc[mask, "type"] = "split_parent"
+            base_df.loc[mask, TransactionsTableFields.SPLIT_ID.value] = None
         else:
             # Exclude parent transactions (default behavior)
-            base_df = df[~mask].copy()
-            base_df[TransactionsTableFields.SPLIT_ID.value] = None
+            base_df = _ensure_split_id(df[~mask].copy())
 
         split_rows = []
         for id_, split_group in split_df.groupby(

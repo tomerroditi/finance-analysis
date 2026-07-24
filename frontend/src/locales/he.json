@@ -423,6 +423,7 @@
     "deleteTransaction": "מחק תנועה",
     "deleteConfirmation": "האם אתה בטוח שברצונך למחוק תנועה ידנית זו?",
     "failedSave": "שמירת התנועה נכשלה.",
+    "invalidAmount": "יש להזין סכום תקין.",
     "failedUpdate": "עדכון התנועה נכשל.",
     "failedDelete": "מחיקת התנועה נכשלה.",
     "failedSplit": "פיצול התנועה נכשל.",

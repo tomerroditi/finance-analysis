@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
 import { qkPrefix } from "../services/queryKeys";
@@ -32,6 +32,32 @@ export interface ResendError {
 /** Cooldown window enforced client-side after a resend attempt, win or lose. */
 export const RESEND_COOLDOWN_SECONDS = 60;
 
+/**
+ * Query-key prefixes a finished scrape invalidates.
+ *
+ * A successful scrape writes new transactions (and, for insurance
+ * providers, new policy balances) straight into the DB. Completion is
+ * detected by POLLING, not by a mutation, so the shared
+ * `MutationCache.onSuccess` sweep in `queryClient.ts` never fires for it —
+ * whatever isn't listed here stays stale for the full 5-minute
+ * `staleTime`, i.e. freshly scraped transactions were invisible on the
+ * Transactions / Dashboard / Budget pages for up to five minutes.
+ *
+ * Deliberately a narrow list rather than a bare `invalidateQueries()`:
+ * `.claude/rules/frontend_components.md` → "Don't fan out invalidation in
+ * mutation hot paths". Everything here is genuinely downstream of new
+ * transaction rows.
+ */
+const SCRAPE_COMPLETION_PREFIXES = [
+  qkPrefix.transactions,
+  qkPrefix.analytics,
+  qkPrefix.budget,
+  qkPrefix.pendingRefunds,
+  qkPrefix.insuranceAccounts,
+  qkPrefix.bankBalances,
+  qkPrefix.lastScrapes,
+] as const;
+
 export function useScraping() {
   const queryClient = useQueryClient();
   const [runningScrapers, setRunningScrapers] = useState<
@@ -52,31 +78,24 @@ export function useScraping() {
   // `resendCooldownRemaining` recomputes and the countdown ticks down in
   // the UI without callers needing their own interval.
   const [, setCooldownTick] = useState(0);
-  const cooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
 
   useEffect(() => {
-    const anyActive = Object.values(resendCooldownEnd).some(
-      (end) => end > Date.now(),
-    );
-    if (!anyActive) {
-      if (cooldownIntervalRef.current) {
-        clearInterval(cooldownIntervalRef.current);
-        cooldownIntervalRef.current = null;
-      }
-      return;
-    }
-    if (cooldownIntervalRef.current) return;
-    cooldownIntervalRef.current = setInterval(() => {
+    // Deadlines are absolute timestamps, so the closed-over map stays
+    // authoritative for this effect's lifetime — no ref needed.
+    const anyActive = () =>
+      Object.values(resendCooldownEnd).some((end) => end > Date.now());
+    if (!anyActive()) return;
+
+    const interval = setInterval(() => {
+      // One last tick so the UI renders the cooldown at 0, then stop. The
+      // effect's dep (`resendCooldownEnd`) does NOT change when a deadline
+      // merely passes, so nothing else would ever clear this timer — it
+      // used to keep re-rendering the whole Data Sources page once a second
+      // for the rest of the session after a single Resend.
       setCooldownTick((tick) => tick + 1);
+      if (!anyActive()) clearInterval(interval);
     }, 1000);
-    return () => {
-      if (cooldownIntervalRef.current) {
-        clearInterval(cooldownIntervalRef.current);
-        cooldownIntervalRef.current = null;
-      }
-    };
+    return () => clearInterval(interval);
   }, [resendCooldownEnd]);
 
   /** Seconds remaining in the resend cooldown for a process, or 0 if none. */
@@ -338,8 +357,9 @@ export function useScraping() {
             Date.now() - scraper.last_updated > 5000
           ) {
             if (newStatus === "success" && scraper.status !== "success") {
-              queryClient.invalidateQueries({ queryKey: qkPrefix.lastScrapes });
-              queryClient.invalidateQueries({ queryKey: qkPrefix.bankBalances });
+              for (const queryKey of SCRAPE_COMPLETION_PREFIXES) {
+                queryClient.invalidateQueries({ queryKey });
+              }
             }
             setRunningScrapers((prev) => ({
               ...prev,

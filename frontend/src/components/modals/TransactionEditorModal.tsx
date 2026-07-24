@@ -8,6 +8,7 @@ import { useCashBalances } from "../../hooks/useCashBalances";
 import { Modal } from "../common/Modal";
 import { useNotify } from "../../context/DialogContext";
 import { RuleQuickAction } from "../transactions/RuleQuickAction";
+import { parseAmountInput } from "../../utils/numberFormatting";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string; provider?: string };
@@ -27,7 +28,18 @@ export function TransactionEditorModal({
     transaction.source?.includes("manual_investment");
   const isCash = transaction.source?.includes("cash");
 
-  const [formData, setFormData] = useState({
+  // `amount` is `number | ""` so clearing the field is representable. A bare
+  // `parseFloat(e.target.value)` stored NaN, React rendered "NaN" back into
+  // the controlled input, and submit serialised `"amount": null` → backend
+  // 422 → a generic "failed" toast that named no field.
+  const [formData, setFormData] = useState<{
+    date: string;
+    description: string;
+    amount: number | "";
+    category: string;
+    tag: string;
+    account_name: string;
+  }>({
     date: transaction.date,
     description: transaction.description || transaction.desc || "",
     amount: transaction.amount,
@@ -46,9 +58,15 @@ export function TransactionEditorModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const amount = Number(formData.amount);
+    if (formData.amount === "" || Number.isNaN(amount)) {
+      notify.error(t("transactions.invalidAmount"));
+      return;
+    }
     try {
       await transactionsApi.update(transaction.unique_id, {
         ...formData,
+        amount,
         source: transaction.source,
       });
       onSuccess();
@@ -149,7 +167,7 @@ export function TransactionEditorModal({
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      amount: parseFloat(e.target.value),
+                      amount: parseAmountInput(e.target.value),
                     })
                   }
                   className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl ps-10 pe-4 py-2.5 text-sm outline-none focus:border-[var(--primary)] disabled:opacity-50 transition-all font-mono"
@@ -208,7 +226,10 @@ export function TransactionEditorModal({
                   unique_id: transaction.unique_id,
                   source: transaction.source,
                   description: formData.description,
-                  amount: formData.amount,
+                  // Rule preview needs a number; an in-progress empty field
+                  // falls back to the transaction's own amount.
+                  amount:
+                    formData.amount === "" ? transaction.amount : formData.amount,
                   date: formData.date,
                   category: transaction.category,
                   tag: transaction.tag,
