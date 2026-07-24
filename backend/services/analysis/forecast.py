@@ -287,8 +287,14 @@ class ForecastMixin:
         today = pd.Timestamp.today()
 
         def avg_last_n_months(n: int) -> float:
+            # Complete months only — start at i=1. Including the running month
+            # divided a few days of spend by a full month and dragged the
+            # trend baseline down (a 3-month average of three 3,000 months
+            # came out at 2,033 on the 24th). The income baseline in
+            # get_cash_flow_forecast already excludes it; these must agree.
             month_keys = [
-                (today - pd.DateOffset(months=i)).strftime("%Y-%m") for i in range(n)
+                (today - pd.DateOffset(months=i)).strftime("%Y-%m")
+                for i in range(1, n + 1)
             ]
             total = sum(monthly.get(m, 0.0) for m in month_keys)
             if include_projects and monthly_project is not None:

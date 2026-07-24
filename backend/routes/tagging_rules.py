@@ -8,13 +8,43 @@ in priority order (highest first); the first matching rule wins.
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.errors import ValidationException
 from backend.services.tagging_rules_service import TaggingRulesService
 
 router = APIRouter()
+
+
+def _validate_conditions(service: TaggingRulesService, conditions: dict) -> None:
+    """Run the shared rule-integrity check on client-supplied conditions.
+
+    ``add_rule``/``update_rule`` validate their conditions before touching
+    the DB; the read-only endpoints did not, so malformed values (a
+    non-numeric amount, ``null``, a one-element ``between``) reached the
+    query builder and crashed it with a 500.
+
+    Parameters
+    ----------
+    service : TaggingRulesService
+        Service owning the integrity rules.
+    conditions : dict
+        Condition tree supplied by the client.
+
+    Raises
+    ------
+    BadRequestException
+        If the conditions violate the rule schema (mapped to HTTP 400).
+    ValidationException
+        If a condition value has a type the validator itself cannot coerce
+        (e.g. ``null`` in a numeric comparison), also mapped to HTTP 400.
+    """
+    try:
+        service.validate_rule_integrity(conditions)
+    except (TypeError, ValueError) as e:
+        raise ValidationException(f"Invalid rule conditions: {e}")
 
 
 class RuleCreate(BaseModel):
@@ -175,6 +205,7 @@ def validate_rule_conflicts(
         400 if a conflicting rule exists.
     """
     service = TaggingRulesService(db)
+    _validate_conditions(service, rule.conditions)
     service.check_conflicts(
         conditions=rule.conditions,
         category=rule.category,
@@ -186,7 +217,10 @@ def validate_rule_conflicts(
 
 class RulePreview(BaseModel):
     conditions: Dict[str, Any]
-    limit: Optional[int] = None
+    # Bounded: an unbounded default returned the whole table, and a negative
+    # limit made SQLite ignore the LIMIT while pandas ``head(-1)`` dropped a
+    # row — a preview that silently lied about what the rule matches.
+    limit: int = Field(default=100, ge=1, le=1000)
 
 
 @router.post("/rules/preview")
@@ -200,16 +234,21 @@ def preview_rule_matches(
     Parameters
     ----------
     preview : RulePreview
-        ``conditions`` dict defining match criteria and optional ``limit``
-        capping the number of returned matches. When ``limit`` is omitted or
-        ``null``, all matches are returned.
+        ``conditions`` dict defining match criteria and a ``limit`` (1-1000,
+        default 100) capping the number of returned matches.
 
     Returns
     -------
     dict
         ``{"matches": list[dict], "count": int}``.
+
+    Raises
+    ------
+    HTTPException
+        400 if the conditions are malformed.
     """
     service = TaggingRulesService(db)
+    _validate_conditions(service, preview.conditions)
     matches = service.preview_rule(preview.conditions, preview.limit)
     return {"matches": matches, "count": len(matches)}
 

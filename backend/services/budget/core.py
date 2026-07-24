@@ -641,12 +641,23 @@ class BudgetService:
         # Optionally exclude pending refunds
         if exclude_pending_refunds:
             pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
-            tx_ids = pending_refs["transaction_ids"]
+            tx_keys = pending_refs["transaction_keys"]
             split_ids = pending_refs["split_ids"]
 
-            expenses = expenses[
-                ~expenses[TransactionsTableFields.UNIQUE_ID.value].isin(tx_ids)
-            ]
+            if tx_keys:
+                # `unique_id` is a per-table auto-increment, so it must be
+                # paired with the source table — matching on the bare id would
+                # also drop the same-numbered transaction in every other table.
+                keys = pd.Series(
+                    list(
+                        zip(
+                            expenses[TransactionsTableFields.SOURCE.value],
+                            expenses[TransactionsTableFields.UNIQUE_ID.value],
+                        )
+                    ),
+                    index=expenses.index,
+                )
+                expenses = expenses[~keys.isin(tx_keys)]
             if TransactionsTableFields.SPLIT_ID.value in expenses.columns:
                 expenses = expenses[
                     ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)

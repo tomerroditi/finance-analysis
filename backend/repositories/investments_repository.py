@@ -11,6 +11,7 @@ from backend.errors import EntityNotFoundException
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 from backend.models.investment import Investment
+from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.constants.tables import InvestmentsTableFields, Tables
 
 
@@ -313,11 +314,23 @@ class InvestmentsRepository:
         EntityNotFoundException
             If no investment with the given ID exists.
         """
+        # Delete child snapshots first (SQLite may not enforce FK CASCADE —
+        # `PRAGMA foreign_keys` is off, so `ondelete="CASCADE"` on the model
+        # is decorative). Left behind, an orphan snapshot is silently adopted
+        # by the next investment that reuses this rowid, giving it a phantom
+        # balance in profit/loss and the net-worth chart.
+        self.db.execute(
+            delete(InvestmentBalanceSnapshot).where(
+                InvestmentBalanceSnapshot.investment_id == investment_id
+            )
+        )
         stmt = delete(Investment).where(Investment.id == investment_id)
         result = self.db.execute(stmt)
-        self.db.commit()
 
         if result.rowcount == 0:
+            self.db.rollback()
             raise EntityNotFoundException(
                 f"No investment found with ID {investment_id}"
             )
+
+        self.db.commit()

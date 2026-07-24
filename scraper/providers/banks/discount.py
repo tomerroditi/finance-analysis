@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
@@ -9,6 +9,7 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     fetch_get_within_page,
+    parse_provider_date,
     wait_for_navigation,
     wait_until_element_found,
 )
@@ -44,23 +45,23 @@ def _convert_transactions(
         operation_date = txn.get("OperationDate", "")
         value_date = txn.get("ValueDate", "")
 
-        date_iso = ""
-        if operation_date:
-            try:
-                date_iso = datetime.strptime(
-                    str(operation_date), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                date_iso = str(operation_date)
+        # A date that can't be parsed used to pass through verbatim, writing
+        # non-ISO text straight into the DB date column. Drop the row loudly
+        # instead of corrupting it.
+        parsed_date = parse_provider_date(operation_date, DATE_FORMAT)
+        if parsed_date is None:
+            logger.warning(
+                "Discount: dropping transaction with unparseable "
+                "OperationDate %r",
+                operation_date,
+            )
+            continue
+        date_iso = parsed_date.isoformat()
 
-        processed_date_iso = ""
-        if value_date:
-            try:
-                processed_date_iso = datetime.strptime(
-                    str(value_date), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                processed_date_iso = str(value_date)
+        parsed_value_date = parse_provider_date(value_date, DATE_FORMAT)
+        processed_date_iso = (
+            parsed_value_date.isoformat() if parsed_value_date else date_iso
+        )
 
         amount = txn.get("OperationAmount", 0)
         operation_number = txn.get("OperationNumber")

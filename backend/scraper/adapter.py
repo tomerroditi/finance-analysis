@@ -38,6 +38,17 @@ logger = logging.getLogger(__name__)
 # scrape coroutine indefinitely.
 SCRAPE_TIMEOUT_SECONDS = 300
 
+# Recorded when a scraper reports success but returned no accounts at all.
+# Isracard (:299, :361) and Max (:120, :320) pass ignore_errors=True on every
+# data fetch, and HaPhoenix catches per-account failures — so an expired
+# session or a changed API silently yields zero accounts. Recording that as
+# SUCCESS both hid the breakage and advanced the last-successful-scrape
+# watermark that the next scrape window is computed from.
+NO_ACCOUNTS_ERROR = (
+    "Scrape returned no accounts — the session may have expired or the "
+    "provider's API may have changed. Try reconnecting the account."
+)
+
 # NOTE: these two dicts are plain in-process, single-event-loop state —
 # there is exactly one asyncio event loop per uvicorn worker, and the app
 # runs a single in-process worker (see ``build/app_entry.py``). Under a
@@ -89,6 +100,31 @@ _SERVICE_TO_TABLE = {
     Services.BANK.value: Tables.BANK.value,
     Services.INSURANCE.value: Tables.INSURANCE.value,
 }
+
+
+def _format_key_amount(amount) -> str:
+    """Render an amount for a dedup key at fixed 2-decimal precision.
+
+    A raw float repr is not a stable key: ``0.1 + 0.2`` renders as
+    ``0.30000000000000004`` while ``0.3`` renders as ``0.3``, so two runs
+    that reach the same amount by different arithmetic produce different
+    keys for the same transaction.
+
+    Parameters
+    ----------
+    amount : float or str
+        The transaction's charged amount.
+
+    Returns
+    -------
+    str
+        The amount at 2 decimal places, or its ``str`` form if it is not
+        numeric at all.
+    """
+    try:
+        return f"{float(amount):.2f}"
+    except (TypeError, ValueError):
+        return str(amount)
 
 
 def create_adapter(
@@ -189,6 +225,11 @@ class ScraperAdapter:
         self._data: pd.DataFrame | None = None
         self._error: str = ""
         self._table_name: str = _SERVICE_TO_TABLE.get(service_name, "")
+        # Number of accounts the scraper reported, or None when the scrape
+        # never produced a result. Distinguishes "an account with no
+        # activity this window" (a real success) from "we fetched nothing
+        # at all" (a swallowed failure). See NO_ACCOUNTS_ERROR.
+        self._accounts_fetched: int | None = None
 
     # ------------------------------------------------------------------
     # Public interface
@@ -231,6 +272,7 @@ class ScraperAdapter:
             )
 
             if result.success:
+                self._accounts_fetched = len(result.accounts)
                 self._data = self._result_to_dataframe(result, self.service_name)
                 if self._data is not None and not self._data.empty:
                     self._data = self._data.sort_values(by=["date"])
@@ -493,6 +535,100 @@ class ScraperAdapter:
     # Data conversion
     # ------------------------------------------------------------------
 
+    def _iter_scraped_rows(self, result):
+        """Yield ``(account, txn, txn_date, row_id, unique_id)`` per scraped row.
+
+        Centralises dedup-key construction so the base frame and the
+        insurance memo map can never disagree about a row's ``id``.
+
+        ``id`` is the DB-visible key that
+        ``TransactionsRepository.add_scraped_transactions`` dedups on, via
+        the composite ``(id, provider, date, amount)``. Rows without a
+        provider ``identifier`` fell back to
+        ``"{account}_{date}_{amount}"``, so two genuinely distinct same-day,
+        same-amount transactions collapsed onto one key. Once the first was
+        stored, every overlapping re-scrape (the window reaches back 7 days)
+        matched both incoming rows against it and dropped the second
+        **permanently**.
+
+        The discriminator is deliberately minimal, because the key is
+        matched against rows **already in the user's database**:
+
+        * Rows that carry a provider identifier are untouched. A repeated
+          identifier means the provider itself considers the rows the same,
+          and re-keying them would re-insert historical rows as duplicates.
+        * The **first** identifier-less row of each
+          ``(account, date, amount)`` group keeps the exact legacy string,
+          including the raw float repr of the amount. Every such row already
+          in the DB therefore still matches and is still deduped.
+        * Only the 2nd, 3rd, … occurrence gains a ``#N`` suffix — those are
+          precisely the rows that are being lost today.
+
+        The float repr is left alone in ``id`` on purpose. Reformatting it
+        (e.g. to 2dp) would change the key of *every* identifier-less row
+        ever stored, re-inserting each as a duplicate on the next
+        overlapping scrape. ``unique_id`` is not persisted (``unique_id`` is
+        an autoincrement PK on the DB side and is excluded from the insert
+        via ``TransactionBase.BASE_COLUMN_NAMES``), so it is free to use the
+        deterministic 2-decimal form.
+
+        Parameters
+        ----------
+        result : ScrapingResult
+            The scraping result from the scraper framework.
+
+        Yields
+        ------
+        tuple
+            ``(account, txn, txn_date, row_id, unique_id)``.
+        """
+        # Occurrence counters, per scrape. Keyed on the exact tuple whose
+        # collisions we are disambiguating.
+        fallback_counts: dict[tuple[str, str, str], int] = {}
+        unique_counts: dict[tuple[str, str, str, str], int] = {}
+
+        for account in result.accounts:
+            for txn in account.transactions:
+                # Normalise date to YYYY-MM-DD
+                txn_date = txn.date
+                if "T" in txn_date:
+                    txn_date = txn_date.split("T")[0]
+
+                identifier = txn.identifier or ""
+                key_amount = _format_key_amount(txn.charged_amount)
+
+                unique_key = (
+                    str(account.account_number), txn_date, key_amount, identifier,
+                )
+                unique_n = unique_counts.get(unique_key, 0) + 1
+                unique_counts[unique_key] = unique_n
+                unique_id = (
+                    f"{self.provider_name}_{account.account_number}"
+                    f"_{txn_date}_{key_amount}_{identifier}"
+                )
+                if unique_n > 1:
+                    unique_id = f"{unique_id}#{unique_n}"
+
+                if txn.identifier:
+                    row_id = txn.identifier
+                else:
+                    # Legacy format preserved verbatim for the first
+                    # occurrence — see the note above on backward compat.
+                    row_id = (
+                        f"{account.account_number}_{txn_date}"
+                        f"_{txn.charged_amount}"
+                    )
+                    fallback_key = (
+                        str(account.account_number), txn_date,
+                        str(txn.charged_amount),
+                    )
+                    fallback_n = fallback_counts.get(fallback_key, 0) + 1
+                    fallback_counts[fallback_key] = fallback_n
+                    if fallback_n > 1:
+                        row_id = f"{row_id}#{fallback_n}"
+
+                yield account, txn, txn_date, row_id, unique_id
+
     def _result_to_dataframe(self, result, service_name: str) -> pd.DataFrame:
         """Convert a ``ScrapingResult`` to a DataFrame matching the existing pipeline.
 
@@ -511,40 +647,26 @@ class ScraperAdapter:
         source = _SERVICE_TO_TABLE.get(service_name, "")
         rows: list[dict] = []
 
-        for account in result.accounts:
-            for txn in account.transactions:
-                # Normalise date to YYYY-MM-DD
-                txn_date = txn.date
-                if "T" in txn_date:
-                    txn_date = txn_date.split("T")[0]
-
-                identifier = txn.identifier or ""
-                unique_id = (
-                    f"{self.provider_name}_{account.account_number}"
-                    f"_{txn_date}_{txn.charged_amount}_{identifier}"
-                )
-
-                row_id = txn.identifier or (
-                    f"{account.account_number}_{txn_date}_{txn.charged_amount}"
-                )
-
-                row = {
-                    TransactionsTableFields.ID.value: row_id,
-                    TransactionsTableFields.DATE.value: txn_date,
-                    TransactionsTableFields.AMOUNT.value: txn.charged_amount,
-                    TransactionsTableFields.DESCRIPTION.value: txn.description,
-                    TransactionsTableFields.ACCOUNT_NUMBER.value: account.account_number,
-                    TransactionsTableFields.TYPE.value: txn.type.value,
-                    TransactionsTableFields.STATUS.value: txn.status.value,
-                    TransactionsTableFields.ACCOUNT_NAME.value: self.account_name,
-                    TransactionsTableFields.PROVIDER.value: self.provider_name,
-                    TransactionsTableFields.CATEGORY.value: None,
-                    TransactionsTableFields.TAG.value: None,
-                    TransactionsTableFields.SOURCE.value: source,
-                    TransactionsTableFields.UNIQUE_ID.value: unique_id,
-                    TransactionsTableFields.SPLIT_ID.value: None,
-                }
-                rows.append(row)
+        for account, txn, txn_date, row_id, unique_id in self._iter_scraped_rows(
+            result
+        ):
+            row = {
+                TransactionsTableFields.ID.value: row_id,
+                TransactionsTableFields.DATE.value: txn_date,
+                TransactionsTableFields.AMOUNT.value: txn.charged_amount,
+                TransactionsTableFields.DESCRIPTION.value: txn.description,
+                TransactionsTableFields.ACCOUNT_NUMBER.value: account.account_number,
+                TransactionsTableFields.TYPE.value: txn.type.value,
+                TransactionsTableFields.STATUS.value: txn.status.value,
+                TransactionsTableFields.ACCOUNT_NAME.value: self.account_name,
+                TransactionsTableFields.PROVIDER.value: self.provider_name,
+                TransactionsTableFields.CATEGORY.value: None,
+                TransactionsTableFields.TAG.value: None,
+                TransactionsTableFields.SOURCE.value: source,
+                TransactionsTableFields.UNIQUE_ID.value: unique_id,
+                TransactionsTableFields.SPLIT_ID.value: None,
+            }
+            rows.append(row)
 
         if not rows:
             return pd.DataFrame()
@@ -620,8 +742,19 @@ class ScraperAdapter:
             status = ScrapingHistoryRepository.CANCELED
             error_message = None
         elif self._data is not None and not self._error:
-            status = ScrapingHistoryRepository.SUCCESS
-            error_message = None
+            # An account that simply had no activity in the window is a
+            # genuine success; a run that produced no accounts at all is not
+            # — see NO_ACCOUNTS_ERROR.
+            if self._accounts_fetched == 0:
+                status = ScrapingHistoryRepository.FAILED
+                error_message = NO_ACCOUNTS_ERROR
+                logger.error(
+                    "%s: %s: %s",
+                    self.provider_name, self.account_name, NO_ACCOUNTS_ERROR,
+                )
+            else:
+                status = ScrapingHistoryRepository.SUCCESS
+                error_message = None
         else:
             status = ScrapingHistoryRepository.FAILED
             error_message = self._error or None
@@ -640,15 +773,15 @@ class InsuranceScraperAdapter(ScraperAdapter):
         if df.empty:
             return df
 
+        # Reuse the base row-key generator so the memo map is keyed by the
+        # same (discriminated) ids the frame's `id` column holds — building
+        # the key a second time here is how the two drifted apart.
         memo_map: dict[str, str] = {}
-        for account in result.accounts:
-            for txn in account.transactions:
-                if txn.memo:
-                    txn_date = txn.date.split("T")[0] if "T" in txn.date else txn.date
-                    row_id = txn.identifier or (
-                        f"{account.account_number}_{txn_date}_{txn.charged_amount}"
-                    )
-                    memo_map[row_id] = txn.memo
+        for _account, txn, _txn_date, row_id, _unique_id in self._iter_scraped_rows(
+            result
+        ):
+            if txn.memo:
+                memo_map[row_id] = txn.memo
 
         if memo_map:
             df["memo"] = df["id"].map(memo_map)

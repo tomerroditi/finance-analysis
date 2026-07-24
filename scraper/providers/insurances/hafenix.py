@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from typing import Optional
 from urllib.parse import quote
 
 from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
-from scraper.utils import wait_until_element_found
+from scraper.utils import parse_provider_date, wait_until_element_found
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +102,12 @@ def _safe_float(val) -> float:
         return 0.0
 
 
-def _parse_date(date_str: str) -> str:
+def _parse_date(date_str: str) -> Optional[str]:
     """Parse date from HaPhoenix format to ISO format.
+
+    Returning the raw string on failure wrote non-ISO text straight into
+    the DB date column, so an unreadable value now yields ``None`` and the
+    caller drops (or blanks) the value instead.
 
     Parameters
     ----------
@@ -112,15 +116,13 @@ def _parse_date(date_str: str) -> str:
 
     Returns
     -------
-    str
-        Date in YYYY-MM-DD format.
+    Optional[str]
+        Date in YYYY-MM-DD format, or ``None`` when unparseable.
     """
-    if "T" in date_str:
+    if date_str and "T" in date_str:
         return date_str.split("T")[0]
-    try:
-        return datetime.strptime(date_str, "%d.%m.%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        return date_str
+    parsed = parse_provider_date(date_str, "%d.%m.%Y")
+    return parsed.strftime("%Y-%m-%d") if parsed else None
 
 
 class HaPhoenixScraper(BrowserScraper):
@@ -345,7 +347,7 @@ class HaPhoenixScraper(BrowserScraper):
         policy_id = account_info["policyId"]
         pension_type = account_info.get("pensionType", "makifa").lower()
         balance = _safe_float(account_info.get("balance", 0))
-        balance_date = _parse_date(account_info.get("balanceDate", ""))
+        balance_date = _parse_date(account_info.get("balanceDate", "")) or ""
 
         self._emit_progress(f"scraping pension {policy_id}")
 
@@ -455,7 +457,7 @@ class HaPhoenixScraper(BrowserScraper):
         """
         policy_id = account_info["policyId"]
         balance = _safe_float(account_info.get("balance", 0))
-        balance_date = _parse_date(account_info.get("balanceDate", ""))
+        balance_date = _parse_date(account_info.get("balanceDate", "")) or ""
 
         self._emit_progress(f"scraping hishtalmut {policy_id}")
 
@@ -614,6 +616,14 @@ class HaPhoenixScraper(BrowserScraper):
             for deposit in year_data.get("list", []):
                 date_raw = deposit.get("depositDate", "")
                 date_str = _parse_date(date_raw)
+                if date_str is None:
+                    logger.warning(
+                        "HaPhoenix: dropping deposit with unparseable "
+                        "depositDate %r for policy %s",
+                        date_raw,
+                        policy_id,
+                    )
+                    continue
                 total = _safe_float(deposit.get("totalDeposit", 0))
                 employer_name = deposit.get("employerName", "")
                 employee = _safe_float(deposit.get("employeeDeposit", 0))
@@ -673,6 +683,14 @@ class HaPhoenixScraper(BrowserScraper):
             for deposit in year_data.get("list", []):
                 date_raw = deposit.get("depositDate", "")
                 date_str = _parse_date(date_raw)
+                if date_str is None:
+                    logger.warning(
+                        "HaPhoenix: dropping deposit with unparseable "
+                        "depositDate %r for policy %s",
+                        date_raw,
+                        policy_id,
+                    )
+                    continue
                 total = _safe_float(deposit.get("totalDeposit", 0))
 
                 transactions.append(

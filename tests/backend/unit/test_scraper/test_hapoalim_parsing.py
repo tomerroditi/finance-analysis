@@ -48,10 +48,19 @@ class TestHapoalimConvertTransactions:
         assert result[0].date == "2024-03-15T00:00:00"
         assert result[0].processed_date == "2024-03-16T00:00:00"
 
-    def test_unparseable_date_passes_through(self):
-        """A malformed date is kept verbatim rather than raising."""
+    def test_unparseable_date_row_is_dropped(self):
+        """A malformed eventDate drops the row instead of passing raw text.
+
+        The raw string landed in the DB date column, breaking date filters
+        and sorts, and was later re-parsed month-first.
+        """
         result = _convert_transactions([_raw_txn(eventDate="15/03/2024")])
-        assert result[0].date == "15/03/2024"
+        assert result == []
+
+    def test_missing_value_date_falls_back_to_the_event_date(self):
+        """An absent valueDate reuses the event date, not an empty string."""
+        result = _convert_transactions([_raw_txn(valueDate="")])
+        assert result[0].processed_date == result[0].date
 
     def test_serial_number_zero_marks_pending(self):
         """serialNumber 0 means the transaction is still pending."""

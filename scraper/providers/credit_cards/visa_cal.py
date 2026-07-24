@@ -24,6 +24,7 @@ from scraper.utils import (
     fetch_post,
     filter_old_transactions,
     page_eval,
+    to_amount,
     wait_for_navigation,
     wait_until,
     wait_until_element_found,
@@ -88,6 +89,31 @@ class TrnTypeCode(str, Enum):
 def _is_pending(transaction: dict) -> bool:
     """Check if a transaction is pending (no debit date)."""
     return "debCrdDate" not in transaction
+
+
+def _to_amount(value: object) -> float:
+    """Coerce a raw API amount to ``float``.
+
+    The Cal API returns amounts as numbers or as strings depending on the
+    endpoint. Multiplying a string by an int is Python string-repetition,
+    which silently yields ``''`` for a negative multiplier instead of
+    raising — so the value must be coerced before any arithmetic.
+
+    Thin alias for the shared :func:`scraper.utils.to_amount`, kept so this
+    module's call sites read locally. Every provider now shares one
+    implementation.
+
+    Parameters
+    ----------
+    value : object
+        Raw amount from the API (number, numeric string, or None).
+
+    Returns
+    -------
+    float
+        The parsed amount, or ``0.0`` when it cannot be parsed.
+    """
+    return to_amount(value)
 
 
 def _convert_parsed_data_to_transactions(
@@ -158,14 +184,19 @@ def _convert_parsed_data_to_transactions(
                 months=installments.number - 1
             )).strftime("%Y-%m-%d")
 
-        charged_amount = (
+        # A credit (refund) is money coming back, so both amounts are
+        # positive. `charged_amount` is the field the backend persists, so
+        # negating it unconditionally recorded every refund as an expense.
+        is_credit = trn_type_code == TrnTypeCode.CREDIT
+        sign = 1 if is_credit else -1
+
+        raw_charged = (
             txn.get("trnAmt", 0)
             if is_pending_txn
             else txn.get("amtBeforeConvAndIndex", 0)
-        ) * -1
-
-        is_credit = trn_type_code == TrnTypeCode.CREDIT
-        original_amount = txn.get("trnAmt", 0) * (1 if is_credit else -1)
+        )
+        charged_amount = _to_amount(raw_charged) * sign
+        original_amount = _to_amount(txn.get("trnAmt", 0)) * sign
 
         if is_pending_txn:
             processed_date_local = purchase_date_local
@@ -176,9 +207,13 @@ def _convert_parsed_data_to_transactions(
             except (ValueError, AttributeError):
                 processed_date_local = purchase_date_local
 
+        # A credit is a standalone refund, never an installment plan. Typing
+        # it as INSTALLMENTS made `filter_old_transactions` drop it entirely
+        # when combining installments, since credits carry no payment count.
         txn_type = (
             TransactionType.NORMAL
-            if trn_type_code in (TrnTypeCode.REGULAR, TrnTypeCode.STANDING_ORDER)
+            if trn_type_code
+            in (TrnTypeCode.REGULAR, TrnTypeCode.STANDING_ORDER, TrnTypeCode.CREDIT)
             else TransactionType.INSTALLMENTS
         )
 

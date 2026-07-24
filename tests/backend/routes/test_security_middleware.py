@@ -114,3 +114,107 @@ class TestRemoteClientTokenMiddleware:
             },
         )
         assert response.status_code != 401
+
+
+class TestRequestSizeLimitMiddleware:
+    """Tests for the request body size cap, including chunked bodies."""
+
+    @staticmethod
+    def _chunked(total_bytes: int, chunk_size: int = 4096):
+        """Yield ``total_bytes`` of filler in chunks (forces chunked encoding)."""
+        sent = 0
+        while sent < total_bytes:
+            size = min(chunk_size, total_bytes - sent)
+            sent += size
+            yield b"x" * size
+
+    def test_declared_oversize_body_is_rejected(self, test_client, monkeypatch):
+        """A Content-Length above the cap returns 413."""
+        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        response = test_client.post(
+            "/api/transactions/",
+            content=b"x" * 4096,
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 413
+
+    def test_invalid_content_length_is_rejected(self, test_client):
+        """A non-numeric Content-Length returns 400."""
+        response = test_client.post(
+            "/api/transactions/",
+            content=b"{}",
+            headers={"Content-Length": "not-a-number"},
+        )
+        assert response.status_code == 400
+
+    def test_chunked_oversize_body_is_rejected(self, test_client, monkeypatch):
+        """A chunked body over the cap returns 413 instead of being processed.
+
+        Without a Content-Length header the middleware previously waved the
+        request through and the full body was buffered and parsed.
+        """
+        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        response = test_client.post(
+            "/api/transactions/",
+            content=self._chunked(64 * 1024),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 413
+
+    def test_chunked_body_under_cap_is_still_readable(self, test_client):
+        """A chunked body under the cap reaches the endpoint intact."""
+        payload = (
+            b'{"date": "2024-06-01", "description": "Chunked", "amount": -12.5,'
+            b' "account_name": "Wallet", "service": "cash"}'
+        )
+
+        def stream():
+            yield payload[:20]
+            yield payload[20:]
+
+        response = test_client.post(
+            "/api/transactions/",
+            content=stream(),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 200
+
+        txns = test_client.get("/api/transactions/", params={"service": "cash"}).json()
+        assert any(t["description"] == "Chunked" for t in txns)
+
+
+class TestDocsEndpointsAreTokenGuarded:
+    """Tests that OpenAPI/docs endpoints require a token for remote clients."""
+
+    @pytest.fixture
+    def untrusted_client(self, monkeypatch):
+        """Make the middleware treat every connection as remote."""
+        monkeypatch.setattr(
+            "backend.utils.auth.is_trusted_client", lambda host: False
+        )
+
+    @pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
+    def test_docs_paths_require_token_for_remote_clients(
+        self, test_client, untrusted_client, monkeypatch, tmp_path, path
+    ):
+        """A remote client with no token cannot enumerate the API surface."""
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
+        monkeypatch.delenv("FAD_API_TOKEN", raising=False)
+        response = test_client.get(path)
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
+    def test_docs_paths_open_for_local_clients(self, test_client, path):
+        """Loopback clients keep unauthenticated access to the docs."""
+        response = test_client.get(path)
+        assert response.status_code == 200
+
+    def test_docs_paths_accept_valid_token(
+        self, test_client, untrusted_client, monkeypatch
+    ):
+        """A remote client with the configured token can read the schema."""
+        monkeypatch.setenv("FAD_API_TOKEN", "correct-token")
+        response = test_client.get(
+            "/openapi.json", headers={"Authorization": "Bearer correct-token"}
+        )
+        assert response.status_code == 200

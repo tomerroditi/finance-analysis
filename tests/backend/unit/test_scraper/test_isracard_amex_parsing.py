@@ -148,6 +148,67 @@ class TestConvertTransactionsDomestic:
         )
         assert result == []
 
+    def test_thousands_separated_amount_strings_parse(self):
+        """A comma-grouped amount string is coerced, not crashed on.
+
+        The API returns amounts as strings or numbers; ``float("1,234.56")``
+        raised ValueError and took down the entire scrape run.
+        """
+        result = _convert_transactions(
+            [_domestic_txn(dealSum="1,234.56", paymentSum="1,234.56")],
+            BILLING_DATE,
+        )
+        assert result[0].original_amount == -1234.56
+        assert result[0].charged_amount == -1234.56
+
+    def test_missing_amounts_are_zero(self):
+        """Absent amount fields coerce to zero rather than raising."""
+        result = _convert_transactions(
+            [_domestic_txn(dealSum=None, paymentSum="")], BILLING_DATE
+        )
+        assert result[0].original_amount == 0.0
+        assert result[0].charged_amount == 0.0
+
+    def test_zero_string_outbound_amount_is_not_treated_as_outbound(self):
+        """A "0.00" dealSumOutbound is an amount, not an outbound flag.
+
+        Truthiness on a numeric string made every domestic row carrying a
+        zero outbound amount switch to the outbound merchant, the outbound
+        (years-old) date, the outbound voucher, and a zero amount.
+        """
+        result = _convert_transactions(
+            [
+                _domestic_txn(
+                    dealSumOutbound="0.00",
+                    paymentSumOutbound="0.00",
+                    fullPurchaseDateOutbound="01/01/2019",
+                    fullSupplierNameOutbound="WRONG MERCHANT",
+                    voucherNumberRatzOutbound="00999999",
+                )
+            ],
+            BILLING_DATE,
+        )
+        assert len(result) == 1
+        txn = result[0]
+        assert txn.date == "2024-03-15T00:00:00"
+        assert txn.description == "סופר"
+        assert txn.identifier == "123456"
+        assert txn.charged_amount == -100.50
+
+    def test_zero_int_outbound_amount_is_not_treated_as_outbound(self):
+        """A numeric 0 outbound amount likewise doesn't flip the row."""
+        result = _convert_transactions(
+            [
+                _domestic_txn(
+                    dealSumOutbound=0,
+                    fullPurchaseDateOutbound="01/01/2019",
+                    fullSupplierNameOutbound="WRONG MERCHANT",
+                )
+            ],
+            BILLING_DATE,
+        )
+        assert result[0].description == "סופר"
+
     def test_installments_set_type_and_info(self):
         """An installments moreInfo marks the transaction INSTALLMENTS."""
         result = _convert_transactions(

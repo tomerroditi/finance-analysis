@@ -473,9 +473,16 @@ class TestBuildSingleFilter:
 
         assert result is True
 
-    def test_unknown_field_returns_true(self, service):
-        """Verify unknown field returns True (no filtering)."""
+    def test_unknown_field_matches_nothing(self, service):
+        """Verify an unknown field matches nothing rather than everything."""
         condition = {"field": "nonexistent", "operator": "equals", "value": "x"}
+        result = service._build_single_filter(condition, CreditCardTransaction)
+
+        assert result is False
+
+    def test_service_field_returns_true(self, service):
+        """Verify the 'service' field defers to table selection (matches all)."""
+        condition = {"field": "service", "operator": "equals", "value": "banks"}
         result = service._build_single_filter(condition, CreditCardTransaction)
 
         assert result is True
@@ -1491,3 +1498,93 @@ class TestAutoTagCreditCardsBills:
 
         # Ambiguous match -- should not tag either
         assert count == 0
+
+
+class TestLikeWildcardEscaping:
+    """Condition values match literally — LIKE metacharacters are escaped."""
+
+    def _seed(self, db_session, suffix, description):
+        """Seed one untagged bank transaction."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"like-{suffix}", date="2026-03-10", provider="p",
+                account_name="a", description=description, amount=-10.0,
+                category=None, tag=None, source="bank_transactions",
+                type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+
+    def test_percent_is_literal_not_wildcard(self, db_session):
+        """A '%' in the value matches a literal percent sign."""
+        self._seed(db_session, "a", "SALE 50% OFF")
+        self._seed(db_session, "b", "SALE 5000 SHEKEL")
+
+        matched = TaggingRulesService(db_session).preview_rule(
+            {
+                "type": "CONDITION", "field": "description",
+                "operator": "contains", "value": "50%",
+            }
+        )
+        assert {m["description"] for m in matched} == {"SALE 50% OFF"}
+
+    def test_underscore_is_literal_not_wildcard(self, db_session):
+        """An '_' in the value matches a literal underscore."""
+        self._seed(db_session, "a", "PAY_ME")
+        self._seed(db_session, "b", "PAYXME")
+
+        matched = TaggingRulesService(db_session).preview_rule(
+            {
+                "type": "CONDITION", "field": "description",
+                "operator": "contains", "value": "PAY_ME",
+            }
+        )
+        assert {m["description"] for m in matched} == {"PAY_ME"}
+
+    def test_unknown_field_matches_no_transactions(self, db_session):
+        """A typo'd field matches nothing rather than every transaction."""
+        self._seed(db_session, "a", "groceries")
+        self._seed(db_session, "b", "fuel")
+
+        matched = TaggingRulesService(db_session).preview_rule(
+            {
+                "type": "CONDITION", "field": "descripton",
+                "operator": "contains", "value": "groceries",
+            }
+        )
+        assert matched == []
+
+    def test_validate_rejects_unknown_field(self, db_session):
+        """Rule validation rejects an unrecognised condition field."""
+        from backend.errors import BadRequestException
+
+        with pytest.raises(BadRequestException, match="Unknown condition field"):
+            TaggingRulesService(db_session).validate_rule_integrity(
+                {
+                    "type": "CONDITION", "field": "descripton",
+                    "operator": "contains", "value": "x",
+                }
+            )
+
+
+class TestNullNumericValueIsRejected:
+    """A JSON null on a numeric field is a client error, not a crash."""
+
+    @pytest.mark.parametrize(
+        "operator,value", [("lt", None), ("between", [None, 1])]
+    )
+    def test_null_value_raises_bad_request(self, db_session, operator, value):
+        """None reaching float() raises BadRequestException, not TypeError.
+
+        The validator only caught ValueError, so a null escaped validation
+        and surfaced as a 500 from add_rule/update_rule.
+        """
+        with pytest.raises(BadRequestException):
+            TaggingRulesService(db_session).validate_rule_integrity(
+                {
+                    "type": "CONDITION", "field": "amount",
+                    "operator": operator, "value": value,
+                }
+            )

@@ -581,6 +581,51 @@ fragment MovementsFragment on Movements {
 }"""
 
 
+def _mask_phone(phone_number: object) -> str:
+    """Mask a phone number down to its last 4 digits for logging.
+
+    Every log line that mentions a phone number must go through this — the
+    prepare path masked it while the SMS-provider-block branch 15 lines
+    later logged it in full, defeating the masking for exactly the users
+    hitting a problem.
+
+    Parameters
+    ----------
+    phone_number : object
+        The raw phone number (may be None).
+
+    Returns
+    -------
+    str
+        ``"***"`` plus at most the trailing 4 characters.
+    """
+    text = str(phone_number or "")
+    return f"***{text[-4:]}" if len(text) > 4 else "***"
+
+
+def _movement_date_str(movement: dict) -> str:
+    """Israel-local ``YYYY-MM-DD`` date a movement is recorded under.
+
+    The stored ``Transaction.date`` and the start-date window filter must
+    agree on a basis. They didn't: the filter compared UTC calendar dates
+    while the stored value was Israel-local, so anything transacted between
+    midnight and 02:00/03:00 Israel time carried a UTC date one day earlier
+    and was dropped whenever the window opened on that day.
+
+    Parameters
+    ----------
+    movement : dict
+        Raw GraphQL movement record.
+
+    Returns
+    -------
+    str
+        Israel-local date string.
+    """
+    raw = movement.get("valueDate") or movement["movementTimestamp"]
+    return utc_to_israel_date_str(raw)
+
+
 def _sanitize_hebrew(text: str) -> str:
     """Clean Hebrew strings that use LTR override characters.
 
@@ -745,7 +790,7 @@ class OneZeroScraper(ApiScraper):
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug(
-            "Sending OTP to phone number ending in %s", str(phone_number)[-4:]
+            "Sending OTP to phone number ending in %s", _mask_phone(phone_number)
         )
         try:
             otp_prepare_response = await fetch_post(
@@ -762,7 +807,7 @@ class OneZeroScraper(ApiScraper):
                 raise
             logger.warning(
                 "SMS provider blocked phone number %s; arming cooldown",
-                phone_number,
+                _mask_phone(phone_number),
             )
             otp_prepare_rate_limiter.record_provider_block(phone_number)
             raise OtpProviderBlockedError(OTP_PROVIDER_BLOCKED_MESSAGE) from error
@@ -994,9 +1039,9 @@ class OneZeroScraper(ApiScraper):
                 break
 
             # Check if we've gone past the start date
-            if movements and datetime.fromisoformat(
-                movements[0]["movementTimestamp"].replace("Z", "+00:00")
-            ).date() < start_date:
+            if movements and (
+                date.fromisoformat(_movement_date_str(movements[0])) < start_date
+            ):
                 break
 
         # Sort by timestamp ascending
@@ -1006,14 +1051,12 @@ class OneZeroScraper(ApiScraper):
             )
         )
 
-        # Filter to only include movements from start_date onwards
+        # Filter to only include movements from start_date onwards, on the
+        # same Israel-local basis the transaction date is stored with.
         matching_movements = [
             m
             for m in movements
-            if datetime.fromisoformat(
-                m["movementTimestamp"].replace("Z", "+00:00")
-            ).date()
-            >= start_date
+            if date.fromisoformat(_movement_date_str(m)) >= start_date
         ]
 
         # Calculate balance from last movement's running balance
@@ -1041,7 +1084,7 @@ class OneZeroScraper(ApiScraper):
                     ),
                     status=TransactionStatus.COMPLETED,
                     identifier=movement["movementId"],
-                    date=utc_to_israel_date_str(movement["valueDate"]),
+                    date=_movement_date_str(movement),
                     processed_date=utc_to_israel_date_str(movement["movementTimestamp"]),
                     original_amount=amount,
                     original_currency=movement["movementCurrency"],

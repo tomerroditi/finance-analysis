@@ -92,7 +92,12 @@ class TestTransactionValidationErrors:
         """
         response = test_client.post(
             "/api/transactions/1/split",
-            json={"source": "credit_card_transactions", "splits": []},
+            json={
+                "source": "credit_card_transactions",
+                "splits": [
+                    {"amount": -25.0, "category": "Food", "tag": "Groceries"},
+                ],
+            },
         )
         assert response.status_code == 400
         assert "Cannot split" in response.json()["detail"]
@@ -243,3 +248,126 @@ class TestNaNRejection:
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 422
+
+
+class TestSplitRequestValidation:
+    """Tests for split payload validation (empty splits, amount mismatch)."""
+
+    def test_split_with_empty_splits_is_rejected(self, test_client):
+        """POST /api/transactions/{id}/split with an empty splits list returns 422.
+
+        An empty list used to flip the parent to ``split_parent`` with zero
+        children, which made the transaction vanish from the merged view and
+        from every KPI/budget calculation.
+        """
+        response = test_client.post(
+            "/api/transactions/1/split",
+            json={"source": "credit_card_transactions", "splits": []},
+        )
+        assert response.status_code == 422
+
+    def test_split_with_empty_splits_leaves_transaction_visible(
+        self, test_client, seed_base_transactions
+    ):
+        """A rejected empty split must not hide the parent transaction."""
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
+        uid = txns[0]["unique_id"]
+
+        response = test_client.post(
+            f"/api/transactions/{uid}/split",
+            json={"source": "credit_card_transactions", "splits": []},
+        )
+        assert response.status_code == 422
+
+        after = test_client.get("/api/transactions/?service=credit_cards").json()
+        assert any(t["unique_id"] == uid for t in after)
+
+    def test_split_amounts_must_sum_to_parent(
+        self, test_client, seed_base_transactions
+    ):
+        """POST /api/transactions/{id}/split rejects splits that don't sum to the parent.
+
+        The frontend modal enforces this invariant (see
+        ``.claude/rules/split_transactions.md``); without a server-side check
+        the merged view totalled far more than the original transaction.
+        """
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
+        tx = next(t for t in txns if abs(t["amount"]) > 100)
+        uid = tx["unique_id"]
+
+        response = test_client.post(
+            f"/api/transactions/{uid}/split",
+            json={
+                "source": "credit_card_transactions",
+                "splits": [
+                    {"amount": -999999.0, "category": "Food", "tag": "Groceries"},
+                    {"amount": -1.0, "category": "Transport", "tag": "Gas"},
+                ],
+            },
+        )
+        assert response.status_code == 400
+        assert "sum" in response.json()["detail"].lower()
+
+    def test_split_amounts_within_tolerance_are_accepted(
+        self, test_client, seed_base_transactions
+    ):
+        """Rounding drift below the 0.01 tolerance is still accepted."""
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
+        tx = next(t for t in txns if abs(t["amount"]) > 100)
+        uid = tx["unique_id"]
+        amount = tx["amount"]
+
+        response = test_client.post(
+            f"/api/transactions/{uid}/split",
+            json={
+                "source": "credit_card_transactions",
+                "splits": [
+                    {
+                        "amount": round(amount / 2, 2) + 0.004,
+                        "category": "Food",
+                        "tag": "Groceries",
+                    },
+                    {
+                        "amount": amount - round(amount / 2, 2) - 0.004,
+                        "category": "Transport",
+                        "tag": "Gas",
+                    },
+                ],
+            },
+        )
+        assert response.status_code == 200
+
+
+class TestUnknownSourceHandling:
+    """Tests that an unrecognised ``source`` yields 400, never 500."""
+
+    def test_update_transaction_unknown_source(self, test_client):
+        """PUT /api/transactions/{id} with an unknown source returns 400."""
+        response = test_client.put(
+            "/api/transactions/1",
+            json={"category": "Food", "source": "not_a_table"},
+        )
+        assert response.status_code == 400
+        assert "not_a_table" in response.json()["detail"]
+
+    def test_split_transaction_unknown_source(self, test_client):
+        """POST /api/transactions/{id}/split with an unknown source returns 400."""
+        response = test_client.post(
+            "/api/transactions/1/split",
+            json={
+                "source": "not_a_table",
+                "splits": [
+                    {"amount": -25.0, "category": "Food", "tag": "Groceries"},
+                ],
+            },
+        )
+        assert response.status_code == 400
+        assert "not_a_table" in response.json()["detail"]
+
+    def test_revert_split_unknown_source(self, test_client):
+        """DELETE /api/transactions/{id}/split with an unknown source returns 400."""
+        response = test_client.delete(
+            "/api/transactions/1/split?source=not_a_table"
+        )
+        assert response.status_code == 400
+        assert "not_a_table" in response.json()["detail"]

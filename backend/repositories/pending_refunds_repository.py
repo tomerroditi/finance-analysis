@@ -125,8 +125,11 @@ class PendingRefundsRepository:
             .where(PendingRefund.source_type == source_type)
             .where(PendingRefund.source_id == source_id)
             .where(PendingRefund.source_table == source_table)
+            .order_by(PendingRefund.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising — see the note in
+        # BudgetMonthOverrideRepository.get_for_source.
+        return self.db.execute(stmt).scalars().first()
 
     def add_refund_link(
         self,
@@ -255,8 +258,11 @@ class PendingRefundsRepository:
             .where(
                 RefundSourceNote.refund_transaction_id == refund_transaction_id
             )
+            .order_by(RefundSourceNote.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising — see the note in
+        # BudgetMonthOverrideRepository.get_for_source.
+        return self.db.execute(stmt).scalars().first()
 
     def get_all_source_notes(self) -> pd.DataFrame:
         """
@@ -356,6 +362,62 @@ class PendingRefundsRepository:
         pending = self.db.get(PendingRefund, pending_id)
         if pending:
             self.db.delete(pending)
+        self.db.commit()
+
+    def delete_for_transaction(
+        self, source_tables: list[str], unique_id: int
+    ) -> None:
+        """
+        Purge every refund record tied to a deleted transaction.
+
+        Removes pending refunds sourced from the transaction (plus their
+        links), links that used it as the refund source, and any note
+        attached to it. Left behind, these rows are silently re-adopted by
+        the next transaction that reuses the rowid — ``unique_id`` is a
+        per-table auto-increment and SQLite recycles ids.
+
+        Parameters
+        ----------
+        source_tables : list[str]
+            Every accepted spelling of the source table (e.g. both
+            ``"cash"`` and ``"cash_transactions"``), since older rows may
+            store the service name rather than the table name.
+        unique_id : int
+            unique_id of the deleted transaction.
+        """
+        orphan_ids = [
+            row_id
+            for (row_id,) in self.db.execute(
+                select(PendingRefund.id).where(
+                    PendingRefund.source_type == "transaction",
+                    PendingRefund.source_id == unique_id,
+                    PendingRefund.source_table.in_(source_tables),
+                )
+            ).all()
+        ]
+        if orphan_ids:
+            self.db.execute(
+                delete(RefundLink).where(
+                    RefundLink.pending_refund_id.in_(orphan_ids)
+                )
+            )
+            self.db.execute(
+                delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+            )
+
+        # The transaction may also have funded other people's refunds.
+        self.db.execute(
+            delete(RefundLink).where(
+                RefundLink.refund_transaction_id == unique_id,
+                RefundLink.refund_source.in_(source_tables),
+            )
+        )
+        self.db.execute(
+            delete(RefundSourceNote).where(
+                RefundSourceNote.refund_transaction_id == unique_id,
+                RefundSourceNote.refund_source.in_(source_tables),
+            )
+        )
         self.db.commit()
 
     def delete_refund_link(self, link_id: int) -> RefundLink | None:

@@ -431,3 +431,45 @@ class TestMaskedCredentials:
             "banks", "hapoalim", "Main Account",
             {"userCode": "new_code", "password": "brand-new-secret"},
         )
+
+
+class TestDeleteClearsScrapeHistory:
+    """Removing an account must not leave a stale scrape watermark."""
+
+    def test_re_added_account_gets_full_backfill(self, db_session, monkeypatch):
+        """After delete, the next scrape window is the fresh-account year.
+
+        Scrape history outliving the credential made a re-added account
+        resume from its old "last successful scrape" date, silently skipping
+        ~12 months of backfill with no way for the user to force it.
+        """
+        from datetime import date
+
+        from backend.repositories.scraping_history_repository import (
+            ScrapingHistoryRepository,
+        )
+        from backend.services.scraping_service import ScrapingService
+
+        history = ScrapingHistoryRepository(db_session)
+        scrape_id = history.record_scrape_start(
+            "banks", "hapoalim", "Main", date.today()
+        )
+        history.record_scrape_end(scrape_id, "success")
+        assert history.get_last_successful_scrape_date(
+            "banks", "hapoalim", "Main"
+        )
+
+        service = CredentialsService(db_session)
+        monkeypatch.setattr(
+            service.repository, "delete_credentials", lambda *a, **k: None
+        )
+        service.delete_credential("banks", "hapoalim", "Main")
+
+        assert (
+            history.get_last_successful_scrape_date("banks", "hapoalim", "Main")
+            is None
+        )
+        start = ScrapingService(db_session)._get_scraper_start_date(
+            "banks", "hapoalim", "Main"
+        )
+        assert (date.today() - start).days >= 364

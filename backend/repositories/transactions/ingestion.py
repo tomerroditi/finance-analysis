@@ -11,8 +11,19 @@ import logging
 import pandas as pd
 from sqlalchemy import select
 
-from backend.models.pending_refund import PendingRefund
+from backend.constants.providers import Services
+from backend.constants.tables import Tables
+from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.models.transaction import TransactionBase
+
+# Refund records may store either the table name or the older service name.
+SERVICE_BY_TABLE: dict[str, str] = {
+    Tables.BANK.value: Services.BANK.value,
+    Tables.CREDIT_CARD.value: Services.CREDIT_CARD.value,
+    Tables.CASH.value: Services.CASH.value,
+    Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: Services.MANUAL_INVESTMENTS.value,
+    Tables.INSURANCE.value: Services.INSURANCE.value,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -189,14 +200,32 @@ class IngestionMixin:
         if not stale:
             return None
 
-        # Never purge rows a pending refund points at — the refund record
-        # references the row's unique_id and would be orphaned.
+        # Never purge rows a refund record points at — it references the row's
+        # unique_id and would be orphaned. Two directions matter: the row may
+        # BE the expense awaiting a refund, or it may be the incoming
+        # transaction that FUNDS someone else's refund.
+        #
+        # Legacy rows may store the service name ("banks") rather than the
+        # table name ("bank_transactions"), so both spellings are accepted.
+        table_aliases = [repo.table]
+        service_alias = SERVICE_BY_TABLE.get(repo.table)
+        if service_alias:
+            table_aliases.append(service_alias)
+
         refund_locked = {
             row[0]
             for row in self.db.execute(
                 select(PendingRefund.source_id).where(
                     PendingRefund.source_type == "transaction",
-                    PendingRefund.source_table == repo.table,
+                    PendingRefund.source_table.in_(table_aliases),
+                )
+            ).all()
+        }
+        refund_locked |= {
+            row[0]
+            for row in self.db.execute(
+                select(RefundLink.refund_transaction_id).where(
+                    RefundLink.refund_source.in_(table_aliases)
                 )
             ).all()
         }

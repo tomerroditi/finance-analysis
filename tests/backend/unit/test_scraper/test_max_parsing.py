@@ -1,5 +1,7 @@
 """Tests for the Max credit card provider's pure parsing helpers."""
 
+import logging
+
 import pytest
 
 from scraper.models.transaction import TransactionStatus, TransactionType
@@ -65,10 +67,26 @@ class TestGetTransactionType:
         assert _get_transaction_type("חדש", 3) == TransactionType.INSTALLMENTS
         assert _get_transaction_type("חדש", 5) == TransactionType.NORMAL
 
-    def test_unknown_name_and_type_raises(self):
-        """A fully unknown plan name/type combination raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown transaction type"):
+    def test_unknown_name_and_type_defaults_to_normal(self):
+        """A fully unknown plan name/type degrades to NORMAL, never raises.
+
+        The call site is inside the per-row mapping loop, so raising here
+        aborted the whole scrape — every card, every month — the first time
+        Max shipped a new plan name.
+        """
+        assert _get_transaction_type("מסלול עלום", 42) == TransactionType.NORMAL
+
+    def test_unknown_type_is_logged(self, caplog):
+        """The unknown plan name is logged so it can be added to the maps."""
+        with caplog.at_level(logging.WARNING, logger=max_module.__name__):
             _get_transaction_type("מסלול עלום", 42)
+        assert "מסלול עלום" in caplog.text
+
+    def test_unknown_type_does_not_abort_row_mapping(self):
+        """A row with an unknown plan still maps to a usable Transaction."""
+        txn = _map_transaction(_raw_txn(planName="מסלול עלום", planTypeId=42))
+        assert txn.type == TransactionType.NORMAL
+        assert txn.charged_amount == -120.5
 
 
 class TestGetInstallmentsInfo:
@@ -132,6 +150,14 @@ class TestMapTransaction:
         txn = _map_transaction(_raw_txn())
         assert txn.original_amount == -120.5
         assert txn.charged_amount == -120.5
+
+    def test_thousands_separated_string_amounts_parse(self):
+        """A comma-grouped amount string is coerced, not crashed on."""
+        txn = _map_transaction(
+            _raw_txn(originalAmount="1,234.56", actualPaymentAmount="1,234.56")
+        )
+        assert txn.original_amount == -1234.56
+        assert txn.charged_amount == -1234.56
 
     def test_completed_when_payment_date_present(self):
         """A transaction with a payment date is COMPLETED."""

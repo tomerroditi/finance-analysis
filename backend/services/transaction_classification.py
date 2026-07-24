@@ -19,6 +19,7 @@ import pandas as pd
 
 from backend.constants.categories import (
     CREDIT_CARDS,
+    IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories,
@@ -30,10 +31,13 @@ INCOME_CATEGORY_VALUES: list[str] = [c.value for c in IncomeCategories]
 # category breakdowns). Note: intentionally excludes the bank-side
 # ``Credit Cards`` bill category — itemized CC purchases carry the real
 # category detail (see kpi_calculations.md → "Credit Card Deduplication").
+# ``Ignore`` is excluded too: it marks internal transfers and CC bill
+# summaries, which are not spending and must never consume budget.
 EXPENSE_EXCLUDED_CATEGORIES: list[str] = [
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     CREDIT_CARDS,
+    IGNORE_CATEGORY,
     *INCOME_CATEGORY_VALUES,
 ]
 

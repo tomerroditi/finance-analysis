@@ -8,6 +8,10 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.models.investment import Investment
+from backend.repositories.investment_snapshots_repository import (
+    InvestmentSnapshotsRepository,
+)
+from backend.repositories.investments_repository import InvestmentsRepository
 from backend.services.investments_service import InvestmentsService
 
 
@@ -328,3 +332,40 @@ class TestPrimeLinkedCalculation:
         assert count == 1
         assert len(service.get_balance_snapshots(prime_id)) > 0
         assert service.get_balance_snapshots(fixed_id) == []
+
+
+class TestOrphanSnapshots:
+    """Snapshots must not survive their investment.
+
+    SQLite runs with ``PRAGMA foreign_keys`` off, so the model's
+    ``ondelete="CASCADE"`` does not fire and rowids are reused.
+    """
+
+    def test_snapshots_deleted_with_investment(self, db_session):
+        """Deleting an investment removes its balance snapshots."""
+        repo = InvestmentsRepository(db_session)
+        snaps = InvestmentSnapshotsRepository(db_session)
+        repo.create_investment(
+            category="Investments", tag="Fund A", type_="stocks", name="Fund A")
+        inv_id = int(repo.get_all_investments(include_closed=True).iloc[0]["id"])
+        snaps.upsert_snapshot(inv_id, "2024-06-30", 250000.0)
+
+        repo.delete_investment(inv_id)
+        left = snaps.get_snapshots_for_investment(inv_id)
+        assert left.empty, "snapshot outlived its investment"
+
+    def test_new_investment_does_not_inherit_balance(self, db_session):
+        """A brand-new investment reusing the rowid has no phantom balance."""
+        repo = InvestmentsRepository(db_session)
+        snaps = InvestmentSnapshotsRepository(db_session)
+        repo.create_investment(
+            category="Investments", tag="Fund A", type_="stocks", name="Fund A")
+        old_id = int(repo.get_all_investments(include_closed=True).iloc[0]["id"])
+        snaps.upsert_snapshot(old_id, "2024-06-30", 250000.0)
+        repo.delete_investment(old_id)
+
+        repo.create_investment(
+            category="Investments", tag="Fund B", type_="stocks", name="Fund B")
+        new_id = int(repo.get_all_investments(include_closed=True).iloc[0]["id"])
+        metrics = InvestmentsService(db_session).calculate_profit_loss(new_id)
+        assert metrics["current_balance"] == 0.0

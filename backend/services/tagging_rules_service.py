@@ -23,6 +23,42 @@ TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
     Tables.BANK.value: BankTransaction,
 }
 
+# Fields a condition may match on, and the operators each accepts.
+TEXT_CONDITION_FIELDS: List[str] = [
+    "description",
+    "account_name",
+    "provider",
+    "service",
+]
+NUMERIC_CONDITION_FIELDS: List[str] = ["amount"]
+VALID_TEXT_OPERATORS: List[str] = ["contains", "equals", "starts_with", "ends_with"]
+VALID_NUMERIC_OPERATORS: List[str] = ["gt", "lt", "gte", "lte", "equals", "between"]
+
+
+def _escape_like(value: Any) -> str:
+    """Escape SQL ``LIKE`` metacharacters in a user-supplied search value.
+
+    ``%`` and ``_`` are wildcards inside a ``LIKE`` pattern, so a rule
+    searching for a literal ``"50%"`` would otherwise match ``"5000"`` too.
+    Callers must pass ``escape="\\\\"`` to the ``like()`` call.
+
+    Parameters
+    ----------
+    value : Any
+        Raw condition value; coerced to ``str``.
+
+    Returns
+    -------
+    str
+        The value with ``\\``, ``%``, and ``_`` backslash-escaped.
+    """
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
 
 class TaggingRulesService:
     """
@@ -363,11 +399,19 @@ class TaggingRulesService:
                 raise BadRequestException("Condition missing field or operator")
 
             # Type Validation Logic
-            valid_text_ops = ["contains", "equals", "starts_with", "ends_with"]
-            valid_num_ops = ["gt", "lt", "gte", "lte", "equals", "between"]
+            valid_text_ops = VALID_TEXT_OPERATORS
+            valid_num_ops = VALID_NUMERIC_OPERATORS
 
-            text_fields = ["description", "account_name", "provider", "service"]
-            num_fields = ["amount"]
+            text_fields = TEXT_CONDITION_FIELDS
+            num_fields = NUMERIC_CONDITION_FIELDS
+
+            # Reject unknown fields loudly. Left unchecked, a typo'd field name
+            # builds a filter that matches nothing (previously: everything).
+            if field not in text_fields and field not in num_fields:
+                raise BadRequestException(
+                    f"Unknown condition field '{field}'. Valid fields: "
+                    + ", ".join(sorted(text_fields + num_fields))
+                )
 
             if field in num_fields:
                 if operator not in valid_num_ops:
@@ -379,17 +423,20 @@ class TaggingRulesService:
                         raise BadRequestException(
                             "Value for between must be list of 2 numbers"
                         )
+                    # TypeError too: a JSON null reaches float() as None and
+                    # raises TypeError, which used to escape validation and
+                    # 500 the request instead of returning 400.
                     try:
                         float(value[0])
                         float(value[1])
-                    except ValueError:
+                    except (TypeError, ValueError):
                         raise BadRequestException(
                             "Values for numeric field must be numbers"
                         )
                 else:
                     try:
                         float(value)
-                    except ValueError:
+                    except (TypeError, ValueError):
                         raise BadRequestException(
                             f"Value '{value}' must be a number for field '{field}'"
                         )
@@ -575,18 +622,24 @@ class TaggingRulesService:
         operator = condition.get("operator")
         value = condition.get("value")
 
+        if field == "service":
+            # Restriction handled at the table-selection level, not here.
+            return True
+
         column = self._get_model_column(field, model)
         if column is None:
-            return True  # Ignored field (e.g., 'service' handled by table selection)
+            # An unrecognised field is a broken rule. Matching nothing keeps it
+            # inert; returning True would silently re-tag every transaction.
+            return False
 
         if operator == "contains":
-            return column.like(f"%{value}%")
+            return column.like(f"%{_escape_like(value)}%", escape="\\")
         elif operator == "equals":
             return column == value
         elif operator == "starts_with":
-            return column.like(f"{value}%")
+            return column.like(f"{_escape_like(value)}%", escape="\\")
         elif operator == "ends_with":
-            return column.like(f"%{value}")
+            return column.like(f"%{_escape_like(value)}", escape="\\")
         elif operator == "gt":
             return column > float(value)
         elif operator == "lt":
