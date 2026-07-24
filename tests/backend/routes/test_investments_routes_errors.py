@@ -292,3 +292,29 @@ class TestInvestmentDateValidation:
             "/api/investments/1", json={"closed_date": "garbage"}
         )
         assert response.status_code == 422
+
+
+class TestAnalysisDateQueryValidation:
+    """Date query params are validated before reaching the service."""
+
+    def test_analysis_rejects_malformed_start_date(self, test_client):
+        """A malformed start_date returns 400 rather than reaching analytics."""
+        response = test_client.get(
+            "/api/investments/1/analysis", params={"start_date": "not-a-date"}
+        )
+        assert response.status_code == 400
+
+    def test_analysis_rejects_malformed_end_date(self, test_client):
+        """A malformed end_date returns 400."""
+        response = test_client.get(
+            "/api/investments/1/analysis", params={"end_date": "13/45/2026"}
+        )
+        assert response.status_code == 400
+
+    def test_calculate_snapshots_rejects_malformed_end_date(self, test_client):
+        """A malformed end_date on the fixed-rate calculator returns 400."""
+        response = test_client.post(
+            "/api/investments/1/balances/calculate",
+            params={"end_date": "garbage"},
+        )
+        assert response.status_code == 400

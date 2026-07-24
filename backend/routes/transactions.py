@@ -213,6 +213,11 @@ def delete_transaction(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Delete a transaction (only for manual entries)."""
+    # An unrecognised source is a malformed request, not a permission
+    # problem — without this it surfaced as 403 "Deletion of X transactions
+    # is prohibited", which reads as "you may not delete this" rather than
+    # "that table does not exist".
+    _validate_source(source)
     service = TransactionsService(db)
     try:
         service.delete_transaction(int(unique_id), source)

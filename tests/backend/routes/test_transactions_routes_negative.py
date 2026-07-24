@@ -371,3 +371,14 @@ class TestUnknownSourceHandling:
         )
         assert response.status_code == 400
         assert "not_a_table" in response.json()["detail"]
+
+
+class TestDeleteUnknownSource:
+    """An unknown source is a bad request, not a permission failure."""
+
+    def test_delete_with_unknown_source_returns_400(self, test_client):
+        """DELETE with a nonexistent source table returns 400, not 403."""
+        response = test_client.delete(
+            "/api/transactions/1", params={"source": "not_a_table"}
+        )
+        assert response.status_code == 400

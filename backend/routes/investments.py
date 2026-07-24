@@ -181,6 +181,10 @@ def get_investment_analysis(
     end_date : str, optional
         ISO date string (YYYY-MM-DD) to restrict the transaction history.
     """
+    if start_date is not None:
+        _parse_iso_date(start_date, "start_date")
+    if end_date is not None:
+        _parse_iso_date(end_date, "end_date")
     service = InvestmentsService(db)
     return service.get_investment_analysis(investment_id, start_date, end_date)
 
@@ -297,6 +301,8 @@ def calculate_fixed_rate_snapshots(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Trigger fixed-rate auto-calculation of balance snapshots."""
+    if end_date is not None:
+        _parse_iso_date(end_date, "end_date")
     service = InvestmentsService(db)
     service.calculate_fixed_rate_snapshots(investment_id, end_date=end_date)
     return {"status": "success"}
