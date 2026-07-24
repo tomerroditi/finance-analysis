@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overview — Cohen household</title>
+<style>
+:root{
+  --plane:#F6F7F9; --surface:#FFFFFF; --surface-2:#FCFCFD;
+  --hair:#E7E9EE; --hair-strong:#DCDFE6;
+  --ink:#0E1116; --ink-2:#5A6472; --muted:#8A93A1;
+  --accent:#C9F24D; --accent-strong:#B4E600; --accent-ink:#1a1f0a;
+  --pos:#17864E; --neg:#C0392B;
+  --nav-w:224px;
+  --c-housing:#5A6472; --c-groceries:#17864E; --c-kids:#7C5CBF; --c-dining:#E08A1E;
+  --c-transport:#2F80D6; --c-shopping:#C0397B; --c-utilities:#0E9488; --c-health:#C0392B;
+  --c-salary:#17864E; --c-subs:#8A93A1;
+  --shadow:0 1px 2px rgba(14,17,22,.04);
+}
+:root[data-theme="dark"]{
+  --plane:#0E1116; --surface:#171B21; --surface-2:#1B2028;
+  --hair:#272C35; --hair-strong:#30363F;
+  --ink:#EEF1F5; --ink-2:#A7B0BD; --muted:#727C8A;
+  --accent:#C9F24D; --accent-strong:#B4E600; --accent-ink:#1a1f0a;
+  --pos:#3FBE7C; --neg:#E5675A;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{max-width:100%;overflow-x:hidden}
+body{
+  font-family:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:var(--plane); color:var(--ink);
+  font-size:13px; line-height:1.45;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+.tnum{font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1}
+.eyebrow{font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted)}
+button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit}
+input{font-family:inherit}
+:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px; border-radius:6px}
+
+/* ---------- LAYOUT ---------- */
+.app{display:grid; grid-template-columns:var(--nav-w) 1fr; min-height:100vh}
+
+/* ---------- NAV RAIL ---------- */
+.rail{
+  border-inline-end:1px solid var(--hair); background:var(--surface);
+  display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
+}
+.brand{display:flex; align-items:center; gap:10px; padding:18px 18px 16px}
+.brandmark{width:26px; height:26px; border-radius:7px; background:var(--accent);
+  display:grid; place-items:center; color:var(--accent-ink); font-weight:800; font-size:14px; flex:none}
+.brand-name{font-weight:600; font-size:13.5px; letter-spacing:-.01em}
+.rail-sec{padding:6px 12px}
+.rail-sec .eyebrow{padding:8px 8px 6px}
+.navitem{display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
+  color:var(--ink-2); font-weight:500; font-size:13px; width:100%; text-align:start; margin-bottom:1px}
+.navitem svg{width:16px; height:16px; flex:none; opacity:.8}
+.navitem:hover{background:var(--surface-2); color:var(--ink)}
+.navitem.active{background:var(--plane); color:var(--ink); font-weight:600}
+:root[data-theme="dark"] .navitem.active{background:var(--surface-2)}
+.navitem.active svg{opacity:1}
+.rail-foot{margin-top:auto; padding:12px; border-top:1px solid var(--hair)}
+.acct-card{display:flex; align-items:center; gap:9px; padding:8px; border-radius:8px}
+.acct-card:hover{background:var(--surface-2)}
+.avatar{width:28px; height:28px; border-radius:50%; background:var(--c-kids);
+  color:#fff; display:grid; place-items:center; font-weight:600; font-size:11px; flex:none}
+.acct-meta{min-width:0}
+.acct-meta b{display:block; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.acct-meta span{font-size:11px; color:var(--muted)}
+
+/* ---------- MAIN ---------- */
+.main{min-width:0; display:flex; flex-direction:column}
+.topbar{
+  position:sticky; top:0; z-index:20; background:color-mix(in srgb,var(--plane) 88%,transparent);
+  backdrop-filter:blur(8px); border-bottom:1px solid var(--hair);
+  display:flex; align-items:center; gap:12px; padding:12px 24px;
+}
+.railtoggle{display:none}
+.switcher{display:flex; align-items:center; gap:9px; padding:6px 10px; border:1px solid var(--hair);
+  border-radius:9px; background:var(--surface); font-weight:600; font-size:13px}
+.switcher:hover{border-color:var(--hair-strong)}
+.switcher .dot{width:18px;height:18px;border-radius:5px;background:var(--c-kids);color:#fff;
+  display:grid;place-items:center;font-size:9px;font-weight:700}
+.switcher svg{width:13px;height:13px;color:var(--muted)}
+.spacer{flex:1}
+.rangepill{display:flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid var(--hair);
+  border-radius:9px; background:var(--surface); font-size:12.5px; font-weight:500; color:var(--ink-2)}
+.rangepill svg{width:14px;height:14px;color:var(--muted)}
+.iconbtn{width:34px;height:34px;border:1px solid var(--hair);border-radius:9px;background:var(--surface);
+  display:grid;place-items:center;color:var(--ink-2)}
+.iconbtn:hover{border-color:var(--hair-strong);color:var(--ink)}
+.iconbtn svg{width:16px;height:16px}
+.btn-primary{display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:9px;
+  background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:13px}
+.btn-primary:hover{background:var(--accent-strong)}
+.btn-primary svg{width:14px;height:14px}
+
+.content{padding:22px 24px 40px; max-width:1440px; width:100%}
+.page-head{display:flex; align-items:baseline; gap:12px; margin-bottom:4px}
+.page-head h1{font-size:19px; font-weight:600; letter-spacing:-.02em}
+.page-head .sub{color:var(--muted); font-size:12.5px}
+.updated{margin-left:auto; color:var(--muted); font-size:11.5px; display:flex; align-items:center; gap:6px}
+.livedot{width:6px;height:6px;border-radius:50%;background:var(--pos)}
+
+/* ---------- KPI ROW ---------- */
+.kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:18px}
+.kpi{background:var(--surface); border:1px solid var(--hair); border-radius:12px; padding:14px 15px;
+  box-shadow:var(--shadow); position:relative; overflow:hidden}
+.kpi.hero{background:var(--accent); border-color:var(--accent-strong)}
+.kpi.hero .eyebrow,.kpi.hero .kpi-sub{color:var(--accent-ink); opacity:.72}
+.kpi.hero .kpi-val{color:var(--accent-ink)}
+.kpi-top{display:flex; align-items:center; justify-content:space-between}
+.kpi-val{font-size:23px; font-weight:600; letter-spacing:-.02em; margin-top:9px}
+.kpi-val small{font-size:13px; font-weight:500; color:var(--muted); margin-inline-start:2px}
+.kpi.hero .kpi-val small{color:var(--accent-ink);opacity:.6}
+.kpi-sub{margin-top:5px; font-size:12px; color:var(--ink-2); display:flex; align-items:center; gap:6px}
+.chip-delta{display:inline-flex; align-items:center; gap:3px; font-weight:600; font-variant-numeric:tabular-nums}
+.chip-delta.up{color:var(--pos)} .chip-delta.down{color:var(--neg)}
+.kpi.hero .chip-delta.up{color:var(--accent-ink)}
+.spark{position:absolute; inset-inline-end:12px; top:12px; width:64px; height:24px; opacity:.85}
+
+/* ---------- CARD ---------- */
+.card{background:var(--surface); border:1px solid var(--hair); border-radius:12px; box-shadow:var(--shadow)}
+.card-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--hair)}
+.card-head h2{font-size:13.5px; font-weight:600; letter-spacing:-.01em}
+.card-head .hint{color:var(--muted); font-size:11.5px}
+.card-head .right{margin-left:auto; display:flex; align-items:center; gap:8px}
+
+/* ---------- NET WORTH CHART ---------- */
+.chartcard{margin-top:16px}
+.nw-head{display:flex; align-items:flex-end; gap:20px; padding:16px 18px 8px; flex-wrap:wrap}
+.nw-big{font-size:28px; font-weight:600; letter-spacing:-.025em}
+.nw-big small{font-size:14px;color:var(--muted);font-weight:500}
+.nw-sub{color:var(--ink-2); font-size:12.5px; margin-top:2px}
+.rangetoggle{margin-inline-start:auto; display:flex; gap:2px; background:var(--plane); padding:3px;
+  border-radius:9px; border:1px solid var(--hair)}
+.rangetoggle button{padding:5px 11px; border-radius:6px; font-size:12px; font-weight:600; color:var(--ink-2)}
+.rangetoggle button.active{background:var(--surface); color:var(--ink); box-shadow:var(--shadow)}
+.chartwrap{position:relative; padding:4px 8px 6px}
+#nwchart{display:block; width:100%; height:230px}
+.nw-tip{position:absolute; pointer-events:none; background:var(--ink); color:#fff; padding:7px 10px;
+  border-radius:8px; font-size:11.5px; opacity:0; transition:opacity .1s; white-space:nowrap; z-index:5;
+  transform:translate(-50%,-100%); box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.nw-tip b{font-size:13px; font-variant-numeric:tabular-nums}
+.nw-tip .t-m{color:#B7C0CE; font-size:10.5px; letter-spacing:.03em; text-transform:uppercase}
+:root[data-theme="dark"] .nw-tip{background:#000}
+
+/* ---------- TWO COLUMN REGION ---------- */
+.region{display:grid; grid-template-columns:1.55fr 1fr; gap:16px; margin-top:16px; align-items:start}
+.stack{display:flex; flex-direction:column; gap:16px; min-width:0}
+
+/* ---------- TABLES ---------- */
+.tablewrap{overflow-x:auto}
+table{width:100%; border-collapse:collapse; font-size:12.5px}
+thead th{font-size:10px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);
+  text-align:start; padding:9px 14px; border-bottom:1px solid var(--hair); white-space:nowrap; background:var(--surface-2)}
+tbody td{padding:9px 14px; border-bottom:1px solid var(--hair); white-space:nowrap; vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface-2)}
+.num{text-align:end; font-variant-numeric:tabular-nums}
+.amt-neg{color:var(--ink)} .amt-pos{color:var(--pos); font-weight:600}
+.catcell{display:flex; align-items:center; gap:8px}
+.catdot{width:8px;height:8px;border-radius:50%; flex:none}
+.desc{font-weight:500; color:var(--ink)}
+.acct-txt{color:var(--ink-2); font-variant-numeric:tabular-nums}
+.date-txt{color:var(--ink-2); font-variant-numeric:tabular-nums}
+
+/* txn toolbar */
+.txtools{display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--hair); flex-wrap:wrap}
+.search{display:flex; align-items:center; gap:7px; border:1px solid var(--hair); border-radius:8px;
+  padding:6px 10px; background:var(--surface-2); flex:1; min-width:150px; max-width:250px}
+.search svg{width:14px;height:14px;color:var(--muted); flex:none}
+.search input{border:none; background:none; outline:none; color:var(--ink); font-size:12.5px; width:100%}
+.chips{display:flex; gap:6px; flex-wrap:wrap}
+.chip{padding:5px 11px; border-radius:20px; border:1px solid var(--hair); background:var(--surface);
+  font-size:11.5px; font-weight:500; color:var(--ink-2)}
+.chip:hover{border-color:var(--hair-strong)}
+.chip.active{background:var(--ink); color:var(--surface); border-color:var(--ink)}
+:root[data-theme="dark"] .chip.active{background:var(--ink); color:#0E1116}
+.emptyrow td{text-align:center; color:var(--muted); padding:22px}
+
+/* budget meter */
+.meter{width:96px; height:6px; border-radius:4px; background:var(--hair); overflow:hidden; display:inline-block; vertical-align:middle}
+.meter i{display:block; height:100%; border-radius:4px; background:var(--pos)}
+.meter i.warn{background:var(--c-dining)} .meter i.over{background:var(--neg)}
+.usepct{font-weight:600; font-variant-numeric:tabular-nums}
+.usepct.over{color:var(--neg)}
+
+/* ---------- SIDE PANELS ---------- */
+.catrow{display:grid; grid-template-columns:1fr auto; gap:6px 12px; align-items:center; padding:8px 16px}
+.catrow:hover{background:var(--surface-2)}
+.catrow .lbl{display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:500; grid-column:1}
+.catrow .val{font-variant-numeric:tabular-nums; color:var(--ink-2); font-size:12px; grid-column:2; text-align:end}
+.catbar{grid-column:1 / -1; height:6px; border-radius:4px; background:var(--hair); overflow:hidden}
+.catbar i{display:block; height:100%; border-radius:4px; transition:filter .12s}
+.catrow:hover .catbar i{filter:brightness(1.08)}
+.catpct{font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
+
+/* holdings */
+.hold{display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--hair)}
+.hold:last-child{border-bottom:none}
+.hold:hover{background:var(--surface-2)}
+.hold .hname{font-weight:500; font-size:12.5px; flex:1; min-width:0}
+.hold .hname small{display:block; color:var(--muted); font-size:11px; font-weight:400; margin-top:1px}
+.hold .hval{text-align:end; font-variant-numeric:tabular-nums; font-weight:600; font-size:12.5px}
+.hold .hchg{font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums; width:52px; text-align:end}
+.hchg.up{color:var(--pos)} .hchg.down{color:var(--neg)}
+
+/* cashflow mini */
+.cf-body{padding:16px}
+.cf-net{display:flex; align-items:baseline; gap:8px}
+.cf-net b{font-size:24px; font-weight:600; letter-spacing:-.02em; color:var(--pos); font-variant-numeric:tabular-nums}
+.cf-net span{font-size:12px; color:var(--muted)}
+.cf-bars{margin-top:14px; display:flex; flex-direction:column; gap:11px}
+.cf-line .cf-l-top{display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:5px}
+.cf-line .cf-l-top .k{color:var(--ink-2); font-weight:500}
+.cf-line .cf-l-top .v{font-variant-numeric:tabular-nums; font-weight:600}
+.cf-track{height:8px; border-radius:5px; background:var(--hair); overflow:hidden}
+.cf-track i{display:block; height:100%; border-radius:5px}
+.cf-track i.inc{background:var(--pos)} .cf-track i.exp{background:var(--ink-2)}
+.cf-months{display:flex; gap:4px; align-items:flex-end; height:44px; margin-top:16px; padding-top:12px; border-top:1px solid var(--hair)}
+.cf-m{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px}
+.cf-m .col{width:100%; display:flex; gap:2px; align-items:flex-end; height:32px; justify-content:center}
+.cf-m .col b{width:5px; border-radius:2px}
+.cf-m .col b.i{background:var(--pos)} .cf-m .col b.e{background:var(--hair-strong)}
+.cf-m span{font-size:9px; color:var(--muted)}
+
+/* insights */
+.insights{list-style:none; padding:6px 4px}
+.insights li{display:flex; gap:9px; padding:8px 12px; font-size:12.5px; color:var(--ink-2); align-items:flex-start}
+.insights li .ic{width:18px;height:18px;border-radius:5px;background:var(--plane);display:grid;place-items:center;flex:none;margin-top:1px}
+.insights li .ic svg{width:11px;height:11px;color:var(--accent-strong)}
+:root[data-theme="dark"] .insights li .ic{background:var(--surface-2)}
+
+/* legend for chart */
+.leg{display:flex; gap:14px; padding:0 18px 10px}
+.leg span{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-2)}
+.leg i{width:9px;height:9px;border-radius:2px}
+
+.footnote{margin-top:24px; text-align:center; color:var(--muted); font-size:11px}
+
+/* ---------- RESPONSIVE ---------- */
+@media(max-width:1180px){
+  .region{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:1024px){
+  :root{--nav-w:64px}
+  .brand-name,.rail-sec .eyebrow,.navitem span,.acct-meta{display:none}
+  .brand{justify-content:center; padding:16px 0}
+  .navitem{justify-content:center; padding:9px}
+  .acct-card{justify-content:center}
+}
+@media(max-width:720px){
+  .app{grid-template-columns:1fr}
+  .rail{display:none}
+  .railtoggle{display:grid}
+  .content{padding:16px 14px 32px}
+  .topbar{padding:10px 14px; gap:8px}
+  .switcher .stxt{display:none}
+  .rangepill .rtxt{display:none}
+  .kpis{grid-template-columns:1fr 1fr; gap:10px}
+  .nw-head{gap:12px}
+  .rangetoggle{margin-inline-start:0}
+}
+@media(max-width:420px){
+  .kpis{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  *{transition:none!important; animation:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ NAV RAIL ============ -->
+  <aside class="rail">
+    <div class="brand">
+      <div class="brandmark">Ⲥ</div>
+      <div class="brand-name">Cohen&nbsp;·&nbsp;Finance</div>
+    </div>
+    <nav class="rail-sec">
+      <div class="eyebrow">Workspace</div>
+      <button class="navitem active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Overview</span></button>
+      <button class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span>Transactions</span></button>
+      <button class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1018 0 9 9 0 00-18 0z"/><path d="M12 7v5l3 2"/></svg><span>Budgets</span></button>
+      <button class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5m0 14h16M8 15l3-4 3 3 4-6"/></svg><span>Investments</span></button>
+      <button class="navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg><span>Accounts</span></button>
+    </nav>
+    <div class="rail-foot">
+      <button class="acct-card">
+        <div class="avatar">TN</div>
+        <div class="acct-meta">
+          <b>Tomer &amp; Noa</b>
+          <span>Owner</span>
+        </div>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="iconbtn railtoggle" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button class="switcher" aria-label="Switch household">
+        <span class="dot">C</span>
+        <span class="stxt">Cohen household</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="spacer"></div>
+      <button class="rangepill" aria-label="Date range">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
+        <span class="rtxt">This month</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      </button>
+      <button class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+    </header>
+
+    <main class="content">
+      <div class="page-head">
+        <h1>Overview</h1>
+        <span class="sub">Tomer &amp; Noa · Jul 2026</span>
+        <span class="updated"><span class="livedot"></span>Synced 4 min ago</span>
+      </div>
+
+      <!-- ===== KPI ROW ===== -->
+      <section class="kpis">
+        <div class="kpi">
+          <div class="kpi-top"><span class="eyebrow">Net worth</span></div>
+          <svg class="spark" viewBox="0 0 64 24" preserveAspectRatio="none" data-spark="nw"></svg>
+          <div class="kpi-val tnum">1,117,240 <small>₪</small></div>
+          <div class="kpi-sub"><span class="chip-delta up">▲ +34,180 ₪</span><span>+3.2% MoM</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-top"><span class="eyebrow">Investments</span></div>
+          <svg class="spark" viewBox="0 0 64 24" preserveAspectRatio="none" data-spark="inv"></svg>
+          <div class="kpi-val tnum">919.8K <small>₪</small></div>
+          <div class="kpi-sub"><span class="chip-delta up">▲ +0.9%</span><span>82% of net worth</span></div>
+        </div>
+        <div class="kpi hero">
+          <div class="kpi-top"><span class="eyebrow">Savings this month</span></div>
+          <svg class="spark" viewBox="0 0 64 24" preserveAspectRatio="none" data-spark="cf"></svg>
+          <div class="kpi-val tnum">+9,800 <small>₪</small></div>
+          <div class="kpi-sub"><span class="chip-delta up">▲ +2,300 vs Jun</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-top"><span class="eyebrow">Savings rate</span></div>
+          <svg class="spark" viewBox="0 0 64 24" preserveAspectRatio="none" data-spark="sr"></svg>
+          <div class="kpi-val tnum">34<small>%</small></div>
+          <div class="kpi-sub"><span class="chip-delta up">▲ +6 pts</span><span>from 28%</span></div>
+        </div>
+      </section>
+
+      <!-- ===== NET WORTH CHART ===== -->
+      <section class="card chartcard">
+        <div class="nw-head">
+          <div>
+            <div class="eyebrow">Net worth</div>
+            <div class="nw-big tnum">1,117,240 <small>₪</small></div>
+            <div class="nw-sub"><span class="chip-delta up">▲ +234K ₪</span> over the last 12 months</div>
+          </div>
+          <div class="rangetoggle" id="rangeToggle">
+            <button data-r="3">3M</button>
+            <button data-r="6">6M</button>
+            <button data-r="12" class="active">1Y</button>
+            <button data-r="all">All</button>
+          </div>
+        </div>
+        <div class="leg">
+          <span><i style="background:var(--ink)"></i> Net worth</span>
+          <span><i style="background:var(--accent-strong)"></i> Endpoint</span>
+        </div>
+        <div class="chartwrap">
+          <svg id="nwchart" viewBox="0 0 900 230" preserveAspectRatio="none" role="img" aria-label="Net worth over time"></svg>
+          <div class="nw-tip" id="nwtip"></div>
+        </div>
+      </section>
+
+      <!-- ===== TWO COLUMN REGION ===== -->
+      <section class="region">
+        <!-- LEFT: TABLES -->
+        <div class="stack">
+          <!-- transactions -->
+          <div class="card">
+            <div class="card-head">
+              <h2>Recent transactions</h2>
+              <span class="hint">July 2026</span>
+              <div class="right"><button class="chip">View all</button></div>
+            </div>
+            <div class="txtools">
+              <label class="search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+                <input type="text" id="txSearch" placeholder="Search description…" aria-label="Search transactions">
+              </label>
+              <div class="chips" id="catChips"></div>
+            </div>
+            <div class="tablewrap">
+              <table>
+                <thead><tr>
+                  <th>Date</th><th>Description</th><th>Category</th><th>Account</th><th class="num">Amount</th>
+                </tr></thead>
+                <tbody id="txBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- budgets -->
+          <div class="card">
+            <div class="card-head">
+              <h2>Budget utilisation</h2>
+              <span class="hint">4 tracked · 1 over</span>
+            </div>
+            <div class="tablewrap">
+              <table>
+                <thead><tr>
+                  <th>Category</th><th class="num">Spent</th><th class="num">Limit</th>
+                  <th>Progress</th><th class="num">Used</th>
+                </tr></thead>
+                <tbody id="budgetBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: PANELS -->
+        <div class="stack">
+          <!-- cashflow mini -->
+          <div class="card">
+            <div class="card-head"><h2>Cash flow</h2><span class="hint">this month</span></div>
+            <div class="cf-body">
+              <div class="cf-net"><b>+9,800 ₪</b><span>net saved</span></div>
+              <div class="cf-bars">
+                <div class="cf-line">
+                  <div class="cf-l-top"><span class="k">Income</span><span class="v tnum" style="color:var(--pos)">28,500 ₪</span></div>
+                  <div class="cf-track"><i class="inc" style="width:100%"></i></div>
+                </div>
+                <div class="cf-line">
+                  <div class="cf-l-top"><span class="k">Spending</span><span class="v tnum">18,700 ₪</span></div>
+                  <div class="cf-track"><i class="exp" style="width:65.6%"></i></div>
+                </div>
+              </div>
+              <div class="cf-months" id="cfMonths"></div>
+            </div>
+          </div>
+
+          <!-- spending by category -->
+          <div class="card">
+            <div class="card-head"><h2>Spending by category</h2><span class="hint">% of total</span></div>
+            <div id="catPanel" style="padding:4px 0"></div>
+          </div>
+
+          <!-- holdings -->
+          <div class="card">
+            <div class="card-head"><h2>Holdings</h2><span class="hint">4 accounts</span></div>
+            <div id="holdings"></div>
+          </div>
+
+          <!-- insights -->
+          <div class="card">
+            <div class="card-head"><h2>Insights</h2></div>
+            <ul class="insights" id="insights"></ul>
+          </div>
+        </div>
+      </section>
+
+      <div class="footnote">Balances in ₪ ILS · demo data · Operator design study</div>
+    </main>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============ SHARED DEMO DATA ============ */
+const HH={name:"Cohen household",people:"Tomer & Noa"};
+const MONTHS=["Jul '25","Aug","Sep","Oct","Nov","Dec","Jan '26","Feb","Mar","Apr","May","Jun","Jul"];
+const NW=[883,904,916,939,958,982,1001,1034,1049,1071,1091,1083,1117];
+const NW_INV=[681,701,716,742,760,782,805,835,861,882,905,912,919.8];
+const CF=[{m:"Feb",inc:28200,exp:21400},{m:"Mar",inc:28900,exp:23800},{m:"Apr",inc:28500,exp:19600},{m:"May",inc:31200,exp:22100},{m:"Jun",inc:28500,exp:24900},{m:"Jul",inc:28500,exp:18700}];
+const CATS=[{name:"Housing",amt:6200},{name:"Groceries",amt:3100},{name:"Kids & school",amt:2350},{name:"Dining out",amt:1850},{name:"Transport",amt:1420},{name:"Shopping",amt:1180},{name:"Utilities",amt:980},{name:"Health",amt:720}];
+const BUDGETS=[{name:"Groceries",spent:3100,limit:3500},{name:"Dining out",spent:1850,limit:1500},{name:"Transport",spent:1420,limit:1600},{name:"Shopping",spent:1180,limit:1000}];
+const TX=[
+{d:"23 Jul",desc:"Shufersal Deal",cat:"Groceries",acct:"Hapoalim ·1234",amt:-312.40},
+{d:"23 Jul",desc:"Cafe Aroma",cat:"Dining out",acct:"Cal ·5521",amt:-54.00},
+{d:"22 Jul",desc:"Paz Gas Station",cat:"Transport",acct:"Cal ·5521",amt:-287.00},
+{d:"21 Jul",desc:"Salary — Noa Cohen",cat:"Salary",acct:"Leumi ·8842",amt:14250.00},
+{d:"20 Jul",desc:"Chevrat Chashmal",cat:"Utilities",acct:"Hapoalim ·1234",amt:-410.20},
+{d:"19 Jul",desc:"Rami Levy",cat:"Groceries",acct:"Hapoalim ·1234",amt:-198.60},
+{d:"18 Jul",desc:"Netflix",cat:"Subscriptions",acct:"Max ·3390",amt:-54.90},
+{d:"18 Jul",desc:"Superpharm",cat:"Health",acct:"Cal ·5521",amt:-142.30},
+{d:"17 Jul",desc:"Zara TLV",cat:"Shopping",acct:"Max ·3390",amt:-389.00},
+{d:"16 Jul",desc:"Bituach Leumi",cat:"Utilities",acct:"Hapoalim ·1234",amt:-220.00},
+{d:"15 Jul",desc:"Gan Yeladim (daycare)",cat:"Kids & school",acct:"Hapoalim ·1234",amt:-2350.00},
+{d:"14 Jul",desc:"Wolt delivery",cat:"Dining out",acct:"Cal ·5521",amt:-96.50}];
+const HOLDINGS=[{name:"Pension — Menora",amt:412000,d:"+1.8%"},{name:"Keren Hishtalmut",amt:238500,d:"+2.1%"},{name:"S&P 500 ETF (IBKR)",amt:184300,d:"+3.4%"},{name:"Crypto",amt:85000,d:"-4.2%"}];
+const INSIGHTS=[
+"Dining out is 23% over budget with 8 days left in July.",
+"3 subscriptions renew this week — 164 ₪ total.",
+"Savings rate hit 34%, up from 28% last month.",
+"Investments crossed 900K ₪ for the first time."];
+
+/* category → color var */
+const CAT_COLOR={
+  "Housing":"var(--c-housing)","Groceries":"var(--c-groceries)","Kids & school":"var(--c-kids)",
+  "Dining out":"var(--c-dining)","Transport":"var(--c-transport)","Shopping":"var(--c-shopping)",
+  "Utilities":"var(--c-utilities)","Health":"var(--c-health)","Salary":"var(--c-salary)",
+  "Subscriptions":"var(--c-subs)"
+};
+const catColor=(c)=>CAT_COLOR[c]||"var(--muted)";
+const fmt=(n,dec=0)=>n.toLocaleString("en-US",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+
+/* ============ SPARKLINES ============ */
+function spark(el,data,color){
+  const w=64,h=24,pad=2;
+  const mn=Math.min(...data),mx=Math.max(...data),rng=(mx-mn)||1;
+  const pts=data.map((v,i)=>{
+    const x=pad+(i/(data.length-1))*(w-pad*2);
+    const y=pad+(1-(v-mn)/rng)*(h-pad*2);
+    return [x,y];
+  });
+  const line=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  const last=pts[pts.length-1];
+  el.innerHTML=`<path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`+
+    `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2" fill="${color}"/>`;
+}
+function initSparks(){
+  const heroInk=getComputedStyle(document.documentElement).getPropertyValue('--accent-ink').trim();
+  const inkC=getComputedStyle(document.documentElement).getPropertyValue('--ink-2').trim();
+  document.querySelectorAll('[data-spark]').forEach(el=>{
+    const k=el.dataset.spark;
+    if(k==='nw') spark(el,NW.slice(-8),inkC);
+    else if(k==='inv') spark(el,NW_INV.slice(-8),inkC);
+    else if(k==='cf') spark(el,CF.map(c=>c.inc-c.exp),heroInk);
+    else if(k==='sr') spark(el,[27,29,31,29,30,32,31,34].map(x=>x),inkC);
+  });
+}
+
+/* ============ NET WORTH CHART ============ */
+const chart=document.getElementById('nwchart');
+const tip=document.getElementById('nwtip');
+const VBW=900,VBH=230,PADL=8,PADR=8,PADT=18,PADB=24;
+let curRange=12, curPts=[], curData=[], curLabels=[];
+
+function sliceData(r){
+  let n = r==='all'||r>=13 ? 13 : (r+1);
+  n=Math.min(n,NW.length);
+  return {vals:NW.slice(-n), labels:MONTHS.slice(-n)};
+}
+function drawChart(r){
+  const {vals,labels}=sliceData(r);
+  curData=vals; curLabels=labels;
+  const mn=Math.min(...vals),mx=Math.max(...vals);
+  const pad=(mx-mn)*0.18||10;
+  const lo=mn-pad, hi=mx+pad, rng=(hi-lo)||1;
+  const iw=VBW-PADL-PADR, ih=VBH-PADT-PADB;
+  curPts=vals.map((v,i)=>{
+    const x=PADL+(vals.length===1?0.5:i/(vals.length-1))*iw;
+    const y=PADT+(1-(v-lo)/rng)*ih;
+    return {x,y,v,label:labels[i]};
+  });
+  const linePath=curPts.map((p,i)=>(i?"L":"M")+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ");
+  const areaPath=`M${curPts[0].x.toFixed(1)} ${(VBH-PADB).toFixed(1)} `+
+    curPts.map(p=>"L"+p.x.toFixed(1)+" "+p.y.toFixed(1)).join(" ")+
+    ` L${curPts[curPts.length-1].x.toFixed(1)} ${(VBH-PADB).toFixed(1)} Z`;
+  // gridlines (4)
+  let grid="";
+  for(let g=0; g<=3; g++){
+    const gy=PADT+(g/3)*ih;
+    const gv=hi-(g/3)*rng;
+    grid+=`<line x1="${PADL}" y1="${gy.toFixed(1)}" x2="${VBW-PADR}" y2="${gy.toFixed(1)}" class="grid"/>`;
+    grid+=`<text x="${VBW-PADR-2}" y="${(gy-3).toFixed(1)}" class="gtext" text-anchor="end">${Math.round(gv)}K</text>`;
+  }
+  const last=curPts[curPts.length-1];
+  // x labels (thin out)
+  let xl="";
+  const step=Math.ceil(curPts.length/7);
+  curPts.forEach((p,i)=>{
+    if(i%step===0 || i===curPts.length-1){
+      xl+=`<text x="${p.x.toFixed(1)}" y="${VBH-6}" class="gtext" text-anchor="middle">${p.label}</text>`;
+    }
+  });
+  chart.innerHTML=`
+    <defs>
+      <linearGradient id="nwgrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--ink)" stop-opacity="0.14"/>
+        <stop offset="100%" stop-color="var(--ink)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <style>
+      .grid{stroke:var(--hair); stroke-width:1}
+      .gtext{fill:var(--muted); font-size:9px; font-family:inherit; font-variant-numeric:tabular-nums}
+    </style>
+    ${grid}${xl}
+    <path d="${areaPath}" fill="url(#nwgrad)"/>
+    <path d="${linePath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <line id="cross" x1="0" y1="${PADT}" x2="0" y2="${VBH-PADB}" stroke="var(--hair-strong)" stroke-width="1" stroke-dasharray="3 3" style="opacity:0"/>
+    <circle id="hoverdot" r="4" fill="var(--ink)" stroke="var(--surface)" stroke-width="2" style="opacity:0"/>
+    <circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="5" fill="var(--accent-strong)" stroke="var(--surface)" stroke-width="2.5"/>
+  `;
+}
+function nearestPoint(clientX){
+  const rect=chart.getBoundingClientRect();
+  const scale=VBW/rect.width;
+  const vx=(clientX-rect.left)*scale;
+  let best=curPts[0],bd=Infinity;
+  for(const p of curPts){const dd=Math.abs(p.x-vx); if(dd<bd){bd=dd;best=p;}}
+  return best;
+}
+function onMove(e){
+  if(!curPts.length)return;
+  const cx=e.touches?e.touches[0].clientX:e.clientX;
+  const p=nearestPoint(cx);
+  const cross=chart.querySelector('#cross');
+  const dot=chart.querySelector('#hoverdot');
+  if(cross){cross.setAttribute('x1',p.x);cross.setAttribute('x2',p.x);cross.style.opacity=1;}
+  if(dot){dot.setAttribute('cx',p.x);dot.setAttribute('cy',p.y);dot.style.opacity=1;}
+  const rect=chart.getBoundingClientRect();
+  const px=rect.left+(p.x/VBW)*rect.width;
+  const py=rect.top+(p.y/VBH)*rect.height;
+  const wrapRect=chart.parentElement.getBoundingClientRect();
+  tip.style.left=(px-wrapRect.left)+"px";
+  tip.style.top=(py-wrapRect.top-10)+"px";
+  tip.style.transform="translate(-50%,-100%)";
+  tip.innerHTML=`<div class="t-m">${p.label}</div><b class="tnum">${fmt(p.v*1000)} ₪</b>`;
+  tip.style.opacity=1;
+}
+function onLeave(){
+  tip.style.opacity=0;
+  const cross=chart.querySelector('#cross');const dot=chart.querySelector('#hoverdot');
+  if(cross)cross.style.opacity=0; if(dot)dot.style.opacity=0;
+}
+chart.addEventListener('mousemove',onMove);
+chart.addEventListener('mouseleave',onLeave);
+chart.addEventListener('touchmove',onMove,{passive:true});
+chart.addEventListener('touchend',onLeave);
+
+document.getElementById('rangeToggle').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  document.querySelectorAll('#rangeToggle button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  const r=b.dataset.r==='all'?'all':parseInt(b.dataset.r,10);
+  drawChart(r);
+});
+
+/* ============ TRANSACTIONS ============ */
+const txBody=document.getElementById('txBody');
+const catChips=document.getElementById('catChips');
+let activeCat="All", searchTerm="";
+const txCats=["All",...Array.from(new Set(TX.map(t=>t.cat)))];
+
+txCats.forEach(c=>{
+  const b=document.createElement('button');
+  b.className='chip'+(c==='All'?' active':'');
+  b.textContent=c;
+  b.addEventListener('click',()=>{
+    activeCat=c;
+    document.querySelectorAll('#catChips .chip').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    renderTx();
+  });
+  catChips.appendChild(b);
+});
+document.getElementById('txSearch').addEventListener('input',e=>{searchTerm=e.target.value.toLowerCase().trim();renderTx();});
+
+function renderTx(){
+  const rows=TX.filter(t=>
+    (activeCat==="All"||t.cat===activeCat) &&
+    (!searchTerm || t.desc.toLowerCase().includes(searchTerm) || t.cat.toLowerCase().includes(searchTerm))
+  );
+  if(!rows.length){
+    txBody.innerHTML=`<tr class="emptyrow"><td colspan="5">No transactions match your filters.</td></tr>`;
+    return;
+  }
+  txBody.innerHTML=rows.map(t=>{
+    const pos=t.amt>0;
+    const amtStr=(pos?"+":"−")+fmt(Math.abs(t.amt),2)+" ₪";
+    return `<tr>
+      <td class="date-txt">${t.d}</td>
+      <td class="desc">${t.desc}</td>
+      <td><span class="catcell"><span class="catdot" style="background:${catColor(t.cat)}"></span>${t.cat}</span></td>
+      <td class="acct-txt">${t.acct}</td>
+      <td class="num ${pos?'amt-pos':'amt-neg'}">${amtStr}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ============ BUDGETS ============ */
+const budgetBody=document.getElementById('budgetBody');
+budgetBody.innerHTML=BUDGETS.map(b=>{
+  const pct=b.spent/b.limit*100;
+  const over=pct>100;
+  const cls=over?'over':(pct>=90?'warn':'');
+  return `<tr>
+    <td><span class="catcell"><span class="catdot" style="background:${catColor(b.name)}"></span>${b.name}</span></td>
+    <td class="num">${fmt(b.spent)} ₪</td>
+    <td class="num acct-txt">${fmt(b.limit)} ₪</td>
+    <td><span class="meter"><i class="${cls}" style="width:${Math.min(pct,100).toFixed(0)}%"></i></span></td>
+    <td class="num"><span class="usepct ${over?'over':''}">${Math.round(pct)}%</span></td>
+  </tr>`;
+}).join("");
+
+/* ============ SPENDING BY CATEGORY ============ */
+const catPanel=document.getElementById('catPanel');
+const totalSpend=CATS.reduce((s,c)=>s+c.amt,0);
+const maxCat=Math.max(...CATS.map(c=>c.amt));
+catPanel.innerHTML=CATS.map(c=>{
+  const pct=c.amt/totalSpend*100;
+  const w=c.amt/maxCat*100;
+  return `<div class="catrow">
+    <span class="lbl"><span class="catdot" style="background:${catColor(c.name)}"></span>${c.name}</span>
+    <span class="val">${fmt(c.amt)} ₪ <span class="catpct">· ${pct.toFixed(0)}%</span></span>
+    <span class="catbar"><i style="width:${w.toFixed(1)}%;background:${catColor(c.name)}"></i></span>
+  </div>`;
+}).join("");
+
+/* ============ HOLDINGS ============ */
+const holdings=document.getElementById('holdings');
+holdings.innerHTML=HOLDINGS.map(h=>{
+  const up=h.d.startsWith('+');
+  const compact=h.amt>=1000?(h.amt/1000).toFixed(1)+"K":h.amt;
+  return `<div class="hold">
+    <div class="hname">${h.name}<small>${fmt(h.amt)} ₪</small></div>
+    <div class="hval">${compact} ₪</div>
+    <div class="hchg ${up?'up':'down'}">${h.d}</div>
+  </div>`;
+}).join("");
+
+/* ============ CASHFLOW MONTHS ============ */
+const cfMonths=document.getElementById('cfMonths');
+const cfMax=Math.max(...CF.flatMap(c=>[c.inc,c.exp]));
+cfMonths.innerHTML=CF.map(c=>{
+  const ih=(c.inc/cfMax*100).toFixed(0), eh=(c.exp/cfMax*100).toFixed(0);
+  return `<div class="cf-m">
+    <div class="col"><b class="i" style="height:${ih}%"></b><b class="e" style="height:${eh}%"></b></div>
+    <span>${c.m}</span>
+  </div>`;
+}).join("");
+
+/* ============ INSIGHTS ============ */
+document.getElementById('insights').innerHTML=INSIGHTS.map(t=>
+  `<li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>${t}</li>`
+).join("");
+
+/* ============ THEME TOGGLE ============ */
+const themeBtn=document.getElementById('themeBtn');
+themeBtn.addEventListener('click',()=>{
+  const cur=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',cur);
+  document.getElementById('themeIcon').innerHTML = cur==='dark'
+    ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>'
+    : '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/>';
+  initSparks(); drawChart(document.querySelector('#rangeToggle .active').dataset.r==='all'?'all':parseInt(document.querySelector('#rangeToggle .active').dataset.r,10));
+});
+
+/* ============ INIT ============ */
+renderTx();
+initSparks();
+drawChart(12);
+</script>
+</body>
+</html>

@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overview · Cohen household</title>
+<style>
+  :root {
+    --paper: #FBF9F5;
+    --paper-2: #F5F2EC;
+    --card: #FFFFFF;
+    --card-soft: #FCFAF6;
+    --ink: #2B2A26;
+    --ink-2: #6B6A62;
+    --ink-3: #9A9890;
+    --line: #ECE7DD;
+    --line-2: #E3DDD1;
+    --accent: #2F9E77;
+    --accent-2: #3FB08A;
+    --accent-soft: #E4F3ED;
+    --neg: #B99A8C;
+    --shadow-1: 0 1px 2px rgba(60,50,30,.04), 0 6px 16px rgba(60,50,30,.05);
+    --shadow-2: 0 2px 6px rgba(60,50,30,.06), 0 18px 44px rgba(60,50,30,.09);
+    --r-lg: 26px;
+    --r-md: 20px;
+    --r-sm: 14px;
+    /* pastel category palette */
+    --c-coral: #E8A598;
+    --c-apricot: #E9C08A;
+    --c-sage: #9FC4A6;
+    --c-dusty: #9DB6CE;
+    --c-lav: #B7ADD6;
+    --c-clay: #D3A98E;
+    --c-mint: #A8D2C4;
+    --c-rose: #DBA9B6;
+  }
+  :root[data-theme="dark"] {
+    --paper: #1B1A17;
+    --paper-2: #201E1A;
+    --card: #232019;
+    --card-soft: #262218;
+    --ink: #F0ECE2;
+    --ink-2: #B4AF9F;
+    --ink-3: #86816F;
+    --line: #34302A;
+    --line-2: #3D3830;
+    --accent: #4FC195;
+    --accent-2: #3FB08A;
+    --accent-soft: #1F332C;
+    --neg: #C4A497;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.25), 0 6px 16px rgba(0,0,0,.3);
+    --shadow-2: 0 2px 6px rgba(0,0,0,.3), 0 18px 44px rgba(0,0,0,.45);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, "SF Pro Rounded", ui-rounded, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+    transition: background .4s ease, color .4s ease;
+    min-height: 100vh;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(63,176,138,.08), transparent 60%),
+      radial-gradient(900px 500px at 0% 5%, rgba(233,192,138,.10), transparent 55%);
+    pointer-events: none; z-index: 0;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 26px 22px 90px; position: relative; z-index: 1; }
+
+  /* ---------- top bar ---------- */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 26px; }
+  .brand { display: flex; align-items: center; gap: 13px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 15px;
+    background: linear-gradient(150deg, var(--accent-2), var(--accent));
+    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 20px;
+    box-shadow: 0 6px 16px rgba(47,158,119,.32);
+  }
+  .brand h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.02em; }
+  .brand p { margin: 1px 0 0; font-size: 12.5px; color: var(--ink-3); }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 999px; font-size: 13px; color: var(--ink-2);
+    box-shadow: var(--shadow-1);
+  }
+  .dot-green { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .theme-toggle {
+    width: 46px; height: 46px; border-radius: 15px; border: 1px solid var(--line);
+    background: var(--card); cursor: pointer; font-size: 18px; color: var(--ink);
+    box-shadow: var(--shadow-1); transition: transform .2s ease, background .3s;
+    display: grid; place-items: center;
+  }
+  .theme-toggle:hover { transform: translateY(-1px); }
+  .theme-toggle:active { transform: scale(.95); }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--shadow-1);
+    padding: 24px; margin-bottom: 20px;
+    opacity: 0; transform: translateY(16px);
+    animation: rise .7s cubic-bezier(.22,1,.36,1) forwards;
+  }
+  .card:nth-child(1){animation-delay:.02s}
+  .card:nth-child(2){animation-delay:.08s}
+  .card:nth-child(3){animation-delay:.14s}
+  .card:nth-child(4){animation-delay:.2s}
+  .card:nth-child(5){animation-delay:.26s}
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid-2 > .card { margin-bottom: 0; }
+
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .card-head h2 { font-size: 15.5px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+  .card-head .sub { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+  .eyebrow { font-size: 12px; color: var(--ink-3); font-weight: 550; margin: 0 0 4px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 28px; }
+  .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .hero-num { font-size: 48px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; margin: 6px 0 8px; }
+  .hero-num .cur { font-size: 26px; color: var(--ink-2); font-weight: 600; margin-inline-start: 6px; }
+  .delta { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; color: var(--accent); }
+  .delta .pill-up { background: var(--accent-soft); color: var(--accent); padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+  .delta .muted { color: var(--ink-3); font-weight: 500; }
+
+  .segmented {
+    display: inline-flex; background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px; gap: 2px;
+  }
+  .segmented button {
+    border: 0; background: transparent; color: var(--ink-2);
+    font: inherit; font-size: 13px; font-weight: 550; padding: 7px 15px; border-radius: 999px;
+    cursor: pointer; transition: color .2s;
+  }
+  .segmented button.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow-1); }
+  .segmented button:hover:not(.active) { color: var(--ink); }
+
+  .chart-wrap { position: relative; margin-top: 22px; }
+  svg { display: block; width: 100%; overflow: visible; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--ink); color: var(--paper);
+    padding: 9px 13px; border-radius: 12px; font-size: 12.5px; line-height: 1.35;
+    box-shadow: var(--shadow-2); opacity: 0; transform: translateY(4px);
+    transition: opacity .16s, transform .16s; white-space: nowrap; z-index: 5;
+  }
+  .tooltip.show { opacity: 1; transform: none; }
+  .tooltip b { font-weight: 650; font-size: 14px; }
+  :root[data-theme="dark"] .tooltip { background: #0f0e0c; color: #f4f0e6; border: 1px solid var(--line-2); }
+
+  /* ---------- accounts ---------- */
+  .acct-row {
+    display: grid; grid-template-columns: 44px 1fr auto auto; gap: 14px; align-items: center;
+    padding: 13px 8px; border-radius: var(--r-sm); transition: background .2s;
+  }
+  .acct-row:hover { background: var(--card-soft); }
+  .acct-row + .acct-row { border-top: 1px solid var(--line); }
+  .acct-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; }
+  .acct-name { font-weight: 600; font-size: 14.5px; }
+  .acct-name small { display: block; color: var(--ink-3); font-weight: 500; font-size: 12px; margin-top: 1px; }
+  .acct-amt { font-weight: 650; font-size: 15px; text-align: end; }
+  .acct-amt.neg { color: var(--neg); }
+  .acct-delta { font-size: 12px; font-weight: 600; text-align: end; min-width: 46px; }
+  .acct-delta.up { color: var(--accent); }
+  .acct-delta.down { color: var(--neg); }
+  .spark { width: 62px; height: 26px; }
+
+  /* ---------- cash flow ---------- */
+  .cf-legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); }
+  .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .lg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .save-banner {
+    margin-top: 18px; background: linear-gradient(120deg, var(--accent-soft), transparent);
+    border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px; font-size: 13.5px;
+  }
+  .save-banner b { color: var(--accent); }
+  .save-emoji { font-size: 20px; }
+
+  /* ---------- spending / donut ---------- */
+  .donut-layout { display: grid; grid-template-columns: 200px 1fr; gap: 22px; align-items: center; }
+  .donut-center { text-anchor: middle; }
+  .cat-list { display: flex; flex-direction: column; gap: 3px; }
+  .cat-item {
+    display: grid; grid-template-columns: 12px 1fr auto; gap: 11px; align-items: center;
+    padding: 8px 9px; border-radius: 11px; cursor: default; transition: background .18s;
+  }
+  .cat-item:hover, .cat-item.hot { background: var(--card-soft); }
+  .cat-swatch { width: 12px; height: 12px; border-radius: 5px; }
+  .cat-name { font-size: 13.5px; font-weight: 550; }
+  .cat-amt { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+  .donut-seg { transition: opacity .18s, transform .18s; transform-origin: center; cursor: pointer; }
+  .donut-seg.dim { opacity: .28; }
+
+  /* ---------- budgets ---------- */
+  .bud-row { padding: 12px 4px; }
+  .bud-row + .bud-row { border-top: 1px solid var(--line); }
+  .bud-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .bud-name { font-weight: 600; font-size: 14px; }
+  .bud-vals { font-size: 12.5px; color: var(--ink-2); }
+  .bud-vals .over { color: var(--neg); font-weight: 600; }
+  .bar-track { height: 9px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); width: 0; transition: width 1s cubic-bezier(.22,1,.36,1); }
+  .bar-fill.over { background: linear-gradient(90deg, var(--accent), var(--c-coral)); }
+
+  /* ---------- transactions ---------- */
+  .tx-row { display: grid; grid-template-columns: 40px 1fr auto; gap: 13px; align-items: center; padding: 11px 6px; border-radius: 12px; transition: background .18s; }
+  .tx-row:hover { background: var(--card-soft); }
+  .tx-row + .tx-row { border-top: 1px solid var(--line); }
+  .tx-ic { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-size: 16px; }
+  .tx-desc { font-weight: 600; font-size: 14px; }
+  .tx-meta { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+  .tx-amt { font-weight: 650; font-size: 14.5px; text-align: end; }
+  .tx-amt.pos { color: var(--accent); }
+  .tx-date { font-size: 11px; color: var(--ink-3); text-align: end; margin-top: 1px; }
+
+  /* ---------- insights ---------- */
+  .insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .insight {
+    background: var(--card-soft); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 15px 16px; display: flex; gap: 12px; align-items: flex-start;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .insight:hover { transform: translateY(-2px); box-shadow: var(--shadow-1); }
+  .insight .emo {
+    width: 38px; height: 38px; min-width: 38px; border-radius: 12px; display: grid; place-items: center;
+    font-size: 18px; background: var(--accent-soft);
+  }
+  .insight p { margin: 0; font-size: 13.5px; line-height: 1.4; color: var(--ink); }
+
+  .section-title { font-size: 13px; font-weight: 600; color: var(--ink-3); margin: 28px 4px 12px; letter-spacing: .01em; }
+
+  :focus-visible { outline: 2.5px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+  @media (max-width: 860px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .donut-layout { grid-template-columns: 1fr; justify-items: center; }
+    .cat-list { width: 100%; }
+    .insight-grid { grid-template-columns: 1fr; }
+    .hero-num { font-size: 40px; }
+  }
+  @media (max-width: 440px) {
+    .wrap { padding: 18px 14px 70px; }
+    .card { padding: 18px; }
+    .hero { padding: 20px; }
+    .hero-num { font-size: 34px; }
+    .hero-num .cur { font-size: 20px; }
+    .chip.hide-sm { display: none; }
+    .acct-row { grid-template-columns: 40px 1fr auto; }
+    .spark { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+    .card { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">₪</div>
+      <div>
+        <h1>Cohen household</h1>
+        <p>Tomer &amp; Noa · Overview</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="chip hide-sm"><span class="dot-green"></span> Synced 2m ago</span>
+      <button class="theme-toggle" id="themeBtn" aria-label="Toggle dark mode">☾</button>
+    </div>
+  </header>
+
+  <!-- HERO: net worth -->
+  <section class="card hero" aria-label="Net worth">
+    <div class="hero-top">
+      <div>
+        <p class="eyebrow">Total net worth</p>
+        <div class="hero-num" id="nwNum">1,117,240 <span class="cur">₪</span></div>
+        <div class="delta">
+          <span class="pill-up">▲ 3.2%</span>
+          <span>+34,180 ₪</span>
+          <span class="muted">this month</span>
+        </div>
+      </div>
+      <div class="segmented" role="tablist" aria-label="Time range">
+        <button data-range="3" role="tab">3M</button>
+        <button data-range="6" role="tab">6M</button>
+        <button data-range="12" class="active" role="tab" aria-selected="true">1Y</button>
+        <button data-range="all" role="tab">All</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <svg id="nwChart" viewBox="0 0 900 300" preserveAspectRatio="none" role="img" aria-label="Net worth trend chart"></svg>
+      <div class="tooltip" id="nwTip"></div>
+    </div>
+  </section>
+
+  <!-- Accounts + Cash flow -->
+  <div class="grid-2">
+    <section class="card" aria-label="Where it sits">
+      <div class="card-head"><div><h2>Where it sits</h2><div class="sub">Across your accounts</div></div></div>
+      <div id="acctList"></div>
+    </section>
+
+    <section class="card" aria-label="Cash flow">
+      <div class="card-head">
+        <div><h2>Cash flow</h2><div class="sub">Income vs spending</div></div>
+        <div class="cf-legend">
+          <span class="lg"><i style="background:var(--accent)"></i>In</span>
+          <span class="lg"><i style="background:var(--c-clay)"></i>Out</span>
+        </div>
+      </div>
+      <div class="chart-wrap" style="margin-top:6px">
+        <svg id="cfChart" viewBox="0 0 460 220" role="img" aria-label="Cash flow bar chart"></svg>
+        <div class="tooltip" id="cfTip"></div>
+      </div>
+      <div class="save-banner">
+        <span class="save-emoji">🌿</span>
+        <div>You saved <b>+9,800 ₪</b> in July · <b>34% savings rate</b></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Spending by category -->
+  <section class="card" aria-label="Spending by category">
+    <div class="card-head"><div><h2>Spending by category</h2><div class="sub">July 2026</div></div></div>
+    <div class="donut-layout">
+      <svg id="donut" viewBox="0 0 200 200" role="img" aria-label="Spending donut chart"></svg>
+      <div class="cat-list" id="catList"></div>
+    </div>
+  </section>
+
+  <!-- Budgets + Insights -->
+  <div class="grid-2">
+    <section class="card" aria-label="Budgets">
+      <div class="card-head"><div><h2>Budgets</h2><div class="sub">July · day 23 of 31</div></div></div>
+      <div id="budList"></div>
+    </section>
+
+    <section class="card" aria-label="Smart insights">
+      <div class="card-head"><div><h2>Smart insights</h2><div class="sub">Personalized for you</div></div></div>
+      <div class="insight-grid" id="insightGrid"></div>
+    </section>
+  </div>
+
+  <!-- Recent activity -->
+  <section class="card" aria-label="Recent activity">
+    <div class="card-head"><div><h2>Recent activity</h2><div class="sub">Latest transactions</div></div></div>
+    <div id="txList"></div>
+  </section>
+
+</div>
+
+<script>
+/* ---------------- DATA ---------------- */
+const HH={name:"Cohen household",people:"Tomer & Noa"};
+const MONTHS=["Jul '25","Aug","Sep","Oct","Nov","Dec","Jan '26","Feb","Mar","Apr","May","Jun","Jul"];
+const NW=[883,904,916,939,958,982,1001,1034,1049,1071,1091,1083,1117];
+const NW_BANK=[171,168,175,181,166,190,178,185,159,174,188,170,185.4];
+const NW_INV=[681,701,716,742,760,782,805,835,861,882,905,912,919.8];
+const NW_CASH=[9,11,14,10,13,8,12,15,11,9,14,12,12.04];
+const NW_LIAB=[720,715,709,703,697,691,685,679,673,667,661,655,649];
+const CF=[{m:"Feb",inc:28200,exp:21400},{m:"Mar",inc:28900,exp:23800},{m:"Apr",inc:28500,exp:19600},{m:"May",inc:31200,exp:22100},{m:"Jun",inc:28500,exp:24900},{m:"Jul",inc:28500,exp:18700}];
+const CATS=[{name:"Housing",amt:6200},{name:"Groceries",amt:3100},{name:"Kids & school",amt:2350},{name:"Dining out",amt:1850},{name:"Transport",amt:1420},{name:"Shopping",amt:1180},{name:"Utilities",amt:980},{name:"Health",amt:720}];
+const BUDGETS=[{name:"Groceries",spent:3100,limit:3500},{name:"Dining out",spent:1850,limit:1500},{name:"Transport",spent:1420,limit:1600},{name:"Shopping",spent:1180,limit:1000}];
+const TX=[
+{d:"23 Jul",desc:"Shufersal Deal",cat:"Groceries",acct:"Hapoalim ·1234",amt:-312.40},
+{d:"23 Jul",desc:"Cafe Aroma",cat:"Dining out",acct:"Cal ·5521",amt:-54.00},
+{d:"22 Jul",desc:"Paz Gas Station",cat:"Transport",acct:"Cal ·5521",amt:-287.00},
+{d:"21 Jul",desc:"Salary — Noa Cohen",cat:"Salary",acct:"Leumi ·8842",amt:14250.00},
+{d:"20 Jul",desc:"Chevrat Chashmal",cat:"Utilities",acct:"Hapoalim ·1234",amt:-410.20},
+{d:"19 Jul",desc:"Rami Levy",cat:"Groceries",acct:"Hapoalim ·1234",amt:-198.60},
+{d:"18 Jul",desc:"Netflix",cat:"Subscriptions",acct:"Max ·3390",amt:-54.90},
+{d:"15 Jul",desc:"Gan Yeladim (daycare)",cat:"Kids & school",acct:"Hapoalim ·1234",amt:-2350.00}];
+const HOLDINGS=[{name:"Pension — Menora",amt:412000,d:"+1.8%"},{name:"Keren Hishtalmut",amt:238500,d:"+2.1%"},{name:"S&P 500 ETF (IBKR)",amt:184300,d:"+3.4%"},{name:"Crypto",amt:85000,d:"-4.2%"}];
+const INSIGHTS=[
+"Dining out is 23% over budget with 8 days left in July.",
+"3 subscriptions renew this week — 164 ₪ total.",
+"Savings rate hit 34%, up from 28% last month.",
+"Investments crossed 900K ₪ for the first time."];
+
+const CAT_COLORS=["var(--c-clay)","var(--c-sage)","var(--c-lav)","var(--c-coral)","var(--c-dusty)","var(--c-apricot)","var(--c-mint)","var(--c-rose)"];
+
+/* ---------------- HELPERS ---------------- */
+const NBSP=" ";
+function fmt(n){ // full shekel: "1,117,240 ₪"
+  const sign = n<0 ? "-" : "";
+  const v = Math.round(Math.abs(n));
+  return sign + v.toLocaleString("en-US") + NBSP + "₪";
+}
+function compact(n){ // "919.8K ₪", "1.1M ₪"
+  const sign = n<0 ? "-" : "";
+  const a = Math.abs(n);
+  let s;
+  if(a>=1e6) s=(a/1e6).toFixed(a>=1e7?0:1).replace(/\.0$/,"")+"M";
+  else if(a>=1e3) s=(a/1e3).toFixed(a>=1e5?0:1).replace(/\.0$/,"")+"K";
+  else s=Math.round(a).toString();
+  return sign + s + NBSP + "₪";
+}
+const $=s=>document.querySelector(s);
+
+/* ---------------- HERO NET WORTH CHART ---------------- */
+const nwSvg=$("#nwChart"), nwTip=$("#nwTip");
+const NW_W=900, NW_H=300, PAD_T=24, PAD_B=34, PAD_X=8;
+let currentRange=12;
+
+function sliceData(range){
+  let start;
+  if(range==="all") start=0;
+  else start=Math.max(0, NW.length-range-1);
+  return { vals: NW.slice(start), labels: MONTHS.slice(start), offset:start };
+}
+
+function buildNW(range){
+  const {vals,labels}=sliceData(range);
+  const n=vals.length;
+  const min=Math.min(...vals), max=Math.max(...vals);
+  const pad=(max-min)*0.18 || 10;
+  const lo=min-pad, hi=max+pad;
+  const X=i=> PAD_X + i*( (NW_W-2*PAD_X) / (n-1) );
+  const Y=v=> PAD_T + (1-(v-lo)/(hi-lo))*(NW_H-PAD_T-PAD_B);
+  const pts=vals.map((v,i)=>[X(i),Y(v)]);
+
+  let line="M"+pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" L");
+  let area=line+` L${X(n-1).toFixed(1)},${(NW_H-PAD_B).toFixed(1)} L${X(0).toFixed(1)},${(NW_H-PAD_B).toFixed(1)} Z`;
+
+  const gridLines=[0,0.5,1].map(t=>{
+    const y=PAD_T+t*(NW_H-PAD_T-PAD_B);
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${NW_W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 6"/>`;
+  }).join("");
+
+  // month labels (thin out on small ranges)
+  const step=n>9?Math.ceil(n/6):1;
+  let xlabels="";
+  for(let i=0;i<n;i+=step){
+    xlabels+=`<text x="${X(i).toFixed(1)}" y="${NW_H-8}" font-size="12" fill="var(--ink-3)" text-anchor="${i===0?'start':(i>=n-1?'end':'middle')}">${labels[i]}</text>`;
+  }
+
+  nwSvg.innerHTML=`
+    <defs>
+      <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.26"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.01"/>
+      </linearGradient>
+    </defs>
+    ${gridLines}
+    <path d="${area}" fill="url(#nwFill)"/>
+    <path id="nwLine" d="${line}" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <line id="nwCross" x1="0" y1="${PAD_T}" x2="0" y2="${NW_H-PAD_B}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 4" opacity="0"/>
+    <circle id="nwHov" r="6" fill="var(--card)" stroke="var(--accent)" stroke-width="3" opacity="0"/>
+    ${xlabels}
+    <rect id="nwHit" x="0" y="0" width="${NW_W}" height="${NW_H}" fill="transparent"/>
+  `;
+
+  // draw animation
+  const path=nwSvg.querySelector("#nwLine");
+  if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
+    const len=path.getTotalLength();
+    path.style.strokeDasharray=len; path.style.strokeDashoffset=len;
+    path.getBoundingClientRect();
+    path.style.transition="stroke-dashoffset 1s ease";
+    requestAnimationFrame(()=>{ path.style.strokeDashoffset=0; });
+  }
+
+  // interaction
+  const hit=nwSvg.querySelector("#nwHit");
+  const cross=nwSvg.querySelector("#nwCross");
+  const hov=nwSvg.querySelector("#nwHov");
+  const wrap=nwSvg.parentElement;
+
+  function move(evt){
+    const r=nwSvg.getBoundingClientRect();
+    const px=(evt.clientX-r.left)/r.width*NW_W;
+    let i=Math.round((px-PAD_X)/((NW_W-2*PAD_X)/(n-1)));
+    i=Math.max(0,Math.min(n-1,i));
+    const cx=X(i), cy=Y(vals[i]);
+    cross.setAttribute("x1",cx); cross.setAttribute("x2",cx); cross.setAttribute("opacity","1");
+    hov.setAttribute("cx",cx); hov.setAttribute("cy",cy); hov.setAttribute("opacity","1");
+    nwTip.innerHTML=`<b>${compact(vals[i]*1000)}</b><br>${labels[i]}`;
+    nwTip.classList.add("show");
+    const wr=wrap.getBoundingClientRect();
+    const tx=(cx/NW_W)*wr.width;
+    nwTip.style.left=Math.min(Math.max(tx,50),wr.width-50)+"px";
+    nwTip.style.top=((cy/NW_H)*wr.height-52)+"px";
+    nwTip.style.transform="translateX(-50%)";
+  }
+  hit.addEventListener("mousemove",move);
+  hit.addEventListener("mouseleave",()=>{cross.setAttribute("opacity","0");hov.setAttribute("opacity","0");nwTip.classList.remove("show");});
+}
+buildNW(12);
+
+document.querySelectorAll(".segmented button").forEach(b=>{
+  b.addEventListener("click",()=>{
+    document.querySelectorAll(".segmented button").forEach(x=>{x.classList.remove("active");x.removeAttribute("aria-selected");});
+    b.classList.add("active"); b.setAttribute("aria-selected","true");
+    const r=b.dataset.range;
+    buildNW(r==="all"?"all":parseInt(r));
+  });
+});
+
+/* ---------------- ACCOUNTS ---------------- */
+const ACCTS=[
+  {name:"Bank",sub:"Hapoalim · Leumi",amt:185400,ic:"🏦",bg:"var(--accent-soft)",series:NW_BANK,d:"+2.1%"},
+  {name:"Investments",sub:"Pension · ETF · Crypto",amt:919800,ic:"📈",bg:"#EAF0F6",series:NW_INV,d:"+0.9%"},
+  {name:"Cash",sub:"Wallet & envelopes",amt:12040,ic:"💵",bg:"#F3EFE1",series:NW_CASH,d:"+0.3%"},
+  {name:"Mortgage",sub:"Home loan",amt:-649000,ic:"🏠",bg:"#F5ECE8",series:NW_LIAB.map(v=>-v),d:"−0.9%",neg:true}
+];
+function sparkline(series,color){
+  const w=62,h=26,n=series.length,mn=Math.min(...series),mx=Math.max(...series);
+  const rng=(mx-mn)||1;
+  const pts=series.map((v,i)=>[ (i/(n-1))*w, h-2-((v-mn)/rng)*(h-4) ]);
+  const d="M"+pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" L");
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+$("#acctList").innerHTML=ACCTS.map(a=>{
+  const up=!a.neg;
+  const col=up?"var(--accent)":"var(--neg)";
+  return `<div class="acct-row" tabindex="0">
+    <div class="acct-ic" style="background:${a.bg}">${a.ic}</div>
+    <div><div class="acct-name">${a.name}<small>${a.sub}</small></div></div>
+    ${sparkline(a.series,col)}
+    <div>
+      <div class="acct-amt ${a.neg?'neg':''}">${a.neg?'−'+compact(Math.abs(a.amt)):compact(a.amt)}</div>
+      <div class="acct-delta ${a.d.includes('−')||a.d.includes('-')?'down':'up'}">${a.d}</div>
+    </div>
+  </div>`;
+}).join("");
+
+/* ---------------- CASH FLOW BARS ---------------- */
+const cfSvg=$("#cfChart"), cfTip=$("#cfTip");
+(function(){
+  const W=460,H=220,pt=14,pb=28,px=10;
+  const maxV=Math.max(...CF.map(c=>Math.max(c.inc,c.exp)));
+  const n=CF.length;
+  const groupW=(W-2*px)/n;
+  const barW=groupW*0.28, gap=groupW*0.12;
+  const Y=v=>pt+(1-v/maxV)*(H-pt-pb);
+  let bars="";
+  CF.forEach((c,i)=>{
+    const gx=px+i*groupW+groupW/2;
+    const x1=gx-barW-gap/2, x2=gx+gap/2;
+    const yi=Y(c.inc), ye=Y(c.exp);
+    const baseY=H-pb;
+    bars+=`<g class="cfg" data-i="${i}">
+      <rect x="${x1.toFixed(1)}" y="${baseY}" width="${barW.toFixed(1)}" height="0" rx="5" fill="var(--accent)" class="cfb" data-h="${(baseY-yi).toFixed(1)}" data-y="${yi.toFixed(1)}"/>
+      <rect x="${x2.toFixed(1)}" y="${baseY}" width="${barW.toFixed(1)}" height="0" rx="5" fill="var(--c-clay)" class="cfb" data-h="${(baseY-ye).toFixed(1)}" data-y="${ye.toFixed(1)}"/>
+      <rect x="${(gx-groupW/2).toFixed(1)}" y="${pt}" width="${groupW.toFixed(1)}" height="${H-pt-pb+pb}" fill="transparent" class="cfhit"/>
+      <text x="${gx.toFixed(1)}" y="${H-9}" font-size="12" fill="var(--ink-3)" text-anchor="middle">${c.m}</text>
+    </g>`;
+  });
+  cfSvg.innerHTML=bars;
+  // animate bars
+  const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  cfSvg.querySelectorAll(".cfb").forEach((r,idx)=>{
+    const h=+r.dataset.h, y=+r.dataset.y;
+    if(reduce){ r.setAttribute("height",h); r.setAttribute("y",y); }
+    else{
+      r.style.transition="none";
+      setTimeout(()=>{
+        r.style.transition="height .8s cubic-bezier(.22,1,.36,1), y .8s cubic-bezier(.22,1,.36,1)";
+        r.setAttribute("height",h); r.setAttribute("y",y);
+      }, 120+idx*40);
+    }
+  });
+  const wrap=cfSvg.parentElement;
+  cfSvg.querySelectorAll(".cfg").forEach(g=>{
+    const i=+g.dataset.i, c=CF[i];
+    const hit=g.querySelector(".cfhit");
+    hit.addEventListener("mousemove",e=>{
+      cfTip.innerHTML=`<b>${c.m}</b><br>In ${compact(c.inc)} · Out ${compact(c.exp)}<br>Saved ${compact(c.inc-c.exp)}`;
+      cfTip.classList.add("show");
+      const wr=wrap.getBoundingClientRect(), r=cfSvg.getBoundingClientRect();
+      const cx=(e.clientX-r.left)/r.width*wr.width;
+      cfTip.style.left=Math.min(Math.max(cx,68),wr.width-68)+"px";
+      cfTip.style.top="0px"; cfTip.style.transform="translateX(-50%)";
+    });
+    hit.addEventListener("mouseleave",()=>cfTip.classList.remove("show"));
+  });
+})();
+
+/* ---------------- DONUT ---------------- */
+const donut=$("#donut"), catList=$("#catList");
+(function(){
+  const total=CATS.reduce((s,c)=>s+c.amt,0);
+  const cx=100,cy=100,rO=88,rI=58;
+  let a0=-Math.PI/2;
+  let segs="";
+  const segEls=[];
+  CATS.forEach((c,i)=>{
+    const frac=c.amt/total;
+    const a1=a0+frac*2*Math.PI;
+    const large=(a1-a0)>Math.PI?1:0;
+    const x0=cx+rO*Math.cos(a0), y0=cy+rO*Math.sin(a0);
+    const x1=cx+rO*Math.cos(a1), y1=cy+rO*Math.sin(a1);
+    const xi1=cx+rI*Math.cos(a1), yi1=cy+rI*Math.sin(a1);
+    const xi0=cx+rI*Math.cos(a0), yi0=cy+rI*Math.sin(a0);
+    const d=`M${x0.toFixed(2)},${y0.toFixed(2)} A${rO},${rO} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)} L${xi1.toFixed(2)},${yi1.toFixed(2)} A${rI},${rI} 0 ${large} 0 ${xi0.toFixed(2)},${yi0.toFixed(2)} Z`;
+    segs+=`<path class="donut-seg" data-i="${i}" d="${d}" fill="${CAT_COLORS[i%CAT_COLORS.length]}"/>`;
+    a0=a1;
+  });
+  donut.innerHTML=`${segs}
+    <text class="donut-center" x="100" y="94" font-size="12" fill="var(--ink-3)">Total spend</text>
+    <text class="donut-center" x="100" y="116" font-size="19" font-weight="700" fill="var(--ink)">${compact(total)}</text>`;
+
+  catList.innerHTML=CATS.map((c,i)=>`
+    <div class="cat-item" data-i="${i}">
+      <span class="cat-swatch" style="background:${CAT_COLORS[i%CAT_COLORS.length]}"></span>
+      <span class="cat-name">${c.name}</span>
+      <span class="cat-amt">${compact(c.amt)}</span>
+    </div>`).join("");
+
+  const paths=[...donut.querySelectorAll(".donut-seg")];
+  const items=[...catList.querySelectorAll(".cat-item")];
+  function hl(i,on){
+    paths.forEach((p,j)=>p.classList.toggle("dim", on && j!==i));
+    if(on) paths[i].style.transform="scale(1.04)"; else paths.forEach(p=>p.style.transform="");
+    items.forEach((it,j)=>it.classList.toggle("hot", on && j===i));
+  }
+  paths.forEach((p,i)=>{ p.addEventListener("mouseenter",()=>hl(i,true)); p.addEventListener("mouseleave",()=>hl(i,false)); });
+  items.forEach((it,i)=>{ it.addEventListener("mouseenter",()=>hl(i,true)); it.addEventListener("mouseleave",()=>hl(i,false)); });
+
+  // reveal animation
+  if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
+    paths.forEach((p,i)=>{ p.style.opacity="0"; p.style.transition="opacity .5s ease "+(i*0.05)+"s"; requestAnimationFrame(()=>p.style.opacity="1"); });
+  }
+})();
+
+/* ---------------- BUDGETS ---------------- */
+$("#budList").innerHTML=BUDGETS.map(b=>{
+  const pct=Math.min(100, b.spent/b.limit*100);
+  const over=b.spent>b.limit;
+  const realPct=b.spent/b.limit*100;
+  return `<div class="bud-row">
+    <div class="bud-top">
+      <span class="bud-name">${b.name}</span>
+      <span class="bud-vals">${fmt(b.spent)} / ${fmt(b.limit)} ${over?`<span class="over">· ${Math.round(realPct-100)}% over</span>`:''}</span>
+    </div>
+    <div class="bar-track"><div class="bar-fill ${over?'over':''}" data-w="${pct}"></div></div>
+  </div>`;
+}).join("");
+setTimeout(()=>{ document.querySelectorAll(".bar-fill").forEach(f=>f.style.width=f.dataset.w+"%"); },200);
+
+/* ---------------- INSIGHTS ---------------- */
+const INS_EMO=["🍽️","🔁","🌱","🎉"];
+$("#insightGrid").innerHTML=INSIGHTS.map((t,i)=>`
+  <div class="insight"><div class="emo">${INS_EMO[i]}</div><p>${t}</p></div>`).join("");
+
+/* ---------------- TRANSACTIONS ---------------- */
+const TX_IC={Groceries:["🛒","var(--c-sage)"],"Dining out":["☕","var(--c-clay)"],Transport:["⛽","var(--c-dusty)"],Salary:["💰","var(--accent-soft)"],Utilities:["💡","var(--c-apricot)"],"Kids & school":["🎒","var(--c-lav)"],Subscriptions:["📺","var(--c-rose)"]};
+$("#txList").innerHTML=TX.slice(0,6).map(t=>{
+  const ic=TX_IC[t.cat]||["💳","var(--paper-2)"];
+  const pos=t.amt>0;
+  return `<div class="tx-row">
+    <div class="tx-ic" style="background:${ic[1]}">${ic[0]}</div>
+    <div><div class="tx-desc">${t.desc}</div><div class="tx-meta">${t.cat} · ${t.acct}</div></div>
+    <div>
+      <div class="tx-amt ${pos?'pos':''}">${pos?'+'+fmt(t.amt):'−'+fmt(Math.abs(t.amt))}</div>
+      <div class="tx-date">${t.d}</div>
+    </div>
+  </div>`;
+}).join("");
+
+/* ---------------- THEME TOGGLE ---------------- */
+const root=document.documentElement, tBtn=$("#themeBtn");
+tBtn.addEventListener("click",()=>{
+  const dark=root.getAttribute("data-theme")==="dark";
+  root.setAttribute("data-theme",dark?"light":"dark");
+  tBtn.textContent=dark?"☾":"☀";
+});
+</script>
+</body>
+</html>

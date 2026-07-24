@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COHEN HOUSEHOLD // TERMINAL</title>
+<style>
+:root{
+  --bg:#050607;
+  --bg2:#0A0C0E;
+  --panel:#0E1216;
+  --panel2:#0B0F13;
+  --line:#1c2430;
+  --line2:#141b24;
+  --txt:#c9d6d1;
+  --dim:#6d7d84;
+  --dim2:#495056;
+  --amber:#FFB000;
+  --amber2:#F5A623;
+  --green:#3DD68C;
+  --green2:#26C281;
+  --red:#FF5C5C;
+  --cyan:#4FC3F7;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);font-family:var(--mono);font-size:13px;line-height:1.35;-webkit-font-smoothing:antialiased}
+body{
+  background:
+    linear-gradient(var(--line2) 1px, transparent 1px) 0 0/100% 3px,
+    radial-gradient(circle at 50% 0%, #0b1116 0%, var(--bg) 70%);
+  background-blend-mode:soft-light,normal;
+  overflow-x:hidden;
+}
+.scan{position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.014) 0 1px, transparent 1px 3px);
+  mix-blend-mode:overlay}
+.tabnum{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pos{color:var(--green)}
+.neg{color:var(--red)}
+.amb{color:var(--amber)}
+.cy{color:var(--cyan)}
+.dim{color:var(--dim)}
+a{color:var(--cyan);text-decoration:none}
+
+/* ---------- STATUS BAR ---------- */
+.statusbar{
+  display:flex;align-items:center;gap:0;
+  background:#000;border-bottom:1px solid var(--line);
+  font-size:11px;letter-spacing:.08em;height:26px;position:sticky;top:0;z-index:50;
+}
+.statusbar .seg{padding:0 10px;height:100%;display:flex;align-items:center;border-right:1px solid var(--line);white-space:nowrap}
+.statusbar .brand{color:#000;background:var(--amber);font-weight:700;letter-spacing:.14em}
+.statusbar .live{color:var(--green)}
+.dot{width:6px;height:6px;background:var(--green);border-radius:50%;display:inline-block;margin-inline-end:6px;box-shadow:0 0 6px var(--green);animation:blink 1.4s steps(1) infinite}
+.statusbar .grow{flex:1;border-right:none;justify-content:flex-end;color:var(--dim);overflow:hidden}
+.statusbar .clock{color:var(--amber);border-right:none}
+
+/* ---------- TICKER ---------- */
+.ticker{
+  display:flex;align-items:stretch;background:var(--bg2);border-bottom:1px solid var(--line);
+  overflow-x:auto;scrollbar-width:none;
+}
+.ticker::-webkit-scrollbar{display:none}
+.tk{padding:7px 14px;border-right:1px solid var(--line);min-width:132px;flex:1 0 auto}
+.tk .lbl{font-size:9.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.tk .val{font-size:16px;font-variant-numeric:tabular-nums;color:var(--txt);margin-top:2px;letter-spacing:.01em}
+.tk .dl{font-size:10.5px;font-variant-numeric:tabular-nums;margin-top:1px}
+
+/* ---------- COMMAND BAR ---------- */
+.cmdbar{display:flex;align-items:center;gap:8px;background:#000;border-bottom:1px solid var(--line);padding:5px 10px;font-size:12px}
+.cmdbar .prompt{color:var(--amber);font-weight:700}
+.cmdwrap{flex:1;display:flex;align-items:center;position:relative}
+#cmd{flex:1;background:transparent;border:none;outline:none;color:var(--green);font-family:var(--mono);font-size:12px;letter-spacing:.06em;caret-color:var(--green)}
+#cmd::placeholder{color:var(--dim2)}
+.curs{width:8px;height:14px;background:var(--green);display:inline-block;margin-inline-end:2px;animation:blink 1s steps(1) infinite;box-shadow:0 0 5px var(--green);flex:0 0 auto}
+.curs.hide{display:none}
+.cmdhist{color:var(--dim);font-size:10.5px;letter-spacing:.05em;white-space:nowrap;display:flex;gap:14px}
+.cmdhist b{color:var(--dim);font-weight:400}
+.cmdhist .go{color:var(--amber)}
+
+/* ---------- GRID ---------- */
+.wrap{padding:8px;max-width:1600px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:8px}
+.panel{background:var(--panel);border:1px solid var(--line);position:relative;display:flex;flex-direction:column;min-width:0}
+.panel::before{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 40px rgba(0,0,0,.5)}
+.ph{display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,#12181d,#0c1116);border-bottom:1px solid var(--line);padding:5px 9px;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);position:relative;z-index:1}
+.ph .corner{color:var(--line);letter-spacing:0}
+.ph .fill{flex:1;color:var(--line);overflow:hidden;white-space:nowrap;letter-spacing:-1px;user-select:none}
+.ph .meta{color:var(--dim);font-size:9.5px;letter-spacing:.1em}
+.pb{padding:9px;position:relative;z-index:1;min-width:0}
+
+.col12{grid-column:span 12}
+.col8{grid-column:span 8}
+.col7{grid-column:span 7}
+.col6{grid-column:span 6}
+.col5{grid-column:span 5}
+.col4{grid-column:span 4}
+
+/* ---------- NET WORTH CHART ---------- */
+.nwtop{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.nwbig{font-size:26px;font-variant-numeric:tabular-nums;color:var(--amber);letter-spacing:.01em}
+.nwsub{font-size:11px;color:var(--dim)}
+.ranges{display:flex;gap:0;margin-inline-start:auto;border:1px solid var(--line)}
+.ranges button{background:transparent;border:none;border-inline-start:1px solid var(--line);color:var(--dim);font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;padding:3px 10px;cursor:pointer}
+.ranges button:first-child{border-inline-start:none}
+.ranges button.on{background:var(--amber);color:#000;font-weight:700}
+.ranges button:hover:not(.on){color:var(--txt)}
+.chartbox{position:relative}
+svg{display:block;width:100%;overflow:visible}
+.readout{position:absolute;top:4px;pointer-events:none;background:#000;border:1px solid var(--amber);padding:3px 7px;font-size:10.5px;letter-spacing:.06em;white-space:nowrap;color:var(--amber);opacity:0;transition:opacity .08s;z-index:5}
+.readout .v{color:var(--txt);font-variant-numeric:tabular-nums}
+.axlbl{font-size:9px;fill:var(--dim);font-family:var(--mono)}
+
+/* ---------- TABLES ---------- */
+.tablewrap{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.tablewrap::-webkit-scrollbar{height:7px}
+.tablewrap::-webkit-scrollbar-thumb{background:var(--line)}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:100%}
+th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);font-weight:400;text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+th.r{text-align:right}
+td{padding:4px 8px;border-bottom:1px solid var(--line2);white-space:nowrap;font-variant-numeric:tabular-nums}
+tr:hover td{background:#131a20}
+.tag{color:var(--cyan);font-size:11px}
+.acct{color:var(--dim);font-size:10.5px;letter-spacing:.06em}
+
+/* ---------- CATEGORY EXPOSURE ---------- */
+.catrow{display:grid;grid-template-columns:96px 1fr 58px 40px;align-items:center;gap:8px;padding:3px 0;font-size:11.5px}
+.catrow .cn{color:var(--txt);letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.catbar{height:9px;background:#0a0e12;border:1px solid var(--line);position:relative;overflow:hidden}
+.catbar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--amber2),var(--amber));display:block}
+.catrow .camt{text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+.catrow .cpct{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* ---------- BUDGET METERS ---------- */
+.budrow{margin-bottom:9px}
+.budhead{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.budhead .bn{color:var(--txt);letter-spacing:.06em}
+.budhead .bv{font-variant-numeric:tabular-nums;color:var(--dim)}
+.meter{height:12px;background:#0a0e12;border:1px solid var(--line);position:relative;display:flex}
+.meter i{display:block;height:100%;background:var(--green2)}
+.meter.warn i{background:var(--amber)}
+.meter.over i{background:var(--red)}
+.meter .pctflag{position:absolute;top:50%;transform:translateY(-50%);inset-inline-end:4px;font-size:9px;font-variant-numeric:tabular-nums;letter-spacing:.05em}
+.over .pctflag{color:#000;font-weight:700}
+
+/* ---------- CASHFLOW ---------- */
+.cfnet{font-size:11px;color:var(--dim);margin-bottom:6px}
+.cfnet b{color:var(--green);font-weight:400}
+
+/* ---------- INSIGHTS ---------- */
+.ins{list-style:none;margin:0;padding:0}
+.ins li{padding:5px 0;border-bottom:1px solid var(--line2);font-size:11px;letter-spacing:.03em;display:flex;gap:8px;align-items:baseline}
+.ins li:last-child{border-bottom:none}
+.ins .b{color:var(--amber);font-size:9px}
+
+.foot{color:var(--dim2);font-size:9.5px;letter-spacing:.14em;text-align:center;padding:12px 0 8px}
+
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .dot,.curs,#cmd{animation:none!important}
+  .curs{opacity:1}
+}
+@media(max-width:1024px){
+  .col8,.col7,.col6,.col5,.col4{grid-column:span 12}
+}
+@media(max-width:560px){
+  .cmdhist{display:none}
+  .nwbig{font-size:21px}
+  .wrap{padding:5px}
+  .grid{gap:5px}
+}
+:focus-visible{outline:1px solid var(--cyan);outline-offset:1px}
+</style>
+</head>
+<body>
+<div class="scan" aria-hidden="true"></div>
+
+<!-- STATUS BAR -->
+<div class="statusbar">
+  <div class="seg brand">FIN//TERM</div>
+  <div class="seg"><span class="dot"></span><span class="live">LIVE</span></div>
+  <div class="seg">COHEN HOUSEHOLD</div>
+  <div class="seg dim">TOMER &amp; NOA</div>
+  <div class="seg grow" id="tape">TLV 27°C · USD/ILS 3.68 · TA-125 +0.42% · BOI PRIME 6.00% · CPI +2.8%</div>
+  <div class="seg clock" id="clock">--:--:-- IDT</div>
+</div>
+
+<!-- TICKER -->
+<div class="ticker" id="ticker"></div>
+
+<!-- COMMAND BAR -->
+<div class="cmdbar">
+  <span class="prompt">&gt;</span>
+  <div class="cmdwrap">
+    <span class="curs" id="curs" aria-hidden="true"></span>
+    <input id="cmd" autocomplete="off" spellcheck="false" aria-label="Command input" placeholder="TYPE COMMAND · e.g. NW &lt;GO&gt;  BUDGET &lt;GO&gt;  POS &lt;GO&gt;">
+  </div>
+  <div class="cmdhist">
+    <b>&gt; NW <span class="go">&lt;GO&gt;</span></b>
+    <b>&gt; SR MoM <span class="go">&lt;GO&gt;</span></b>
+    <b>&gt; BLOTTER 30D <span class="go">&lt;GO&gt;</span></b>
+  </div>
+</div>
+
+<div class="wrap">
+<div class="grid">
+
+  <!-- NET WORTH -->
+  <section class="panel col8">
+    <div class="ph"><span class="corner">┌</span> NET WORTH · TIME SERIES <span class="fill">──────────────────────────────</span><span class="meta" id="nwrange">1Y</span></div>
+    <div class="pb">
+      <div class="nwtop">
+        <div>
+          <div class="nwbig" id="nwbig">1,117,240</div>
+          <div class="nwsub">ILS · NET OF LIAB 649,000 · <span class="pos">+31.5K MoM</span></div>
+        </div>
+        <div class="ranges" role="group" aria-label="Range">
+          <button data-r="3">3M</button>
+          <button data-r="6">6M</button>
+          <button data-r="12" class="on">1Y</button>
+          <button data-r="all">ALL</button>
+        </div>
+      </div>
+      <div class="chartbox">
+        <div class="readout" id="nwread"></div>
+        <svg id="nwsvg" viewBox="0 0 900 260" preserveAspectRatio="none" role="img" aria-label="Net worth time series"></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSIGHTS -->
+  <section class="panel col4">
+    <div class="ph"><span class="corner">┌</span> SIGNALS <span class="fill">──────────</span><span class="meta">ALERTS·4</span></div>
+    <div class="pb">
+      <ul class="ins" id="insights"></ul>
+    </div>
+  </section>
+
+  <!-- CASH FLOW -->
+  <section class="panel col5">
+    <div class="ph"><span class="corner">┌</span> CASH FLOW · 6M <span class="fill">────────────</span><span class="meta">IN/OUT</span></div>
+    <div class="pb">
+      <div class="cfnet">NET <b id="cfnet">+9,800</b> · SR <span class="amb" id="cfsr">34%</span> · AVG OUT <span class="dim" id="cfavg"></span></div>
+      <div class="chartbox">
+        <div class="readout" id="cfread"></div>
+        <svg id="cfsvg" viewBox="0 0 560 200" preserveAspectRatio="none" role="img" aria-label="Cash flow bars"></svg>
+      </div>
+      <div style="display:flex;gap:16px;font-size:10px;letter-spacing:.08em;margin-top:6px;color:var(--dim)">
+        <span><span style="color:var(--green)">█</span> INCOME</span>
+        <span><span style="color:var(--red)">█</span> SPENDING</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- POSITIONS -->
+  <section class="panel col7">
+    <div class="ph"><span class="corner">┌</span> POSITIONS · HOLDINGS <span class="fill">──────────────────</span><span class="meta">MKT VAL</span></div>
+    <div class="pb" style="padding:0">
+      <div class="tablewrap">
+        <table id="postbl">
+          <thead><tr>
+            <th>#</th><th>INSTRUMENT</th><th class="r">MKT VAL ILS</th><th class="r">WT%</th><th class="r">DAY</th>
+          </tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATEGORY EXPOSURE -->
+  <section class="panel col5">
+    <div class="ph"><span class="corner">┌</span> CATEGORY EXPOSURE <span class="fill">──────────</span><span class="meta">MTD SPEND</span></div>
+    <div class="pb" id="cats"></div>
+  </section>
+
+  <!-- BUDGET UTIL -->
+  <section class="panel col5">
+    <div class="ph"><span class="corner">┌</span> BUDGET UTILISATION <span class="fill">─────────</span><span class="meta">SPENT/LIM</span></div>
+    <div class="pb" id="budgets"></div>
+  </section>
+
+  <!-- BLOTTER -->
+  <section class="panel col7">
+    <div class="ph"><span class="corner">┌</span> BLOTTER · RECENT ACTIVITY <span class="fill">──────────────</span><span class="meta">12 REC</span></div>
+    <div class="pb" style="padding:0">
+      <div class="tablewrap" style="max-height:none">
+        <table id="blotter">
+          <thead><tr>
+            <th>DATE</th><th>DESCRIPTION</th><th>CAT</th><th>ACCT</th><th class="r">AMOUNT ILS</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div>
+<div class="foot">FIN//TERM v2.6 · COHEN HOUSEHOLD · ALL FIGURES ILS · SIMULATED · DATA AS OF 24-JUL-2026 · NOT INVESTMENT ADVICE</div>
+</div>
+
+<script>
+/* ---------------- SHARED DATA ---------------- */
+const HH={name:"COHEN HOUSEHOLD",people:"TOMER & NOA"};
+const MONTHS=["Jul'25","Aug","Sep","Oct","Nov","Dec","Jan'26","Feb","Mar","Apr","May","Jun","Jul"];
+const NW=[883,904,916,939,958,982,1001,1034,1049,1071,1091,1083,1117];
+const NW_BANK=[171,168,175,181,166,190,178,185,159,174,188,170,185.4];
+const NW_INV=[681,701,716,742,760,782,805,835,861,882,905,912,919.8];
+const NW_CASH=[9,11,14,10,13,8,12,15,11,9,14,12,12.04];
+const NW_LIAB=[720,715,709,703,697,691,685,679,673,667,661,655,649];
+const CF=[{m:"FEB",inc:28200,exp:21400},{m:"MAR",inc:28900,exp:23800},{m:"APR",inc:28500,exp:19600},{m:"MAY",inc:31200,exp:22100},{m:"JUN",inc:28500,exp:24900},{m:"JUL",inc:28500,exp:18700}];
+const CATS=[{name:"HOUSING",amt:6200},{name:"GROCERIES",amt:3100},{name:"KIDS/SCHOOL",amt:2350},{name:"DINING",amt:1850},{name:"TRANSPORT",amt:1420},{name:"SHOPPING",amt:1180},{name:"UTILITIES",amt:980},{name:"HEALTH",amt:720}];
+const BUDGETS=[{name:"GROCERIES",spent:3100,limit:3500},{name:"DINING",spent:1850,limit:1500},{name:"TRANSPORT",spent:1420,limit:1600},{name:"SHOPPING",spent:1180,limit:1000}];
+const TX=[
+{d:"23JUL",desc:"SHUFERSAL DEAL",cat:"GROCERIES",acct:"HAPOALIM",amt:-312.40},
+{d:"23JUL",desc:"CAFE AROMA",cat:"DINING",acct:"CAL",amt:-54.00},
+{d:"22JUL",desc:"PAZ GAS",cat:"TRANSPORT",acct:"CAL",amt:-287.00},
+{d:"21JUL",desc:"SALARY — NOA COHEN",cat:"SALARY",acct:"LEUMI",amt:14250.00},
+{d:"20JUL",desc:"CHEVRAT CHASHMAL",cat:"UTILITIES",acct:"HAPOALIM",amt:-410.20},
+{d:"19JUL",desc:"RAMI LEVY",cat:"GROCERIES",acct:"HAPOALIM",amt:-198.60},
+{d:"18JUL",desc:"NETFLIX",cat:"SUBSCRIPTIONS",acct:"MAX",amt:-54.90},
+{d:"18JUL",desc:"SUPERPHARM",cat:"HEALTH",acct:"CAL",amt:-142.30},
+{d:"17JUL",desc:"ZARA TLV",cat:"SHOPPING",acct:"MAX",amt:-389.00},
+{d:"16JUL",desc:"BITUACH LEUMI",cat:"UTILITIES",acct:"HAPOALIM",amt:-220.00},
+{d:"15JUL",desc:"GAN YELADIM",cat:"KIDS/SCHOOL",acct:"HAPOALIM",amt:-2350.00},
+{d:"14JUL",desc:"WOLT",cat:"DINING",acct:"CAL",amt:-96.50}];
+const HOLDINGS=[{name:"PENSION MENORA",amt:412000,d:"+1.8%"},{name:"KEREN HISHTALMUT",amt:238500,d:"+2.1%"},{name:"S&P500 ETF IBKR",amt:184300,d:"+3.4%"},{name:"CRYPTO",amt:85000,d:"-4.2%"}];
+const INSIGHTS=["DINING 23% OVER BUDGET · 8D LEFT","3 SUBS RENEW THIS WK · 164 ILS","SAVINGS RATE 34% (+6PP MoM)","INV CROSSED 900K ILS"];
+
+/* ---------------- HELPERS ---------------- */
+const NS="http://www.w3.org/2000/svg";
+const fmt=n=>Math.round(n).toLocaleString('en-US');
+const fmt1=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const compact=n=>{const a=Math.abs(n);if(a>=1e6)return (n/1e6).toFixed(2)+'M';if(a>=1e3)return (n/1e3).toFixed(1)+'K';return String(Math.round(n));};
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+
+/* ---------------- TICKER ---------------- */
+const TICK=[
+  {lbl:"NET WORTH",val:"1,117,240",dl:"+31,540 (+2.9%)",cls:"pos"},
+  {lbl:"MoM Δ",val:"+2.90%",dl:"vs +3.1% PRIOR",cls:"pos"},
+  {lbl:"SAVINGS RATE",val:"34.0%",dl:"+6.0pp",cls:"pos"},
+  {lbl:"BANK",val:"185,400",dl:"+15,400",cls:"pos"},
+  {lbl:"INVESTMENTS",val:"919,800",dl:"+7,800 (+0.9%)",cls:"pos"},
+  {lbl:"CASH",val:"12,040",dl:"+40",cls:"pos"},
+  {lbl:"DEBT",val:"649,000",dl:"-6,000 (-0.9%)",cls:"pos"}
+];
+const tk=document.getElementById('ticker');
+TICK.forEach(t=>{
+  const d=document.createElement('div');d.className='tk';
+  d.innerHTML=`<div class="lbl">${t.lbl}</div><div class="val">${t.val}</div><div class="dl ${t.cls}">${t.dl}</div>`;
+  tk.appendChild(d);
+});
+
+/* ---------------- INSIGHTS ---------------- */
+const insUl=document.getElementById('insights');
+INSIGHTS.forEach(s=>{const li=document.createElement('li');li.innerHTML=`<span class="b amb">▸</span><span>${s}</span>`;insUl.appendChild(li);});
+
+/* ---------------- NET WORTH CHART ---------------- */
+const nwsvg=document.getElementById('nwsvg');
+const nwread=document.getElementById('nwread');
+const VBW=900,VBH=260,PADL=54,PADR=12,PADT=14,PADB=24;
+let curRange=12, nwPts=[];
+function sliceNW(r){
+  if(r==='all'||r>=NW.length)return {i0:0};
+  return {i0:NW.length-r};
+}
+function drawNW(r){
+  nwsvg.innerHTML='';
+  const s=sliceNW(r);
+  const vals=NW.slice(s.i0), labs=MONTHS.slice(s.i0);
+  const n=vals.length;
+  const mn=Math.min(...vals), mx=Math.max(...vals);
+  const pad=(mx-mn)*0.15||10;
+  const lo=mn-pad, hi=mx+pad;
+  const X=i=>PADL+(VBW-PADL-PADR)*(n<=1?0.5:i/(n-1));
+  const Y=v=>PADT+(VBH-PADT-PADB)*(1-(v-lo)/(hi-lo));
+  // gridlines
+  for(let g=0;g<=4;g++){
+    const gy=PADT+(VBH-PADT-PADB)*g/4;
+    el('line',{x1:PADL,y1:gy,x2:VBW-PADR,y2:gy,stroke:'#141b24','stroke-width':1},nwsvg);
+    const gv=hi-(hi-lo)*g/4;
+    const tx=el('text',{x:PADL-6,y:gy+3,'text-anchor':'end',class:'axlbl'},nwsvg);tx.textContent=compact(gv*1000);
+  }
+  // x labels (sparse)
+  const step=Math.ceil(n/6);
+  for(let i=0;i<n;i+=step){
+    const tx=el('text',{x:X(i),y:VBH-6,'text-anchor':'middle',class:'axlbl'},nwsvg);tx.textContent=labs[i];
+  }
+  // area
+  let dArea=`M ${X(0)} ${Y(vals[0])}`;
+  let dLine=`M ${X(0)} ${Y(vals[0])}`;
+  nwPts=[{x:X(0),y:Y(vals[0]),v:vals[0],l:labs[0]}];
+  for(let i=1;i<n;i++){dLine+=` L ${X(i)} ${Y(vals[i])}`;dArea+=` L ${X(i)} ${Y(vals[i])}`;nwPts.push({x:X(i),y:Y(vals[i]),v:vals[i],l:labs[i]});}
+  dArea+=` L ${X(n-1)} ${VBH-PADB} L ${X(0)} ${VBH-PADB} Z`;
+  const grad=el('linearGradient',{id:'nwg',x1:0,y1:0,x2:0,y2:1},nwsvg);
+  el('stop',{offset:'0%','stop-color':'#FFB000','stop-opacity':'0.22'},grad);
+  el('stop',{offset:'100%','stop-color':'#FFB000','stop-opacity':'0'},grad);
+  el('path',{d:dArea,fill:'url(#nwg)'},nwsvg);
+  el('path',{d:dLine,fill:'none',stroke:'#FFB000','stroke-width':1.6},nwsvg);
+  // end dot
+  const last=nwPts[nwPts.length-1];
+  el('circle',{cx:last.x,cy:last.y,r:3,fill:'#FFB000'},nwsvg);
+  // crosshair elements
+  const cvx=el('line',{x1:0,y1:PADT,x2:0,y2:VBH-PADB,stroke:'#4FC3F7','stroke-width':1,'stroke-dasharray':'3 3',opacity:0},nwsvg);
+  const cvy=el('line',{x1:PADL,y1:0,x2:VBW-PADR,y2:0,stroke:'#4FC3F7','stroke-width':1,'stroke-dasharray':'3 3',opacity:0},nwsvg);
+  const cdot=el('circle',{cx:0,cy:0,r:4,fill:'none',stroke:'#4FC3F7','stroke-width':1.5,opacity:0},nwsvg);
+  nwsvg._cross={cvx,cvy,cdot};
+  document.getElementById('nwrange').textContent = (r==='all'?'ALL':r+'M');
+  document.getElementById('nwbig').textContent=fmt(vals[n-1]*1000);
+}
+function nwMove(ev){
+  const rect=nwsvg.getBoundingClientRect();
+  const px=(ev.clientX-rect.left)/rect.width*VBW;
+  let best=nwPts[0],bd=1e9;
+  nwPts.forEach(p=>{const dd=Math.abs(p.x-px);if(dd<bd){bd=dd;best=p;}});
+  const {cvx,cvy,cdot}=nwsvg._cross;
+  cvx.setAttribute('x1',best.x);cvx.setAttribute('x2',best.x);cvx.setAttribute('opacity',1);
+  cvy.setAttribute('y1',best.y);cvy.setAttribute('y2',best.y);cvy.setAttribute('opacity',1);
+  cdot.setAttribute('cx',best.x);cdot.setAttribute('cy',best.y);cdot.setAttribute('opacity',1);
+  nwread.style.opacity=1;
+  nwread.innerHTML=`${best.l} · <span class="v">${fmt(best.v*1000)}</span> ILS`;
+  const rx=Math.min(Math.max(best.x/VBW*rect.width-nwread.offsetWidth/2,4),rect.width-nwread.offsetWidth-4);
+  nwread.style.left=rx+'px';
+}
+function nwLeave(){nwread.style.opacity=0;const c=nwsvg._cross;if(c){c.cvx.setAttribute('opacity',0);c.cvy.setAttribute('opacity',0);c.cdot.setAttribute('opacity',0);}}
+nwsvg.addEventListener('mousemove',nwMove);
+nwsvg.addEventListener('mouseleave',nwLeave);
+document.querySelectorAll('.ranges button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.ranges button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    const r=b.dataset.r==='all'?'all':parseInt(b.dataset.r);
+    drawNW(r);
+  });
+});
+drawNW(12);
+
+/* ---------------- CASH FLOW ---------------- */
+const cfsvg=document.getElementById('cfsvg');
+const cfread=document.getElementById('cfread');
+const CW=560,CH=200,CPADL=8,CPADR=8,CPADT=10,CPADB=22;
+function drawCF(){
+  cfsvg.innerHTML='';
+  const maxV=Math.max(...CF.map(c=>Math.max(c.inc,c.exp)));
+  const n=CF.length;
+  const groupW=(CW-CPADL-CPADR)/n;
+  const barW=groupW*0.30;
+  const zeroY=CH-CPADB;
+  const H=CH-CPADT-CPADB;
+  // baseline
+  el('line',{x1:CPADL,y1:zeroY,x2:CW-CPADR,y2:zeroY,stroke:'#1c2430','stroke-width':1},cfsvg);
+  CF.forEach((c,i)=>{
+    const gx=CPADL+groupW*i+groupW/2;
+    const incH=H*c.inc/maxV, expH=H*c.exp/maxV;
+    const x1=gx-barW-2, x2=gx+2;
+    el('rect',{x:x1,y:zeroY-incH,width:barW,height:incH,fill:'#26C281'},cfsvg);
+    el('rect',{x:x2,y:zeroY-expH,width:barW,height:expH,fill:'#FF5C5C'},cfsvg);
+    const tx=el('text',{x:gx,y:CH-6,'text-anchor':'middle',class:'axlbl'},cfsvg);tx.textContent=c.m;
+    // hit area
+    const hit=el('rect',{x:CPADL+groupW*i,y:CPADT,width:groupW,height:H+10,fill:'transparent'},cfsvg);
+    hit.style.cursor='crosshair';
+    hit.addEventListener('mousemove',ev=>{
+      cfread.style.opacity=1;
+      const net=c.inc-c.exp;
+      const sr=Math.round(net/c.inc*100);
+      cfread.innerHTML=`${c.m} · IN <span class="v" style="color:#3DD68C">${fmt(c.inc)}</span> · OUT <span class="v" style="color:#FF5C5C">${fmt(c.exp)}</span> · NET <span class="v" style="color:#FFB000">+${fmt(net)}</span> · SR ${sr}%`;
+      const rect=cfsvg.getBoundingClientRect();
+      let rx=gx/CW*rect.width-cfread.offsetWidth/2;
+      rx=Math.min(Math.max(rx,4),rect.width-cfread.offsetWidth-4);
+      cfread.style.left=rx+'px';
+    });
+    hit.addEventListener('mouseleave',()=>{cfread.style.opacity=0;});
+  });
+}
+drawCF();
+// cashflow summary
+const lastCF=CF[CF.length-1];
+document.getElementById('cfnet').textContent='+'+fmt(lastCF.inc-lastCF.exp);
+document.getElementById('cfsr').textContent=Math.round((lastCF.inc-lastCF.exp)/lastCF.inc*100)+'%';
+document.getElementById('cfavg').textContent=fmt(CF.reduce((a,c)=>a+c.exp,0)/CF.length);
+
+/* ---------------- POSITIONS ---------------- */
+const postbl=document.getElementById('postbl');
+const totHold=HOLDINGS.reduce((a,h)=>a+h.amt,0);
+const pbody=postbl.querySelector('tbody');
+HOLDINGS.forEach((h,i)=>{
+  const wt=(h.amt/totHold*100).toFixed(1);
+  const dcls=h.d.startsWith('-')?'neg':'pos';
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="dim">${i+1}</td><td>${h.name}</td><td class="num">${fmt(h.amt)}</td><td class="num dim">${wt}</td><td class="num ${dcls}">${h.d}</td>`;
+  pbody.appendChild(tr);
+});
+postbl.querySelector('tfoot').innerHTML=`<tr style="border-top:1px solid var(--line)"><td></td><td class="amb">TOTAL PORTFOLIO</td><td class="num amb">${fmt(totHold)}</td><td class="num dim">100.0</td><td class="num pos">+1.4%</td></tr>`;
+
+/* ---------------- CATEGORY EXPOSURE ---------------- */
+const catsEl=document.getElementById('cats');
+const totCat=CATS.reduce((a,c)=>a+c.amt,0);
+const maxCat=Math.max(...CATS.map(c=>c.amt));
+CATS.forEach(c=>{
+  const pct=(c.amt/totCat*100);
+  const w=(c.amt/maxCat*100);
+  const row=document.createElement('div');row.className='catrow';
+  row.innerHTML=`<div class="cn">${c.name}</div><div class="catbar"><i style="width:${w}%"></i></div><div class="camt">${fmt(c.amt)}</div><div class="cpct">${pct.toFixed(0)}%</div>`;
+  catsEl.appendChild(row);
+});
+const totRow=document.createElement('div');totRow.className='catrow';totRow.style.borderTop='1px solid var(--line)';totRow.style.marginTop='4px';totRow.style.paddingTop='6px';
+totRow.innerHTML=`<div class="cn amb">TOTAL MTD</div><div></div><div class="camt amb">${fmt(totCat)}</div><div class="cpct">100%</div>`;
+catsEl.appendChild(totRow);
+
+/* ---------------- BUDGETS ---------------- */
+const budEl=document.getElementById('budgets');
+BUDGETS.forEach(b=>{
+  const pct=b.spent/b.limit*100;
+  const cls=pct>100?'over':pct>=90?'warn':'';
+  const flagCls=pct>100?'':(pct>=90?'amb':'dim');
+  const row=document.createElement('div');row.className='budrow';
+  row.innerHTML=`
+    <div class="budhead"><span class="bn">${b.name}</span><span class="bv">${fmt(b.spent)} / ${fmt(b.limit)}</span></div>
+    <div class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i><span class="pctflag ${flagCls}">${pct>100?'&gt;100% ⚠':pct.toFixed(0)+'%'}</span></div>`;
+  budEl.appendChild(row);
+});
+
+/* ---------------- BLOTTER ---------------- */
+const blbody=document.querySelector('#blotter tbody');
+TX.forEach(t=>{
+  const cls=t.amt<0?'neg':'pos';
+  const sign=t.amt<0?'':'+';
+  const amt=(t.amt<0?'-':'+')+fmt1(Math.abs(t.amt));
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="dim">${t.d}</td><td>${t.desc}</td><td class="tag">${t.cat}</td><td class="acct">${t.acct}</td><td class="num ${cls}">${amt}</td>`;
+  blbody.appendChild(tr);
+});
+
+/* ---------------- CLOCK ---------------- */
+function tick(){
+  try{
+    const d=new Date();
+    const p=x=>String(x).padStart(2,'0');
+    document.getElementById('clock').textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} IDT`;
+  }catch(e){document.getElementById('clock').textContent='09:41:00 IDT';}
+}
+tick();
+const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+if(!reduce)setInterval(tick,1000);
+
+/* ---------------- COMMAND INPUT ---------------- */
+const cmd=document.getElementById('cmd');
+const curs=document.getElementById('curs');
+// Block cursor sits before the prompt when idle; native caret takes over on focus.
+cmd.addEventListener('focus',()=>{curs.classList.add('hide');});
+cmd.addEventListener('blur',()=>{if(!cmd.value)curs.classList.remove('hide');});
+cmd.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    const v=cmd.value.trim().toUpperCase();
+    if(v){
+      const hist=document.querySelector('.cmdhist');
+      const b=document.createElement('b');b.innerHTML=`&gt; ${v.replace('<','&lt;').replace('>','&gt;')} <span class="go">&lt;GO&gt;</span>`;
+      hist.insertBefore(b,hist.firstChild);
+      if(hist.children.length>3)hist.removeChild(hist.lastChild);
+      cmd.value='';
+    }
+  }
+});
+</script>
+</body>
+</html>

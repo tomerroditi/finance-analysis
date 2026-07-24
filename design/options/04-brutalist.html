@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COHEN HOUSEHOLD — OVERVIEW</title>
+<style>
+  :root{
+    --paper:#F5F4EF;
+    --paper2:#FDFBF6;
+    --ink:#111111;
+    --yellow:#FFE14D;
+    --coral:#FF5A5F;
+    --blue:#2D6BFF;
+    --green:#2FD46B;
+    --lav:#B79CFF;
+    --orange:#FF8A3D;
+    --shadow:6px 6px 0 #111111;
+    --shadow-sm:4px 4px 0 #111111;
+    --shadow-lg:10px 10px 0 #111111;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{max-width:100%;overflow-x:hidden}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Archivo","Helvetica Neue",Arial,"Segoe UI",system-ui,sans-serif;
+    font-weight:600;
+    line-height:1.1;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:60px;
+  }
+  /* dotted paper texture */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:radial-gradient(#11111114 1px,transparent 1px);
+    background-size:22px 22px;
+  }
+  .wrap{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:22px}
+  .uc{text-transform:uppercase;letter-spacing:0.02em}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  h1,h2,h3{font-weight:900;letter-spacing:-0.01em}
+
+  /* ---- MASTHEAD ---- */
+  .masthead{
+    display:flex;align-items:stretch;gap:16px;flex-wrap:wrap;
+    border:3px solid var(--ink);background:var(--yellow);
+    box-shadow:var(--shadow);margin-bottom:22px;
+  }
+  .logo-block{
+    background:var(--ink);color:var(--yellow);padding:16px 20px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .logo-mark{
+    width:34px;height:34px;background:var(--coral);border:3px solid var(--yellow);
+    display:grid;place-items:center;font-weight:900;font-size:20px;color:var(--ink);
+    transform:rotate(-6deg);
+  }
+  .logo-block .name{font-weight:900;font-size:22px;letter-spacing:0.02em}
+  .mast-mid{display:flex;align-items:center;padding:10px 18px;flex:1;min-width:200px}
+  .mast-mid .hh{font-weight:900;font-size:clamp(18px,2.4vw,28px)}
+  .mast-mid .ppl{font-weight:800;font-size:12px;background:var(--ink);color:var(--paper);
+    padding:4px 8px;margin-inline-start:12px;letter-spacing:0.04em}
+  .mast-right{display:flex;align-items:center;gap:10px;padding:10px 16px}
+  .chip{
+    border:3px solid var(--ink);background:var(--paper2);padding:8px 12px;
+    font-weight:900;font-size:12px;box-shadow:var(--shadow-sm);letter-spacing:0.04em;
+  }
+  .chip.blue{background:var(--blue);color:#fff}
+  .avatar{width:40px;height:40px;border:3px solid var(--ink);background:var(--lav);
+    display:grid;place-items:center;font-weight:900;box-shadow:var(--shadow-sm)}
+
+  /* ---- GRID ---- */
+  .bento{display:grid;grid-template-columns:repeat(12,1fr);gap:22px}
+  .card{
+    border:3px solid var(--ink);background:var(--paper2);
+    box-shadow:var(--shadow);padding:18px;position:relative;
+  }
+  .card-title{font-weight:900;font-size:13px;letter-spacing:0.06em;margin-bottom:14px;
+    display:flex;align-items:center;gap:8px;text-transform:uppercase}
+  .card-title .dot{width:12px;height:12px;border:2px solid var(--ink);display:inline-block}
+
+  .col-8{grid-column:span 8}
+  .col-4{grid-column:span 4}
+  .col-6{grid-column:span 6}
+  .col-3{grid-column:span 3}
+  .col-12{grid-column:span 12}
+
+  /* ---- HERO ---- */
+  .hero{background:var(--paper2)}
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;margin-bottom:6px}
+  .hero-label{font-weight:900;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;
+    background:var(--ink);color:var(--paper);padding:6px 10px;display:inline-block}
+  .hero-num{font-weight:900;font-size:clamp(44px,7vw,84px);line-height:0.9;letter-spacing:-0.03em;margin:10px 0}
+  .cur{font-size:0.5em;vertical-align:0.18em;font-weight:900;margin-inline-start:6px}
+  .tag-green{background:var(--green);border:3px solid var(--ink);font-weight:900;
+    padding:8px 12px;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-sm);font-size:15px}
+  .tag-green .arr{font-size:18px}
+
+  .ranges{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{
+    border:3px solid var(--ink);background:var(--paper2);color:var(--ink);
+    font-family:inherit;font-weight:900;font-size:13px;letter-spacing:0.04em;
+    padding:9px 15px;cursor:pointer;box-shadow:var(--shadow-sm);
+    transition:transform .05s,box-shadow .05s;text-transform:uppercase;
+  }
+  .btn:hover{background:var(--yellow)}
+  .btn:active{transform:translate(4px,4px);box-shadow:0 0 0 #111}
+  .btn.active{background:var(--blue);color:#fff}
+  .btn:focus-visible{outline:3px solid var(--coral);outline-offset:2px}
+
+  .chart-wrap{position:relative;margin-top:16px;border:3px solid var(--ink);background:#fff}
+  svg{display:block;width:100%;height:auto}
+  .tt-box{
+    position:absolute;pointer-events:none;opacity:0;transform:transl(-50%,0);
+    border:3px solid var(--ink);background:var(--yellow);box-shadow:var(--shadow-sm);
+    padding:8px 10px;font-weight:900;font-size:12px;white-space:nowrap;z-index:5;transition:opacity .08s;
+  }
+  .tt-m{font-size:11px;letter-spacing:0.05em}
+  .tt-v{font-size:16px;margin-top:2px}
+
+  /* ---- WHERE MONEY IS ---- */
+  .money-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .mblock{border:3px solid var(--ink);padding:14px;box-shadow:var(--shadow-sm);position:relative}
+  .mblock .ml{font-weight:900;font-size:11px;letter-spacing:0.06em;text-transform:uppercase}
+  .mblock .mv{font-weight:900;font-size:clamp(24px,2.6vw,34px);margin:8px 0 4px;letter-spacing:-0.02em}
+  .mblock .md{font-weight:800;font-size:12px;display:inline-block;padding:3px 7px;border:2px solid var(--ink);background:#fff}
+  .b-blue{background:var(--blue);color:#fff}
+  .b-blue .md{color:var(--ink)}
+  .b-lav{background:var(--lav)}
+  .b-yellow{background:var(--yellow)}
+  .b-coral{background:var(--coral);color:#fff}
+  .b-coral .md{color:var(--ink)}
+
+  /* ---- CASHFLOW ---- */
+  .cf-readout{font-weight:900;font-size:clamp(20px,2.2vw,28px);margin-top:14px;
+    background:var(--green);border:3px solid var(--ink);padding:10px 14px;display:inline-block;box-shadow:var(--shadow-sm)}
+  .cf-legend{display:flex;gap:16px;margin-top:12px;flex-wrap:wrap}
+  .lg{display:flex;align-items:center;gap:7px;font-weight:800;font-size:12px;text-transform:uppercase}
+  .lg .sw{width:16px;height:16px;border:2px solid var(--ink)}
+
+  /* ---- CATEGORIES ---- */
+  .catrow{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+  .catname{width:120px;font-weight:900;font-size:12px;text-transform:uppercase;flex-shrink:0}
+  .catbar-track{flex:1;height:26px;border:2px solid var(--ink);background:#fff;position:relative;overflow:hidden}
+  .catbar-fill{height:100%;border-inline-end:2px solid var(--ink);transition:filter .1s}
+  .catrow:hover .catbar-fill{filter:brightness(1.08)}
+  .catrow:hover .catamt{background:var(--ink);color:var(--paper)}
+  .catamt{width:78px;text-align:end;font-weight:900;font-size:13px;flex-shrink:0;padding:2px 4px}
+
+  /* ---- ENVELOPES ---- */
+  .env-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .env{border:3px solid var(--ink);padding:14px;box-shadow:var(--shadow-sm);background:#fff;position:relative}
+  .env.over{background:var(--coral);color:var(--ink)}
+  .env-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .env-name{font-weight:900;font-size:14px;text-transform:uppercase}
+  .env-badge{font-weight:900;font-size:11px;border:2px solid var(--ink);padding:2px 7px;background:var(--green)}
+  .env.over .env-badge{background:var(--ink);color:var(--coral)}
+  .env-meter{height:22px;border:2px solid var(--ink);background:#fff;position:relative;overflow:hidden}
+  .env.over .env-meter{background:#fff}
+  .env-fill{height:100%;background:var(--green);transition:width .3s}
+  .env.over .env-fill{background:var(--ink)}
+  .env-nums{display:flex;justify-content:space-between;margin-top:8px;font-weight:800;font-size:12px}
+  .env-nums .spent{font-weight:900}
+  .rot-badge{position:absolute;top:-14px;right:-10px;background:var(--ink);color:var(--coral);
+    font-weight:900;font-size:10px;padding:4px 8px;border:2px solid var(--coral);transform:rotate(6deg);letter-spacing:0.06em}
+
+  /* ---- ACTIVITY ---- */
+  .tx{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:2px solid var(--ink)}
+  .tx:last-child{border-bottom:none}
+  .tx-date{width:52px;font-weight:900;font-size:11px;flex-shrink:0;text-transform:uppercase;line-height:1.15}
+  .tx-body{flex:1;min-width:0}
+  .tx-desc{font-weight:900;font-size:14px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tx-meta{font-weight:700;font-size:11px;color:#444;margin-top:2px}
+  .tx-cat{display:inline-block;border:2px solid var(--ink);padding:1px 6px;font-size:10px;font-weight:900;background:var(--yellow);margin-inline-end:6px}
+  .tx-amt{font-weight:900;font-size:17px;flex-shrink:0;text-align:end}
+  .tx-amt.pos{color:#0a7a3a}
+  .tx-amt.neg{color:var(--ink)}
+
+  /* ---- HOLDINGS ---- */
+  .hold{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:2px solid var(--ink)}
+  .hold:last-child{border-bottom:none}
+  .hold-name{font-weight:900;font-size:13px;text-transform:uppercase}
+  .hold-right{display:flex;align-items:center;gap:10px}
+  .hold-amt{font-weight:900;font-size:16px}
+  .hold-d{font-weight:900;font-size:11px;border:2px solid var(--ink);padding:2px 6px}
+  .hold-d.up{background:var(--green)}
+  .hold-d.down{background:var(--coral);color:#fff}
+
+  /* ---- INSIGHTS ---- */
+  .notes{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  .note{
+    border:3px solid var(--ink);padding:16px;box-shadow:var(--shadow);
+    font-weight:900;font-size:15px;line-height:1.2;min-height:120px;
+    display:flex;align-items:flex-start;text-transform:uppercase;letter-spacing:0.01em;
+  }
+  .note:nth-child(1){background:var(--yellow);transform:rotate(-2deg)}
+  .note:nth-child(2){background:var(--lav);transform:rotate(1.5deg)}
+  .note:nth-child(3){background:var(--green);transform:rotate(-1deg)}
+  .note:nth-child(4){background:var(--orange);transform:rotate(2deg)}
+  .note .pin{position:absolute}
+  .section-hd{font-weight:900;font-size:16px;letter-spacing:0.08em;text-transform:uppercase;
+    margin:30px 0 18px;display:inline-block;background:var(--ink);color:var(--paper);padding:8px 14px;box-shadow:var(--shadow-sm)}
+
+  /* ---- RESPONSIVE ---- */
+  @media(max-width:1024px){
+    .col-8,.col-4,.col-6,.col-3{grid-column:span 12}
+    .money-grid{grid-template-columns:repeat(2,1fr)}
+    .notes{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:560px){
+    .wrap{padding:14px}
+    .bento{gap:16px}
+    .money-grid{grid-template-columns:1fr}
+    .env-grid{grid-template-columns:1fr}
+    .notes{grid-template-columns:1fr}
+    .catname{width:88px}
+    .catamt{width:64px}
+    .mast-right{width:100%;justify-content:space-between}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- MASTHEAD -->
+  <header class="masthead">
+    <div class="logo-block">
+      <div class="logo-mark">₪</div>
+      <div class="name uc">FINSTACK</div>
+    </div>
+    <div class="mast-mid">
+      <span class="hh uc" id="hhName">COHEN HOUSEHOLD</span>
+      <span class="ppl uc" id="hhPpl">TOMER &amp; NOA</span>
+    </div>
+    <div class="mast-right">
+      <span class="chip uc">JUL 2026</span>
+      <span class="chip blue uc">OVERVIEW</span>
+      <div class="avatar uc">TN</div>
+    </div>
+  </header>
+
+  <div class="bento">
+
+    <!-- HERO NET WORTH -->
+    <section class="card hero col-8">
+      <div class="hero-top">
+        <div>
+          <span class="hero-label">TOTAL NET WORTH</span>
+          <div class="hero-num num">1,117,240<span class="cur">₪</span></div>
+          <span class="tag-green num"><span class="arr">▲</span> +34,180 ₪ &nbsp;·&nbsp; +3.2% <span style="font-size:12px;font-weight:800">THIS MONTH</span></span>
+        </div>
+        <div class="ranges" role="group" aria-label="Chart range">
+          <button class="btn" data-range="3">3M</button>
+          <button class="btn" data-range="6">6M</button>
+          <button class="btn" data-range="12">1Y</button>
+          <button class="btn active" data-range="all">ALL</button>
+        </div>
+      </div>
+      <div class="chart-wrap" id="nwWrap">
+        <svg id="nwChart" viewBox="0 0 900 320" preserveAspectRatio="none" role="img" aria-label="Net worth over time"></svg>
+        <div class="tt-box" id="nwTip"><div class="tt-m" id="nwTipM"></div><div class="tt-v num" id="nwTipV"></div></div>
+      </div>
+    </section>
+
+    <!-- WHERE MONEY IS -->
+    <section class="card col-4">
+      <div class="card-title"><span class="dot" style="background:var(--blue)"></span>WHERE THE MONEY IS</div>
+      <div class="money-grid">
+        <div class="mblock b-blue">
+          <div class="ml">BANK</div>
+          <div class="mv num">185.4K<span style="font-size:0.5em"> ₪</span></div>
+          <div class="md num">▲ +8.4%</div>
+        </div>
+        <div class="mblock b-lav">
+          <div class="ml">INVESTMENTS</div>
+          <div class="mv num">919.8K<span style="font-size:0.5em"> ₪</span></div>
+          <div class="md num">▲ +0.9%</div>
+        </div>
+        <div class="mblock b-yellow">
+          <div class="ml">CASH</div>
+          <div class="mv num">12.0K<span style="font-size:0.5em"> ₪</span></div>
+          <div class="md num">▲ +0.3%</div>
+        </div>
+        <div class="mblock b-coral">
+          <div class="ml">MORTGAGE</div>
+          <div class="mv num">−649K<span style="font-size:0.5em"> ₪</span></div>
+          <div class="md num">▼ −0.9%</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CASHFLOW -->
+    <section class="card col-6">
+      <div class="card-title"><span class="dot" style="background:var(--green)"></span>CASH FLOW · LAST 6 MONTHS</div>
+      <div class="chart-wrap" id="cfWrap" style="background:#fff">
+        <svg id="cfChart" viewBox="0 0 620 260" preserveAspectRatio="none" role="img" aria-label="Income vs spending"></svg>
+        <div class="tt-box" id="cfTip"><div class="tt-m" id="cfTipM"></div><div class="tt-v num" id="cfTipV"></div></div>
+      </div>
+      <div class="cf-legend">
+        <span class="lg"><span class="sw" style="background:var(--green)"></span>INCOME</span>
+        <span class="lg"><span class="sw" style="background:var(--ink)"></span>SPENDING</span>
+      </div>
+      <div class="cf-readout num">SAVED +9,800 ₪ · 34%</div>
+    </section>
+
+    <!-- CATEGORIES -->
+    <section class="card col-6">
+      <div class="card-title"><span class="dot" style="background:var(--orange)"></span>SPENDING BY CATEGORY · JUL</div>
+      <div id="catList"></div>
+    </section>
+
+    <!-- ENVELOPES -->
+    <section class="card col-8">
+      <div class="card-title"><span class="dot" style="background:var(--coral)"></span>BUDGET ENVELOPES</div>
+      <div class="env-grid" id="envGrid"></div>
+    </section>
+
+    <!-- HOLDINGS -->
+    <section class="card col-4">
+      <div class="card-title"><span class="dot" style="background:var(--lav)"></span>HOLDINGS</div>
+      <div id="holdList"></div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section class="card col-12">
+      <div class="card-title"><span class="dot" style="background:var(--yellow)"></span>RECENT ACTIVITY</div>
+      <div id="txList"></div>
+    </section>
+
+  </div>
+
+  <div class="section-hd">📌 INSIGHTS &amp; ALERTS</div>
+  <div class="notes" id="notes"></div>
+
+</div>
+
+<script>
+/* ---------------- SHARED DATA ---------------- */
+const HH={name:"COHEN HOUSEHOLD",people:"TOMER & NOA"};
+const MONTHS=["JUL'25","AUG","SEP","OCT","NOV","DEC","JAN'26","FEB","MAR","APR","MAY","JUN","JUL"];
+const NW=[883,904,916,939,958,982,1001,1034,1049,1071,1091,1083,1117];
+const CF=[{m:"FEB",inc:28200,exp:21400},{m:"MAR",inc:28900,exp:23800},{m:"APR",inc:28500,exp:19600},{m:"MAY",inc:31200,exp:22100},{m:"JUN",inc:28500,exp:24900},{m:"JUL",inc:28500,exp:18700}];
+const CATS=[{name:"HOUSING",amt:6200},{name:"GROCERIES",amt:3100},{name:"KIDS & SCHOOL",amt:2350},{name:"DINING OUT",amt:1850},{name:"TRANSPORT",amt:1420},{name:"SHOPPING",amt:1180},{name:"UTILITIES",amt:980},{name:"HEALTH",amt:720}];
+const BUDGETS=[{name:"GROCERIES",spent:3100,limit:3500},{name:"DINING OUT",spent:1850,limit:1500},{name:"TRANSPORT",spent:1420,limit:1600},{name:"SHOPPING",spent:1180,limit:1000}];
+const TX=[
+{d:"23 JUL",desc:"SHUFERSAL DEAL",cat:"GROCERIES",acct:"HAPOALIM ·1234",amt:-312.40},
+{d:"21 JUL",desc:"SALARY — NOA COHEN",cat:"SALARY",acct:"LEUMI ·8842",amt:14250.00},
+{d:"22 JUL",desc:"PAZ GAS STATION",cat:"TRANSPORT",acct:"CAL ·5521",amt:-287.00},
+{d:"20 JUL",desc:"CHEVRAT CHASHMAL",cat:"UTILITIES",acct:"HAPOALIM ·1234",amt:-410.20},
+{d:"18 JUL",desc:"NETFLIX",cat:"SUBSCRIPTIONS",acct:"MAX ·3390",amt:-54.90},
+{d:"15 JUL",desc:"GAN YELADIM (DAYCARE)",cat:"KIDS & SCHOOL",acct:"HAPOALIM ·1234",amt:-2350.00}];
+const HOLDINGS=[{name:"PENSION — MENORA",amt:412000,d:"+1.8%"},{name:"KEREN HISHTALMUT",amt:238500,d:"+2.1%"},{name:"S&P 500 ETF (IBKR)",amt:184300,d:"+3.4%"},{name:"CRYPTO",amt:85000,d:"-4.2%"}];
+const INSIGHTS=["DINING OUT IS 23% OVER BUDGET — 8 DAYS LEFT!","3 SUBSCRIPTIONS RENEW THIS WEEK · 164 ₪","SAVINGS RATE HIT 34% — UP FROM 28%!","INVESTMENTS CROSSED 900K ₪ 🎉"];
+const PALETTE=["#2D6BFF","#2FD46B","#FF8A3D","#B79CFF","#FF5A5F","#FFE14D","#2D6BFF","#2FD46B"];
+
+/* ---------------- HELPERS ---------------- */
+function fmt(n){return Math.round(n).toLocaleString('en-US');}
+function fmtK(n){ // n in thousands -> compact
+  if(n>=1000){return (n/1000).toFixed(2).replace(/\.?0+$/,'')+'M';}
+  return n.toFixed(1).replace(/\.0$/,'')+'K';
+}
+
+/* ---------------- NET WORTH CHART ---------------- */
+const nwSvg=document.getElementById('nwChart');
+const nwWrap=document.getElementById('nwWrap');
+const nwTip=document.getElementById('nwTip'), nwTipM=document.getElementById('nwTipM'), nwTipV=document.getElementById('nwTipV');
+const VW=900, VH=320, PAD_L=8, PAD_R=8, PAD_T=24, PAD_B=30;
+
+let curRange='all';
+function sliceNW(range){
+  if(range==='all') return {months:MONTHS,vals:NW};
+  const n=parseInt(range,10);
+  return {months:MONTHS.slice(-(n+1)),vals:NW.slice(-(n+1))};
+}
+
+function drawNW(range){
+  curRange=range;
+  const {months,vals}=sliceNW(range);
+  const n=vals.length;
+  const min=Math.min(...vals), max=Math.max(...vals);
+  const pad=(max-min)*0.18||10;
+  const lo=min-pad, hi=max+pad;
+  const iw=VW-PAD_L-PAD_R, ih=VH-PAD_T-PAD_B;
+  const X=i=> PAD_L + (n===1?iw/2:(i/(n-1))*iw);
+  const Y=v=> PAD_T + ih - ((v-lo)/(hi-lo))*ih;
+
+  let path='', area='';
+  vals.forEach((v,i)=>{ const x=X(i),y=Y(v); path+=(i?'L':'M')+x+' '+y+' '; });
+  area='M'+X(0)+' '+(PAD_T+ih)+' ';
+  vals.forEach((v,i)=>{ area+='L'+X(i)+' '+Y(v)+' '; });
+  area+='L'+X(n-1)+' '+(PAD_T+ih)+' Z';
+
+  // gridlines
+  let grid='';
+  for(let g=0;g<=3;g++){ const gy=PAD_T+(ih/3)*g; grid+=`<line x1="${PAD_L}" y1="${gy}" x2="${VW-PAD_R}" y2="${gy}" stroke="#1111112a" stroke-width="1.5" stroke-dasharray="4 5"/>`; }
+
+  // dots
+  let dots='';
+  vals.forEach((v,i)=>{ dots+=`<rect x="${X(i)-4}" y="${Y(v)-4}" width="8" height="8" fill="#111" />`; });
+
+  // x labels (subset)
+  let xl='';
+  const step=Math.ceil(n/6);
+  months.forEach((m,i)=>{ if(i%step===0||i===n-1){ xl+=`<text x="${X(i)}" y="${VH-8}" font-size="12" font-weight="900" fill="#111" text-anchor="middle">${m}</text>`; }});
+
+  nwSvg.innerHTML=`
+    ${grid}
+    <path d="${area}" fill="#2D6BFF" fill-opacity="0.18"/>
+    <path d="${path}" fill="none" stroke="#111" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    ${xl}
+    <line id="nwCross" x1="0" y1="${PAD_T}" x2="0" y2="${PAD_T+ih}" stroke="#FF5A5F" stroke-width="2.5" stroke-dasharray="5 4" opacity="0"/>
+    <rect id="nwHot" x="0" y="0" width="${VW}" height="${VH}" fill="transparent"/>
+  `;
+  nwSvg._meta={months,vals,X,Y,n,ih};
+}
+
+nwSvg.addEventListener('mousemove',e=>{
+  const meta=nwSvg._meta; if(!meta)return;
+  const rect=nwSvg.getBoundingClientRect();
+  const rel=(e.clientX-rect.left)/rect.width; // 0..1
+  const xView=rel*VW;
+  // nearest index
+  let idx=Math.round((xView-PAD_L)/((VW-PAD_L-PAD_R))*(meta.n-1));
+  idx=Math.max(0,Math.min(meta.n-1,idx));
+  const cx=meta.X(idx), cy=meta.Y(meta.vals[idx]);
+  const cross=document.getElementById('nwCross');
+  cross.setAttribute('x1',cx);cross.setAttribute('x2',cx);cross.setAttribute('opacity','1');
+  // tooltip position in px
+  const pxX=(cx/VW)*rect.width;
+  const pxY=(cy/VH)*rect.height;
+  nwTipM.textContent=meta.months[idx];
+  nwTipV.textContent=fmt(meta.vals[idx]*1000)+' ₪';
+  nwTip.style.opacity='1';
+  let left=pxX;
+  nwTip.style.left=Math.max(60,Math.min(rect.width-60,left))+'px';
+  nwTip.style.top=Math.max(4,pxY-64)+'px';
+  nwTip.style.transform='translateX(-50%)';
+});
+nwSvg.addEventListener('mouseleave',()=>{ nwTip.style.opacity='0'; const c=document.getElementById('nwCross'); if(c)c.setAttribute('opacity','0'); });
+
+document.querySelectorAll('.btn[data-range]').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.btn[data-range]').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    drawNW(b.dataset.range);
+  });
+});
+drawNW('all');
+
+/* ---------------- CASHFLOW CHART ---------------- */
+const cfSvg=document.getElementById('cfChart');
+const cfTip=document.getElementById('cfTip'), cfTipM=document.getElementById('cfTipM'), cfTipV=document.getElementById('cfTipV');
+(function drawCF(){
+  const CVW=620,CVH=260,cpl=14,cpr=14,cpt=18,cpb=30;
+  const iw=CVW-cpl-cpr, ih=CVH-cpt-cpb;
+  const maxV=Math.max(...CF.map(d=>Math.max(d.inc,d.exp)));
+  const groups=CF.length;
+  const gw=iw/groups;
+  const barW=gw*0.30;
+  let bars='',labels='';
+  CF.forEach((d,i)=>{
+    const gx=cpl+gw*i+gw/2;
+    const incH=(d.inc/maxV)*ih, expH=(d.exp/maxV)*ih;
+    const incX=gx-barW-3, expX=gx+3;
+    const incY=cpt+ih-incH, expY=cpt+ih-expH;
+    bars+=`<g class="cfg" data-i="${i}">
+      <rect x="${incX}" y="${incY}" width="${barW}" height="${incH}" fill="#2FD46B" stroke="#111" stroke-width="3"/>
+      <rect x="${expX}" y="${expY}" width="${barW}" height="${expH}" fill="#111" stroke="#111" stroke-width="3"/>
+      <rect class="cfhot" x="${gx-gw/2}" y="${cpt}" width="${gw}" height="${ih}" fill="transparent"/>
+    </g>`;
+    labels+=`<text x="${gx}" y="${CVH-8}" font-size="13" font-weight="900" fill="#111" text-anchor="middle">${d.m}</text>`;
+  });
+  // baseline
+  const base=`<line x1="${cpl}" y1="${cpt+ih}" x2="${CVW-cpr}" y2="${cpt+ih}" stroke="#111" stroke-width="3"/>`;
+  cfSvg.innerHTML=bars+base+labels;
+
+  cfSvg.querySelectorAll('.cfg').forEach(g=>{
+    g.addEventListener('mousemove',e=>{
+      const i=+g.dataset.i; const d=CF[i];
+      const rect=cfSvg.getBoundingClientRect();
+      cfTipM.textContent=d.m;
+      cfTipV.innerHTML='IN '+fmt(d.inc)+' · OUT '+fmt(d.exp);
+      cfTip.style.opacity='1';
+      const px=e.clientX-rect.left;
+      cfTip.style.left=Math.max(70,Math.min(rect.width-70,px))+'px';
+      cfTip.style.top='6px';
+      cfTip.style.transform='translateX(-50%)';
+    });
+    g.addEventListener('mouseleave',()=>{cfTip.style.opacity='0';});
+  });
+})();
+
+/* ---------------- CATEGORIES ---------------- */
+(function(){
+  const maxC=Math.max(...CATS.map(c=>c.amt));
+  const html=CATS.map((c,i)=>{
+    const w=(c.amt/maxC)*100;
+    const color=PALETTE[i%PALETTE.length];
+    return `<div class="catrow">
+      <div class="catname">${c.name}</div>
+      <div class="catbar-track"><div class="catbar-fill" style="width:${w}%;background:${color}"></div></div>
+      <div class="catamt num">${fmt(c.amt)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('catList').innerHTML=html;
+})();
+
+/* ---------------- ENVELOPES ---------------- */
+(function(){
+  const html=BUDGETS.map(b=>{
+    const over=b.spent>b.limit;
+    const pct=Math.min(100,(b.spent/b.limit)*100);
+    const diff=b.spent-b.limit;
+    const badge=over?`OVER BY ${fmt(diff)} ₪`:`${fmt(b.limit-b.spent)} ₪ LEFT`;
+    return `<div class="env ${over?'over':''}">
+      ${over?'<span class="rot-badge">OVER!</span>':''}
+      <div class="env-head">
+        <span class="env-name">${b.name}</span>
+        <span class="env-badge num">${badge}</span>
+      </div>
+      <div class="env-meter"><div class="env-fill" style="width:${pct}%"></div></div>
+      <div class="env-nums"><span class="spent num">${fmt(b.spent)} ₪</span><span class="num">/ ${fmt(b.limit)} ₪</span></div>
+    </div>`;
+  }).join('');
+  document.getElementById('envGrid').innerHTML=html;
+})();
+
+/* ---------------- HOLDINGS ---------------- */
+(function(){
+  const html=HOLDINGS.map(h=>{
+    const up=!h.d.startsWith('-');
+    return `<div class="hold">
+      <span class="hold-name">${h.name}</span>
+      <span class="hold-right"><span class="hold-amt num">${fmtK(h.amt/1000)}<span style="font-size:11px"> ₪</span></span>
+      <span class="hold-d ${up?'up':'down'} num">${h.d}</span></span>
+    </div>`;
+  }).join('');
+  document.getElementById('holdList').innerHTML=html;
+})();
+
+/* ---------------- ACTIVITY ---------------- */
+(function(){
+  const html=TX.map(t=>{
+    const pos=t.amt>0;
+    const amt=(pos?'+':'−')+fmt(Math.abs(t.amt))+' ₪';
+    return `<div class="tx">
+      <div class="tx-date">${t.d}</div>
+      <div class="tx-body">
+        <div class="tx-desc">${t.desc}</div>
+        <div class="tx-meta"><span class="tx-cat">${t.cat}</span>${t.acct}</div>
+      </div>
+      <div class="tx-amt ${pos?'pos':'neg'} num">${amt}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('txList').innerHTML=html;
+})();
+
+/* ---------------- INSIGHTS ---------------- */
+(function(){
+  document.getElementById('notes').innerHTML=INSIGHTS.map(t=>`<div class="note">${t}</div>`).join('');
+})();
+</script>
+</body>
+</html>

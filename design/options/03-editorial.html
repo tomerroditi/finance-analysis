@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Cohen Ledger — Monthly Statement</title>
+<style>
+  :root{
+    --paper:#FFF1E5;        /* FT pink-tinted newsprint */
+    --paper-2:#FBEADB;      /* slightly deeper panel tint */
+    --ink:#191919;          /* near-black ink */
+    --ink-soft:#3A3733;
+    --ink-mute:#726B61;     /* captions / labels */
+    --rule:#D9D6CE;         /* hairline rules */
+    --rule-strong:#B7B0A4;
+    --accent:#7A2E2E;       /* oxblood */
+    --pos:#2F6B4F;          /* dignified green */
+    --neg:#8A2B22;          /* dignified red */
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{overflow-x:hidden}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 32px 96px}
+
+  /* Eyebrows / labels */
+  .eyebrow{font-family:var(--sans);text-transform:uppercase;letter-spacing:.22em;
+    font-size:10.5px;font-weight:600;color:var(--ink-mute)}
+  .label{font-family:var(--sans);text-transform:uppercase;letter-spacing:.14em;
+    font-size:10px;font-weight:600;color:var(--ink-mute)}
+
+  /* ---------- Masthead ---------- */
+  .masthead{padding:34px 0 14px;text-align:center}
+  .masthead .edition{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-mute);border-bottom:1px solid var(--ink);padding-bottom:8px;margin-bottom:16px}
+  .masthead h1{font-size:clamp(38px,7vw,84px);line-height:.9;margin:6px 0 0;
+    letter-spacing:-.01em;font-weight:600;text-wrap:balance}
+  .masthead .sub{font-family:var(--sans);text-transform:uppercase;letter-spacing:.34em;
+    font-size:11px;color:var(--ink-soft);margin-top:16px}
+  .rule-double{border-top:3px double var(--ink);margin:16px 0 0}
+  .dateline{display:flex;justify-content:center;gap:22px;flex-wrap:wrap;
+    font-family:var(--sans);font-size:11px;letter-spacing:.06em;color:var(--ink-mute);
+    padding:9px 0;border-bottom:1px solid var(--ink)}
+  .dateline b{color:var(--ink);font-weight:600}
+
+  /* ---------- Lede ---------- */
+  .lede{display:grid;grid-template-columns:1.15fr 1fr;gap:44px;padding:34px 0 30px;
+    border-bottom:1px solid var(--rule)}
+  .lede-fig .eyebrow{margin-bottom:10px}
+  .networth{font-size:clamp(52px,9vw,104px);line-height:.86;letter-spacing:-.02em;
+    font-weight:600;margin:0}
+  .networth .cur{font-size:.42em;vertical-align:baseline;color:var(--ink-mute);
+    letter-spacing:0;margin-inline-start:.12em}
+  .delta{margin-top:18px;font-family:var(--sans);font-size:14px;color:var(--ink-soft);
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .delta .up{color:var(--pos);font-weight:600;font-size:16px}
+  .delta .sep{width:1px;height:15px;background:var(--rule-strong)}
+  .lede-txt{font-size:19px;line-height:1.5;color:var(--ink-soft);max-width:44ch}
+  .lede-txt p{margin:0}
+  .dropcap::first-letter{font-size:4.6em;line-height:.72;float:left;font-weight:600;
+    padding:6px 12px 0 0;color:var(--accent)}
+  .authored-by{font-family:var(--sans);font-size:11px;letter-spacing:.05em;
+    color:var(--ink-mute);margin-top:18px;font-style:normal}
+
+  /* ---------- Broadsheet grid ---------- */
+  .cols{column-count:1}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:0 40px}
+  .section-head{display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:2px solid var(--ink);padding-bottom:6px;margin:0 0 16px}
+  .section-head h2{font-size:22px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .exhibit-tag{font-family:var(--sans);text-transform:uppercase;letter-spacing:.16em;
+    font-size:9.5px;font-weight:600;color:var(--accent)}
+
+  .exhibit{border:1px solid var(--rule-strong);padding:18px 18px 14px;background:transparent;
+    margin-bottom:6px}
+  .exhibit-cap{font-family:var(--sans);font-size:10.5px;color:var(--ink-mute);
+    letter-spacing:.03em;margin-top:10px;line-height:1.45}
+  .exhibit-cap b{color:var(--ink);font-weight:600}
+
+  /* Range toggle */
+  .toggle{display:inline-flex;gap:0;border:1px solid var(--rule-strong)}
+  .toggle button{font-family:var(--sans);font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;background:transparent;border:0;border-inline-start:1px solid var(--rule-strong);
+    color:var(--ink-mute);padding:5px 11px;cursor:pointer;transition:background .15s,color .15s}
+  .toggle button:first-child{border-inline-start:0}
+  .toggle button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+  .toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* charts */
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .axis-line{stroke:var(--rule-strong);stroke-width:1}
+  .grid-line{stroke:var(--rule);stroke-width:1}
+  .nw-path{fill:none;stroke:var(--ink);stroke-width:1.4;
+    stroke-linejoin:round;stroke-linecap:round}
+  .nw-area{fill:var(--accent);opacity:.06}
+  .tick{font-family:var(--sans);font-size:10px;fill:var(--ink-mute)}
+  .crosshair{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3;opacity:0}
+  .cross-dot{fill:var(--accent);opacity:0}
+  .readout{opacity:0;pointer-events:none}
+  .readout rect{fill:var(--paper);stroke:var(--ink);stroke-width:1}
+  .readout .rt-m{font-family:var(--sans);font-size:10px;fill:var(--ink-mute);letter-spacing:.04em}
+  .readout .rt-v{font-family:var(--serif);font-size:15px;fill:var(--ink);font-weight:600}
+
+  .bar-inc{fill:var(--ink);opacity:.86}
+  .bar-exp{fill:var(--accent);opacity:.5;stroke:var(--accent);stroke-width:1}
+  .bar-inc:hover,.bar-exp:hover{opacity:1}
+
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  caption{text-align:start}
+  th,td{padding:7px 4px;text-align:start;border-bottom:1px solid var(--rule)}
+  thead th{font-family:var(--sans);font-size:10px;text-transform:uppercase;
+    letter-spacing:.11em;color:var(--ink-mute);font-weight:600;border-bottom:1px solid var(--ink)}
+  td.num,th.num{text-align:end;font-variant-numeric:tabular-nums;
+    font-feature-settings:"tnum" 1}
+  .row-total td{border-top:2px solid var(--ink);border-bottom:none;
+    font-weight:600;font-size:16px;padding-top:9px}
+  .grp-head td{font-family:var(--sans);font-size:10px;text-transform:uppercase;
+    letter-spacing:.12em;color:var(--accent);padding-top:14px;border-bottom:none;font-weight:600}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}
+  .muted{color:var(--ink-mute)}
+  .table-scroll{overflow-x:auto}
+
+  /* Composition list */
+  .comp{list-style:none;margin:0;padding:0}
+  .comp li{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;
+    gap:2px 12px;padding:9px 0;border-bottom:1px solid var(--rule);cursor:default;
+    transition:background .12s}
+  .comp li:hover{background:var(--paper-2)}
+  .comp .cname{font-size:15px}
+  .comp .camt{text-align:end;font-variant-numeric:tabular-nums;font-size:15px}
+  .comp .cpct{grid-column:1/2;font-family:var(--sans);font-size:10px;color:var(--ink-mute);
+    letter-spacing:.04em}
+  .comp .cbar{grid-column:1/3;height:3px;background:var(--rule);margin-top:6px;position:relative}
+  .comp .cbar > i{position:absolute;inset-block:0;inset-inline-start:0;background:var(--ink);
+    transform:scaleX(0);transform-origin:left;transition:transform 1s cubic-bezier(.2,.7,.2,1)}
+  .comp li:hover .cbar > i{background:var(--accent)}
+
+  /* Ledger listings */
+  .ledger{columns:2;column-gap:40px;column-rule:1px solid var(--rule)}
+  .ledger .entry{break-inside:avoid;display:grid;grid-template-columns:auto 1fr auto;
+    gap:0 10px;padding:7px 0;border-bottom:1px dotted var(--rule);align-items:baseline}
+  .ledger .ld-date{font-family:var(--sans);font-size:10.5px;color:var(--ink-mute);
+    letter-spacing:.03em;white-space:nowrap}
+  .ledger .ld-desc{font-size:14px}
+  .ledger .ld-desc small{display:block;font-family:var(--sans);font-size:10px;
+    color:var(--ink-mute);letter-spacing:.02em;margin-top:1px}
+  .ledger .ld-amt{font-variant-numeric:tabular-nums;font-size:14px;text-align:end;white-space:nowrap}
+
+  /* Analyst notes */
+  .notes{columns:2;column-gap:44px;font-style:italic;font-size:16px;line-height:1.55;
+    color:var(--ink-soft)}
+  .notes p{margin:0 0 15px;break-inside:avoid}
+  .notes p::before{content:"—  ";color:var(--accent);font-style:normal}
+  .colophon{margin-top:40px;padding-top:14px;border-top:3px double var(--ink);
+    font-family:var(--sans);font-size:10.5px;color:var(--ink-mute);letter-spacing:.05em;
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+
+  /* spanning helpers */
+  .span-7{grid-column:span 7}.span-5{grid-column:span 5}
+  .span-6{grid-column:span 6}.span-4{grid-column:span 4}
+  .span-8{grid-column:span 8}.span-12{grid-column:span 12}
+  .block{margin:38px 0}
+  .subhead-note{font-family:var(--sans);font-size:11px;color:var(--ink-mute);
+    letter-spacing:.04em;margin:0 0 14px;font-style:italic}
+
+  @media (max-width:1024px){
+    .lede{grid-template-columns:1fr;gap:26px}
+    .span-7,.span-5,.span-6,.span-4,.span-8{grid-column:span 12}
+    .grid{gap:0 24px}
+  }
+  @media (max-width:640px){
+    .wrap{padding:0 18px 64px}
+    .ledger,.notes{columns:1}
+    .dateline{gap:12px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+    .comp .cbar > i{transform:scaleX(1)!important}
+    .nw-path{stroke-dasharray:none!important;stroke-dashoffset:0!important}
+  }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= MASTHEAD ================= -->
+  <header class="masthead" role="banner">
+    <div class="edition">
+      <span>Vol. XII · No. 7</span>
+      <span>Private Circulation</span>
+      <span>Est. 2019</span>
+    </div>
+    <div class="eyebrow">A Household Financial Broadsheet</div>
+    <h1>The Cohen Ledger</h1>
+    <div class="sub">Monthly Statement &amp; Analysis of Net Worth</div>
+    <div class="rule-double"></div>
+    <div class="dateline">
+      <span><b>Tel Aviv</b></span>
+      <span>Wednesday, <b>23 July 2026</b></span>
+      <span>Prepared for <b>Tomer &amp; Noa Cohen</b></span>
+      <span>All figures in <b>₪ ILS</b></span>
+    </div>
+  </header>
+
+  <!-- ================= LEDE ================= -->
+  <section class="lede" aria-labelledby="nw-head">
+    <div class="lede-fig">
+      <div class="eyebrow" id="nw-head">Total Net Worth · As of Statement Date</div>
+      <p class="networth">1,117,240<span class="cur">₪</span></p>
+      <div class="delta">
+        <span class="up">▲ 34,180 ₪</span>
+        <span class="sep"></span>
+        <span class="up">+3.2%</span>
+        <span class="muted">month over month</span>
+      </div>
+    </div>
+    <div class="lede-txt">
+      <p class="dropcap">The household closed July in its strongest position on record, with net worth advancing past the 1.11-million-shekel mark as disciplined spending and a buoyant investment book together lifted the balance sheet a further 3.2 percent on the month.</p>
+      <div class="authored-by">Prepared by the Household Accounts Office · Figures unaudited</div>
+    </div>
+  </section>
+
+  <!-- ================= EXHIBITS ROW 1 ================= -->
+  <div class="grid block">
+    <!-- Exhibit 1 : Net worth trend -->
+    <div class="span-7">
+      <div class="section-head">
+        <h2>Net Worth, In Trend</h2>
+        <span class="exhibit-tag">Exhibit 1</span>
+      </div>
+      <div class="exhibit">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+          <span class="label">Thousands of shekels · trailing period</span>
+          <div class="toggle" role="group" aria-label="Select time range">
+            <button data-range="3" aria-pressed="false">3M</button>
+            <button data-range="6" aria-pressed="false">6M</button>
+            <button data-range="12" aria-pressed="true">1Y</button>
+            <button data-range="all" aria-pressed="false">All</button>
+          </div>
+        </div>
+        <svg id="nwChart" viewBox="0 0 640 300" role="img" aria-label="Net worth trend line chart"></svg>
+        <p class="exhibit-cap"><b>Reading:</b> a single ink stroke traces the household's net worth over the trailing year. Hover for the month-end figure. Growth of <b>+234,240 ₪</b> across the twelve months shown.</p>
+      </div>
+    </div>
+
+    <!-- Exhibit 2 : Income vs Expenditure -->
+    <div class="span-5">
+      <div class="section-head">
+        <h2>Income &amp; Outlay</h2>
+        <span class="exhibit-tag">Exhibit 2</span>
+      </div>
+      <div class="exhibit">
+        <span class="label">Six months · income against expenditure</span>
+        <svg id="cfChart" viewBox="0 0 400 300" role="img" aria-label="Income versus expenditure bar chart" style="margin-top:8px"></svg>
+        <p class="exhibit-cap"><b>Net saving +9,800 ₪</b> in July — a saving rate of <b>34%</b> of income, the household's highest of the half-year. Ink bars denote income; shaded bars, expenditure.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= EXHIBITS ROW 2 ================= -->
+  <div class="grid block">
+    <!-- Exhibit 3 : Spending composition -->
+    <div class="span-5">
+      <div class="section-head">
+        <h2>Where It Went</h2>
+        <span class="exhibit-tag">Exhibit 3</span>
+      </div>
+      <p class="subhead-note">Composition of July expenditure, ranked by weight.</p>
+      <ul class="comp" id="compList"></ul>
+    </div>
+
+    <!-- Balance sheet -->
+    <div class="span-4">
+      <div class="section-head">
+        <h2>Balance Sheet</h2>
+        <span class="exhibit-tag">Statement</span>
+      </div>
+      <table aria-label="Balance sheet">
+        <tbody>
+          <tr class="grp-head"><td colspan="2">Assets</td></tr>
+          <tr><td>Bank deposits</td><td class="num">185,400 ₪</td></tr>
+          <tr><td>Investment holdings</td><td class="num">919,800 ₪</td></tr>
+          <tr><td>Cash on hand</td><td class="num">12,040 ₪</td></tr>
+          <tr><td class="muted">Total assets</td><td class="num muted">1,117,240 ₪</td></tr>
+          <tr class="grp-head"><td colspan="2">Liabilities</td></tr>
+          <tr><td>Mortgage — Leumi</td><td class="num neg">(649,000 ₪)</td></tr>
+          <tr class="row-total"><td>Net worth</td><td class="num">1,117,240 ₪</td></tr>
+        </tbody>
+      </table>
+      <p class="exhibit-cap" style="margin-top:10px">Net worth is stated after the outstanding mortgage, which has amortised <b>71,000 ₪</b> over the trailing year.</p>
+    </div>
+
+    <!-- Holdings -->
+    <div class="span-3" style="grid-column:span 3">
+      <div class="section-head">
+        <h2>Holdings</h2>
+        <span class="exhibit-tag">Positions</span>
+      </div>
+      <div class="table-scroll">
+      <table aria-label="Investment holdings">
+        <thead><tr><th>Position</th><th class="num">Value</th><th class="num">Δ</th></tr></thead>
+        <tbody id="holdBody"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= EXHIBITS ROW 3 ================= -->
+  <div class="grid block">
+    <!-- Budget variance -->
+    <div class="span-6">
+      <div class="section-head">
+        <h2>Budget Variance</h2>
+        <span class="exhibit-tag">Schedule</span>
+      </div>
+      <p class="subhead-note">Actual expenditure against budget; overspend shown in parentheses.</p>
+      <div class="table-scroll">
+      <table aria-label="Budget variance">
+        <thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead>
+        <tbody id="budgetBody"></tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- The Ledger -->
+    <div class="span-6">
+      <div class="section-head">
+        <h2>The Ledger</h2>
+        <span class="exhibit-tag">Recent Entries</span>
+      </div>
+      <p class="subhead-note">A listing of the household's most recent transactions.</p>
+      <div class="ledger" id="ledger"></div>
+    </div>
+  </div>
+
+  <!-- ================= ANALYST NOTES ================= -->
+  <div class="block">
+    <div class="section-head">
+      <h2>Analyst's Notes</h2>
+      <span class="exhibit-tag">Commentary</span>
+    </div>
+    <div class="notes" id="notes"></div>
+  </div>
+
+  <div class="colophon">
+    <span>The Cohen Ledger · Household Accounts Office · Tel Aviv</span>
+    <span>Set in Iowan Old Style · Printed on statement day, 23 July 2026</span>
+  </div>
+
+</div>
+
+<script>
+/* ================= SHARED DEMO DATA ================= */
+const HH={name:"The Cohen Household",people:"Tomer & Noa Cohen",place:"Tel Aviv",date:"23 July 2026"};
+const MONTHS=["Jul '25","Aug","Sep","Oct","Nov","Dec","Jan '26","Feb","Mar","Apr","May","Jun","Jul"];
+const NW=[883,904,916,939,958,982,1001,1034,1049,1071,1091,1083,1117];
+const CF=[{m:"Feb",inc:28200,exp:21400},{m:"Mar",inc:28900,exp:23800},{m:"Apr",inc:28500,exp:19600},{m:"May",inc:31200,exp:22100},{m:"Jun",inc:28500,exp:24900},{m:"Jul",inc:28500,exp:18700}];
+const CATS=[{name:"Housing",amt:6200},{name:"Groceries",amt:3100},{name:"Kids & school",amt:2350},{name:"Dining out",amt:1850},{name:"Transport",amt:1420},{name:"Shopping",amt:1180},{name:"Utilities",amt:980},{name:"Health",amt:720}];
+const BUDGETS=[{name:"Groceries",spent:3100,limit:3500},{name:"Dining out",spent:1850,limit:1500},{name:"Transport",spent:1420,limit:1600},{name:"Shopping",spent:1180,limit:1000}];
+const TX=[
+{d:"23 Jul",desc:"Shufersal Deal",cat:"Groceries",acct:"Hapoalim ·1234",amt:-312.40},
+{d:"23 Jul",desc:"Cafe Aroma",cat:"Dining out",acct:"Cal ·5521",amt:-54.00},
+{d:"22 Jul",desc:"Paz Gas Station",cat:"Transport",acct:"Cal ·5521",amt:-287.00},
+{d:"21 Jul",desc:"Salary — Noa Cohen",cat:"Salary",acct:"Leumi ·8842",amt:14250.00},
+{d:"20 Jul",desc:"Chevrat Chashmal",cat:"Utilities",acct:"Hapoalim ·1234",amt:-410.20},
+{d:"19 Jul",desc:"Rami Levy",cat:"Groceries",acct:"Hapoalim ·1234",amt:-198.60},
+{d:"18 Jul",desc:"Netflix",cat:"Subscriptions",acct:"Max ·3390",amt:-54.90},
+{d:"17 Jul",desc:"Zara TLV",cat:"Shopping",acct:"Max ·3390",amt:-389.00},
+{d:"15 Jul",desc:"Gan Yeladim (daycare)",cat:"Kids & school",acct:"Hapoalim ·1234",amt:-2350.00}];
+const HOLDINGS=[{name:"Pension — Menora",amt:412000,d:"+1.8%"},{name:"Keren Hishtalmut",amt:238500,d:"+2.1%"},{name:"S&P 500 ETF (IBKR)",amt:184300,d:"+3.4%"},{name:"Crypto",amt:85000,d:"-4.2%"}];
+const INSIGHTS=[
+"Dining out is 23% over budget with eight days remaining in July.",
+"Three subscriptions renew this week, totalling 164 ₪.",
+"The household savings rate reached 34%, up from 28% a month earlier.",
+"Investment holdings crossed 900,000 ₪ for the first time."];
+
+/* ================= HELPERS ================= */
+const SVGNS="http://www.w3.org/2000/svg";
+const el=(n,a={})=>{const e=document.createElementNS(SVGNS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const fmt=n=>Math.round(n).toLocaleString("en-US");
+const fmt2=n=>n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtK=n=>(n>=1000?(n/1000).toFixed(n%1000===0?0:1)+"M":n.toLocaleString("en-US")); // thousands->M
+const reduceMotion=window.matchMedia("(prefers-reduced-motion:reduce)").matches;
+
+/* ================= EXHIBIT 1 : NET WORTH ================= */
+const nwSvg=document.getElementById("nwChart");
+const NWW=640,NWH=300,mL=52,mR=16,mT=18,mB=34;
+let curRange=12;
+
+function sliceData(range){
+  if(range==="all"||range>=NW.length) return {vals:NW.slice(),labs:MONTHS.slice()};
+  const n=range+1;
+  return {vals:NW.slice(NW.length-n),labs:MONTHS.slice(MONTHS.length-n)};
+}
+
+function drawNW(range){
+  nwSvg.innerHTML="";
+  const {vals,labs}=sliceData(range==="all"?"all":+range);
+  const N=vals.length;
+  const min=Math.min(...vals), max=Math.max(...vals);
+  const pad=(max-min)*0.18||10;
+  const lo=min-pad, hi=max+pad;
+  const px=i=>mL+(i/(N-1))*(NWW-mL-mR);
+  const py=v=>mT+(1-(v-lo)/(hi-lo))*(NWH-mT-mB);
+
+  // horizontal gridlines + y ticks
+  const ticks=4;
+  for(let t=0;t<=ticks;t++){
+    const v=lo+(t/ticks)*(hi-lo);
+    const y=py(v);
+    nwSvg.appendChild(el("line",{class:"grid-line",x1:mL,y1:y,x2:NWW-mR,y2:y}));
+    const tx=el("text",{class:"tick",x:mL-8,y:y+3,"text-anchor":"end"});
+    tx.textContent=Math.round(v)+"K";
+    nwSvg.appendChild(tx);
+  }
+  // axes
+  nwSvg.appendChild(el("line",{class:"axis-line",x1:mL,y1:mT,x2:mL,y2:NWH-mB}));
+  nwSvg.appendChild(el("line",{class:"axis-line",x1:mL,y1:NWH-mB,x2:NWW-mR,y2:NWH-mB}));
+
+  // x ticks (thin out if many)
+  const step=Math.ceil(N/8);
+  labs.forEach((l,i)=>{
+    if(i%step!==0 && i!==N-1) return;
+    const tx=el("text",{class:"tick",x:px(i),y:NWH-mB+16,"text-anchor":"middle"});
+    tx.textContent=l;
+    nwSvg.appendChild(tx);
+  });
+
+  // area
+  let ad=`M ${px(0)} ${NWH-mB}`;
+  vals.forEach((v,i)=>{ad+=` L ${px(i)} ${py(v)}`;});
+  ad+=` L ${px(N-1)} ${NWH-mB} Z`;
+  nwSvg.appendChild(el("path",{class:"nw-area",d:ad}));
+
+  // line
+  let d="";
+  vals.forEach((v,i)=>{d+=(i?"L":"M")+px(i)+" "+py(v)+" ";});
+  const path=el("path",{class:"nw-path",d});
+  nwSvg.appendChild(path);
+  if(!reduceMotion){
+    const len=path.getTotalLength();
+    path.style.strokeDasharray=len;
+    path.style.strokeDashoffset=len;
+    path.animate([{strokeDashoffset:len},{strokeDashoffset:0}],{duration:900,easing:"cubic-bezier(.4,0,.2,1)",fill:"forwards"});
+  }
+  // endpoint dot
+  nwSvg.appendChild(el("circle",{cx:px(N-1),cy:py(vals[N-1]),r:2.6,fill:"var(--ink)"}));
+
+  // crosshair + readout
+  const cross=el("line",{class:"crosshair",x1:0,y1:mT,x2:0,y2:NWH-mB});
+  const dot=el("circle",{class:"cross-dot",r:3.4});
+  const ro=el("g",{class:"readout"});
+  const roRect=el("rect",{x:0,y:0,width:96,height:40,rx:0});
+  const roM=el("text",{class:"rt-m",x:10,y:15});
+  const roV=el("text",{class:"rt-v",x:10,y:31});
+  ro.appendChild(roRect);ro.appendChild(roM);ro.appendChild(roV);
+  nwSvg.appendChild(cross);nwSvg.appendChild(dot);nwSvg.appendChild(ro);
+
+  const hit=el("rect",{x:mL,y:mT,width:NWW-mL-mR,height:NWH-mT-mB,fill:"transparent",style:"cursor:crosshair"});
+  nwSvg.appendChild(hit);
+
+  function move(evt){
+    const pt=nwSvg.createSVGPoint();
+    const r=nwSvg.getBoundingClientRect();
+    const cx=evt.touches?evt.touches[0].clientX:evt.clientX;
+    const relX=(cx-r.left)/r.width*NWW;
+    let idx=Math.round((relX-mL)/((NWW-mL-mR)/(N-1)));
+    idx=Math.max(0,Math.min(N-1,idx));
+    const X=px(idx),Y=py(vals[idx]);
+    cross.setAttribute("x1",X);cross.setAttribute("x2",X);
+    cross.style.opacity=1;
+    dot.setAttribute("cx",X);dot.setAttribute("cy",Y);dot.style.opacity=1;
+    roM.textContent=labs[idx];
+    roV.textContent=fmt(vals[idx]*1000)+" ₪";
+    const wv=Math.max(roV.getComputedTextLength(),roM.getComputedTextLength())+20;
+    roRect.setAttribute("width",wv);
+    let rx=X+12; if(rx+wv>NWW-mR) rx=X-12-wv;
+    const ry=Math.max(mT,Y-46);
+    ro.setAttribute("transform",`translate(${rx},${ry})`);
+    ro.style.opacity=1;
+  }
+  function leave(){cross.style.opacity=0;dot.style.opacity=0;ro.style.opacity=0;}
+  hit.addEventListener("mousemove",move);
+  hit.addEventListener("mouseleave",leave);
+  hit.addEventListener("touchmove",move,{passive:true});
+  hit.addEventListener("touchend",leave);
+}
+drawNW(12);
+
+document.querySelectorAll(".toggle button").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".toggle button").forEach(b=>b.setAttribute("aria-pressed","false"));
+    btn.setAttribute("aria-pressed","true");
+    drawNW(btn.dataset.range);
+  });
+});
+
+/* ================= EXHIBIT 2 : INCOME vs EXPENDITURE ================= */
+(function(){
+  const svg=document.getElementById("cfChart");
+  const W=400,H=300,ml=44,mr=12,mt=16,mb=42;
+  const maxV=Math.max(...CF.map(c=>Math.max(c.inc,c.exp)));
+  const hi=Math.ceil(maxV/5000)*5000;
+  const groups=CF.length;
+  const gw=(W-ml-mr)/groups;
+  const bw=gw*0.30;
+  const py=v=>mt+(1-v/hi)*(H-mt-mb);
+
+  // y gridlines
+  for(let t=0;t<=4;t++){
+    const v=(t/4)*hi, y=py(v);
+    svg.appendChild(el("line",{class:"grid-line",x1:ml,y1:y,x2:W-mr,y2:y}));
+    const tx=el("text",{class:"tick",x:ml-7,y:y+3,"text-anchor":"end"});
+    tx.textContent=(v/1000)+"K";
+    svg.appendChild(tx);
+  }
+  svg.appendChild(el("line",{class:"axis-line",x1:ml,y1:H-mb,x2:W-mr,y2:H-mb}));
+
+  const ro=el("g",{class:"readout"});
+  const roRect=el("rect",{x:0,y:0,width:110,height:40});
+  const roM=el("text",{class:"rt-m",x:10,y:15});
+  const roV=el("text",{class:"rt-v",x:10,y:31});
+  ro.appendChild(roRect);ro.appendChild(roM);ro.appendChild(roV);
+
+  CF.forEach((c,i)=>{
+    const cx=ml+i*gw+gw/2;
+    const xi=cx-bw-2, xe=cx+2;
+    const hInc=(H-mb)-py(c.inc), hExp=(H-mb)-py(c.exp);
+    const bInc=el("rect",{class:"bar-inc",x:xi,y:py(c.inc),width:bw,height:hInc});
+    const bExp=el("rect",{class:"bar-exp",x:xe,y:py(c.exp),width:bw,height:hExp});
+    svg.appendChild(bInc);svg.appendChild(bExp);
+    // month label
+    const tx=el("text",{class:"tick",x:cx,y:H-mb+16,"text-anchor":"middle"});
+    tx.textContent=c.m;
+    svg.appendChild(tx);
+
+    function show(kind,val,rect){
+      roM.textContent=c.m+" · "+kind;
+      roV.textContent=fmt(val)+" ₪";
+      const wv=Math.max(roV.getComputedTextLength(),roM.getComputedTextLength())+20;
+      roRect.setAttribute("width",wv);
+      let rx=cx-wv/2; rx=Math.max(ml,Math.min(W-mr-wv,rx));
+      const ry=Math.max(mt,+rect.getAttribute("y")-46);
+      ro.setAttribute("transform",`translate(${rx},${ry})`);
+      ro.style.opacity=1;
+    }
+    bInc.addEventListener("mouseenter",()=>show("Income",c.inc,bInc));
+    bExp.addEventListener("mouseenter",()=>show("Outlay",c.exp,bExp));
+    [bInc,bExp].forEach(b=>b.addEventListener("mouseleave",()=>ro.style.opacity=0));
+  });
+  svg.appendChild(ro);
+
+  // legend
+  const lg=el("g",{transform:`translate(${ml},${H-14})`});
+  lg.appendChild(el("rect",{class:"bar-inc",x:0,y:-8,width:11,height:11}));
+  const l1=el("text",{class:"tick",x:16,y:1});l1.textContent="Income";lg.appendChild(l1);
+  lg.appendChild(el("rect",{class:"bar-exp",x:80,y:-8,width:11,height:11}));
+  const l2=el("text",{class:"tick",x:96,y:1});l2.textContent="Expenditure";lg.appendChild(l2);
+  svg.appendChild(lg);
+})();
+
+/* ================= EXHIBIT 3 : COMPOSITION ================= */
+(function(){
+  const total=CATS.reduce((s,c)=>s+c.amt,0);
+  const max=Math.max(...CATS.map(c=>c.amt));
+  const ul=document.getElementById("compList");
+  CATS.forEach((c,i)=>{
+    const pct=(c.amt/total*100);
+    const li=document.createElement("li");
+    li.innerHTML=`
+      <span class="cname">${c.name}</span>
+      <span class="camt">${fmt(c.amt)} ₪</span>
+      <span class="cpct">${pct.toFixed(1)}% of outlay</span>
+      <span class="cbar"><i style="width:${(c.amt/max*100).toFixed(1)}%"></i></span>`;
+    ul.appendChild(li);
+    const bar=li.querySelector(".cbar > i");
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      setTimeout(()=>{bar.style.transform="scaleX(1)";}, reduceMotion?0:80*i);
+    }));
+  });
+})();
+
+/* ================= HOLDINGS ================= */
+(function(){
+  const tb=document.getElementById("holdBody");
+  HOLDINGS.forEach(h=>{
+    const up=h.d.startsWith("+");
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${h.name}</td><td class="num">${fmtVal(h.amt)}</td>
+      <td class="num ${up?'pos':'neg'}">${h.d}</td>`;
+    tb.appendChild(tr);
+  });
+  function fmtVal(n){return n>=1000?(n/1000).toFixed(1)+"K ₪":fmt(n)+" ₪";}
+})();
+
+/* ================= BUDGET VARIANCE ================= */
+(function(){
+  const tb=document.getElementById("budgetBody");
+  BUDGETS.forEach(b=>{
+    const variance=b.limit-b.spent; // + under, - over
+    const over=variance<0;
+    const vtxt=over?`(${fmt(Math.abs(variance))} ₪)`:`${fmt(variance)} ₪`;
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${b.name}</td>
+      <td class="num muted">${fmt(b.limit)} ₪</td>
+      <td class="num">${fmt(b.spent)} ₪</td>
+      <td class="num ${over?'neg':'pos'}">${vtxt}</td>`;
+    tb.appendChild(tr);
+  });
+  // total row
+  const tl=BUDGETS.reduce((s,b)=>s+b.limit,0);
+  const ts=BUDGETS.reduce((s,b)=>s+b.spent,0);
+  const tv=tl-ts; const over=tv<0;
+  const tr=document.createElement("tr");
+  tr.className="row-total";
+  tr.innerHTML=`<td>Total tracked</td>
+    <td class="num">${fmt(tl)} ₪</td>
+    <td class="num">${fmt(ts)} ₪</td>
+    <td class="num ${over?'neg':'pos'}">${over?`(${fmt(Math.abs(tv))} ₪)`:`${fmt(tv)} ₪`}</td>`;
+  tb.appendChild(tr);
+})();
+
+/* ================= LEDGER ================= */
+(function(){
+  const wrap=document.getElementById("ledger");
+  TX.forEach(t=>{
+    const neg=t.amt<0;
+    const amt=neg?`(${fmt2(Math.abs(t.amt))} ₪)`:`${fmt2(t.amt)} ₪`;
+    const div=document.createElement("div");
+    div.className="entry";
+    div.innerHTML=`
+      <span class="ld-date">${t.d}</span>
+      <span class="ld-desc">${t.desc}<small>${t.cat} · ${t.acct}</small></span>
+      <span class="ld-amt ${neg?'':'pos'}">${amt}</span>`;
+    wrap.appendChild(div);
+  });
+})();
+
+/* ================= ANALYST NOTES ================= */
+(function(){
+  const box=document.getElementById("notes");
+  INSIGHTS.forEach(t=>{
+    const p=document.createElement("p");
+    p.textContent=t;
+    box.appendChild(p);
+  });
+})();
+</script>
+</body>
+</html>
