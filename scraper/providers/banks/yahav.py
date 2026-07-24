@@ -25,6 +25,7 @@ from scraper.utils import (
 logger = logging.getLogger(__name__)
 
 SHEKEL_CURRENCY = "ILS"
+SHEKEL_CURRENCY_SYMBOL = "\u20aa"
 
 LOGIN_URL = "https://login.yahav.co.il/login/"
 BASE_URL = "https://digital.yahav.co.il/BaNCSDigitalUI/app/index.html#/"
@@ -72,6 +73,7 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
         txns,
         date_format=DATE_FORMAT,
         parse_identifier=parse_digits_identifier,
+        strip_symbols=(SHEKEL_CURRENCY_SYMBOL,),
         currency=SHEKEL_CURRENCY,
     )
 

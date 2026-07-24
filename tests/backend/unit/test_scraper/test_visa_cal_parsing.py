@@ -89,14 +89,63 @@ class TestConvertCompletedTransactions:
         )
         assert result[0].type == TransactionType.NORMAL
 
-    def test_credit_transaction_keeps_positive_original_amount(self):
-        """A credit (type 6) keeps a positive original amount (refund)."""
+    def test_credit_transaction_keeps_positive_amounts(self):
+        """A credit (type 6) is a refund — both amounts stay positive.
+
+        ``charged_amount`` is the field the backend persists, so negating it
+        recorded every merchant refund as an expense of the same size.
+        """
         result = _convert_parsed_data_to_transactions(
             [_month_data([_completed_txn(trnTypeCode="6")])]
         )
         assert result[0].original_amount == 200.0
-        # The charged amount is still negated from amtBeforeConvAndIndex.
-        assert result[0].charged_amount == -200.0
+        assert result[0].charged_amount == 200.0
+
+    def test_credit_transaction_is_typed_normal(self):
+        """A credit is a standalone refund, not an installment plan.
+
+        Typing it as INSTALLMENTS made ``filter_old_transactions`` drop it
+        when combining installments, because credits carry no payment count.
+        """
+        result = _convert_parsed_data_to_transactions(
+            [_month_data([_completed_txn(trnTypeCode="6")])]
+        )
+        assert result[0].type == TransactionType.NORMAL
+
+    def test_credit_survives_installment_combining(self):
+        """A refund is not filtered out when installments are combined."""
+        from datetime import date
+
+        from scraper.utils.transactions import filter_old_transactions
+
+        result = _convert_parsed_data_to_transactions(
+            [_month_data([_completed_txn(trnTypeCode="6")])]
+        )
+        kept = filter_old_transactions(
+            result, date(2020, 1, 1), combine_installments=True
+        )
+        assert len(kept) == 1
+
+    def test_string_amounts_are_coerced(self):
+        """Amounts sent as strings parse to numbers, not empty strings.
+
+        Multiplying a string by -1 is Python string-repetition, which
+        silently produced ``''`` instead of raising.
+        """
+        result = _convert_parsed_data_to_transactions(
+            [
+                _month_data(
+                    [
+                        _completed_txn(
+                            trnAmt="1,100.50",
+                            amtBeforeConvAndIndex="1,100.50",
+                        )
+                    ]
+                )
+            ]
+        )
+        assert result[0].charged_amount == -1100.50
+        assert result[0].original_amount == -1100.50
 
     def test_installments_shift_date_and_set_info(self):
         """Installment N shifts the purchase date N-1 months forward."""

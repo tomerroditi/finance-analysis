@@ -12,8 +12,12 @@ export const Budget: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<BudgetTab>("monthly");
 
+  // `sm:flex-1` (not `flex-1`) + `shrink-0`: on mobile the tabs keep their
+  // natural width and the container scrolls, instead of the widest tab
+  // forcing the page past the viewport. See frontend_responsive.md →
+  // "Tab Bars & Button Groups".
   const tabClass = (tab: BudgetTab) =>
-    `flex-1 whitespace-nowrap flex items-center justify-center gap-2 px-3 md:px-6 py-2.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
+    `sm:flex-1 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 md:px-6 py-2.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
       activeTab === tab
         ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
         : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
@@ -23,7 +27,7 @@ export const Budget: React.FC = () => {
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
       <CategoryConflictBanner />
       <div className="mb-6">
-        <div className="flex w-full gap-1 bg-[var(--surface-light)] p-1 rounded-xl">
+        <div className="flex w-full gap-1 bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
           <button onClick={() => setActiveTab("monthly")} className={tabClass("monthly")}>
             <Calendar size={18} />
             {t("budget.monthlyBudget")}
