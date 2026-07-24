@@ -758,3 +758,89 @@ class TestRefundNotes:
         sources = service.get_refund_sources()
         assert len(sources) == 1
         assert sources[0]["note"] == "Insurance claim payout"
+
+
+class TestActivePendingIdentifiers:
+    """Tests for get_active_pending_identifiers source-table pairing."""
+
+    def test_transaction_keys_pair_id_with_source_table(self, db_session):
+        """Transaction ids are returned paired with their canonical table."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 5, "banks", 100.0)
+
+        ids = service.get_active_pending_identifiers()
+        assert ids["transaction_keys"] == {("bank_transactions", 5)}
+        assert ids["split_ids"] == set()
+
+    def test_split_ids_stay_bare(self, db_session):
+        """Split ids remain bare — split_transactions is a single table."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("split", 7, "banks", 100.0)
+
+        ids = service.get_active_pending_identifiers()
+        assert ids["split_ids"] == {7}
+        assert ids["transaction_keys"] == set()
+
+    def test_resolved_refunds_are_not_active(self, db_session):
+        """Resolved pending refunds drop out of the active identifier sets."""
+        from backend.models.transaction import BankTransaction
+
+        refund = BankTransaction(
+            id="ident-refund", date="2026-03-12", provider="p",
+            account_name="a", description="refund", amount=100.0,
+            category="Other Income", tag=None, source="bank_transactions",
+            type="normal", status="completed",
+        )
+        db_session.add(refund)
+        db_session.flush()
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund("transaction", 5, "banks", 100.0)
+        service.link_refund(pending["id"], refund.unique_id, "banks", 100.0)
+
+        assert service.get_active_pending_identifiers()["transaction_keys"] == set()
+
+    def test_marked_bank_txn_does_not_mask_same_id_in_other_table(self, db_session):
+        """A pending refund on bank #N leaves credit-card #N in the budget.
+
+        ``unique_id`` is a per-table auto-increment, so bank #1 and
+        credit-card #1 are unrelated transactions.
+        """
+        from backend.models.transaction import (
+            BankTransaction,
+            CreditCardTransaction,
+        )
+        from backend.services.budget_service import BudgetService
+
+        db_session.add(
+            BankTransaction(
+                id="collide-bank", date="2026-03-10", provider="p",
+                account_name="a", description="bank purchase", amount=-100.0,
+                category="Food", tag="Groceries", source="bank_transactions",
+                type="normal", status="completed",
+            )
+        )
+        db_session.add(
+            CreditCardTransaction(
+                id="collide-cc", date="2026-03-11", provider="p",
+                account_name="a", description="cc purchase", amount=-250.0,
+                category="Food", tag="Groceries",
+                source="credit_card_transactions", type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+        bank_uid = db_session.query(BankTransaction).one().unique_id
+        cc_uid = db_session.query(CreditCardTransaction).one().unique_id
+        assert bank_uid == cc_uid, "precondition: per-table ids collide"
+
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "transaction", bank_uid, "banks", 100.0
+        )
+
+        descriptions = set(
+            BudgetService(db_session).get_filtered_expenses()["description"]
+        )
+        assert "bank purchase" not in descriptions
+        assert "cc purchase" in descriptions
