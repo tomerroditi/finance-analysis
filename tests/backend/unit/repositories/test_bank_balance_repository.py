@@ -69,3 +69,46 @@ class TestBankBalanceRepository:
         repo = BankBalanceRepository(db_session)
         deleted = repo.delete_by_account("nonexistent", "nope")
         assert deleted is False
+
+
+class TestUpsertIsAtomicAndDuplicateTolerant:
+    """One row per account, and a legacy duplicate must stay readable."""
+
+    def test_repeated_upsert_keeps_a_single_row(self, db_session):
+        """Upserting the same account twice updates rather than duplicates."""
+        repo = BankBalanceRepository(db_session)
+        repo.upsert("hapoalim", "Main", 100.0, 10.0)
+        repo.upsert("hapoalim", "Main", 250.0, 20.0)
+
+        rows = repo.get_all()
+        assert len(rows) == 1
+        assert repo.get_by_account("hapoalim", "Main").balance == 250.0
+
+    def test_duplicate_rows_do_not_raise(self, db_session):
+        """A pre-existing duplicate resolves to the lowest id instead of 500ing.
+
+        ``scalar_one_or_none`` raised ``MultipleResultsFound`` on legacy
+        databases that a racing upsert had already duplicated, which no API
+        path could repair.
+        """
+        from backend.models.bank_balance import BankBalance
+
+        db_session.add(
+            BankBalance(
+                provider="leumi", account_name="Joint", balance=1.0,
+                prior_wealth_amount=0.0,
+            )
+        )
+        db_session.commit()
+        # Simulate a legacy duplicate written before the constraint existed.
+        db_session.execute(
+            BankBalance.__table__.insert().values(
+                provider="leumi", account_name="Joint", balance=2.0,
+                prior_wealth_amount=0.0,
+            ).prefix_with("OR IGNORE")
+        )
+        db_session.commit()
+
+        assert BankBalanceRepository(db_session).get_by_account(
+            "leumi", "Joint"
+        ).balance == 1.0

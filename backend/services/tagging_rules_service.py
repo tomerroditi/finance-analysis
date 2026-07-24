@@ -423,17 +423,20 @@ class TaggingRulesService:
                         raise BadRequestException(
                             "Value for between must be list of 2 numbers"
                         )
+                    # TypeError too: a JSON null reaches float() as None and
+                    # raises TypeError, which used to escape validation and
+                    # 500 the request instead of returning 400.
                     try:
                         float(value[0])
                         float(value[1])
-                    except ValueError:
+                    except (TypeError, ValueError):
                         raise BadRequestException(
                             "Values for numeric field must be numbers"
                         )
                 else:
                     try:
                         float(value)
-                    except ValueError:
+                    except (TypeError, ValueError):
                         raise BadRequestException(
                             f"Value '{value}' must be a number for field '{field}'"
                         )

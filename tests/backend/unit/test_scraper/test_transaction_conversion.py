@@ -20,7 +20,9 @@ from scraper.utils.transactions import (
     parse_amount,
     parse_digits_identifier,
     parse_int_identifier,
+    parse_provider_date,
     sort_transactions_by_date,
+    to_amount,
 )
 from scraper.utils.waiting import wait_for_first
 
@@ -152,6 +154,71 @@ class TestParseDigitsIdentifier:
         assert parse_digits_identifier(None) is None
 
 
+class TestToAmount:
+    """Tests for the shared raw-API amount coercion helper."""
+
+    def test_float_passes_through(self):
+        """A numeric value is returned unchanged."""
+        assert to_amount(1234.56) == 1234.56
+
+    def test_int_is_coerced(self):
+        """An integer value becomes a float."""
+        assert to_amount(42) == 42.0
+
+    def test_numeric_string_is_coerced(self):
+        """A numeric string is parsed rather than raising."""
+        assert to_amount("1234.56") == 1234.56
+
+    def test_thousands_separated_string_is_coerced(self):
+        """A comma-grouped string parses instead of raising ValueError."""
+        assert to_amount("1,234.56") == 1234.56
+
+    def test_whitespace_and_rtl_marks_are_stripped(self):
+        """Invisible bidi marks and padding don't defeat the parse."""
+        assert to_amount("‏ 1,234.56 ‎") == 1234.56
+
+    def test_none_is_zero(self):
+        """A missing value is treated as zero."""
+        assert to_amount(None) == 0.0
+
+    def test_empty_string_is_zero(self):
+        """An empty string is treated as zero."""
+        assert to_amount("") == 0.0
+
+    def test_garbage_returns_default(self):
+        """Unparseable input falls back to the caller-supplied default."""
+        assert to_amount("abc") == 0.0
+        assert to_amount("abc", default=-1.0) == -1.0
+
+
+class TestParseProviderDate:
+    """Tests for the shared provider-date parser."""
+
+    def test_format_parse(self):
+        """A string matching the given format parses."""
+        assert parse_provider_date("15/03/2024", "%d/%m/%Y").isoformat() == (
+            "2024-03-15T00:00:00"
+        )
+
+    def test_iso_parse_without_format(self):
+        """Without a format the value is parsed as ISO-8601."""
+        assert parse_provider_date("2024-03-15T00:00:00").day == 15
+
+    def test_mismatched_format_is_none(self):
+        """A value that doesn't match the format yields None, not garbage."""
+        assert parse_provider_date("not-a-date", "%d/%m/%Y") is None
+
+    def test_empty_and_none_are_none(self):
+        """Empty / missing values yield None."""
+        assert parse_provider_date("", "%d/%m/%Y") is None
+        assert parse_provider_date(None, "%d/%m/%Y") is None
+        assert parse_provider_date("   ", "%d/%m/%Y") is None
+
+    def test_non_string_input_is_stringified(self):
+        """A non-string value is coerced before parsing."""
+        assert parse_provider_date(20240315, "%Y%m%d").month == 3
+
+
 class TestConvertCreditDebitRows:
     """Tests for the shared scraped-row to Transaction converter."""
 
@@ -191,13 +258,29 @@ class TestConvertCreditDebitRows:
         )
         assert result[0].status == TransactionStatus.COMPLETED
 
-    def test_unparseable_date_passes_through(self):
-        """A date that doesn't match the format is kept verbatim."""
+    def test_unparseable_date_row_is_skipped(self):
+        """A date that doesn't match the format drops the row entirely.
+
+        Passing the raw string through wrote non-ISO text straight into the
+        DB date column, breaking every date filter and sort downstream.
+        """
         rows = [{"date": "not-a-date", "credit": "10", "debit": ""}]
         result = convert_credit_debit_rows(
             rows, date_format="%d/%m/%Y", parse_identifier=parse_int_identifier
         )
-        assert result[0].date == "not-a-date"
+        assert result == []
+
+    def test_parseable_rows_survive_an_unparseable_neighbour(self):
+        """One malformed row is dropped without discarding the good rows."""
+        rows = [
+            {"date": "not-a-date", "credit": "10", "debit": ""},
+            {"date": "01/01/2024", "credit": "10", "debit": ""},
+        ]
+        result = convert_credit_debit_rows(
+            rows, date_format="%d/%m/%Y", parse_identifier=parse_int_identifier
+        )
+        assert len(result) == 1
+        assert result[0].date == "2024-01-01T00:00:00"
 
     def test_skip_empty_date_drops_rows(self):
         """With skip_empty_date=True, rows without a date are dropped."""
@@ -214,14 +297,17 @@ class TestConvertCreditDebitRows:
         assert len(result) == 1
         assert result[0].date == "2024-01-01T00:00:00"
 
-    def test_empty_date_kept_by_default(self):
-        """Without skip_empty_date, rows with an empty date are still emitted."""
+    def test_empty_date_is_skipped_even_without_the_flag(self):
+        """An empty date is unparseable, so the row is dropped either way.
+
+        Emitting a transaction with an empty date column produced a row that
+        no date filter or sort could ever place correctly.
+        """
         rows = [{"date": "", "credit": "10", "debit": ""}]
         result = convert_credit_debit_rows(
             rows, date_format="%d/%m/%Y", parse_identifier=parse_int_identifier
         )
-        assert len(result) == 1
-        assert result[0].date == ""
+        assert result == []
 
     def test_memo_empty_string_becomes_none(self):
         """An empty memo string is normalized to None."""
@@ -288,6 +374,20 @@ class TestFixInstallments:
         result = fix_installments([txn])
         assert result[0] is txn
 
+    def test_ambiguous_slash_date_is_read_day_first(self):
+        """'03/12/2024' is 3 December, not 12 March.
+
+        dateutil defaults to month-first, which silently shifted every
+        Israeli DD/MM/YYYY date by up to nine months.
+        """
+        txn = _make_txn(
+            type=TransactionType.INSTALLMENTS,
+            date="03/12/2024",
+            installments=InstallmentInfo(number=2, total=3),
+        )
+        result = fix_installments([txn])
+        assert result[0].date == "2025-01-03"
+
 
 class TestFilterOldTransactions:
     """Tests for the start-date transaction filter."""
@@ -315,6 +415,16 @@ class TestFilterOldTransactions:
             [later, initial], date(2024, 1, 1), combine_installments=True
         )
         assert result == [initial]
+
+    def test_ambiguous_slash_date_is_read_day_first(self):
+        """A DD/MM/YYYY date is not re-read month-first by the filter.
+
+        Month-first parsing turned '03/12/2024' into 12 March 2024, which
+        dropped a December transaction from a December-onwards window.
+        """
+        txn = _make_txn(date="03/12/2024")
+        result = filter_old_transactions([txn], date(2024, 12, 1))
+        assert result == [txn]
 
     def test_sort_transactions_by_date_orders_ascending(self):
         """sort_transactions_by_date returns transactions oldest first."""

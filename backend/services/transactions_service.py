@@ -627,6 +627,8 @@ class TransactionsService:
         if not success:
             raise ValueError("Transaction not found or deletion failed")
 
+        self._purge_dependent_records(unique_id, source)
+
         if source == Tables.CASH.value:
             # Recalculate cash balance if this was a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
@@ -634,6 +636,54 @@ class TransactionsService:
         elif source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value and inv_category and inv_tag:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
+
+    def _purge_dependent_records(self, unique_id: int, source: str) -> None:
+        """
+        Remove every record that pointed at a now-deleted transaction.
+
+        Splits, pending refunds (and their links), refund-source notes and
+        budget month overrides all reference a transaction by
+        ``(source_table, unique_id)``. ``unique_id`` is a per-table
+        auto-increment and SQLite reuses rowids, so an orphan left behind is
+        not merely dead data — the next transaction created in that table
+        silently inherits it, landing in the wrong budget month or carrying
+        someone else's refund.
+
+        Parameters
+        ----------
+        unique_id : int
+            unique_id of the deleted transaction.
+        source : str
+            Table name the transaction was deleted from.
+        """
+        from backend.repositories.budget_month_override_repository import (
+            BudgetMonthOverrideRepository,
+        )
+        from backend.repositories.pending_refunds_repository import (
+            PendingRefundsRepository,
+        )
+
+        # Older rows may store the service name ("cash") rather than the table
+        # name ("cash_transactions"); accept every spelling that resolves here.
+        aliases = {
+            name
+            for name, repo in self.transactions_repository.repo_map.items()
+            if repo.model.__tablename__ == source
+        }
+        aliases.add(source)
+        source_aliases = sorted(aliases)
+
+        self.transactions_repository.split_repo.delete_all_splits_for_transaction(
+            unique_id, source
+        )
+
+        PendingRefundsRepository(self.db).delete_for_transaction(
+            source_aliases, unique_id
+        )
+
+        override_repo = BudgetMonthOverrideRepository(self.db)
+        for alias in source_aliases:
+            override_repo.delete_for_source("transaction", unique_id, alias)
 
     def split_transaction(
         self, unique_id: int, source: str, splits: list[dict]

@@ -3,7 +3,8 @@ Bank balance repository for account balance snapshots.
 """
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models.bank_balance import BankBalance
@@ -46,13 +47,20 @@ class BankBalanceRepository:
         Returns
         -------
         BankBalance | None
-            The matching ORM record, or None if not found.
+            The matching ORM record, or None if not found. When a legacy
+            database already contains duplicates for the pair, the lowest-id
+            row wins rather than raising — ``scalar_one_or_none`` turned a
+            duplicate into a permanent 500 that no API path could repair.
         """
-        stmt = select(BankBalance).where(
-            BankBalance.provider == provider,
-            BankBalance.account_name == account_name,
+        stmt = (
+            select(BankBalance)
+            .where(
+                BankBalance.provider == provider,
+                BankBalance.account_name == account_name,
+            )
+            .order_by(BankBalance.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        return self.db.execute(stmt).scalars().first()
 
     def upsert(
         self,
@@ -85,28 +93,50 @@ class BankBalanceRepository:
         BankBalance
             The created or updated ORM record.
         """
-        existing = self.get_by_account(provider, account_name)
-        if existing:
-            existing.balance = balance
-            existing.prior_wealth_amount = prior_wealth_amount
-            if last_manual_update is not None:
-                existing.last_manual_update = last_manual_update
-            if last_scrape_update is not None:
-                existing.last_scrape_update = last_scrape_update
-            self.db.commit()
-            return existing
-        else:
-            record = BankBalance(
-                provider=provider,
-                account_name=account_name,
-                balance=balance,
-                prior_wealth_amount=prior_wealth_amount,
-                last_manual_update=last_manual_update,
-                last_scrape_update=last_scrape_update,
+        values: dict = {
+            "balance": balance,
+            "prior_wealth_amount": prior_wealth_amount,
+        }
+        if last_manual_update is not None:
+            values["last_manual_update"] = last_manual_update
+        if last_scrape_update is not None:
+            values["last_scrape_update"] = last_scrape_update
+
+        def _try_update() -> int:
+            stmt = (
+                update(BankBalance)
+                .where(
+                    BankBalance.provider == provider,
+                    BankBalance.account_name == account_name,
+                )
+                .values(**values)
             )
-            self.db.add(record)
-            self.db.commit()
-            return record
+            return self.db.execute(stmt).rowcount
+
+        # Atomic upsert: UPDATE first, INSERT only when nothing matched. The
+        # old read-then-write let two concurrent requests both see "missing"
+        # and both insert — NullPool gives every request its own connection
+        # with no shared isolation. The UniqueConstraint turns that race into
+        # an IntegrityError, which we absorb by re-running the UPDATE.
+        if _try_update() == 0:
+            try:
+                record = BankBalance(
+                    provider=provider,
+                    account_name=account_name,
+                    balance=balance,
+                    prior_wealth_amount=prior_wealth_amount,
+                    last_manual_update=last_manual_update,
+                    last_scrape_update=last_scrape_update,
+                )
+                self.db.add(record)
+                self.db.commit()
+                return record
+            except IntegrityError:
+                self.db.rollback()
+                _try_update()
+
+        self.db.commit()
+        return self.get_by_account(provider, account_name)
 
     def delete_by_account(self, provider: str, account_name: str) -> bool:
         """Delete balance record for an account.

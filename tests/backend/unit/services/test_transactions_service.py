@@ -1342,3 +1342,88 @@ class TestClearCategoryAndTag:
         for tx, original_cat in zip([tx1, tx2], original_categories):
             refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id, "bank_transactions")
             assert refreshed.category == original_cat  # unchanged
+
+
+class TestDeletePurgesDependentRecords:
+    """Records pointing at a deleted transaction must not outlive it.
+
+    ``unique_id`` is a per-table auto-increment and SQLite reuses rowids, so
+    an orphan is silently re-adopted by the next transaction created in that
+    table — landing it in the wrong budget month or attaching a stranger's
+    pending refund.
+    """
+
+    @staticmethod
+    def _seed_cash(db_session, tx_id="purge-1", date="2024-02-10"):
+        """Seed one deletable cash transaction and return its unique_id."""
+        from backend.models.transaction import CashTransaction
+
+        db_session.add(
+            CashTransaction(
+                id=tx_id, date=date, account_name="Wallet",
+                description="spend", amount=-100.0, category="Food",
+                tag="Groceries", source="cash_transactions", type="expense",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        return (
+            db_session.query(CashTransaction).filter_by(id=tx_id).one().unique_id
+        )
+
+    def test_pending_refund_is_removed(self, db_session):
+        """A pending refund does not survive its source transaction."""
+        from backend.services.pending_refunds_service import (
+            PendingRefundsService,
+        )
+
+        unique_id = self._seed_cash(db_session)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "transaction", unique_id, "cash", 50.0
+        )
+
+        TransactionsService(db_session).delete_transaction(
+            unique_id, "cash_transactions"
+        )
+
+        assert PendingRefundsService(db_session).get_all_pending() == []
+
+    def test_budget_month_override_is_removed(self, db_session):
+        """A budget month override does not survive its transaction."""
+        from backend.services.budget_month_override_service import (
+            BudgetMonthOverrideService,
+        )
+
+        unique_id = self._seed_cash(db_session)
+        service = BudgetMonthOverrideService(db_session)
+        service.set_override(
+            "transaction", unique_id, "cash_transactions", 2024, 3
+        )
+
+        TransactionsService(db_session).delete_transaction(
+            unique_id, "cash_transactions"
+        )
+
+        assert service.get_all() == []
+
+    def test_splits_are_removed(self, db_session):
+        """Split children do not survive their parent transaction."""
+        from backend.repositories.split_transactions_repository import (
+            SplitTransactionsRepository,
+        )
+
+        unique_id = self._seed_cash(db_session)
+        service = TransactionsService(db_session)
+        service.split_transaction(
+            unique_id,
+            "cash_transactions",
+            [
+                {"amount": -60.0, "category": "Food", "tag": "Groceries"},
+                {"amount": -40.0, "category": "Other", "tag": "Misc"},
+            ],
+        )
+
+        service.delete_transaction(unique_id, "cash_transactions")
+
+        splits = SplitTransactionsRepository(db_session).get_data()
+        assert splits.empty

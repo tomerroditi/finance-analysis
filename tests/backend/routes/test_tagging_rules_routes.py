@@ -439,3 +439,150 @@ class TestTaggingRulesRoutesErrors:
             data = response.json()
             assert data["status"] == "success"
             assert data["tagged_count"] == 0
+
+
+class TestPreviewAndValidateConditionIntegrity:
+    """Tests that malformed conditions yield 400, never 500."""
+
+    def _numeric_condition(self, value):
+        """Build a single numeric CONDITION node with the given value."""
+        return {
+            "type": "CONDITION",
+            "field": "amount",
+            "operator": "gt",
+            "value": value,
+        }
+
+    def test_preview_rejects_non_numeric_amount_value(self, test_client_no_raise):
+        """POST /rules/preview with value 'abc' on a numeric field returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._numeric_condition("abc")},
+        )
+        assert response.status_code == 400
+
+    def test_preview_rejects_null_amount_value(self, test_client_no_raise):
+        """POST /rules/preview with a null numeric value returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._numeric_condition(None)},
+        )
+        assert response.status_code == 400
+
+    def test_preview_rejects_short_between_value(self, test_client_no_raise):
+        """POST /rules/preview with a one-element ``between`` value returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/preview",
+            json={
+                "conditions": {
+                    "type": "CONDITION",
+                    "field": "amount",
+                    "operator": "between",
+                    "value": [1],
+                }
+            },
+        )
+        assert response.status_code == 400
+
+    def test_validate_rejects_non_numeric_amount_value(self, test_client_no_raise):
+        """POST /rules/validate with value 'abc' on a numeric field returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/validate",
+            json={
+                "conditions": self._numeric_condition("abc"),
+                "category": "Food",
+                "tag": "Groceries",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_validate_rejects_null_amount_value(self, test_client_no_raise):
+        """POST /rules/validate with a null numeric value returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/validate",
+            json={
+                "conditions": self._numeric_condition(None),
+                "category": "Food",
+                "tag": "Groceries",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_validate_rejects_short_between_value(self, test_client_no_raise):
+        """POST /rules/validate with a one-element ``between`` value returns 400."""
+        response = test_client_no_raise.post(
+            "/api/tagging-rules/rules/validate",
+            json={
+                "conditions": {
+                    "type": "CONDITION",
+                    "field": "amount",
+                    "operator": "between",
+                    "value": [1],
+                },
+                "category": "Food",
+                "tag": "Groceries",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_valid_conditions_still_preview(
+        self, test_client, seed_untagged_transactions
+    ):
+        """A well-formed numeric condition still previews successfully."""
+        response = test_client.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._numeric_condition(-1000000)},
+        )
+        assert response.status_code == 200
+
+
+class TestPreviewLimitBounds:
+    """Tests for the bounded ``limit`` field on the preview endpoint."""
+
+    def _conditions(self):
+        """Build a condition matching every description."""
+        return {
+            "type": "CONDITION",
+            "field": "description",
+            "operator": "contains",
+            "value": "",
+        }
+
+    def test_negative_limit_is_rejected(self, test_client):
+        """POST /rules/preview with limit=-1 returns 422.
+
+        A negative limit made SQLite ignore the LIMIT clause while pandas
+        ``head(-1)`` silently dropped the last row.
+        """
+        response = test_client.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._conditions(), "limit": -1},
+        )
+        assert response.status_code == 422
+
+    def test_zero_limit_is_rejected(self, test_client):
+        """POST /rules/preview with limit=0 returns 422."""
+        response = test_client.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._conditions(), "limit": 0},
+        )
+        assert response.status_code == 422
+
+    def test_excessive_limit_is_rejected(self, test_client):
+        """POST /rules/preview with limit above the cap returns 422."""
+        response = test_client.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._conditions(), "limit": 5000},
+        )
+        assert response.status_code == 422
+
+    def test_omitted_limit_defaults_to_bounded_value(
+        self, test_client, seed_untagged_transactions
+    ):
+        """POST /rules/preview without a limit uses the bounded default."""
+        response = test_client.post(
+            "/api/tagging-rules/rules/preview",
+            json={"conditions": self._conditions()},
+        )
+        assert response.status_code == 200
+        assert response.json()["count"] <= 100

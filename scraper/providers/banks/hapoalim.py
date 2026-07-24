@@ -3,7 +3,7 @@ import logging
 import random
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
@@ -11,6 +11,7 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     fetch_get_within_page,
+    parse_provider_date,
     wait_until,
     wait_until_element_found,
 )
@@ -68,23 +69,22 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
         event_date_str = txn.get("eventDate", "")
         value_date_str = txn.get("valueDate", "")
 
-        date_iso = ""
-        if event_date_str:
-            try:
-                date_iso = datetime.strptime(
-                    str(event_date_str), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                date_iso = str(event_date_str)
+        # A date that can't be parsed used to pass through verbatim, writing
+        # non-ISO text straight into the DB date column. Drop the row loudly
+        # instead of corrupting it.
+        parsed_date = parse_provider_date(event_date_str, DATE_FORMAT)
+        if parsed_date is None:
+            logger.warning(
+                "Hapoalim: dropping transaction with unparseable eventDate %r",
+                event_date_str,
+            )
+            continue
+        date_iso = parsed_date.isoformat()
 
-        processed_date_iso = ""
-        if value_date_str:
-            try:
-                processed_date_iso = datetime.strptime(
-                    str(value_date_str), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                processed_date_iso = str(value_date_str)
+        parsed_value_date = parse_provider_date(value_date_str, DATE_FORMAT)
+        processed_date_iso = (
+            parsed_value_date.isoformat() if parsed_value_date else date_iso
+        )
 
         serial_number = txn.get("serialNumber")
         status = (

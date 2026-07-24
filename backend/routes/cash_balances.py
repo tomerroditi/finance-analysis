@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.cash_balance_service import CashBalanceService
 
@@ -67,8 +68,18 @@ def delete_cash_balance(
 
     Migrates any transactions from the deleted account to "Wallet".
     Cannot delete the default "Wallet" account.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no cash balance record exists for ``account_name``. Deleting
+        an unknown envelope used to report success.
     """
     service = CashBalanceService(db)
+    if service.get_by_account_name(account_name) is None:
+        raise EntityNotFoundException(
+            f"Cash balance for account '{account_name}' not found"
+        )
     try:
         service.delete_for_account(account_name)
         return {"status": "deleted", "account_name": account_name}

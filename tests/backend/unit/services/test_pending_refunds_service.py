@@ -844,3 +844,30 @@ class TestActivePendingIdentifiers:
         )
         assert "bank purchase" not in descriptions
         assert "cc purchase" in descriptions
+
+
+class TestSourceTableNormalization:
+    """source_table is stored canonically so downstream guards match it."""
+
+    def test_service_name_is_stored_as_table_name(self, db_session):
+        """Marking with 'banks' stores 'bank_transactions'.
+
+        The re-scrape purge guard matches on the table name, so a row saved
+        under the service name left its transaction unprotected — the row was
+        purged on the next overlapping scrape and the refund orphaned.
+        """
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 5, "banks", 100.0)
+
+        stored = service.repo.get_all_pending_refunds()
+        assert stored.iloc[0]["source_table"] == "bank_transactions"
+
+    def test_duplicate_detected_across_source_spellings(self, db_session):
+        """The same source marked as 'banks' then 'bank_transactions' clashes."""
+        service = PendingRefundsService(db_session)
+        service.mark_as_pending_refund("transaction", 5, "banks", 100.0)
+
+        with pytest.raises(ValidationException):
+            service.mark_as_pending_refund(
+                "transaction", 5, "bank_transactions", 50.0
+            )

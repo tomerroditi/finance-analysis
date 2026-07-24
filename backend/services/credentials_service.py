@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
 from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
+from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 
 # In-memory cache for credentials
 _credentials_cache: Optional[Dict] = None
@@ -38,6 +39,7 @@ class CredentialsService:
         db : Session
             SQLAlchemy session for database operations.
         """
+        self.db = db
         self.repository = CredentialsRepository(db)
         self.credentials = self.load_credentials()
 
@@ -168,6 +170,13 @@ class CredentialsService:
             Account name.
         """
         self.repository.delete_credentials(service, provider, account)
+        # Drop the scrape history too. It outlives the credential otherwise,
+        # and re-adding the account resumes from the stale "last successful
+        # scrape" watermark instead of doing the fresh-account one-year
+        # backfill — losing ~12 months of history with no way to force it.
+        ScrapingHistoryRepository(self.db).delete_for_account(
+            service, provider, account
+        )
         self._invalidate_cache()
 
     def get_scraper_credentials(self, service, provider, account) -> Dict:
@@ -314,9 +323,14 @@ class CredentialsService:
             Provider identifier.
         account_name : str
             Account name whose credentials should be deleted.
+
+        Notes
+        -----
+        Alias of :meth:`delete_account`. Both names are in use (the API route
+        calls this one); they must not drift, so this delegates rather than
+        repeating the cleanup.
         """
-        self.repository.delete_credentials(service, provider, account_name)
-        self._invalidate_cache()
+        self.delete_account(service, provider, account_name)
 
     def seed_demo_credentials(self) -> None:
         """

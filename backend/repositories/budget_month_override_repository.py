@@ -72,8 +72,12 @@ class BudgetMonthOverrideRepository:
             .where(BudgetMonthOverride.source_type == source_type)
             .where(BudgetMonthOverride.source_id == source_id)
             .where(BudgetMonthOverride.source_table == source_table)
+            .order_by(BudgetMonthOverride.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising: a legacy duplicate (written
+        # before the uniqueness constraint) would otherwise turn every read
+        # of this source into a permanent 500 with no API path to repair it.
+        return self.db.execute(stmt).scalars().first()
 
     def upsert(
         self,

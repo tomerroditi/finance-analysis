@@ -8,15 +8,66 @@ from datetime import date
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
+from backend.constants.tables import Tables
 from backend.dependencies import get_database
+from backend.errors import ValidationException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
+
+# Every accepted ``source``/``service`` identifier: both the table names and
+# the service aliases the repository dispatches on. An unrecognized value used
+# to reach the repository lookup, which returns ``None`` and was then
+# dereferenced — a 500 for what is plainly a client mistake.
+_VALID_SOURCES = frozenset(
+    {
+        Tables.CREDIT_CARD.value,
+        Tables.BANK.value,
+        Tables.CASH.value,
+        Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+        Tables.INSURANCE.value,
+        Services.CREDIT_CARD.value,
+        Services.BANK.value,
+        Services.CASH.value,
+        Services.MANUAL_INVESTMENTS.value,
+        Services.INSURANCE.value,
+    }
+)
+
+# Splits are money slices of one transaction, so they must add up to it. Money
+# is stored as a float, so allow a cent of accumulated rounding drift.
+_SPLIT_SUM_TOLERANCE = 0.01
+
+
+def _validate_source(source: str) -> str:
+    """Reject a ``source`` the transactions repository cannot dispatch on.
+
+    Parameters
+    ----------
+    source : str
+        Table or service identifier supplied by the client.
+
+    Returns
+    -------
+    str
+        The unchanged ``source`` when it is recognized.
+
+    Raises
+    ------
+    ValidationException
+        If ``source`` is not a known table or service name.
+    """
+    if source not in _VALID_SOURCES:
+        raise ValidationException(
+            f"Invalid source: '{source}'. Valid sources: "
+            + ", ".join(sorted(_VALID_SOURCES))
+        )
+    return source
 
 
 class TransactionCreate(ApiRequestModel):
@@ -61,7 +112,9 @@ class SplitItem(ApiRequestModel):
 
 class SplitRequest(ApiRequestModel):
     source: str
-    splits: List[SplitItem]
+    # A zero-slice split flipped the parent to ``split_parent`` with no
+    # children, hiding the transaction from the merged view and every KPI.
+    splits: List[SplitItem] = Field(..., min_length=1)
 
 
 class StatusResponse(BaseModel):
@@ -140,6 +193,7 @@ def update_transaction(
         ``{"status": "success"}`` if any field was updated,
         ``{"status": "no_changes"}`` if nothing changed.
     """
+    _validate_source(data.source)
     service = TransactionsService(db)
     try:
         updated = service.update_transaction(
@@ -169,12 +223,59 @@ def delete_transaction(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+def _reject_unbalanced_splits(
+    service: TransactionsService, unique_id: int, data: "SplitRequest"
+) -> None:
+    """Raise when the split slices don't add up to the parent transaction.
+
+    Parameters
+    ----------
+    service : TransactionsService
+        Service used to look the parent transaction up.
+    unique_id : int
+        Per-table ID of the transaction being split.
+    data : SplitRequest
+        The requested split, carrying ``source`` and the slice list.
+
+    Raises
+    ------
+    ValidationException
+        If the slice amounts differ from the parent amount by more than
+        ``_SPLIT_SUM_TOLERANCE``.
+
+    Notes
+    -----
+    A parent that cannot be resolved is left to the service call, which
+    reports the missing-parent error with its own message.
+    """
+    try:
+        parent = service.get_transaction(unique_id, data.source)
+        parent_amount = float(parent["amount"])
+    except (ValueError, KeyError, TypeError):
+        return
+
+    total = sum(split.amount for split in data.splits)
+    if abs(total - parent_amount) > _SPLIT_SUM_TOLERANCE:
+        raise ValidationException(
+            f"Split amounts must sum to the transaction amount "
+            f"({parent_amount:.2f}); got {total:.2f}"
+        )
+
+
 @router.post("/{unique_id}/split", response_model=StatusResponse)
 def split_transaction(
     unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Split a transaction into multiple parts."""
+    """Split a transaction into multiple parts.
+
+    The slice amounts must add up to the parent amount (within a cent) —
+    the same invariant the split modal enforces client-side. Without the
+    server-side check a crafted payload silently inflated every total that
+    reads the merged view.
+    """
+    _validate_source(data.source)
     service = TransactionsService(db)
+    _reject_unbalanced_splits(service, unique_id, data)
     try:
         splits = [s.model_dump() for s in data.splits]
         service.split_transaction(unique_id, data.source, splits)
@@ -190,6 +291,7 @@ def revert_split(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Revert a transaction split."""
+    _validate_source(source)
     service = TransactionsService(db)
     try:
         service.revert_split(unique_id, source)

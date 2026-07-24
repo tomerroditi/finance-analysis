@@ -1385,3 +1385,45 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         }
         # Shares of a complete breakdown sum to ~1.
         assert round(sum(s["share"] for s in end_only["sources"]), 4) == 1.0
+
+
+class TestMonthlyExpenseAveragesExcludePartialMonth:
+    """Trend baselines average complete months only."""
+
+    def test_avg_3_months_ignores_running_month(self, db_session):
+        """Three complete 3,000 months average to 3,000, not a diluted figure.
+
+        Including the running month divided a few days of spend by a full
+        month, dragging the cash-flow forecast's expense baseline down while
+        its income baseline already excluded that month.
+        """
+        import pandas as pd
+
+        from backend.models.transaction import BankTransaction
+
+        today = pd.Timestamp.today().normalize()
+        rows = []
+        for index, offset in enumerate((1, 2, 3)):
+            month = (today - pd.DateOffset(months=offset)).replace(day=15)
+            rows.append(
+                BankTransaction(
+                    id=f"avg{index}", date=month.strftime("%Y-%m-%d"),
+                    provider="p", account_name="a", description="d",
+                    amount=-3000.0, category="Food", tag=None,
+                    source="bank_transactions", type="normal",
+                    status="completed",
+                )
+            )
+        rows.append(
+            BankTransaction(
+                id="avg-partial", date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="p", account_name="a", description="partial",
+                amount=-100.0, category="Food", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.add_all(rows)
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_monthly_expenses()
+        assert result["avg_3_months"] == 3000.0

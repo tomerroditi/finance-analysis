@@ -205,6 +205,32 @@ class ScrapingHistoryRepository:
 
         return self.db.execute(stmt).scalar()
 
+    def delete_for_account(self, service: str, provider: str, account: str) -> None:
+        """Delete all scrape history for one account.
+
+        Called when the account's credentials are removed. Left behind, the
+        history still answers "when did we last scrape this account?", so
+        re-adding the account resumes from that watermark instead of doing
+        the fresh-account one-year backfill — silently losing ~12 months of
+        history with no way for the user to force it.
+
+        Parameters
+        ----------
+        service : str
+            Service type (e.g. ``"banks"``).
+        provider : str
+            Provider identifier.
+        account : str
+            Account name.
+        """
+        stmt = delete(ScrapingHistory).where(
+            ScrapingHistory.service_name == service,
+            ScrapingHistory.provider_name == provider,
+            ScrapingHistory.account_name == account,
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def clear_old_records(self, days_to_keep: int = 30) -> None:
         """Clear scraping history records older than specified days.
 

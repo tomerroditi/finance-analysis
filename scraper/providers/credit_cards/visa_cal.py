@@ -24,6 +24,7 @@ from scraper.utils import (
     fetch_post,
     filter_old_transactions,
     page_eval,
+    to_amount,
     wait_for_navigation,
     wait_until,
     wait_until_element_found,
@@ -98,6 +99,10 @@ def _to_amount(value: object) -> float:
     which silently yields ``''`` for a negative multiplier instead of
     raising — so the value must be coerced before any arithmetic.
 
+    Thin alias for the shared :func:`scraper.utils.to_amount`, kept so this
+    module's call sites read locally. Every provider now shares one
+    implementation.
+
     Parameters
     ----------
     value : object
@@ -108,12 +113,7 @@ def _to_amount(value: object) -> float:
     float
         The parsed amount, or ``0.0`` when it cannot be parsed.
     """
-    if value is None or value == "":
-        return 0.0
-    try:
-        return float(str(value).replace(",", ""))
-    except (TypeError, ValueError):
-        return 0.0
+    return to_amount(value)
 
 
 def _convert_parsed_data_to_transactions(

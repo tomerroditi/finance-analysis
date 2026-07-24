@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 from backend.errors import EntityNotFoundException
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
 
+# Mean Gregorian month length, used to convert a day-accurate runway into
+# months so `monthly_needed` reflects the time actually left.
+DAYS_PER_MONTH = 30.44
+
 
 class SavingsGoalService:
     """Service for managing savings goals and computing progress."""
@@ -92,7 +96,17 @@ class SavingsGoalService:
             months = (target_ts.year - today.year) * 12 + (target_ts.month - today.month)
             months_remaining = max(0, int(months))
             if not is_achieved:
-                monthly_needed = round(remaining / months_remaining, 2) if months_remaining > 0 else round(remaining, 2)
+                # Size the contribution off the real runway in days. A pure
+                # calendar-month difference treats a goal due on the 1st two
+                # months out as two full months even when only ~39 days
+                # remain, understating what the user must save each month.
+                days_remaining = max(0, (target_ts - today).days)
+                months_of_runway = days_remaining / DAYS_PER_MONTH
+                monthly_needed = (
+                    round(remaining / months_of_runway, 2)
+                    if months_of_runway > 0
+                    else round(remaining, 2)
+                )
 
         return {
             **goal,

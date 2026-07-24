@@ -1567,3 +1567,24 @@ class TestLikeWildcardEscaping:
                     "operator": "contains", "value": "x",
                 }
             )
+
+
+class TestNullNumericValueIsRejected:
+    """A JSON null on a numeric field is a client error, not a crash."""
+
+    @pytest.mark.parametrize(
+        "operator,value", [("lt", None), ("between", [None, 1])]
+    )
+    def test_null_value_raises_bad_request(self, db_session, operator, value):
+        """None reaching float() raises BadRequestException, not TypeError.
+
+        The validator only caught ValueError, so a null escaped validation
+        and surfaced as a 500 from add_rule/update_rule.
+        """
+        with pytest.raises(BadRequestException):
+            TaggingRulesService(db_session).validate_rule_integrity(
+                {
+                    "type": "CONDITION", "field": "amount",
+                    "operator": operator, "value": value,
+                }
+            )

@@ -68,6 +68,13 @@ class PendingRefundsService:
         if expected_amount <= 0:
             raise ValidationException("Expected refund amount must be positive")
 
+        # Store the canonical table name. Callers pass service names ("banks")
+        # or table names ("bank_transactions") interchangeably, and the
+        # re-scrape purge guard in the ingestion repository matches on the
+        # table name — a row saved as "banks" left its transaction unprotected
+        # and the refund orphaned when the row was re-scraped.
+        source_table = self._canonical_source(source_table)
+
         # Check if already marked
         existing = self.repo.get_pending_for_source(
             source_type, source_id, source_table

@@ -1,6 +1,6 @@
 """Budget month override model."""
 
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, UniqueConstraint
 
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
@@ -38,3 +38,13 @@ class BudgetMonthOverride(Base, TimestampMixin):
     source_table = Column(String, nullable=False)
     override_year = Column(Integer, nullable=False)
     override_month = Column(Integer, nullable=False)
+
+    # One override per source. A racing upsert could otherwise insert a
+    # second row, after which every read of that source raised
+    # MultipleResultsFound — a permanent 500 with no way to repair it.
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type", "source_id", "source_table",
+            name="uq_budget_month_override_source",
+        ),
+    )

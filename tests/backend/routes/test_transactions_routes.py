@@ -363,6 +363,9 @@ class TestTransactionsRoutesErrors:
         ) as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
+            # Parent lookup must balance the requested slices, otherwise the
+            # route's sum check short-circuits before the service is called.
+            mock_svc.get_transaction.return_value = {"amount": -50.0}
             mock_svc.split_transaction.side_effect = ValueError(
                 "Failed to split transaction"
             )
@@ -480,6 +483,9 @@ class TestTransactionsRoutesAdditional:
         ) as mock_cls:
             mock_repo = MagicMock()
             mock_cls.return_value = mock_repo
+            # Parent lookup must balance the requested slices, otherwise the
+            # route's sum check short-circuits before the repo is reached.
+            mock_repo.get_transaction_by_id.return_value = {"amount": -50.0}
             mock_repo.split_transaction.return_value = False
             response = test_client.post(
                 "/api/transactions/1/split",

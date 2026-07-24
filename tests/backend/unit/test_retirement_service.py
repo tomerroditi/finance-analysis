@@ -613,10 +613,31 @@ class TestCurrentStatus:
 
     @staticmethod
     def _service(monthly_data, net_worth=0.0, total_investments=0.0):
-        """Build a RetirementService with a mocked analysis_service."""
+        """Build a RetirementService with a mocked analysis_service.
+
+        Entries are labelled with consecutive months ending at LAST month, so
+        every one is a complete month. ``get_current_status`` drops the
+        running month (it has partial income but near-full expenses), and
+        unlabelled fixtures would not exercise that path realistically.
+        """
+        import pandas as pd
+
         service = RetirementService.__new__(RetirementService)
         analysis = MagicMock()
-        analysis.get_income_expenses_over_time.return_value = monthly_data
+        last_complete = pd.Timestamp.today().normalize().replace(
+            day=1
+        ) - pd.DateOffset(months=1)
+        labelled = [
+            {
+                **entry,
+                "month": (
+                    last_complete
+                    - pd.DateOffset(months=len(monthly_data) - 1 - index)
+                ).strftime("%Y-%m"),
+            }
+            for index, entry in enumerate(monthly_data)
+        ]
+        analysis.get_income_expenses_over_time.return_value = labelled
         analysis.get_net_worth_over_time.return_value = (
             [{"net_worth": net_worth}] if net_worth else []
         )
@@ -659,3 +680,122 @@ class TestCurrentStatus:
         assert status["avg_monthly_expenses"] == 0.0
         assert status["monthly_savings"] == 0.0
         assert status["savings_rate"] == 0.0
+
+
+class TestProjectionAlignment:
+    """The projection curve is aligned to the ages it is labelled with."""
+
+    GOAL = {
+        "current_age": 40, "gender": "male", "target_retirement_age": 60,
+        "life_expectancy": 85, "monthly_expenses_in_retirement": 10000,
+        "inflation_rate": 0.0, "expected_return_rate": 0.05,
+        "withdrawal_rate": 0.04, "pension_monthly_payout_estimate": 0,
+        "keren_hishtalmut_balance": 0,
+        "keren_hishtalmut_monthly_contribution": 0,
+        "bituach_leumi_eligible": False, "bituach_leumi_monthly_estimate": 0,
+        "other_passive_income": 0,
+    }
+    STATUS = {
+        "net_worth": 1_000_000.0, "monthly_savings": 20_000.0,
+        "avg_monthly_income": 0.0, "avg_monthly_expenses": 0.0,
+        "savings_rate": 0.0, "total_investments": 0.0,
+    }
+
+    def test_first_point_is_todays_net_worth(self, db_session):
+        """The point labelled current_age holds today's actual net worth.
+
+        It used to hold a year of compounding already applied, so the chart
+        opened above the user's real balance.
+        """
+        proj = RetirementService(db_session)._project_net_worth(
+            self.GOAL, self.STATUS
+        )
+        assert proj[0]["age"] == 40
+        assert proj[0]["net_worth_baseline"] == 1_000_000
+
+    def test_fire_age_matches_independent_simulation(self, db_session, monkeypatch):
+        """fire_age agrees with a hand-rolled simulation of the same plan."""
+        status = self.STATUS
+        monkeypatch.setattr(
+            RetirementService, "get_current_status", lambda self: status
+        )
+        result = RetirementService(db_session).get_projections(
+            goal_override=self.GOAL
+        )
+        net_worth, age = 1_000_000.0, 40
+        while net_worth < 10000 * 12 / 0.04:
+            net_worth = net_worth * 1.05 + 240_000.0
+            age += 1
+        assert result["fire_age"] == age
+
+
+class TestDepletionOnlyInDrawdown:
+    """A dip before retirement is not portfolio depletion."""
+
+    def test_negative_net_worth_today_is_not_depletion(
+        self, db_session, monkeypatch
+    ):
+        """A mortgage-driven negative net worth today is not 'off_track'.
+
+        The scan covered the accumulation phase too, so anyone carrying
+        loans was marked off_track and the solver returned 'unachievable'.
+        """
+        status = {**TestProjectionAlignment.STATUS, "net_worth": -500_000.0}
+        monkeypatch.setattr(
+            RetirementService, "get_current_status", lambda self: status
+        )
+        result = RetirementService(db_session).get_projections(
+            goal_override=TestProjectionAlignment.GOAL
+        )
+        assert result["net_worth_projection"][-1]["net_worth_baseline"] > 0
+        assert result["portfolio_depleted_age"] is None
+
+    def test_solver_finds_achievable_plan(self, db_session, monkeypatch):
+        """solve_all_fields does not report -1 for a plan that works."""
+        status = {**TestProjectionAlignment.STATUS, "net_worth": -500_000.0}
+        monkeypatch.setattr(
+            RetirementService, "get_current_status", lambda self: status
+        )
+        solved = RetirementService(db_session).solve_all_fields(
+            goal_override=TestProjectionAlignment.GOAL
+        )
+        assert solved["target_retirement_age"] != -1
+
+
+class TestStatusExcludesPartialMonth:
+    """Averages must not be diluted by the running month."""
+
+    def test_avg_income_ignores_current_month(self, db_session):
+        """Six complete 10k-salary months average to 10k, not 8.3k."""
+        import pandas as pd
+        from backend.models.transaction import BankTransaction
+
+        today = pd.Timestamp.today().normalize()
+        rows, i = [], 0
+        for k in range(1, 7):
+            month = (today - pd.DateOffset(months=k)).replace(day=10)
+            for amount, category in ((10000.0, "Salary"), (-4000.0, "Food")):
+                rows.append(
+                    BankTransaction(
+                        id=f"pm{i}", date=month.strftime("%Y-%m-%d"),
+                        provider="p", account_name="a", description="d",
+                        amount=amount, category=category, tag=None,
+                        source="bank_transactions", type="normal",
+                        status="completed",
+                    )
+                )
+                i += 1
+        rows.append(
+            BankTransaction(
+                id=f"pm{i}", date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="p", account_name="a", description="partial",
+                amount=-100.0, category="Food", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.add_all(rows)
+        db_session.commit()
+
+        status = RetirementService(db_session).get_current_status()
+        assert status["avg_monthly_income"] == 10000.0
+        assert status["monthly_savings"] == 6000.0

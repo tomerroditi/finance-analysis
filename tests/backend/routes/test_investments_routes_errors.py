@@ -183,3 +183,112 @@ class TestInvestmentBalanceSnapshotErrors:
             json={"balance": 15000.0},
         )
         assert response.status_code == 404
+
+
+class TestInvestmentDateValidation:
+    """Tests rejecting malformed date strings on investment endpoints."""
+
+    def test_create_snapshot_rejects_garbage_date(self, test_client):
+        """POST /api/investments/1/balances with a non-ISO date returns 422.
+
+        An unvalidated ``date`` string used to be persisted verbatim, after
+        which every analysis endpoint crashed while parsing it and the bad
+        snapshot could no longer be listed or deleted.
+        """
+        response = test_client.post(
+            "/api/investments/1/balances",
+            json={"date": "garbage", "balance": 100.0},
+        )
+        assert response.status_code == 422
+
+    def test_garbage_snapshot_date_leaves_analysis_healthy(
+        self, test_client, seed_investments
+    ):
+        """A rejected snapshot date must not break the analysis endpoints."""
+        investment_id = test_client.get("/api/investments/").json()[0]["id"]
+        rejected = test_client.post(
+            f"/api/investments/{investment_id}/balances",
+            json={"date": "garbage", "balance": 100.0},
+        )
+        assert rejected.status_code == 422
+
+        assert test_client.get("/api/investments/analysis/portfolio").status_code == 200
+        assert (
+            test_client.get("/api/investments/analysis/balance-history").status_code
+            == 200
+        )
+        assert (
+            test_client.get(f"/api/investments/{investment_id}/analysis").status_code
+            == 200
+        )
+        assert (
+            test_client.get(f"/api/investments/{investment_id}/balances").status_code
+            == 200
+        )
+
+    def test_create_snapshot_rejects_impossible_calendar_date(self, test_client):
+        """POST /api/investments/1/balances with 2024-13-45 returns 422."""
+        response = test_client.post(
+            "/api/investments/1/balances",
+            json={"date": "2024-13-45", "balance": 100.0},
+        )
+        assert response.status_code == 422
+
+    def test_create_snapshot_accepts_iso_date(self, test_client, seed_investments):
+        """POST /api/investments/{id}/balances with a valid ISO date succeeds."""
+        investment_id = test_client.get("/api/investments/").json()[0]["id"]
+        response = test_client.post(
+            f"/api/investments/{investment_id}/balances",
+            json={"date": "2024-06-01", "balance": 100.0},
+        )
+        assert response.status_code == 200
+
+    def test_update_snapshot_rejects_garbage_date(self, test_client):
+        """PUT /api/investments/1/balances/1 with a non-ISO date returns 422."""
+        response = test_client.put(
+            "/api/investments/1/balances/1",
+            json={"date": "garbage"},
+        )
+        assert response.status_code == 422
+
+    def test_close_investment_rejects_garbage_date(self, test_client):
+        """POST /api/investments/1/close with a non-ISO closed_date returns 400."""
+        response = test_client.post(
+            "/api/investments/1/close", params={"closed_date": "garbage"}
+        )
+        assert response.status_code == 400
+
+    def test_create_investment_rejects_garbage_liquidity_date(self, test_client):
+        """POST /api/investments/ with a non-ISO liquidity_date returns 422."""
+        response = test_client.post(
+            "/api/investments/",
+            json={
+                "category": "Investments",
+                "tag": "Stocks",
+                "type": "stocks",
+                "name": "Bad dates",
+                "liquidity_date": "garbage",
+            },
+        )
+        assert response.status_code == 422
+
+    def test_create_investment_rejects_garbage_maturity_date(self, test_client):
+        """POST /api/investments/ with a non-ISO maturity_date returns 422."""
+        response = test_client.post(
+            "/api/investments/",
+            json={
+                "category": "Investments",
+                "tag": "Stocks",
+                "type": "stocks",
+                "name": "Bad dates",
+                "maturity_date": "garbage",
+            },
+        )
+        assert response.status_code == 422
+
+    def test_update_investment_rejects_garbage_closed_date(self, test_client):
+        """PUT /api/investments/1 with a non-ISO closed_date returns 422."""
+        response = test_client.put(
+            "/api/investments/1", json={"closed_date": "garbage"}
+        )
+        assert response.status_code == 422
