@@ -652,16 +652,22 @@ export function RetirementGoalForm({
             suffix="₪"
             disabled={!form.bituach_leumi_eligible}
             headerExtra={
-              <input
-                type="checkbox"
-                checked={form.bituach_leumi_eligible}
-                onChange={(e) =>
-                  handleChange("bituach_leumi_eligible", e.target.checked)
-                }
-                title={t("earlyRetirement.form.bituachLeumiEligible")}
-                aria-label={t("earlyRetirement.form.bituachLeumiEligible")}
-                className="shrink-0 w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
-              />
+              /* The checkbox itself is 14px. Padding on an <input> does not
+                 reliably grow its hit box, so the label carries it — a label
+                 forwards clicks to its control, giving a 30px tap target
+                 without changing where the box is drawn. */
+              <label className="inline-flex shrink-0 p-2 -m-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.bituach_leumi_eligible}
+                  onChange={(e) =>
+                    handleChange("bituach_leumi_eligible", e.target.checked)
+                  }
+                  title={t("earlyRetirement.form.bituachLeumiEligible")}
+                  aria-label={t("earlyRetirement.form.bituachLeumiEligible")}
+                  className="shrink-0 w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
+                />
+              </label>
             }
           />
           <NumberField

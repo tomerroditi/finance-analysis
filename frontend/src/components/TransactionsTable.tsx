@@ -750,13 +750,15 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
-              <label
-                className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
-                htmlFor="table-untagged-only"
-              >
+            {/* The whole pill is the label, so the tap target is the pill
+                rather than the 12px checkbox inside it. */}
+            <label
+              htmlFor="table-untagged-only"
+              className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)] cursor-pointer select-none"
+            >
+              <span className="text-xs font-medium text-[var(--text-muted)] whitespace-nowrap">
                 {t("transactions.filters.onlyUntagged")}
-              </label>
+              </span>
               <input
                 id="table-untagged-only"
                 type="checkbox"
@@ -764,15 +766,15 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 onChange={(e) => updateFilters({ onlyUntagged: e.target.checked })}
                 className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
               />
-            </div>
+            </label>
             {showSplitParentsFilter && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)]">
-                <label
-                  className="text-xs font-medium text-[var(--text-muted)] cursor-pointer select-none whitespace-nowrap"
-                  htmlFor="table-split-parents"
-                >
+              <label
+                htmlFor="table-split-parents"
+                className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)] cursor-pointer select-none"
+              >
+                <span className="text-xs font-medium text-[var(--text-muted)] whitespace-nowrap">
                   {t("transactions.filters.showSplitParents")}
-                </label>
+                </span>
                 <input
                   id="table-split-parents"
                   type="checkbox"
@@ -780,7 +782,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                   onChange={(e) => onIncludeSplitParentsChange?.(e.target.checked)}
                   className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
                 />
-              </div>
+              </label>
             )}
             {onAddTransaction && (
               <button

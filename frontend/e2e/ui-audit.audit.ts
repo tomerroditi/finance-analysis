@@ -154,16 +154,20 @@ async function auditPage(page: Page, cell: string, path: string) {
         document.querySelectorAll("button, a, [role=button], input[type=checkbox]"),
       );
       for (const el of els) {
-        const r = el.getBoundingClientRect();
+        // A control inside a <label> is activated by tapping the label, so
+        // measure the label's box instead of the (often tiny) input's.
+        const label = el.closest("label");
+        const box = label ?? el;
+        const r = box.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
         if (getComputedStyle(el).visibility === "hidden") continue;
         if (r.height < 24 || r.width < 24) {
           const e = el as HTMLElement;
-          const label =
+          const description =
             e.getAttribute("aria-label") ||
             (e.textContent || "").trim().slice(0, 30) ||
             e.className.toString().slice(0, 40);
-          out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${label}"`);
+          out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${description}"`);
         }
       }
       return out;
