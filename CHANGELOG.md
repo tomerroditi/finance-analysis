@@ -1,3 +1,9 @@
+## v1.49.2 (2026-07-25)
+
+### Fix
+
+- **transactions**: pin split_id dtype so the analysis concat stops warning
+
 ## v1.49.1 (2026-07-25)
 
 ### Fix
