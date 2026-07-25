@@ -1,3 +1,21 @@
+## v1.49.0 (2026-07-25)
+
+### Feat
+
+- **accounts**: ask whether to keep or delete an account's data on disconnect
+
+### Fix
+
+- **scraper**: name the failing phase and join every log line to its history row
+- **scraper**: record the provider's real login error instead of an enum label
+- **scraping**: hold Resend for 30s from when the 2FA prompt first appears
+- **routes**: validate analysis date params and unknown delete source
+- **frontend**: bring mobile tap targets up to the documented minimum
+- **frontend,backend**: repair refunded splits, stale UI data, and clipped chart labels
+- **backend,scraper**: close a further 25 verified defects across the stack
+- **app**: repair money-losing deletes, Visa Cal refunds, and mobile budget layout
+- **analytics**: correct four money-affecting classification bugs
+
 ## v1.48.1 (2026-07-23)
 
 ### Fix
