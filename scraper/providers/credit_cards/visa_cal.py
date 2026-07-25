@@ -10,7 +10,7 @@ from typing import Optional
 from dateutil.relativedelta import relativedelta
 
 from scraper.base import BrowserScraper, LoginOptions
-from scraper.models.account import AccountResult
+from scraper.models.account import AccountResult, CardType
 from scraper.models.result import LoginResult
 from scraper.models.transaction import (
     InstallmentInfo,
@@ -309,6 +309,48 @@ async def _has_change_password_form(page) -> bool:
     return False
 
 
+def _resolve_card_frame(
+    frames_response: dict, card_unique_id: str
+) -> tuple[Optional[dict], CardType, dict]:
+    """Locate a card's credit frame and determine who issued the card.
+
+    Cal groups frames under ``bankIssuedCards`` (cards a bank issued on Cal's
+    rails) and ``calIssuedCards`` (Cal's own cards). A card appears in exactly
+    one group, and which group it lands in is what tells us its type.
+
+    Parameters
+    ----------
+    frames_response : dict
+        Parsed GetFrameStatus response.
+    card_unique_id : str
+        The card to look for.
+
+    Returns
+    -------
+    tuple[Optional[dict], CardType, dict]
+        The card-level frame (None when the group carries only account-level
+        totals), the resolved card type, and the enclosing group dict.
+    """
+    result = frames_response.get("result") or {}
+
+    def find_in(group_key: str) -> Optional[dict]:
+        group = result.get(group_key) or {}
+        for item in group.get("cardLevelFrames") or []:
+            if item.get("cardUniqueId") == card_unique_id:
+                return item
+        return None
+
+    bank_issued_frame = find_in("bankIssuedCards")
+    if bank_issued_frame:
+        return bank_issued_frame, CardType.BANK_ISSUED, result.get("bankIssuedCards") or {}
+
+    return (
+        find_in("calIssuedCards"),
+        CardType.COMPANY_ISSUED,
+        result.get("calIssuedCards") or {},
+    )
+
+
 def _get_possible_login_results(page) -> dict[LoginResult, list]:
     """Build login result detection rules for Visa Cal.
 
@@ -479,6 +521,118 @@ class VisaCalScraper(BrowserScraper):
         token = auth_module["auth"]["calConnectToken"]
         return f"CALAuthScheme {token}"
 
+    async def _fetch_card_data(
+        self,
+        card: dict,
+        effective_start: date,
+        future_months: int,
+        headers: dict[str, str],
+    ) -> AccountResult:
+        """Fetch frames, pending and completed transactions for a single card.
+
+        Parameters
+        ----------
+        card : dict
+            Card descriptor with 'cardUniqueId' and 'last4Digits'.
+        effective_start : date
+            Earliest transaction date to keep.
+        future_months : int
+            How many months past the current one to fetch.
+        headers : dict[str, str]
+            Authorized request headers shared across the Cal API calls.
+
+        Returns
+        -------
+        AccountResult
+            The card's transactions plus its balance and credit frame.
+        """
+        card_uid = card["cardUniqueId"]
+        last4 = card["last4Digits"]
+
+        logger.debug("Fetching frames (misgarot) for card %s", card_uid)
+        frames_response = await fetch_post(
+            FRAMES_REQUEST_ENDPOINT,
+            {"cardsForFrameData": [{"cardUniqueId": card_uid}]},
+            headers,
+        )
+
+        frame, card_type, account_group = _resolve_card_frame(
+            frames_response, card_uid
+        )
+        logger.debug("Card %s resolved as %s", card_uid, card_type.value)
+
+        final_month = date.today() + relativedelta(months=future_months)
+        start_month = effective_start.replace(day=1)
+        months_diff = (
+            (final_month.year - start_month.year) * 12
+            + final_month.month
+            - start_month.month
+        )
+
+        logger.debug("Fetching pending transactions for card %s", card_uid)
+        pending_data = await fetch_post(
+            PENDING_TRANSACTIONS_REQUEST_ENDPOINT,
+            {"cardUniqueIDArray": [card_uid]},
+            headers,
+        )
+
+        logger.debug("Fetching completed transactions for card %s", card_uid)
+        all_months_data: list[dict] = []
+        for i in range(months_diff + 1):
+            month_date = final_month - relativedelta(months=i)
+            month_data = await fetch_post(
+                TRANSACTIONS_REQUEST_ENDPOINT,
+                {
+                    "cardUniqueId": card_uid,
+                    "month": str(month_date.month),
+                    "year": str(month_date.year),
+                },
+                headers,
+            )
+
+            if month_data.get("statusCode") != 1:
+                raise Exception(
+                    f"Failed to fetch transactions for card {last4}. "
+                    f"Message: {month_data.get('title', '')}"
+                )
+
+            all_months_data.append(month_data)
+
+        if pending_data.get("statusCode") not in (1, 96):
+            logger.debug(
+                "Failed to fetch pending for card %s: %s",
+                last4,
+                pending_data.get("title", ""),
+            )
+            pending_data = None
+
+        transactions = _convert_parsed_data_to_transactions(
+            all_months_data, pending_data
+        )
+
+        txns = filter_old_transactions(
+            transactions,
+            effective_start,
+            self.options.combine_installments,
+        )
+
+        # Card-level debit wins; fall back to the account-level total.
+        next_debit = frame.get("nextTotalDebit") if frame else None
+        if next_debit is None:
+            next_debit = account_group.get("nextTotalDebitForAccount")
+        balance_date = frame.get("nextDebitDate") if frame else None
+        if balance_date is None:
+            balance_date = account_group.get("nextTotalDebitDateForAccount")
+
+        return AccountResult(
+            account_number=last4,
+            transactions=txns,
+            balance=-next_debit if next_debit is not None else None,
+            balance_date=balance_date,
+            card_type=card_type,
+            card_frame=account_group.get("frameLimitForCardAmount"),
+        )
+
     async def fetch_data(self) -> list[AccountResult]:
         """Fetch credit card transaction data from Visa Cal API.
 
@@ -498,7 +652,6 @@ class VisaCalScraper(BrowserScraper):
 
         future_months = self.options.future_months_to_scrape or 1
 
-        # Fetch frames (misgarot) for balance info
         headers = {
             "Authorization": authorization,
             "X-Site-Id": X_SITE_ID,
@@ -506,104 +659,9 @@ class VisaCalScraper(BrowserScraper):
             **API_HEADERS,
         }
 
-        frames_response = await fetch_post(
-            FRAMES_REQUEST_ENDPOINT,
-            {
-                "cardsForFrameData": [
-                    {"cardUniqueId": c["cardUniqueId"]} for c in cards
-                ]
-            },
-            headers,
-        )
-
-        accounts: list[AccountResult] = []
-        for card in cards:
-            card_uid = card["cardUniqueId"]
-            last4 = card["last4Digits"]
-
-            final_month = date.today() + relativedelta(months=future_months)
-            start_month = effective_start.replace(day=1)
-            months_diff = (
-                (final_month.year - start_month.year) * 12
-                + final_month.month
-                - start_month.month
+        return [
+            await self._fetch_card_data(
+                card, effective_start, future_months, headers
             )
-
-            # Fetch pending transactions
-            logger.debug(
-                "Fetching pending transactions for card %s", card_uid
-            )
-            pending_data = await fetch_post(
-                PENDING_TRANSACTIONS_REQUEST_ENDPOINT,
-                {"cardUniqueIDArray": [card_uid]},
-                headers,
-            )
-
-            # Fetch completed transactions month by month
-            logger.debug(
-                "Fetching completed transactions for card %s", card_uid
-            )
-            all_months_data: list[dict] = []
-            for i in range(months_diff + 1):
-                month_date = final_month - relativedelta(months=i)
-                month_data = await fetch_post(
-                    TRANSACTIONS_REQUEST_ENDPOINT,
-                    {
-                        "cardUniqueId": card_uid,
-                        "month": str(month_date.month),
-                        "year": str(month_date.year),
-                    },
-                    headers,
-                )
-
-                if month_data.get("statusCode") != 1:
-                    raise Exception(
-                        f"Failed to fetch transactions for card {last4}. "
-                        f"Message: {month_data.get('title', '')}"
-                    )
-
-                all_months_data.append(month_data)
-
-            # Validate pending data
-            if pending_data.get("statusCode") not in (1, 96):
-                logger.debug(
-                    "Failed to fetch pending for card %s: %s",
-                    last4,
-                    pending_data.get("title", ""),
-                )
-                pending_data = None
-
-            transactions = _convert_parsed_data_to_transactions(
-                all_months_data, pending_data
-            )
-
-            # Filter old transactions
-            txns = filter_old_transactions(
-                transactions,
-                effective_start,
-                self.options.combine_installments,
-            )
-
-            # Get balance from frames
-            balance = None
-            bank_issued = (
-                frames_response.get("result", {})
-                .get("bankIssuedCards", {})
-                .get("cardLevelFrames", [])
-            )
-            for frame_item in bank_issued:
-                if frame_item.get("cardUniqueId") == card_uid:
-                    next_debit = frame_item.get("nextTotalDebit")
-                    if next_debit is not None:
-                        balance = -next_debit
-                    break
-
-            accounts.append(
-                AccountResult(
-                    account_number=last4,
-                    transactions=txns,
-                    balance=balance,
-                )
-            )
-
-        return accounts
+            for card in cards
+        ]

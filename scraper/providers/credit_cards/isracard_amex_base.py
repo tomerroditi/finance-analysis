@@ -19,7 +19,7 @@ from scraper.utils import (
     filter_old_transactions,
     fix_installments,
     get_all_months,
-    sleep,
+    random_delay,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,11 @@ INSTALLMENTS_KEYWORD = "תשלום"
 
 DATE_FORMAT = "%d/%m/%Y"
 
-RATE_LIMIT_SLEEP_BETWEEN = 1.0  # seconds
+# Isracard/Amex fingerprint automation by request cadence. 2.5s base, jittered
+# up to 3.0s, is the sweet spot upstream settled on: slower is wasteful, faster
+# trips the detector mid-scrape.
+RATE_LIMIT_SLEEP_BETWEEN = 2.5  # seconds
+RATE_LIMIT_SLEEP_JITTER = 0.5  # seconds added to the upper bound
 RATE_LIMIT_TRANSACTIONS_BATCH_SIZE = 10
 
 
@@ -294,8 +298,13 @@ async def _fetch_accounts(
         List of account dicts with 'index', 'account_number', and 'processed_date'.
     """
     data_url = _get_accounts_url(services_url, month_date)
-    logger.debug("Fetching accounts from %s", data_url)
+    logger.debug(
+        "Fetching accounts for %s from %s", month_date.strftime("%Y-%m"), data_url
+    )
 
+    await random_delay(
+        RATE_LIMIT_SLEEP_BETWEEN, RATE_LIMIT_SLEEP_BETWEEN + RATE_LIMIT_SLEEP_JITTER
+    )
     data = await fetch_get_within_page(page, data_url, ignore_errors=True)
 
     if (
@@ -351,13 +360,15 @@ async def _fetch_transactions_for_month(
     accounts = await _fetch_accounts(page, services_url, month_date)
     data_url = _get_transactions_url(services_url, month_date)
 
-    await sleep(RATE_LIMIT_SLEEP_BETWEEN)
     logger.debug(
-        "Fetching transactions from %s for month %s",
-        data_url,
+        "Fetching transactions for %s from %s",
         month_date.strftime("%Y-%m"),
+        data_url,
     )
 
+    await random_delay(
+        RATE_LIMIT_SLEEP_BETWEEN, RATE_LIMIT_SLEEP_BETWEEN + RATE_LIMIT_SLEEP_JITTER
+    )
     data = await fetch_get_within_page(page, data_url, ignore_errors=True)
 
     if (

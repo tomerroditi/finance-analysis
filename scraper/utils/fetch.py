@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any, Optional
 
 import httpx
@@ -11,9 +12,46 @@ logger = logging.getLogger(__name__)
 
 JSON_CONTENT_TYPE = "application/json"
 
+_AUTOMATION_BLOCKED_PATTERN = re.compile(r"block automation|bot detection", re.IGNORECASE)
+
 
 def _json_headers() -> dict[str, str]:
     return {"Accept": JSON_CONTENT_TYPE, "Content-Type": JSON_CONTENT_TYPE}
+
+
+def _assert_automation_not_blocked(
+    status: Optional[int], response_text: Optional[str], url: str
+) -> None:
+    """Raise when the provider answered with an anti-automation block.
+
+    Providers that detect a headless browser answer with `429 Too Many
+    Requests` or a body naming the detector rather than an error status. Both
+    parse as "no data" downstream, so surface them as an explicit error with
+    remediation hints instead of an opaque JSON parse failure.
+
+    Parameters
+    ----------
+    status : Optional[int]
+        HTTP status code of the in-page fetch.
+    response_text : Optional[str]
+        Raw response body, if any.
+    url : str
+        The requested URL, included in the error message.
+
+    Raises
+    ------
+    ScraperError
+        If the response looks like an anti-automation block.
+    """
+    blocked_body = bool(response_text and _AUTOMATION_BLOCKED_PATTERN.search(response_text))
+    if status == 429 or blocked_body:
+        raise ScraperError(
+            f"Automation detected and blocked by server. Status: {status}, URL: {url}. "
+            "The site is actively blocking automated access. Consider: "
+            "1) Using show_browser=True, 2) Adding longer delays, "
+            "3) Using residential proxies, 4) Running at different times of day",
+            ErrorType.GENERIC,
+        )
 
 
 def _raise_for_status_with_body(resp: httpx.Response) -> None:
@@ -121,6 +159,8 @@ async def fetch_get_within_page(
                 ErrorType.GENERIC,
             )
         return None
+    if not ignore_errors:
+        _assert_automation_not_blocked(result.get("__status"), result.get("__data"), url)
     data = result.get("__data")
     if data is None:
         return None
@@ -154,10 +194,10 @@ async def fetch_post_within_page(
                         extraHeaders
                     ),
                 });
-                if (response.status === 204) return { __data: null };
-                return { __data: await response.text() };
+                if (response.status === 204) return { __data: null, __status: 204 };
+                return { __data: await response.text(), __status: response.status };
             } catch (e) {
-                return { __error: e.message };
+                return { __error: e.message, __status: 0 };
             }
         }"""
     result = await page.evaluate(js_fn, [url, data, extra_headers or {}])
@@ -168,6 +208,8 @@ async def fetch_post_within_page(
                 ErrorType.GENERIC,
             )
         return None
+    if not ignore_errors:
+        _assert_automation_not_blocked(result.get("__status"), result.get("__data"), url)
     text = result.get("__data")
     if text is None:
         return None

@@ -36,7 +36,7 @@ from scraper.utils.transactions import (
     parse_int_identifier,
     sort_transactions_by_date,
 )
-from scraper.utils.waiting import sleep, wait_for_first, wait_until
+from scraper.utils.waiting import random_delay, sleep, wait_for_first, wait_until
 
 __all__ = [
     "click_button",
@@ -69,6 +69,7 @@ __all__ = [
     "parse_digits_identifier",
     "parse_int_identifier",
     "sort_transactions_by_date",
+    "random_delay",
     "sleep",
     "wait_for_first",
     "wait_until",

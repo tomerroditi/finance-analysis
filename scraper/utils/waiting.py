@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import Awaitable, Callable, TypeVar
 
 from scraper.exceptions import TimeoutError
@@ -31,6 +32,23 @@ async def wait_until(
 async def sleep(seconds: float) -> None:
     """Async sleep wrapper."""
     await asyncio.sleep(seconds)
+
+
+async def random_delay(minimum: float = 0.5, maximum: float = 2.0) -> None:
+    """Sleep for a random duration in ``[minimum, maximum]`` seconds.
+
+    A fixed inter-request delay is itself a bot signal — providers that
+    fingerprint automation look for metronomic timing. Jittering the pause
+    makes the request cadence look human.
+
+    Parameters
+    ----------
+    minimum : float
+        Lower bound of the delay, in seconds.
+    maximum : float
+        Upper bound of the delay, in seconds.
+    """
+    await asyncio.sleep(random.uniform(minimum, maximum))
 
 
 async def wait_for_first(*coros: Awaitable) -> None:
