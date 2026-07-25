@@ -11,7 +11,6 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils.dates import utc_to_israel_date_str
 from scraper.utils.fetch import fetch_graphql, fetch_post
-from scraper.utils.mobile_tls import build_mobile_client
 from scraper.utils.otp_rate_limit import (
     OTP_PROVIDER_BLOCKED_MESSAGE,
     OtpProviderBlockedError,
@@ -748,15 +747,6 @@ class OneZeroScraper(ApiScraper):
     # flow runs (None when a stored token was reused). The backend adapter
     # reads this to persist a refreshed token after a forced re-auth.
     refreshed_otp_long_term_token: Optional[str] = None
-
-    async def initialize(self) -> None:
-        """Create an HTTP client that looks like the One Zero Android app.
-
-        ``tfd-bank.com`` sits behind Cloudflare bot management, which scores
-        the TLS handshake. The default client fingerprint matches no shipping
-        mobile app and gets challenged, so use the OkHttp-shaped one instead.
-        """
-        self.client = build_mobile_client()
 
     async def _trigger_two_factor_auth(self, phone_number: str) -> dict:
         """Trigger OTP SMS to the user's phone number.
