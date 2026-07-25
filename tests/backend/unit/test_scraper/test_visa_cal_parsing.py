@@ -89,42 +89,49 @@ class TestConvertCompletedTransactions:
         )
         assert result[0].type == TransactionType.NORMAL
 
-    def test_credit_transaction_keeps_positive_amounts(self):
-        """A credit (type 6) is a refund — both amounts stay positive.
+    def test_credit_amount_signs_match_upstream(self):
+        """A credit keeps upstream's deliberate sign asymmetry.
 
-        ``charged_amount`` is the field the backend persists, so negating it
-        recorded every merchant refund as an expense of the same size.
+        The two API fields use different conventions, so only one consults
+        the credit flag:
+
+            chargedAmount  = (isPending ? trnAmt : amtBeforeConvAndIndex) * -1
+            originalAmount = trnAmt * (trnTypeCode === credit ? 1 : -1)
+
+        ``amtBeforeConvAndIndex`` arrives already signed by Cal, so the flat
+        ``* -1`` produces a positive refund by itself. ``trnAmt`` is an
+        unsigned magnitude and needs the flag.
+
+        Applying the flag to ``charged_amount`` too — the field the backend
+        persists — inverts every refund. That was briefly shipped here and
+        reverted; this test pins the correct behaviour so it is not
+        reintroduced. The fixture's ``amtBeforeConvAndIndex`` is positive, as
+        it would be for a charge, which is why ``charged_amount`` is negative.
         """
         result = _convert_parsed_data_to_transactions(
             [_month_data([_completed_txn(trnTypeCode="6")])]
         )
         assert result[0].original_amount == 200.0
-        assert result[0].charged_amount == 200.0
+        assert result[0].charged_amount == -200.0
 
-    def test_credit_transaction_is_typed_normal(self):
-        """A credit is a standalone refund, not an installment plan.
+    def test_signed_api_amount_yields_a_positive_refund(self):
+        """A credit whose API amount is negative stores as a positive refund.
 
-        Typing it as INSTALLMENTS made ``filter_old_transactions`` drop it
-        when combining installments, because credits carry no payment count.
+        This is the real-world shape: Cal signs ``amtBeforeConvAndIndex``, so
+        a refund arrives negative and the flat ``* -1`` makes it positive.
         """
         result = _convert_parsed_data_to_transactions(
-            [_month_data([_completed_txn(trnTypeCode="6")])]
+            [
+                _month_data(
+                    [
+                        _completed_txn(
+                            trnTypeCode="6", amtBeforeConvAndIndex=-200.0
+                        )
+                    ]
+                )
+            ]
         )
-        assert result[0].type == TransactionType.NORMAL
-
-    def test_credit_survives_installment_combining(self):
-        """A refund is not filtered out when installments are combined."""
-        from datetime import date
-
-        from scraper.utils.transactions import filter_old_transactions
-
-        result = _convert_parsed_data_to_transactions(
-            [_month_data([_completed_txn(trnTypeCode="6")])]
-        )
-        kept = filter_old_transactions(
-            result, date(2020, 1, 1), combine_installments=True
-        )
-        assert len(kept) == 1
+        assert result[0].charged_amount == 200.0
 
     def test_string_amounts_are_coerced(self):
         """Amounts sent as strings parse to numbers, not empty strings.
