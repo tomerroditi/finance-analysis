@@ -1,3 +1,15 @@
+## v1.49.1 (2026-07-25)
+
+### Fix
+
+- **scraper**: stop discarding the One Zero long-term token
+- **scraper**: type WAF blocks so they leave the GENERAL_ERROR bucket
+- **scraper**: sync providers with upstream through abe6fb9
+
+### Refactor
+
+- **scraper**: move the One Zero TLS fingerprint to its own branch
+
 ## v1.49.0 (2026-07-25)
 
 ### Feat
