@@ -223,7 +223,14 @@ class ScraperAdapter:
 
         # Pipeline state
         self._data: pd.DataFrame | None = None
+        # Technical failure detail — the provider's own message, HTTP body or
+        # exception text. Recorded verbatim for diagnosis.
         self._error: str = ""
+        # Failure category (``ScrapingResult.error_type``), recorded alongside
+        # so the UI can render friendly translated copy without the technical
+        # text having to double as a user-facing message. Previously this was
+        # collapsed into ``_error`` and lost.
+        self._error_type: str = ""
         self._table_name: str = _SERVICE_TO_TABLE.get(service_name, "")
         # Number of accounts the scraper reported, or None when the scrape
         # never produced a result. Distinguishes "an account with no
@@ -289,12 +296,19 @@ class ScraperAdapter:
                     self._post_save_hook(result)
                 self._persist_refreshed_otp_token(scraper)
             else:
-                self._error = result.error_message or result.error_type or "Unknown error"
+                self._error_type = result.error_type or "GENERAL_ERROR"
+                self._error = (
+                    result.error_message
+                    or f"the {self.provider_name} scraper reported "
+                    f"{self._error_type} with no further detail"
+                )
                 logger.error(
-                    "%s: %s: Scraping failed — %s",
-                    self.provider_name, self.account_name, self._error,
+                    "%s: %s: Scraping failed — [%s] %s",
+                    self.provider_name, self.account_name,
+                    self._error_type, self._error,
                 )
         except asyncio.TimeoutError:
+            self._error_type = "TIMEOUT"
             self._error = (
                 f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
                 "and was aborted"
@@ -309,7 +323,8 @@ class ScraperAdapter:
             if scraper is not None:
                 await scraper._safe_terminate(False)
         except Exception as exc:
-            self._error = str(exc)
+            self._error_type = "GENERAL_ERROR"
+            self._error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
             logger.error(
                 "%s: %s: Unexpected error — %s",
                 self.provider_name, self.account_name, self._error,
@@ -738,6 +753,7 @@ class ScraperAdapter:
         id_ : int
             Scraping history record ID (same as ``process_id``).
         """
+        error_type = None
         if self._otp_code == self.CANCEL:
             status = ScrapingHistoryRepository.CANCELED
             error_message = None
@@ -748,6 +764,7 @@ class ScraperAdapter:
             if self._accounts_fetched == 0:
                 status = ScrapingHistoryRepository.FAILED
                 error_message = NO_ACCOUNTS_ERROR
+                error_type = "NO_ACCOUNTS"
                 logger.error(
                     "%s: %s: %s",
                     self.provider_name, self.account_name, NO_ACCOUNTS_ERROR,
@@ -758,10 +775,13 @@ class ScraperAdapter:
         else:
             status = ScrapingHistoryRepository.FAILED
             error_message = self._error or None
+            error_type = self._error_type or "GENERAL_ERROR"
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(id_, status, error_message)
+            history_repo.record_scrape_end(
+                id_, status, error_message, error_type
+            )
 
 
 class InsuranceScraperAdapter(ScraperAdapter):

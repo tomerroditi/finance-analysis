@@ -944,11 +944,15 @@ class OneZeroScraper(ApiScraper):
             otp_token = await self._resolve_otp_token()
         except OtpCanceledError:
             logger.info("Login aborted: user canceled two-factor authentication")
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "two-factor authentication canceled by the user",
+            )
         except Exception as e:
-            self._login_error_detail = str(e)
             logger.error("Failed to resolve OTP token: %s", e)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR, f"could not obtain an OTP token — {e}"
+            )
 
         try:
             logger.debug("Requesting id token")
@@ -976,9 +980,8 @@ class OneZeroScraper(ApiScraper):
             self._access_token = _extract_result_data(session_token_response, "accessToken")
 
         except Exception as e:
-            self._login_error_detail = str(e)
             logger.error("Login failed: %s", e)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(LoginResult.UNKNOWN_ERROR, e)
 
         return LoginResult.SUCCESS
 

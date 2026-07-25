@@ -154,31 +154,90 @@ class TestLoginErrorDetail:
         return _StubScraper("onezero", DUMMY_CREDENTIALS, ScraperOptions())
 
     def test_general_error_uses_login_detail_when_set(self):
-        """A general/unknown failure surfaces the detail as the error message."""
+        """A general/unknown failure surfaces the detail after the result label."""
         scraper = self._scraper()
         scraper._login_error_detail = "HTTP 503 /otp/prepare — body: blocked prefix"
         result = scraper._login_result_to_scraping_result(LoginResult.UNKNOWN_ERROR)
         assert result.error_type == "GENERAL_ERROR"
-        assert result.error_message == "HTTP 503 /otp/prepare — body: blocked prefix"
+        assert result.error_message == (
+            "login unknown_error: HTTP 503 /otp/prepare — body: blocked prefix"
+        )
 
-    def test_general_error_falls_back_to_generic_when_no_detail(self):
-        """Without a recorded detail, the generic message is used."""
+    def test_no_detail_says_so_instead_of_implying_a_provider_message(self):
+        """Without a detail the message states that none was reported.
+
+        The old wording — "Login failed with result: unknown_error" — read like
+        text the bank had returned, when it was assembled entirely from our own
+        enum. Saying "no detail reported" makes the absence explicit so nobody
+        goes looking for a provider message that never existed.
+        """
         scraper = self._scraper()
         result = scraper._login_result_to_scraping_result(LoginResult.UNKNOWN_ERROR)
-        assert result.error_message == "Login failed with result: unknown_error"
+        assert result.error_message == (
+            "login unknown_error: no detail reported by the onezero scraper"
+        )
 
-    def test_known_error_type_keeps_generic_message(self):
-        """A known failure type keeps its generic message even if a detail is set."""
+    def test_known_error_type_also_carries_its_detail(self):
+        """A classified failure keeps its detail too, not just the label.
+
+        Previously the detail was dropped for every non-GENERAL_ERROR type, on
+        the theory that the label said enough. It doesn't — "invalid_password"
+        alone can't distinguish a genuinely wrong password from a provider that
+        rendered a login error for another reason. ``error_type`` now carries
+        the classification (and drives the user-facing copy), which frees the
+        message to always carry the evidence.
+        """
         scraper = self._scraper()
-        scraper._login_error_detail = "some noisy detail"
+        scraper._login_error_detail = "detected on https://x.test/login"
         result = scraper._login_result_to_scraping_result(LoginResult.INVALID_PASSWORD)
         assert result.error_type == "INVALID_PASSWORD"
-        assert result.error_message == "Login failed with result: invalid_password"
+        assert result.error_message == (
+            "login invalid_password: detected on https://x.test/login"
+        )
 
     def test_success_returns_none(self):
         """A successful login maps to None so the caller proceeds to fetch."""
         scraper = self._scraper()
         assert scraper._login_result_to_scraping_result(LoginResult.SUCCESS) is None
+
+
+class TestFailLogin:
+    """Tests for the _fail_login helper that records why login failed."""
+
+    def _scraper(self) -> _StubScraper:
+        """Build a stub scraper for helper tests."""
+        return _StubScraper("onezero", DUMMY_CREDENTIALS, ScraperOptions())
+
+    def test_returns_the_result_unchanged(self):
+        """The helper is usable inline as the return value."""
+        scraper = self._scraper()
+        assert (
+            scraper._fail_login(LoginResult.ACCOUNT_BLOCKED, "blocked")
+            is LoginResult.ACCOUNT_BLOCKED
+        )
+
+    def test_records_a_string_detail(self):
+        """A plain string detail is stored verbatim."""
+        scraper = self._scraper()
+        scraper._fail_login(LoginResult.UNKNOWN_ERROR, "phone prefix rejected")
+        assert scraper._login_error_detail == "phone prefix rejected"
+
+    def test_renders_an_exception_with_its_class(self):
+        """Exceptions keep their type, which is often the only clue."""
+        scraper = self._scraper()
+        scraper._fail_login(LoginResult.UNKNOWN_ERROR, TimeoutError("no response"))
+        assert scraper._login_error_detail == "TimeoutError: no response"
+
+    def test_empty_exception_message_still_yields_the_class_name(self):
+        """A bare `raise SomeError` must not record an empty detail.
+
+        ``str(exc)`` is "" for an argument-less exception, which under the old
+        `self._login_error_detail = str(e)` assignment stored an empty string —
+        indistinguishable from "nothing was recorded".
+        """
+        scraper = self._scraper()
+        scraper._fail_login(LoginResult.UNKNOWN_ERROR, KeyError())
+        assert scraper._login_error_detail == "KeyError"
 
 
 class TestScraperErrorClassification:

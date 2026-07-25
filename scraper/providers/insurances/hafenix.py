@@ -191,13 +191,20 @@ class HaPhoenixScraper(BrowserScraper):
             # Request OTP from user
             if self.on_otp_request is None:
                 logger.error("on_otp_request callback not set")
-                return LoginResult.UNKNOWN_ERROR
+                return self._fail_login(
+                    LoginResult.UNKNOWN_ERROR,
+                    "the site asked for a 2FA code but no code prompt was "
+                    "available (on_otp_request callback not set)",
+                )
 
             self._emit_progress("waiting for OTP code")
             otp_code = await self.on_otp_request()
 
             if otp_code == "cancel":
-                return LoginResult.UNKNOWN_ERROR
+                return self._fail_login(
+                    LoginResult.UNKNOWN_ERROR,
+                    "two-factor authentication canceled by the user",
+                )
 
             # Fill OTP with human-like typing
             self._emit_progress("submitting OTP code")
@@ -227,7 +234,7 @@ class HaPhoenixScraper(BrowserScraper):
 
         except Exception as e:
             logger.error("HaPhoenix login failed: %s", e)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(LoginResult.UNKNOWN_ERROR, e)
 
     async def _wait_for_submit_enabled(self, timeout: float = 10000) -> None:
         """Wait for the 'send code' button to drop its disabled state."""

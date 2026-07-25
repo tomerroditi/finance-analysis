@@ -71,9 +71,11 @@ class BaseScraper(ABC):
         # ``OTP_CANCEL_SENTINEL`` signals a user cancellation — the scraper must
         # abort without forwarding it to the provider (raise ``OtpCanceledError``).
         self.on_otp_request: Optional[Callable[[], Awaitable[str]]] = None
-        # Optional human-readable detail a subclass can set when login fails, so
-        # a general/unknown login failure surfaces the real reason (e.g. the
-        # provider's HTTP error body) instead of a generic message.
+        # Human-readable detail describing *why* login failed — the provider's
+        # HTTP error body, the exception text, the unexpected landing URL. Set
+        # it via `_fail_login`; `_login_result_to_scraping_result` folds it into
+        # the recorded error message so the scraping-history row carries the
+        # real reason rather than just the LoginResult label.
         self._login_error_detail: Optional[str] = None
 
     async def scrape(self) -> ScrapingResult:
@@ -226,10 +228,53 @@ class BaseScraper(ABC):
         if self.on_progress is not None:
             self.on_progress(message)
 
+    def _fail_login(
+        self, result: LoginResult, detail: str | BaseException
+    ) -> LoginResult:
+        """Record why login failed and return the result to hand back.
+
+        Written to be used inline — ``return self._fail_login(
+        LoginResult.UNKNOWN_ERROR, exc)`` — so attaching the real reason is a
+        single expression at the failure site. Without this, most providers
+        returned a bare ``LoginResult`` and the only record of the actual cause
+        was a ``logger.error`` line in the uvicorn log; the scraping-history row
+        the UI reads got the enum label and nothing else.
+
+        Parameters
+        ----------
+        result : LoginResult
+            The login outcome to return.
+        detail : str or BaseException
+            The real reason. Exceptions are rendered as
+            ``ClassName: message`` so an empty-message exception still says
+            something useful.
+
+        Returns
+        -------
+        LoginResult
+            ``result``, unchanged.
+        """
+        if isinstance(detail, BaseException):
+            text = str(detail).strip()
+            detail = (
+                f"{type(detail).__name__}: {text}"
+                if text
+                else type(detail).__name__
+            )
+        self._login_error_detail = detail or None
+        return result
+
     def _login_result_to_scraping_result(
         self, result: LoginResult
     ) -> ScrapingResult | None:
         """Map a failed LoginResult to a ScrapingResult.
+
+        The message always leads with the ``LoginResult`` label and appends the
+        recorded detail, so the stored text is both classifiable and actually
+        diagnostic. When a provider reported no detail we say so explicitly
+        rather than implying the label *was* the provider's message — that
+        ambiguity is what made a bare "Login failed with result: unknown_error"
+        look like it came from the bank when it was entirely ours.
 
         Returns None if login was successful (caller should proceed to fetch).
         """
@@ -243,10 +288,13 @@ class BaseScraper(ABC):
             LoginResult.UNKNOWN_ERROR: "GENERAL_ERROR",
         }
         error_type = error_mapping.get(result, "GENERAL_ERROR")
-        if error_type == "GENERAL_ERROR" and self._login_error_detail:
-            error_message = self._login_error_detail
-        else:
-            error_message = f"Login failed with result: {result.value}"
+        detail = (self._login_error_detail or "").strip()
+        error_message = (
+            f"login {result.value}: {detail}"
+            if detail
+            else f"login {result.value}: no detail reported by the "
+            f"{self.provider} scraper"
+        )
         return ScrapingResult(
             success=False,
             error_type=error_type,

@@ -183,6 +183,11 @@ def _fake_db():
 
 def _record(adapter) -> tuple[str, str | None]:
     """Run _record_scraping_attempt and capture the recorded status."""
+    return _record_full(adapter)[:2]
+
+
+def _record_full(adapter) -> tuple[str, str | None, str | None]:
+    """Run _record_scraping_attempt and capture status, message and category."""
     with patch("backend.scraper.adapter.get_db_context", _fake_db), patch(
         "backend.scraper.adapter.ScrapingHistoryRepository"
     ) as repo_cls:
@@ -191,7 +196,7 @@ def _record(adapter) -> tuple[str, str | None]:
         repo_cls.CANCELED = ScrapingHistoryRepository.CANCELED
         adapter._record_scraping_attempt(1)
         call = repo_cls.return_value.record_scrape_end.call_args
-    return call.args[1], call.args[2]
+    return call.args[1], call.args[2], call.args[3]
 
 
 class TestEmptyScrapeIsNotSuccess:
@@ -254,3 +259,63 @@ class TestEmptyScrapeIsNotSuccess:
         adapter._accounts_fetched = 0
         status, _ = _record(adapter)
         assert status == ScrapingHistoryRepository.CANCELED
+
+
+class TestErrorTypeIsRecordedSeparately:
+    """The failure category is stored beside the detail, not folded into it.
+
+    One column had to serve both the person debugging and the person reading
+    the UI. Anything diagnostic enough for the first was too raw for the
+    second, which is how a scrape came to be logged as the contentless
+    "Login failed with result: unknown_error".
+    """
+
+    def test_scraper_error_type_is_persisted(self):
+        """A failure's category reaches the history row."""
+        import pandas as pd
+
+        adapter = _adapter()
+        adapter._data = pd.DataFrame([{"a": 1}])
+        adapter._accounts_fetched = 1
+        adapter._error = "login invalid_password: detected on https://x.test"
+        adapter._error_type = "INVALID_PASSWORD"
+        status, message, error_type = _record_full(adapter)
+        assert status == ScrapingHistoryRepository.FAILED
+        assert message == "login invalid_password: detected on https://x.test"
+        assert error_type == "INVALID_PASSWORD"
+
+    def test_failure_without_a_category_falls_back_to_general(self):
+        """An error recorded with no category is still classified.
+
+        A NULL category would send the UI down the "no type, show the raw
+        message" legacy path for a brand-new failure.
+        """
+        import pandas as pd
+
+        adapter = _adapter()
+        adapter._data = pd.DataFrame([{"a": 1}])
+        adapter._accounts_fetched = 1
+        adapter._error = "boom"
+        _, _, error_type = _record_full(adapter)
+        assert error_type == "GENERAL_ERROR"
+
+    def test_zero_accounts_gets_its_own_category(self):
+        """The no-accounts failure is distinguishable from a generic one."""
+        import pandas as pd
+
+        adapter = _adapter()
+        adapter._data = pd.DataFrame()
+        adapter._accounts_fetched = 0
+        _, _, error_type = _record_full(adapter)
+        assert error_type == "NO_ACCOUNTS"
+
+    def test_success_records_no_category(self):
+        """A green run leaves both error fields NULL."""
+        import pandas as pd
+
+        adapter = _adapter()
+        adapter._data = pd.DataFrame([{"a": 1}])
+        adapter._accounts_fetched = 1
+        _, message, error_type = _record_full(adapter)
+        assert message is None
+        assert error_type is None

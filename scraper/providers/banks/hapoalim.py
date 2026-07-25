@@ -446,7 +446,7 @@ class HapoalimScraper(BrowserScraper):
 
         except Exception as exc:
             logger.error("Hapoalim login failed: %s", exc)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(LoginResult.UNKNOWN_ERROR, exc)
 
     async def _wait_for_post_login_state(self) -> str:
         """Race-wait for the post-submit state.
@@ -491,13 +491,20 @@ class HapoalimScraper(BrowserScraper):
                 "Hapoalim 2FA modal appeared but no on_otp_request callback "
                 "is configured — provider is misregistered"
             )
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "the site asked for a 2FA code but this provider is not "
+                "registered as needing one, so no code prompt was available",
+            )
 
         self._emit_progress("waiting for OTP code")
         otp_code = await self.on_otp_request()
 
         if otp_code == "cancel":
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "two-factor authentication canceled by the user",
+            )
 
         digits = (otp_code or "").strip()
         if len(digits) != OTP_LENGTH or not digits.isdigit():
@@ -505,7 +512,10 @@ class HapoalimScraper(BrowserScraper):
                 "Hapoalim OTP must be %d digits, got %r",
                 OTP_LENGTH, otp_code,
             )
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                f"the code entered was not {OTP_LENGTH} digits",
+            )
 
         self._emit_progress("submitting OTP code")
         # Focus the first separated input; the Angular component auto-advances
@@ -536,7 +546,11 @@ class HapoalimScraper(BrowserScraper):
             )
         except Exception as exc:
             logger.error("Hapoalim post-OTP navigation failed: %s", exc)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "the code was submitted but the site never reached the account "
+                f"homepage ({type(exc).__name__}: {exc})",
+            )
 
         return LoginResult.SUCCESS
 
