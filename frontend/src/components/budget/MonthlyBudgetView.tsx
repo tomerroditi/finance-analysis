@@ -576,7 +576,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
               <button
                 onClick={() => setShowTotalTransactions((v) => !v)}
-                className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors mt-2"
+                className="py-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors mt-1"
               >
                 {showTotalTransactions
                   ? t("budget.hideTransactions")

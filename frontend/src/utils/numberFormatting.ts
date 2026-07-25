@@ -85,3 +85,24 @@ export function formatPercentChange(value: number, fractionDigits = 1): string {
   const sign = v >= 0 ? "+" : "-";
   return `${sign}${Math.abs(v).toFixed(fractionDigits)}%`;
 }
+
+/**
+ * Parse a numeric `<input>`'s raw value into form state.
+ *
+ * Returns `""` for an empty or unparseable field instead of `NaN`. Storing
+ * `parseFloat(e.target.value)` directly puts `NaN` in state the moment the
+ * user clears the field: React then renders "NaN" back into the controlled
+ * input, and `JSON.stringify` serialises it as `null`, so the request hits
+ * the backend as `"amount": null` and comes back 422 with a generic
+ * "failed to save" toast that names no field.
+ *
+ * Callers must still reject `""` at submit time — see the `amount` guards in
+ * the transaction modals.
+ * @param raw - The input element's current `value`
+ * @returns The parsed number, or "" when the field is empty/invalid
+ */
+export function parseAmountInput(raw: string): number | "" {
+  if (raw.trim() === "") return "";
+  const parsed = parseFloat(raw);
+  return Number.isNaN(parsed) ? "" : parsed;
+}

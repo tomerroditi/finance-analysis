@@ -62,9 +62,9 @@ class TestScrapingServiceStatus:
     """Tests for scraping status retrieval methods."""
 
     def test_get_scraping_status(self, service):
-        """Verify get_scraping_status returns dict with status, process_id, and error_message."""
+        """Verify the status dict carries status, process_id, and both error fields."""
         service.scraping_history_repo.get_scraping_status.return_value = "in_progress"
-        service.scraping_history_repo.get_error_message.return_value = None
+        service.scraping_history_repo.get_error.return_value = (None, None)
 
         result = service.get_scraping_status(42)
 
@@ -72,14 +72,34 @@ class TestScrapingServiceStatus:
             "status": "in_progress",
             "process_id": 42,
             "error_message": None,
+            "error_type": None,
         }
         service.scraping_history_repo.get_scraping_status.assert_called_once_with(42)
-        service.scraping_history_repo.get_error_message.assert_called_once_with(42)
+        service.scraping_history_repo.get_error.assert_called_once_with(42)
+
+    def test_get_scraping_status_reports_type_alongside_detail(self, service):
+        """The failure category travels with the technical detail, not instead of it.
+
+        The client needs both: the category selects the translated message it
+        shows, and the detail is the provider's own text kept available for
+        debugging. Collapsing them into one string is what forced the raw text
+        to double as the user-facing message.
+        """
+        service.scraping_history_repo.get_scraping_status.return_value = "failed"
+        service.scraping_history_repo.get_error.return_value = (
+            "login invalid_password: detected on https://x.test/login",
+            "INVALID_PASSWORD",
+        )
+
+        result = service.get_scraping_status(7)
+
+        assert result["error_type"] == "INVALID_PASSWORD"
+        assert "https://x.test/login" in result["error_message"]
 
     def test_get_scraping_status_unknown(self, service):
         """Verify status is 'unknown' when repository returns None."""
         service.scraping_history_repo.get_scraping_status.return_value = None
-        service.scraping_history_repo.get_error_message.return_value = None
+        service.scraping_history_repo.get_error.return_value = (None, None)
 
         result = service.get_scraping_status(99)
 

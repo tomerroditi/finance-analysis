@@ -10,6 +10,15 @@ from backend.models.pending_refund import (
     RefundSourceNote,
 )
 
+# SQLite caps bound parameters per statement; chunk long IN lists.
+_IN_CHUNK = 500
+
+
+def _chunked(values: list, size: int = _IN_CHUNK):
+    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
+
 
 class PendingRefundsRepository:
     """
@@ -125,8 +134,11 @@ class PendingRefundsRepository:
             .where(PendingRefund.source_type == source_type)
             .where(PendingRefund.source_id == source_id)
             .where(PendingRefund.source_table == source_table)
+            .order_by(PendingRefund.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising — see the note in
+        # BudgetMonthOverrideRepository.get_for_source.
+        return self.db.execute(stmt).scalars().first()
 
     def add_refund_link(
         self,
@@ -255,8 +267,11 @@ class PendingRefundsRepository:
             .where(
                 RefundSourceNote.refund_transaction_id == refund_transaction_id
             )
+            .order_by(RefundSourceNote.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising — see the note in
+        # BudgetMonthOverrideRepository.get_for_source.
+        return self.db.execute(stmt).scalars().first()
 
     def get_all_source_notes(self) -> pd.DataFrame:
         """
@@ -356,6 +371,66 @@ class PendingRefundsRepository:
         pending = self.db.get(PendingRefund, pending_id)
         if pending:
             self.db.delete(pending)
+        self.db.commit()
+
+    def delete_for_transactions(
+        self, source_tables: list[str], unique_ids: list[int]
+    ) -> None:
+        """
+        Purge every refund record tied to a deleted transaction.
+
+        Removes pending refunds sourced from the transaction (plus their
+        links), links that used it as the refund source, and any note
+        attached to it. Left behind, these rows are silently re-adopted by
+        the next transaction that reuses the rowid — ``unique_id`` is a
+        per-table auto-increment and SQLite recycles ids.
+
+        Parameters
+        ----------
+        source_tables : list[str]
+            Every accepted spelling of the source table (e.g. both
+            ``"cash"`` and ``"cash_transactions"``), since older rows may
+            store the service name rather than the table name.
+        unique_ids : list[int]
+            unique_ids of the deleted transactions.
+        """
+        if not unique_ids:
+            return
+
+        for chunk in _chunked(unique_ids):
+            orphan_ids = [
+                row_id
+                for (row_id,) in self.db.execute(
+                    select(PendingRefund.id).where(
+                        PendingRefund.source_type == "transaction",
+                        PendingRefund.source_id.in_(chunk),
+                        PendingRefund.source_table.in_(source_tables),
+                    )
+                ).all()
+            ]
+            if orphan_ids:
+                self.db.execute(
+                    delete(RefundLink).where(
+                        RefundLink.pending_refund_id.in_(orphan_ids)
+                    )
+                )
+                self.db.execute(
+                    delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+                )
+
+            # A transaction may also have funded someone else's refund.
+            self.db.execute(
+                delete(RefundLink).where(
+                    RefundLink.refund_transaction_id.in_(chunk),
+                    RefundLink.refund_source.in_(source_tables),
+                )
+            )
+            self.db.execute(
+                delete(RefundSourceNote).where(
+                    RefundSourceNote.refund_transaction_id.in_(chunk),
+                    RefundSourceNote.refund_source.in_(source_tables),
+                )
+            )
         self.db.commit()
 
     def delete_refund_link(self, link_id: int) -> RefundLink | None:

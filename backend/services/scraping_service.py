@@ -116,18 +116,26 @@ class ScrapingService:
             - ``status`` – status string (e.g. ``"IN_PROGRESS"``, ``"SUCCESS"``,
               ``"FAILED"``, ``"WAITING_FOR_2FA"``) or ``"unknown"`` if not found.
             - ``process_id`` – echoed back ``scraping_process_id``.
-            - ``error_message`` – error detail if status is ``"FAILED"``, else ``None``.
+            - ``error_message`` – technical error detail if status is
+              ``"FAILED"``, else ``None``. This is the provider's own message /
+              exception text, meant for diagnosis — not for display as-is.
+            - ``error_type`` – failure category (``INVALID_PASSWORD``,
+              ``ACCOUNT_BLOCKED``, ``TIMEOUT``, ``GENERAL_ERROR``, …) the client
+              maps to friendly, translated copy. ``None`` for rows recorded
+              before the category was tracked, where the client falls back to
+              showing ``error_message``.
         """
         status = self.scraping_history_repo.get_scraping_status(
             int(scraping_process_id)
         )
-        error_message = self.scraping_history_repo.get_error_message(
+        error_message, error_type = self.scraping_history_repo.get_error(
             int(scraping_process_id)
         )
         return {
             "status": status or "unknown",
             "process_id": scraping_process_id,
             "error_message": error_message,
+            "error_type": error_type,
         }
 
     def get_last_scrape_dates(self) -> List[Dict]:

@@ -157,3 +157,39 @@ class TestSavingsGoalEnrichment:
 
         assert goal["months_remaining"] is None
         assert goal["monthly_needed"] is None
+
+
+class TestRunwayUsesRealDays:
+    """monthly_needed reflects the days actually remaining, not whole months."""
+
+    def test_monthly_needed_accounts_for_partial_first_month(self, db_session):
+        """A goal due on the 1st two calendar months out is not 2 full months.
+
+        A pure calendar-month difference treated ~39 days of runway as two
+        months, advising roughly two-thirds of the contribution required.
+        """
+        import pandas as pd
+
+        today = pd.Timestamp.today().normalize()
+        target = (today + pd.DateOffset(months=2)).replace(day=1)
+        days_remaining = (target - today).days
+
+        goal = SavingsGoalService(db_session).create(
+            name="Trip", target_amount=12000.0, current_amount=0.0,
+            target_date=target.strftime("%Y-%m-%d"),
+        )
+
+        required = 12000.0 / (days_remaining / 30.44)
+        assert goal["monthly_needed"] == pytest.approx(required, abs=0.01)
+
+    def test_achieved_goal_has_no_monthly_needed(self, db_session):
+        """A goal already met reports no required contribution."""
+        import pandas as pd
+
+        target = (pd.Timestamp.today().normalize() + pd.DateOffset(months=2))
+        goal = SavingsGoalService(db_session).create(
+            name="Done", target_amount=100.0, current_amount=100.0,
+            target_date=target.strftime("%Y-%m-%d"),
+        )
+        assert goal["is_achieved"] is True
+        assert goal["monthly_needed"] is None

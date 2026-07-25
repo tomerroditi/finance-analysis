@@ -190,24 +190,41 @@ class TestProjectBudgetErrors:
         assert response.status_code == 404
         assert "not found" in response.json()["detail"].lower()
 
-    def test_delete_nonexistent_project_succeeds_silently(self, test_client):
-        """DELETE /api/budget/projects/NonExistent returns 200.
+    # Missing-project delete/update behaviour is covered by
+    # ``TestProjectNotFoundErrors`` below (both now 404).
 
-        The service's ``delete_project`` does not validate existence before
-        deleting. When no matching rows exist, the DELETE executes without
-        error and returns success.
+
+class TestProjectNotFoundErrors:
+    """Tests that project endpoints 404 on unknown project names."""
+
+    def test_delete_nonexistent_project_returns_404(self, test_client):
+        """DELETE /api/budget/projects/{name} for an unknown project returns 404.
+
+        The endpoint used to report ``{"status": "success"}`` for a project
+        that never existed, masking typos and stale UI state.
         """
-        response = test_client.delete("/api/budget/projects/NonExistentProject")
+        response = test_client.delete("/api/budget/projects/doesnotexist")
+        assert response.status_code == 404
+        assert "doesnotexist" in response.json()["detail"]
+
+    def test_update_nonexistent_project_returns_404(self, test_client):
+        """PUT /api/budget/projects/{name} for an unknown project returns 404.
+
+        The service raised a bare ``ValueError`` that reached the global
+        handler as a 500.
+        """
+        response = test_client.put(
+            "/api/budget/projects/nope", json={"total_budget": 1000.0}
+        )
+        assert response.status_code == 404
+
+    def test_delete_existing_project_still_succeeds(
+        self, test_client, seed_project_transactions
+    ):
+        """DELETE /api/budget/projects/{name} still deletes a real project."""
+        projects = test_client.get("/api/budget/projects").json()
+        assert projects, "expected seeded projects"
+        name = projects[0]
+        response = test_client.delete(f"/api/budget/projects/{name}")
         assert response.status_code == 200
-
-    def test_update_nonexistent_project(self, test_client):
-        """Verify that ValueError propagates when updating a non-existent project.
-
-        The service raises a ValueError when updating a non-existent project.
-        Since the route has no try/except, the error propagates through.
-        """
-        with pytest.raises(ValueError, match="not found"):
-            test_client.put(
-                "/api/budget/projects/NonExistentProject",
-                json={"total_budget": 60000.0},
-            )
+        assert name not in test_client.get("/api/budget/projects").json()

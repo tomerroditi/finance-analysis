@@ -3,6 +3,11 @@
 import pytest
 from copy import deepcopy
 from unittest.mock import MagicMock
+from backend.models.transaction import BankTransaction
+from backend.repositories.bank_balance_repository import BankBalanceRepository
+from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.services.bank_balance_service import BankBalanceService
+from backend.services.pending_refunds_service import PendingRefundsService
 
 import backend.services.credentials_service as cs
 from backend.services.credentials_service import CredentialsService
@@ -430,4 +435,153 @@ class TestMaskedCredentials:
         mock_repo.save_credentials.assert_called_once_with(
             "banks", "hapoalim", "Main Account",
             {"userCode": "new_code", "password": "brand-new-secret"},
+        )
+
+
+class TestDeleteClearsScrapeHistory:
+    """The scrape watermark tracks whether the data was kept or erased."""
+
+    def test_re_added_account_gets_full_backfill(self, db_session, monkeypatch):
+        """Erasing the data also clears the watermark, forcing a fresh year.
+
+        Scrape history outliving an erased account made a re-added account
+        resume from its old "last successful scrape" date, silently skipping
+        ~12 months of backfill with no way for the user to force it. It is
+        only cleared alongside the data — wiping it while the transactions
+        stayed would force a redundant re-scrape of rows already stored.
+        """
+        from datetime import date
+
+        from backend.repositories.scraping_history_repository import (
+            ScrapingHistoryRepository,
+        )
+        from backend.services.scraping_service import ScrapingService
+
+        history = ScrapingHistoryRepository(db_session)
+        scrape_id = history.record_scrape_start(
+            "banks", "hapoalim", "Main", date.today()
+        )
+        history.record_scrape_end(scrape_id, "success")
+        assert history.get_last_successful_scrape_date(
+            "banks", "hapoalim", "Main"
+        )
+
+        service = CredentialsService(db_session)
+        monkeypatch.setattr(
+            service.repository, "delete_credentials", lambda *a, **k: None
+        )
+        service.delete_credential(
+            "banks", "hapoalim", "Main", delete_data=True
+        )
+
+        assert (
+            history.get_last_successful_scrape_date("banks", "hapoalim", "Main")
+            is None
+        )
+        start = ScrapingService(db_session)._get_scraper_start_date(
+            "banks", "hapoalim", "Main"
+        )
+        assert (date.today() - start).days >= 364
+
+
+def _seed_account(db, monkeypatch):
+    """Seed two bank accounts, a balance with prior wealth, and a scrape."""
+    db.add(BankTransaction(
+        id="ad1", date="2024-01-05", provider="hapoalim", account_name="Main",
+        description="rent", amount=-3000.0, category="Home", tag="Rent",
+        source="bank_transactions", type="normal", status="completed"))
+    db.add(BankTransaction(
+        id="ad2", date="2024-01-06", provider="hapoalim", account_name="Other",
+        description="keep me", amount=-50.0, category="Food", tag=None,
+        source="bank_transactions", type="normal", status="completed"))
+    db.commit()
+    BankBalanceRepository(db).upsert(
+        provider="hapoalim", account_name="Main",
+        balance=25000.0, prior_wealth_amount=20000.0)
+    from datetime import date
+    h = ScrapingHistoryRepository(db)
+    sid = h.record_scrape_start("banks", "hapoalim", "Main", date.today())
+    h.record_scrape_end(sid, "success")
+    svc = CredentialsService(db)
+    monkeypatch.setattr(svc.repository, "delete_credentials", lambda *a, **k: None)
+    return svc, h
+
+
+class TestKeepData:
+    """delete_data=False removes only the connection."""
+
+    def test_transactions_balance_and_history_survive(self, db_session, monkeypatch):
+        """Nothing but the credential is touched."""
+        svc, hist = _seed_account(db_session, monkeypatch)
+        res = svc.delete_credential("banks", "hapoalim", "Main")
+        assert res["transactions_deleted"] == 0
+        assert db_session.query(BankTransaction).count() == 2
+        assert BankBalanceService(db_session).get_total_prior_wealth() == 20000.0
+        assert hist.get_last_successful_scrape_date("banks", "hapoalim", "Main")
+
+
+class TestRemoveData:
+    """delete_data=True removes the account's data and its dependents."""
+
+    def test_only_that_accounts_transactions_go(self, db_session, monkeypatch):
+        """Sibling accounts on the same provider are untouched."""
+        svc, hist = _seed_account(db_session, monkeypatch)
+        res = svc.delete_credential(
+            "banks", "hapoalim", "Main", delete_data=True)
+        assert res["transactions_deleted"] == 1
+        remaining = db_session.query(BankTransaction).all()
+        assert [t.account_name for t in remaining] == ["Other"]
+
+    def test_history_cleared_so_next_scrape_backfills(self, db_session, monkeypatch):
+        """The watermark goes, so reconnecting starts a fresh year."""
+        svc, hist = _seed_account(db_session, monkeypatch)
+        svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
+        assert hist.get_last_successful_scrape_date(
+            "banks", "hapoalim", "Main") is None
+
+    def test_dependent_records_are_purged(self, db_session, monkeypatch):
+        """A pending refund on a deleted transaction does not survive."""
+        svc, _ = _seed_account(db_session, monkeypatch)
+        uid = db_session.query(BankTransaction).filter_by(id="ad1").one().unique_id
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "transaction", uid, "banks", 100.0)
+
+        svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
+
+        assert PendingRefundsService(db_session).get_all_pending() == []
+
+    def test_prior_wealth_survives_a_keep_delete(self, db_session, monkeypatch):
+        """Disconnecting must not destroy the account's prior wealth.
+
+        The balance row carries ``prior_wealth_amount``. Dropping it while the
+        transactions stayed removed money from net worth that the surviving
+        history still accounted for.
+        """
+        svc, _ = _seed_account(db_session, monkeypatch)
+        before = BankBalanceService(db_session).get_total_prior_wealth()
+        svc.delete_credential("banks", "hapoalim", "Main")
+        assert BankBalanceService(db_session).get_total_prior_wealth() == before
+
+    def test_keeping_data_keeps_the_watermark(self, db_session, monkeypatch):
+        """Disconnecting without erasing leaves the scrape watermark intact.
+
+        Reconnecting then resumes from where it left off rather than
+        re-scraping a year of transactions that are still stored.
+        """
+        from datetime import date
+
+        history = ScrapingHistoryRepository(db_session)
+        scrape_id = history.record_scrape_start(
+            "banks", "hapoalim", "Main", date.today()
+        )
+        history.record_scrape_end(scrape_id, "success")
+
+        service = CredentialsService(db_session)
+        monkeypatch.setattr(
+            service.repository, "delete_credentials", lambda *a, **k: None
+        )
+        service.delete_credential("banks", "hapoalim", "Main")
+
+        assert history.get_last_successful_scrape_date(
+            "banks", "hapoalim", "Main"
         )

@@ -2,7 +2,7 @@
 Bank balance snapshot model.
 """
 
-from sqlalchemy import Column, Float, Integer, String
+from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 
 from backend.constants.tables import Tables
 from backend.models.base import Base, TimestampMixin
@@ -20,3 +20,10 @@ class BankBalance(Base, TimestampMixin):
     prior_wealth_amount = Column(Float, nullable=False, default=0.0)
     last_manual_update = Column(String, nullable=True)
     last_scrape_update = Column(String, nullable=True)
+
+    # One balance row per account. Without this, a concurrent upsert could
+    # insert a second row, after which every read of the account raised
+    # MultipleResultsFound — a permanent 500 with no API path to repair it.
+    __table_args__ = (
+        UniqueConstraint("provider", "account_name", name="uq_bank_balance_account"),
+    )

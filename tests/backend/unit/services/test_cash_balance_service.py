@@ -221,10 +221,11 @@ class TestCashBalanceService:
         assert result is not None
 
     def test_delete_for_account_recalculates_wallet_balance(self, db_session: Session):
-        """Verify deleting an account recalculates the Wallet balance after migration.
+        """Verify deleting an account folds its money into Wallet.
 
-        When transactions are migrated from a deleted account to Wallet,
-        Wallet's balance should be recalculated to include those transactions.
+        Both the deleted account's transactions and its prior wealth move to
+        Wallet, so total tracked cash is conserved. Migrating only the
+        transactions silently destroyed the envelope's prior wealth.
         """
         service = CashBalanceService(db_session)
 
@@ -249,13 +250,17 @@ class TestCashBalanceService:
         db_session.add(txn)
         db_session.commit()
 
-        # Delete Savings — its -200 transaction migrates to Wallet
+        # Total tracked cash before the delete: Wallet 1000 + Savings (500-200) = 1300
+        total_before = service.get_total_prior_wealth() + (-200.0)
+
+        # Delete Savings — its -200 transaction AND its 500 prior wealth move to Wallet
         service.delete_for_account("Savings")
 
-        # Wallet balance should be recalculated: prior_wealth(1000) + txn_sum(-200) = 800
+        # prior_wealth(1000 + 500) + txn_sum(-200) = 1300 — nothing is lost
         wallet = service.get_by_account_name("Wallet")
-        assert wallet["balance"] == 800.0
-        assert wallet["prior_wealth_amount"] == 1000.0
+        assert wallet["prior_wealth_amount"] == 1500.0
+        assert wallet["balance"] == 1300.0
+        assert wallet["balance"] == total_before
 
 
 class TestMigrateFromTransactions:
@@ -411,3 +416,39 @@ class TestDeletePriorWealthTransaction:
 
         # The no-op neither created nor deleted anything.
         assert db_session.query(CashTransaction).count() == 0
+
+
+class TestDeletePreservesPriorWealth:
+    """Deleting a cash envelope must not destroy its prior wealth."""
+
+    def test_total_prior_wealth_is_conserved(self, db_session: Session):
+        """Total cash prior wealth is unchanged by deleting an envelope."""
+        service = CashBalanceService(db_session)
+        db_session.add(
+            CashTransaction(
+                id="pw_conserve_1", date="2024-01-01", account_name="Vacation Jar",
+                description="Expense", amount=-100.0, category="Food",
+                tag="Groceries", source="cash_transactions", type="expense",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        service.set_balance("Wallet", 500.0)
+        service.set_balance("Vacation Jar", 900.0)
+
+        before = service.get_total_prior_wealth()
+        service.delete_for_account("Vacation Jar")
+
+        assert service.get_total_prior_wealth() == before
+
+    def test_envelope_with_no_prior_wealth_leaves_wallet_untouched(
+        self, db_session: Session
+    ):
+        """Deleting a zero-prior-wealth envelope does not alter Wallet's."""
+        service = CashBalanceService(db_session)
+        service.set_balance("Wallet", 500.0)
+        service.set_balance("Empty Jar", 0.0)
+
+        service.delete_for_account("Empty Jar")
+
+        assert service.get_by_account_name("Wallet")["prior_wealth_amount"] == 500.0

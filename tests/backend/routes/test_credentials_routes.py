@@ -33,7 +33,7 @@ def mock_credentials_deps(monkeypatch):
         "password": "__unchanged__",
     }
     mock_service.save_credentials.return_value = None
-    mock_service.delete_credential.return_value = None
+    mock_service.delete_credential.return_value = {"transactions_deleted": 0}
 
     # Create a callable mock that acts as both a class (with static methods)
     # and a constructor (returns instance when called).
@@ -48,6 +48,7 @@ def mock_credentials_deps(monkeypatch):
         "backend.routes.credentials.CredentialsService",
         mock_cls,
     )
+    return mock_service
 
 
 class TestCredentialsRoutes:
@@ -127,3 +128,32 @@ class TestCredentialsRoutes:
         )
         assert response.status_code == 200
         assert response.json()["status"] == "success"
+
+
+class TestDeleteAccountDataChoice:
+    """The delete endpoint distinguishes disconnecting from erasing."""
+
+    def test_defaults_to_keeping_data(self, test_client, mock_credentials_deps):
+        """No query param means delete_data=False — the safe default."""
+        response = test_client.delete(
+            "/api/credentials/banks/hapoalim/Main"
+        )
+        assert response.status_code == 200
+        assert response.json()["transactions_deleted"] == 0
+        _, kwargs = mock_credentials_deps.delete_credential.call_args
+        assert kwargs["delete_data"] is False
+
+    def test_delete_data_true_is_forwarded(
+        self, test_client, mock_credentials_deps
+    ):
+        """delete_data=true reaches the service and the count is returned."""
+        mock_credentials_deps.delete_credential.return_value = {
+            "transactions_deleted": 7
+        }
+        response = test_client.delete(
+            "/api/credentials/banks/hapoalim/Main?delete_data=true"
+        )
+        assert response.status_code == 200
+        assert response.json()["transactions_deleted"] == 7
+        _, kwargs = mock_credentials_deps.delete_credential.call_args
+        assert kwargs["delete_data"] is True

@@ -81,12 +81,19 @@ export function formatMonthShort(month: string | Date): string {
 }
 
 /**
- * Today's date as an ISO calendar date string ("YYYY-MM-DD").
- * Shared default for date inputs and "as of today" API payloads.
- * @returns Today's date in ISO YYYY-MM-DD format
+ * Today's date as an ISO calendar date string ("YYYY-MM-DD"), in the user's
+ * LOCAL calendar. Shared default for date inputs and "as of today" API
+ * payloads.
+ *
+ * Deliberately not `toISOString()`: that serialises the UTC instant, so in
+ * any positive-offset zone (Israel is UTC+2/+3) every moment between local
+ * midnight and 02:00/03:00 yields *yesterday's* date — which silently
+ * back-dated close-investment, balance-snapshot and pay-off-liability forms
+ * for anyone using the app late at night.
+ * @returns Today's local date in ISO YYYY-MM-DD format
  */
 export function todayISO(): string {
-  return new Date().toISOString().split("T")[0];
+  return format(new Date(), "yyyy-MM-dd");
 }
 
 /**

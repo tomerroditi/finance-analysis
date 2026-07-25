@@ -24,6 +24,35 @@ logger = logging.getLogger(__name__)
 LoginResultCheck = Union[str, re.Pattern, Callable[..., Awaitable[bool]]]
 
 
+def _redact_url(url: str) -> str:
+    """Strip query and fragment from a URL before it is recorded.
+
+    Where the browser landed is the diagnostic signal; the query string is not,
+    and on a login flow it routinely carries tokens, session ids and OTP
+    material we must not write into the DB or show in the UI.
+
+    Parameters
+    ----------
+    url : str
+        The URL to redact.
+
+    Returns
+    -------
+    str
+        ``scheme://host/path``, with a ``?…`` marker when a query was dropped.
+        Returns the input unchanged if it cannot be parsed.
+    """
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return url
+    # Rebuild via geturl() rather than f-stringing scheme/netloc/path: a page
+    # that never navigated is "about:blank", which has no netloc, and manual
+    # reassembly turned it into the nonsense "about://blank".
+    base = parts._replace(query="", fragment="").geturl()
+    return f"{base}?…" if (parts.query or parts.fragment) else base
+
+
 @dataclass
 class LoginOptions:
     """Configuration for the generic login flow."""
@@ -358,25 +387,87 @@ class BrowserScraper(BaseScraper):
         -------
         LoginResult
             The detected login result, or UNKNOWN_ERROR if no match.
+
+        Notes
+        -----
+        Every failure path — matched or not — records where the browser landed
+        and whatever error text the page is showing, because that text *is* the
+        provider's own message. Providers detect a failure by finding the very
+        element holding it (Max's ``LOGIN_ERROR_SELECTOR`` is exactly this) and
+        then returned a bare enum, so the bank's explanation was read and
+        discarded in the same breath. The no-match case is the other half: every
+        check missed and the only surviving clue was a log line.
         """
         current_url = await get_current_url(self.page)
+
+        async def detected(result: LoginResult) -> LoginResult:
+            if result == LoginResult.SUCCESS:
+                return result
+            return self._fail_login(
+                result,
+                f"detected on {_redact_url(current_url)}"
+                f"{await self._page_error_text()}",
+            )
 
         for result, checks in possible_results.items():
             for check in checks:
                 if isinstance(check, re.Pattern):
                     if check.search(current_url):
-                        return result
+                        return await detected(result)
                 elif isinstance(check, str):
                     if check.lower() in current_url.lower():
-                        return result
+                        return await detected(result)
                 elif callable(check):
                     try:
                         matched = await check(page=self.page, value=current_url)
                         if matched:
-                            return result
+                            return await detected(result)
                     except Exception as e:
                         logger.debug(
                             "Login result check callable raised: %s", e
                         )
 
-        return LoginResult.UNKNOWN_ERROR
+        return self._fail_login(
+            LoginResult.UNKNOWN_ERROR,
+            f"no login-result check matched; landed on {_redact_url(current_url)}"
+            f"{await self._page_error_text()}",
+        )
+
+    async def _page_error_text(self) -> str:
+        """Return the page's visible error text, as a ``; showing: ...`` suffix.
+
+        Scoped to conventional error containers rather than the whole body: the
+        goal is the provider's own message ("Your account is locked", "Wrong
+        password"), not a dump of the page — which on a bank site could sweep up
+        account details into a DB row the UI displays.
+
+        Returns
+        -------
+        str
+            Empty string when nothing is found or the page can't be read.
+        """
+        try:
+            texts = await self.page.evaluate(
+                """() => Array.from(
+                    document.querySelectorAll(
+                        '[role=alert], [class*=error], [class*=Error], [class*=alert]'
+                    )
+                )
+                    .filter((el) => el.offsetParent !== null)
+                    .map((el) => (el.textContent || '').trim())
+                    .filter((t) => t.length > 1 && t.length < 300)"""
+            )
+        except Exception as e:  # page closed, navigation mid-flight, CSP
+            logger.debug("Could not read page error text: %s", e)
+            return ""
+
+        # De-duplicate: nested error containers repeat their child's text.
+        seen: list[str] = []
+        for text in texts or []:
+            collapsed = " ".join(text.split())
+            if collapsed and not any(collapsed in kept for kept in seen):
+                seen.append(collapsed)
+        if not seen:
+            return ""
+        joined = " | ".join(seen)[:400]
+        return f"; page showing: {joined}"

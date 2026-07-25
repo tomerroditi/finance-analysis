@@ -25,6 +25,7 @@ from scraper.utils import (
     fix_installments,
     get_all_months,
     sort_transactions_by_date,
+    to_amount,
     wait_for_redirect,
     wait_until_element_found,
 )
@@ -138,12 +139,15 @@ def _get_transaction_type(plan_name: str, plan_type_id: int) -> TransactionType:
     Returns
     -------
     TransactionType
-        NORMAL or INSTALLMENTS.
+        NORMAL or INSTALLMENTS. An unrecognized plan degrades to NORMAL.
 
-    Raises
-    ------
-    ValueError
-        If the plan name and type ID combination is unknown.
+    Notes
+    -----
+    This is called from inside the per-row mapping loop, so it must never
+    raise: a single new Max plan name used to abort the whole scrape for
+    every card and every month. An unknown plan is logged (so the name can
+    be added to the maps) and treated as NORMAL — the amounts and dates are
+    unaffected, only the installment classification is a best guess.
     """
     cleaned = plan_name.replace("\t", " ").strip()
 
@@ -158,7 +162,14 @@ def _get_transaction_type(plan_name: str, plan_type_id: int) -> TransactionType:
     if plan_type_id == 5:
         return TransactionType.NORMAL
 
-    raise ValueError(f"Unknown transaction type {cleaned}")
+    logger.warning(
+        "Max: unknown transaction plan %r (planTypeId=%r); "
+        "defaulting to NORMAL. Add it to NORMAL_PLAN_NAMES or "
+        "INSTALLMENTS_PLAN_NAMES.",
+        cleaned,
+        plan_type_id,
+    )
+    return TransactionType.NORMAL
 
 
 def _get_installments_info(comments: str) -> Optional[InstallmentInfo]:
@@ -282,9 +293,9 @@ def _map_transaction(raw: dict) -> Transaction:
         ),
         date=txn_date_str,
         processed_date=processed_date_str,
-        original_amount=-float(raw.get("originalAmount", 0) or 0),
+        original_amount=-to_amount(raw.get("originalAmount")),
         original_currency=raw.get("originalCurrency", SHEKEL_CURRENCY),
-        charged_amount=-float(raw.get("actualPaymentAmount", 0) or 0),
+        charged_amount=-to_amount(raw.get("actualPaymentAmount")),
         charged_currency=_get_charged_currency(raw.get("paymentCurrency")),
         description=raw.get("merchantName", "").strip(),
         memo=_get_memo(

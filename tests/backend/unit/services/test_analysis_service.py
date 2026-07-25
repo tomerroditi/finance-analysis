@@ -450,6 +450,40 @@ class TestAnalysisServiceSankey:
         assert result["nodes"] == []
         assert result["links"] == []
 
+    def test_get_sankey_data_excludes_ignore_category(self, db_session):
+        """Verify an unbalanced Ignore transfer is not a Sankey flow.
+
+        Ignore marks internal transfers and CC bill summaries. Its legs only
+        cancel when both are tracked, so any residual must be dropped rather
+        than surfacing as a phantom expense that skews Wealth Growth.
+        """
+        from backend.models.transaction import BankTransaction
+
+        for i, (category, amount) in enumerate(
+            [("Salary", 10000.0), ("Food", -1200.0), ("Ignore", -5000.0)]
+        ):
+            db_session.add(
+                BankTransaction(
+                    id=f"sankey-ignore-{i}", date="2026-03-10", provider="p",
+                    account_name="a", description=f"d{i}", amount=amount,
+                    category=category, tag=None, source="bank_transactions",
+                    type="normal", status="completed",
+                )
+            )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_sankey_data()
+        labels = result["node_labels"]
+        assert "Ignore" not in labels
+        assert "Refunds: Ignore" not in labels
+
+        flows = {
+            (labels[link["source"]], labels[link["target"]]): link["value"]
+            for link in result["links"]
+        }
+        # 10000 income - 1200 real expenses; the 5000 transfer is not spending.
+        assert flows[("Total Income", "Wealth Growth")] == 8800.0
+
     def test_get_sankey_data_unknown_cc_gap(self, db_session):
         """Verify Unknown destination appears when bank CC payments exceed itemized CC total."""
         # Bank CC bill payment: 500
@@ -1351,3 +1385,45 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         }
         # Shares of a complete breakdown sum to ~1.
         assert round(sum(s["share"] for s in end_only["sources"]), 4) == 1.0
+
+
+class TestMonthlyExpenseAveragesExcludePartialMonth:
+    """Trend baselines average complete months only."""
+
+    def test_avg_3_months_ignores_running_month(self, db_session):
+        """Three complete 3,000 months average to 3,000, not a diluted figure.
+
+        Including the running month divided a few days of spend by a full
+        month, dragging the cash-flow forecast's expense baseline down while
+        its income baseline already excluded that month.
+        """
+        import pandas as pd
+
+        from backend.models.transaction import BankTransaction
+
+        today = pd.Timestamp.today().normalize()
+        rows = []
+        for index, offset in enumerate((1, 2, 3)):
+            month = (today - pd.DateOffset(months=offset)).replace(day=15)
+            rows.append(
+                BankTransaction(
+                    id=f"avg{index}", date=month.strftime("%Y-%m-%d"),
+                    provider="p", account_name="a", description="d",
+                    amount=-3000.0, category="Food", tag=None,
+                    source="bank_transactions", type="normal",
+                    status="completed",
+                )
+            )
+        rows.append(
+            BankTransaction(
+                id="avg-partial", date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="p", account_name="a", description="partial",
+                amount=-100.0, category="Food", tag=None,
+                source="bank_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.add_all(rows)
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_monthly_expenses()
+        assert result["avg_3_months"] == 3000.0

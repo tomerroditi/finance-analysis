@@ -65,24 +65,29 @@ interface PendingConfirm {
 }
 
 export function DialogProvider({ children }: { children: ReactNode }) {
-  const [confirmState, setConfirmState] = useState<PendingConfirm | null>(null);
+  // A FIFO queue, not a single slot. Overlapping `confirm()` calls are real
+  // (a bulk action that asks twice, a keyboard-fast user, two components
+  // reacting to the same event): the previous single-slot state replaced the
+  // pending entry and dropped its `resolve`, so that caller's `await` never
+  // settled and its handler silently died half-way through.
+  const [confirmQueue, setConfirmQueue] = useState<PendingConfirm[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const idRef = useRef(0);
 
   const confirm = useCallback((options: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
-      setConfirmState({ options, resolve });
+      setConfirmQueue((prev) => [...prev, { options, resolve }]);
     });
   }, []);
 
   const handleConfirmClose = useCallback(
     (result: boolean) => {
-      if (confirmState) {
-        confirmState.resolve(result);
-        setConfirmState(null);
-      }
+      const pending = confirmQueue[0];
+      if (!pending) return;
+      pending.resolve(result);
+      setConfirmQueue((prev) => prev.slice(1));
     },
-    [confirmState],
+    [confirmQueue],
   );
 
   const dismissNotification = useCallback((id: number) => {
@@ -120,7 +125,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   return (
     <DialogContext.Provider value={value}>
       {children}
-      <ConfirmDialog state={confirmState} onClose={handleConfirmClose} />
+      <ConfirmDialog
+        state={confirmQueue[0] ?? null}
+        onClose={handleConfirmClose}
+      />
       <NotificationStack
         notifications={notifications}
         onDismiss={dismissNotification}
@@ -289,10 +297,17 @@ function NotificationStack({
   return (
     <div className="fixed z-[80] bottom-4 inset-x-4 sm:inset-x-auto sm:end-4 sm:bottom-4 flex flex-col gap-2 pointer-events-none sm:max-w-sm w-auto sm:w-96">
       {notifications.map((n) => (
+        // `onDismiss` is passed through by identity (the stable
+        // `dismissNotification` callback) and the id is applied inside the
+        // toast. An inline `() => onDismiss(n.id)` closure here would be a
+        // NEW function on every NotificationStack render, so every
+        // subsequent toast (or dismissal) re-ran each visible toast's
+        // auto-dismiss effect and restarted its 4.5 s timer — toasts stayed
+        // on screen far longer than their configured duration.
         <NotificationToast
           key={n.id}
           notification={n}
-          onDismiss={() => onDismiss(n.id)}
+          onDismiss={onDismiss}
         />
       ))}
     </div>
@@ -304,16 +319,17 @@ function NotificationToast({
   onDismiss,
 }: {
   notification: NotificationItem;
-  onDismiss: () => void;
+  onDismiss: (id: number) => void;
 }) {
   const { t } = useTranslation();
   const { Icon, ring, iconClass } = VARIANT_STYLES[notification.variant];
+  const { id, duration } = notification;
 
   useEffect(() => {
-    if (notification.duration <= 0) return;
-    const timer = setTimeout(onDismiss, notification.duration);
+    if (duration <= 0) return;
+    const timer = setTimeout(() => onDismiss(id), duration);
     return () => clearTimeout(timer);
-  }, [notification.duration, onDismiss]);
+  }, [id, duration, onDismiss]);
 
   return (
     <div
@@ -332,7 +348,7 @@ function NotificationToast({
         </div>
       </div>
       <button
-        onClick={onDismiss}
+        onClick={() => onDismiss(id)}
         aria-label={t("common.close")}
         className="p-1 -mt-1 -me-1 rounded-md text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors shrink-0"
       >

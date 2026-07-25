@@ -2354,3 +2354,92 @@ class TestProjectCategoryExclusion:
         updated_rule = updated.loc[updated[ID] == project_rule_id].iloc[0]
         assert updated_rule[AMOUNT] == 7500.0
         assert updated_rule[CATEGORY] == "Renovation"
+
+
+class TestIgnoreCategoryExcludedFromBudget:
+    """The Ignore category marks internal transfers — it must not consume budget."""
+
+    def _seed(self, db_session, suffix, category, amount):
+        """Seed one bank transaction in March 2026."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"ignore-{suffix}", date="2026-03-10", provider="p",
+                account_name="a", description=f"d{suffix}", amount=amount,
+                category=category, tag=None, source="bank_transactions",
+                type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+
+    def test_ignore_absent_from_filtered_expenses(self, db_session):
+        """An internal transfer categorized Ignore is not an expense row."""
+        self._seed(db_session, "food", "Food", -300.0)
+        self._seed(db_session, "transfer", "Ignore", -20000.0)
+
+        categories = set(BudgetService(db_session).get_filtered_expenses()["category"])
+        assert "Ignore" not in categories
+        assert "Food" in categories
+
+    def test_ignore_does_not_consume_total_budget(self, db_session):
+        """Ignore spend does not count against the monthly Total Budget."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 5000.0, TOTAL_BUDGET, [ALL_TAGS], 3, 2026
+        )
+        self._seed(db_session, "food", "Food", -300.0)
+        self._seed(db_session, "transfer", "Ignore", -20000.0)
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 3)
+        total = next(e for e in view if e["rule"][CATEGORY] == TOTAL_BUDGET)
+        assert total["current_amount"] == 300.0
+
+
+class TestPendingRefundOnSplitSlice:
+    """A refund marked on one slice must drop only that slice from spend."""
+
+    def test_pending_split_slice_is_excluded(self, db_session):
+        """Marking a slice as awaiting refund removes it from filtered expenses.
+
+        Split children reach analysis through the repository, which sets
+        ``split_id``; the service then blanket-assigned ``None`` over it, so
+        the exclusion keyed on ``split_id`` never matched and a refunded
+        slice kept counting as budget spend.
+        """
+        from backend.models.transaction import CashTransaction
+        from backend.repositories.split_transactions_repository import (
+            SplitTransactionsRepository,
+        )
+        from backend.services.pending_refunds_service import (
+            PendingRefundsService,
+        )
+        from backend.services.transactions_service import TransactionsService
+
+        db_session.add(
+            CashTransaction(
+                id="slice-refund-1", date="2026-03-10", account_name="Wallet",
+                description="mixed", amount=-100.0, category="Food",
+                tag="Groceries", source="cash_transactions", type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        unique_id = db_session.query(CashTransaction).one().unique_id
+
+        TransactionsService(db_session).split_transaction(
+            unique_id,
+            "cash_transactions",
+            [
+                {"amount": -60.0, "category": "Food", "tag": "Groceries"},
+                {"amount": -40.0, "category": "Other", "tag": "Misc"},
+            ],
+        )
+
+        splits = SplitTransactionsRepository(db_session).get_data()
+        slice_id = int(splits.iloc[0]["id"])
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "split", slice_id, "cash", 60.0
+        )
+
+        expenses = BudgetService(db_session).get_filtered_expenses()
+        assert expenses["amount"].sum() == -40.0

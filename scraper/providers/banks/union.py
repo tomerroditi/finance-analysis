@@ -25,6 +25,7 @@ from scraper.utils import (
 logger = logging.getLogger(__name__)
 
 SHEKEL_CURRENCY = "ILS"
+SHEKEL_CURRENCY_SYMBOL = "\u20aa"
 
 BASE_URL = "https://hb.unionbank.co.il"
 TRANSACTIONS_URL = f"{BASE_URL}/eBanking/Accounts/ExtendedActivity.aspx#/"
@@ -65,6 +66,7 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
         txns,
         date_format=DATE_FORMAT,
         parse_identifier=parse_int_identifier,
+        strip_symbols=(SHEKEL_CURRENCY_SYMBOL,),
         currency=SHEKEL_CURRENCY,
     )
 

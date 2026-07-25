@@ -19,7 +19,9 @@ from scraper.utils import (
     filter_old_transactions,
     fix_installments,
     get_all_months,
+    parse_provider_date,
     sleep,
+    to_amount,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,12 +168,7 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     Optional[datetime]
         Parsed datetime, or None if parsing fails.
     """
-    if not date_str:
-        return None
-    try:
-        return datetime.strptime(date_str, DATE_FORMAT)
-    except ValueError:
-        return None
+    return parse_provider_date(date_str, DATE_FORMAT)
 
 
 def _convert_transactions(
@@ -201,7 +198,11 @@ def _convert_transactions(
         if voucher_ratz == "000000000" or voucher_ratz_outbound == "000000000":
             continue
 
-        is_outbound = txn.get("dealSumOutbound", False)
+        # ``dealSumOutbound`` is an AMOUNT, not a flag. Using it as a boolean
+        # made a JSON "0.00"/"0" string (truthy in Python) flip a perfectly
+        # good domestic row onto the outbound date, description, voucher and
+        # amount — i.e. the wrong merchant, a years-old date, and 0 shekels.
+        is_outbound = to_amount(txn.get("dealSumOutbound")) != 0
 
         if is_outbound:
             txn_date_str = txn.get("fullPurchaseDateOutbound", "")
@@ -232,13 +233,15 @@ def _convert_transactions(
         except (ValueError, TypeError):
             identifier = identifier_raw or None
 
-        # Determine amounts (API may return strings or numbers)
+        # Determine amounts. The API may return strings or numbers, and the
+        # strings can be comma-grouped ("1,234.56") — a bare float() raised
+        # ValueError from inside this loop and aborted the whole run.
         if is_outbound:
-            original_amount = -float(txn.get("dealSumOutbound", 0))
-            charged_amount = -float(txn.get("paymentSumOutbound", 0))
+            original_amount = -to_amount(txn.get("dealSumOutbound"))
+            charged_amount = -to_amount(txn.get("paymentSumOutbound"))
         else:
-            original_amount = -float(txn.get("dealSum", 0))
-            charged_amount = -float(txn.get("paymentSum", 0))
+            original_amount = -to_amount(txn.get("dealSum"))
+            charged_amount = -to_amount(txn.get("paymentSum"))
 
         # Determine currencies
         original_currency = _convert_currency(

@@ -171,8 +171,10 @@ class CashBalanceService:
         """
         Delete the cash balance record for a cash account.
 
-        Prevents deletion of the default "Wallet" account and migrates any
-        transactions from the deleted account to "Wallet" before deletion.
+        Prevents deletion of the default "Wallet" account. Both the account's
+        transactions **and** its prior wealth are folded into "Wallet" before
+        deletion, so the envelope's money is preserved rather than dropped
+        from net worth, the Sankey "Prior Wealth" node and the overview.
 
         Parameters
         ----------
@@ -188,11 +190,31 @@ class CashBalanceService:
         if account_name == "Wallet":
             raise ValueError("Cannot delete the default 'Wallet' account")
 
+        # Carry the envelope's prior wealth over to Wallet. Deleting the row
+        # without this silently destroys money that predates tracked
+        # transactions — the migrated transactions alone don't represent it.
+        deleted = self.cash_balance_repo.get_by_account_name(account_name)
+        carried_prior_wealth = (
+            float(deleted.prior_wealth_amount or 0.0) if deleted else 0.0
+        )
+
         # Migrate transactions from deleted account to "Wallet"
         self._migrate_transactions_to_wallet(account_name)
 
         # Delete the balance record
         self.cash_balance_repo.delete_by_account_name(account_name)
+
+        if carried_prior_wealth:
+            wallet = self.cash_balance_repo.get_by_account_name("Wallet")
+            wallet_prior_wealth = (
+                float(wallet.prior_wealth_amount or 0.0) if wallet else 0.0
+            ) + carried_prior_wealth
+            self.cash_balance_repo.upsert(
+                account_name="Wallet",
+                balance=wallet_prior_wealth
+                + self._get_account_transaction_sum("Wallet"),
+                prior_wealth_amount=wallet_prior_wealth,
+            )
 
     def _get_account_transaction_sum(self, account_name: str) -> float:
         """

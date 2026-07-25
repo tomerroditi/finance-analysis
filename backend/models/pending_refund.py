@@ -1,6 +1,6 @@
 """Pending refund and refund link models."""
 
-from sqlalchemy import Column, Float, Integer, String
+from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 
 from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
@@ -36,6 +36,15 @@ class PendingRefund(Base, TimestampMixin):
     status = Column(String, default="pending")
     notes = Column(String, nullable=True)
 
+    # One pending refund per source — the service already rejects a second
+    # one, so a duplicate can only arrive via a race.
+    __table_args__ = (
+        UniqueConstraint(
+            "source_type", "source_id", "source_table",
+            name="uq_pending_refund_source",
+        ),
+    )
+
 
 class RefundSourceNote(Base, TimestampMixin):
     """
@@ -61,6 +70,14 @@ class RefundSourceNote(Base, TimestampMixin):
     refund_source = Column(String, nullable=False)
     refund_transaction_id = Column(Integer, nullable=False)
     note = Column(String, nullable=False)
+
+    # One note per (source table, transaction) — upsert semantics.
+    __table_args__ = (
+        UniqueConstraint(
+            "refund_source", "refund_transaction_id",
+            name="uq_refund_source_note",
+        ),
+    )
 
 
 class RefundLink(Base, TimestampMixin):

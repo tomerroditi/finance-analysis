@@ -10,10 +10,12 @@ import { createStore, get, set, del } from "idb-keyval";
  * scrape "in-progress" value across reloads would mislead the UI.
  */
 const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
-  "scrapingStatus",
-  "scraping-status",
   // Mirrors the SW's /api/scraping/* exclusion (rules/frontend_pwa.md says
-  // both cache layers must agree).
+  // both cache layers must agree). This is the ONLY scraping-backed query
+  // key in the app — live scraper status is polled imperatively through
+  // `scrapingApi.getStatus` in `hooks/useScraping.ts`, never via React
+  // Query, so there is no "scrapingStatus"/"scraping-status" entry to
+  // exclude (two such dead strings used to sit here matching nothing).
   "last-scrapes",
   // Hits /api/credentials/providers — mirrors the SW's /api/credentials*
   // exclusion; the key itself doesn't contain "credential" so the heuristic
@@ -23,10 +25,12 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   // persisted (it was previously plain useState, so no stale cache exists
   // and no PERSIST_BUSTER bump is needed).
   "backups",
+  // Read-only POST "preview" endpoints the pages treat as queries. This is
+  // the only one that actually reaches the cache: the retirement Calculate
+  // preview is plain component state (see RetirementGoalForm), not a query,
+  // so the old "retirement-preview" / "suggestion-preview" / "rule-conflicts"
+  // entries here matched nothing and were removed.
   "rule-preview",
-  "rule-conflicts",
-  "retirement-preview",
-  "suggestion-preview",
   "onboardingStatus",
   // Update-availability is intentionally not persisted: the source of
   // truth is the backend's 24h disk cache. A stale IndexedDB hydration
@@ -131,4 +135,10 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // that still hold them.
 // v3: query keys were centralized (services/queryKeys.ts) — old persisted
 // entries use retired key shapes and must be discarded, not hydrated.
-export const PERSIST_BUSTER = "v3";
+// v4: `PendingRefund` gained `links` / `total_refunded` / `remaining` and
+// `Liability` gained `current_rate` / `rate_spread` plus new `loan_type`
+// values after the v3 bump; a hydrated v3 snapshot would feed the new
+// components the old shape. Also discards the orphan `["retirement", …]`
+// prefetch entries written under the drifted literal keys in
+// services/routePrefetch.ts.
+export const PERSIST_BUSTER = "v4";

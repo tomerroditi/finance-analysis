@@ -76,7 +76,11 @@ class ScrapingHistoryRepository:
         return history.id
 
     def record_scrape_end(
-        self, scrape_id: int, status: str, error_message: str = None
+        self,
+        scrape_id: int,
+        status: str,
+        error_message: str = None,
+        error_type: str = None,
     ) -> None:
         """Update a scraping record with its final status and optional error.
 
@@ -88,7 +92,13 @@ class ScrapingHistoryRepository:
             Final status of the scraping operation. Expected values are SUCCESS,
             FAILED, or CANCELED.
         error_message : str, optional
-            Human-readable error details if status is FAILED, by default None.
+            Technical error details if status is FAILED — the provider's own
+            message or the exception text. By default None.
+        error_type : str, optional
+            Failure category (``INVALID_PASSWORD``, ``TIMEOUT``,
+            ``GENERAL_ERROR``, …) used to pick the user-facing message, keeping
+            ``error_message`` free to carry the raw provider text. By default
+            None.
 
         Returns
         -------
@@ -97,7 +107,11 @@ class ScrapingHistoryRepository:
         stmt = (
             update(ScrapingHistory)
             .where(ScrapingHistory.id == scrape_id)
-            .values(status=status, error_message=error_message)
+            .values(
+                status=status,
+                error_message=error_message,
+                error_type=error_type,
+            )
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -157,6 +171,28 @@ class ScrapingHistoryRepository:
         )
         return self.db.execute(stmt).scalar()
 
+    def get_error(self, scrape_id: int) -> tuple[str | None, str | None]:
+        """Get both the error detail and its category in one query.
+
+        Parameters
+        ----------
+        scrape_id : int
+            ID of the scraping record to look up.
+
+        Returns
+        -------
+        tuple[str or None, str or None]
+            ``(error_message, error_type)``. Both are None when no error was
+            recorded or no such record exists. ``error_type`` is None for rows
+            written before the column existed — callers should fall back to
+            displaying ``error_message``.
+        """
+        stmt = select(
+            ScrapingHistory.error_message, ScrapingHistory.error_type
+        ).where(ScrapingHistory.id == scrape_id)
+        row = self.db.execute(stmt).first()
+        return (row[0], row[1]) if row else (None, None)
+
     def get_scraping_history(self) -> pd.DataFrame:
         """Get the complete scraping history as a DataFrame.
 
@@ -204,6 +240,32 @@ class ScrapingHistoryRepository:
         )
 
         return self.db.execute(stmt).scalar()
+
+    def delete_for_account(self, service: str, provider: str, account: str) -> None:
+        """Delete all scrape history for one account.
+
+        Called when the account's credentials are removed. Left behind, the
+        history still answers "when did we last scrape this account?", so
+        re-adding the account resumes from that watermark instead of doing
+        the fresh-account one-year backfill — silently losing ~12 months of
+        history with no way for the user to force it.
+
+        Parameters
+        ----------
+        service : str
+            Service type (e.g. ``"banks"``).
+        provider : str
+            Provider identifier.
+        account : str
+            Account name.
+        """
+        stmt = delete(ScrapingHistory).where(
+            ScrapingHistory.service_name == service,
+            ScrapingHistory.provider_name == provider,
+            ScrapingHistory.account_name == account,
+        )
+        self.db.execute(stmt)
+        self.db.commit()
 
     def clear_old_records(self, days_to_keep: int = 30) -> None:
         """Clear scraping history records older than specified days.

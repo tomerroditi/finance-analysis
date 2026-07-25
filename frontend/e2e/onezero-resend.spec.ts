@@ -10,6 +10,10 @@ const PROCESS_ID = 4242;
 // used to live in a separate onezero-force-2fa.spec.ts.
 const ONEZERO_ACCOUNT = "E2E OneZero Resend";
 
+// Mirrors INITIAL_2FA_COOLDOWN_SECONDS in src/hooks/useScraping.ts. Not
+// imported: e2e specs run outside the Vite graph and must not pull app modules.
+const INITIAL_2FA_COOLDOWN_SECONDS = 30;
+
 /**
  * Seed (or remove) a OneZero bank credential through the credentials API,
  * the same path the Data Sources "add account" form uses. Demo mode must
@@ -75,6 +79,12 @@ test.describe("OneZero resend-in-place 2FA", () => {
     // signal that "the process id is unchanged", since the UI itself
     // doesn't render the numeric id anywhere.
     const polledProcessIds: string[] = [];
+
+    // Install a controllable clock so the cooldown windows can be skipped
+    // instead of slept through. `resume()` right after install puts time back
+    // on a real tick, so polling, React and TanStack Query all behave normally.
+    await page.clock.install();
+    await page.clock.resume();
 
     await page.route("**/api/scraping/start", async (route) => {
       startBody = route.request().postDataJSON();
@@ -163,6 +173,19 @@ test.describe("OneZero resend-in-place 2FA", () => {
 
     await expect(verifyButton).toBeVisible({ timeout: 10_000 });
     await expect(resendButton).toBeVisible();
+
+    // Reaching waiting_for_2fa means the provider just sent a code, so Resend
+    // starts inside an initial cooldown (INITIAL_2FA_COOLDOWN_SECONDS) rather
+    // than live. Before that existed, "Re-authenticate" followed immediately by
+    // "Resend" fired a second OTP seconds after the first.
+    await expect(resendButton).toBeDisabled();
+    await expect(resendButton).toHaveText(/\d/);
+
+    // Jump past the initial window instead of sleeping through it — the clock
+    // is installed with `time` at the current instant and immediately resumed,
+    // so the app runs normally and only this fast-forward skips ahead.
+    await page.clock.fastForward(INITIAL_2FA_COOLDOWN_SECONDS * 1000);
+
     await expect(resendButton).toBeEnabled();
     const resendLabelBefore = await resendButton.innerText();
     expect(resendLabelBefore).toMatch(/^Resend$|^שלח שוב$/);

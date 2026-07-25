@@ -29,6 +29,8 @@ import { ProviderLogo } from "../components/common/ProviderLogo";
 import { Skeleton } from "../components/common/Skeleton";
 import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
 import { AccountCard } from "../components/dataSources/AccountCard";
+import { DisconnectAccountModal } from "../components/dataSources/DisconnectAccountModal";
+import { useNotify } from "../context/DialogContext";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
@@ -52,6 +54,7 @@ export function DataSources() {
   const isRtl = i18nInstance.language === "he";
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
+  const notify = useNotify();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<
@@ -65,6 +68,7 @@ export function DataSources() {
     {},
   );
   const [editingAccount, setEditingAccount] = useState<CredentialAccount | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CredentialAccount | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
   useScrollLock(isAddOpen || !!editingAccount);
 
@@ -123,10 +127,42 @@ export function DataSources() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (acc: CredentialAccount) =>
-      credentialsApi.delete(acc.service, acc.provider, acc.account_name),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts }),
+    mutationFn: ({
+      acc,
+      deleteData,
+    }: {
+      acc: CredentialAccount;
+      deleteData: boolean;
+    }) =>
+      credentialsApi
+        .delete(acc.service, acc.provider, acc.account_name, { deleteData })
+        .then((res) => res.data),
+    onSuccess: (result, { deleteData }) => {
+      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
+      if (deleteData) {
+        // Wiping an account's data changes far more than the accounts list:
+        // its transactions (plus splits/refunds/notes/overrides), its bank
+        // balance (and the prior wealth derived from it) and its scrape
+        // history are all gone. Narrow prefixes only — no blanket sweep.
+        queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+        queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
+        queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+        queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
+        queryClient.invalidateQueries({ queryKey: qkPrefix.bankBalances });
+        queryClient.invalidateQueries({ queryKey: qkPrefix.lastScrapes });
+      }
+      setDeleteTarget(null);
+      const deleted = result?.transactions_deleted ?? 0;
+      if (deleted > 0) {
+        notify.success(
+          t("dataSources.transactionsDeleted", { count: deleted }),
+        );
+      }
+    },
+    onError: () => {
+      setDeleteTarget(null);
+      notify.error(t("dataSources.disconnectFailed"));
+    },
   });
 
   // Bank Balances
@@ -344,7 +380,7 @@ export function DataSources() {
                   }
                   onView={() => handleView(acc)}
                   onEdit={() => handleEdit(acc)}
-                  onDelete={() => deleteMutation.mutate(acc)}
+                  onDelete={() => setDeleteTarget(acc)}
                 />
               );
             };
@@ -643,6 +679,23 @@ export function DataSources() {
           </div>
         </div>
       )}
+
+      {/* Keyed by target so the keep-vs-delete choice resets to the safe
+          default every time the modal opens for a different account. */}
+      <DisconnectAccountModal
+        key={
+          deleteTarget
+            ? `${deleteTarget.service}-${deleteTarget.provider}-${deleteTarget.account_name}`
+            : "no-disconnect-target"
+        }
+        isOpen={deleteTarget !== null}
+        accountName={deleteTarget?.account_name ?? ""}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(deleteData) => {
+          if (deleteTarget) deleteMutation.mutate({ acc: deleteTarget, deleteData });
+        }}
+      />
 
       <UpdateBankBalanceModal
         isOpen={balanceModalAccount !== null}

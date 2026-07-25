@@ -24,6 +24,7 @@ from scraper.utils import (
     fetch_post,
     filter_old_transactions,
     page_eval,
+    to_amount,
     wait_for_navigation,
     wait_until,
     wait_until_element_found,
@@ -88,6 +89,31 @@ class TrnTypeCode(str, Enum):
 def _is_pending(transaction: dict) -> bool:
     """Check if a transaction is pending (no debit date)."""
     return "debCrdDate" not in transaction
+
+
+def _to_amount(value: object) -> float:
+    """Coerce a raw API amount to ``float``.
+
+    The Cal API returns amounts as numbers or as strings depending on the
+    endpoint. Multiplying a string by an int is Python string-repetition,
+    which silently yields ``''`` for a negative multiplier instead of
+    raising — so the value must be coerced before any arithmetic.
+
+    Thin alias for the shared :func:`scraper.utils.to_amount`, kept so this
+    module's call sites read locally. Every provider now shares one
+    implementation.
+
+    Parameters
+    ----------
+    value : object
+        Raw amount from the API (number, numeric string, or None).
+
+    Returns
+    -------
+    float
+        The parsed amount, or ``0.0`` when it cannot be parsed.
+    """
+    return to_amount(value)
 
 
 def _convert_parsed_data_to_transactions(
@@ -158,14 +184,34 @@ def _convert_parsed_data_to_transactions(
                 months=installments.number - 1
             )).strftime("%Y-%m-%d")
 
-        charged_amount = (
+        # The two amount fields carry DIFFERENT sign conventions, which is why
+        # only one of them consults the credit flag. Do not "fix" the
+        # asymmetry — it is deliberate and matches upstream
+        # eshaham/israeli-bank-scrapers verbatim:
+        #
+        #   chargedAmount  = (isPending ? trnAmt : amtBeforeConvAndIndex) * -1
+        #   originalAmount = trnAmt * (trnTypeCode === credit ? 1 : -1)
+        #
+        # `amtBeforeConvAndIndex` arrives already signed by the API (negative
+        # for a charge, positive for a credit), so the flat `* -1` yields a
+        # negative expense and a positive refund on its own. `trnAmt` is an
+        # unsigned magnitude, so it needs the explicit credit flag.
+        #
+        # Applying the credit flag to `charged_amount` as well inverts every
+        # refund — the field the backend persists — and was briefly shipped
+        # and reverted here. See the note in the test module.
+        is_credit = trn_type_code == TrnTypeCode.CREDIT
+
+        raw_charged = (
             txn.get("trnAmt", 0)
             if is_pending_txn
             else txn.get("amtBeforeConvAndIndex", 0)
-        ) * -1
-
-        is_credit = trn_type_code == TrnTypeCode.CREDIT
-        original_amount = txn.get("trnAmt", 0) * (1 if is_credit else -1)
+        )
+        # `_to_amount` is a genuine porting requirement, not a behaviour
+        # change: in JS `"100.0" * -1` coerces to -100, but in Python it is
+        # string repetition and silently yields `''`.
+        charged_amount = _to_amount(raw_charged) * -1
+        original_amount = _to_amount(txn.get("trnAmt", 0)) * (1 if is_credit else -1)
 
         if is_pending_txn:
             processed_date_local = purchase_date_local
@@ -176,6 +222,12 @@ def _convert_parsed_data_to_transactions(
             except (ValueError, AttributeError):
                 processed_date_local = purchase_date_local
 
+        # Matches upstream: only REGULAR and STANDING_ORDER are NORMAL.
+        # A credit therefore types as INSTALLMENTS, which `combine_installments`
+        # would filter out — but that option is never enabled in this app
+        # (it defaults to False and nothing sets it), so the path is
+        # unreachable. Left faithful to upstream rather than diverging for a
+        # case that cannot occur here.
         txn_type = (
             TransactionType.NORMAL
             if trn_type_code in (TrnTypeCode.REGULAR, TrnTypeCode.STANDING_ORDER)

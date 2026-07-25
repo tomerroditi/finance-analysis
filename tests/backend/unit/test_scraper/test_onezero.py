@@ -1,6 +1,8 @@
 """Tests for the OneZero bank scraper: identity-server URLs, OTP flow, errors."""
 
 import asyncio
+import logging
+from datetime import date
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -431,3 +433,131 @@ class TestOtpCancel:
 
         with pytest.raises(OtpCanceledError):
             asyncio.run(run())
+
+
+class TestPhoneNumberMasking:
+    """Phone numbers must never reach the logs in full.
+
+    The prepare path deliberately masks the number to its last 4 digits;
+    the SMS-provider-block branch a few lines later logged it in full,
+    defeating the masking for exactly the users hitting a problem.
+    """
+
+    def test_provider_block_warning_masks_the_phone_number(self, caplog):
+        """The provider-block warning logs only the last 4 digits."""
+        scraper = _make_scraper()
+        phone = "+15551234567"
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(
+                    side_effect=[
+                        {"resultData": {"deviceToken": "dt"}},
+                        _sms_provider_block_error(),
+                    ]
+                ),
+            ):
+                await scraper._trigger_two_factor_auth(phone)
+
+        with caplog.at_level(logging.WARNING, logger=onezero.__name__):
+            with pytest.raises(OtpProviderBlockedError):
+                asyncio.run(run())
+
+        assert phone not in caplog.text
+        assert "4567" in caplog.text
+
+    def test_mask_phone_keeps_only_the_last_four_digits(self):
+        """The masking helper never emits more than the trailing 4 digits."""
+        assert onezero._mask_phone("+15551234567") == "***4567"
+        assert "1234" not in onezero._mask_phone("+15551234567")
+
+    def test_mask_phone_handles_short_and_missing_values(self):
+        """Short or missing numbers mask entirely rather than leaking."""
+        assert onezero._mask_phone("123") == "***"
+        assert onezero._mask_phone(None) == "***"
+
+
+def _movement(**overrides) -> dict:
+    """Build a raw OneZero GraphQL movement dict."""
+    movement = {
+        "movementId": "mv-1",
+        "movementTimestamp": "2024-03-14T22:30:00Z",
+        "valueDate": "2024-03-14T22:30:00Z",
+        "creditDebit": "DEBIT",
+        "movementAmount": "25.0",
+        "movementCurrency": "ILS",
+        "description": "coffee",
+        "runningBalance": "1000.0",
+        "transaction": None,
+    }
+    movement.update(overrides)
+    return movement
+
+
+def _movements_response(movements: list[dict]) -> dict:
+    """Wrap movements in the GraphQL response envelope (single page)."""
+    return {
+        "movements": {
+            "movements": movements,
+            "pagination": {"cursor": None, "hasMore": False},
+        }
+    }
+
+
+class TestMovementDateBasis:
+    """The start-date filter must use the same basis as the stored date.
+
+    Movements are stored under their Israel-local date but were filtered on
+    their UTC date, so anything transacted between midnight and 02:00 Israel
+    time was silently dropped whenever the window opened on that day.
+    """
+
+    def _fetch(self, movements: list[dict], start: date):
+        """Run _fetch_portfolio_movements against a canned GraphQL page."""
+        scraper = _make_scraper()
+        scraper._access_token = "token"
+        scraper.client = None
+        portfolio = {
+            "portfolioId": "p1",
+            "portfolioNum": "12345",
+            "accounts": [{"accountId": "a1"}],
+        }
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_graphql",
+                new=AsyncMock(return_value=_movements_response(movements)),
+            ):
+                return await scraper._fetch_portfolio_movements(portfolio, start)
+
+        return asyncio.run(run())
+
+    def test_after_midnight_israel_movement_is_kept(self):
+        """A 00:30 Israel-time movement survives a window opening that day."""
+        result = self._fetch([_movement()], date(2024, 3, 15))
+        assert len(result.transactions) == 1
+        assert result.transactions[0].date == "2024-03-15"
+
+    def test_movement_before_the_window_is_still_dropped(self):
+        """A movement genuinely before the window is filtered out."""
+        result = self._fetch(
+            [_movement(valueDate="2024-03-10T09:00:00Z",
+                       movementTimestamp="2024-03-10T09:00:00Z")],
+            date(2024, 3, 15),
+        )
+        assert result.transactions == []
+
+    def test_stored_date_matches_the_filter_basis(self):
+        """Every surviving transaction's date is >= the window start."""
+        result = self._fetch(
+            [_movement(), _movement(movementId="mv-2",
+                                    valueDate="2024-03-20T09:00:00Z",
+                                    movementTimestamp="2024-03-20T09:00:00Z")],
+            date(2024, 3, 15),
+        )
+        assert [t.date for t in result.transactions] == [
+            "2024-03-15", "2024-03-20"
+        ]

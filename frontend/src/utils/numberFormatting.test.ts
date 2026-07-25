@@ -4,6 +4,7 @@ import {
   formatCompactCurrency,
   formatChange,
   formatPercentChange,
+  parseAmountInput,
 } from "./numberFormatting";
 
 // LRI ... PDI envelope + NBSP between digits and ₪.
@@ -108,5 +109,27 @@ describe("formatPercentChange", () => {
   it("respects fractionDigits", () => {
     expect(formatPercentChange(614.4, 1)).toBe("+614.4%");
     expect(formatPercentChange(2.5, 2)).toBe("+2.50%");
+  });
+});
+
+describe("parseAmountInput", () => {
+  it("parses ordinary numeric input", () => {
+    expect(parseAmountInput("150")).toBe(150);
+    expect(parseAmountInput("-12.5")).toBe(-12.5);
+    expect(parseAmountInput("0")).toBe(0);
+  });
+
+  it("returns \"\" instead of NaN for an emptied field", () => {
+    // The whole point: `parseFloat("")` is NaN, which React renders back
+    // into the controlled input as "NaN" and JSON.stringify serialises as
+    // null (-> backend 422).
+    expect(parseAmountInput("")).toBe("");
+    expect(parseAmountInput("   ")).toBe("");
+  });
+
+  it("returns \"\" for unparseable input rather than NaN", () => {
+    expect(parseAmountInput("abc")).toBe("");
+    expect(parseAmountInput("-")).toBe("");
+    expect(Number.isNaN(parseAmountInput("abc") as number)).toBe(false);
   });
 });

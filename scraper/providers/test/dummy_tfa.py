@@ -23,13 +23,19 @@ class DummyTFAScraper(DummyRegularScraper):
         await asyncio.sleep(1)
 
         if self.on_otp_request is None:
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "no code prompt was available (on_otp_request callback not set)",
+            )
 
         self._emit_progress("Waiting for OTP code")
         otp_code = await self.on_otp_request()
 
         if otp_code == OTP_CANCEL_SENTINEL:
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "two-factor authentication canceled by the user",
+            )
 
         return LoginResult.SUCCESS
 
