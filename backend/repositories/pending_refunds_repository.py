@@ -10,6 +10,15 @@ from backend.models.pending_refund import (
     RefundSourceNote,
 )
 
+# SQLite caps bound parameters per statement; chunk long IN lists.
+_IN_CHUNK = 500
+
+
+def _chunked(values: list, size: int = _IN_CHUNK):
+    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
+
 
 class PendingRefundsRepository:
     """
@@ -364,8 +373,8 @@ class PendingRefundsRepository:
             self.db.delete(pending)
         self.db.commit()
 
-    def delete_for_transaction(
-        self, source_tables: list[str], unique_id: int
+    def delete_for_transactions(
+        self, source_tables: list[str], unique_ids: list[int]
     ) -> None:
         """
         Purge every refund record tied to a deleted transaction.
@@ -382,42 +391,46 @@ class PendingRefundsRepository:
             Every accepted spelling of the source table (e.g. both
             ``"cash"`` and ``"cash_transactions"``), since older rows may
             store the service name rather than the table name.
-        unique_id : int
-            unique_id of the deleted transaction.
+        unique_ids : list[int]
+            unique_ids of the deleted transactions.
         """
-        orphan_ids = [
-            row_id
-            for (row_id,) in self.db.execute(
-                select(PendingRefund.id).where(
-                    PendingRefund.source_type == "transaction",
-                    PendingRefund.source_id == unique_id,
-                    PendingRefund.source_table.in_(source_tables),
+        if not unique_ids:
+            return
+
+        for chunk in _chunked(unique_ids):
+            orphan_ids = [
+                row_id
+                for (row_id,) in self.db.execute(
+                    select(PendingRefund.id).where(
+                        PendingRefund.source_type == "transaction",
+                        PendingRefund.source_id.in_(chunk),
+                        PendingRefund.source_table.in_(source_tables),
+                    )
+                ).all()
+            ]
+            if orphan_ids:
+                self.db.execute(
+                    delete(RefundLink).where(
+                        RefundLink.pending_refund_id.in_(orphan_ids)
+                    )
                 )
-            ).all()
-        ]
-        if orphan_ids:
+                self.db.execute(
+                    delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+                )
+
+            # A transaction may also have funded someone else's refund.
             self.db.execute(
                 delete(RefundLink).where(
-                    RefundLink.pending_refund_id.in_(orphan_ids)
+                    RefundLink.refund_transaction_id.in_(chunk),
+                    RefundLink.refund_source.in_(source_tables),
                 )
             )
             self.db.execute(
-                delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+                delete(RefundSourceNote).where(
+                    RefundSourceNote.refund_transaction_id.in_(chunk),
+                    RefundSourceNote.refund_source.in_(source_tables),
+                )
             )
-
-        # The transaction may also have funded other people's refunds.
-        self.db.execute(
-            delete(RefundLink).where(
-                RefundLink.refund_transaction_id == unique_id,
-                RefundLink.refund_source.in_(source_tables),
-            )
-        )
-        self.db.execute(
-            delete(RefundSourceNote).where(
-                RefundSourceNote.refund_transaction_id == unique_id,
-                RefundSourceNote.refund_source.in_(source_tables),
-            )
-        )
         self.db.commit()
 
     def delete_refund_link(self, link_id: int) -> RefundLink | None:

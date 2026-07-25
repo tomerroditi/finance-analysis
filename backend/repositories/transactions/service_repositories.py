@@ -145,6 +145,72 @@ class ServiceRepository:
             self.db.rollback()
             raise
 
+    def get_unique_ids_for_account(
+        self, provider: str, account_name: str
+    ) -> list[int]:
+        """List the unique_ids of every transaction belonging to one account.
+
+        Parameters
+        ----------
+        provider : str
+            Provider identifier (e.g. ``"hapoalim"``).
+        account_name : str
+            Account name as stored on the transactions.
+
+        Returns
+        -------
+        list[int]
+            unique_ids in this repository's table for that account.
+        """
+        stmt = select(self.model.unique_id).where(
+            self.model.provider == provider,
+            self.model.account_name == account_name,
+        )
+        return [row[0] for row in self.db.execute(stmt).all()]
+
+    def delete_transactions_for_account(
+        self, provider: str, account_name: str
+    ) -> int:
+        """Delete every transaction belonging to one account.
+
+        The caller is responsible for purging records that reference these
+        rows first — see ``TransactionsService.delete_account_data``.
+
+        Parameters
+        ----------
+        provider : str
+            Provider identifier.
+        account_name : str
+            Account name as stored on the transactions.
+
+        Returns
+        -------
+        int
+            Number of transactions deleted.
+
+        Raises
+        ------
+        SQLAlchemyError
+            On database failure, after rolling back.
+        """
+        try:
+            stmt = delete(self.model).where(
+                self.model.provider == provider,
+                self.model.account_name == account_name,
+            )
+            result = self.db.execute(stmt)
+            self.db.commit()
+            return result.rowcount
+        except SQLAlchemyError:
+            logger.exception(
+                "Account delete failed for %s/%s in %s",
+                provider,
+                account_name,
+                self.model.__tablename__,
+            )
+            self.db.rollback()
+            raise
+
     def update_transaction_by_unique_id(self, unique_id: int, updates: dict) -> bool:
         """Update arbitrary fields of a transaction by unique_id.
 

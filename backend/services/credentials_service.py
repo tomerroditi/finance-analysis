@@ -156,9 +156,20 @@ class CredentialsService:
 
         return credentials
 
-    def delete_account(self, service: str, provider: str, account: str) -> None:
+    def delete_account(
+        self,
+        service: str,
+        provider: str,
+        account: str,
+        delete_data: bool = False,
+    ) -> dict:
         """
-        Delete an account's credentials from the repository and invalidate the cache.
+        Disconnect an account, optionally deleting its stored data too.
+
+        Deleting the connection alone is non-destructive: the account's
+        transactions, balances and scrape history all survive. Passing
+        ``delete_data`` additionally removes the transactions and every record
+        that references them.
 
         Parameters
         ----------
@@ -168,16 +179,48 @@ class CredentialsService:
             Provider identifier.
         account : str
             Account name.
+        delete_data : bool, optional
+            When ``False`` (the default) only the connection is removed —
+            transactions, balances and scrape history are all kept, so
+            re-adding the account resumes where it left off. When ``True`` the
+            account's transactions and everything referencing them are deleted
+            as well, and the next connection starts with a fresh one-year
+            backfill.
+
+        Returns
+        -------
+        dict
+            ``{"transactions_deleted": int}`` — zero when ``delete_data`` is
+            ``False``.
         """
+        result = {"transactions_deleted": 0}
+
+        if delete_data:
+            # Order matters: purge the data while the account's identity is
+            # still known, then drop the credential.
+            from backend.services.transactions_service import TransactionsService
+
+            try:
+                result = TransactionsService(self.db).delete_account_data(
+                    service, provider, account
+                )
+            except ValueError:
+                # A service with no transaction table of its own (nothing to
+                # delete) must not block disconnecting the account.
+                pass
+
         self.repository.delete_credentials(service, provider, account)
-        # Drop the scrape history too. It outlives the credential otherwise,
-        # and re-adding the account resumes from the stale "last successful
-        # scrape" watermark instead of doing the fresh-account one-year
-        # backfill — losing ~12 months of history with no way to force it.
-        ScrapingHistoryRepository(self.db).delete_for_account(
-            service, provider, account
-        )
+
+        if delete_data:
+            # Only wipe the watermark when the history it refers to is gone.
+            # Deleting it while keeping the transactions would force a
+            # redundant one-year re-scrape of data already stored.
+            ScrapingHistoryRepository(self.db).delete_for_account(
+                service, provider, account
+            )
+
         self._invalidate_cache()
+        return result
 
     def get_scraper_credentials(self, service, provider, account) -> Dict:
         """
@@ -311,7 +354,13 @@ class CredentialsService:
             Services.INSURANCE.value: insurances,
         }
 
-    def delete_credential(self, service: str, provider: str, account_name: str) -> None:
+    def delete_credential(
+        self,
+        service: str,
+        provider: str,
+        account_name: str,
+        delete_data: bool = False,
+    ) -> dict:
         """
         Delete a credential and clean up associated Keyring entries.
 
@@ -330,7 +379,9 @@ class CredentialsService:
         calls this one); they must not drift, so this delegates rather than
         repeating the cleanup.
         """
-        self.delete_account(service, provider, account_name)
+        return self.delete_account(
+            service, provider, account_name, delete_data=delete_data
+        )
 
     def seed_demo_credentials(self) -> None:
         """

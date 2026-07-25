@@ -8,6 +8,15 @@ from sqlalchemy.orm import Session
 
 from backend.models.transaction import SplitTransaction
 
+# SQLite caps bound parameters per statement; chunk long IN lists.
+_IN_CHUNK = 500
+
+
+def _chunked(values: list, size: int = _IN_CHUNK):
+    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
+
 
 class SplitTransactionsRepository:
     """
@@ -148,6 +157,27 @@ class SplitTransactionsRepository:
             SplitTransaction.source == source,
         )
         self.db.execute(stmt)
+        self.db.commit()
+
+    def delete_splits_for_transactions(
+        self, transaction_ids: list[int], source: str
+    ) -> None:
+        """Delete all splits for many parent transactions at once.
+
+        Parameters
+        ----------
+        transaction_ids : list[int]
+            unique_ids of the parent transactions.
+        source : str
+            Table name the parents live in.
+        """
+        for chunk in _chunked(transaction_ids):
+            self.db.execute(
+                delete(SplitTransaction).where(
+                    SplitTransaction.transaction_id.in_(chunk),
+                    SplitTransaction.source == source,
+                )
+            )
         self.db.commit()
 
     def nullify_category_and_tag(self, category: str, tag: str) -> None:

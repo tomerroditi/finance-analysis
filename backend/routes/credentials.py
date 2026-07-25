@@ -5,7 +5,7 @@ Provides endpoints for account credential management.
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,13 @@ class StatusResponse(BaseModel):
 
 class ProviderFieldsResponse(BaseModel):
     fields: List[str]
+
+
+class DeleteAccountResponse(BaseModel):
+    """Result of disconnecting an account."""
+
+    status: str
+    transactions_deleted: int
 
 
 @router.get("/")
@@ -107,16 +114,40 @@ def get_provider_fields(provider: str) -> dict[str, List[str]]:
     return {"fields": fields}
 
 
-@router.delete("/{service}/{provider}/{account_name}", response_model=StatusResponse)
+@router.delete(
+    "/{service}/{provider}/{account_name}",
+    response_model=DeleteAccountResponse,
+)
 def delete_credential(
     service: str,
     provider: str,
     account_name: str,
+    delete_data: bool = Query(
+        False,
+        description=(
+            "Also delete the account's transactions and everything "
+            "referencing them. Defaults to false — the connection is removed "
+            "but the history is kept."
+        ),
+    ),
     db: Session = Depends(get_database),
-) -> dict[str, str]:
-    """Delete a stored credential and clean up associated data.
+) -> dict[str, Any]:
+    """Disconnect an account, optionally deleting its stored data too.
 
-    For bank accounts, also removes the stored balance record for that account.
+    Two distinct outcomes, because "delete this account" is ambiguous:
+
+    - ``delete_data=false`` (default) — remove only the connection and its
+      saved password. Transactions, the bank balance (and with it the
+      account's prior wealth) and the scrape history are all kept, so
+      reconnecting resumes where it left off.
+    - ``delete_data=true`` — additionally delete the account's transactions
+      along with their splits, pending refunds, refund links, source notes
+      and budget month overrides, plus the bank balance and scrape history.
+      Reconnecting then starts with a fresh one-year backfill.
+
+    Previously the balance row was dropped unconditionally while the
+    transactions were kept, which destroyed the account's prior wealth and
+    left net worth inconsistent with the history it was derived from.
 
     Parameters
     ----------
@@ -126,6 +157,8 @@ def delete_credential(
         Provider identifier (e.g. ``hapoalim``, ``isracard``).
     account_name : str
         Account name as stored in credentials.
+    delete_data : bool
+        Whether to delete the account's stored data as well.
 
     Raises
     ------
@@ -134,10 +167,16 @@ def delete_credential(
     """
     creds_service = CredentialsService(db)
     try:
-        creds_service.delete_credential(service, provider, account_name)
-        if service == Services.BANK.value:
-            balance_service = BankBalanceService(db)
-            balance_service.delete_for_account(provider, account_name)
-        return {"status": "success"}
+        result = creds_service.delete_credential(
+            service, provider, account_name, delete_data=delete_data
+        )
+        # The balance row carries `prior_wealth_amount`, so it may only be
+        # dropped when the transactions it was derived from go too.
+        if delete_data and service == Services.BANK.value:
+            BankBalanceService(db).delete_for_account(provider, account_name)
+        return {
+            "status": "success",
+            "transactions_deleted": result.get("transactions_deleted", 0),
+        }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

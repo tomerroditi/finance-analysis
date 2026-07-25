@@ -293,6 +293,12 @@ export interface CredentialAccount {
   account_name: string;
 }
 
+export interface CredentialDeleteResult {
+  status: string;
+  /** 0 when the caller kept the account's data. */
+  transactions_deleted: number;
+}
+
 export const credentialsApi = {
   getAll: () => api.get("/credentials/"),
   getAccounts: () => api.get<CredentialAccount[]>("/credentials/accounts"),
@@ -309,9 +315,25 @@ export const credentialsApi = {
     api.get(
       `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(accountName)}`,
     ),
-  delete: (service: string, provider: string, account_name: string) =>
-    api.delete(
+  /**
+   * Remove a connection.
+   *
+   * `deleteData` defaults to `false`: only the credential row and its saved
+   * password go away, so the account's transactions, bank balance (and the
+   * prior wealth derived from it) and scrape history survive and a
+   * reconnection resumes where it left off. Pass `true` to additionally wipe
+   * the account's transactions and everything referencing them — that is
+   * irreversible and makes a reconnection start a fresh one-year backfill.
+   */
+  delete: (
+    service: string,
+    provider: string,
+    account_name: string,
+    options?: { deleteData?: boolean },
+  ) =>
+    api.delete<CredentialDeleteResult>(
       `/credentials/${encodeURIComponent(service)}/${encodeURIComponent(provider)}/${encodeURIComponent(account_name)}`,
+      { params: { delete_data: options?.deleteData ?? false } },
     ),
 };
 

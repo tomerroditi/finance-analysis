@@ -627,7 +627,7 @@ class TransactionsService:
         if not success:
             raise ValueError("Transaction not found or deletion failed")
 
-        self._purge_dependent_records(unique_id, source)
+        self._purge_dependent_records([unique_id], source)
 
         if source == Tables.CASH.value:
             # Recalculate cash balance if this was a cash transaction
@@ -637,9 +637,11 @@ class TransactionsService:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
 
-    def _purge_dependent_records(self, unique_id: int, source: str) -> None:
+    def _purge_dependent_records(
+        self, unique_ids: list[int], source: str
+    ) -> None:
         """
-        Remove every record that pointed at a now-deleted transaction.
+        Remove every record that pointed at now-deleted transactions.
 
         Splits, pending refunds (and their links), refund-source notes and
         budget month overrides all reference a transaction by
@@ -649,13 +651,20 @@ class TransactionsService:
         silently inherits it, landing in the wrong budget month or carrying
         someone else's refund.
 
+        Takes a list rather than a single id so wiping a whole account costs a
+        handful of bulk DELETEs instead of one round-trip per transaction (a
+        2000-row account took over 5 s row-by-row).
+
         Parameters
         ----------
-        unique_id : int
-            unique_id of the deleted transaction.
+        unique_ids : list[int]
+            unique_ids of the deleted transactions. Empty is a no-op.
         source : str
-            Table name the transaction was deleted from.
+            Table name the transactions were deleted from.
         """
+        if not unique_ids:
+            return
+
         from backend.repositories.budget_month_override_repository import (
             BudgetMonthOverrideRepository,
         )
@@ -673,17 +682,62 @@ class TransactionsService:
         aliases.add(source)
         source_aliases = sorted(aliases)
 
-        self.transactions_repository.split_repo.delete_all_splits_for_transaction(
-            unique_id, source
+        self.transactions_repository.split_repo.delete_splits_for_transactions(
+            unique_ids, source
         )
 
-        PendingRefundsRepository(self.db).delete_for_transaction(
-            source_aliases, unique_id
+        PendingRefundsRepository(self.db).delete_for_transactions(
+            source_aliases, unique_ids
         )
 
-        override_repo = BudgetMonthOverrideRepository(self.db)
-        for alias in source_aliases:
-            override_repo.delete_for_source("transaction", unique_id, alias)
+        BudgetMonthOverrideRepository(self.db).delete_for_sources(
+            "transaction", unique_ids, source_aliases
+        )
+
+    def delete_account_data(
+        self, service: str, provider: str, account_name: str
+    ) -> dict:
+        """Delete every transaction for one account, plus its dependent records.
+
+        Used when the user removes a connected account and chooses to discard
+        its history. Splits, pending refunds, refund links, source notes and
+        budget month overrides are purged alongside the transactions — leaving
+        them behind would orphan them onto whichever transaction next reuses
+        the rowid.
+
+        Parameters
+        ----------
+        service : str
+            Service or table name identifying which transaction table holds
+            the account (e.g. ``"banks"`` or ``"bank_transactions"``).
+        provider : str
+            Provider identifier (e.g. ``"hapoalim"``).
+        account_name : str
+            Account name as stored on the transactions.
+
+        Returns
+        -------
+        dict
+            ``{"transactions_deleted": int}``.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` does not map to a known transaction table.
+        """
+        repo = self.transactions_repository.get_repo_by_source(service)
+        if repo is None:
+            raise ValueError(f"Unknown service '{service}'")
+
+        source = repo.model.__tablename__
+        unique_ids = repo.get_unique_ids_for_account(provider, account_name)
+
+        # Purge dependents first: once the transactions are gone their ids can
+        # be handed to new rows, and an orphan would attach to those instead.
+        self._purge_dependent_records(unique_ids, source)
+
+        deleted = repo.delete_transactions_for_account(provider, account_name)
+        return {"transactions_deleted": deleted}
 
     def split_transaction(
         self, unique_id: int, source: str, splits: list[dict]

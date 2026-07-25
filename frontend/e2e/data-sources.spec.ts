@@ -159,6 +159,110 @@ test.describe("DataSources", () => {
     }
   });
 
+  test("disconnecting an account forces an explicit keep-or-delete data choice", async ({
+    page,
+  }) => {
+    // Two throwaway accounts so each branch gets a fresh card — confirming
+    // consumes the account it was opened for.
+    const provider = "onezero";
+    const keepAccount = "E2E Disconnect Keep";
+    const wipeAccount = "E2E Disconnect Wipe";
+
+    const seed = async (accountName: string) => {
+      const ctx = await request.newContext();
+      await ctx.post(`${API_BASE}/credentials/`, {
+        data: {
+          service: "banks",
+          provider,
+          account_name: accountName,
+          credentials: {
+            email: `${accountName.replace(/\s+/g, "-")}@example.com`,
+            password: "e2e-password",
+            phoneNumber: "+15551234567",
+          },
+        },
+      });
+      await ctx.dispose();
+    };
+    await seed(keepAccount);
+    await seed(wipeAccount);
+
+    // Each card's outermost wrapper carries the "group" class; walk up from the
+    // account-name heading so locators can't match a sibling card's controls.
+    const cardFor = (accountName: string) =>
+      page
+        .getByRole("heading", { name: accountName, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    try {
+      await navigateTo(page, "/data-sources");
+
+      // ---- Branch 1: the default must be non-destructive ----
+      await cardFor(keepAccount)
+        .getByRole("button", { name: "Disconnect Account" })
+        .click();
+
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      const keepRadio = dialog.getByRole("radio", { name: /Keep my data/ });
+      const wipeRadio = dialog.getByRole("radio", { name: /Delete everything/ });
+      await expect(keepRadio).toBeChecked();
+      await expect(wipeRadio).not.toBeChecked();
+      // The irreversible-action warning belongs to the destructive branch only.
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
+
+      const [keepReq] = await Promise.all([
+        page.waitForRequest(
+          (r) => r.url().includes("/api/credentials/banks/") && r.method() === "DELETE",
+        ),
+        dialog.getByRole("button", { name: "Disconnect, keep data" }).click(),
+      ]);
+      expect(new URL(keepReq.url()).searchParams.get("delete_data")).toBe("false");
+      await expect(dialog).toBeHidden();
+
+      // ---- Branch 2: opting in flips the copy and the wire contract ----
+      // Driven at phone height on purpose: the warning is revealed *below* the
+      // scroll container's fold there, and used to stay clipped in half with
+      // nothing prompting the user to scroll.
+      await page.setViewportSize({ width: 375, height: 700 });
+      await cardFor(wipeAccount)
+        .getByRole("button", { name: "Disconnect Account" })
+        .click();
+      await expect(dialog).toBeVisible();
+      // A fresh open must not remember the previous session's choice.
+      await expect(dialog.getByRole("radio", { name: /Keep my data/ })).toBeChecked();
+
+      await dialog.getByRole("radio", { name: /Delete everything/ }).check();
+      const warning = dialog.getByRole("alert");
+      await expect(warning).toContainText(/cannot be undone/i);
+      // 0.99, not 1: `scrollIntoView({ block: "nearest" })` aligns the element
+      // flush with the container edge, and subpixel rounding leaves ~0.25px
+      // out. Before the fix the ratio here was ~0.65 (clipped mid-sentence).
+      await expect(warning).toBeInViewport({ ratio: 0.99 });
+
+      const [wipeReq] = await Promise.all([
+        page.waitForRequest(
+          (r) => r.url().includes("/api/credentials/banks/") && r.method() === "DELETE",
+        ),
+        dialog.getByRole("button", { name: "Disconnect and delete data" }).click(),
+      ]);
+      expect(new URL(wipeReq.url()).searchParams.get("delete_data")).toBe("true");
+      await expect(dialog).toBeHidden();
+
+      // Both cards are gone from the list.
+      await expect(page.getByRole("heading", { name: keepAccount })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: wipeAccount })).toHaveCount(0);
+    } finally {
+      const cleanup = await request.newContext();
+      for (const accountName of [keepAccount, wipeAccount]) {
+        await cleanup.delete(
+          `${API_BASE}/credentials/banks/${provider}/${encodeURIComponent(accountName)}`,
+        );
+      }
+      await cleanup.dispose();
+    }
+  });
+
   test("credential details API never returns plaintext secrets", async ({ page }) => {
     // Regression guard: GET /api/credentials/{service}/{provider}/{account}
     // used to return the keyring password as plaintext JSON. It must now be
