@@ -14,7 +14,18 @@ export interface ScraperState {
   account: Account;
   status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed'
   last_updated: number;
+  /**
+   * Technical failure detail — the provider's own message, HTTP body or
+   * exception text. Shown as secondary "technical details" copy, never as the
+   * primary explanation.
+   */
   error_message?: string;
+  /**
+   * Failure category (`INVALID_PASSWORD`, `TIMEOUT`, `GENERAL_ERROR`, …) that
+   * selects the translated user-facing message. Undefined for scrapes recorded
+   * before the backend tracked it, where `error_message` is all there is.
+   */
+  error_type?: string;
 }
 
 /**
@@ -31,6 +42,18 @@ export interface ResendError {
 
 /** Cooldown window enforced client-side after a resend attempt, win or lose. */
 export const RESEND_COOLDOWN_SECONDS = 60;
+
+/**
+ * Cooldown seeded the first time a process is seen waiting for 2FA.
+ *
+ * Reaching `waiting_for_2fa` means the provider just sent an OTP — the scrape
+ * the user started *is* the first send. Without this, Resend is live the
+ * instant the code input appears, so "Scrape → Resend" fires a second OTP
+ * seconds after the first, before the SMS has even arrived. Shorter than
+ * ``RESEND_COOLDOWN_SECONDS`` because the user hasn't spent a click yet and a
+ * genuinely undelivered first code shouldn't be a full minute of waiting.
+ */
+export const INITIAL_2FA_COOLDOWN_SECONDS = 30;
 
 /**
  * Query-key prefixes a finished scrape invalidates.
@@ -351,6 +374,23 @@ export function useScraping() {
           const res = await scrapingApi.getStatus(scraper.process_id);
           const newStatus = res.data.status;
           const errorMessage = res.data.error_message;
+          const errorType = res.data.error_type;
+
+          if (newStatus === "waiting_for_2fa") {
+            // Seed the resend cooldown from the moment the button appears.
+            // `!== undefined` rather than a falsy check: an already-elapsed
+            // deadline must not be re-seeded, and it also keeps a real resend's
+            // longer cooldown from being clobbered back down to 30s.
+            setResendCooldownEnd((prev) =>
+              prev[scraper.process_id] !== undefined
+                ? prev
+                : {
+                    ...prev,
+                    [scraper.process_id]:
+                      Date.now() + INITIAL_2FA_COOLDOWN_SECONDS * 1000,
+                  },
+            );
+          }
 
           if (
             newStatus !== scraper.status ||
@@ -367,6 +407,7 @@ export function useScraping() {
                 ...scraper,
                 status: newStatus,
                 error_message: errorMessage,
+                error_type: errorType,
                 last_updated: Date.now(),
               },
             }));
