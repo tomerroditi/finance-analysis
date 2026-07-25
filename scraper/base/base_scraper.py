@@ -37,6 +37,29 @@ class ResendNotSupportedError(Exception):
     """
 
 
+def describe_exception(exc: BaseException) -> str:
+    """Render an exception as ``ClassName: message``, or the class name alone.
+
+    ``str(exc)`` is ``""`` for an argument-less ``raise SomeError``, so storing it
+    directly yields an error record indistinguishable from "nothing was
+    recorded". The class name is often the whole diagnosis (``TimeoutError`` vs
+    ``KeyError`` vs ``JSONDecodeError``), so it is always kept.
+
+    Parameters
+    ----------
+    exc : BaseException
+        The exception to describe.
+
+    Returns
+    -------
+    str
+        ``"ClassName: message"``, or just ``"ClassName"`` when the exception
+        carries no message.
+    """
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 @dataclass
 class ScraperOptions:
     """Configuration options for a scraper run."""
@@ -71,9 +94,11 @@ class BaseScraper(ABC):
         # ``OTP_CANCEL_SENTINEL`` signals a user cancellation — the scraper must
         # abort without forwarding it to the provider (raise ``OtpCanceledError``).
         self.on_otp_request: Optional[Callable[[], Awaitable[str]]] = None
-        # Optional human-readable detail a subclass can set when login fails, so
-        # a general/unknown login failure surfaces the real reason (e.g. the
-        # provider's HTTP error body) instead of a generic message.
+        # Human-readable detail describing *why* login failed — the provider's
+        # HTTP error body, the exception text, the unexpected landing URL. Set
+        # it via `_fail_login`; `_login_result_to_scraping_result` folds it into
+        # the recorded error message so the scraping-history row carries the
+        # real reason rather than just the LoginResult label.
         self._login_error_detail: Optional[str] = None
 
     async def scrape(self) -> ScrapingResult:
@@ -84,44 +109,25 @@ class BaseScraper(ABC):
         ScrapingResult
             Result containing accounts data on success, or error info on failure.
         """
+        # Each phase reports failures the same way: "<phase> failed: <detail>",
+        # where the detail always names the exception class. Previously these
+        # handlers stored a bare `str(e)`, so an argument-less exception recorded
+        # an empty message and the phase it died in was only in the log.
         self._emit_progress("initializing")
         try:
             await self.initialize()
         except Exception as e:
-            logger.error("Failed to initialize scraper for %s: %s", self.provider, e)
-            return ScrapingResult(
-                success=False,
-                error_type="INIT_ERROR",
-                error_message=str(e),
-            )
+            return self._phase_failure("initialize", "INIT_ERROR", e, terminate=False)
 
         self._emit_progress("logging in")
         try:
             login_result = await self.login()
-        except asyncio.TimeoutError:
-            logger.error("Login timed out for %s", self.provider)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type="TIMEOUT",
-                error_message=f"Login timed out for {self.provider}",
-            )
+        except asyncio.TimeoutError as e:
+            return await self._phase_failure_async("login", "TIMEOUT", e)
         except ScraperError as e:
-            logger.error("Login failed for %s: %s", self.provider, e)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type=e.error_type.value,
-                error_message=str(e) or f"Login failed for {self.provider}",
-            )
+            return await self._phase_failure_async("login", e.error_type.value, e)
         except Exception as e:
-            logger.error("Login failed for %s: %s", self.provider, e)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type="GENERAL_ERROR",
-                error_message=str(e),
-            )
+            return await self._phase_failure_async("login", "GENERAL_ERROR", e)
 
         scraping_result = self._login_result_to_scraping_result(login_result)
         if scraping_result is not None:
@@ -131,30 +137,14 @@ class BaseScraper(ABC):
         self._emit_progress("fetching data")
         try:
             accounts = await self.fetch_data()
-        except asyncio.TimeoutError:
-            logger.error("Data fetch timed out for %s", self.provider)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type="TIMEOUT",
-                error_message=f"Data fetch timed out for {self.provider}",
-            )
+        except asyncio.TimeoutError as e:
+            return await self._phase_failure_async("fetch data", "TIMEOUT", e)
         except ScraperError as e:
-            logger.error("Data fetch failed for %s: %s", self.provider, e)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type=e.error_type.value,
-                error_message=str(e) or f"Data fetch failed for {self.provider}",
+            return await self._phase_failure_async(
+                "fetch data", e.error_type.value, e
             )
         except Exception as e:
-            logger.error("Data fetch failed for %s: %s", self.provider, e)
-            await self._safe_terminate(False)
-            return ScrapingResult(
-                success=False,
-                error_type="GENERAL_ERROR",
-                error_message=str(e),
-            )
+            return await self._phase_failure_async("fetch data", "GENERAL_ERROR", e)
 
         await self._safe_terminate(True)
         self._emit_progress("done")
@@ -226,10 +216,110 @@ class BaseScraper(ABC):
         if self.on_progress is not None:
             self.on_progress(message)
 
+    def _phase_failure(
+        self,
+        phase: str,
+        error_type: str,
+        exc: BaseException,
+        terminate: bool = True,
+    ) -> ScrapingResult:
+        """Log and build the ScrapingResult for a failed lifecycle phase.
+
+        Parameters
+        ----------
+        phase : str
+            Which phase died — ``"initialize"``, ``"login"``, ``"fetch data"``.
+            Recorded in the message so a failure is placed in the lifecycle
+            without cross-referencing the log.
+        error_type : str
+            Failure category for the record.
+        exc : BaseException
+            The exception that ended the phase.
+        terminate : bool, optional
+            Unused here; see :meth:`_phase_failure_async`, which awaits cleanup.
+            Present so both share one signature.
+
+        Returns
+        -------
+        ScrapingResult
+            A failed result carrying the category and a described exception.
+        """
+        del terminate  # cleanup is the async variant's job
+        detail = describe_exception(exc)
+        logger.error(
+            "%s failed for %s: [%s] %s", phase, self.provider, error_type, detail
+        )
+        return ScrapingResult(
+            success=False,
+            error_type=error_type,
+            error_message=f"{phase} failed: {detail}",
+        )
+
+    async def _phase_failure_async(
+        self, phase: str, error_type: str, exc: BaseException
+    ) -> ScrapingResult:
+        """Terminate the scraper, then build the failed result for ``phase``.
+
+        Parameters
+        ----------
+        phase : str
+            Which phase died.
+        error_type : str
+            Failure category for the record.
+        exc : BaseException
+            The exception that ended the phase.
+
+        Returns
+        -------
+        ScrapingResult
+            A failed result carrying the category and a described exception.
+        """
+        result = self._phase_failure(phase, error_type, exc)
+        await self._safe_terminate(False)
+        return result
+
+    def _fail_login(
+        self, result: LoginResult, detail: str | BaseException
+    ) -> LoginResult:
+        """Record why login failed and return the result to hand back.
+
+        Written to be used inline — ``return self._fail_login(
+        LoginResult.UNKNOWN_ERROR, exc)`` — so attaching the real reason is a
+        single expression at the failure site. Without this, most providers
+        returned a bare ``LoginResult`` and the only record of the actual cause
+        was a ``logger.error`` line in the uvicorn log; the scraping-history row
+        the UI reads got the enum label and nothing else.
+
+        Parameters
+        ----------
+        result : LoginResult
+            The login outcome to return.
+        detail : str or BaseException
+            The real reason. Exceptions are rendered as
+            ``ClassName: message`` so an empty-message exception still says
+            something useful.
+
+        Returns
+        -------
+        LoginResult
+            ``result``, unchanged.
+        """
+        if isinstance(detail, BaseException):
+            detail = describe_exception(detail)
+        self._login_error_detail = detail or None
+        return result
+
     def _login_result_to_scraping_result(
         self, result: LoginResult
     ) -> ScrapingResult | None:
         """Map a failed LoginResult to a ScrapingResult.
+
+        The message always leads with the ``LoginResult`` label and appends the
+        recorded detail, so the stored text is both classifiable and actually
+        diagnostic. When a provider reported no detail we say so explicitly
+        rather than implying the label *was* the provider's message — that
+        ambiguity is what made a bare "Login failed with result: unknown_error"
+        look like it came from the bank when it was entirely ours.
 
         Returns None if login was successful (caller should proceed to fetch).
         """
@@ -243,10 +333,13 @@ class BaseScraper(ABC):
             LoginResult.UNKNOWN_ERROR: "GENERAL_ERROR",
         }
         error_type = error_mapping.get(result, "GENERAL_ERROR")
-        if error_type == "GENERAL_ERROR" and self._login_error_detail:
-            error_message = self._login_error_detail
-        else:
-            error_message = f"Login failed with result: {result.value}"
+        detail = (self._login_error_detail or "").strip()
+        error_message = (
+            f"login {result.value}: {detail}"
+            if detail
+            else f"login {result.value}: no detail reported by the "
+            f"{self.provider} scraper"
+        )
         return ScrapingResult(
             success=False,
             error_type=error_type,

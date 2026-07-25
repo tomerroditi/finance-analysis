@@ -55,13 +55,31 @@ class TestDiscountConvertTransactions:
         )
         assert result[0].status == TransactionStatus.PENDING
 
-    def test_unparseable_date_passes_through(self):
-        """A malformed OperationDate is kept verbatim (stringified)."""
+    def test_unparseable_date_row_is_dropped(self):
+        """A malformed OperationDate drops the row instead of passing raw text.
+
+        The raw string landed in the DB date column, breaking date filters
+        and sorts, and was later re-parsed month-first.
+        """
         result = _convert_transactions(
             [_raw_txn(OperationDate="01/03/2024")],
             TransactionStatus.COMPLETED,
         )
-        assert result[0].date == "01/03/2024"
+        assert result == []
+
+    def test_missing_operation_date_row_is_dropped(self):
+        """A row with no OperationDate at all is dropped, not date-less."""
+        result = _convert_transactions(
+            [_raw_txn(OperationDate="")], TransactionStatus.COMPLETED
+        )
+        assert result == []
+
+    def test_missing_value_date_falls_back_to_the_operation_date(self):
+        """An absent ValueDate reuses the operation date, not an empty string."""
+        result = _convert_transactions(
+            [_raw_txn(ValueDate="")], TransactionStatus.COMPLETED
+        )
+        assert result[0].processed_date == result[0].date
 
     def test_missing_operation_number_gives_none_identifier(self):
         """A missing OperationNumber leaves the identifier as None."""

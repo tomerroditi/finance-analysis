@@ -102,6 +102,16 @@ class SplitsMixin:
                 {
                     **parent_dict,
                     "unique_id": f"split_{split[SplitTransactionsTableFields.ID.value]}",
+                    # The slice's own primary key. `unique_id` above is a
+                    # display string ("split_7") that no write endpoint
+                    # accepts, so without this column a consumer cannot
+                    # address the slice: the pending-refund exclusion in
+                    # BudgetService matched on `split_id` and, finding it
+                    # always empty, silently kept refunded slices in the
+                    # budget.
+                    "split_id": int(
+                        split[SplitTransactionsTableFields.ID.value]
+                    ),
                     "amount": split[SplitTransactionsTableFields.AMOUNT.value],
                     "category": split[SplitTransactionsTableFields.CATEGORY.value],
                     "tag": split[SplitTransactionsTableFields.TAG.value],

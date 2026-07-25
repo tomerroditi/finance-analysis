@@ -627,6 +627,8 @@ class TransactionsService:
         if not success:
             raise ValueError("Transaction not found or deletion failed")
 
+        self._purge_dependent_records([unique_id], source)
+
         if source == Tables.CASH.value:
             # Recalculate cash balance if this was a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
@@ -634,6 +636,108 @@ class TransactionsService:
         elif source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value and inv_category and inv_tag:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
+
+    def _purge_dependent_records(
+        self, unique_ids: list[int], source: str
+    ) -> None:
+        """
+        Remove every record that pointed at now-deleted transactions.
+
+        Splits, pending refunds (and their links), refund-source notes and
+        budget month overrides all reference a transaction by
+        ``(source_table, unique_id)``. ``unique_id`` is a per-table
+        auto-increment and SQLite reuses rowids, so an orphan left behind is
+        not merely dead data — the next transaction created in that table
+        silently inherits it, landing in the wrong budget month or carrying
+        someone else's refund.
+
+        Takes a list rather than a single id so wiping a whole account costs a
+        handful of bulk DELETEs instead of one round-trip per transaction (a
+        2000-row account took over 5 s row-by-row).
+
+        Parameters
+        ----------
+        unique_ids : list[int]
+            unique_ids of the deleted transactions. Empty is a no-op.
+        source : str
+            Table name the transactions were deleted from.
+        """
+        if not unique_ids:
+            return
+
+        from backend.repositories.budget_month_override_repository import (
+            BudgetMonthOverrideRepository,
+        )
+        from backend.repositories.pending_refunds_repository import (
+            PendingRefundsRepository,
+        )
+
+        # Older rows may store the service name ("cash") rather than the table
+        # name ("cash_transactions"); accept every spelling that resolves here.
+        aliases = {
+            name
+            for name, repo in self.transactions_repository.repo_map.items()
+            if repo.model.__tablename__ == source
+        }
+        aliases.add(source)
+        source_aliases = sorted(aliases)
+
+        self.transactions_repository.split_repo.delete_splits_for_transactions(
+            unique_ids, source
+        )
+
+        PendingRefundsRepository(self.db).delete_for_transactions(
+            source_aliases, unique_ids
+        )
+
+        BudgetMonthOverrideRepository(self.db).delete_for_sources(
+            "transaction", unique_ids, source_aliases
+        )
+
+    def delete_account_data(
+        self, service: str, provider: str, account_name: str
+    ) -> dict:
+        """Delete every transaction for one account, plus its dependent records.
+
+        Used when the user removes a connected account and chooses to discard
+        its history. Splits, pending refunds, refund links, source notes and
+        budget month overrides are purged alongside the transactions — leaving
+        them behind would orphan them onto whichever transaction next reuses
+        the rowid.
+
+        Parameters
+        ----------
+        service : str
+            Service or table name identifying which transaction table holds
+            the account (e.g. ``"banks"`` or ``"bank_transactions"``).
+        provider : str
+            Provider identifier (e.g. ``"hapoalim"``).
+        account_name : str
+            Account name as stored on the transactions.
+
+        Returns
+        -------
+        dict
+            ``{"transactions_deleted": int}``.
+
+        Raises
+        ------
+        ValueError
+            If ``service`` does not map to a known transaction table.
+        """
+        repo = self.transactions_repository.get_repo_by_source(service)
+        if repo is None:
+            raise ValueError(f"Unknown service '{service}'")
+
+        source = repo.model.__tablename__
+        unique_ids = repo.get_unique_ids_for_account(provider, account_name)
+
+        # Purge dependents first: once the transactions are gone their ids can
+        # be handed to new rows, and an orphan would attach to those instead.
+        self._purge_dependent_records(unique_ids, source)
+
+        deleted = repo.delete_transactions_for_account(provider, account_name)
+        return {"transactions_deleted": deleted}
 
     def split_transaction(
         self, unique_id: int, source: str, splits: list[dict]
@@ -939,16 +1043,26 @@ class TransactionsService:
         split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
         mask = df[TransactionsTableFields.UNIQUE_ID.value].isin(split_ids)
 
+        # NOTE: the repository already expanded splits, so `df` normally
+        # arrives holding the split children (with `split_id` set) and no
+        # parents. Blanket-assigning None here wiped that id, which silently
+        # disabled every consumer keyed on `split_id` — most visibly the
+        # pending-refund exclusion in BudgetService, so a slice marked as
+        # awaiting a refund still counted as budget spend.
+        def _ensure_split_id(frame: pd.DataFrame) -> pd.DataFrame:
+            if TransactionsTableFields.SPLIT_ID.value not in frame.columns:
+                frame[TransactionsTableFields.SPLIT_ID.value] = None
+            return frame
+
         if include_split_parents:
             # Include parent transactions alongside split children
-            base_df = df.copy()
-            base_df[TransactionsTableFields.SPLIT_ID.value] = None
+            base_df = _ensure_split_id(df.copy())
             # Mark parent transactions with type 'split_parent' for identification
             base_df.loc[mask, "type"] = "split_parent"
+            base_df.loc[mask, TransactionsTableFields.SPLIT_ID.value] = None
         else:
             # Exclude parent transactions (default behavior)
-            base_df = df[~mask].copy()
-            base_df[TransactionsTableFields.SPLIT_ID.value] = None
+            base_df = _ensure_split_id(df[~mask].copy())
 
         split_rows = []
         for id_, split_group in split_df.groupby(

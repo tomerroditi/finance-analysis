@@ -160,10 +160,17 @@ test.describe("Scrape All burst guard", () => {
     expect(startedAccounts).toEqual(startedAfterFirstClick);
   });
 
-  test("a failed scrape shows its specific error_message, not a generic label", async ({
+  test("a failed scrape explains itself and still exposes the provider's text", async ({
     page,
   }) => {
-    const ERROR_MESSAGE = "Wait about a minute before requesting another code.";
+    // The backend records the failure as two fields: `error_type` (the
+    // category) and `error_message` (the provider's own text). The card must
+    // use the first for a readable explanation and still surface the second —
+    // before that split, one string had to be both, and a scrape got logged as
+    // the contentless "Login failed with result: unknown_error".
+    const ERROR_MESSAGE =
+      "login invalid_password: detected on https://bank.test/login; " +
+      "page showing: Wrong password";
 
     await setBankCredential(FAILED_ACCOUNT, true);
     try {
@@ -181,6 +188,7 @@ test.describe("Scrape All burst guard", () => {
           body: JSON.stringify({
             status: "failed",
             error_message: ERROR_MESSAGE,
+            error_type: "INVALID_PASSWORD",
           }),
         });
       });
@@ -196,9 +204,8 @@ test.describe("Scrape All burst guard", () => {
       await scrapeButton.click();
 
       // The card must show the generic "Failed" label AND an info affordance
-      // that reveals the backend's specific error_message — not just
-      // "Failed" alone, which would hide the rate-limit / expired-OTP hint
-      // the backend went out of its way to compute.
+      // that reveals the failure detail — not just "Failed" alone, which would
+      // hide everything the backend went out of its way to compute.
       await expect(card.getByText(/^Failed$|^נכשל$/)).toBeVisible({
         timeout: 10_000,
       });
@@ -207,6 +214,12 @@ test.describe("Scrape All burst guard", () => {
       });
       await expect(errorInfoButton).toBeVisible();
       await errorInfoButton.click();
+
+      // Friendly, translated explanation chosen by error_type…
+      await expect(
+        card.getByText(/rejected the saved login|דחה את פרטי ההתחברות/),
+      ).toBeVisible();
+      // …with the provider's raw text still available underneath.
       await expect(card.getByText(ERROR_MESSAGE)).toBeVisible();
     } finally {
       await setBankCredential(FAILED_ACCOUNT, false);

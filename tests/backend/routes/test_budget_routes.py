@@ -293,6 +293,8 @@ class TestBudgetRoutesErrors:
         ) as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
+            # The route 404s on an unknown project before calling the service.
+            mock_svc.get_all_projects_names.return_value = ["Wedding"]
             mock_svc.delete_project.side_effect = RuntimeError(
                 "Delete project failed"
             )
@@ -310,6 +312,8 @@ class TestBudgetRoutesErrors:
         ) as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
+            # The route 404s on an unknown project before calling the service.
+            mock_svc.get_all_projects_names.return_value = ["Wedding"]
             mock_svc.update_project.side_effect = RuntimeError(
                 "Update project failed"
             )

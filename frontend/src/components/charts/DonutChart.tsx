@@ -49,21 +49,45 @@ function percentInsideLabel({ cx = 0, cy = 0, midAngle = 0, innerRadius = 0, out
   );
 }
 
+/** Approximate advance width of one character at ``fontSize={11}``. */
+const OUTSIDE_LABEL_CHAR_WIDTH = 6.2;
+
 function outsideLabel({ cx = 0, cy = 0, midAngle = 0, outerRadius = 0, percent = 0, name = "" }: SliceLabelProps) {
   if (percent < 0.02) return null;
   const r = outerRadius + 14;
   const x = cx + r * Math.cos(-midAngle * RADIAN);
   const y = cy + r * Math.sin(-midAngle * RADIAN);
+  const anchorAtStart = x > cx;
+
+  // Trim the label to the space actually left between its anchor and the
+  // chart edge. Long track names used to run straight past the SVG bounds,
+  // and since the page does not scroll horizontally they were simply
+  // clipped — on a 375px viewport the outermost labels were unreadable.
+  // `cx` is the pie centre, so `2 * cx` approximates the plot width.
+  const available = anchorAtStart ? Math.max(0, 2 * cx - x) : Math.max(0, x);
+  const suffix = ` ${Math.round(percent * 100)}%`;
+  const maxNameChars =
+    Math.floor(available / OUTSIDE_LABEL_CHAR_WIDTH) - suffix.length;
+
+  let label: string;
+  if (maxNameChars < 2) {
+    label = suffix.trim();
+  } else if (name.length > maxNameChars) {
+    label = `${name.slice(0, maxNameChars - 1)}…${suffix}`;
+  } else {
+    label = `${name}${suffix}`;
+  }
+
   return (
     <text
       x={x}
       y={y}
       fill={CHART_TEXT_COLOR}
       fontSize={11}
-      textAnchor={x > cx ? "start" : "end"}
+      textAnchor={anchorAtStart ? "start" : "end"}
       dominantBaseline="central"
     >
-      {`${name} ${Math.round(percent * 100)}%`}
+      {label}
     </text>
   );
 }

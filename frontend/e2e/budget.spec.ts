@@ -125,6 +125,27 @@ test.describe("Budget", () => {
     }
   });
 
+  // Its own test because the assertion is about layout at a mobile width.
+  // The tab bar previously used `flex-1` + `whitespace-nowrap`, so the three
+  // tabs could not shrink below their text and pushed the document 53px past
+  // the viewport — the whole page scrolled sideways on a phone.
+  test("does not scroll horizontally at mobile width", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await expect(page.getByRole("navigation").first()).toBeVisible();
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    // Anchor on the tab bar so the measurement can't race an unlaid-out page.
+    await expect(
+      page.getByRole("button", { name: /Project Budgets/i }).first(),
+    ).toBeVisible();
+
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+  });
+
   test("alerts banner can be dismissed and alerts disabled from settings", async ({ page }) => {
     await navigateTo(page, "/budget");
     await page.waitForLoadState("networkidle");

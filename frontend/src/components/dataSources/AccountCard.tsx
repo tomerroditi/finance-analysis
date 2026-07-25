@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import type { BankBalance, CredentialAccount } from "../../services/api";
 import type { ResendError, ScraperState } from "../../hooks/useScraping";
-import { useConfirm } from "../../context/DialogContext";
 import { ProviderLogo } from "../common/ProviderLogo";
 import { ScrapeErrorTooltip } from "../common/ScrapeErrorTooltip";
 import { humanizeAccountType, humanizeProvider } from "../../utils/textFormatting";
@@ -40,6 +39,7 @@ interface AccountCardProps {
   onOpenBalanceModal: () => void;
   onView: () => void;
   onEdit: () => void;
+  /** Requests disconnection — the page opens the keep-or-delete-data modal. */
   onDelete: () => void;
 }
 
@@ -67,7 +67,6 @@ export function AccountCard({
   onDelete,
 }: AccountCardProps) {
   const { t } = useTranslation();
-  const confirm = useConfirm();
   const isActive =
     scraper && (scraper.status === "in_progress" || scraper.status === "waiting_for_2fa");
 
@@ -159,8 +158,14 @@ export function AccountCard({
           {scraper?.status === "failed" && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-semibold text-red-400">{t("dataSources.failed")}</span>
-              {!!scraper.error_message && (
-                <ScrapeErrorTooltip message={scraper.error_message} />
+              {/* Rendered whenever either half is present: a category with no
+                  detail still yields a useful explanation, and a legacy row with
+                  only a message still shows that message. */}
+              {(!!scraper.error_message || !!scraper.error_type) && (
+                <ScrapeErrorTooltip
+                  message={scraper.error_message}
+                  errorType={scraper.error_type}
+                />
               )}
             </div>
           )}
@@ -235,15 +240,10 @@ export function AccountCard({
             <Edit2 size={20} />
           </button>
           <button
-            onClick={async () => {
-              const ok = await confirm({
-                title: t("dataSources.disconnectAccount"),
-                message: t("dataSources.confirmDisconnect", { name: acc.account_name }),
-                confirmLabel: t("dataSources.disconnectAccount"),
-                isDestructive: true,
-              });
-              if (ok) onDelete();
-            }}
+            // Confirmation lives in the page's DisconnectAccountModal — the
+            // user must pick keep-data vs delete-data there, which a boolean
+            // confirm() dialog can't express.
+            onClick={onDelete}
             className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
             title={t("dataSources.disconnectAccount")}
           >

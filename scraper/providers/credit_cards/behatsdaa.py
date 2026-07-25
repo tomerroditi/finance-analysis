@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from typing import Optional
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
@@ -9,7 +10,9 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     fetch_post_within_page,
+    parse_provider_date,
     sleep,
+    to_amount,
     wait_until_element_found,
 )
 
@@ -20,7 +23,7 @@ LOGIN_URL = f"{BASE_URL}/login"
 PURCHASE_HISTORY_URL = "https://back.behatsdaa.org.il/api/purchases/purchaseHistory"
 
 
-def _variant_to_transaction(variant: dict) -> Transaction:
+def _variant_to_transaction(variant: dict) -> Optional[Transaction]:
     """Convert a raw purchase variant to a Transaction object.
 
     Parameters
@@ -31,17 +34,25 @@ def _variant_to_transaction(variant: dict) -> Transaction:
 
     Returns
     -------
-    Transaction
-        Converted transaction object.
+    Optional[Transaction]
+        Converted transaction object, or ``None`` when the purchase date
+        cannot be parsed (the row is dropped rather than stored with a
+        raw, unsortable date string).
     """
-    original_amount = -float(variant.get("customerPrice", 0))
+    original_amount = -to_amount(variant.get("customerPrice"))
 
     order_date_str = variant.get("orderDate", "")
-    try:
-        order_date = datetime.fromisoformat(order_date_str)
-        date_iso = order_date.strftime("%Y-%m-%d")
-    except (ValueError, TypeError):
-        date_iso = order_date_str
+    # A date that can't be parsed used to pass through verbatim, writing
+    # non-ISO text straight into the DB date column. Drop the row loudly
+    # instead of corrupting it.
+    order_date = parse_provider_date(order_date_str)
+    if order_date is None:
+        logger.warning(
+            "Behatsdaa: dropping purchase with unparseable orderDate %r",
+            order_date_str,
+        )
+        return None
+    date_iso = order_date.strftime("%Y-%m-%d")
 
     return Transaction(
         type=TransactionType.NORMAL,
@@ -178,7 +189,11 @@ class BehatsdaaScraper(BrowserScraper):
         member_id = data.get("memberId", "")
         variants = data.get("variants", [])
 
-        transactions = [_variant_to_transaction(v) for v in variants]
+        transactions = [
+            txn
+            for txn in (_variant_to_transaction(v) for v in variants)
+            if txn is not None
+        ]
 
         logger.debug("Fetched %d transactions", len(transactions))
 

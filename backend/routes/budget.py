@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.budget_service import (
     BudgetService,
@@ -382,12 +383,42 @@ def get_category_conflicts(db: Session = Depends(get_database)) -> dict[str, Any
     return {"conflicts": BudgetService(db).find_category_overlaps()}
 
 
+def _ensure_project_exists(service: ProjectBudgetService, name: str) -> None:
+    """Raise a 404-mapped error when no project budget is named ``name``.
+
+    Deleting an unknown project reported ``{"status": "success"}`` and
+    updating one surfaced a raw ``ValueError`` as a 500. Every other delete
+    endpoint in the API 404s on a missing entity — match them.
+
+    Parameters
+    ----------
+    service : ProjectBudgetService
+        Service used to list existing project names.
+    name : str
+        Project (category) name from the URL.
+
+    Raises
+    ------
+    EntityNotFoundException
+        If no project budget rules exist for ``name``.
+    """
+    if name not in service.get_all_projects_names():
+        raise EntityNotFoundException(f"Project '{name}' not found")
+
+
 @router.put("/projects/{name}")
 def update_project(
     name: str, project: ProjectUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Update project total budget."""
+    """Update project total budget.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no project with ``name`` exists.
+    """
     service = ProjectBudgetService(db)
+    _ensure_project_exists(service, name)
     service.update_project(name, project.total_budget)
     return {"status": "success"}
 
@@ -396,8 +427,15 @@ def update_project(
 def delete_project(
     name: str, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Delete a project."""
+    """Delete a project.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no project with ``name`` exists.
+    """
     service = ProjectBudgetService(db)
+    _ensure_project_exists(service, name)
     service.delete_project(name)
     return {"status": "success"}
 

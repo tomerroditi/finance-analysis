@@ -1,3 +1,4 @@
+import logging
 import math
 import re
 from datetime import date, datetime
@@ -12,6 +13,126 @@ from scraper.models.transaction import (
     TransactionType,
 )
 
+logger = logging.getLogger(__name__)
+
+# Characters that Israeli providers sprinkle into scraped amount cells:
+# thousands separators, bidi control marks, non-breaking spaces, and the
+# shekel sign. Stripped before any numeric coercion.
+_AMOUNT_NOISE = (
+    ",", "‎", "‏", "‪", "‫", "‬", "‭", "‮",
+    " ", " ", "₪", "₪",
+)
+
+
+def parse_transaction_date(date_str: str) -> date:
+    """Parse a ``Transaction.date`` value into a ``date``.
+
+    Most providers already emit ISO-8601, so ISO is tried first and
+    strictly. Anything else is Israeli-style and therefore **day-first**:
+    ``dateutil``'s default is month-first, which silently read
+    ``03/12/2024`` as 12 March instead of 3 December — a nine-month error
+    that both shifted installment dates and dropped transactions from the
+    scrape window.
+
+    ``dayfirst=True`` must NOT be applied blanket-wide: ``dateutil`` honours
+    it even for ``YYYY-MM-DD`` input, re-reading ``2024-01-10`` as
+    2024-10-01. Hence the ISO-first ordering.
+
+    Parameters
+    ----------
+    date_str : str
+        The transaction's date string.
+
+    Returns
+    -------
+    date
+        The parsed calendar date.
+
+    Raises
+    ------
+    ValueError
+        If the value cannot be parsed at all — a loud failure is preferable
+        to silently mis-dating money.
+    """
+    text = str(date_str).strip()
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        return parse_date(text, dayfirst=True).date()
+
+
+def to_amount(value: object, default: float = 0.0) -> float:
+    """Coerce a raw provider amount to ``float``.
+
+    Provider APIs return amounts as numbers *or* as formatted strings
+    (``"1,234.56"``), sometimes padded with bidi control marks. A bare
+    ``float(value)`` raises ``ValueError`` on those strings, which aborts
+    the entire scrape run from inside a per-row loop.
+
+    Parameters
+    ----------
+    value : object
+        Raw amount from the provider (number, numeric string, or None).
+    default : float
+        Value returned when ``value`` cannot be parsed at all.
+
+    Returns
+    -------
+    float
+        The parsed amount, or ``default`` when it cannot be parsed.
+    """
+    if value is None:
+        return default
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    cleaned = str(value)
+    for noise in _AMOUNT_NOISE:
+        cleaned = cleaned.replace(noise, "")
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return default
+    try:
+        return float(cleaned)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_provider_date(
+    value: object, date_format: Optional[str] = None
+) -> Optional[datetime]:
+    """Parse a provider date, returning ``None`` when it cannot be read.
+
+    Providers used to fall back to passing the *raw* string through when
+    ``strptime`` failed. That raw text landed in the DB date column, where
+    it broke every date filter and sort, and was later re-parsed
+    month-first (turning ``03/12/2024`` into 12 March). Returning ``None``
+    lets callers drop the row instead of corrupting it.
+
+    Parameters
+    ----------
+    value : object
+        Raw date value scraped from the provider.
+    date_format : str, optional
+        ``strptime`` format. When omitted the value is parsed as ISO-8601.
+
+    Returns
+    -------
+    Optional[datetime]
+        The parsed datetime, or ``None`` when the value is empty or
+        does not match the expected shape.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        if date_format:
+            return datetime.strptime(text, date_format)
+        return datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+
 
 def fix_installments(transactions: list[Transaction]) -> list[Transaction]:
     """Adjust dates for non-initial installment transactions."""
@@ -22,7 +143,7 @@ def fix_installments(transactions: list[Transaction]) -> list[Transaction]:
             and txn.installments
             and txn.installments.number > 1
         ):
-            txn_date = parse_date(txn.date).date()
+            txn_date = parse_transaction_date(txn.date)
             adjusted = txn_date + relativedelta(months=txn.installments.number - 1)
             txn = Transaction(**{**txn.__dict__, "date": adjusted.isoformat()})
         result.append(txn)
@@ -163,8 +284,9 @@ def convert_credit_debit_rows(
     txns : list[dict]
         Raw scraped transaction dicts.
     date_format : str
-        ``strptime`` format of the row's date column. A date that fails to
-        parse is passed through verbatim.
+        ``strptime`` format of the row's date column. A row whose date does
+        not match is logged and dropped — never emitted with a raw,
+        unparseable date string.
     parse_identifier : Callable[[str], Optional[str]]
         Provider-specific reference-to-identifier normalizer.
     strip_symbols : tuple[str, ...]
@@ -185,10 +307,16 @@ def convert_credit_debit_rows(
         if skip_empty_date and not date_str:
             continue
 
-        try:
-            date_iso = datetime.strptime(date_str, date_format).isoformat()
-        except (ValueError, TypeError):
-            date_iso = date_str
+        parsed_date = parse_provider_date(date_str, date_format)
+        if parsed_date is None:
+            logger.warning(
+                "Dropping scraped row with unparseable date %r "
+                "(expected format %r)",
+                date_str,
+                date_format,
+            )
+            continue
+        date_iso = parsed_date.isoformat()
 
         amount = credit_debit_amount(
             txn.get("credit", ""),
@@ -221,7 +349,7 @@ def filter_old_transactions(
     """Filter out transactions before start_date."""
     result = []
     for txn in transactions:
-        txn_date = parse_date(txn.date).date()
+        txn_date = parse_transaction_date(txn.date)
         if not combine_installments:
             if txn_date >= start_date:
                 result.append(txn)

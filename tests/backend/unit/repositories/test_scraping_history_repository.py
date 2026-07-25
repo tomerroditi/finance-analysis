@@ -96,6 +96,51 @@ class TestScrapingHistoryRepository:
         repo.record_scrape_end(scrape_id, repo.FAILED, "Invalid password")
         assert repo.get_error_message(scrape_id) == "Invalid password"
 
+    def test_get_error_returns_detail_and_category(self, db_session: Session):
+        """Verify get_error returns both halves of a failure in one query."""
+        repo = ScrapingHistoryRepository(db_session)
+        scrape_id = repo.record_scrape_start(
+            service_name="banks",
+            provider_name="onezero",
+            account_name="Main",
+            start_date=date(2024, 1, 15),
+        )
+
+        repo.record_scrape_end(
+            scrape_id,
+            repo.FAILED,
+            error_message="login unknown_error: HTTP 503 — body: blocked",
+            error_type="GENERAL_ERROR",
+        )
+
+        message, error_type = repo.get_error(scrape_id)
+        assert message == "login unknown_error: HTTP 503 — body: blocked"
+        assert error_type == "GENERAL_ERROR"
+
+    def test_get_error_for_missing_record(self, db_session: Session):
+        """Verify get_error returns a pair of Nones rather than raising."""
+        repo = ScrapingHistoryRepository(db_session)
+        assert repo.get_error(999) == (None, None)
+
+    def test_get_error_type_defaults_to_none_when_not_supplied(
+        self, db_session: Session
+    ):
+        """Verify a caller that omits error_type leaves it NULL.
+
+        Rows written this way mean "category unknown"; the client falls back to
+        showing the stored message, which is how pre-existing history behaves.
+        """
+        repo = ScrapingHistoryRepository(db_session)
+        scrape_id = repo.record_scrape_start(
+            service_name="banks",
+            provider_name="hapoalim",
+            account_name="Checking",
+            start_date=date(2024, 1, 15),
+        )
+
+        repo.record_scrape_end(scrape_id, repo.FAILED, "something went wrong")
+        assert repo.get_error(scrape_id) == ("something went wrong", None)
+
     def test_get_scraping_history(self, db_session: Session):
         """Verify getting full history as DataFrame."""
         repo = ScrapingHistoryRepository(db_session)

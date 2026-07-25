@@ -12,6 +12,7 @@ import pandas as pd
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
+    IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories,
@@ -141,7 +142,16 @@ class NetWorthMixin:
             df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)]["amount"].sum()
         )
 
-        exclude_cats = [SALARY, OTHER_INCOME, LIABILITIES_CATEGORY, INVESTMENTS_CATEGORY]
+        # Ignore covers internal transfers and CC bill summaries. Its two legs
+        # only cancel when both are tracked, so any residual would otherwise
+        # surface as a phantom expense (or refund) and skew Wealth Growth.
+        exclude_cats = [
+            SALARY,
+            OTHER_INCOME,
+            LIABILITIES_CATEGORY,
+            INVESTMENTS_CATEGORY,
+            IGNORE_CATEGORY,
+        ]
         expenses_df = df[~df["category"].isin(exclude_cats)]
         for cat, group in expenses_df.groupby("category"):
             net = group["amount"].sum()

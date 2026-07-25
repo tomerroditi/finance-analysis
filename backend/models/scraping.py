@@ -29,7 +29,15 @@ class ScrapingHistory(Base, TimestampMixin):
     start_date : str, optional
         The ``start_date`` parameter passed to the scraper (oldest data to fetch).
     error_message : str, optional
-        Error details populated when ``status`` is ``FAILED``.
+        Technical error details populated when ``status`` is ``FAILED`` — the
+        provider's own message, HTTP body or exception text. Written for
+        diagnosis, not for display as-is.
+    error_type : str, optional
+        Machine-readable failure category (``INVALID_PASSWORD``,
+        ``ACCOUNT_BLOCKED``, ``TIMEOUT``, ``GENERAL_ERROR``, …) mirroring the
+        scraper's ``ScrapingResult.error_type``. Kept separate from
+        ``error_message`` so the UI can show friendly, translated copy while the
+        raw provider text stays available for debugging.
     """
 
     __tablename__ = Tables.SCRAPING_HISTORY.value
@@ -54,4 +62,7 @@ class ScrapingHistory(Base, TimestampMixin):
     start_date = Column(
         String, nullable=True
     )  # The 'start_date' parameter used for scraping
-    error_message = Column(String, nullable=True)  # Error details for failed scrapes
+    # Technical detail for failed scrapes (provider message / exception text).
+    error_message = Column(String, nullable=True)
+    # Failure category driving the user-facing message; see class docstring.
+    error_type = Column(String, nullable=True)

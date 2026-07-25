@@ -199,7 +199,7 @@ export function InvestmentCard({
               {t("investments.closed")} {inv.closed_date}
               <button
                 onClick={() => onEditCloseDate(inv.id, inv.closed_date)}
-                className="hover:text-white transition-all"
+                className="p-2 -m-2 hover:text-white transition-all"
                 title={t("tooltips.editCloseDate")}
               >
                 <Pencil size={10} />

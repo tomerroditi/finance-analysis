@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from scraper.base import BrowserScraper, LoginOptions
 from scraper.models.account import AccountResult
@@ -10,6 +10,7 @@ from scraper.models.transaction import Transaction, TransactionStatus, Transacti
 from scraper.utils import (
     filter_old_transactions,
     page_eval,
+    parse_provider_date,
     page_eval_all,
     wait_until_element_found,
 )
@@ -101,11 +102,18 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
         amount, currency = _get_amount_data(charged_amount_str)
 
         date_str = txn.get("date", "")
-        try:
-            txn_date = datetime.strptime(date_str, DATE_FORMAT)
-            date_iso = txn_date.isoformat()
-        except (ValueError, TypeError):
-            date_iso = date_str
+        # A date that can't be parsed used to pass through verbatim, writing
+        # non-ISO text straight into the DB date column. Drop the row loudly
+        # instead of corrupting it.
+        txn_date = parse_provider_date(date_str, DATE_FORMAT)
+        if txn_date is None:
+            logger.warning(
+                "Beyahad Bishvilha: dropping transaction with unparseable "
+                "date %r",
+                date_str,
+            )
+            continue
+        date_iso = txn_date.isoformat()
 
         results.append(
             Transaction(

@@ -68,6 +68,13 @@ class PendingRefundsService:
         if expected_amount <= 0:
             raise ValidationException("Expected refund amount must be positive")
 
+        # Store the canonical table name. Callers pass service names ("banks")
+        # or table names ("bank_transactions") interchangeably, and the
+        # re-scrape purge guard in the ingestion repository matches on the
+        # table name — a row saved as "banks" left its transaction unprotected
+        # and the refund orphaned when the row was re-scraped.
+        source_table = self._canonical_source(source_table)
+
         # Check if already marked
         existing = self.repo.get_pending_for_source(
             source_type, source_id, source_table
@@ -830,30 +837,41 @@ class PendingRefundsService:
         """
         Get sets of identifiers for active pending refunds.
 
+        Transactions are keyed by ``(canonical_table, unique_id)`` rather than
+        by bare ``unique_id``: ``unique_id`` is a per-table auto-increment, so
+        bank #5 and credit-card #5 are different transactions. Keying on the
+        bare id would make one pending refund mask up to one transaction per
+        source table.
+
+        Splits stay keyed by bare id — ``split_transactions`` is a single
+        table, so its ids are globally unique.
+
         Returns
         -------
         dict[str, set]
-            Dictionary with keys 'transaction_ids' and 'split_ids'.
-            'transaction_ids' contains unique_ids of transactions.
+            Dictionary with keys 'transaction_keys' and 'split_ids'.
+            'transaction_keys' contains ``(table_name, unique_id)`` tuples.
             'split_ids' contains ids of split transactions.
         """
         pending_df = self.repo.get_all_pending_refunds()
         if pending_df.empty:
-            return {"transaction_ids": set(), "split_ids": set()}
+            return {"transaction_keys": set(), "split_ids": set()}
 
         # Filter for active pending refunds (pending or partial)
         active_pending = pending_df[~pending_df["status"].isin(["resolved", "closed"])]
 
-        # Get transaction unique_ids
+        # Pair each transaction id with its canonical source table so the
+        # merged (cross-table) analysis frame can be filtered unambiguously.
         transaction_pending = active_pending[
             active_pending["source_type"] == "transaction"
         ]
-
-        # Get transaction unique_ids (source_id corresponds to unique_id for transactions)
-        transaction_ids = set(transaction_pending["source_id"].tolist())
+        transaction_keys = {
+            (self._canonical_source(row["source_table"]), row["source_id"])
+            for _, row in transaction_pending.iterrows()
+        }
 
         # Get split ids
         split_pending = active_pending[active_pending["source_type"] == "split"]
         split_ids = set(split_pending["source_id"].tolist())
 
-        return {"transaction_ids": transaction_ids, "split_ids": split_ids}
+        return {"transaction_keys": transaction_keys, "split_ids": split_ids}

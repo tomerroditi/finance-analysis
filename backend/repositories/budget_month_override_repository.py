@@ -1,7 +1,7 @@
 """Budget month override repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from backend.models.budget_month_override import BudgetMonthOverride
@@ -72,8 +72,12 @@ class BudgetMonthOverrideRepository:
             .where(BudgetMonthOverride.source_type == source_type)
             .where(BudgetMonthOverride.source_id == source_id)
             .where(BudgetMonthOverride.source_table == source_table)
+            .order_by(BudgetMonthOverride.id.asc())
         )
-        return self.db.execute(stmt).scalar_one_or_none()
+        # Lowest id wins rather than raising: a legacy duplicate (written
+        # before the uniqueness constraint) would otherwise turn every read
+        # of this source into a permanent 500 with no API path to repair it.
+        return self.db.execute(stmt).scalars().first()
 
     def upsert(
         self,
@@ -137,6 +141,36 @@ class BudgetMonthOverrideRepository:
         if override:
             self.db.delete(override)
             self.db.commit()
+
+    def delete_for_sources(
+        self,
+        source_type: str,
+        source_ids: list[int],
+        source_tables: list[str],
+    ) -> None:
+        """Delete overrides for many sources at once.
+
+        Parameters
+        ----------
+        source_type : str
+            Type of source: 'transaction' or 'split'.
+        source_ids : list[int]
+            Ids of the sources.
+        source_tables : list[str]
+            Every accepted spelling of the source table.
+        """
+        if not source_ids:
+            return
+        for start in range(0, len(source_ids), 500):
+            chunk = source_ids[start:start + 500]
+            self.db.execute(
+                delete(BudgetMonthOverride).where(
+                    BudgetMonthOverride.source_type == source_type,
+                    BudgetMonthOverride.source_id.in_(chunk),
+                    BudgetMonthOverride.source_table.in_(source_tables),
+                )
+            )
+        self.db.commit()
 
     def delete_for_source(
         self,

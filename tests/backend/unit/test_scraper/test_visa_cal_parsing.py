@@ -89,14 +89,70 @@ class TestConvertCompletedTransactions:
         )
         assert result[0].type == TransactionType.NORMAL
 
-    def test_credit_transaction_keeps_positive_original_amount(self):
-        """A credit (type 6) keeps a positive original amount (refund)."""
+    def test_credit_amount_signs_match_upstream(self):
+        """A credit keeps upstream's deliberate sign asymmetry.
+
+        The two API fields use different conventions, so only one consults
+        the credit flag:
+
+            chargedAmount  = (isPending ? trnAmt : amtBeforeConvAndIndex) * -1
+            originalAmount = trnAmt * (trnTypeCode === credit ? 1 : -1)
+
+        ``amtBeforeConvAndIndex`` arrives already signed by Cal, so the flat
+        ``* -1`` produces a positive refund by itself. ``trnAmt`` is an
+        unsigned magnitude and needs the flag.
+
+        Applying the flag to ``charged_amount`` too — the field the backend
+        persists — inverts every refund. That was briefly shipped here and
+        reverted; this test pins the correct behaviour so it is not
+        reintroduced. The fixture's ``amtBeforeConvAndIndex`` is positive, as
+        it would be for a charge, which is why ``charged_amount`` is negative.
+        """
         result = _convert_parsed_data_to_transactions(
             [_month_data([_completed_txn(trnTypeCode="6")])]
         )
         assert result[0].original_amount == 200.0
-        # The charged amount is still negated from amtBeforeConvAndIndex.
         assert result[0].charged_amount == -200.0
+
+    def test_signed_api_amount_yields_a_positive_refund(self):
+        """A credit whose API amount is negative stores as a positive refund.
+
+        This is the real-world shape: Cal signs ``amtBeforeConvAndIndex``, so
+        a refund arrives negative and the flat ``* -1`` makes it positive.
+        """
+        result = _convert_parsed_data_to_transactions(
+            [
+                _month_data(
+                    [
+                        _completed_txn(
+                            trnTypeCode="6", amtBeforeConvAndIndex=-200.0
+                        )
+                    ]
+                )
+            ]
+        )
+        assert result[0].charged_amount == 200.0
+
+    def test_string_amounts_are_coerced(self):
+        """Amounts sent as strings parse to numbers, not empty strings.
+
+        Multiplying a string by -1 is Python string-repetition, which
+        silently produced ``''`` instead of raising.
+        """
+        result = _convert_parsed_data_to_transactions(
+            [
+                _month_data(
+                    [
+                        _completed_txn(
+                            trnAmt="1,100.50",
+                            amtBeforeConvAndIndex="1,100.50",
+                        )
+                    ]
+                )
+            ]
+        )
+        assert result[0].charged_amount == -1100.50
+        assert result[0].original_amount == -1100.50
 
     def test_installments_shift_date_and_set_info(self):
         """Installment N shifts the purchase date N-1 months forward."""

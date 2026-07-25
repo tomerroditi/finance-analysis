@@ -3,7 +3,7 @@ import logging
 import random
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from scraper.base import BrowserScraper
 from scraper.models.account import AccountResult
@@ -11,6 +11,7 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     fetch_get_within_page,
+    parse_provider_date,
     wait_until,
     wait_until_element_found,
 )
@@ -68,23 +69,22 @@ def _convert_transactions(txns: list[dict]) -> list[Transaction]:
         event_date_str = txn.get("eventDate", "")
         value_date_str = txn.get("valueDate", "")
 
-        date_iso = ""
-        if event_date_str:
-            try:
-                date_iso = datetime.strptime(
-                    str(event_date_str), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                date_iso = str(event_date_str)
+        # A date that can't be parsed used to pass through verbatim, writing
+        # non-ISO text straight into the DB date column. Drop the row loudly
+        # instead of corrupting it.
+        parsed_date = parse_provider_date(event_date_str, DATE_FORMAT)
+        if parsed_date is None:
+            logger.warning(
+                "Hapoalim: dropping transaction with unparseable eventDate %r",
+                event_date_str,
+            )
+            continue
+        date_iso = parsed_date.isoformat()
 
-        processed_date_iso = ""
-        if value_date_str:
-            try:
-                processed_date_iso = datetime.strptime(
-                    str(value_date_str), DATE_FORMAT
-                ).isoformat()
-            except ValueError:
-                processed_date_iso = str(value_date_str)
+        parsed_value_date = parse_provider_date(value_date_str, DATE_FORMAT)
+        processed_date_iso = (
+            parsed_value_date.isoformat() if parsed_value_date else date_iso
+        )
 
         serial_number = txn.get("serialNumber")
         status = (
@@ -446,7 +446,7 @@ class HapoalimScraper(BrowserScraper):
 
         except Exception as exc:
             logger.error("Hapoalim login failed: %s", exc)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(LoginResult.UNKNOWN_ERROR, exc)
 
     async def _wait_for_post_login_state(self) -> str:
         """Race-wait for the post-submit state.
@@ -491,13 +491,20 @@ class HapoalimScraper(BrowserScraper):
                 "Hapoalim 2FA modal appeared but no on_otp_request callback "
                 "is configured — provider is misregistered"
             )
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "the site asked for a 2FA code but this provider is not "
+                "registered as needing one, so no code prompt was available",
+            )
 
         self._emit_progress("waiting for OTP code")
         otp_code = await self.on_otp_request()
 
         if otp_code == "cancel":
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "two-factor authentication canceled by the user",
+            )
 
         digits = (otp_code or "").strip()
         if len(digits) != OTP_LENGTH or not digits.isdigit():
@@ -505,7 +512,10 @@ class HapoalimScraper(BrowserScraper):
                 "Hapoalim OTP must be %d digits, got %r",
                 OTP_LENGTH, otp_code,
             )
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                f"the code entered was not {OTP_LENGTH} digits",
+            )
 
         self._emit_progress("submitting OTP code")
         # Focus the first separated input; the Angular component auto-advances
@@ -536,7 +546,11 @@ class HapoalimScraper(BrowserScraper):
             )
         except Exception as exc:
             logger.error("Hapoalim post-OTP navigation failed: %s", exc)
-            return LoginResult.UNKNOWN_ERROR
+            return self._fail_login(
+                LoginResult.UNKNOWN_ERROR,
+                "the code was submitted but the site never reached the account "
+                f"homepage ({type(exc).__name__}: {exc})",
+            )
 
         return LoginResult.SUCCESS
 

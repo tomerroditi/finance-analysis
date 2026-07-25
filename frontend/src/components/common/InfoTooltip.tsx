@@ -53,7 +53,7 @@ export function InfoTooltip({
           e.stopPropagation();
           setShow((v) => !v);
         }}
-        className="text-[var(--text-muted)] hover:text-white transition-colors inline-flex items-center"
+        className="p-2 -m-2 text-[var(--text-muted)] hover:text-white transition-colors inline-flex items-center"
         aria-label={t("common.moreInfo")}
       >
         <Info size={iconSize} />

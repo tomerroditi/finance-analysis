@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -12,6 +13,9 @@ from scraper.models.transaction import Transaction, TransactionStatus, Transacti
 from scraper.utils import (
     fetch_post_within_page,
     page_eval_all,
+    parse_int_identifier,
+    parse_provider_date,
+    to_amount,
     wait_for_first,
     wait_for_url,
     wait_until_element_disappear,
@@ -121,11 +125,14 @@ async def _convert_transactions(
     results: list[Transaction] = []
     for row in txns:
         date_str = row.get("MC02PeulaTaaEZ", "")
-        try:
-            txn_date = datetime.fromisoformat(date_str)
-            date_iso = txn_date.isoformat()
-        except (ValueError, TypeError):
-            date_iso = str(date_str)
+        txn_date = parse_provider_date(date_str)
+        if txn_date is None:
+            logger.warning(
+                "Mizrahi: dropping transaction with unparseable date %r",
+                date_str,
+            )
+            continue
+        date_iso = txn_date.isoformat()
 
         is_today = row.get("IsTodayTransaction", False)
         status = (
@@ -152,6 +159,20 @@ async def _convert_transactions(
 
 async def _extract_pending_transactions(frame) -> list[Transaction]:
     """Extract pending transactions from the pending iframe.
+
+    Unlike the completed path — which receives an already-signed amount from
+    the API — this table renders unsigned magnitudes of pending *charges*.
+    The amount is therefore normalized to negative (the repo-wide expense
+    convention); a cell that already carries a sign is not double-negated.
+
+    Rows whose date or amount cannot be read are dropped: the previous
+    ``except -> amount = 0.0`` fallback inserted real zero-amount
+    transactions whenever a cell carried a shekel sign or a bidi mark.
+
+    The pending grid's columns are date, description, reference, amount,
+    balance; the reference cell supplies the identifier (int-normalized
+    the same way the completed path normalizes its asmachta) so two
+    same-day, same-amount pending rows stay distinguishable.
 
     Parameters
     ----------
@@ -181,18 +202,26 @@ async def _extract_pending_transactions(frame) -> list[Transaction]:
             continue
         date_str = row[0]
         description = row[1]
+        reference_str = row[2]
         amount_str = row[3]
 
-        try:
-            txn_date = datetime.strptime(date_str, "%d/%m/%y")
-            date_iso = txn_date.isoformat()
-        except (ValueError, TypeError):
+        txn_date = parse_provider_date(date_str, "%d/%m/%y")
+        if txn_date is None:
+            continue
+        date_iso = txn_date.isoformat()
+
+        raw_amount = to_amount(amount_str, default=float("nan"))
+        if math.isnan(raw_amount):
+            logger.warning(
+                "Mizrahi: dropping pending row with unparseable amount %r",
+                amount_str,
+            )
             continue
 
-        try:
-            amount = float(amount_str.replace(",", ""))
-        except (ValueError, TypeError):
-            amount = 0.0
+        # Pending rows are charges awaiting settlement; the table shows the
+        # magnitude only. Recording it as scraped made every pending charge
+        # look like income until it settled.
+        amount = -abs(raw_amount)
 
         transactions.append(
             Transaction(
@@ -204,6 +233,7 @@ async def _extract_pending_transactions(frame) -> list[Transaction]:
                 original_currency=SHEKEL_CURRENCY,
                 charged_amount=amount,
                 description=description,
+                identifier=parse_int_identifier(reference_str, strip=True),
             )
         )
     return transactions

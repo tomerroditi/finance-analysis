@@ -7,7 +7,10 @@ import {
   type RetirementSuggestions,
 } from "../services/api";
 import { useQueryKeys } from "../hooks/useQueryKeys";
-import { RetirementGoalForm } from "../components/retirement/RetirementGoalForm";
+import {
+  RetirementGoalForm,
+  type RetirementPreview,
+} from "../components/retirement/RetirementGoalForm";
 import { RetirementProjections } from "../components/retirement/RetirementProjections";
 
 type SuggestionField = keyof RetirementSuggestions;
@@ -19,6 +22,9 @@ export function EarlyRetirement() {
     field: string;
     value: number;
   } | null>(null);
+  // Unsaved "what if" results from the form's Calculate / Reset / Adjust
+  // flows. Kept out of the query cache on purpose — see RetirementPreview.
+  const [preview, setPreview] = useState<RetirementPreview | null>(null);
 
   const { data: goal, isLoading: goalLoading } = useQuery({
     queryKey: qk.retirement.goal(),
@@ -30,7 +36,8 @@ export function EarlyRetirement() {
     queryFn: () => retirementApi.getStatus().then((r) => r.data),
   });
 
-  // Projections from saved goal (initial load only — previews overwrite this cache)
+  // Projections from the SAVED goal. A preview never touches this query —
+  // it shadows it in `shownProjections` below and disappears on save.
   const {
     data: projections,
     isLoading: projectionsLoading,
@@ -55,7 +62,12 @@ export function EarlyRetirement() {
     setPendingAdjust({ field, value });
   };
 
-  const isBusy = projectionsFetching;
+  // A preview wins over the saved plan, and suppresses the loading skeleton:
+  // the saved-plan query refetching in the background must never blank out
+  // numbers the user just calculated.
+  const shownProjections = preview?.projections ?? projections;
+  const shownSuggestions = preview?.suggestions ?? suggestions;
+  const isBusy = projectionsFetching && !preview;
 
   return (
     <div className="flex flex-col gap-4 md:gap-6 p-4 md:p-6">
@@ -73,22 +85,23 @@ export function EarlyRetirement() {
             isCalculating={isBusy}
             pendingAdjust={pendingAdjust}
             onAdjustApplied={() => setPendingAdjust(null)}
+            onPreview={setPreview}
           />
         )}
       </Section>
 
       {/* Section 3: Projections */}
-      {(!!goal || !!projections) && (
+      {(!!goal || !!shownProjections) && (
         <Section
           icon={<BarChart3 size={18} className="text-purple-400" />}
           title={t("earlyRetirement.sections.projections")}
         >
-          {projectionsLoading || isBusy ? (
+          {(projectionsLoading && !preview) || isBusy ? (
             <ProjectionsSkeleton />
-          ) : projections ? (
+          ) : shownProjections ? (
             <RetirementProjections
-              projections={projections}
-              suggestions={suggestions}
+              projections={shownProjections}
+              suggestions={shownSuggestions}
               onAdjust={handleAdjust}
             />
           ) : null}

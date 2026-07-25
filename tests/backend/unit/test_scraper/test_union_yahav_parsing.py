@@ -46,11 +46,14 @@ class TestUnionConvertTransactions:
         )
         assert result[0].original_amount == -300.0
 
-    def test_empty_date_row_is_kept_verbatim(self):
-        """Union does not skip rows with an empty date column."""
+    def test_empty_date_row_is_dropped(self):
+        """A row with an empty date column is unusable and is dropped.
+
+        It used to be emitted with an empty date, producing a DB row no
+        date filter or sort could place.
+        """
         result = union_convert([{"date": "", "credit": "5", "debit": ""}])
-        assert len(result) == 1
-        assert result[0].date == ""
+        assert result == []
 
     def test_non_numeric_reference_passes_through(self):
         """A non-numeric reference is kept unchanged as the identifier."""
@@ -125,10 +128,14 @@ class TestYahavConvertTransactions:
         )
         assert result[0].original_amount == -2500.75
 
-    def test_bad_date_passes_through(self):
-        """A malformed date string is kept verbatim."""
+    def test_bad_date_row_is_dropped(self):
+        """A date that doesn't match Yahav's format drops the row.
+
+        Passing the raw string through wrote non-ISO text into the DB date
+        column instead of failing visibly.
+        """
         result = yahav_convert(
             [{"date": "15/03/24", "debit": "1", "credit": ""}]
         )
         # Two-digit year does not match Yahav's DD/MM/YYYY format.
-        assert result[0].date == "15/03/24"
+        assert result == []

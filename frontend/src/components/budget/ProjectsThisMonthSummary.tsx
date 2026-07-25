@@ -49,7 +49,7 @@ export const ProjectsThisMonthSummary: React.FC<ProjectsThisMonthSummaryProps> =
         </h3>
         <button
           onClick={onViewAll}
-          className="inline-flex items-center gap-1 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
+          className="inline-flex items-center gap-1 py-2 -my-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
         >
           {t("budget.viewAllProjects")}
           {isRtl ? (

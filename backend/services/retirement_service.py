@@ -5,6 +5,7 @@ Computes FIRE projections, net worth trajectories, and retirement income
 phase analysis for the Israeli financial context.
 """
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
@@ -137,6 +138,16 @@ class RetirementService:
         monthly_savings = 0.0
 
         if monthly_data:
+            # Complete months only. The running month has partial income (no
+            # salary yet, early in the month) but near-full expenses, so
+            # including it understated monthly_savings — which drives the
+            # entire FIRE projection, savings_rate and monthly_savings_needed.
+            current_month = pd.Timestamp.today().strftime("%Y-%m")
+            complete_months = [
+                m for m in monthly_data if m["month"] < current_month
+            ] or monthly_data
+
+            monthly_data = complete_months
             # Income: last 6 months average (or all if fewer).
             recent_income = (
                 monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
@@ -261,7 +272,9 @@ class RetirementService:
 
         # Longevity check: does portfolio survive until life expectancy?
         portfolio_depleted_age = self._find_depletion_age(
-            net_worth_projection, goal_data["life_expectancy"]
+            net_worth_projection,
+            goal_data["life_expectancy"],
+            goal_data["target_retirement_age"],
         )
 
         # Readiness traffic light (must both reach FIRE and survive drawdown)
@@ -342,6 +355,26 @@ class RetirementService:
 
             for year_offset in range(life_exp - current_age + 1):
                 age = current_age + year_offset
+
+                # Record the balance the user HAS at this age, before applying
+                # this year's growth. Recording after the growth step labelled
+                # today's point with a year of compounding already applied,
+                # which shifted the whole curve — and `fire_age` — a year early.
+                total = nw + kh
+                if scenario_name == "optimistic":
+                    projections.append(
+                        {
+                            "age": age,
+                            "net_worth_optimistic": round(total, 0),
+                            "net_worth_baseline": 0,
+                            "net_worth_conservative": 0,
+                        }
+                    )
+                else:
+                    projections[year_offset][f"net_worth_{scenario_name}"] = round(
+                        total, 0
+                    )
+
                 inflation_adjusted_expenses = annual_expenses * (
                     (1 + inflation) ** year_offset
                 )
@@ -372,23 +405,6 @@ class RetirementService:
 
                     nw = nw * (1 + rate) - withdrawal_needed
                     kh = kh * (1 + max(rate, 0))  # KH continues to grow
-
-                total = nw + kh
-
-                # Only append for one scenario, update for others
-                if scenario_name == "optimistic":
-                    projections.append(
-                        {
-                            "age": age,
-                            "net_worth_optimistic": round(total, 0),
-                            "net_worth_baseline": 0,
-                            "net_worth_conservative": 0,
-                        }
-                    )
-                else:
-                    projections[year_offset][f"net_worth_{scenario_name}"] = round(
-                        total, 0
-                    )
 
         return projections
 
@@ -542,7 +558,12 @@ class RetirementService:
         Runs the full projection and checks that baseline never hits zero.
         """
         projection = self._project_net_worth(goal, status)
-        return self._find_depletion_age(projection, goal["life_expectancy"]) is None
+        return (
+            self._find_depletion_age(
+                projection, goal["life_expectancy"], goal["target_retirement_age"]
+            )
+            is None
+        )
 
     def _solve_target_retirement_age(self, goal: dict, status: dict) -> int:
         """Find earliest retirement age where portfolio survives to life expectancy.
@@ -664,11 +685,26 @@ class RetirementService:
 
     @staticmethod
     def _find_depletion_age(
-        net_worth_projection: list[dict], life_expectancy: int
+        net_worth_projection: list[dict],
+        life_expectancy: int,
+        target_retirement_age: int | None = None,
     ) -> int | None:
         """Find the age at which portfolio first drops to zero or below.
 
-        Only checks baseline scenario during the drawdown phase.
+        Only the drawdown phase counts. During accumulation a negative
+        balance is normal — anyone carrying a mortgage or loans has a
+        negative net worth today — and it says nothing about whether the
+        plan survives retirement.
+
+        Parameters
+        ----------
+        net_worth_projection : list[dict]
+            Points from :meth:`_project_net_worth`.
+        life_expectancy : int
+            Upper age bound to consider.
+        target_retirement_age : int or None
+            Age drawdown begins. Points before it are ignored. ``None``
+            keeps the legacy behaviour of scanning every point.
 
         Returns
         -------
@@ -676,6 +712,8 @@ class RetirementService:
             Age when portfolio is depleted, or None if it survives.
         """
         for point in net_worth_projection:
+            if target_retirement_age is not None and point["age"] < target_retirement_age:
+                continue
             if point["net_worth_baseline"] <= 0 and point["age"] <= life_expectancy:
                 return point["age"]
         return None

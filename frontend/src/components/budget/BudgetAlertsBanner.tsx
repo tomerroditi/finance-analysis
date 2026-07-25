@@ -65,7 +65,7 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="flex items-center gap-2 min-w-0 text-start"
+          className="flex items-center gap-2 min-w-0 py-2 -my-2 text-start"
         >
           <AlertTriangle size={18} className={`${iconColor} shrink-0`} />
           <span className="font-semibold text-sm text-[var(--text-default)]">
@@ -77,7 +77,7 @@ export const BudgetAlertsBanner: React.FC<BudgetAlertsBannerProps> = ({
         </button>
         <button
           onClick={() => dismissAll(visibleAlerts.map((a) => a.rule_id))}
-          className="shrink-0 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
+          className="shrink-0 py-2 -my-2 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-default)] transition-colors"
         >
           {t("budgetAlerts.dismissAll")}
         </button>
