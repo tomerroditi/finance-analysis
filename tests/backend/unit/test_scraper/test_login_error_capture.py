@@ -9,6 +9,7 @@ bank actually said.
 
 import asyncio
 
+from scraper.base.base_scraper import describe_exception
 from scraper.base.browser_scraper import _redact_url
 from scraper.models.result import LoginResult
 
@@ -52,6 +53,102 @@ def _scraper(page: _FakePage):
 def _detect(scraper, possible_results):
     """Run the async detection helper synchronously."""
     return asyncio.run(scraper._detect_login_result(possible_results))
+
+
+class TestDescribeException:
+    """Tests for the shared exception renderer used by every failure path."""
+
+    def test_message_is_prefixed_with_the_class(self):
+        """The class name is kept — it is often the whole diagnosis."""
+        assert describe_exception(ValueError("bad json")) == "ValueError: bad json"
+
+    def test_empty_message_yields_the_class_name_alone(self):
+        """A bare `raise SomeError` must not render as an empty string.
+
+        `str(exc)` is "" there, so storing it directly produced an error record
+        indistinguishable from "nothing was recorded".
+        """
+        assert describe_exception(KeyError()) == "KeyError"
+
+    def test_whitespace_only_message_is_treated_as_empty(self):
+        """A message of blanks is no more informative than none."""
+        assert describe_exception(RuntimeError("   ")) == "RuntimeError"
+
+
+class TestPhaseFailures:
+    """Tests for how a failed lifecycle phase is recorded.
+
+    `scrape()`'s init and fetch handlers stored a bare `str(e)`, so the phase a
+    scrape died in lived only in the log, and an argument-less exception was
+    recorded as an empty message.
+    """
+
+    def _scraper(self, **kwargs):
+        """Build a stub scraper whose lifecycle methods can be made to raise."""
+        from scraper.base.base_scraper import BaseScraper
+
+        class _Stub(BaseScraper):
+            async def initialize(self):
+                if "init" in kwargs:
+                    raise kwargs["init"]
+
+            async def login(self):
+                if "login" in kwargs:
+                    raise kwargs["login"]
+                return LoginResult.SUCCESS
+
+            async def fetch_data(self):
+                if "fetch" in kwargs:
+                    raise kwargs["fetch"]
+                return []
+
+        return _Stub("onezero", {}, None)
+
+    def test_fetch_failure_names_the_phase_and_the_exception_class(self):
+        """A fetch-stage crash says both where it died and what was raised."""
+        result = asyncio.run(self._scraper(fetch=ValueError("bad payload")).scrape())
+
+        assert result.success is False
+        assert result.error_type == "GENERAL_ERROR"
+        assert result.error_message == "fetch data failed: ValueError: bad payload"
+
+    def test_fetch_failure_with_no_message_still_records_the_class(self):
+        """An argument-less exception no longer records an empty message."""
+        result = asyncio.run(self._scraper(fetch=KeyError()).scrape())
+
+        assert result.error_message == "fetch data failed: KeyError"
+
+    def test_init_failure_is_attributed_to_initialize(self):
+        """An init crash is distinguishable from a login or fetch crash."""
+        result = asyncio.run(self._scraper(init=OSError("no browser")).scrape())
+
+        assert result.error_type == "INIT_ERROR"
+        assert result.error_message == "initialize failed: OSError: no browser"
+
+    def test_login_crash_is_attributed_to_login(self):
+        """A login crash (raised, not returned) names the login phase."""
+        result = asyncio.run(self._scraper(login=RuntimeError("boom")).scrape())
+
+        assert result.error_type == "GENERAL_ERROR"
+        assert result.error_message == "login failed: RuntimeError: boom"
+
+    def test_timeout_keeps_its_own_category(self):
+        """A timeout is categorised as TIMEOUT, not folded into GENERAL_ERROR."""
+        result = asyncio.run(self._scraper(fetch=asyncio.TimeoutError()).scrape())
+
+        assert result.error_type == "TIMEOUT"
+        assert "fetch data failed" in result.error_message
+
+    def test_scraper_error_keeps_its_declared_category(self):
+        """A typed ScraperError's own category survives."""
+        from scraper.exceptions import CredentialsError
+
+        result = asyncio.run(
+            self._scraper(login=CredentialsError("rejected")).scrape()
+        )
+
+        assert result.error_type == "INVALID_PASSWORD"
+        assert "rejected" in result.error_message
 
 
 class TestRedactUrl:

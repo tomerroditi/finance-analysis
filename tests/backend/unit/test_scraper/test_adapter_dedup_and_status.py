@@ -261,6 +261,39 @@ class TestEmptyScrapeIsNotSuccess:
         assert status == ScrapingHistoryRepository.CANCELED
 
 
+class TestLogLinesCarryTheScrapeId:
+    """Every log line must name the scraping_history row it explains.
+
+    `process_id` IS `scraping_history.id`. Without it in the log, correlating a
+    log line to the failed row it describes meant matching provider + account +
+    timestamp by eye — ambiguous as soon as an account is scraped twice in a day.
+    """
+
+    def test_log_id_contains_the_process_id_and_identity(self):
+        """The prefix carries all three facts needed to find the row."""
+        adapter = _adapter()
+        assert adapter._log_id.startswith(f"scrape#{adapter.process_id} ")
+        assert adapter.provider_name in adapter._log_id
+        assert adapter.account_name in adapter._log_id
+
+    def test_failure_log_line_is_prefixed_with_the_scrape_id(self, caplog):
+        """A recorded failure emits a log line joinable back to its row."""
+        import logging
+
+        import pandas as pd
+
+        adapter = _adapter()
+        adapter._data = pd.DataFrame()
+        adapter._accounts_fetched = 0
+        with caplog.at_level(logging.ERROR, logger="backend.scraper.adapter"):
+            _record_full(adapter)
+
+        assert any(
+            f"scrape#{adapter.process_id}" in record.getMessage()
+            for record in caplog.records
+        ), caplog.text
+
+
 class TestErrorTypeIsRecordedSeparately:
     """The failure category is stored beside the detail, not folded into it.
 

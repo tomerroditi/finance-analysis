@@ -93,6 +93,11 @@ ResendNotSupportedError = _import_scraper_module(
 OtpRateLimitError = _import_scraper_module(
     "scraper.utils.otp_rate_limit"
 ).OtpRateLimitError
+# Single renderer for "what was this exception", shared with the scraper package
+# so a failure reads the same whether it was caught inside a scraper or out here.
+_describe_exception = _import_scraper_module(
+    "scraper.base.base_scraper"
+).describe_exception
 
 # Maps frontend service names to DB table / source column values.
 _SERVICE_TO_TABLE = {
@@ -207,6 +212,13 @@ class ScraperAdapter:
         self.process_id = process_id
         self.force_2fa = force_2fa
 
+        # Identity prefix on every log line this adapter emits. Includes the
+        # process id because that IS the `scraping_history.id` — without it,
+        # matching a log line to the failed row it explains meant eyeballing
+        # provider + account + timestamp, which is ambiguous the moment an
+        # account is scraped twice in a day.
+        self._log_id = f"scrape#{process_id} {provider_name}/{account_name}"
+
         # 2FA state
         self._otp_code: str | None = None
         self._otp_event = asyncio.Event()
@@ -261,8 +273,8 @@ class ScraperAdapter:
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
-            "[%s] %s: %s: Scraping started (from %s)",
-            ts, self.provider_name, self.account_name, self.start_date,
+            "[%s] %s: Scraping started (from %s)",
+            ts, self._log_id, self.start_date,
         )
 
         scraper = None
@@ -303,8 +315,8 @@ class ScraperAdapter:
                     f"{self._error_type} with no further detail"
                 )
                 logger.error(
-                    "%s: %s: Scraping failed — [%s] %s",
-                    self.provider_name, self.account_name,
+                    "%s: Scraping failed — [%s] %s",
+                    self._log_id,
                     self._error_type, self._error,
                 )
         except asyncio.TimeoutError:
@@ -314,8 +326,8 @@ class ScraperAdapter:
                 "and was aborted"
             )
             logger.error(
-                "%s: %s: Scraping timed out — %s",
-                self.provider_name, self.account_name, self._error,
+                "%s: Scraping timed out — %s",
+                self._log_id, self._error,
             )
             # wait_for cancelled scrape() mid-flight, so the scraper's own
             # terminate() in its finally may not have run — force browser
@@ -324,10 +336,10 @@ class ScraperAdapter:
                 await scraper._safe_terminate(False)
         except Exception as exc:
             self._error_type = "GENERAL_ERROR"
-            self._error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            self._error = _describe_exception(exc)
             logger.error(
-                "%s: %s: Unexpected error — %s",
-                self.provider_name, self.account_name, self._error,
+                "%s: Unexpected error — %s",
+                self._log_id, self._error,
             )
         finally:
             # Unregister FIRST: _record_scraping_attempt is a DB write that
@@ -339,14 +351,14 @@ class ScraperAdapter:
                 self._record_scraping_attempt(self.process_id)
             except Exception:
                 logger.exception(
-                    "%s: %s: Failed to record scraping attempt",
-                    self.provider_name, self.account_name,
+                    "%s: Failed to record scraping attempt",
+                    self._log_id,
                 )
 
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info(
-            "[%s] %s: %s: Scraping finished",
-            ts, self.provider_name, self.account_name,
+            "[%s] %s: Scraping finished",
+            ts, self._log_id,
         )
 
     def _unregister_from_2fa_waiting(self) -> None:
@@ -400,13 +412,13 @@ class ScraperAdapter:
                     self.service_name, self.provider_name, self.account_name, merged
                 )
             logger.info(
-                "%s: %s: Persisted refreshed long-term token after forced 2FA",
-                self.provider_name, self.account_name,
+                "%s: Persisted refreshed long-term token after forced 2FA",
+                self._log_id,
             )
         except Exception as exc:
             logger.warning(
-                "%s: %s: Failed to persist refreshed long-term token — %s",
-                self.provider_name, self.account_name, exc,
+                "%s: Failed to persist refreshed long-term token — %s",
+                self._log_id, exc,
             )
 
     def set_otp_code(self, code: str) -> None:
@@ -542,8 +554,8 @@ class ScraperAdapter:
                 )
         except Exception as exc:
             logger.warning(
-                "%s: %s: Failed to mark waiting_for_2fa — %s",
-                self.provider_name, self.account_name, exc,
+                "%s: Failed to mark waiting_for_2fa — %s",
+                self._log_id, exc,
             )
 
     # ------------------------------------------------------------------
@@ -717,13 +729,13 @@ class ScraperAdapter:
                 count += tagging_rules_service.auto_tag_credit_cards_bills()
                 if count > 0:
                     logger.info(
-                        "%s: %s: Auto-tagged %d transactions",
-                        self.provider_name, self.account_name, count,
+                        "%s: Auto-tagged %d transactions",
+                        self._log_id, count,
                     )
         except Exception as exc:
             logger.error(
-                "%s: %s: Error auto-tagging — %s",
-                self.provider_name, self.account_name, exc,
+                "%s: Error auto-tagging — %s",
+                self._log_id, exc,
             )
 
     def _recalculate_bank_balances(self) -> None:
@@ -738,8 +750,8 @@ class ScraperAdapter:
                 )
         except Exception as exc:
             logger.error(
-                "%s: %s: Error recalculating bank balance — %s",
-                self.provider_name, self.account_name, exc,
+                "%s: Error recalculating bank balance — %s",
+                self._log_id, exc,
             )
 
     def _post_save_hook(self, result) -> None:
@@ -766,8 +778,8 @@ class ScraperAdapter:
                 error_message = NO_ACCOUNTS_ERROR
                 error_type = "NO_ACCOUNTS"
                 logger.error(
-                    "%s: %s: %s",
-                    self.provider_name, self.account_name, NO_ACCOUNTS_ERROR,
+                    "%s: %s",
+                    self._log_id, NO_ACCOUNTS_ERROR,
                 )
             else:
                 status = ScrapingHistoryRepository.SUCCESS
@@ -829,8 +841,8 @@ class InsuranceScraperAdapter(ScraperAdapter):
                 for meta in accounts_to_upsert:
                     service.upsert(**meta)
                 logger.info(
-                    "%s: %s: Saved metadata for %d insurance accounts",
-                    self.provider_name, self.account_name, len(accounts_to_upsert),
+                    "%s: Saved metadata for %d insurance accounts",
+                    self._log_id, len(accounts_to_upsert),
                 )
 
                 inv_service = InvestmentsService(db)
@@ -840,16 +852,16 @@ class InsuranceScraperAdapter(ScraperAdapter):
                     try:
                         inv_service.sync_from_insurance(meta)
                         logger.info(
-                            "%s: %s: Synced hishtalmut investment for policy %s",
-                            self.provider_name, self.account_name, meta["policy_id"],
+                            "%s: Synced hishtalmut investment for policy %s",
+                            self._log_id, meta["policy_id"],
                         )
                     except Exception:
                         logger.exception(
-                            "%s: %s: Failed to sync hishtalmut investment for policy %s",
-                            self.provider_name, self.account_name, meta["policy_id"],
+                            "%s: Failed to sync hishtalmut investment for policy %s",
+                            self._log_id, meta["policy_id"],
                         )
         except Exception as exc:
             logger.error(
-                "%s: %s: Error saving insurance metadata — %s",
-                self.provider_name, self.account_name, exc,
+                "%s: Error saving insurance metadata — %s",
+                self._log_id, exc,
             )
