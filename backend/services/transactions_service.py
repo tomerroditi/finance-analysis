@@ -40,6 +40,20 @@ from backend.repositories.transactions_repository import (
 )
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
+# `split_id` holds the primary key of a `split_transactions` row, or nothing at
+# all for a transaction that was never split. Assigning bare `None` yields an
+# `object` column, while the split-expansion path yields `float64` (NaN for the
+# unsplit rows) — so frames built by different paths disagreed on the dtype of a
+# column that is frequently all-NA. `pd.concat` reconciles that today by
+# ignoring the all-NA side, but warns that it will stop doing so. Pinning every
+# synthesised column to the same dtype keeps the frames uniform.
+SPLIT_ID_DTYPE = "float64"
+
+
+def _empty_split_id(index: pd.Index) -> pd.Series:
+    """Build an all-missing ``split_id`` column with the canonical dtype."""
+    return pd.Series(index=index, dtype=SPLIT_ID_DTYPE)
+
 
 class TransactionsService:
     """
@@ -187,7 +201,9 @@ class TransactionsService:
 
         if not rows:
             return pd.DataFrame()
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows).astype(
+            {TransactionsTableFields.SPLIT_ID.value: SPLIT_ID_DTYPE}
+        )
 
     def _build_investment_prior_wealth_rows(self) -> pd.DataFrame:
         """Build synthetic prior wealth rows from Investment.prior_wealth_amount.
@@ -221,7 +237,9 @@ class TransactionsService:
 
         if not rows:
             return pd.DataFrame()
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows).astype(
+            {TransactionsTableFields.SPLIT_ID.value: SPLIT_ID_DTYPE}
+        )
 
 
     def update_tagging_by_id(
@@ -1027,7 +1045,7 @@ class TransactionsService:
         split_df = self.split_transactions_repository.get_data()
         if split_df.empty:
             if TransactionsTableFields.SPLIT_ID.value not in df.columns:
-                df[TransactionsTableFields.SPLIT_ID.value] = None
+                df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(df.index)
             return (
                 df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
             )
@@ -1051,7 +1069,9 @@ class TransactionsService:
         # awaiting a refund still counted as budget spend.
         def _ensure_split_id(frame: pd.DataFrame) -> pd.DataFrame:
             if TransactionsTableFields.SPLIT_ID.value not in frame.columns:
-                frame[TransactionsTableFields.SPLIT_ID.value] = None
+                frame[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(
+                    frame.index
+                )
             return frame
 
         if include_split_parents:
@@ -1093,7 +1113,9 @@ class TransactionsService:
         else:
             result_df = base_df
             if TransactionsTableFields.SPLIT_ID.value not in result_df.columns:
-                result_df[TransactionsTableFields.SPLIT_ID.value] = None
+                result_df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(
+                    result_df.index
+                )
 
         return (
             result_df[analysis_cols].reset_index(drop=True)

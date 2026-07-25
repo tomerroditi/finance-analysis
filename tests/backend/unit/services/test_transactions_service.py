@@ -1,5 +1,6 @@
 """Tests for TransactionsService using real in-memory SQLite database."""
 
+import warnings
 from datetime import date, datetime
 
 import pandas as pd
@@ -118,6 +119,40 @@ class TestTransactionsServiceDataRetrieval:
         # Plus the cash prior wealth row seeded directly
         all_pw_rows = result[result[tag_col] == PRIOR_WEALTH_TAG]
         assert len(all_pw_rows) == 3  # 2 bank balance + 1 cash
+
+    def test_get_data_for_analysis_merges_without_dtype_warning(
+        self,
+        db_session,
+        seed_base_transactions,
+        seed_split_transactions,
+        seed_prior_wealth_transactions,
+    ):
+        """Verify the source frames agree on dtypes before they are concatenated.
+
+        ``split_id`` used to be an ``object`` column of ``None`` on frames the
+        split-expansion path never touched (cash, the synthetic prior-wealth
+        rows) and ``float64`` everywhere else. Concatenating an all-NA column
+        with a differently-typed one makes pandas emit a ``FutureWarning``
+        about all-NA entries no longer being excluded from dtype inference.
+        """
+        service = TransactionsService(db_session)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            result = service.get_data_for_analysis()
+
+        split_id_col = TransactionsTableFields.SPLIT_ID.value
+        frames = [
+            service.get_table_for_analysis(service_name)
+            for service_name in ("credit_cards", "banks", "cash", "manual_investments")
+        ] + [
+            service._build_bank_prior_wealth_rows(),
+            service._build_investment_prior_wealth_rows(),
+        ]
+        dtypes = {
+            frame[split_id_col].dtype for frame in frames if split_id_col in frame.columns
+        }
+        assert dtypes == {result[split_id_col].dtype}
 
     def test_get_table_for_analysis_single_service(self, db_session, seed_base_transactions):
         """Verify filtering by a single service."""
