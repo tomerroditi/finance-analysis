@@ -6,13 +6,30 @@ from typing import Any, Optional
 import httpx
 from playwright.async_api import Page
 
-from scraper.exceptions import ErrorType, ScraperError
+from scraper.exceptions import AutomationBlockedError, ErrorType, ScraperError
 
 logger = logging.getLogger(__name__)
 
 JSON_CONTENT_TYPE = "application/json"
 
 _AUTOMATION_BLOCKED_PATTERN = re.compile(r"block automation|bot detection", re.IGNORECASE)
+
+# Text a WAF interstitial serves in place of the API's own response body.
+_WAF_BODY_PATTERN = re.compile(
+    r"cf-browser-verification|cf_chl_opt|/cdn-cgi/challenge-platform"
+    r"|attention required|checking your browser|just a moment"
+    r"|access denied|request blocked|akamai",
+    re.IGNORECASE,
+)
+
+# Response headers only an edge/WAF sets, never the origin API.
+_WAF_HEADERS = ("cf-ray", "cf-mitigated", "x-akamai-request-id")
+
+_REMEDIATION = (
+    "The site is actively blocking automated access. Consider: "
+    "1) Using show_browser=True, 2) Adding longer delays, "
+    "3) Using residential proxies, 4) Running at different times of day"
+)
 
 
 def _json_headers() -> dict[str, str]:
@@ -40,18 +57,59 @@ def _assert_automation_not_blocked(
 
     Raises
     ------
-    ScraperError
+    AutomationBlockedError
         If the response looks like an anti-automation block.
     """
     blocked_body = bool(response_text and _AUTOMATION_BLOCKED_PATTERN.search(response_text))
     if status == 429 or blocked_body:
-        raise ScraperError(
-            f"Automation detected and blocked by server. Status: {status}, URL: {url}. "
-            "The site is actively blocking automated access. Consider: "
-            "1) Using show_browser=True, 2) Adding longer delays, "
-            "3) Using residential proxies, 4) Running at different times of day",
-            ErrorType.GENERIC,
+        raise AutomationBlockedError(
+            f"Automation detected and blocked by server. Status: {status}, "
+            f"URL: {url}. {_REMEDIATION}"
         )
+
+
+def _describe_waf_evidence(resp: httpx.Response) -> Optional[str]:
+    """Return why a response looks like a WAF block, or None if it doesn't.
+
+    Distinguishes an edge rejection from a genuine API error. Both can be a
+    403, so status alone proves nothing — the tell is either a header only an
+    edge sets, or challenge markup where JSON was expected. Requiring one of
+    those keeps a legitimate ``403 {"error": "forbidden"}`` from the origin out
+    of the automation-blocked bucket.
+
+    Parameters
+    ----------
+    resp : httpx.Response
+        The failing response.
+
+    Returns
+    -------
+    Optional[str]
+        A short description of the evidence found, or None when the response
+        carries no WAF signal.
+    """
+    if resp.status_code == 429:
+        return "status 429"
+
+    if resp.status_code not in (401, 403, 503):
+        return None
+
+    edge_headers = [h for h in _WAF_HEADERS if h in resp.headers]
+    try:
+        body = resp.text or ""
+    except Exception:
+        body = ""
+    body_match = _WAF_BODY_PATTERN.search(body)
+
+    # An edge header alone is not proof — Cloudflare fronts plenty of APIs and
+    # stamps cf-ray on their legitimate errors too. Pair it with a body that
+    # isn't the API's own JSON.
+    looks_like_html = body.lstrip()[:1] == "<"
+    if body_match:
+        return f"challenge markup ({body_match.group(0)!r})"
+    if edge_headers and looks_like_html:
+        return f"edge headers {edge_headers} with an HTML body"
+    return None
 
 
 def _raise_for_status_with_body(resp: httpx.Response) -> None:
@@ -64,6 +122,14 @@ def _raise_for_status_with_body(resp: httpx.Response) -> None:
     response preserved (so status-based handling such as retry logic still
     works) and a message that appends a truncated body.
 
+    The one exception is a WAF block, which is raised as ``AutomationBlockedError``
+    so it lands in the scrape history under its own error type instead of the
+    ``GENERAL_ERROR`` bucket. That trades away ``HTTPStatusError`` for those
+    responses — deliberately: the status-based handlers that matter here key on
+    markers a challenge page never carries (One Zero's Twilio block is a 503
+    with an ``ErrorOtpService`` body), so none of them can match a WAF response
+    anyway.
+
     Parameters
     ----------
     resp : httpx.Response
@@ -71,12 +137,21 @@ def _raise_for_status_with_body(resp: httpx.Response) -> None:
 
     Raises
     ------
+    AutomationBlockedError
+        If the failure carries WAF evidence (edge headers, challenge markup).
     httpx.HTTPStatusError
-        If the status indicates an error, with the body included in the message.
+        For every other error status, with the body included in the message.
     """
     try:
         resp.raise_for_status()
     except httpx.HTTPStatusError as error:
+        evidence = _describe_waf_evidence(resp)
+        if evidence is not None:
+            raise AutomationBlockedError(
+                f"Blocked before reaching the provider ({evidence}). "
+                f"Status: {resp.status_code}, URL: {resp.request.url}. {_REMEDIATION}"
+            ) from error
+
         body = (resp.text or "").strip()
         if len(body) > 500:
             body = body[:500] + "…"

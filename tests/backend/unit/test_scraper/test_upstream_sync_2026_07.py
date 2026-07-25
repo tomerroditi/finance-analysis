@@ -13,9 +13,10 @@ Covers the four upstream changes synced in this pass:
 
 import asyncio
 
+import httpx
 import pytest
 
-from scraper.exceptions import ScraperError
+from scraper.exceptions import AutomationBlockedError, ErrorType, ScraperError
 from scraper.models.account import CardType
 from scraper.providers.banks.leumi import _fetch_savings_for_account
 from scraper.providers.credit_cards.max import (
@@ -76,6 +77,77 @@ class TestAutomationBlockDetection:
         assert asyncio.run(fetch.fetch_get_within_page(page, "https://x/y")) == {
             "ok": True
         }
+
+
+def _response(status: int, body: str = "", headers: dict | None = None) -> httpx.Response:
+    """Build a response bound to a request, as httpx requires for raise_for_status."""
+    return httpx.Response(
+        status,
+        text=body,
+        headers=headers or {},
+        request=httpx.Request("POST", "https://identity.tfd-bank.com/v1/devices/token"),
+    )
+
+
+class TestHttpWafDetection:
+    """Edge blocks on the httpx path are typed, not lumped into GENERAL_ERROR.
+
+    One Zero is an ``ApiScraper`` on httpx, so the in-page guard never sees its
+    traffic — this is the path that labels its failures.
+    """
+
+    def test_challenge_markup_is_reported_as_a_block(self):
+        """A 403 serving a Cloudflare interstitial raises AutomationBlockedError."""
+        resp = _response(
+            403,
+            "<html><head><title>Just a moment...</title></head></html>",
+            {"cf-ray": "abc123"},
+        )
+
+        with pytest.raises(AutomationBlockedError) as excinfo:
+            fetch._raise_for_status_with_body(resp)
+
+        assert excinfo.value.error_type is ErrorType.AUTOMATION_BLOCKED
+
+    def test_429_is_reported_as_a_block(self):
+        """Rate-limit status alone is enough evidence."""
+        with pytest.raises(AutomationBlockedError):
+            fetch._raise_for_status_with_body(_response(429, "slow down"))
+
+    def test_edge_header_with_html_body_is_reported_as_a_block(self):
+        """An edge header plus HTML where JSON was expected counts as evidence."""
+        resp = _response(403, "<html><body>Denied</body></html>", {"cf-ray": "x"})
+
+        with pytest.raises(AutomationBlockedError):
+            fetch._raise_for_status_with_body(resp)
+
+    def test_onezero_twilio_block_is_not_mistaken_for_a_waf_block(self):
+        """The 503 SMS-provider block must stay an HTTPStatusError.
+
+        ``_is_sms_provider_block`` catches ``httpx.HTTPStatusError`` to arm the
+        OTP circuit breaker. Retyping that response would silently disable it.
+        """
+        resp = _response(
+            503,
+            '{"error": {"code": "ErrorOtpService"}}',
+            {"cf-ray": "abc123"},
+        )
+
+        with pytest.raises(httpx.HTTPStatusError) as excinfo:
+            fetch._raise_for_status_with_body(resp)
+
+        assert "ErrorOtpService" in str(excinfo.value)
+
+    def test_plain_api_forbidden_stays_an_http_error(self):
+        """A JSON 403 from the origin is an API error, not an automation block."""
+        resp = _response(403, '{"error": "forbidden"}')
+
+        with pytest.raises(httpx.HTTPStatusError):
+            fetch._raise_for_status_with_body(resp)
+
+    def test_success_passes_through(self):
+        """A 200 raises nothing."""
+        assert fetch._raise_for_status_with_body(_response(200, "{}")) is None
 
 
 class TestRandomDelay:

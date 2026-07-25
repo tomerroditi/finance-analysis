@@ -8,6 +8,7 @@ class ErrorType(str, Enum):
     ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
     TWO_FACTOR_RETRIEVER_MISSING = "TWO_FACTOR_RETRIEVER_MISSING"
     TIMEOUT = "TIMEOUT"
+    AUTOMATION_BLOCKED = "AUTOMATION_BLOCKED"
     GENERIC = "GENERIC"
     GENERAL = "GENERAL_ERROR"
 
@@ -40,6 +41,18 @@ class TwoFactorError(ScraperError):
 
 class TimeoutError(ScraperError):
     error_type = ErrorType.TIMEOUT
+
+
+class AutomationBlockedError(ScraperError):
+    """The provider refused the request because it detected automation.
+
+    Distinct from a credentials or availability failure: nothing about the
+    account is wrong, so retrying with the same client is pointless. Carrying
+    its own error type keeps it out of the ``GENERAL_ERROR`` bucket, where a
+    WAF block is indistinguishable from a parsing bug in the scrape history.
+    """
+
+    error_type = ErrorType.AUTOMATION_BLOCKED
 
 
 class ConnectionError(ScraperError):
