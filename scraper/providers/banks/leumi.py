@@ -14,8 +14,8 @@ from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import (
     click_button,
+    fetch_get_within_page,
     fill_input,
-    page_eval,
     page_eval_all,
     sleep,
     wait_for_first,
@@ -33,6 +33,11 @@ TRANSACTIONS_URL = (
 FILTERED_TRANSACTIONS_URL = (
     f"{BASE_URL}/ChannelWCF/Broker.svc/ProcessRequest"
     "?moduleName=UC_SO_27_GetBusinessAccountTrx"
+)
+LOGON_URL = f"{BASE_URL}/authenticate/logon"
+SAVINGS_URL = (
+    f"{BASE_URL}/uiapiproxy/v1/digital-retails/mobile/accounts/1/Deposits"
+    "?operationList=true"
 )
 
 ACCOUNT_BLOCKED_MSG = "\u05d4\u05de\u05e0\u05d5\u05d9 \u05d7\u05e1\u05d5\u05dd"
@@ -103,33 +108,31 @@ def _extract_transactions_from_page(
 
 
 async def _navigate_to_login(page) -> None:
-    """Navigate from the homepage to the login form.
+    """Navigate to the login form.
+
+    Leumi's marketing homepage no longer reliably exposes the ``.enter_account``
+    link the old flow scraped the href from (upstream 2026-07-22, commit
+    de14046), so go straight to the logon page.
 
     Parameters
     ----------
     page : Page
         Playwright page instance.
     """
-    login_button_selector = ".enter_account"
-    logger.debug("Waiting for homepage login button")
-    await wait_until_element_found(page, login_button_selector)
-
-    login_url = await page_eval(page, login_button_selector, "el => el.href")
-    if login_url:
-        logger.debug("Navigating to login page: %s", login_url)
-        await page.goto(login_url)
-        await wait_for_navigation(page, "networkidle")
-        await asyncio.gather(
-            wait_until_element_found(
-                page, 'input[placeholder="\u05e9\u05dd \u05de\u05e9\u05ea\u05de\u05e9"]', only_visible=True
-            ),
-            wait_until_element_found(
-                page, 'input[placeholder="\u05e1\u05d9\u05e1\u05de\u05d4"]', only_visible=True
-            ),
-            wait_until_element_found(
-                page, 'button[type="submit"]', only_visible=True
-            ),
-        )
+    logger.debug("Navigating directly to login page: %s", LOGON_URL)
+    await page.goto(LOGON_URL)
+    await wait_for_navigation(page, "networkidle")
+    await asyncio.gather(
+        wait_until_element_found(
+            page, 'input[placeholder="\u05e9\u05dd \u05de\u05e9\u05ea\u05de\u05e9"]', only_visible=True
+        ),
+        wait_until_element_found(
+            page, 'input[placeholder="\u05e1\u05d9\u05e1\u05de\u05d4"]', only_visible=True
+        ),
+        wait_until_element_found(
+            page, 'button[type="submit"]', only_visible=True
+        ),
+    )
 
 
 async def _wait_for_post_login(page) -> None:
@@ -330,6 +333,72 @@ async def _fetch_transactions(
     return accounts
 
 
+async def _fetch_savings_for_account(page, account_id: str) -> list[AccountResult]:
+    """Fetch the deposit/savings accounts hanging off one current account.
+
+    Each deposit becomes its own zero-transaction account carrying only its
+    balance — Leumi's deposits endpoint exposes balances, not a transaction
+    ledger.
+
+    Parameters
+    ----------
+    page : Page
+        Playwright page instance.
+    account_id : str
+        The parent current-account number.
+
+    Returns
+    -------
+    list[AccountResult]
+        One result per deposit; empty when the account has no savings.
+    """
+    try:
+        savings_data = await fetch_get_within_page(page, SAVINGS_URL, ignore_errors=True)
+    except Exception as exc:
+        logger.debug("Error fetching savings accounts for %s: %s", account_id, exc)
+        return []
+
+    deposits = (savings_data or {}).get("depositsAndSavingsItems") or []
+    if not deposits:
+        logger.debug("No savings accounts found for account %s", account_id)
+        return []
+
+    logger.debug("Found %d savings deposits for %s", len(deposits), account_id)
+    return [
+        AccountResult(
+            account_number=f"{account_id}-{deposit.get('depositId')}",
+            transactions=[],
+            balance=deposit.get("currentBalance"),
+            savings_account=True,
+        )
+        for deposit in deposits
+    ]
+
+
+async def _fetch_savings_accounts(
+    page, regular_accounts: list[AccountResult]
+) -> list[AccountResult]:
+    """Collect savings accounts across every current account.
+
+    Parameters
+    ----------
+    page : Page
+        Playwright page instance.
+    regular_accounts : list[AccountResult]
+        The already-scraped current accounts.
+
+    Returns
+    -------
+    list[AccountResult]
+        Flattened savings accounts. Failures are logged, never raised — a
+        missing deposits endpoint must not fail the whole scrape.
+    """
+    savings: list[AccountResult] = []
+    for account in regular_accounts:
+        savings.extend(await _fetch_savings_for_account(page, account.account_number))
+    return savings
+
+
 class LeumiScraper(BrowserScraper):
     """Scraper for Bank Leumi (https://www.leumi.co.il).
 
@@ -384,4 +453,6 @@ class LeumiScraper(BrowserScraper):
 
         await self.navigate_to(TRANSACTIONS_URL)
 
-        return await _fetch_transactions(self.page, effective_start)
+        accounts = await _fetch_transactions(self.page, effective_start)
+        accounts.extend(await _fetch_savings_accounts(self.page, accounts))
+        return accounts

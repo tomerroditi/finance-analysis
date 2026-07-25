@@ -24,6 +24,7 @@ from scraper.utils import (
     filter_old_transactions,
     fix_installments,
     get_all_months,
+    sleep,
     sort_transactions_by_date,
     to_amount,
     wait_for_redirect,
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 BASE_API_ACTIONS_URL = "https://onlinelcapi.max.co.il"
 BASE_WELCOME_URL = "https://www.max.co.il"
+HOME_PAGE_DATA_URL = f"{BASE_WELCOME_URL}/api/registered/getHomePageData"
 
 LOGIN_URL = f"{BASE_WELCOME_URL}/login"
 PASSWORD_EXPIRED_URL = f"{BASE_WELCOME_URL}/renew-password"
@@ -124,6 +126,69 @@ async def _load_categories(page) -> None:
         logger.debug("%d categories loaded", len(res["result"]))
         for item in res["result"]:
             _categories[item["id"]] = item["name"]
+
+
+async def _load_home_page_data(page) -> dict[str, dict]:
+    """Fetch the home-page card summary, keyed by the card's last 4 digits.
+
+    Parameters
+    ----------
+    page : Page
+        The Playwright browser page.
+
+    Returns
+    -------
+    dict[str, dict]
+        Raw card summary dicts keyed by ``Last4Digits``. Empty when the
+        endpoint is unavailable.
+    """
+    logger.debug("Loading home page data for card balances")
+    res = await fetch_get_within_page(page, HOME_PAGE_DATA_URL, ignore_errors=True)
+    cards = ((res or {}).get("Result") or {}).get("UserCards") or {}
+    return {card["Last4Digits"]: card for card in cards.get("Cards") or []}
+
+
+def _get_card_balance(card: dict) -> Optional[float]:
+    """Derive the card's outstanding balance from its credit limit.
+
+    Max exposes the limit and the remaining headroom rather than the balance
+    itself, so the amount already spent is their difference. Returned negative
+    to match the project convention (negative = money owed / spent).
+
+    Parameters
+    ----------
+    card : dict
+        A card entry from the home-page data.
+
+    Returns
+    -------
+    Optional[float]
+        The balance, or None when either component is missing.
+    """
+    credit_limit = card.get("CreditLimit")
+    open_to_buy = card.get("OpenToBuy")
+    if credit_limit is None or open_to_buy is None:
+        return None
+    return round(-(credit_limit - open_to_buy), 2)
+
+
+def _get_card_balance_date(card: dict) -> Optional[str]:
+    """Return the date the shekel cycle summary was computed for.
+
+    Parameters
+    ----------
+    card : dict
+        A card entry from the home-page data.
+
+    Returns
+    -------
+    Optional[str]
+        The cycle date, or None when the card has no shekel cycle entry.
+    """
+    for entry in card.get("CycleSummary") or []:
+        if "₪" in (entry.get("CurrencySymbol") or ""):
+            return entry.get("Date")
+    return None
 
 
 def _get_transaction_type(plan_name: str, plan_type_id: int) -> TransactionType:
@@ -419,7 +484,16 @@ class MaxScraper(BrowserScraper):
             await click_button(page, ".personal-area > a.go-to-personal-area")
             if await element_present_on_page(page, ".login-link#private"):
                 await click_button(page, ".login-link#private")
-            await wait_until_element_found(page, "#login-password-link", only_visible=True)
+            # The password-login tab sometimes renders late; retry once.
+            try:
+                await wait_until_element_found(
+                    page, "#login-password-link", only_visible=True, timeout=10000
+                )
+            except Exception:
+                await sleep(1.0)
+                await wait_until_element_found(
+                    page, "#login-password-link", only_visible=True, timeout=10000
+                )
             await click_button(page, "#login-password-link")
             await wait_until_element_found(
                 page,
@@ -463,6 +537,7 @@ class MaxScraper(BrowserScraper):
         all_months = get_all_months(effective_start, future_months)
 
         await _load_categories(self.page)
+        home_page_cards = await _load_home_page_data(self.page)
 
         all_results: dict[str, list[Transaction]] = {}
         for month_date in all_months:
@@ -481,10 +556,14 @@ class MaxScraper(BrowserScraper):
                 self.options.combine_installments,
                 True,
             )
+            card = home_page_cards.get(account_number)
             accounts.append(
                 AccountResult(
                     account_number=account_number,
                     transactions=prepared,
+                    balance=_get_card_balance(card) if card else None,
+                    balance_date=_get_card_balance_date(card) if card else None,
+                    card_frame=card.get("CreditLimit") if card else None,
                 )
             )
 

@@ -306,7 +306,6 @@ class ScraperAdapter:
                     self._apply_auto_tagging()
                     self._recalculate_bank_balances()
                     self._post_save_hook(result)
-                self._persist_refreshed_otp_token(scraper)
             else:
                 self._error_type = result.error_type or "GENERAL_ERROR"
                 self._error = (
@@ -342,6 +341,15 @@ class ScraperAdapter:
                 self._log_id, self._error,
             )
         finally:
+            # Persist before anything that can raise, and regardless of how the
+            # scrape ended. A token is minted the moment login succeeds, so a
+            # later fetch_data failure (or the 5-minute timeout) must not throw
+            # it away — doing so costs the user another SMS for a failure that
+            # had nothing to do with authentication, and every wasted SMS walks
+            # them toward the provider's own rate limit.
+            if scraper is not None:
+                self._persist_refreshed_otp_token(scraper)
+
             # Unregister FIRST: _record_scraping_attempt is a DB write that
             # can raise, and a raise before unregistering would leave this
             # adapter stuck in _active_scrapers — permanently blocking new
@@ -387,10 +395,18 @@ class ScraperAdapter:
             _active_scrapers.pop(name, None)
 
     def _persist_refreshed_otp_token(self, scraper) -> None:
-        """Persist a freshly obtained long-term token after a forced re-auth.
+        """Persist a freshly obtained long-term token, however it was obtained.
 
-        Only acts on a forced run whose scraper exposes a fresh token. Merges
-        the new token into the existing credentials (so non-sensitive DB
+        A long-term token lets later scrapes skip the SMS round trip entirely,
+        so it is worth keeping whenever one is minted — not only on a forced
+        re-auth. This used to return early unless ``force_2fa`` was set, which
+        silently discarded the token from a *first* connect: the provider's
+        credential form has no ``otpLongTermToken`` field (it cannot — the token
+        does not exist until a scrape has run), and this method is the only
+        writer, so nothing else could save it. The result was an SMS prompt on
+        every single scrape unless the user happened to use the force-2FA path.
+
+        Merges the new token into the existing credentials (so non-sensitive DB
         fields are preserved, not wiped) and upserts via CredentialsRepository.
         Any failure is logged and swallowed — it must never fail the scrape.
 
@@ -400,10 +416,12 @@ class ScraperAdapter:
             The scraper instance that just ran; may expose
             ``refreshed_otp_long_term_token``.
         """
-        if not self.force_2fa:
-            return
         token = getattr(scraper, "refreshed_otp_long_term_token", None)
         if not token:
+            return
+        if token == self.credentials.get("otpLongTermToken"):
+            # Unchanged token — skip the Keyring write rather than rewrite the
+            # same secret on every scrape.
             return
         try:
             merged = {**self.credentials, "otpLongTermToken": token}
@@ -412,7 +430,7 @@ class ScraperAdapter:
                     self.service_name, self.provider_name, self.account_name, merged
                 )
             logger.info(
-                "%s: Persisted refreshed long-term token after forced 2FA",
+                "%s: Persisted long-term token; later scrapes can skip the SMS",
                 self._log_id,
             )
         except Exception as exc:
