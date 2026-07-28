@@ -1,3 +1,11 @@
+## v1.49.7 (2026-07-28)
+
+### Fix
+
+- **api**: render non-finite floats as null instead of 500ing
+- **deps**: sync requirements.txt with the pyproject pins
+- **deps**: batch the remaining Dependabot upgrades into one change
+
 ## v1.49.6 (2026-07-28)
 
 ### Fix
