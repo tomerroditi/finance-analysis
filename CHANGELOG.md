@@ -1,3 +1,10 @@
+## v1.49.6 (2026-07-28)
+
+### Fix
+
+- **lint**: keep the new set-state-in-effect rule non-blocking
+- **deps**: Bump the frontend-minor-patch group
+
 ## v1.49.5 (2026-07-28)
 
 ### Fix
