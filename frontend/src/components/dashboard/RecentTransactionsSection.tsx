@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Split, RefreshCw, Tag, Link2 } from "lucide-react";
 import { transactionsApi, pendingRefundsApi } from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";

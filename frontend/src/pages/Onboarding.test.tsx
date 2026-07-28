@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type * as ReactRouterDom from "react-router-dom";
+import type * as ReactRouterDom from "react-router";
 import i18n from "../i18n";
 import { Onboarding } from "./Onboarding";
 import { renderWithProviders } from "../test-utils";
@@ -15,9 +15,9 @@ const toggleDemoModeMock = vi.fn(async (enabled: boolean) =>
   toggleDemoModeImpl(enabled),
 );
 
-vi.mock("react-router-dom", async () => {
+vi.mock("react-router", async () => {
   const actual = await vi.importActual<typeof ReactRouterDom>(
-    "react-router-dom",
+    "react-router",
   );
   return {
     ...actual,

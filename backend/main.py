@@ -311,6 +311,40 @@ async def require_token_for_remote_clients(request: Request, call_next):
     )
 
 
+# CSRF guard. Loopback clients are trusted by connection, so every website
+# the user visits can also reach this API from their browser. CORS only stops
+# the attacker *reading* the response — a cross-origin POST still executes,
+# and a body sent with no Content-Type (a Blob with an empty type) is parsed
+# by FastAPI as JSON, dodging the preflight that application/json would have
+# forced. So state-changing requests must carry a same-site Origin, or none
+# at all (curl, the desktop app, and other non-browser clients send none and
+# cannot be driven by a hostile page).
+@app.middleware("http")
+async def enforce_same_origin_for_writes(request: Request, call_next):
+    """Reject state-changing /api requests carrying a foreign Origin."""
+    if (
+        os.environ.get("VERCEL")
+        or request.method not in auth.UNSAFE_METHODS
+        or not request.url.path.startswith("/api/")
+    ):
+        return await call_next(request)
+    origin = request.headers.get("origin")
+    if not auth.origin_allowed(
+        origin, request.headers.get("host"), _cors_origins, _allowed_hosts
+    ):
+        logger.warning(
+            "Blocked cross-origin %s %s from Origin %r",
+            request.method,
+            request.url.path,
+            origin,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Cross-origin request rejected"},
+        )
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Apply conservative security headers to every response."""

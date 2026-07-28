@@ -15,6 +15,10 @@ its security model is connection-based:
   domain at 127.0.0.1 to reach the API from the victim's browser —
   such requests arrive from loopback (so token auth doesn't apply) but
   carry the attacker's hostname in ``Host``.
+- State-changing requests must carry a same-site ``Origin`` (or none at
+  all). Loopback trust means *any* web page the user visits can reach
+  this API from their browser: CORS blocks the attacker from *reading*
+  the response, but the request still executes. See ``origin_allowed``.
 """
 
 import hmac
@@ -23,6 +27,7 @@ import logging
 import os
 import secrets
 from typing import Iterable, Optional, Set
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -169,3 +174,80 @@ def host_allowed(host_header: Optional[str], allowed: Iterable[str]) -> bool:
     if "*" in allowed_set:
         return True
     return hostname_from_host_header(host_header) in allowed_set
+
+
+# Methods that can change server state. Browsers always attach an ``Origin``
+# header to these (unlike GET/HEAD), which is what makes the check below a
+# reliable CSRF defence.
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def origin_allowed(
+    origin: Optional[str],
+    host_header: Optional[str],
+    cors_origins: Iterable[str],
+    allowed_hosts: Iterable[str],
+) -> bool:
+    """Return True when a state-changing request's ``Origin`` is trustworthy.
+
+    Loopback clients are trusted by connection, which means every website
+    the user visits can also reach this API through their browser. CORS
+    only stops the attacker from *reading* the response — a cross-origin
+    ``POST`` still executes, and a body sent with no ``Content-Type`` (a
+    ``Blob`` with an empty type) is parsed by FastAPI as JSON, so the
+    preflight that ``application/json`` would have triggered never happens.
+    Rejecting foreign origins on unsafe methods closes that hole.
+
+    Parameters
+    ----------
+    origin : Optional[str]
+        The request's ``Origin`` header. ``None``/empty means a non-browser
+        client (curl, the desktop app, Playwright's request context) and is
+        allowed — those cannot be driven by a hostile web page. The literal
+        string ``"null"`` (sandboxed iframe, ``file://`` document) is
+        rejected, since it is an origin an attacker can arrange.
+    host_header : Optional[str]
+        The request's ``Host`` header, used for the same-origin comparison.
+        This is what lets the packaged desktop app work on whatever random
+        port it picked at launch without any configuration.
+    cors_origins : Iterable[str]
+        Configured ``CORS_ORIGINS`` entries — the dev server proxies with
+        ``changeOrigin``, so its ``Origin`` (``http://localhost:5173``)
+        never matches ``Host`` and must be allowlisted explicitly.
+    allowed_hosts : Iterable[str]
+        The ``Host`` allowlist. An origin whose hostname is already trusted
+        there (the tailnet address in ``./start.sh remote``) is accepted on
+        any port.
+
+    Returns
+    -------
+    bool
+        True when the request may proceed.
+    """
+    if not origin:
+        return True
+    origin = origin.strip()
+    if origin.lower() == "null":
+        return False
+
+    if origin in set(cors_origins):
+        return True
+
+    allowed_host_set = {h.lower() for h in allowed_hosts}
+    if "*" in allowed_host_set:
+        return True
+
+    try:
+        parts = urlsplit(origin)
+    except ValueError:
+        return False
+    origin_hostname = (parts.hostname or "").lower()
+    if not origin_hostname:
+        return False
+
+    # Same-origin: the page was served by this very backend (any port the
+    # packaged app happened to pick).
+    if origin_hostname == hostname_from_host_header(host_header).strip("[]"):
+        return True
+
+    return origin_hostname in allowed_host_set

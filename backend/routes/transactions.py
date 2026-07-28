@@ -4,6 +4,7 @@ Transactions API routes.
 Provides endpoints for transaction CRUD operations.
 """
 
+import logging
 from datetime import date
 from typing import Any, List, Optional
 
@@ -17,6 +18,8 @@ from backend.dependencies import get_database
 from backend.errors import ValidationException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.transactions_service import TransactionsService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -164,8 +167,13 @@ def create_transaction(
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except RuntimeError:
+        # Don't echo the exception text: a 500 here is an unhandled server
+        # fault, and its message can carry SQL fragments, file paths, or
+        # credential values. Log it and return the same opaque body the
+        # global handler uses.
+        logger.exception("Failed to create transaction")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/{unique_id}", response_model=StatusResponse)

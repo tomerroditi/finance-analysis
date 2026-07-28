@@ -1,0 +1,48 @@
+# Dependabot keeps the three dependency surfaces patched automatically.
+#
+# This exists because the npm tree drifted to 11 advisories (1 critical,
+# 9 high) before anyone noticed — vulnerable axios, vite, vitest and
+# react-router all shipped in the frontend bundle. Weekly PRs surface that
+# drift while each bump is still a one-line change instead of a major
+# migration.
+#
+# Minor/patch updates are grouped so routine bumps arrive as one reviewable
+# PR per ecosystem; majors stay separate because they need a real look
+# (the react-router 7 → 8 bump moved the package name).
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "fix(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "fix(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  # Pinning and patching the actions themselves — a compromised third-party
+  # action runs with whatever token scope the workflow granted it.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(ci)"
