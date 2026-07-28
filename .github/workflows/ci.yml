@@ -31,7 +31,7 @@ jobs:
         run: pip install poetry
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
@@ -104,7 +104,7 @@ jobs:
         run: pip install poetry
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
@@ -127,7 +127,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
@@ -184,7 +184,7 @@ jobs:
         run: pip install poetry
 
       - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pypoetry/virtualenvs
           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
