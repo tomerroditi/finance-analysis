@@ -1,3 +1,10 @@
+## v1.49.3 (2026-07-28)
+
+### Fix
+
+- **deps**: patch starlette, cryptography and click advisories
+- **security**: block cross-origin writes, patch dependency CVEs, add scanning
+
 ## v1.49.2 (2026-07-25)
 
 ### Fix
