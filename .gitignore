@@ -90,3 +90,6 @@ build/.iconset-tmp/
 build/icon.icns
 build/FinanceAnalysis*.dmg
 build/FinanceAppInstaller.exe
+
+# Schemathesis 4 writes a local run cache next to the project root.
+.schemathesis/
