@@ -1,3 +1,9 @@
+## v1.49.5 (2026-07-28)
+
+### Fix
+
+- **deps**: Bump the backend-minor-patch group with 11 updates
+
 ## v1.49.4 (2026-07-28)
 
 ### Fix
