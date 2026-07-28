@@ -26,6 +26,7 @@ import { NetWorthCard } from "../components/dashboard/NetWorthCard";
 import { CashFlowCard } from "../components/dashboard/CashFlowCard";
 import { CategoryBreakdownCard } from "../components/dashboard/CategoryBreakdownCard";
 import { RefundsCard } from "../components/dashboard/RefundsCard";
+import { EarlyRetirementCard } from "../components/dashboard/EarlyRetirementCard";
 import { Skeleton } from "../components/common/Skeleton";
 import { DeferUntilVisible } from "../components/common/DeferUntilVisible";
 import { EmptyState } from "../components/common/EmptyState";
@@ -429,6 +430,7 @@ export function Dashboard() {
     cash_flow: () => <CashFlowCard />,
     category: () => <CategoryBreakdownCard />,
     refunds: () => <RefundsCard />,
+    retirement: () => <EarlyRetirementCard />,
   };
 
   return (

@@ -288,7 +288,14 @@
       "netWorth": "Net Worth",
       "cashFlow": "Cash Flow",
       "category": "Categories",
-      "refunds": "Refunds"
+      "refunds": "Refunds",
+      "retirement": "Early Retirement"
+    },
+    "retirementCard": {
+      "title": "Early Retirement",
+      "viewPlan": "View full plan",
+      "noPlan": "Set up your retirement plan to see how close you are to financial independence.",
+      "setupCta": "Set up your plan"
     },
     "refundsCard": {
       "title": "Refunds",

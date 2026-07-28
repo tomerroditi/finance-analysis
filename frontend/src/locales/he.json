@@ -288,7 +288,14 @@
       "netWorth": "שווי נקי",
       "cashFlow": "תזרים מזומנים",
       "category": "קטגוריות",
-      "refunds": "החזרים"
+      "refunds": "החזרים",
+      "retirement": "פרישה מוקדמת"
+    },
+    "retirementCard": {
+      "title": "פרישה מוקדמת",
+      "viewPlan": "לתוכנית המלאה",
+      "noPlan": "הגדירו תוכנית פרישה כדי לראות כמה אתם קרובים לעצמאות כלכלית.",
+      "setupCta": "הגדרת תוכנית"
     },
     "refundsCard": {
       "title": "החזרים",
