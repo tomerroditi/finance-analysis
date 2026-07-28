@@ -27,7 +27,7 @@ playwright = "^1.57.0"
 httpx = "^0.28.0"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "==8.3.5"
+pytest = "^9.0.3"
 Faker = "==24.3.0"
 commitizen = "^4.4.1"
 playwright = "^1.57.0"
@@ -37,7 +37,7 @@ pytest-cov = "^7.0.0"
 # Schemathesis fuzzes the FastAPI OpenAPI schema at /openapi.json — runs in
 # a dedicated CI job (see ci.yml), not via pytest, so it is not added to the
 # `pythonpath` test discovery.
-schemathesis = "^3.36.0"
+schemathesis = "^4.24.3"
 # Provides a PlaintextKeyring fallback so the demo-mode toggle works in
 # CI / sandbox environments without an OS keyring backend (Secret Service,
 # Mac Keychain, Windows Credential Manager). Required for the empty-DB

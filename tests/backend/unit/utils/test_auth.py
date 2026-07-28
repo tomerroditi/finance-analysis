@@ -129,3 +129,71 @@ class TestHostAllowlist:
         """Verify '*' allows every host (trusted-proxy deployments)."""
         allowed = auth.build_allowed_hosts(env_value="*")
         assert auth.host_allowed("anything.example.com", allowed) is True
+
+
+class TestOriginAllowed:
+    """Origin validation for state-changing requests (CSRF defence)."""
+
+    CORS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "testserver"}
+
+    def _check(self, origin, host="localhost:8000", cors=None, hosts=None):
+        """Run origin_allowed with this class's default CORS/host allowlists."""
+        return auth.origin_allowed(
+            origin,
+            host,
+            self.CORS if cors is None else cors,
+            self.HOSTS if hosts is None else hosts,
+        )
+
+    def test_absent_origin_is_allowed(self):
+        """Verify non-browser clients (curl, desktop app) are not blocked."""
+        assert self._check(None) is True
+        assert self._check("") is True
+
+    def test_foreign_origin_is_rejected(self):
+        """Verify a hostile site cannot drive state-changing requests."""
+        assert self._check("https://evil.example.com") is False
+
+    def test_lookalike_origin_is_rejected(self):
+        """Verify suffix/prefix lookalike hostnames do not slip through."""
+        assert self._check("http://localhost.evil.com") is False
+        assert self._check("http://notlocalhost") is False
+
+    def test_null_origin_is_rejected(self):
+        """Verify sandboxed iframes / file:// documents are rejected."""
+        assert self._check("null") is False
+        assert self._check("NULL") is False
+
+    def test_same_origin_is_allowed_on_any_port(self):
+        """Verify the packaged app works on whatever port it picked."""
+        assert self._check("http://localhost:8000", host="localhost:8000") is True
+        assert self._check("http://localhost:49821", host="localhost:49821") is True
+
+    def test_dev_proxy_origin_is_allowed(self):
+        """Verify the Vite dev server origin survives changeOrigin proxying."""
+        assert self._check("http://localhost:5173", host="127.0.0.1:8000") is True
+
+    def test_allowlisted_host_origin_is_allowed(self):
+        """Verify a tailnet address trusted for Host is trusted as Origin."""
+        hosts = self.HOSTS | {"100.64.0.7"}
+        assert self._check("http://100.64.0.7:5174", hosts=hosts) is True
+
+    def test_ipv6_same_origin_is_allowed(self):
+        """Verify bracketed IPv6 Host literals match their Origin form."""
+        assert self._check("http://[::1]:8000", host="[::1]:8000") is True
+
+    def test_wildcard_host_allowlist_disables_check(self):
+        """Verify '*' (trusted-proxy deployments) accepts any origin."""
+        assert self._check("https://evil.example.com", hosts={"*"}) is True
+
+    def test_malformed_origin_is_rejected(self):
+        """Verify unparseable / hostless origins fail closed."""
+        assert self._check("not a url") is False
+        assert self._check("http://") is False
+
+    def test_unsafe_methods_cover_state_changers(self):
+        """Verify the guarded method set is exactly the state-changing verbs."""
+        assert auth.UNSAFE_METHODS == {"POST", "PUT", "PATCH", "DELETE"}
+        assert "GET" not in auth.UNSAFE_METHODS
+        assert "OPTIONS" not in auth.UNSAFE_METHODS

@@ -34,14 +34,15 @@ MAX_EXAMPLES="${SCHEMATHESIS_MAX_EXAMPLES:-25}"
 
 echo "Fuzzing ${SCHEMA_URL} (max examples per endpoint: ${MAX_EXAMPLES})"
 
+# Schemathesis 4 CLI: OpenAPI 3.1 is native (no --experimental), the
+# hypothesis-prefixed flags lost their prefix, and --request-timeout /
+# --max-response-time are in seconds rather than milliseconds.
 poetry run schemathesis run "${SCHEMA_URL}" \
-  --base-url "${BASE_URL}" \
-  --experimental=openapi-3.1 \
+  --url "${BASE_URL}" \
   --include-method=GET \
   --exclude-path-regex='^/api/(testing|scraping|credentials|backups|updates)' \
-  --hypothesis-max-examples="${MAX_EXAMPLES}" \
-  --hypothesis-deadline=2000 \
-  --hypothesis-suppress-health-check=too_slow,filter_too_much,data_too_large \
+  --max-examples="${MAX_EXAMPLES}" \
+  --suppress-health-check=too_slow,filter_too_much,data_too_large \
   --workers=2 \
-  --request-timeout=5000 \
+  --request-timeout=5 \
   --checks=not_a_server_error

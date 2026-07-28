@@ -77,6 +77,13 @@ def _setup_env() -> Path:
     user.mkdir(parents=True, exist_ok=True)
     (user / "logs").mkdir(parents=True, exist_ok=True)
     os.environ["FAD_USER_DIR"] = str(user)
+    # The shipped bundle is a production install. Without this, ``ENVIRONMENT``
+    # defaults to "development" in backend.main and the desktop app serves
+    # /docs, /redoc and /openapi.json — a full map of the API for anything
+    # that reaches the port. Demo Mode lives in the testing router, so keep
+    # that mounted explicitly (same trade-off ``./start.sh prod`` makes).
+    os.environ.setdefault("ENVIRONMENT", "production")
+    os.environ.setdefault("ENABLE_TESTING_ROUTES", "1")
     return user
 
 

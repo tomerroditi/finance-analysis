@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, TrendingUp } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { investmentsApi, ratesApi, type Investment } from "../services/api";
 import { Modal } from "../components/common/Modal";
 import { SelectDropdown } from "../components/common/SelectDropdown";

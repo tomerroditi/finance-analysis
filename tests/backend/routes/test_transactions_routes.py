@@ -271,7 +271,12 @@ class TestTransactionsRoutesErrors:
             assert "Invalid service" in response.json()["detail"]
 
     def test_create_transaction_runtime_error(self, test_client):
-        """Verify 500 when create_transaction raises RuntimeError."""
+        """Verify a RuntimeError 500s without echoing the exception text.
+
+        The message can carry SQL fragments, file paths, or credential
+        values, so the response body stays opaque and the detail goes to
+        the server log instead.
+        """
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
@@ -287,7 +292,8 @@ class TestTransactionsRoutesErrors:
                 },
             )
             assert response.status_code == 500
-            assert "DB write failed" in response.json()["detail"]
+            assert response.json()["detail"] == "Internal server error"
+            assert "DB write failed" not in response.text
 
     # -- PUT /{unique_id} error path --
 

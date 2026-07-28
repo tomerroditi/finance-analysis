@@ -37,11 +37,11 @@ def _release_payload(
             [
                 {
                     "name": "FinanceAnalysis.dmg",
-                    "browser_download_url": "https://example/finance.dmg",
+                    "browser_download_url": "https://github.com/tomerroditi/finance-analysis/releases/download/v1/finance.dmg",
                 },
                 {
                     "name": "FinanceAppInstaller.exe",
-                    "browser_download_url": "https://example/finance.exe",
+                    "browser_download_url": "https://github.com/tomerroditi/finance-analysis/releases/download/v1/finance.exe",
                 },
             ]
             if with_assets
@@ -231,11 +231,11 @@ class TestPickAssetUrl:
         return [
             {
                 "name": "FinanceAnalysis.dmg",
-                "browser_download_url": "https://example/finance.dmg",
+                "browser_download_url": "https://github.com/tomerroditi/finance-analysis/releases/download/v1/finance.dmg",
             },
             {
                 "name": "FinanceAppInstaller.exe",
-                "browser_download_url": "https://example/installer.exe",
+                "browser_download_url": "https://github.com/tomerroditi/finance-analysis/releases/download/v1/installer.exe",
             },
         ]
 
@@ -245,7 +245,7 @@ class TestPickAssetUrl:
 
         assert (
             update_service._pick_asset_url(self._assets())
-            == "https://example/installer.exe"
+            == "https://github.com/tomerroditi/finance-analysis/releases/download/v1/installer.exe"
         )
 
     def test_darwin_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,3 +268,39 @@ class TestPickAssetUrl:
         monkeypatch.setattr(update_service.sys, "platform", "linux")
 
         assert update_service._pick_asset_url(self._assets()) is None
+
+
+class TestSafeGithubUrl:
+    """Tests for the release-URL scheme/host guard.
+
+    Both URLs this service returns are rendered as clickable links in the
+    update toast and About panel, so a hostile or malformed GitHub payload
+    must not be able to hand the UI a ``javascript:`` href.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://github.com/o/r/releases/download/v1/app.exe",
+            "https://objects.github.com/asset",
+        ],
+    )
+    def test_https_github_urls_pass_through(self, url: str) -> None:
+        """Verify legitimate HTTPS GitHub URLs are returned unchanged."""
+        assert update_service._safe_github_url(url) == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "javascript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "http://github.com/o/r/app.exe",
+            "https://github.com.evil.test/app.exe",
+            "https://evil.test/app.exe",
+            "",
+            None,
+        ],
+    )
+    def test_hostile_or_malformed_urls_are_dropped(self, url) -> None:
+        """Verify non-HTTPS, non-GitHub, and empty URLs collapse to None."""
+        assert update_service._safe_github_url(url) is None

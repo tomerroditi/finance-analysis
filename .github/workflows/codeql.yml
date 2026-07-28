@@ -1,0 +1,58 @@
+name: CodeQL
+
+# Static analysis for the Python backend/scraper and the TypeScript frontend.
+# Runs on PRs (catch it before merge), on pushes to the long-lived branches
+# (so the Security tab reflects what is actually shipped), and weekly — the
+# rule set gains new queries over time, so code that was clean last month
+# can light up without anyone touching it.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    - cron: "27 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload results to the Security tab.
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended adds the lower-severity security queries on
+          # top of the default set; worth the extra minutes on a codebase
+          # that handles credentials and financial records.
+          queries: security-extended
+
+      # No build step: both languages analyze fine in CodeQL's autobuild-free
+      # mode, and the frontend's real build already runs in ci.yml.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

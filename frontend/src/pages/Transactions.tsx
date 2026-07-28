@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
 import { useCashBalances } from "../hooks/useCashBalances";

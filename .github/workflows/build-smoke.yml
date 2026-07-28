@@ -11,6 +11,11 @@ name: Build smoke test
 # This workflow deliberately does not upload artifacts or push
 # anywhere — it's a green/red signal only.
 
+# Least privilege: this workflow only builds and smoke-tests, so the
+# ambient GITHUB_TOKEN needs nothing beyond reading the checkout.
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [main]

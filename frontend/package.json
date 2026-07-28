@@ -24,7 +24,7 @@
     "@tanstack/query-async-storage-persister": "^5.100.3",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-query-persist-client": "^5.100.3",
-    "axios": "^1.16.1",
+    "axios": "^1.18.1",
     "date-fns": "^4.1.0",
     "i18next": "^25.8.14",
     "idb-keyval": "^6.2.2",
@@ -32,7 +32,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^16.5.6",
-    "react-router-dom": "^7.11.0",
+    "react-router": "^8.3.0",
     "recharts": "^3.9.2",
     "vite-plugin-pwa": "^1.2.0",
     "zustand": "^5.0.9"
@@ -59,10 +59,19 @@
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4",
-    "vitest": "^4.0.18"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "@babel/core": "^7.29.7",
+    "brace-expansion": "^5.0.8",
+    "minimatch@3": { "brace-expansion": "^1.1.16" },
+    "minimatch@5": { "brace-expansion": "^2.1.2" },
+    "minimatch@9": { "brace-expansion": "^2.1.2" },
+    "fast-uri": "^3.1.4",
+    "form-data": "^4.0.6",
+    "js-yaml": "^4.3.0",
+    "postcss": "^8.5.23"
   }
 }

@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -105,6 +106,29 @@ def _parse_semver(version: str) -> tuple[int, ...]:
     return tuple(out)
 
 
+def _safe_github_url(url: Optional[str]) -> Optional[str]:
+    """Return ``url`` only when it is an HTTPS GitHub URL, else ``None``.
+
+    Both URLs this module returns are rendered as clickable links in the
+    update toast and About panel. They come straight out of the GitHub API
+    response, so a hostile or malformed payload could otherwise hand the UI
+    a ``javascript:`` or ``data:`` href. Pinning scheme and host keeps the
+    link inert if the response is ever not what we expect.
+    """
+    if not url:
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https":
+        return None
+    if host != "github.com" and not host.endswith(".github.com"):
+        return None
+    return url
+
+
 def _pick_asset_url(assets: list[dict]) -> Optional[str]:
     """Pick the OS-matching release asset download URL.
 
@@ -126,7 +150,7 @@ def _pick_asset_url(assets: list[dict]) -> Optional[str]:
         return None
     for asset in assets:
         if asset.get("name", "").lower().endswith(suffix):
-            return asset.get("browser_download_url")
+            return _safe_github_url(asset.get("browser_download_url"))
     return None
 
 
@@ -194,7 +218,8 @@ class UpdateService:
                 latest=latest,
                 is_outdated=self._is_outdated(current, latest),
                 asset_url=asset_url,
-                html_url=payload.get("html_url") or RELEASES_HTML_URL,
+                html_url=_safe_github_url(payload.get("html_url"))
+                or RELEASES_HTML_URL,
                 checked_at=datetime.now(tz=timezone.utc).isoformat(),
             )
         except Exception as exc:
