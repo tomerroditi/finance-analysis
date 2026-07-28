@@ -1,3 +1,9 @@
+## v1.49.4 (2026-07-28)
+
+### Fix
+
+- **bootstrap**: re-sync venv deps when poetry.lock changes
+
 ## v1.49.3 (2026-07-28)
 
 ### Fix
