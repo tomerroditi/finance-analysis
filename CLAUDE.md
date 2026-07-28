@@ -32,7 +32,7 @@ python -m scraper <provider> --show-browser             # Run scraper with visib
 
 ## Environment Setup (New Clone / Worktree)
 
-`npm run backend` auto-bootstraps the Python venv via `.claude/scripts/bootstrap_venv.sh` if `.venv/` is missing — the first backend start in a fresh worktree takes ~90s, subsequent starts are instant. Frontend deps still install manually:
+`npm run backend` auto-bootstraps the Python venv via `.claude/scripts/bootstrap_venv.sh` if `.venv/` is missing — the first backend start in a fresh worktree takes ~90s, subsequent starts are instant. The script also **re-syncs deps when `poetry.lock` changes**: it stamps the lock's SHA-256 in `.venv/.deps-lock-hash` after each install and runs `poetry install` on the next start if the hash differs (a `git pull` / branch switch / merge that adds a package). The warm-start check is just a single file hash, so up-to-date starts stay instant. This closes the gap where a presence-only check (`.venv/bin/uvicorn` exists) let a venv run with stale deps and crash on a missing import. Frontend deps still install manually:
 
 ```bash
 cd frontend && npm install
