@@ -51,6 +51,7 @@ from backend.routes import (
     updates,
     version as version_route,
 )
+from backend.utils.json_response import SafeJSONResponse
 from backend.utils.version import get_app_version
 
 load_dotenv()
@@ -157,6 +158,11 @@ app = FastAPI(
     description="API for personal finance tracking and analysis",
     version=get_app_version(),
     lifespan=lifespan,
+    # Payloads here are largely DataFrame-derived, and pandas renders SQL
+    # NULL as NaN. Starlette's default JSONResponse dumps with
+    # allow_nan=False, so one NaN 500s the whole endpoint. Render those as
+    # null instead — see backend/utils/json_response.py.
+    default_response_class=SafeJSONResponse,
     docs_url=None if _docs_disabled else "/docs",
     redoc_url=None if _docs_disabled else "/redoc",
     openapi_url=None if _docs_disabled else "/openapi.json",
