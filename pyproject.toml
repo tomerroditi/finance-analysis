@@ -8,8 +8,8 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
-pandas = "==2.2.3"
-numpy = "==1.26.4"
+pandas = "==3.0.5"
+numpy = "==2.5.1"
 PyYAML = "==6.0.3"
 SQLAlchemy = "==2.0.51"
 keyring = ">=24.0.0"

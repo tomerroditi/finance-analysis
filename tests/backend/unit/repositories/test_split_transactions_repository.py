@@ -2,6 +2,7 @@
 Unit tests for SplitTransactionsRepository CRUD operations.
 """
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.split_transactions_repository import SplitTransactionsRepository
@@ -104,8 +105,13 @@ class TestSplitTransactionsRepository:
 
         result = repo.get_data()
         groceries_row = result[result["transaction_id"] == 100].iloc[0]
-        assert groceries_row["category"] is None
-        assert groceries_row["tag"] is None
+        # Assert pandas-native nullness rather than `is None`: pandas 3
+        # materialises SQL NULL as NaN in these object columns. Every consumer
+        # of get_data() treats the frame with pandas semantics (groupby, isin,
+        # boolean masks), and services normalise to None at the API boundary,
+        # so NaN here is correct — only the assertion was version-specific.
+        assert pd.isna(groceries_row["category"])
+        assert pd.isna(groceries_row["tag"])
 
         # "Food/Restaurants" should be untouched (different tag)
         restaurants_row = result[result["transaction_id"] == 101].iloc[0]

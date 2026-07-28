@@ -7,6 +7,7 @@ hit the target by its date.
 
 import math
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,12 @@ class SavingsGoalService:
         df = self.repo.get_all()
         if df.empty:
             return []
+        # pandas 3 materialises SQL NULL as NaN rather than None in these
+        # columns. NaN is *truthy*, so without this both the `is None` sort
+        # key below and the `if target_date:` guard in _enrich would treat a
+        # dateless goal as dated — the latter then raising on int(NaN).
+        # Same normalisation the investments service does.
+        df = df.replace({np.nan: None})
         goals = [self._enrich(row._asdict()) for row in df.itertuples(index=False)]
         goals.sort(key=lambda g: (g["target_date"] is None, g["target_date"] or ""))
         return goals
@@ -90,7 +97,10 @@ class SavingsGoalService:
         months_remaining = None
         monthly_needed = None
         target_date = goal.get("target_date")
-        if target_date:
+        # `and pd.notna(...)` guards the NaN pandas 3 hands back for a
+        # NULL date — NaN is truthy, so a bare `if target_date:` would
+        # fall through to int(NaN) and raise.
+        if target_date and pd.notna(target_date):
             today = pd.Timestamp.today().normalize()
             target_ts = pd.Timestamp(target_date)
             months = (target_ts.year - today.year) * 12 + (target_ts.month - today.month)
