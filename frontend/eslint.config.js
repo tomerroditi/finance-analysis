@@ -27,6 +27,17 @@ export default defineConfig([
           fixStyle: "inline-type-imports",
         },
       ],
+      // `set-state-in-effect` arrived in eslint-plugin-react-hooks 7.1 and
+      // flags four pre-existing sites: the two modals that seed their form
+      // state when they open (BudgetRuleModal, RuleEditorModal) and the two
+      // TransactionsTable effects that reset pagination / bulk-edit state
+      // when their inputs change. All four work correctly today, and the
+      // idiomatic fixes (remount via `key`, or derive during render) are
+      // behavioural changes to shared UI — per CLAUDE.md those need Playwright
+      // verification and e2e coverage, which does not belong in a dependency
+      // bump. Kept as a warning so the signal stays visible on new code
+      // without blocking CI; promote back to "error" once the four are fixed.
+      "react-hooks/set-state-in-effect": "warn",
       // Allow intentionally-unused parameters when prefixed with `_`,
       // matching TypeScript's own convention. Required for legacy
       // signatures we need to keep for caller compatibility.
