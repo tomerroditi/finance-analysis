@@ -1367,8 +1367,8 @@
       "withdrawalRate": "The percentage of your portfolio you withdraw annually in retirement. 3.5% is conservative for Israel (vs. the US 4% rule) due to higher inflation.",
       "pension": "Expected monthly pension payout at full pension age.",
       "bituachLeumi": "National Insurance old-age pension. Starts at full pension age (67 for men, 65 for women).",
-      "netWorthChart": "Baseline uses your expected return rate. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
-      "incomeChart": "Income sources by age. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension (70% from age 60, 100% from full pension age) + Bituach Leumi + passive income."
+      "netWorthChart": "Baseline uses your expected return rate adjusted for your inflation rate — all amounts are in today's shekels. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
+      "incomeChart": "Income sources by age, in today's shekels. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension and Bituach Leumi (from full pension age) + passive income."
     }
   },
   "dataFlow": {

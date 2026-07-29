@@ -256,11 +256,12 @@ class TestRetirementIncome:
             assert entry["passive_income"] == expected_passive
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_expenses_grow_with_inflation(self, sample_goal):
-        """Expenses should increase year over year due to inflation."""
+    def test_expenses_constant_in_todays_money(self, sample_goal):
+        """Expenses are constant in real terms (today's shekels) at every age."""
         service = RetirementService.__new__(RetirementService)
         result = service._project_retirement_income(sample_goal)
-        assert result[1]["expenses"] > result[0]["expenses"]
+        expected = round(sample_goal["monthly_expenses_in_retirement"] * 12, 0)
+        assert all(r["expenses"] == expected for r in result)
 
 
 class TestRequiredSavings:
@@ -760,6 +761,204 @@ class TestDepletionOnlyInDrawdown:
             goal_override=TestProjectionAlignment.GOAL
         )
         assert solved["target_retirement_age"] != -1
+
+
+class TestRealTermsModel:
+    """The projection is computed in today's shekels with real returns."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_inflation_delays_fire_age(self, mock_status, sample_goal, sample_status):
+        """Higher inflation lowers real returns, so FIRE arrives later.
+
+        The old model compared a nominal (inflating) projection against a
+        today-shekels FIRE number, so inflation had no effect on fire_age at
+        all — declaring FIRE far too early.
+        """
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+
+        no_inflation = service.get_projections(
+            goal_override={**sample_goal, "inflation_rate": 0.0}
+        )
+        high_inflation = service.get_projections(
+            goal_override={**sample_goal, "inflation_rate": 0.03}
+        )
+        assert no_inflation["fire_age"] != -1
+        if high_inflation["fire_age"] == -1:
+            return  # never reached at all — strictly "later"
+        assert high_inflation["fire_age"] > no_inflation["fire_age"]
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_first_point_includes_keren_hishtalmut(self, sample_goal, sample_status):
+        """Total wealth = tracked net worth + KH balance.
+
+        Tracked net worth (bank + investments + cash) does not contain the
+        KH balance; the old code subtracted KH from it anyway, silently
+        dropping the whole KH balance from the projection.
+        """
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_net_worth(sample_goal, sample_status)
+        expected = sample_status["net_worth"] + sample_goal["keren_hishtalmut_balance"]
+        assert result[0]["net_worth_baseline"] == round(expected, 0)
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_progress_counts_keren_hishtalmut(self, mock_status, sample_goal, sample_status):
+        """Progress toward the FIRE number includes the KH balance."""
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        fire_number = sample_goal["monthly_expenses_in_retirement"] * 12 / sample_goal["withdrawal_rate"]
+        expected = (
+            (sample_status["net_worth"] + sample_goal["keren_hishtalmut_balance"])
+            / fire_number * 100
+        )
+        assert result["progress_pct"] == pytest.approx(expected, abs=0.11)
+
+
+class TestSolverTargetsOnTrack:
+    """Solvers must target readiness (FIRE by target + survival), not survival alone."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_return_rate_not_fooled_by_pension_covered_plan(self, sample_goal, sample_status):
+        """A plan whose pension covers all expenses survives at ANY rate.
+
+        The old survival-only binary search converged to its lower bound and
+        suggested a nonsensical ~-10% return while the plan stayed off-track
+        (FIRE number never reached). It must return -1 instead.
+        """
+        goal = {
+            **sample_goal,
+            "monthly_expenses_in_retirement": 10000.0,
+            "other_passive_income": 12000.0,  # covers expenses at every age
+            "target_retirement_age": 50,
+        }
+        status = {**sample_status, "net_worth": 1000.0, "monthly_savings": 100.0}
+        goal["keren_hishtalmut_balance"] = 0.0
+        goal["keren_hishtalmut_monthly_contribution"] = 0.0
+        service = RetirementService.__new__(RetirementService)
+        result = service._solve_return_rate(goal, status)
+        assert result == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solved_return_rate_puts_plan_on_track(self, sample_goal, sample_status):
+        """Applying the solved rate must actually make the plan on track."""
+        service = RetirementService.__new__(RetirementService)
+        rate = service._solve_return_rate(sample_goal, sample_status)
+        if rate == -1:
+            return
+        assert service._plan_on_track(
+            {**sample_goal, "expected_return_rate": rate}, sample_status
+        )
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solved_expenses_put_plan_on_track(self, sample_goal, sample_status):
+        """Applying the solved retirement expenses must make the plan on track."""
+        service = RetirementService.__new__(RetirementService)
+        expenses = service._solve_monthly_expenses(sample_goal, sample_status)
+        assert expenses > 0
+        assert service._plan_on_track(
+            {**sample_goal, "monthly_expenses_in_retirement": expenses}, sample_status
+        )
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_life_expectancy_not_suggested_when_fire_unreachable(
+        self, sample_goal, sample_status
+    ):
+        """Shorter life expectancy can't fix a plan that never reaches FIRE."""
+        goal = {
+            **sample_goal,
+            "monthly_expenses_in_retirement": 100000.0,
+            "other_passive_income": 150000.0,  # survives forever
+        }
+        status = {**sample_status, "net_worth": 1000.0, "monthly_savings": 100.0}
+        service = RetirementService.__new__(RetirementService)
+        assert service._solve_life_expectancy(goal, status) == -1
+
+
+class TestSolversRespectOverrides:
+    """solve_all_fields must use the same override-adjusted status as projections."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_income_override_changes_suggestions(
+        self, mock_status, sample_goal, sample_status
+    ):
+        """A monthly income override must flow into the solved target age."""
+        mock_status.return_value = {
+            **sample_status,
+            "avg_monthly_income": 13000.0,
+            "avg_monthly_expenses": 12000.0,
+            "monthly_savings": 1000.0,
+        }
+        service = RetirementService.__new__(RetirementService)
+
+        base = service.solve_all_fields(goal_override=sample_goal)
+        boosted = service.solve_all_fields(
+            goal_override={**sample_goal, "monthly_income": 40000.0}
+        )
+        # 28k/mo savings instead of 1k must allow retiring earlier (or make
+        # an unreachable plan reachable).
+        if base["target_retirement_age"] == -1:
+            assert boosted["target_retirement_age"] != -1
+        else:
+            assert (
+                boosted["target_retirement_age"] < base["target_retirement_age"]
+            )
+
+
+class TestAdditionalSavingsSemantics:
+    """monthly_savings_needed is the EXTRA saving beyond current contributions."""
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_on_track_plan_needs_zero_extra(self, sample_goal, sample_status):
+        """A plan already reaching FIRE by target age reports 0 extra needed.
+
+        The old formula returned the TOTAL required monthly saving, so users
+        who were already saving enough still saw a large amber number.
+        """
+        service = RetirementService.__new__(RetirementService)
+        # Make the plan comfortably on track via wealth
+        status = {**sample_status, "net_worth": 4500000.0}
+        fire_number = (
+            sample_goal["monthly_expenses_in_retirement"] * 12
+            / sample_goal["withdrawal_rate"]
+        )
+        assert service._calc_required_monthly_savings(
+            sample_goal, status, fire_number
+        ) == 0.0
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_extra_savings_close_the_gap_exactly(self, sample_goal, sample_status):
+        """Saving current + extra reaches the FIRE number at the target age."""
+        from backend.services.retirement_service import _real_rate
+
+        service = RetirementService.__new__(RetirementService)
+        status = {**sample_status, "net_worth": 500000.0}
+        fire_number = (
+            sample_goal["monthly_expenses_in_retirement"] * 12
+            / sample_goal["withdrawal_rate"]
+        )
+        extra = service._calc_required_monthly_savings(
+            sample_goal, status, fire_number
+        )
+        assert extra > 0
+
+        # Re-simulate the accumulation with the extra savings applied
+        rate = _real_rate(
+            sample_goal["expected_return_rate"], sample_goal["inflation_rate"]
+        )
+        years = sample_goal["target_retirement_age"] - sample_goal["current_age"]
+        wealth = status["net_worth"] + sample_goal["keren_hishtalmut_balance"]
+        annual = (
+            status["monthly_savings"]
+            + sample_goal["keren_hishtalmut_monthly_contribution"]
+            + extra
+        ) * 12
+        for _ in range(years):
+            wealth = wealth * (1 + rate) + annual
+        assert wealth == pytest.approx(fire_number, rel=1e-6)
 
 
 class TestStatusExcludesPartialMonth:
