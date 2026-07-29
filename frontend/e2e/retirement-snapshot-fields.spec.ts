@@ -57,11 +57,13 @@ test.describe("Retirement snapshot fields", () => {
     const computedLabels = page.getByText("auto-calculated");
     await expect(computedLabels).toHaveCount(2);
 
-    // No reset buttons should be visible initially (form = calculated values)
+    // Exactly one reset button is visible initially: the demo goal ships
+    // with an Avg Monthly Expenses override (steady-state spending without
+    // the wedding/renovation arcs), so that field differs from calculated.
     const resetBtns = page.locator("button[title='Reset to calculated']");
-    await expect(resetBtns).toHaveCount(0);
+    await expect(resetBtns).toHaveCount(1);
 
-    // Change the Net Worth value (first snapshot input)
+    // Change the Net Worth value (first snapshot input — not overridden)
     const netWorthInput = page
       .locator(".p-3.rounded-xl input[type='number']")
       .first();
@@ -69,15 +71,16 @@ test.describe("Retirement snapshot fields", () => {
     await netWorthInput.fill("999999");
     await netWorthInput.press("Tab");
 
-    // Reset button should now appear for that field
-    await expect(resetBtns.first()).toBeVisible();
+    // A second reset button appears; Net Worth's card comes first in the
+    // grid, so its reset button is the first one.
+    await expect(resetBtns).toHaveCount(2);
 
     // Click reset — value should revert
     await resetBtns.first().click();
     await expect(netWorthInput).toHaveValue(originalValue);
 
-    // Reset button should disappear again
-    await expect(resetBtns).toHaveCount(0);
+    // Back to just the shipped expenses-override reset button
+    await expect(resetBtns).toHaveCount(1);
   });
 
   test("modified snapshot fields are sent when saving the plan", async ({

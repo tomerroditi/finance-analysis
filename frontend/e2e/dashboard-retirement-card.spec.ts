@@ -61,6 +61,9 @@ test.describe("Dashboard early-retirement card", () => {
     // Insight KPIs render from the demo plan (readiness + FIRE number).
     await expect(card.getByText("Readiness", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(card.getByText("FIRE Number", { exact: true })).toBeVisible();
+    // The demo plan is deliberately tuned to be on track (see
+    // create_retirement_goal in scripts/generate_demo_data.py) — guard it.
+    await expect(card.getByText("On Track", { exact: true })).toBeVisible();
 
     // The net worth projection chart renders an actual Recharts SVG.
     await expect(
