@@ -646,6 +646,9 @@ class TestCurrentStatus:
             "total_investments": total_investments
         }
         service.analysis_service = analysis
+        investments = MagicMock()
+        investments.get_all_investments.return_value = []
+        service.investments_service = investments
         return service
 
     def test_expenses_use_last_12_months_income_last_6(self):
@@ -681,6 +684,21 @@ class TestCurrentStatus:
         assert status["avg_monthly_expenses"] == 0.0
         assert status["monthly_savings"] == 0.0
         assert status["savings_rate"] == 0.0
+
+    def test_tracked_kh_value_sums_hishtalmut_investments(self):
+        """Status exposes the value of synced KH investments in net worth."""
+        service = self._service([])
+        service.investments_service.get_all_investments.return_value = [
+            {"id": 4, "type": "hishtalmut"},
+            {"id": 5, "type": "hishtalmut"},
+            {"id": 1, "type": "mutual_fund"},
+        ]
+        service.investments_service.calculate_current_balance.side_effect = (
+            lambda inv_id: {4: 110000.0, 5: 95000.0, 1: 50000.0}[inv_id]
+        )
+        status = service.get_current_status()
+        # Only the hishtalmut investments count — the mutual fund does not.
+        assert status["tracked_kh_value"] == 205000.0
 
 
 class TestProjectionAlignment:
@@ -790,17 +808,37 @@ class TestRealTermsModel:
         assert high_inflation["fire_age"] > no_inflation["fire_age"]
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_first_point_includes_keren_hishtalmut(self, sample_goal, sample_status):
-        """Total wealth = tracked net worth + KH balance.
+    def test_manually_entered_kh_counts_on_top(self, sample_goal, sample_status):
+        """A KH balance only typed into the goal adds to tracked net worth.
 
-        Tracked net worth (bank + investments + cash) does not contain the
-        KH balance; the old code subtracted KH from it anyway, silently
-        dropping the whole KH balance from the projection.
+        With no synced KH investments (``tracked_kh_value`` 0/absent), the
+        tracked net worth contains no KH, so total wealth = net worth + the
+        goal's KH balance. The old code subtracted the goal KH from net
+        worth unconditionally, silently dropping it for these users.
         """
         service = RetirementService.__new__(RetirementService)
         result = service._project_net_worth(sample_goal, sample_status)
         expected = sample_status["net_worth"] + sample_goal["keren_hishtalmut_balance"]
         assert result[0]["net_worth_baseline"] == round(expected, 0)
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_synced_kh_is_not_double_counted(self, sample_goal, sample_status):
+        """Scraped KH auto-synced into investments is already in net worth.
+
+        InsuranceSyncMixin creates a ``hishtalmut`` investment with scraped
+        balance snapshots for every scraped policy, and the net worth series
+        values investments snapshot-first — so that KH value is inside
+        ``status["net_worth"]``. The projection must swap it out of the base
+        portfolio before adding the goal's KH bucket, keeping the starting
+        total equal to net worth (not net worth + KH again).
+        """
+        status = {
+            **sample_status,
+            "tracked_kh_value": sample_goal["keren_hishtalmut_balance"],
+        }
+        service = RetirementService.__new__(RetirementService)
+        result = service._project_net_worth(sample_goal, status)
+        assert result[0]["net_worth_baseline"] == round(status["net_worth"], 0)
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     @patch.object(RetirementService, "get_current_status")

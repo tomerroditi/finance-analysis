@@ -189,6 +189,21 @@ class RetirementService:
         overview = self.analysis_service.get_overview()
         total_investments = overview.get("total_investments", 0.0)
 
+        # Keren Hishtalmut value that is ALREADY inside the tracked net
+        # worth: scraped KH policies are auto-synced into the investments
+        # table with scraped balance snapshots (InsuranceSyncMixin), and the
+        # net worth series values investments snapshot-first. The FIRE
+        # projection models KH as its own bucket (goal field), so this
+        # amount must be moved out of the base portfolio to avoid double
+        # counting. For users who only typed a KH balance (nothing synced),
+        # this is 0 and their KH counts on top of net worth.
+        tracked_kh_value = 0.0
+        for inv in self.investments_service.get_all_investments():
+            if inv.get("type") == "hishtalmut":
+                tracked_kh_value += self.investments_service.calculate_current_balance(
+                    int(inv["id"])
+                )
+
         return {
             "net_worth": current_net_worth,
             "avg_monthly_expenses": avg_monthly_expenses,
@@ -196,6 +211,7 @@ class RetirementService:
             "savings_rate": round(savings_rate, 1),
             "total_investments": total_investments,
             "monthly_savings": monthly_savings,
+            "tracked_kh_value": tracked_kh_value,
         }
 
     def get_projections(self, goal_override: dict | None = None) -> dict:
@@ -225,9 +241,14 @@ class RetirementService:
         fire_number = annual_expenses / goal_data["withdrawal_rate"]
 
         # Progress toward the FIRE number counts total wealth: tracked net
-        # worth (bank + investments + cash) plus the Keren Hishtalmut balance,
-        # which is not part of the tracked net worth.
-        total_wealth = status["net_worth"] + goal_data["keren_hishtalmut_balance"]
+        # worth (with any synced KH investments swapped out) plus the goal's
+        # KH balance, so KH counts exactly once whether it was scraped into
+        # the investments table or only typed into the goal.
+        total_wealth = (
+            status["net_worth"]
+            - status.get("tracked_kh_value", 0.0)
+            + goal_data["keren_hishtalmut_balance"]
+        )
         progress_pct = min(
             (total_wealth / fire_number * 100) if fire_number > 0 else 0, 100
         )
@@ -343,9 +364,12 @@ class RetirementService:
         converted to a real rate, and expenses, savings and retirement income
         sources are held constant (CPI-indexed in practice).
 
-        The tracked net worth (bank + investments + cash) does NOT include
-        the Keren Hishtalmut balance, so KH is added on top and modelled as
-        its own bucket (drawn first in retirement — it is tax-free).
+        KH is modelled as its own bucket (drawn first in retirement — it is
+        tax-free), seeded from the goal's KH balance. Whatever KH value is
+        already inside the tracked net worth (scraped policies auto-synced
+        into the investments table — ``status["tracked_kh_value"]``) is
+        removed from the base portfolio so it isn't counted twice; a KH
+        balance that was only typed into the goal sits fully on top.
 
         Parameters
         ----------
@@ -369,11 +393,9 @@ class RetirementService:
         annual_savings = monthly_savings * 12
         full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
-        # Keren Hishtalmut is not part of the tracked net worth — model it
-        # as a separate tax-free bucket on top of it.
         kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
-        base_nw = status["net_worth"]
+        base_nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
 
         annual_expenses = goal["monthly_expenses_in_retirement"] * 12
 
@@ -637,9 +659,9 @@ class RetirementService:
         kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        # First find earliest age where FIRE number is reached (KH sits on
-        # top of the tracked net worth — see _project_net_worth)
-        nw = status["net_worth"]
+        # First find earliest age where FIRE number is reached (KH bucket
+        # swaps out any synced KH value — see _project_net_worth)
+        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
         kh = kh_balance
         fire_eligible_age = None
         for year_offset in range(goal["life_expectancy"] - current_age + 1):
@@ -681,7 +703,7 @@ class RetirementService:
         kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        nw = status["net_worth"]
+        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
         kh = kh_balance
         for _ in range(years):
             nw = nw * (1 + rate) + annual_savings
@@ -860,7 +882,11 @@ class RetirementService:
             return 0.0
 
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
-        current_wealth = status["net_worth"] + goal["keren_hishtalmut_balance"]
+        current_wealth = (
+            status["net_worth"]
+            - status.get("tracked_kh_value", 0.0)
+            + goal["keren_hishtalmut_balance"]
+        )
 
         # Future value of what the user has today
         fv_current = current_wealth * ((1 + rate) ** years)

@@ -2448,7 +2448,7 @@ def create_retirement_goal(session):
     The last 12 tracked months are dominated by the wedding + renovation
     arcs, which push the calculated average expenses above income. The goal
     therefore ships with `monthly_expenses_override` set to the household's
-    steady-state spending (~23k) — exactly what the override fields exist
+    steady-state spending (~22k) — exactly what the override fields exist
     for — which also demos the "reset to calculated" affordance on the
     Avg Monthly Expenses snapshot card.
 
@@ -2471,9 +2471,9 @@ def create_retirement_goal(session):
         gender="male",
         target_retirement_age=55,
         life_expectancy=90,
-        # Lower than today's ~23k steady state: the mortgage is paid off and
+        # Lower than today's ~22k steady state: the mortgage is paid off and
         # the kids are independent by 55.
-        monthly_expenses_in_retirement=17000.0,
+        monthly_expenses_in_retirement=16500.0,
         inflation_rate=0.025,
         # Nominal long-term return of a diversified equity-leaning portfolio;
         # the calculator converts it to a real (inflation-adjusted) rate.
@@ -2486,7 +2486,7 @@ def create_retirement_goal(session):
         bituach_leumi_monthly_estimate=2800.0,
         other_passive_income=0.0,
         # Steady-state spending without the one-off wedding/renovation arcs.
-        monthly_expenses_override=23000.0,
+        monthly_expenses_override=22000.0,
     ))
     session.flush()
 
