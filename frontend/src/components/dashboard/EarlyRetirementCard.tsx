@@ -140,6 +140,7 @@ export function EarlyRetirementCard() {
                 data={projections.net_worth_projection}
                 fireNumber={projections.fire_number}
                 targetAge={projections.target_retirement_age}
+                pensionAge={projections.full_pension_age}
               />
             ) : (
               <RetirementIncomeChart data={projections.income_projection} />
@@ -210,12 +211,16 @@ function KpiRow({ projections }: { projections: RetirementProjections }) {
     {
       key: "monthlySavingsNeeded",
       icon: Banknote,
+      // "On track!" only when the plan actually is — 0 extra savings can
+      // coexist with off_track readiness (depleting drawdown).
       value:
-        projections.monthly_savings_needed === 0
+        projections.monthly_savings_needed === 0 &&
+        projections.readiness === "on_track"
           ? t("earlyRetirement.projections.onTrackNoExtra")
           : formatCurrency(projections.monthly_savings_needed),
       color:
-        projections.monthly_savings_needed === 0
+        projections.monthly_savings_needed === 0 &&
+        projections.readiness === "on_track"
           ? "text-emerald-400"
           : "text-amber-400",
     },
@@ -237,7 +242,7 @@ function KpiRow({ projections }: { projections: RetirementProjections }) {
         <div className="mt-1.5 h-1.5 bg-[var(--surface)] rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full ${readiness.bar}`}
-            style={{ width: `${Math.min(projections.progress_pct, 100)}%` }}
+            style={{ width: `${Math.min(Math.max(projections.progress_pct, 0), 100)}%` }}
           />
         </div>
         <span className="text-[10px] text-[var(--text-muted)]" dir="ltr">

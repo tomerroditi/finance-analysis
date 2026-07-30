@@ -249,8 +249,12 @@ class RetirementService:
             - status.get("tracked_kh_value", 0.0)
             + goal_data["keren_hishtalmut_balance"]
         )
+        # Clamped to [0, 100]: negative wealth would otherwise emit a
+        # negative percentage, which the UI progress bar renders as an
+        # invalid CSS width (visually a FULL bar).
         progress_pct = min(
-            (total_wealth / fire_number * 100) if fire_number > 0 else 0, 100
+            max((total_wealth / fire_number * 100) if fire_number > 0 else 0, 0),
+            100,
         )
 
         # Project net worth year by year
@@ -312,6 +316,11 @@ class RetirementService:
             "readiness": readiness,
             "portfolio_depleted_age": portfolio_depleted_age,
             "target_retirement_age": goal_data["target_retirement_age"],
+            # Gender-resolved (67 male / 65 female) — the chart's pension-age
+            # marker must match where pension income actually starts.
+            "full_pension_age": _get_full_pension_age(
+                goal_data.get("gender", "male")
+            ),
             "net_worth_projection": net_worth_projection,
             "income_projection": income_projection,
         }
@@ -690,12 +699,16 @@ class RetirementService:
         Uses binary search: upper bound from the FIRE formula applied to the
         projected wealth at target age, then verifies FIRE-by-target-age and
         drawdown longevity together.
+
+        Returns -1 when no positive expense level works (already at/past the
+        target age, or projected wealth never supports any spending) — the
+        UI filters -1 out; a literal "0 ILS/month" suggestion is noise.
         """
         current_age = goal["current_age"]
         target_age = goal["target_retirement_age"]
         years = target_age - current_age
         if years <= 0:
-            return 0.0
+            return -1
 
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
         monthly_savings = status["monthly_savings"]
@@ -713,7 +726,7 @@ class RetirementService:
         # Upper bound: FIRE formula max (may not survive drawdown)
         max_monthly = (projected_nw * goal["withdrawal_rate"]) / 12
         if max_monthly <= 0:
-            return 0.0
+            return -1
 
         # Binary search for max expenses that keep the plan on track
         lo, hi = 0.0, max_monthly
@@ -727,7 +740,9 @@ class RetirementService:
             if hi - lo < 100:  # converge to within 100 ILS
                 break
 
-        return lo
+        # lo > 0 was verified on-track by the search; lo == 0 means not even
+        # a token spending level works (e.g. wealth stays negative to target)
+        return lo if lo > 0 else -1
 
     def _solve_return_rate(self, goal: dict, status: dict) -> float:
         """Find minimum nominal return rate where the plan is on track.
@@ -735,12 +750,16 @@ class RetirementService:
         Uses binary search over return rates, requiring both FIRE by the
         target age and drawdown longevity (survival alone is trivially true
         for pension-covered plans and would converge to the search floor).
+
+        Returns -1 when not achievable at any rate up to 30%, or when the
+        target age is already at/behind the current age (no return rate can
+        retire someone in the past) — the UI filters -1 out.
         """
         current_age = goal["current_age"]
         target_age = goal["target_retirement_age"]
         years = target_age - current_age
         if years <= 0:
-            return 0.0
+            return -1
 
         # Binary search between -10% and 30%
         lo, hi = -0.10, 0.30

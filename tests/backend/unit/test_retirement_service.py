@@ -366,19 +366,37 @@ class TestAutoAdjustSolver:
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_solve_monthly_expenses_zero_years(self, sample_goal, sample_status):
-        """If target age equals current age, monthly expenses should be 0."""
+        """Target age at/behind current age is not solvable — -1, not a '0' suggestion."""
         sample_goal["target_retirement_age"] = sample_goal["current_age"]
         service = RetirementService.__new__(RetirementService)
         result = service._solve_monthly_expenses(sample_goal, sample_status)
-        assert result == 0.0
+        assert result == -1
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     def test_solve_return_rate_zero_years(self, sample_goal, sample_status):
-        """If target age equals current age, return rate should be 0."""
+        """Target age at/behind current age is not solvable — -1, not a '0%' suggestion."""
         sample_goal["target_retirement_age"] = sample_goal["current_age"]
         service = RetirementService.__new__(RetirementService)
         result = service._solve_return_rate(sample_goal, sample_status)
-        assert result == 0.0
+        assert result == -1
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    def test_solve_monthly_expenses_hopeless_returns_minus_one(
+        self, sample_goal, sample_status
+    ):
+        """Wealth that stays negative to target yields -1, not 'spend 0'."""
+        status = {
+            **sample_status,
+            "net_worth": -2_000_000.0,
+            "monthly_savings": 0.0,
+        }
+        goal = {
+            **sample_goal,
+            "keren_hishtalmut_balance": 0.0,
+            "keren_hishtalmut_monthly_contribution": 0.0,
+        }
+        service = RetirementService.__new__(RetirementService)
+        assert service._solve_monthly_expenses(goal, status) == -1
 
 
 class TestLongevityCheck:
@@ -544,7 +562,8 @@ class TestGetProjections:
             "fire_number", "years_to_fire", "fire_age",
             "earliest_possible_retirement_age", "monthly_savings_needed",
             "progress_pct", "readiness", "portfolio_depleted_age",
-            "target_retirement_age", "net_worth_projection", "income_projection",
+            "target_retirement_age", "full_pension_age",
+            "net_worth_projection", "income_projection",
         }
         assert set(result.keys()) == expected_keys
 
@@ -570,6 +589,21 @@ class TestGetProjections:
         service = RetirementService.__new__(RetirementService)
         result = service.get_projections(goal_override=sample_goal)
         assert "portfolio_depleted_age" in result
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_progress_pct_clamped_at_zero(self, mock_status, sample_goal, sample_status):
+        """Negative total wealth reports 0% progress, never a negative pct.
+
+        A negative percentage reaches the UI as an invalid negative CSS
+        width, which browsers drop — rendering a visually FULL progress bar.
+        """
+        sample_status["net_worth"] = -500000.0
+        sample_goal["keren_hishtalmut_balance"] = 0.0
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+        assert result["progress_pct"] == 0.0
 
 
 class TestSolveAllFields:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Target, BarChart3 } from "lucide-react";
@@ -21,7 +21,10 @@ export function EarlyRetirement() {
   const [pendingAdjust, setPendingAdjust] = useState<{
     field: string;
     value: number;
+    seq: number;
   } | null>(null);
+  // Per-click id so applying the SAME suggestion twice still re-applies.
+  const adjustSeq = useRef(0);
   // Unsaved "what if" results from the form's Calculate / Reset / Adjust
   // flows. Kept out of the query cache on purpose — see RetirementPreview.
   const [preview, setPreview] = useState<RetirementPreview | null>(null);
@@ -59,7 +62,8 @@ export function EarlyRetirement() {
   });
 
   const handleAdjust = (field: SuggestionField, value: number) => {
-    setPendingAdjust({ field, value });
+    adjustSeq.current += 1;
+    setPendingAdjust({ field, value, seq: adjustSeq.current });
   };
 
   // A preview wins over the saved plan, and suppresses the loading skeleton:

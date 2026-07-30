@@ -39,6 +39,8 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 interface PendingAdjust {
   field: string;
   value: number;
+  /** Monotonic per-click id so re-applying an identical suggestion works. */
+  seq: number;
 }
 
 /**
@@ -62,12 +64,43 @@ interface Props {
   onPreview: (preview: RetirementPreview | null) => void;
 }
 
-function formToPayload(form: ReturnType<typeof goalToForm>) {
+function formToPayload(
+  form: ReturnType<typeof goalToForm>,
+  status: RetirementStatus | null,
+) {
+  // A snapshot field equal to the calculated status value (or 0) is NOT an
+  // override — send null so the plan keeps tracking real data. Sending the
+  // number back (the old behavior) silently froze every saved plan at its
+  // save-day snapshot: net worth, income and expenses stopped responding
+  // to new transactions, and the reset arrow couldn't undo it because it
+  // also wrote a number.
+  const normalizeOverride = (
+    value: number,
+    statusValue: number | undefined,
+  ): number | null =>
+    value === 0 || value === Math.round(statusValue ?? 0) ? null : value;
+
   return {
     ...form,
     inflation_rate: form.inflation_rate / 100,
     expected_return_rate: form.expected_return_rate / 100,
     withdrawal_rate: form.withdrawal_rate / 100,
+    net_worth_override: normalizeOverride(
+      form.net_worth_override,
+      status?.net_worth,
+    ),
+    monthly_income: normalizeOverride(
+      form.monthly_income,
+      status?.avg_monthly_income,
+    ),
+    monthly_expenses_override: normalizeOverride(
+      form.monthly_expenses_override,
+      status?.avg_monthly_expenses,
+    ),
+    total_investments_override: normalizeOverride(
+      form.total_investments_override,
+      status?.total_investments,
+    ),
   };
 }
 
@@ -190,9 +223,11 @@ export function RetirementGoalForm({
       ...(scrapedDefaults.keren_hishtalmut_monthly_contribution != null && {
         keren_hishtalmut_monthly_contribution: scrapedDefaults.keren_hishtalmut_monthly_contribution,
       }),
-      ...(scrapedDefaults.pension_monthly_deposit != null && {
-        pension_monthly_payout_estimate: scrapedDefaults.pension_monthly_deposit,
-      }),
+      // NOTE: pension_monthly_deposit (the ~2k monthly CONTRIBUTION into the
+      // fund) is deliberately NOT filled into pension_monthly_payout_estimate
+      // (the expected monthly PAYOUT at pension age, typically 4-5x larger).
+      // The old auto-fill confused the two and seeded materially wrong
+      // retirement income for every scraped user.
       ...(scrapedDefaults.avg_monthly_salary != null && {
         monthly_income: scrapedDefaults.avg_monthly_salary,
       }),
@@ -213,7 +248,7 @@ export function RetirementGoalForm({
   // where nothing can invalidate it.
   const previewPlan = useCallback(
     (formValues: ReturnType<typeof goalToForm>) => {
-      const payload = formToPayload(formValues);
+      const payload = formToPayload(formValues, status);
       return Promise.all([
         retirementApi.previewProjections(payload),
         retirementApi.previewSuggestions(payload),
@@ -224,7 +259,7 @@ export function RetirementGoalForm({
         });
       });
     },
-    [onPreview],
+    [onPreview, status],
   );
 
   // Calculate: preview projections without saving. Intentionally NOT a
@@ -245,8 +280,11 @@ export function RetirementGoalForm({
   // pattern (same as the blocks above); the API preview itself is a side
   // effect and runs in the useEffect below, after the commit.
   const [lastAppliedKey, setLastAppliedKey] = useState("");
+  // seq makes each click unique — without it, clicking the SAME suggestion
+  // again (after hand-editing the field) matched lastAppliedKey and became
+  // a permanent no-op that also left pendingAdjust wedged non-null.
   const adjustKey = pendingAdjust
-    ? `${pendingAdjust.field}:${pendingAdjust.value}`
+    ? `${pendingAdjust.field}:${pendingAdjust.value}:${pendingAdjust.seq}`
     : "";
   if (pendingAdjust && adjustKey !== lastAppliedKey) {
     setLastAppliedKey(adjustKey);
@@ -270,16 +308,28 @@ export function RetirementGoalForm({
     // `previewPlan`, not `runPreview`: the latter flips `isPreviewing`
     // synchronously, which is a cascading-render setState inside an effect
     // body (and the page already renders its own busy state for adjusts).
-    previewPlan(form).then(() => {
+    // `.finally`, not `.then`: a rejected preview must still clear
+    // pendingAdjust, or the adjust flow stays wedged for the session.
+    previewPlan(form).finally(() => {
       onAdjustApplied?.();
     });
   }, [lastAppliedKey, form, previewPlan, onAdjustApplied]);
 
   // Save Plan: persist to DB
   const saveMutation = useMutation({
-    mutationFn: () => retirementApi.upsertGoal(formToPayload(form)),
+    mutationFn: () => retirementApi.upsertGoal(formToPayload(form, status)),
     onSuccess: (response) => {
       queryClient.setQueryData(qk.retirement.goal(), response.data);
+      // Refetch the saved-plan projections/suggestions NOW (narrow keys).
+      // Without this, the preview is dropped below but the global debounced
+      // sweep only refetches ~200ms later — in that window the page fell
+      // back to the PREVIOUS plan's cached numbers with no busy state.
+      void queryClient.invalidateQueries({
+        queryKey: qk.retirement.projections(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: qk.retirement.suggestions(),
+      });
       setHasUnsavedChanges(false);
       // The preview and the saved plan now agree; drop the preview so the
       // page goes back to the (about to be refetched) server truth.
@@ -318,12 +368,6 @@ export function RetirementGoalForm({
   const applyScrapedKhMonthly = () => {
     if (scrapedDefaults?.keren_hishtalmut_monthly_contribution != null) {
       handleChange("keren_hishtalmut_monthly_contribution", scrapedDefaults.keren_hishtalmut_monthly_contribution);
-    }
-  };
-
-  const applyScrapedPension = () => {
-    if (scrapedDefaults?.pension_monthly_deposit != null) {
-      handleChange("pension_monthly_payout_estimate", scrapedDefaults.pension_monthly_deposit);
     }
   };
 
@@ -583,18 +627,6 @@ export function RetirementGoalForm({
             min={0}
             suffix="₪"
             tooltip={t("earlyRetirement.tooltips.pension")}
-            footer={
-              scrapedDefaults?.pension_monthly_deposit != null ? (
-                <ScrapedHint
-                  onClick={applyScrapedPension}
-                  label={t("earlyRetirement.form.useScrapedPension", {
-                    amount: formatCurrency(
-                      scrapedDefaults.pension_monthly_deposit,
-                    ),
-                  })}
-                />
-              ) : null
-            }
           />
           <NumberField
             label={t("earlyRetirement.form.kerenHishtalmutBalance")}
@@ -684,6 +716,11 @@ export function RetirementGoalForm({
 
       {/* Action Buttons */}
       <div className="flex items-center justify-end gap-3">
+        {saveMutation.isError && (
+          <span className="text-xs text-rose-400">
+            {t("earlyRetirement.form.saveFailed")}
+          </span>
+        )}
         {goal && hasUnsavedChanges && (
           <button
             type="button"
@@ -698,7 +735,10 @@ export function RetirementGoalForm({
         <button
           type="button"
           onClick={handleSave}
-          disabled={isBusy || !hasUnsavedChanges}
+          // With no saved goal yet, everything is unsaved by definition — a
+          // first-time user must be able to save the defaults without a
+          // throwaway edit.
+          disabled={isBusy || (!!goal && !hasUnsavedChanges)}
           className="flex items-center gap-2 px-4 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
         >
           <Save size={15} />

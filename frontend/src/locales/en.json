@@ -1311,9 +1311,9 @@
       "resetPlan": "Reset",
       "useScrapedKh": "Use scraped balance: {{amount}}",
       "useScrapedKhMonthly": "Use scraped deposit: {{amount}}",
-      "useScrapedPension": "Use scraped deposit: {{amount}}",
       "monthlyIncome": "Monthly Income",
-      "useSalaryAvg": "Use 6-month salary avg: {{amount}}"
+      "useSalaryAvg": "Use 6-month salary avg: {{amount}}",
+      "saveFailed": "Save failed — check the values and try again"
     },
     "status": {
       "netWorth": "Net Worth",

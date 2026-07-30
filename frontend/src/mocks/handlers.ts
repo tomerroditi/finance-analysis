@@ -265,6 +265,7 @@ export const mockRetirementProjections = {
   readiness: "off_track" as const,
   portfolio_depleted_age: 85,
   target_retirement_age: 55,
+  full_pension_age: 67,
   net_worth_projection: [
     { age: 35, net_worth_optimistic: 500000, net_worth_baseline: 500000, net_worth_conservative: 500000 },
     { age: 45, net_worth_optimistic: 1500000, net_worth_baseline: 1200000, net_worth_conservative: 900000 },

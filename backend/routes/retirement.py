@@ -112,6 +112,7 @@ class RetirementProjectionsResponse(BaseModel):
     readiness: str
     portfolio_depleted_age: Optional[int] = None
     target_retirement_age: int
+    full_pension_age: int
     net_worth_projection: list[NetWorthProjectionPoint]
     income_projection: list[IncomeProjectionPoint]
 

@@ -851,6 +851,7 @@ export interface RetirementProjections {
   readiness: "on_track" | "close" | "off_track";
   portfolio_depleted_age: number | null;
   target_retirement_age: number;
+  full_pension_age: number;
   net_worth_projection: {
     age: number;
     net_worth_optimistic: number;

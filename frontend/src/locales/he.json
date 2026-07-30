@@ -1313,9 +1313,9 @@
       "resetPlan": "איפוס",
       "useScrapedKh": "השתמש ביתרה מגרידה: {{amount}}",
       "useScrapedKhMonthly": "השתמש בהפקדה מגרידה: {{amount}}",
-      "useScrapedPension": "השתמש בהפקדה מגרידה: {{amount}}",
       "monthlyIncome": "הכנסה חודשית",
-      "useSalaryAvg": "השתמש בממוצע משכורת 6 חודשים: {{amount}}"
+      "useSalaryAvg": "השתמש בממוצע משכורת 6 חודשים: {{amount}}",
+      "saveFailed": "השמירה נכשלה — בדקו את הערכים ונסו שוב"
     },
     "status": {
       "netWorth": "שווי נקי",

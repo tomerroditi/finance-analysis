@@ -117,5 +117,13 @@ test.describe("Retirement snapshot fields", () => {
     expect(resp.ok()).toBeTruthy();
     const body = await resp.request().postDataJSON();
     expect(body.net_worth_override).toBe(1234567);
+    // Untouched snapshot fields must save as null, NOT as frozen copies of
+    // today's calculated values — the old behavior pinned net worth/income/
+    // expenses at save-day numbers and the plan stopped tracking real data.
+    expect(body.monthly_income).toBeNull();
+    expect(body.total_investments_override).toBeNull();
+    // The demo goal's stored expenses override (steady-state spending,
+    // differs from calculated) survives the save untouched.
+    expect(body.monthly_expenses_override).toBe(22000);
   });
 });

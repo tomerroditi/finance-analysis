@@ -89,6 +89,36 @@ reports 0 (the UI renders that as "On track!"). It uses the same
 end-of-year annual-deposit model as `_project_net_worth`, so "0 extra"
 agrees with the projection reaching FIRE at the target age.
 
+## Status overrides must stay live, not frozen
+
+The goal's snapshot overrides (`net_worth_override`, `monthly_income`,
+`monthly_expenses_override`, `total_investments_override`) mean "replace
+the calculated value with this number". The form (`RetirementGoalForm`)
+therefore **sends `null` for any snapshot field equal to the calculated
+status value** (`formToPayload`'s `normalizeOverride`). Never "simplify"
+that into sending the displayed number — that froze every saved plan at
+its save-day snapshot (net worth/income/expenses stopped responding to
+new transactions, and the reset arrow couldn't undo it). The
+`retirement-snapshot-fields` e2e pins the null-for-untouched behavior on
+the save request body. Note `total_investments_override` is display-only
+— no projection math consumes total investments.
+
+## Other UI contracts
+
+- `full_pension_age` (gender-resolved, 67 male / 65 female) is part of the
+  projections response — the net-worth chart's pension-age marker must use
+  it, never a hardcoded 67.
+- Scraped `pension_monthly_deposit` (the ~2k monthly contribution INTO the
+  fund) must never be auto-filled into `pension_monthly_payout_estimate`
+  (the expected monthly payout, typically 4-5× larger). That autofill
+  shipped once and seeded materially wrong retirement income.
+- Solvers return **-1** for "not solvable" (target age at/behind current
+  age, nothing on-track at any value) — never 0, which the UI would render
+  as a real suggestion.
+- "On track!" copy for `monthly_savings_needed == 0` renders only when
+  `readiness == "on_track"` — 0 extra savings can coexist with off_track
+  (FIRE reached but the portfolio depletes in drawdown).
+
 ## Demo Mode invariant
 
 The demo retirement plan must stay **on_track** (green readiness, FIRE

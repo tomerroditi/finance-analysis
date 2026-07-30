@@ -26,9 +26,16 @@ interface Props {
   data: DataPoint[];
   fireNumber: number;
   targetAge: number;
+  /** Gender-resolved full pension age (67 male / 65 female). */
+  pensionAge?: number;
 }
 
-export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) {
+export function NetWorthProjectionChart({
+  data,
+  fireNumber,
+  targetAge,
+  pensionAge = 67,
+}: Props) {
   const { t } = useTranslation();
 
   const rows = useMemo(
@@ -138,7 +145,7 @@ export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) 
             }}
           />
           <ReferenceLine
-            x={67}
+            x={pensionAge}
             stroke="#6b7280"
             strokeWidth={1}
             strokeDasharray="2 3"
