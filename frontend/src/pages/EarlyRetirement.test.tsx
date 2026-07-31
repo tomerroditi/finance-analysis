@@ -57,6 +57,44 @@ describe("EarlyRetirement", () => {
     });
   });
 
+  describe("scraped auto-fill", () => {
+    // Regression: scraped amounts are fractional (averages, agorot) but the
+    // currency inputs are whole-shekel (implicit step=1). An unrounded fill
+    // left the input browser-invalid ("Please enter a valid value…").
+    it("rounds fractional scraped values to whole shekels; deposit never fills pension payout", async () => {
+      server.use(
+        http.get("/api/retirement/goal", () => HttpResponse.json(null)),
+        http.get("/api/retirement/scraped-defaults", () =>
+          HttpResponse.json({
+            keren_hishtalmut_balance: 255000.55,
+            keren_hishtalmut_monthly_contribution: 2971.33,
+            pension_monthly_deposit: 1571.44,
+            avg_monthly_salary: 31092.73833333333,
+          }),
+        ),
+      );
+      renderWithProviders(<EarlyRetirement />);
+
+      const inputValues = () =>
+        screen
+          .getAllByRole("spinbutton")
+          .map((el) => (el as HTMLInputElement).value);
+
+      // The auto-fill lands once the scraped defaults arrive — rounded.
+      await waitFor(() => expect(inputValues()).toContain("31093"));
+      const values = inputValues();
+      expect(values).toContain("255001");
+      expect(values).toContain("2971");
+      expect(values).not.toContain("31092.73833333333");
+      expect(values).not.toContain("255000.55");
+      expect(values).not.toContain("2971.33");
+      // The pension DEPOSIT (contribution into the fund) must never be
+      // auto-filled into the pension PAYOUT estimate.
+      expect(values).not.toContain("1571");
+      expect(values).not.toContain("1571.44");
+    });
+  });
+
   describe("projections section", () => {
     it("displays FIRE metrics", async () => {
       renderWithProviders(<EarlyRetirement />);

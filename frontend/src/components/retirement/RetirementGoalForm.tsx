@@ -135,17 +135,27 @@ function goalToForm(
     gender: goal.gender,
     target_retirement_age: goal.target_retirement_age,
     life_expectancy: goal.life_expectancy,
-    monthly_expenses_in_retirement: goal.monthly_expenses_in_retirement,
+    // Currency fields are whole-shekel inputs (implicit step=1) — round on
+    // load so a stored fractional value (e.g. saved by the pre-rounding
+    // scraped auto-fill) can't wedge the input in an invalid state.
+    monthly_expenses_in_retirement: Math.round(
+      goal.monthly_expenses_in_retirement,
+    ),
     inflation_rate: Math.round(goal.inflation_rate * 10000) / 100,
     expected_return_rate: Math.round(goal.expected_return_rate * 10000) / 100,
     withdrawal_rate: Math.round(goal.withdrawal_rate * 10000) / 100,
-    pension_monthly_payout_estimate: goal.pension_monthly_payout_estimate,
-    keren_hishtalmut_balance: goal.keren_hishtalmut_balance,
-    keren_hishtalmut_monthly_contribution:
+    pension_monthly_payout_estimate: Math.round(
+      goal.pension_monthly_payout_estimate,
+    ),
+    keren_hishtalmut_balance: Math.round(goal.keren_hishtalmut_balance),
+    keren_hishtalmut_monthly_contribution: Math.round(
       goal.keren_hishtalmut_monthly_contribution,
+    ),
     bituach_leumi_eligible: goal.bituach_leumi_eligible,
-    bituach_leumi_monthly_estimate: goal.bituach_leumi_monthly_estimate,
-    other_passive_income: goal.other_passive_income,
+    bituach_leumi_monthly_estimate: Math.round(
+      goal.bituach_leumi_monthly_estimate,
+    ),
+    other_passive_income: Math.round(goal.other_passive_income),
     monthly_income: Math.round(
       goal.monthly_income ?? status?.avg_monthly_income ?? 0,
     ),
@@ -211,17 +221,24 @@ export function RetirementGoalForm({
       retirementApi.getScrapedDefaults().then((r) => r.data),
   });
 
-  // Auto-fill scraped insurance values when no saved goal exists
+  // Auto-fill scraped insurance values when no saved goal exists.
+  // Always Math.round: scraped amounts are fractional (averages, agorot)
+  // but the currency inputs are whole-shekel (implicit step=1) — an
+  // unrounded fill leaves the input browser-invalid ("enter a valid value").
   const [scrapedApplied, setScrapedApplied] = useState(false);
   if (!scrapedApplied && scrapedDefaults && !goal) {
     setScrapedApplied(true);
     setForm((prev) => ({
       ...prev,
       ...(scrapedDefaults.keren_hishtalmut_balance != null && {
-        keren_hishtalmut_balance: scrapedDefaults.keren_hishtalmut_balance,
+        keren_hishtalmut_balance: Math.round(
+          scrapedDefaults.keren_hishtalmut_balance,
+        ),
       }),
       ...(scrapedDefaults.keren_hishtalmut_monthly_contribution != null && {
-        keren_hishtalmut_monthly_contribution: scrapedDefaults.keren_hishtalmut_monthly_contribution,
+        keren_hishtalmut_monthly_contribution: Math.round(
+          scrapedDefaults.keren_hishtalmut_monthly_contribution,
+        ),
       }),
       // NOTE: pension_monthly_deposit (the ~2k monthly CONTRIBUTION into the
       // fund) is deliberately NOT filled into pension_monthly_payout_estimate
@@ -229,7 +246,7 @@ export function RetirementGoalForm({
       // The old auto-fill confused the two and seeded materially wrong
       // retirement income for every scraped user.
       ...(scrapedDefaults.avg_monthly_salary != null && {
-        monthly_income: scrapedDefaults.avg_monthly_salary,
+        monthly_income: Math.round(scrapedDefaults.avg_monthly_salary),
       }),
     }));
   }
@@ -361,13 +378,19 @@ export function RetirementGoalForm({
 
   const applyScrapedKhBalance = () => {
     if (scrapedDefaults?.keren_hishtalmut_balance != null) {
-      handleChange("keren_hishtalmut_balance", scrapedDefaults.keren_hishtalmut_balance);
+      handleChange(
+        "keren_hishtalmut_balance",
+        Math.round(scrapedDefaults.keren_hishtalmut_balance),
+      );
     }
   };
 
   const applyScrapedKhMonthly = () => {
     if (scrapedDefaults?.keren_hishtalmut_monthly_contribution != null) {
-      handleChange("keren_hishtalmut_monthly_contribution", scrapedDefaults.keren_hishtalmut_monthly_contribution);
+      handleChange(
+        "keren_hishtalmut_monthly_contribution",
+        Math.round(scrapedDefaults.keren_hishtalmut_monthly_contribution),
+      );
     }
   };
 
