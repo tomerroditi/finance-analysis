@@ -165,6 +165,27 @@ describe("EarlyRetirement", () => {
       expect(container.textContent).not.toContain("3,600,000");
     });
 
+    // Regression: the projections section rendered a skeleton whenever the
+    // query was merely REFETCHING (window refocus after staleTime, the
+    // global post-mutation sweep) — every return to the tab looked like a
+    // full page reload. Cached values must stay on screen.
+    it("keeps cached projections on screen during a background refetch", async () => {
+      const { container, queryClient } = renderWithProviders(
+        <EarlyRetirement />,
+      );
+      await waitFor(() =>
+        expect(container.textContent).toContain("3,600,000"),
+      );
+
+      act(() => {
+        void queryClient.invalidateQueries();
+      });
+
+      // Synchronously after invalidation the query is fetching — the page
+      // must still show the cached numbers, not a skeleton.
+      expect(container.textContent).toContain("3,600,000");
+    });
+
     it("leaves the saved-plan cache entry untouched", async () => {
       usePreviewHandlers();
       const { container, queryClient } = renderWithProviders(

@@ -335,21 +335,25 @@ export function RetirementGoalForm({
   // Save Plan: persist to DB
   const saveMutation = useMutation({
     mutationFn: () => retirementApi.upsertGoal(formToPayload(form, status)),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       queryClient.setQueryData(qk.retirement.goal(), response.data);
-      // Refetch the saved-plan projections/suggestions NOW (narrow keys).
-      // Without this, the preview is dropped below but the global debounced
-      // sweep only refetches ~200ms later — in that window the page fell
-      // back to the PREVIOUS plan's cached numbers with no busy state.
-      void queryClient.invalidateQueries({
-        queryKey: qk.retirement.projections(),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: qk.retirement.suggestions(),
-      });
       setHasUnsavedChanges(false);
-      // The preview and the saved plan now agree; drop the preview so the
-      // page goes back to the (about to be refetched) server truth.
+      // Refetch the saved-plan projections/suggestions (narrow keys) and
+      // WAIT for them before dropping the preview: the page keeps showing
+      // cached data during background refetches (no skeleton), so dropping
+      // the preview early would flash the PREVIOUS plan's numbers until the
+      // refetch lands. The mutation stays isPending through this await, so
+      // the Save button shows its busy state for the whole round trip.
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: qk.retirement.projections(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: qk.retirement.suggestions(),
+        }),
+      ]);
+      // Cache now holds the new plan's numbers; swap from preview to the
+      // server truth with no visible gap.
       onPreview(null);
     },
   });
