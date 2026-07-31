@@ -100,8 +100,10 @@ that into sending the displayed number — that froze every saved plan at
 its save-day snapshot (net worth/income/expenses stopped responding to
 new transactions, and the reset arrow couldn't undo it). The
 `retirement-snapshot-fields` e2e pins the null-for-untouched behavior on
-the save request body. Note `total_investments_override` is display-only
-— no projection math consumes total investments.
+the save request body. Note `total_investments_override` was removed from
+the form entirely (no projection math ever consumed it — the whole net
+worth compounds at the expected return); the form always sends it as
+null so legacy stored overrides get cleared.
 
 ## Other UI contracts
 

@@ -21,8 +21,10 @@ describe("EarlyRetirement", () => {
 
     it("displays financial status metrics", async () => {
       renderWithProviders(<EarlyRetirement />);
+      // "Net Worth" also appears in chart headings and tooltip copy —
+      // assert at least one element renders it.
       await waitFor(() => {
-        expect(screen.getByText(/Net Worth/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/Net Worth/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -47,11 +49,11 @@ describe("EarlyRetirement", () => {
       // The "Israeli Savings Vehicles" cluster on the form renders
       // dedicated inputs for Keren Hishtalmut and Monthly Pension.
       await waitFor(() => {
+        // Labels also appear inside the info-tooltip copy — getAllByText
+        // asserts at least one element is present.
         expect(
-          screen.getByText(/Keren Hishtalmut Balance/i),
-        ).toBeInTheDocument();
-        // "Monthly Pension" appears in both the form label and the
-        // breakdown table — getAllByText asserts at least one is present.
+          screen.getAllByText(/Keren Hishtalmut Balance/i).length,
+        ).toBeGreaterThan(0);
         expect(screen.getAllByText(/Monthly Pension/i).length).toBeGreaterThan(0);
       });
     });

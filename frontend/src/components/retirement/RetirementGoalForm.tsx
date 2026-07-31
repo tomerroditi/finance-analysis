@@ -15,7 +15,6 @@ import {
   TrendingDown,
   Wallet,
   PiggyBank,
-  ArrowUpDown,
   DollarSign,
   Percent,
   User,
@@ -97,10 +96,10 @@ function formToPayload(
       form.monthly_expenses_override,
       status?.avg_monthly_expenses,
     ),
-    total_investments_override: normalizeOverride(
-      form.total_investments_override,
-      status?.total_investments,
-    ),
+    // Display of total investments was removed from the form (no projection
+    // math ever consumed it); always send null so legacy stored overrides
+    // are cleared on the next save.
+    total_investments_override: null,
   };
 }
 
@@ -127,7 +126,7 @@ function goalToForm(
       monthly_income: Math.round(status?.avg_monthly_income ?? 0),
       net_worth_override: Math.round(status?.net_worth ?? 0),
       monthly_expenses_override: Math.round(status?.avg_monthly_expenses ?? 0),
-      total_investments_override: Math.round(status?.total_investments ?? 0),
+      total_investments_override: 0,
     };
   }
   return {
@@ -165,9 +164,7 @@ function goalToForm(
     monthly_expenses_override: Math.round(
       goal.monthly_expenses_override ?? status?.avg_monthly_expenses ?? 0,
     ),
-    total_investments_override: Math.round(
-      goal.total_investments_override ?? status?.total_investments ?? 0,
-    ),
+    total_investments_override: 0,
   };
 }
 
@@ -205,9 +202,6 @@ export function RetirementGoalForm({
       }),
       ...(prev.monthly_expenses_override === 0 && {
         monthly_expenses_override: Math.round(status.avg_monthly_expenses),
-      }),
-      ...(prev.total_investments_override === 0 && {
-        total_investments_override: Math.round(status.total_investments),
       }),
       ...(prev.monthly_income === 0 && {
         monthly_income: Math.round(status.avg_monthly_income),
@@ -419,7 +413,8 @@ export function RetirementGoalForm({
         <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           {t("earlyRetirement.sections.currentStatus")}
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* 5 cards since the display-only Total Investments card was removed */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <SnapshotField
             label={t("earlyRetirement.status.netWorth")}
             icon={TrendingUp}
@@ -529,20 +524,6 @@ export function RetirementGoalForm({
               {t("earlyRetirement.status.computed")}
             </div>
           </div>
-          <SnapshotField
-            label={t("earlyRetirement.status.totalInvestments")}
-            icon={ArrowUpDown}
-            iconColor="text-purple-400"
-            value={form.total_investments_override}
-            statusValue={Math.round(status?.total_investments ?? 0)}
-            onChange={(v) => handleChange("total_investments_override", v)}
-            onReset={() =>
-              handleChange(
-                "total_investments_override",
-                Math.round(status?.total_investments ?? 0),
-              )
-            }
-          />
         </div>
       </div>
 
@@ -663,6 +644,7 @@ export function RetirementGoalForm({
             onChange={(v) => handleChange("keren_hishtalmut_balance", v)}
             min={0}
             suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.kerenHishtalmutBalance")}
             footer={
               scrapedDefaults?.keren_hishtalmut_balance != null ? (
                 <ScrapedHint
@@ -686,6 +668,7 @@ export function RetirementGoalForm({
             }
             min={0}
             suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.kerenHishtalmutMonthly")}
             footer={
               scrapedDefaults?.keren_hishtalmut_monthly_contribution != null ? (
                 <ScrapedHint
@@ -709,6 +692,7 @@ export function RetirementGoalForm({
             }
             min={0}
             suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.bituachLeumi")}
             disabled={!form.bituach_leumi_eligible}
             headerExtra={
               /* The checkbox itself is 14px. Padding on an <input> does not
@@ -737,6 +721,7 @@ export function RetirementGoalForm({
             onChange={(v) => handleChange("other_passive_income", v)}
             min={0}
             suffix="₪"
+            tooltip={t("earlyRetirement.tooltips.otherPassiveIncome")}
           />
         </div>
       </div>
