@@ -83,6 +83,33 @@ test.describe("Retirement snapshot fields", () => {
     await expect(resetBtns).toHaveCount(1);
   });
 
+  // Regression: the form + Calculate preview lived in component state, so
+  // navigating to another app page (which unmounts this one) wiped them and
+  // every re-entry looked like a full page reload. The session workspace
+  // store must restore the user's edits on remount.
+  test("form edits survive navigating away and back", async ({ page }) => {
+    await navigateTo(page, "/early-retirement");
+
+    const netWorthInput = page
+      .locator(".p-3.rounded-xl input[type='number']")
+      .first();
+    await expect
+      .poll(async () => Number(await netWorthInput.inputValue()), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    await netWorthInput.fill("2222222");
+
+    // Client-side navigation away and back via the sidebar.
+    await page.getByRole("link", { name: /Transactions/i }).first().click();
+    await expect(page).toHaveURL(/transactions/);
+    await page.getByRole("link", { name: /Early Retirement/i }).first().click();
+
+    // The edited value is restored — not rebuilt from the saved goal.
+    await expect(netWorthInput).toHaveValue("2222222", { timeout: 30_000 });
+  });
+
   test("modified snapshot fields are sent when saving the plan", async ({
     page,
   }) => {

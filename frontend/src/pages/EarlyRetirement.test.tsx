@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { renderWithProviders } from "../test-utils";
@@ -6,9 +6,14 @@ import { server } from "../mocks/server";
 import { mockRetirementProjections } from "../mocks/handlers";
 import { makeQueryKeys } from "../services/queryKeys";
 import type { RetirementProjections } from "../services/api";
+import { useRetirementWorkspaceStore } from "../stores/retirementWorkspaceStore";
 import { EarlyRetirement } from "./EarlyRetirement";
 
 describe("EarlyRetirement", () => {
+  // The workspace store is module-global — reset it so tests stay isolated.
+  beforeEach(() => {
+    useRetirementWorkspaceStore.getState().clear();
+  });
   describe("current status section", () => {
     it("renders the current financial status section", async () => {
       renderWithProviders(<EarlyRetirement />);
@@ -186,6 +191,32 @@ describe("EarlyRetirement", () => {
       // Synchronously after invalidation the query is fetching — the page
       // must still show the cached numbers, not a skeleton.
       expect(container.textContent).toContain("3,600,000");
+    });
+
+    // Regression: the Calculate preview and form edits lived in component
+    // state, so navigating to another page (which unmounts this one) wiped
+    // them — every re-entry looked like a full page reload. The session
+    // workspace store must restore the preview on remount.
+    it("keeps the Calculate preview across unmount/remount (route navigation)", async () => {
+      usePreviewHandlers();
+      const first = renderWithProviders(<EarlyRetirement />);
+      await waitFor(() =>
+        expect(first.container.textContent).toContain("3,600,000"),
+      );
+      submitCalculate();
+      await waitFor(() =>
+        expect(first.container.textContent).toContain("7,777,777"),
+      );
+
+      // Simulate route navigation: unmount the page, then mount it fresh.
+      first.unmount();
+      const second = renderWithProviders(<EarlyRetirement />);
+
+      // The preview is back immediately and still shadows the saved plan.
+      await waitFor(() =>
+        expect(second.container.textContent).toContain("7,777,777"),
+      );
+      expect(second.container.textContent).not.toContain("3,600,000");
     });
 
     it("leaves the saved-plan cache entry untouched", async () => {

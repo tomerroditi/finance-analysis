@@ -34,6 +34,8 @@ import {
 } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useDemoMode } from "../../context/DemoModeContext";
+import { useRetirementWorkspaceStore } from "../../stores/retirementWorkspaceStore";
 
 interface PendingAdjust {
   field: string;
@@ -168,6 +170,9 @@ function goalToForm(
   };
 }
 
+/** Shape of the form's working values — also stored in the session workspace. */
+export type RetirementFormValues = ReturnType<typeof goalToForm>;
+
 export function RetirementGoalForm({
   goal,
   status,
@@ -179,12 +184,45 @@ export function RetirementGoalForm({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const { isDemoMode } = useDemoMode();
 
-  const [form, setForm] = useState(() => goalToForm(goal, status));
+  // Restore the workspace saved by a previous mount this session (route
+  // navigation unmounts the page — without this every visit rebuilt the form
+  // from the saved goal, silently discarding the user's edits). Read once at
+  // mount via getState: the form is the only writer while mounted, so a
+  // subscription would only cause redundant re-renders.
+  //
+  // Only a workspace with UNSAVED EDITS is restorable. A pristine snapshot
+  // must rebuild from the saved goal instead: during the IndexedDB cache
+  // restore there is a brief window where the goal query is neither loading
+  // nor resolved, so the form can mount once with no-goal defaults — and the
+  // write-through below records them. Restoring that pristine snapshot on the
+  // next mount would pin the form to empty defaults and skip the goal seed.
+  const [restored] = useState(() => {
+    const s = useRetirementWorkspaceStore.getState();
+    return s.form !== null && s.demo === isDemoMode && s.hasUnsavedChanges
+      ? s
+      : null;
+  });
 
-  // Sync form from saved goal on first load
-  const [goalLoaded, setGoalLoaded] = useState(!!goal);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(
+    restored ? restored.hasUnsavedChanges : false,
+  );
+
+  const [form, setForm] = useState(() =>
+    restored ? restored.form! : goalToForm(goal, status),
+  );
+
+  // Keep the workspace current so navigating away preserves it.
+  useEffect(() => {
+    useRetirementWorkspaceStore
+      .getState()
+      .saveForm(isDemoMode, form, hasUnsavedChanges);
+  }, [isDemoMode, form, hasUnsavedChanges]);
+
+  // Sync form from saved goal on first load. A restored workspace already
+  // holds what the user was editing — never clobber it with the saved goal.
+  const [goalLoaded, setGoalLoaded] = useState(!!restored || !!goal);
   if (!goalLoaded && goal) {
     setGoalLoaded(true);
     setForm(goalToForm(goal, status));
@@ -192,7 +230,7 @@ export function RetirementGoalForm({
 
   // Fill snapshot fields from status when they are still at the default (0)
   // Handles the case where status arrives after the initial form state is set.
-  const [statusApplied, setStatusApplied] = useState(!!status);
+  const [statusApplied, setStatusApplied] = useState(!!restored || !!status);
   if (!statusApplied && status) {
     setStatusApplied(true);
     setForm((prev) => ({
@@ -219,7 +257,7 @@ export function RetirementGoalForm({
   // Always Math.round: scraped amounts are fractional (averages, agorot)
   // but the currency inputs are whole-shekel (implicit step=1) — an
   // unrounded fill leaves the input browser-invalid ("enter a valid value").
-  const [scrapedApplied, setScrapedApplied] = useState(false);
+  const [scrapedApplied, setScrapedApplied] = useState(!!restored);
   if (!scrapedApplied && scrapedDefaults && !goal) {
     setScrapedApplied(true);
     setForm((prev) => ({
