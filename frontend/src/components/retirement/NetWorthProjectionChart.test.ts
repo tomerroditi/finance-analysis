@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { truncateProjectionAtDepletion } from "./NetWorthProjectionChart";
+import { truncateProjectionAtDepletion } from "./projectionTruncation";
 
 function point(
   age: number,
