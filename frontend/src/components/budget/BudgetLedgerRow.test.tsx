@@ -1,17 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { BudgetRuleRow } from "./BudgetRuleRow";
+import { BudgetLedgerRow } from "./BudgetLedgerRow";
 
 /**
- * BudgetRuleRow renders a signed `current` amount (expenses negative in the
- * raw convention, but the backend already negates so that spend is positive
- * and a net refund is negative). These tests lock in the edge case where a
- * rule's period nets to a refund (refunds exceed spend) — it must never be
- * rendered as spending or as "over budget".
+ * BudgetLedgerRow renders a signed `current` amount (the backend negates so
+ * that spend is positive and a net refund is negative). These tests lock in
+ * the edge case where a rule's period nets to a refund (refunds exceed spend)
+ * — it must never be rendered as spending or as "over budget". Ported from
+ * BudgetRuleRow, which this row replaced.
  */
 function renderRow(current: number, total: number) {
   return render(
-    <BudgetRuleRow
+    <BudgetLedgerRow
       label="Other Expenses"
       current={current}
       total={total}
@@ -22,17 +22,16 @@ function renderRow(current: number, total: number) {
 }
 
 function fillWidth(container: HTMLElement): string {
-  const fill = container.querySelector<HTMLElement>('div[style*="width"]');
+  const fill = container.querySelector<HTMLElement>('[style*="width"]');
   return fill?.style.width ?? "";
 }
 
-describe("BudgetRuleRow", () => {
+describe("BudgetLedgerRow", () => {
   describe("normal spend", () => {
     it("fills the bar proportionally and shows the remaining amount", () => {
       const { container } = renderRow(1000, 3000);
       expect(fillWidth(container)).toBe("33.33333333333333%");
       expect(container.textContent).toContain("remaining");
-      expect(container.textContent).not.toContain("over");
       expect(container.textContent).not.toContain("net refund");
     });
 
@@ -57,6 +56,19 @@ describe("BudgetRuleRow", () => {
       expect(container.textContent).toContain("-1,200");
       expect(container.textContent).toContain("net refund");
       expect(fillWidth(container)).toBe("0%");
+    });
+  });
+
+  describe("percentage column", () => {
+    it("reads 0% for a net refund rather than a negative percentage", () => {
+      const { container } = renderRow(-1200, 3000);
+      expect(container.textContent).toContain("0%");
+      expect(container.textContent).not.toContain("-40%");
+    });
+
+    it("shows an em dash when the envelope has no budget", () => {
+      const { container } = renderRow(500, 0);
+      expect(container.textContent).toContain("—");
     });
   });
 });

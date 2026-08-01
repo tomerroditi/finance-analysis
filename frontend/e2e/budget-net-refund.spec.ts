@@ -34,9 +34,13 @@ test.describe("Budget — net refund rows", () => {
       const rows = await page.evaluate(() => {
         const strip = (s: string | null) =>
           (s ?? "").replace(/[⁦⁩\s]/g, "");
-        // Rule rows are the bordered cards that hold a font-mono figure and a
-        // progress-bar fill; scope to the monthly budget list.
-        const figures = [...document.querySelectorAll("span.font-mono")];
+        // Rule rows are the bordered cards that hold the spent/budget figure
+        // and a progress-bar fill. Target that figure by testid: the ledger
+        // row also renders the remaining amount and the percentage in
+        // font-mono, and "-384" in the remaining column is an OVERSPEND, not
+        // a refund — reading it as one made this invariant fire on every
+        // over-budget row.
+        const figures = [...document.querySelectorAll('[data-testid="ledger-figures"]')];
         return figures.map((fig) => {
           const row = fig.closest("div.rounded-xl") ?? fig.parentElement;
           const text = strip(fig.textContent);
