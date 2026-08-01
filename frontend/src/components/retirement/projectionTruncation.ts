@@ -28,26 +28,37 @@ export type TruncatedPoint = { age: number } & Record<
 /**
  * Cut the projection off where the portfolio is exhausted.
  *
- * Each scenario line ends at its own depletion point: the first age (in the
- * drawdown phase, `age >= targetAge`) where it reaches 0 or below is clamped
- * to exactly 0, and everything after it becomes `null` so the line stops
- * instead of diving into meaningless negative territory. The chart's x-range
- * ends where the LONGEST-surviving track hits zero; if any track never
- * depletes, the full horizon is kept.
+ * A track is depleted at the point after its LAST positive value — i.e.
+ * where it drops to 0 or below and never recovers, in any phase. That point
+ * is clamped to exactly 0 and everything after it becomes `null`, so the
+ * line touches zero and stops instead of diving into meaningless negative
+ * territory. The chart's x-range ends where the LONGEST-surviving track
+ * depletes; if any track never depletes, the full horizon is kept.
  *
- * A negative value BEFORE the target age is not depletion — that's a normal
- * accumulation-phase state for anyone carrying a mortgage — so those points
- * are plotted as-is.
+ * Tracks that dip to/below zero but climb back (a planned big expense, a
+ * debt-heavy start that recovers) are NOT depleted — they plot in full,
+ * negative stretch included, because the recovery is the story. Only a
+ * terminal collapse is cut.
  */
 export function truncateProjectionAtDepletion(
   data: ProjectionPoint[],
-  targetAge: number,
 ): TruncatedPoint[] {
   const depletionIdx = {} as Record<ScenarioKey, number>;
   for (const key of SCENARIO_KEYS) {
-    depletionIdx[key] = data.findIndex(
-      (d) => d.age >= targetAge && d[key] <= 0,
-    );
+    let lastPositive = -1;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (data[i][key] > 0) {
+        lastPositive = i;
+        break;
+      }
+    }
+    // Depletion = a positive point followed by a terminal <= 0 tail. A track
+    // that is never positive, or is still positive at the horizon, never
+    // depletes.
+    depletionIdx[key] =
+      lastPositive >= 0 && lastPositive < data.length - 1
+        ? lastPositive + 1
+        : -1;
   }
 
   const indices = SCENARIO_KEYS.map((key) => depletionIdx[key]);

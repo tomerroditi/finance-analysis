@@ -38,7 +38,7 @@ export function NetWorthProjectionChart({
 
   const rows = useMemo(
     () =>
-      truncateProjectionAtDepletion(data, targetAge).map((d) => ({
+      truncateProjectionAtDepletion(data).map((d) => ({
         ...d,
         // Conservative→optimistic range rendered as a band area — ends
         // together with whichever of its two bounding lines stops first.
@@ -50,7 +50,7 @@ export function NetWorthProjectionChart({
               ])
             : null,
       })),
-    [data, targetAge],
+    [data],
   );
 
   const minAge = rows[0]?.age ?? 0;
@@ -135,19 +135,22 @@ export function NetWorthProjectionChart({
               fontSize: 11,
             }}
           />
-          <ReferenceLine
-            x={targetAge}
-            stroke="#a855f7"
-            strokeWidth={2}
-            strokeDasharray="8 4 2 4"
-            label={{
-              value: t("earlyRetirement.charts.retirementAge"),
-              angle: -90,
-              position: "insideBottomLeft",
-              fill: "#a855f7",
-              fontSize: 11,
-            }}
-          />
+          {/* Skip the marker when the chart is truncated before target age */}
+          {targetAge <= maxAge && (
+            <ReferenceLine
+              x={targetAge}
+              stroke="#a855f7"
+              strokeWidth={2}
+              strokeDasharray="8 4 2 4"
+              label={{
+                value: t("earlyRetirement.charts.retirementAge"),
+                angle: -90,
+                position: "insideBottomLeft",
+                fill: "#a855f7",
+                fontSize: 11,
+              }}
+            />
+          )}
           {/* Skip the marker when the chart is truncated before pension age */}
           {pensionAge <= maxAge && (
             <ReferenceLine
