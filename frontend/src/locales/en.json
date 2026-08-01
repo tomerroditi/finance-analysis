@@ -591,11 +591,8 @@
     "viewAllProjects": "View all projects",
     "trend": {
       "title": "Budget vs Actual",
-      "subtitle": "Last {{count}} months",
       "budget": "Budget",
       "actual": "Actual",
-      "show": "Show trend",
-      "hide": "Hide trend",
       "empty": "Not enough history yet"
     },
     "yearly": {

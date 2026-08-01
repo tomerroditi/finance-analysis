@@ -221,7 +221,9 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
         </div>
       )}
 
-      {summary && (
+      {/* No rules means nothing is allocated — an empty 0 / 0 gauge is noise,
+          the empty-state line below says it better. */}
+      {summary && rules.length > 0 && (
         <BudgetStatusBand
           label={t("budget.yearly.allocated")}
           spent={summary.total_spent}
