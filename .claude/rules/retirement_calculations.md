@@ -65,9 +65,34 @@ have shipped; regression tests pin both flows in
 
 ## Readiness and the solver predicate
 
-- `readiness == "on_track"` requires BOTH: baseline projection reaches the
-  FIRE number **by the target retirement age**, AND the portfolio never
-  depletes during drawdown within life expectancy.
+Readiness is a **four**-state ladder, and solvency is the gate — running
+out of money is the only real failure, so it is checked first and
+independently of the FIRE number:
+
+| state | meaning |
+|---|---|
+| `off_track` | portfolio depletes before life expectancy (regardless of FIRE) |
+| `on_track` | solvent, and FIRE reached **by the target retirement age** |
+| `close` | solvent, and FIRE reached within **target age + 5** |
+| `funded` | solvent, but FIRE never reached in that window |
+
+`funded` exists because the FIRE number (`annual expenses / withdrawal
+rate`) assumes the portfolio funds **100%** of retirement spending
+forever — it never nets out pension, Bituach Leumi or passive income,
+even though the drawdown projection credits all three. An Israeli plan
+whose pension + BL cover most of retirement spending is therefore solvent
+to life expectancy while never accumulating ~28x expenses. That case used
+to fall through to `off_track`, which read as failure for a plan that
+never runs dry.
+
+Note pension and Bituach Leumi only start at `full_pension_age` (67 male
+/ 65 female). Retiring earlier leaves a gap the portfolio must bridge
+alone, so an early target age can deplete even when guaranteed income
+would later exceed spending — that is genuinely `off_track`.
+
+**`_plan_on_track` (the solver predicate) keeps the STRICT definition** —
+FIRE by the target age AND survival. It is deliberately narrower than
+"not off_track"; see the next bullet for why.
 - The suggestion solvers (`_solve_return_rate`, `_solve_monthly_expenses`,
   `_solve_target_retirement_age`) binary-search against the same
   `_plan_on_track` predicate — **never against drawdown survival alone**.
@@ -120,6 +145,40 @@ null so legacy stored overrides get cleared.
 - "On track!" copy for `monthly_savings_needed == 0` renders only when
   `readiness == "on_track"` — 0 extra savings can coexist with off_track
   (FIRE reached but the portfolio depletes in drawdown).
+
+## Future work — auto-calculate the monthly pension payout
+
+**Not implemented. Noted so we remember to build it; do not treat any of
+this as current behaviour.**
+
+`pension_monthly_payout_estimate` is user-entered today, and it is one of
+the highest-leverage inputs in the whole model: it feeds retirement
+income directly, and with the four-state readiness ladder it is often
+what decides `funded` vs `off_track`. Asking a user to guess it is bad —
+most people have no idea what their fund will pay out.
+
+We should derive it instead, from data we already scrape:
+
+- Current accumulated pension balance (scraped).
+- Ongoing monthly deposits (scraped — `pension_monthly_deposit`).
+- Deposits **stop** when the user stops working, i.e. at
+  `target_retirement_age`, not at `full_pension_age`. The balance keeps
+  compounding through the gap years but nothing is added.
+- Assume ~4% annual real growth of the accumulated balance.
+- Convert the projected balance at pension age into a monthly payout via
+  the מקדם קצבה (annuity conversion factor).
+- **Preferred when available:** many providers publish their own
+  projected monthly payout on the scraped statement. Use that directly
+  in preference to our estimate, and fall back to the computation above.
+
+Keep the existing guard intact when building this: the scraped
+`pension_monthly_deposit` must never be written straight into
+`pension_monthly_payout_estimate` — that autofill shipped once and seeded
+materially wrong retirement income (see the bullet above). The derived
+payout is a *computed projection*, not the deposit.
+
+Whatever lands should stay overridable: the user's own statement figure
+must still win over anything we compute.
 
 ## Demo Mode invariant
 

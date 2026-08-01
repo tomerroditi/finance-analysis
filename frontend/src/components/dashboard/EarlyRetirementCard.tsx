@@ -12,6 +12,7 @@ import {
   Banknote,
   CheckCircle2,
   AlertTriangle,
+  ShieldCheck,
   XCircle,
 } from "lucide-react";
 import {
@@ -40,6 +41,15 @@ const readinessConfig = {
     bg: "bg-amber-500/10",
     border: "border-amber-500/30",
     bar: "bg-amber-500",
+  },
+  // Solvent for life, just never hits the FIRE number — a working plan, so
+  // it reads blue (informational) rather than amber (warning) or red.
+  funded: {
+    icon: ShieldCheck,
+    color: "text-sky-400",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/30",
+    bar: "bg-sky-500",
   },
   off_track: {
     icon: XCircle,

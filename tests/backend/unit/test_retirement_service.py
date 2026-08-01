@@ -518,8 +518,10 @@ class TestGetProjections:
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     @patch.object(RetirementService, "get_current_status")
-    def test_readiness_off_track_no_fire(self, mock_status, sample_goal, sample_status):
-        """Off track when FIRE number is never reached."""
+    def test_readiness_off_track_when_portfolio_runs_dry(
+        self, mock_status, sample_goal, sample_status
+    ):
+        """Off track is reserved for plans that actually run out of money."""
         sample_goal["monthly_expenses_in_retirement"] = 500000
         sample_status["net_worth"] = 1000
         sample_status["monthly_savings"] = 100
@@ -528,6 +530,44 @@ class TestGetProjections:
         result = service.get_projections(goal_override=sample_goal)
         assert result["readiness"] == "off_track"
         assert result["fire_age"] == -1
+        # Off track must be driven by depletion, not merely by missing FIRE.
+        assert result["portfolio_depleted_age"] is not None
+
+    @patch.object(RetirementService, "__init__", lambda self, db: None)
+    @patch.object(RetirementService, "get_current_status")
+    def test_readiness_funded_when_solvent_without_fire(
+        self, mock_status, sample_goal, sample_status
+    ):
+        """A plan the pension carries for life is funded, not off track.
+
+        The FIRE number assumes the portfolio funds 100% of retirement
+        spending forever — it never nets out pension / Bituach Leumi /
+        passive income, even though the drawdown projection credits them.
+        So a modest saver whose guaranteed income covers retirement
+        spending never reaches ~28x expenses yet never runs dry either.
+        That used to report off_track, which read as failure for a plan
+        that always has money in it.
+        """
+        # Retire at the full pension age, so there is no gap for the
+        # portfolio to bridge (pension / BL only start at 67). Guaranteed
+        # income then exceeds spending and drawdown never touches savings.
+        sample_goal["target_retirement_age"] = 67
+        sample_goal["monthly_expenses_in_retirement"] = 8000.0
+        sample_goal["pension_monthly_payout_estimate"] = 9000.0
+        sample_goal["bituach_leumi_monthly_estimate"] = 2800.0
+        sample_goal["other_passive_income"] = 0.0
+        # ...but wealth stays far below the FIRE number (8000*12/0.035).
+        sample_status["net_worth"] = 50000.0
+        sample_status["monthly_savings"] = 100.0
+        sample_goal["keren_hishtalmut_balance"] = 0.0
+        sample_goal["keren_hishtalmut_monthly_contribution"] = 0.0
+        mock_status.return_value = sample_status
+        service = RetirementService.__new__(RetirementService)
+        result = service.get_projections(goal_override=sample_goal)
+
+        assert result["fire_age"] == -1
+        assert result["portfolio_depleted_age"] is None
+        assert result["readiness"] == "funded"
 
     @patch.object(RetirementService, "__init__", lambda self, db: None)
     @patch.object(RetirementService, "get_current_status")

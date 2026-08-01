@@ -289,19 +289,26 @@ class RetirementService:
             goal_data["target_retirement_age"],
         )
 
-        # Readiness traffic light (must both reach FIRE and survive drawdown)
-        if fire_age != -1 and fire_age <= goal_data["target_retirement_age"]:
-            if portfolio_depleted_age is not None:
-                readiness = "off_track"
-            else:
-                readiness = "on_track"
-        elif fire_age != -1 and fire_age <= goal_data["target_retirement_age"] + 5:
-            if portfolio_depleted_age is not None:
-                readiness = "off_track"
-            else:
-                readiness = "close"
-        else:
+        # Readiness traffic light. Solvency is the gate: running out of money
+        # is the only real failure, so it is checked FIRST and independently
+        # of the FIRE number. Everything else grades how early you can retire.
+        #
+        # The FIRE number assumes the portfolio funds 100% of retirement
+        # spending forever — it never nets out pension, Bituach Leumi or
+        # passive income, even though the drawdown projection credits all
+        # three. An Israeli plan whose pension + BL cover most of retirement
+        # spending can therefore be solvent to life expectancy and still never
+        # accumulate ~28x expenses. That case used to fall through to
+        # "off_track", which read as failure for a plan that never runs dry;
+        # it is "funded" now.
+        if portfolio_depleted_age is not None:
             readiness = "off_track"
+        elif fire_age != -1 and fire_age <= goal_data["target_retirement_age"]:
+            readiness = "on_track"
+        elif fire_age != -1 and fire_age <= goal_data["target_retirement_age"] + 5:
+            readiness = "close"
+        else:
+            readiness = "funded"
 
         # Retirement income projection (phase-based, from current age)
         income_projection = self._project_retirement_income(goal_data)

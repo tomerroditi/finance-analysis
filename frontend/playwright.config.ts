@@ -66,6 +66,7 @@ const READ_ONLY_SPECS = [
   "**/info-tooltip-aria-label.spec.ts",
   "**/investments.spec.ts",
   "**/liabilities.spec.ts",
+  "**/retirement-readiness.spec.ts",
   "**/route-prefetch.spec.ts",
   "**/rtl-chevrons.spec.ts",
 ];

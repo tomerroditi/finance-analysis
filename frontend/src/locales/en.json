@@ -1333,6 +1333,7 @@
       "readiness": "Readiness",
       "readiness_on_track": "On Track",
       "readiness_close": "Almost There",
+      "readiness_funded": "Funded for Life",
       "readiness_off_track": "Off Track",
       "notReachable": "Not reachable",
       "onTrackNoExtra": "On track!",

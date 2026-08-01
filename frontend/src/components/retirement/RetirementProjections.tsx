@@ -8,6 +8,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  ShieldCheck,
   XCircle,
   Info,
   Wand2,
@@ -40,6 +41,14 @@ const readinessConfig = {
     color: "text-amber-400",
     bg: "bg-amber-500/10",
     border: "border-amber-500/30",
+  },
+  // Solvent for life, just never hits the FIRE number — a working plan, so
+  // it reads blue (informational) rather than amber (warning) or red.
+  funded: {
+    icon: ShieldCheck,
+    color: "text-sky-400",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/30",
   },
   off_track: {
     icon: XCircle,
@@ -261,7 +270,9 @@ export function RetirementProjections({
                     ? "bg-emerald-500"
                     : projections.readiness === "close"
                       ? "bg-amber-500"
-                      : "bg-rose-500"
+                      : projections.readiness === "funded"
+                        ? "bg-sky-500"
+                        : "bg-rose-500"
                 }`}
                 style={{ width: `${Math.min(Math.max(projections.progress_pct, 0), 100)}%` }}
               />
