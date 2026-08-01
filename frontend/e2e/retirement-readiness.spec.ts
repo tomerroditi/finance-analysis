@@ -94,6 +94,19 @@ test.describe("Retirement readiness", () => {
       timeout: 30_000,
     });
     await expect(page.getByText("Off Track")).toHaveCount(0);
+
+    // --- the info icon explains what this state means ---
+    // Tap (not hover) so the assertion also covers touch, where the
+    // hover-only variant of this tooltip would be unreachable.
+    await page
+      .getByText("Readiness", { exact: true })
+      .first()
+      .locator("xpath=..")
+      .getByRole("button", { name: /More info/i })
+      .click();
+    await expect(
+      page.getByText(/pension and Bituach Leumi carry your retirement/i),
+    ).toBeVisible();
   });
 
   test("a depleting plan still reads as off track", async ({ page }) => {

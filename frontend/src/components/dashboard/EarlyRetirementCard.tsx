@@ -21,6 +21,7 @@ import {
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { Skeleton } from "../common/Skeleton";
+import { InfoTooltip } from "../common/InfoTooltip";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { NetWorthProjectionChart } from "../retirement/NetWorthProjectionChart";
 import { RetirementIncomeChart } from "../retirement/RetirementIncomeChart";
@@ -245,6 +246,13 @@ function KpiRow({ projections }: { projections: RetirementProjections }) {
           <span className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
             {t("earlyRetirement.projections.readiness")}
           </span>
+          <InfoTooltip
+            text={t(
+              `earlyRetirement.projections.readinessHelp_${projections.readiness}`,
+            )}
+            iconSize={11}
+            width={220}
+          />
         </div>
         <p className={`text-sm font-bold ${readiness.color} truncate`}>
           {t(`earlyRetirement.projections.readiness_${projections.readiness}`)}

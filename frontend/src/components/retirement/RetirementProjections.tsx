@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Target,
@@ -66,19 +66,39 @@ function formatSuggestionValue(field: SuggestionField, value: number): string {
   return `${value}`;
 }
 
+const TOOLTIP_MAX_WIDTH = 256; // matches the md:w-64 panel below
+
 function InfoTooltip({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [show, setShow] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  // The panel is hard-anchored beside the icon, so one near the right edge
+  // used to run off-screen (the readiness card's tooltip lost ~170px of its
+  // text). Flip it to the other side when it would overflow. Measured on
+  // both hover and tap, since either can open it.
+  const [flip, setFlip] = useState(false);
+  const place = () => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setFlip(rect.left + TOOLTIP_MAX_WIDTH > window.innerWidth);
+  };
   return (
-    <span className="group relative">
-      <Info
-        size={12}
-        className="text-[var(--text-muted)] cursor-help inline"
+    <span ref={wrapRef} className="group relative" onMouseEnter={place}>
+      {/* A real button, not a bare icon: keyboard-reachable, and screen
+          readers announce it. `getByRole("button")` in e2e depends on it. */}
+      <button
+        type="button"
+        aria-label={t("common.moreInfo")}
+        className="text-[var(--text-muted)] cursor-help inline-flex align-middle"
         onClick={(e) => {
           e.stopPropagation();
+          place();
           setShow((v) => !v);
         }}
-      />
-      <span className={`absolute z-10 w-48 sm:w-56 md:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-5 pointer-events-none ${show ? "block" : "hidden group-hover:block"}`}>
+      >
+        <Info size={12} />
+      </button>
+      <span className={`absolute z-10 w-48 sm:w-56 md:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 ${flip ? "end-5" : "start-5"} pointer-events-none ${show ? "block" : "hidden group-hover:block"}`}>
         {text}
       </span>
       {show && (
@@ -251,6 +271,11 @@ export function RetirementProjections({
             <span className="text-xs text-[var(--text-muted)]">
               {t("earlyRetirement.projections.readiness")}
             </span>
+            <InfoTooltip
+              text={t(
+                `earlyRetirement.projections.readinessHelp_${projections.readiness}`,
+              )}
+            />
           </div>
           <div className={`text-lg font-bold ${readiness.color}`}>
             {t(`earlyRetirement.projections.readiness_${projections.readiness}`)}
