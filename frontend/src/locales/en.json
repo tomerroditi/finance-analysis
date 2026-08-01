@@ -591,11 +591,8 @@
     "viewAllProjects": "View all projects",
     "trend": {
       "title": "Budget vs Actual",
-      "subtitle": "Last {{count}} months",
       "budget": "Budget",
       "actual": "Actual",
-      "show": "Show trend",
-      "hide": "Hide trend",
       "empty": "Not enough history yet"
     },
     "yearly": {
@@ -622,12 +619,28 @@
       "amountPlaceholder": "e.g. 20000",
       "tagsLabel": "Tags",
       "tagsPlaceholder": "Select tags",
-      "saveFailed": "Could not save the rule."
+      "saveFailed": "Could not save the rule.",
+      "pace": "Year pace",
+      "monthsElapsed": "{{elapsed}} of {{total}} months",
+      "overPace": "Over pace",
+      "allOnPace": "Everything is on pace.",
+      "ofPace": "{{pct}}% of pace",
+      "spentOfAllocation": "{{spent}} spent of {{total}} allocated"
     },
     "categoryConflict": {
       "banner": "These categories are in both a project and a monthly/yearly budget: {{names}}. Resolve to avoid double-tracking.",
-      "saveFailed": "Could not save — this category conflicts with another budget."
-    }
+      "saveFailed": "Could not save — this category conflicts with another budget.",
+      "chip": "{{names}} — category conflict"
+    },
+    "notices": {
+      "copiedChip": "Rules copied from {{month}}"
+    },
+    "editTotalBudget": "Edit total budget",
+    "projectTags": "Tags",
+    "projectTagEnvelopes": "envelopes",
+    "projectAvgPerMonth": "Avg per month",
+    "projectBurn": "Burn-down",
+    "projectActiveMonths": "Active months"
   },
   "budgetAlerts": {
     "title": "Budget Alerts",

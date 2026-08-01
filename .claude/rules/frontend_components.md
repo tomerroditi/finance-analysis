@@ -22,7 +22,6 @@ frontend/src/components/
 ├── retirement/          # Early retirement calculator components
 ├── layout/              # App layout shell (Layout, Sidebar, TopBar)
 ├── modals/              # Shared modals used across multiple features (ConfirmationModal, LinkRefundModal, SplitTransactionModal, etc.)
-├── BudgetProgressBar.tsx      # Shared across budget views
 ├── DateRangePicker.tsx        # Shared date range selector
 ├── ErrorBoundary.tsx          # Error boundary wrapper
 ├── SankeyChart.tsx            # Sankey flow diagram

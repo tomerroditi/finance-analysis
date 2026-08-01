@@ -148,8 +148,16 @@ test.describe("Yearly budget", () => {
     const createdRow = ruleRow(page, ruleName);
     await expect(createdRow).toBeVisible({ timeout: 10_000 });
     await expect(createdRow).toContainText(freeCategory);
-    // The progress fill is an inline-styled div driven by percent spent.
-    await expect(createdRow.locator("div[style*='width']").first()).toBeVisible();
+    // The progress fill is an inline-styled element driven by percent spent.
+    // It is a <span> now: the ledger row's clickable area is a <button>, and
+    // a <div> inside a button is not valid phrasing content.
+    // A brand-new rule has no spend yet, so the fill is 0%-wide — assert it
+    // is rendered and inline-width-driven rather than "visible", which a
+    // zero-width element never is.
+    await expect(createdRow.locator("[style*='width']").first()).toHaveAttribute(
+      "style",
+      /width:/,
+    );
 
     // ---- 2. Attempt a colliding yearly rule and assert the inline error. ----
     await page.getByRole("button", { name: /add yearly rule/i }).click();
