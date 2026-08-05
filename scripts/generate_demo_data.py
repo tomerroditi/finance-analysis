@@ -2441,7 +2441,16 @@ def create_retirement_goal(session):
     """Create a retirement goal record for FIRE page testing.
 
     Based on the Cohen family profile: two incomes, mortgage, KH + pension
-    balances from the insurance accounts. Target is early retirement at 55.
+    balances from the insurance accounts. Target is early retirement at 55,
+    and the plan is deliberately ON TRACK so Demo Mode shows the healthy
+    readiness path (green readiness card, 0 extra savings needed).
+
+    The last 12 tracked months are dominated by the wedding + renovation
+    arcs, which push the calculated average expenses above income. The goal
+    therefore ships with `monthly_expenses_override` set to the household's
+    steady-state spending (~22k) — exactly what the override fields exist
+    for — which also demos the "reset to calculated" affordance on the
+    Avg Monthly Expenses snapshot card.
 
     The KH balance/contribution numbers below are the SUM of the three
     Keren Hishtalmut accounts seeded in generate_insurance_data
@@ -2462,9 +2471,13 @@ def create_retirement_goal(session):
         gender="male",
         target_retirement_age=55,
         life_expectancy=90,
-        monthly_expenses_in_retirement=20000.0,
+        # Lower than today's ~22k steady state: the mortgage is paid off and
+        # the kids are independent by 55.
+        monthly_expenses_in_retirement=16500.0,
         inflation_rate=0.025,
-        expected_return_rate=0.045,
+        # Nominal long-term return of a diversified equity-leaning portfolio;
+        # the calculator converts it to a real (inflation-adjusted) rate.
+        expected_return_rate=0.07,
         withdrawal_rate=0.035,
         pension_monthly_payout_estimate=8500.0,
         keren_hishtalmut_balance=kh_total_balance,
@@ -2472,6 +2485,8 @@ def create_retirement_goal(session):
         bituach_leumi_eligible=1,
         bituach_leumi_monthly_estimate=2800.0,
         other_passive_income=0.0,
+        # Steady-state spending without the one-off wedding/renovation arcs.
+        monthly_expenses_override=22000.0,
     ))
     session.flush()
 

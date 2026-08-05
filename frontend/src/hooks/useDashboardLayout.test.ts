@@ -35,6 +35,20 @@ describe("default visibility", () => {
     expect(isBetaCard("cash_flow")).toBe(false);
     expect(isBetaCard("category")).toBe(false);
   });
+
+  it("ships the retirement card hidden, full-width, and not beta", () => {
+    const { order, hidden } = normalize({});
+    expect(order).not.toContain("retirement");
+    expect(hidden).toContain("retirement");
+    expect(cardSize("retirement")).toBe("full");
+    expect(isBetaCard("retirement")).toBe(false);
+  });
+
+  it("moves the retirement card to hidden for existing stored layouts that never saw it", () => {
+    const { order, hidden } = normalize({ v: 3, order: ["budget", "recent"], hidden: [] });
+    expect(order).not.toContain("retirement");
+    expect(hidden).toContain("retirement");
+  });
 });
 
 describe("v2 -> v3 migration of the old 'charts' card", () => {

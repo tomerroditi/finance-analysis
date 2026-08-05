@@ -99,6 +99,53 @@ balance ≈ monthly_contribution × 60 months × (1.13 .. 1.19 growth factor)
 
 Use this as a sanity check whenever a balance is edited. If you change a monthly contribution or the gross salary it derives from, recompute the target balance with this rule of thumb. The `RetirementGoal` row's `keren_hishtalmut_balance` and `keren_hishtalmut_monthly_contribution` must equal the sum across the three KH accounts — they are already computed this way; don't hard-code them again.
 
+### KH accounts are ALSO investments (auto-sync — don't double count)
+
+The demo DB contains **six** rows in `investments`: the three manual ones
+(Stock Market Fund, Savings Plan, Corporate Bond) **plus three
+`type='hishtalmut'` investments** (`insurance_policy_id` = KH-DEMO-001/002/OLD)
+with `scraped` balance snapshots — mirroring what
+`InsuranceSyncMixin.sync_from_insurance` creates for real users when KH
+policies are scraped. Because net worth values investments snapshot-first,
+**the 255k KH is part of the demo's tracked net worth**. The retirement
+calculator swaps it out via `status["tracked_kh_value"]` before adding the
+goal's KH bucket (see `.claude/rules/retirement_calculations.md`). Keep the
+synced-investment balances identical to the `insurance_accounts` balances,
+and never add the KH as extra manual-investment *transactions* — its value
+must flow only through the scraped snapshots.
+
+### Retirement plan must stay ON TRACK
+
+The demo `RetirementGoal` is deliberately tuned so Demo Mode shows the
+healthy readiness path — **`readiness == "on_track"`, FIRE age ≤ 55,
+`monthly_savings_needed == 0`** — and the dashboard early-retirement card
+e2e (`dashboard-retirement-card.spec.ts`) asserts the green "On Track"
+readiness, so drifting off track is a CI failure, not just a cosmetic
+change.
+
+The last 12 tracked months include the wedding + renovation arcs, which
+push calculated average expenses above income; the goal therefore ships
+with `monthly_expenses_override=22000` (steady-state spending — this also
+demos the snapshot-override reset button, which
+`retirement-snapshot-fields.spec.ts` asserts is visible exactly once
+initially), `expected_return_rate=0.07` (nominal), and
+`monthly_expenses_in_retirement=16500`.
+
+After ANY change to demo transactions, balances, insurance accounts, or
+the calculator math, re-verify readiness under **both** demo date-shift
+variants (all-months-complete AND running-month-excluded — the
+date-shifted app excludes the running month from the averages):
+
+```python
+# against the freshly generated backend/resources/demo_data.db
+svc = RetirementService(session)
+svc.get_projections()  # readiness must be "on_track", with fire_age
+                       # comfortably below 55 (>= 1 year of buffer)
+```
+
+If it drifts, re-tune the goal params in `create_retirement_goal`
+(keep them realistic — see the docstring) rather than weakening the specs.
+
 ### Mashlima account rule
 
 A Mashlima account should exist **only if** that individual's gross salary exceeds `makifa_salary_cap` (25,000). Do not create a Mashlima account for someone below the cap — the teacher, for instance, has only a Makifa account. If you change `tech_gross` below the cap, delete the Tech Mashlima account (PN-DEMO-003) or the script will emit 0-amount transactions.
@@ -194,6 +241,7 @@ When an e2e/UI test needs data the dataset lacks:
 1. `poetry run python scripts/generate_demo_data.py` — must print non-zero row counts for every table it touches and end without exceptions.
 2. `poetry run pytest tests/backend/ -x -q` — must stay green; the full suite does not depend on the exact numbers but does load the DB in some fixtures.
 3. Sanity-check totals against the story (`SELECT SUM(amount) FROM ...`): salaries over 3 years should be ~1.2M; investments deposited ~125k; wedding paid ≥ 90k of the 120k budget; each pension/KH balance should sit within the `monthly × 60 × 1.13..1.19` band.
+4. Re-verify the retirement plan is still **on_track** (see "Retirement plan must stay ON TRACK" above) — the dashboard retirement-card e2e asserts it.
 4. Commit the `.db` and the `.py` together so the bundled template always matches the generator.
 
 ## Common pitfalls

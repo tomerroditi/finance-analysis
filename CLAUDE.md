@@ -66,7 +66,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
-- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing
+- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`)
 - **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
@@ -79,6 +79,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Project ↔ monthly/yearly category exclusion:** a category can't be both project-owned and used by a monthly/yearly rule — the new-project category picker (`GET /budget/projects/available`) filters out any category already claimed by a monthly/yearly rule, and monthly/yearly rule creation blocks categories already claimed by a project. Existing overlaps (e.g. from data predating this rule) surface via `GET /budget/category-conflicts` and the `CategoryConflictBanner` on the Budget page — non-blocking, dismissible.
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
+- **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style
 

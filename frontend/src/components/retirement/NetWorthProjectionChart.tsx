@@ -15,35 +15,46 @@ import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/c
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
 
-interface DataPoint {
-  age: number;
-  net_worth_optimistic: number;
-  net_worth_baseline: number;
-  net_worth_conservative: number;
-}
+import {
+  truncateProjectionAtDepletion,
+  type ProjectionPoint,
+} from "./projectionTruncation";
 
 interface Props {
-  data: DataPoint[];
+  data: ProjectionPoint[];
   fireNumber: number;
   targetAge: number;
+  /** Gender-resolved full pension age (67 male / 65 female). */
+  pensionAge?: number;
 }
 
-export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) {
+export function NetWorthProjectionChart({
+  data,
+  fireNumber,
+  targetAge,
+  pensionAge = 67,
+}: Props) {
   const { t } = useTranslation();
 
   const rows = useMemo(
     () =>
-      data.map((d) => ({
+      truncateProjectionAtDepletion(data).map((d) => ({
         ...d,
-        // Conservative→optimistic range rendered as a band area.
-        band: [d.net_worth_conservative, d.net_worth_optimistic] as [number, number],
+        // Conservative→optimistic range rendered as a band area — ends
+        // together with whichever of its two bounding lines stops first.
+        band:
+          d.net_worth_conservative != null && d.net_worth_optimistic != null
+            ? ([d.net_worth_conservative, d.net_worth_optimistic] as [
+                number,
+                number,
+              ])
+            : null,
       })),
     [data],
   );
 
-  const ages = data.map((d) => d.age);
-  const minAge = ages[0] ?? 0;
-  const maxAge = ages[ages.length - 1] ?? 0;
+  const minAge = rows[0]?.age ?? 0;
+  const maxAge = rows[rows.length - 1]?.age ?? 0;
   const ageTicks = useMemo(() => {
     const ticks: number[] = [];
     for (let a = Math.ceil(minAge / 5) * 5; a <= maxAge; a += 5) ticks.push(a);
@@ -124,32 +135,38 @@ export function NetWorthProjectionChart({ data, fireNumber, targetAge }: Props) 
               fontSize: 11,
             }}
           />
-          <ReferenceLine
-            x={targetAge}
-            stroke="#a855f7"
-            strokeWidth={2}
-            strokeDasharray="8 4 2 4"
-            label={{
-              value: t("earlyRetirement.charts.retirementAge"),
-              angle: -90,
-              position: "insideBottomLeft",
-              fill: "#a855f7",
-              fontSize: 11,
-            }}
-          />
-          <ReferenceLine
-            x={67}
-            stroke="#6b7280"
-            strokeWidth={1}
-            strokeDasharray="2 3"
-            label={{
-              value: t("earlyRetirement.charts.pensionAge"),
-              angle: -90,
-              position: "insideBottomLeft",
-              fill: "#6b7280",
-              fontSize: 10,
-            }}
-          />
+          {/* Skip the marker when the chart is truncated before target age */}
+          {targetAge <= maxAge && (
+            <ReferenceLine
+              x={targetAge}
+              stroke="#a855f7"
+              strokeWidth={2}
+              strokeDasharray="8 4 2 4"
+              label={{
+                value: t("earlyRetirement.charts.retirementAge"),
+                angle: -90,
+                position: "insideBottomLeft",
+                fill: "#a855f7",
+                fontSize: 11,
+              }}
+            />
+          )}
+          {/* Skip the marker when the chart is truncated before pension age */}
+          {pensionAge <= maxAge && (
+            <ReferenceLine
+              x={pensionAge}
+              stroke="#6b7280"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              label={{
+                value: t("earlyRetirement.charts.pensionAge"),
+                angle: -90,
+                position: "insideBottomLeft",
+                fill: "#6b7280",
+                fontSize: 10,
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

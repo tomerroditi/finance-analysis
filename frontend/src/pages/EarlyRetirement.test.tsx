@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { renderWithProviders } from "../test-utils";
@@ -6,9 +6,14 @@ import { server } from "../mocks/server";
 import { mockRetirementProjections } from "../mocks/handlers";
 import { makeQueryKeys } from "../services/queryKeys";
 import type { RetirementProjections } from "../services/api";
+import { useRetirementWorkspaceStore } from "../stores/retirementWorkspaceStore";
 import { EarlyRetirement } from "./EarlyRetirement";
 
 describe("EarlyRetirement", () => {
+  // The workspace store is module-global — reset it so tests stay isolated.
+  beforeEach(() => {
+    useRetirementWorkspaceStore.getState().clear();
+  });
   describe("current status section", () => {
     it("renders the current financial status section", async () => {
       renderWithProviders(<EarlyRetirement />);
@@ -21,8 +26,10 @@ describe("EarlyRetirement", () => {
 
     it("displays financial status metrics", async () => {
       renderWithProviders(<EarlyRetirement />);
+      // "Net Worth" also appears in chart headings and tooltip copy —
+      // assert at least one element renders it.
       await waitFor(() => {
-        expect(screen.getByText(/Net Worth/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/Net Worth/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -47,13 +54,51 @@ describe("EarlyRetirement", () => {
       // The "Israeli Savings Vehicles" cluster on the form renders
       // dedicated inputs for Keren Hishtalmut and Monthly Pension.
       await waitFor(() => {
+        // Labels also appear inside the info-tooltip copy — getAllByText
+        // asserts at least one element is present.
         expect(
-          screen.getByText(/Keren Hishtalmut Balance/i),
-        ).toBeInTheDocument();
-        // "Monthly Pension" appears in both the form label and the
-        // breakdown table — getAllByText asserts at least one is present.
+          screen.getAllByText(/Keren Hishtalmut Balance/i).length,
+        ).toBeGreaterThan(0);
         expect(screen.getAllByText(/Monthly Pension/i).length).toBeGreaterThan(0);
       });
+    });
+  });
+
+  describe("scraped auto-fill", () => {
+    // Regression: scraped amounts are fractional (averages, agorot) but the
+    // currency inputs are whole-shekel (implicit step=1). An unrounded fill
+    // left the input browser-invalid ("Please enter a valid value…").
+    it("rounds fractional scraped values to whole shekels; deposit never fills pension payout", async () => {
+      server.use(
+        http.get("/api/retirement/goal", () => HttpResponse.json(null)),
+        http.get("/api/retirement/scraped-defaults", () =>
+          HttpResponse.json({
+            keren_hishtalmut_balance: 255000.55,
+            keren_hishtalmut_monthly_contribution: 2971.33,
+            pension_monthly_deposit: 1571.44,
+            avg_monthly_salary: 31092.73833333333,
+          }),
+        ),
+      );
+      renderWithProviders(<EarlyRetirement />);
+
+      const inputValues = () =>
+        screen
+          .getAllByRole("spinbutton")
+          .map((el) => (el as HTMLInputElement).value);
+
+      // The auto-fill lands once the scraped defaults arrive — rounded.
+      await waitFor(() => expect(inputValues()).toContain("31093"));
+      const values = inputValues();
+      expect(values).toContain("255001");
+      expect(values).toContain("2971");
+      expect(values).not.toContain("31092.73833333333");
+      expect(values).not.toContain("255000.55");
+      expect(values).not.toContain("2971.33");
+      // The pension DEPOSIT (contribution into the fund) must never be
+      // auto-filled into the pension PAYOUT estimate.
+      expect(values).not.toContain("1571");
+      expect(values).not.toContain("1571.44");
     });
   });
 
@@ -125,6 +170,53 @@ describe("EarlyRetirement", () => {
 
       expect(container.textContent).toContain("7,777,777");
       expect(container.textContent).not.toContain("3,600,000");
+    });
+
+    // Regression: the projections section rendered a skeleton whenever the
+    // query was merely REFETCHING (window refocus after staleTime, the
+    // global post-mutation sweep) — every return to the tab looked like a
+    // full page reload. Cached values must stay on screen.
+    it("keeps cached projections on screen during a background refetch", async () => {
+      const { container, queryClient } = renderWithProviders(
+        <EarlyRetirement />,
+      );
+      await waitFor(() =>
+        expect(container.textContent).toContain("3,600,000"),
+      );
+
+      act(() => {
+        void queryClient.invalidateQueries();
+      });
+
+      // Synchronously after invalidation the query is fetching — the page
+      // must still show the cached numbers, not a skeleton.
+      expect(container.textContent).toContain("3,600,000");
+    });
+
+    // Regression: the Calculate preview and form edits lived in component
+    // state, so navigating to another page (which unmounts this one) wiped
+    // them — every re-entry looked like a full page reload. The session
+    // workspace store must restore the preview on remount.
+    it("keeps the Calculate preview across unmount/remount (route navigation)", async () => {
+      usePreviewHandlers();
+      const first = renderWithProviders(<EarlyRetirement />);
+      await waitFor(() =>
+        expect(first.container.textContent).toContain("3,600,000"),
+      );
+      submitCalculate();
+      await waitFor(() =>
+        expect(first.container.textContent).toContain("7,777,777"),
+      );
+
+      // Simulate route navigation: unmount the page, then mount it fresh.
+      first.unmount();
+      const second = renderWithProviders(<EarlyRetirement />);
+
+      // The preview is back immediately and still shadows the saved plan.
+      await waitFor(() =>
+        expect(second.container.textContent).toContain("7,777,777"),
+      );
+      expect(second.container.textContent).not.toContain("3,600,000");
     });
 
     it("leaves the saved-plan cache entry untouched", async () => {

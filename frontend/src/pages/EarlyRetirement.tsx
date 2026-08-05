@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Target, BarChart3 } from "lucide-react";
@@ -7,6 +7,8 @@ import {
   type RetirementSuggestions,
 } from "../services/api";
 import { useQueryKeys } from "../hooks/useQueryKeys";
+import { useDemoMode } from "../context/DemoModeContext";
+import { useRetirementWorkspaceStore } from "../stores/retirementWorkspaceStore";
 import {
   RetirementGoalForm,
   type RetirementPreview,
@@ -18,13 +20,26 @@ type SuggestionField = keyof RetirementSuggestions;
 export function EarlyRetirement() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
+  const { isDemoMode } = useDemoMode();
   const [pendingAdjust, setPendingAdjust] = useState<{
     field: string;
     value: number;
+    seq: number;
   } | null>(null);
+  // Per-click id so applying the SAME suggestion twice still re-applies.
+  const adjustSeq = useRef(0);
   // Unsaved "what if" results from the form's Calculate / Reset / Adjust
-  // flows. Kept out of the query cache on purpose — see RetirementPreview.
-  const [preview, setPreview] = useState<RetirementPreview | null>(null);
+  // flows. Kept out of the query cache on purpose (see RetirementPreview) and
+  // held in the session workspace store so route navigation — which unmounts
+  // this page — doesn't wipe what the user just calculated.
+  const preview = useRetirementWorkspaceStore((s) =>
+    s.demo === isDemoMode ? s.preview : null,
+  );
+  const setPreview = useCallback(
+    (next: RetirementPreview | null) =>
+      useRetirementWorkspaceStore.getState().setPreview(isDemoMode, next),
+    [isDemoMode],
+  );
 
   const { data: goal, isLoading: goalLoading } = useQuery({
     queryKey: qk.retirement.goal(),
@@ -38,11 +53,7 @@ export function EarlyRetirement() {
 
   // Projections from the SAVED goal. A preview never touches this query —
   // it shadows it in `shownProjections` below and disappears on save.
-  const {
-    data: projections,
-    isLoading: projectionsLoading,
-    isFetching: projectionsFetching,
-  } = useQuery({
+  const { data: projections, isLoading: projectionsLoading } = useQuery({
     queryKey: qk.retirement.projections(),
     queryFn: () => retirementApi.getProjections().then((r) => r.data),
     enabled: !!goal && goal.id !== -1,
@@ -59,15 +70,18 @@ export function EarlyRetirement() {
   });
 
   const handleAdjust = (field: SuggestionField, value: number) => {
-    setPendingAdjust({ field, value });
+    adjustSeq.current += 1;
+    setPendingAdjust({ field, value, seq: adjustSeq.current });
   };
 
-  // A preview wins over the saved plan, and suppresses the loading skeleton:
-  // the saved-plan query refetching in the background must never blank out
-  // numbers the user just calculated.
+  // A preview wins over the saved plan. Background refetches (window
+  // refocus after staleTime, the global post-mutation sweep) must never
+  // blank the section — cached values stay on screen while the refetch
+  // runs silently. The skeleton renders only on the true first load
+  // (`isLoading`: no cached data at all); gating it on `isFetching` made
+  // every return to the tab look like a full page reload.
   const shownProjections = preview?.projections ?? projections;
   const shownSuggestions = preview?.suggestions ?? suggestions;
-  const isBusy = projectionsFetching && !preview;
 
   return (
     <div className="flex flex-col gap-4 md:gap-6 p-4 md:p-6">
@@ -82,7 +96,6 @@ export function EarlyRetirement() {
           <RetirementGoalForm
             goal={goal ?? null}
             status={status ?? null}
-            isCalculating={isBusy}
             pendingAdjust={pendingAdjust}
             onAdjustApplied={() => setPendingAdjust(null)}
             onPreview={setPreview}
@@ -96,7 +109,7 @@ export function EarlyRetirement() {
           icon={<BarChart3 size={18} className="text-purple-400" />}
           title={t("earlyRetirement.sections.projections")}
         >
-          {(projectionsLoading && !preview) || isBusy ? (
+          {projectionsLoading && !preview ? (
             <ProjectionsSkeleton />
           ) : shownProjections ? (
             <RetirementProjections
