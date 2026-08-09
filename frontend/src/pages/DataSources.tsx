@@ -24,7 +24,7 @@ import {
 } from "../services/api";
 import type { BankBalance, CredentialAccount } from "../services/api";
 
-import { useScraping } from "../hooks/useScraping";
+import { accountKey, useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
 import { Skeleton } from "../components/common/Skeleton";
 import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
@@ -74,12 +74,12 @@ export function DataSources() {
 
   const {
     startScraper, scrapeAll, submitTfa, resendTfa, abortScraper,
-    getScraperForAccount, isAnyScraping, tfaIsPending,
-    resendCooldownRemaining, resendErrors,
+    getScraperForAccount, isStartPending, isTfaPending, isAnyScraping,
+    activeScraperCount, resendCooldownRemaining, resendErrors, tfaCodes,
+    setTfaCode,
   } = useScraping();
 
   const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(null);
-  const [tfaCodes, setTfaCodes] = useState<Record<string, string>>({});
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: qk.credentials.accounts(),
@@ -286,7 +286,9 @@ export function DataSources() {
               onChange={(e) =>
                 setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
               }
-              disabled={isAnyScraping}
+              // Stays usable while scrapes run: the period is read when a
+              // scrape STARTS, so changing it only affects the next launch —
+              // and with parallel scraping there is almost always one running.
               className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
@@ -296,12 +298,19 @@ export function DataSources() {
             <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
+            // Stays clickable while scrapes are running — `scrapeAll` skips
+            // accounts that already have an active scraper and launches the
+            // rest in parallel, so this is how a user picks up sources they
+            // added (or that failed) mid-run. Only disabled when there is
+            // genuinely nothing left to launch.
             onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
-            disabled={isAnyScraping || !accounts?.length}
+            disabled={!accounts?.length || activeScraperCount >= accounts.length}
             className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
-            {isAnyScraping ? t("dataSources.scraping") : t("dataSources.scrapeAll")}
+            {isAnyScraping
+              ? t("dataSources.scrapeAllRunning", { count: activeScraperCount })
+              : t("dataSources.scrapeAll")}
           </button>
           <button
             onClick={() => setIsAddOpen(true)}
@@ -339,7 +348,9 @@ export function DataSources() {
               const lastScrape = lastScrapes?.find(
                 (s) => s.service === acc.service && s.provider === acc.provider && s.account_name === acc.account_name,
               );
-              const tfaKey = `${acc.service}_${acc.provider}_${acc.account_name}`;
+              // Same key the store uses, so a half-typed code survives
+              // navigating away and back.
+              const tfaKey = accountKey(acc);
               const bal = getAccountBalance(acc.provider, acc.account_name);
 
               return (
@@ -350,15 +361,13 @@ export function DataSources() {
                   lastScrapeDate={lastScrape?.last_scrape_date}
                   balance={bal}
                   scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
-                  isAnyScraping={isAnyScraping}
-                  tfaIsPending={tfaIsPending}
+                  isStartPending={isStartPending(acc)}
+                  tfaIsPending={isTfaPending(acc)}
                   tfaCode={tfaCodes[tfaKey] || ""}
-                  onTfaCodeChange={(code) =>
-                    setTfaCodes((prev) => ({ ...prev, [tfaKey]: code }))
-                  }
+                  onTfaCodeChange={(code) => setTfaCode(tfaKey, code)}
                   onSubmitTfa={(code) => {
                     submitTfa(scraper!, code);
-                    setTfaCodes((prev) => ({ ...prev, [tfaKey]: "" }));
+                    setTfaCode(tfaKey, "");
                   }}
                   onResendTfa={() => resendTfa(scraper!)}
                   resendCooldownRemaining={

@@ -89,7 +89,7 @@ const content: DataFlowContent = {
       title: "Scraper Framework", tag: "Async",
       sections: [
         { heading: "Architecture", items: ["BaseScraper: initialize \u2192 login \u2192 fetch_data \u2192 terminate", "BrowserScraper: Playwright with stealth anti-detection", "ApiScraper: httpx async HTTP for API-only sources"] },
-        { heading: "Features", items: ["2FA/OTP handling with async callback", "Configurable scraping period (days back)", "Screenshot capture on failure", "Daily rate limit (one scrape per account per day)", "5-minute timeout"] },
+        { heading: "Features", items: ["2FA/OTP handling with async callback", "Parallel per-account runs (single-flight guard per account only)", "Configurable scraping period (days back)", "Screenshot capture on failure", "Daily rate limit (one scrape per account per day)", "5-minute timeout"] },
         { heading: "Output", text: "ScrapingResult { success, accounts: [{ account_number, transactions, balance }], error_type, error_message }" },
       ],
     },

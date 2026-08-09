@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Sidebar } from "./Sidebar";
+import { ScrapingTracker } from "../ScrapingTracker";
 import { useAppStore } from "../../stores/appStore";
 
 export function Layout() {
@@ -13,6 +14,9 @@ export function Layout() {
 
   return (
     <div className="min-h-dvh bg-[var(--background)]">
+      {/* Outside <main> and outside the router outlet: scraper polling must
+          not restart when the route changes. */}
+      <ScrapingTracker />
       <Sidebar />
       <main
         className={`transition-all duration-300 ${

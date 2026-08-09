@@ -55,6 +55,36 @@ Abstract class defining the interface. Key abstract properties:
 
 **Cancellation:** User enters "cancel" -> `scraper.otp_code == scraper.CANCEL` -> logged as `CANCELED`
 
+## Concurrency: parallel across accounts, single-flight per account
+
+Accounts scrape **in parallel**. `ScrapingService.start_scraping_single`
+launches each adapter on the main event loop and the only mutual exclusion
+is per account, so a user clicking one source after another gets several
+concurrent scrapes (and "Scrape All" fans out over every idle account).
+
+Two invariants keep that safe — don't break either:
+
+1. **The launch critical section is locked.** The `_active_scrapers`
+   membership check, the history-row insert and the registration all happen
+   under `scraping_service._launch_lock`. `start_scraping_single` runs in a
+   FastAPI threadpool worker, so without the lock two starts for the same
+   account can both pass the check and both launch — two scrapes and two OTP
+   SMS for one account, with the second `/otp/prepare` superseding the code
+   the user is already reading. Keep slow I/O (keyring, start-date lookup)
+   *outside* the lock: the async resend-relaunch path calls this from the
+   event-loop thread.
+2. **Register before launching.** `adapter.run()` executes on the event-loop
+   thread, concurrently with the caller, and its `finally` pops the
+   registries by identity. Launch first and a scrape that fails immediately
+   finishes its cleanup before the registration lands — leaving a dead
+   adapter in `_active_scrapers` that blocks that account until restart.
+
+`GET /api/scraping/active` exposes the live registries (joined with each
+process's DB status) so a freshly loaded client can re-adopt running scrapes.
+It reads the **registries, not the history table** — rows left `in_progress`
+by a killed process would otherwise be resurrected forever as fake running
+scrapes with process ids nothing can answer.
+
 ## Scraping History
 
 Tracked in `scraping_history` table for audit and rate limiting:

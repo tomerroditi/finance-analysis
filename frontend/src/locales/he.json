@@ -866,6 +866,7 @@
     "deleteAccount": "מחק חשבון",
     "scrape": "שליפת נתונים",
     "scrapeAll": "שלוף הכל",
+    "scrapeAllRunning": "שלוף הכל ({{count}} בתהליך)",
     "lastScraped": "שליפה אחרונה",
     "neverScraped": "לא נשלף אף פעם",
     "provider": "ספק",

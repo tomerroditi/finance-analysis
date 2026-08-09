@@ -26,7 +26,18 @@ interface AccountCardProps {
   balance: BankBalance | undefined;
   /** Whether this account was scraped today (gates balance entry + badge). */
   scrapedToday: boolean;
-  isAnyScraping: boolean;
+  /**
+   * True while this account's own `/scraping/start` request is in flight.
+   * Scraping is per-account and parallel, so only this account's buttons wait
+   * — a scrape running elsewhere never blocks starting this one.
+   */
+  isStartPending: boolean;
+  /**
+   * True while THIS account's 2FA code is being verified. Must stay
+   * per-account: two accounts can sit on a 2FA prompt simultaneously, and a
+   * shared flag would grey out one card's Verify/Resend while the other's
+   * code is in flight.
+   */
   tfaIsPending: boolean;
   tfaCode: string;
   onTfaCodeChange: (code: string) => void;
@@ -51,7 +62,7 @@ export function AccountCard({
   lastScrapeDate,
   balance,
   scrapedToday,
-  isAnyScraping,
+  isStartPending,
   tfaIsPending,
   tfaCode,
   onTfaCodeChange,
@@ -200,18 +211,25 @@ export function AccountCard({
             </button>
           ) : (
             <button
+              // Deliberately NOT disabled while other accounts scrape: sources
+              // are independent and run in parallel, so the user can click one
+              // after another. Only this account's in-flight start is guarded.
               onClick={() => onStartScrape()}
-              disabled={isAnyScraping}
+              disabled={isStartPending}
               className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={t("dataSources.scrapeThisSource")}
             >
-              <PlayCircle size={20} />
+              {isStartPending ? (
+                <RefreshCw size={20} className="animate-spin" />
+              ) : (
+                <PlayCircle size={20} />
+              )}
             </button>
           )}
           {acc.provider === "onezero" && (
             <button
               onClick={() => onStartScrape({ force2fa: true })}
-              disabled={isAnyScraping}
+              disabled={isStartPending || isActive}
               className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={t("dataSources.forceTfaTitle")}
               aria-label={t("dataSources.forceTfa")}

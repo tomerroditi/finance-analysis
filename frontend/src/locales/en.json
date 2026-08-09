@@ -866,6 +866,7 @@
     "deleteAccount": "Delete Account",
     "scrape": "Scrape",
     "scrapeAll": "Scrape All",
+    "scrapeAllRunning": "Scrape All ({{count}} running)",
     "lastScraped": "Last Scraped",
     "neverScraped": "Never Scraped",
     "provider": "Provider",

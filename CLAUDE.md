@@ -232,6 +232,7 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 - SQLite stores booleans as `0`/`1` integers — in React JSX, `{0 && <Component />}` renders "0". Always use `!!value &&` or `value > 0 &&` for SQLite boolean fields in JSX conditionals
 - Frontend `TransactionsTable.tsx` changes require updating all consumers: `Transactions.tsx` and `TransactionCollapsibleList.tsx`
 - Scraping has 5-minute timeout and daily rate limit (one scrape per account per day)
+- **Scraping is parallel across accounts, single-flight per account.** The frontend keeps scraper state (running/waiting-for-2FA, typed OTP codes) in a **global Zustand store** (`stores/scrapingStore.ts`) with one app-wide poller mounted by `Layout` (`components/ScrapingTracker.tsx`) — so navigating away doesn't drop a scrape or an unanswerable 2FA prompt. A cold load re-adopts live scrapes from `GET /api/scraping/active`. Never gate a per-account scrape button on `isAnyScraping`, and keep the backend's launch lock + register-before-launch ordering intact (see `.claude/rules/backend_scraper.md` → "Concurrency")
 - CORS only allows localhost:5173 by default (configurable via `CORS_ORIGINS` env var)
 - Closing an investment auto-creates a balance snapshot of 0 on the last transaction date (not the closure date)
 - Investment balance snapshots override transaction-based balance when present (snapshot-first, transaction fallback)

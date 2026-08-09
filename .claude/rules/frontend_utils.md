@@ -52,7 +52,8 @@ Custom React hooks for shared data fetching and stateful logic.
 | `useTaggingRules()` | 4 duplicate tagging rule queries | `["taggingRules"]` |
 | `useTransactionFilters()` | Complex filter state management | N/A (local state) |
 | `useCategoryTagCreate()` | Category/tag creation mutation logic | N/A (mutation) |
-| `useScraping()` | Scraping progress state machine | N/A (state) |
+| `useScraping()` | Read + act on scraping state (state itself lives in `stores/scrapingStore.ts`) | N/A (store) |
+| `useScrapingPoller()` | Polls every live scraper + adopts backend-side ones. Mounted **once**, by `Layout` via `ScrapingTracker` | N/A (side effect) |
 | `useScrollLock(isOpen)` | Body scroll prevention for modals | N/A (side effect) |
 
 **When to create a new shared hook:**
@@ -83,6 +84,7 @@ Zustand stores for global client-side state.
 | Store | Purpose |
 |-------|---------|
 | `appStore.ts` | App-wide UI state: sidebar collapse, mobile sidebar, language, demo mode, date range |
+| `scrapingStore.ts` | Live scraper state: running/2FA-waiting scrapers, resend cooldowns, half-typed OTP codes, in-flight starts. Global because scrapes outlive the Data Sources page — see `frontend_pages.md` |
 
 **Use Zustand for:** UI state shared across unrelated components (sidebar, language, date range).
 **Use React Query for:** All server/API data. Never duplicate API data in Zustand.

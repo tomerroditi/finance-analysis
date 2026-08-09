@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -27,6 +28,25 @@ from backend.scraper.adapter import (
 # safe from any thread, including the loop's own thread (the async
 # resend-relaunch path).
 _main_loop: "asyncio.AbstractEventLoop | None" = None
+
+# Serializes the single-flight critical section in
+# ``start_scraping_single``: the ``_active_scrapers`` membership check, the
+# history-row insert, and the registration of the new adapter.
+#
+# Without it, the check and the registration are separated by real work (a
+# DB insert, adapter construction), and ``start_scraping_single`` runs in a
+# FastAPI threadpool worker — so two starts for the same account landing at
+# the same moment could both see an empty registry and both launch, firing
+# two scrapes (and two OTP SMS) for one account. The UI now lets the user
+# fire several accounts in quick succession, which makes that interleaving
+# far more reachable than it was when one scrape at a time was allowed.
+#
+# Only ever held for local, non-awaiting work (a SQLite insert and object
+# construction), never across ``_launch_adapter`` — so the async
+# resend-relaunch path (``resend_2fa_code`` → ``start_scraping_single``,
+# running on the event loop thread) can't stall the loop for meaningful
+# time, and can't deadlock.
+_launch_lock = threading.Lock()
 
 
 def set_main_loop(loop: "asyncio.AbstractEventLoop | None") -> None:
@@ -159,6 +179,62 @@ class ScrapingService:
             )
         return result
 
+    def get_active_scrapes(self) -> List[Dict]:
+        """List every scrape currently alive in this process.
+
+        Lets a freshly loaded client recover the scraping state it can't
+        otherwise know about: which accounts are mid-scrape and which are
+        parked waiting for a 2FA code. The frontend keeps scraper state in
+        memory (a reload, or opening the app in a second tab, starts empty),
+        and a ``waiting_for_2fa`` scraper is invisible — and therefore
+        unanswerable — until the client learns its ``process_id``.
+
+        Truth comes from the in-process registries (``_active_scrapers`` plus
+        ``_tfa_scrapers_waiting``), not from the history table: rows left
+        ``in_progress`` by a killed process would otherwise resurface forever
+        as fake running scrapes. The registries are empty after a restart, so
+        orphaned rows are correctly reported as nothing running. The DB is
+        still consulted for each live adapter's current status.
+
+        Returns
+        -------
+        list[dict]
+            One record per live scrape with ``process_id``, ``service``,
+            ``provider``, ``account_name`` and ``status`` (``in_progress`` or
+            ``waiting_for_2fa``), ordered by ``process_id``. Adapters whose
+            history row already reads terminal (mid-cleanup, or aborted) are
+            omitted — they are no longer actionable.
+        """
+        active_statuses = {
+            self.scraping_history_repo.IN_PROGRESS,
+            self.scraping_history_repo.WAITING_FOR_2FA,
+        }
+        # Both registries are keyed identically, and a 2FA-waiting adapter is
+        # in both — dict merge dedupes by account key, `seen` guards the
+        # (unexpected) case of one adapter registered under two keys.
+        adapters = {**_active_scrapers, **_tfa_scrapers_waiting}
+        seen: set[int] = set()
+        records: List[Dict] = []
+        for adapter in adapters.values():
+            if adapter.process_id in seen:
+                continue
+            seen.add(adapter.process_id)
+            status = self.scraping_history_repo.get_scraping_status(
+                adapter.process_id
+            )
+            if status not in active_statuses:
+                continue
+            records.append(
+                {
+                    "process_id": adapter.process_id,
+                    "service": adapter.service_name,
+                    "provider": adapter.provider_name,
+                    "account_name": adapter.account_name,
+                    "status": status,
+                }
+            )
+        return sorted(records, key=lambda record: record["process_id"])
+
     def start_scraping_single(
         self,
         service: str,
@@ -171,13 +247,18 @@ class ScrapingService:
         Start the scraping process for a single account as an async task.
 
         Records a new scraping history entry, creates a ``ScraperAdapter``,
-        and launches it on the main event loop via ``_launch_adapter`` (using
-        ``run_coroutine_threadsafe`` so it works from this synchronous route,
-        which runs in a threadpool worker thread). If the provider requires
-        2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP
-        is submitted. If an account is already scraping (present in
-        ``_active_scrapers``), this is a no-op that returns the existing
-        run's ``process_id`` — no new history row, adapter, task, or SMS.
+        registers it, and launches it on the main event loop via
+        ``_launch_adapter`` (using ``run_coroutine_threadsafe`` so it works
+        from this synchronous route, which runs in a threadpool worker
+        thread). If the provider requires 2FA, the adapter is stored in
+        ``_tfa_scrapers_waiting`` until an OTP is submitted. If an account is
+        already scraping (present in ``_active_scrapers``), this is a no-op
+        that returns the existing run's ``process_id`` — no new history row,
+        adapter, task, or SMS.
+
+        Accounts are independent: several accounts can be scraping
+        concurrently. The single-flight guard is per account only, so a user
+        clicking scrape on one source after another gets parallel scrapes.
 
         Parameters
         ----------
@@ -198,10 +279,13 @@ class ScrapingService:
             history record.
         """
         name = f"{service} - {provider} - {account}"
-        existing = _active_scrapers.get(name)
-        if existing is not None:
-            return existing.process_id
 
+        # Credential/keyring reads and the start-date lookup happen BEFORE the
+        # lock so the critical section below stays free of slow I/O. Doing
+        # them for a request that turns out to be a duplicate wastes a little
+        # work; holding the launch lock across a keyring round trip would
+        # stall every other account's launch (and the event loop, via the
+        # async resend-relaunch path) instead.
         if scraping_period_days is not None:
             start_date = date.today() - timedelta(days=scraping_period_days)
         else:
@@ -214,38 +298,53 @@ class ScrapingService:
             creds = {k: v for k, v in creds.items() if k != "otpLongTermToken"}
         requires_2fa = is_2fa_required(service, provider)
 
-        # Always start IN_PROGRESS — even for 2FA-capable providers. The
-        # adapter's _otp_callback flips status to WAITING_FOR_2FA only when
-        # the scraper actually awaits the OTP, so the UI never shows a 2FA
-        # prompt for providers that didn't end up needing one (e.g. Hapoalim
-        # from a trusted device, OneZero with a stored long-term token).
-        with get_db_context() as db:
-            history_repo = ScrapingHistoryRepository(db)
-            process_id = history_repo.record_scrape_start(
-                service, provider, account, start_date, history_repo.IN_PROGRESS
+        # The check, the history insert and both registrations happen under
+        # one lock so a concurrent start for the same account either returns
+        # the running process_id or waits and then sees this adapter — it can
+        # never slip between the check and the registration.
+        with _launch_lock:
+            existing = _active_scrapers.get(name)
+            if existing is not None:
+                return existing.process_id
+
+            # Always start IN_PROGRESS — even for 2FA-capable providers. The
+            # adapter's _otp_callback flips status to WAITING_FOR_2FA only when
+            # the scraper actually awaits the OTP, so the UI never shows a 2FA
+            # prompt for providers that didn't end up needing one (e.g. Hapoalim
+            # from a trusted device, OneZero with a stored long-term token).
+            with get_db_context() as db:
+                history_repo = ScrapingHistoryRepository(db)
+                process_id = history_repo.record_scrape_start(
+                    service, provider, account, start_date, history_repo.IN_PROGRESS
+                )
+
+            adapter = create_adapter(
+                service, provider, account, creds, start_date, process_id,
+                force_2fa=force_2fa,
             )
 
-        adapter = create_adapter(
-            service, provider, account, creds, start_date, process_id,
-            force_2fa=force_2fa,
-        )
+            # Registered for ALL providers, not just 2FA ones, so any account
+            # is single-flight. The adapter's run() pops this entry on
+            # completion (success, failure, or cancellation).
+            _active_scrapers[name] = adapter
+
+            # Park the adapter so submit_2fa_code can resolve it later. We
+            # register eagerly (rather than when the scraper actually awaits
+            # OTP) because the user can submit the code immediately after
+            # receiving the SMS, before the scraper has reached
+            # `await on_otp_request()`. The adapter's run() cleans this entry
+            # up on completion.
+            if requires_2fa:
+                _tfa_scrapers_waiting[name] = adapter
+
+        # Launch only AFTER registration. `run()` executes on the event loop
+        # thread, which runs concurrently with this one, and its `finally`
+        # pops the registry entries by identity — so launching first let a
+        # scrape that fails immediately complete its cleanup before the
+        # registration above had run, leaving a dead adapter in
+        # `_active_scrapers` that blocked the account until the process
+        # restarted.
         _launch_adapter(adapter)
-
-        # Register synchronously (no `await` between the earlier `.get()`
-        # check and this insert) so a second concurrent call can't slip in
-        # between the check and the registration. Registered for ALL
-        # providers, not just 2FA ones, so any account is single-flight.
-        # The adapter's run() pops this entry on completion (success,
-        # failure, or cancellation).
-        _active_scrapers[name] = adapter
-
-        # Park the adapter so submit_2fa_code can resolve it later. We register
-        # eagerly (rather than when the scraper actually awaits OTP) because
-        # the user can submit the code immediately after receiving the SMS,
-        # before the scraper has reached `await on_otp_request()`. The
-        # adapter's run() cleans this entry up on completion.
-        if requires_2fa:
-            _tfa_scrapers_waiting[name] = adapter
 
         return process_id
 

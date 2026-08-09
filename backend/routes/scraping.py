@@ -46,6 +46,14 @@ class StatusResponse(BaseModel):
     status: str
 
 
+class ActiveScrapeResponse(BaseModel):
+    process_id: int
+    service: str
+    provider: str
+    account_name: str
+    status: str
+
+
 @router.post("/start")
 def start_scraping_single(
     data: StartScrapingRequest, db: Session = Depends(get_database)
@@ -118,6 +126,25 @@ def get_scraping_status(
     """
     service = ScrapingService(db)
     return service.get_scraping_status(scraping_process_id)
+
+
+@router.get("/active", response_model=list[ActiveScrapeResponse])
+def get_active_scrapes(db: Session = Depends(get_database)) -> list:
+    """Return every scrape currently running or waiting for a 2FA code.
+
+    Lets a client that just loaded (a page reload, a second tab, the app
+    reopened) recover the live scraping state instead of showing idle cards
+    for accounts that are mid-scrape — including one parked on a 2FA prompt,
+    which is unanswerable until the client knows its ``process_id``.
+
+    Returns
+    -------
+    list[dict]
+        Records with ``process_id``, ``service``, ``provider``,
+        ``account_name`` and ``status``. Empty when nothing is running.
+    """
+    service = ScrapingService(db)
+    return service.get_active_scrapes()
 
 
 @router.post("/2fa", response_model=StatusResponse)

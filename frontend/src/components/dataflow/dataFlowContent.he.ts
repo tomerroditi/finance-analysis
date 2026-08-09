@@ -89,7 +89,7 @@ const content: DataFlowContent = {
       title: "מנוע סריקה", tag: "אסינכרוני",
       sections: [
         { heading: "ארכיטקטורה", items: ["BaseScraper: אתחול \u2192 התחברות \u2192 שליפת נתונים \u2192 סיום", "BrowserScraper: Playwright עם התחמקות מזיהוי", "ApiScraper: httpx HTTP אסינכרוני למקורות API בלבד"] },
-        { heading: "יכולות", items: ["טיפול ב-2FA/OTP עם callback אסינכרוני", "תקופת סריקה ניתנת להגדרה (ימים אחורה)", "צילום מסך בעת כשל", "מגבלת קצב יומית (סריקה אחת לחשבון ליום)", "timeout של 5 דקות"] },
+        { heading: "יכולות", items: ["טיפול ב-2FA/OTP עם callback אסינכרוני", "הרצות מקבילות לכל חשבון (נעילה חד-פעמית לכל חשבון בלבד)", "תקופת סריקה ניתנת להגדרה (ימים אחורה)", "צילום מסך בעת כשל", "מגבלת קצב יומית (סריקה אחת לחשבון ליום)", "timeout של 5 דקות"] },
         { heading: "פלט", text: "ScrapingResult { success, accounts: [{ account_number, transactions, balance }], error_type, error_message }" },
       ],
     },

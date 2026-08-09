@@ -19,7 +19,7 @@ import { BudgetSummaryStrip } from "./BudgetSummaryStrip";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { BudgetFreshnessBanner } from "./BudgetFreshnessBanner";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
-import { useScraping } from "../../hooks/useScraping";
+import { useIsAnyScraping } from "../../hooks/useScraping";
 import { BudgetTrendChart } from "./BudgetTrendChart";
 import { BudgetRuleRow } from "./BudgetRuleRow";
 import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
@@ -73,7 +73,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const freshness = useBudgetFreshness();
-  const { isAnyScraping } = useScraping();
+  const isAnyScraping = useIsAnyScraping();
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: qk.budget.analysis(year, month, includeSplitParents),
