@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, vi } from "vitest";
 // Initialize i18n for all tests
 import "./src/i18n";
 import { server } from "./src/mocks/server";
+import { useScrapingStore } from "./src/stores/scrapingStore";
 
 // Mock react-plotly.js globally — Plotly requires browser canvas APIs not available in happy-dom
 vi.mock("react-plotly.js", () => ({
@@ -35,5 +36,10 @@ beforeAll(() => server.listen({ onUnhandledRequest: "warn" }));
 afterEach(() => {
   cleanup();
   server.resetHandlers();
+  // Scraping state is a module-level store, deliberately outliving component
+  // mounts (a scrape must survive navigating away). That also means it
+  // outlives a test: without this, one test's started scraper leaves the next
+  // test's Data Sources page thinking that account is mid-scrape.
+  useScrapingStore.getState().reset();
 });
 afterAll(() => server.close());

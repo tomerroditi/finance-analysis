@@ -10,7 +10,6 @@ import {
   INITIAL_2FA_COOLDOWN_SECONDS,
 } from "./useScraping";
 import { scrapingApi } from "../services/api";
-import { useScrapingStore } from "../stores/scrapingStore";
 import type { ScraperState } from "./useScraping";
 
 vi.mock("../services/api", () => ({
@@ -50,13 +49,6 @@ function renderScraping(w: Wrapper = wrapper) {
     { wrapper: w },
   );
 }
-
-// The store is global and outlives a single render, which is the whole point
-// (scraping state survives navigation) — so each test must start from clean
-// state instead of inheriting the previous test's scrapers.
-beforeEach(() => {
-  useScrapingStore.getState().reset();
-});
 
 const acc = { service: "banks", provider: "onezero", account_name: "Acc" };
 

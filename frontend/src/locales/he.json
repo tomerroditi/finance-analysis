@@ -867,6 +867,7 @@
     "scrape": "שליפת נתונים",
     "scrapeAll": "שלוף הכל",
     "scrapeAllRunning": "שלוף הכל ({{count}} בתהליך)",
+    "scrapeAllNothingToDo": "כל המקורות בתהליך שליפה או סונכרנו היום — השתמשו בכפתור השליפה של המקור עצמו כדי להריץ מחדש",
     "lastScraped": "שליפה אחרונה",
     "neverScraped": "לא נשלף אף פעם",
     "provider": "ספק",

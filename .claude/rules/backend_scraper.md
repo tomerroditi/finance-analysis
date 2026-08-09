@@ -60,7 +60,8 @@ Abstract class defining the interface. Key abstract properties:
 Accounts scrape **in parallel**. `ScrapingService.start_scraping_single`
 launches each adapter on the main event loop and the only mutual exclusion
 is per account, so a user clicking one source after another gets several
-concurrent scrapes (and "Scrape All" fans out over every idle account).
+concurrent scrapes (and "Scrape All" fans out over every eligible account —
+skipping ones already scraping or already synced today).
 
 Two invariants keep that safe — don't break either:
 
@@ -88,7 +89,11 @@ scrapes with process ids nothing can answer.
 ## Scraping History
 
 Tracked in `scraping_history` table for audit and rate limiting:
-- **Daily limits enforced** - one scrape per account per day
+- **Same-day skip is a UI rule, not a backend one** — nothing in
+  `start_scraping_single` rejects a second scrape on the same day. The Data
+  Sources page derives "synced today" from
+  `get_last_successful_scrape_date` and excludes those accounts from
+  "Scrape All"; a per-source button still re-runs one on request.
 - **Status values:** `SUCCESS`, `FAILED`, `CANCELED`
 
 ## Adding a New Provider
@@ -125,7 +130,8 @@ class NewCardScraper(Scraper):
 ## Timeouts & Limits
 
 - **Fixed timeout:** 300 seconds (5 minutes) for all providers
-- **Daily limit:** One scrape per account per day
+- **Daily limit:** advisory only — "Scrape All" skips accounts that already
+  succeeded today, but the backend does not reject a same-day scrape
 - **No automatic retry** - manual retry via UI
 
 ## Notes

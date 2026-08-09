@@ -24,7 +24,7 @@ import {
 } from "../services/api";
 import type { BankBalance, CredentialAccount } from "../services/api";
 
-import { accountKey, useScraping } from "../hooks/useScraping";
+import { accountKey, isScraperActive, useScraping } from "../hooks/useScraping";
 import { ProviderLogo } from "../components/common/ProviderLogo";
 import { Skeleton } from "../components/common/Skeleton";
 import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
@@ -206,6 +206,19 @@ export function DataSources() {
     );
   };
 
+  // The accounts "Scrape All" will actually launch. Two exclusions:
+  //  - already scraping (`scrapeAll` re-checks this itself, so a stale render
+  //    can't double-launch);
+  //  - already synced today — a same-day re-run re-fetches a window the
+  //    account already has, and on a 2FA provider it costs another SMS.
+  // A single source can still be re-scraped from its own card button: that's
+  // an explicit per-account decision (e.g. after widening the period), which
+  // is exactly what a bulk "scrape everything" action shouldn't assume.
+  const scrapeAllTargets = (accounts ?? []).filter((acc: CredentialAccount) => {
+    if (isScrapedToday(acc.provider, acc.account_name)) return false;
+    const scraper = getScraperForAccount(acc);
+    return !scraper || !isScraperActive(scraper);
+  });
 
   useEffect(() => {
     if (!isAddOpen) return;
@@ -298,13 +311,17 @@ export function DataSources() {
             <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
-            // Stays clickable while scrapes are running — `scrapeAll` skips
-            // accounts that already have an active scraper and launches the
-            // rest in parallel, so this is how a user picks up sources they
-            // added (or that failed) mid-run. Only disabled when there is
-            // genuinely nothing left to launch.
-            onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
-            disabled={!accounts?.length || activeScraperCount >= accounts.length}
+            // Stays clickable while scrapes are running — it launches whatever
+            // is still eligible, in parallel, so this is how a user picks up
+            // sources they added (or that failed) mid-run. Disabled only when
+            // nothing is eligible at all.
+            onClick={() => scrapeAll(scrapeAllTargets, scrapingPeriodDays)}
+            disabled={!scrapeAllTargets.length}
+            title={
+              accounts?.length && !scrapeAllTargets.length
+                ? t("dataSources.scrapeAllNothingToDo")
+                : undefined
+            }
             className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />

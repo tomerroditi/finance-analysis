@@ -867,6 +867,7 @@
     "scrape": "Scrape",
     "scrapeAll": "Scrape All",
     "scrapeAllRunning": "Scrape All ({{count}} running)",
+    "scrapeAllNothingToDo": "Every source is already syncing or was synced today — use a source's own scrape button to re-run it",
     "lastScraped": "Last Scraped",
     "neverScraped": "Never Scraped",
     "provider": "Provider",

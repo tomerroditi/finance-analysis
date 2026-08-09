@@ -8,6 +8,9 @@ import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers
 const RUNNING_ACCOUNT = "E2E ScrapeAll Running";
 const IDLE_ACCOUNT = "E2E ScrapeAll Idle";
 const FAILED_ACCOUNT = "E2E ScrapeAll Failed";
+// A pre-existing demo account (not seeded here) that the stubbed
+// last-scrapes response reports as already synced today.
+const SYNCED_TODAY_ACCOUNT = "Main Account";
 const RUNNING_PROCESS_ID = 5001;
 const FAILED_PROCESS_ID = 5003;
 
@@ -99,6 +102,24 @@ test.describe("Parallel scraping + Scrape All burst guard", () => {
       });
     });
 
+    // Report one pre-existing demo account as already synced today. "Scrape
+    // All" must leave it alone: a same-day re-run re-fetches a window the
+    // account already has, and on a 2FA provider it costs another SMS.
+    await page.route("**/api/scraping/last-scrapes", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            service: "banks",
+            provider: "hapoalim",
+            account_name: SYNCED_TODAY_ACCOUNT,
+            last_scrape_date: new Date().toISOString(),
+          },
+        ]),
+      });
+    });
+
     await navigateTo(page, "/data-sources");
 
     await expect(page.getByText(RUNNING_ACCOUNT, { exact: false })).toBeVisible();
@@ -158,10 +179,17 @@ test.describe("Parallel scraping + Scrape All burst guard", () => {
     );
     expect(startedAfterScrapeAll).not.toContain(RUNNING_ACCOUNT);
     expect(startedAfterScrapeAll).not.toContain(IDLE_ACCOUNT);
+    // …nor the account that already synced today, at any point in the run.
+    expect(startedAccounts).not.toContain(SYNCED_TODAY_ACCOUNT);
 
-    // With every account now active there is nothing left to launch, so the
-    // button retires itself.
+    // Every remaining account is now active and the last one is synced today,
+    // so the bulk action has nothing left to launch and retires itself —
+    // saying why, rather than just looking broken.
     await expect(scrapeAllButton).toBeDisabled();
+    await expect(scrapeAllButton).toHaveAttribute(
+      "title",
+      /synced today|סונכרנו היום/,
+    );
   });
 
   test("a failed scrape explains itself and still exposes the provider's text", async ({
