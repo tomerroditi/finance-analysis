@@ -974,7 +974,18 @@
       "email": "אימייל",
       "phoneNumber": "מספר טלפון",
       "otpLongTermToken": "אסימון התחברות ארוך טווח"
-    }
+    },
+    "lastSync": "סינכרון אחרון",
+    "balanceLabel": "יתרה",
+    "scrapeNow": "שליפה",
+    "stopScrape": "עצור",
+    "needsSync": "נדרש סינכרון",
+    "summaryConnected": "מקורות מחוברים",
+    "summarySyncedToday": "סונכרנו היום",
+    "summaryNeedsAttention": "דורשים טיפול",
+    "summaryNeedsAttentionHint": "לא סונכרנו מעולם, או לפני יותר מ-{{count}} ימים",
+    "summaryAllFresh": "הכול מעודכן",
+    "scrapePeriodLabel": "תקופת שליפה"
   },
   "liabilities": {
     "title": "התחייבויות",

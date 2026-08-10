@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../../stores/appStore";
 import { transactionsApi, scrapingApi } from "../../services/api";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { countNeedingAttention } from "../dataSources/sourceHealth";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { prefetchRoute } from "../../services/routePrefetch";
 import { SettingsPopup } from "./SettingsPopup";
@@ -119,16 +120,12 @@ export function Sidebar() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const staleSourceCount = useMemo(() =>
-    lastScrapes?.filter((s: { last_scrape_date: string | null }) => {
-      if (!s.last_scrape_date) return true;
-      const daysSince =
-        // eslint-disable-next-line react-hooks/purity
-        (Date.now() - new Date(s.last_scrape_date).getTime()) /
-        (1000 * 60 * 60 * 24);
-      return daysSince > 7;
-    }).length ?? 0
-  , [lastScrapes]);
+  // Same rule as the Data Sources page's "needs attention" figure, so the
+  // badge count and the page can never disagree.
+  const staleSourceCount = useMemo(
+    () => countNeedingAttention(lastScrapes ?? []),
+    [lastScrapes],
+  );
 
   const getBadge = (path: string): number | null => {
     if (path === "/transactions" && uncategorizedCount > 0)

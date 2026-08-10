@@ -36,6 +36,34 @@ test.describe("DataSources", () => {
         .toBeGreaterThan(0);
     }
 
+    // ── Sync-health summary strip ──
+    // The page opens with the same three-up summary every other data page
+    // leads with. "Connected sources" must agree with what's rendered below
+    // it — the count is the whole point of the card.
+    await expect(page.getByText("Connected sources")).toBeVisible();
+    await expect(page.getByText("Synced today")).toBeVisible();
+    await expect(page.getByText("Needs attention")).toBeVisible();
+
+    const cards = page.locator("div.group").filter({ has: page.getByRole("heading") });
+    const cardCount = await cards.count();
+    const connectedValue = page
+      .getByText("Connected sources")
+      .locator("xpath=following-sibling::p[1]");
+    await expect(connectedValue).toHaveText(String(cardCount));
+
+    // ── Per-service sections ──
+    // Headings carry a count pill (the Investments pattern), and the counts
+    // must sum to the total above.
+    let sectionSum = 0;
+    for (const heading of ["Bank Accounts", "Credit Cards", "Insurance"]) {
+      const h = page.getByRole("heading", { name: heading, exact: true });
+      if ((await h.count()) === 0) continue; // section hidden when empty
+      await expect(h).toBeVisible();
+      const pill = h.locator("xpath=following-sibling::span[1]");
+      sectionSum += Number(await pill.innerText());
+    }
+    expect(sectionSum).toBe(cardCount);
+
     // Step 1: open the connect-account modal — the chooser surfaces all
     // three top-level service types.
     await page.getByRole("button", { name: "Connect Account", exact: true }).click();
