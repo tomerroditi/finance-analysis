@@ -99,6 +99,12 @@ export function useScrapingPoller() {
         }
       })
       .catch((e) => {
+        // A 404 means this deployment has no scraper at all (the hosted demo
+        // omits Playwright, so the scraping router isn't mounted). Nothing can
+        // be running, so there is nothing to adopt — not an error worth logging
+        // on every page load.
+        const status = (e as { response?: { status?: number } }).response?.status;
+        if (status === 404) return;
         console.error("Failed to load active scrapers:", e);
       });
     return () => {

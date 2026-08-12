@@ -3,6 +3,10 @@ Scraping API routes.
 
 Provides endpoints to start, monitor, abort, and handle 2FA for
 automated scraping of Israeli financial institutions.
+
+Importing this module requires the scraper framework (Playwright). The
+read-only scrape-history endpoint lives in ``routes/scraping_readonly.py`` so
+it stays available where the scraper cannot be installed — see that module.
 """
 
 from typing import Optional
@@ -204,17 +208,3 @@ async def resend_2fa(
     return await service.resend_2fa_code(
         data.service, data.provider, data.account
     )
-
-
-@router.get("/last-scrapes")
-def get_last_scrapes(db: Session = Depends(get_database)) -> list:
-    """Return the last successful scrape date for each configured account.
-
-    Returns
-    -------
-    list[dict]
-        List of records with ``service``, ``provider``, ``account``, and
-        ``last_scrape_date`` fields.
-    """
-    service = ScrapingService(db)
-    return service.get_last_scrape_dates()

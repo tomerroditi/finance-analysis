@@ -439,6 +439,15 @@ try:
 except ImportError:
     pass
 
+# Scrape history is a plain DB read and must stay available even where the
+# scraper itself cannot be imported (serverless has no Playwright) — otherwise
+# every data source on the hosted demo reports "never synced".
+from backend.routes import scraping_readonly
+
+app.include_router(
+    scraping_readonly.router, prefix="/api/scraping", tags=["Scraping"]
+)
+
 try:
     from backend.routes import scraping
     app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])

@@ -106,27 +106,30 @@ class TestScrapingServiceStatus:
         assert result["status"] == "unknown"
         assert result["process_id"] == 99
 
-    def test_get_last_scrape_dates(self, service):
-        """Verify last scrape dates are fetched for all configured accounts."""
-        service.credentials_repo.list_accounts.return_value = [
-            {"service": "credit_cards", "provider": "isracard", "account_name": "Main"},
-            {"service": "banks", "provider": "hapoalim", "account_name": "Checking"},
-        ]
-        service.scraping_history_repo.get_last_successful_scrape_date.side_effect = [
-            "2026-02-18",
-            None,
-        ]
+    def test_get_last_scrape_dates_delegates_to_history_service(self, service):
+        """The public method must keep answering, via the shared implementation.
 
-        result = service.get_last_scrape_dates()
+        The query itself lives in ``ScrapingHistoryService`` so the scraper-free
+        route can reuse it (see ``test_scraping_history_service.py`` for its
+        behaviour); this pins that ``ScrapingService`` still exposes it and does
+        not grow a second copy.
+        """
+        expected = [
+            {
+                "service": "banks",
+                "provider": "hapoalim",
+                "account_name": "Checking",
+                "last_scrape_date": "2026-02-18",
+            },
+        ]
+        history_service = MagicMock()
+        history_service.get_last_scrape_dates.return_value = expected
 
-        assert len(result) == 2
-        assert result[0] == {
-            "service": "credit_cards",
-            "provider": "isracard",
-            "account_name": "Main",
-            "last_scrape_date": "2026-02-18",
-        }
-        assert result[1]["last_scrape_date"] is None
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryService",
+            return_value=history_service,
+        ):
+            assert service.get_last_scrape_dates() == expected
 
 
 class TestScrapingServiceStart:

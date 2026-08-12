@@ -80,6 +80,13 @@ Two invariants keep that safe — don't break either:
    finishes its cleanup before the registration lands — leaving a dead
    adapter in `_active_scrapers` that blocks that account until restart.
 
+`GET /api/scraping/last-scrapes` lives in **`routes/scraping_readonly.py`**,
+not `routes/scraping.py`: importing the latter needs Playwright, and
+`backend/main.py` swallows that ImportError — so on a deployment without the
+scraper the endpoint would vanish and every source would report "never synced".
+Keep read-only history queries in that module (and in
+`services/scraping_history_service.py`, which `ScrapingService` delegates to).
+
 `GET /api/scraping/active` exposes the live registries (joined with each
 process's DB status) so a freshly loaded client can re-adopt running scrapes.
 It reads the **registries, not the history table** — rows left `in_progress`

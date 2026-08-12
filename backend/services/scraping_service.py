@@ -9,6 +9,7 @@ from backend.database import get_db_context
 from backend.errors import BadRequestException, EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.services.scraping_history_service import ScrapingHistoryService
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
 from backend.scraper.adapter import (
     OtpRateLimitError,
@@ -162,22 +163,11 @@ class ScrapingService:
         """
         Get last successful scrape dates for all configured accounts.
         Returns a list of dicts with service, provider, account_name, and last_scrape_date.
+
+        Delegates to ``ScrapingHistoryService`` — the same implementation the
+        scraper-free route uses, so the two can't drift.
         """
-        accounts = self.credentials_repo.list_accounts()
-        result = []
-        for acc in accounts:
-            last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
-                acc["service"], acc["provider"], acc["account_name"]
-            )
-            result.append(
-                {
-                    "service": acc["service"],
-                    "provider": acc["provider"],
-                    "account_name": acc["account_name"],
-                    "last_scrape_date": last_scrape,
-                }
-            )
-        return result
+        return ScrapingHistoryService(self.db).get_last_scrape_dates()
 
     def get_active_scrapes(self) -> List[Dict]:
         """List every scrape currently alive in this process.
