@@ -133,4 +133,80 @@ describe("DataSources", () => {
       expect(requested).toHaveLength(0);
     });
   });
+  describe("Scrape All eligibility", () => {
+    /**
+     * Stub last-scrapes + start, and return the accounts each Scrape All
+     * dispatch tried to launch. `hapoalim/Main Account` reports a scrape
+     * timestamped now; `max/Max Card` was last synced days ago.
+     */
+    function stubScrapeAll() {
+      const started: string[] = [];
+      server.use(
+        http.get("/api/scraping/last-scrapes", () =>
+          HttpResponse.json([
+            {
+              service: "banks",
+              provider: "hapoalim",
+              account_name: "Main Account",
+              last_scrape_date: new Date().toISOString(),
+            },
+            {
+              service: "credit_cards",
+              provider: "max",
+              account_name: "Max Card",
+              last_scrape_date: "2026-01-02T08:00:00",
+            },
+          ]),
+        ),
+        http.post("/api/scraping/start", async ({ request }) => {
+          const body = (await request.json()) as { account: string };
+          started.push(body.account);
+          return HttpResponse.json(started.length);
+        }),
+      );
+      return started;
+    }
+
+    /** The Scrape All button, located by label in either of its two states. */
+    const scrapeAllButton = () =>
+      screen.getByRole("button", { name: /scrape all/i });
+
+    it("skips accounts already synced today", async () => {
+      // A same-day re-run re-fetches a window the account already has, and on
+      // a 2FA provider it costs the user another SMS.
+      const user = userEvent.setup();
+      const started = stubScrapeAll();
+      renderWithProviders(<DataSources />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Max Card/i)).toBeInTheDocument();
+      });
+      await waitFor(() => expect(scrapeAllButton()).toBeEnabled());
+      await user.click(scrapeAllButton());
+
+      await waitFor(() => expect(started).toEqual(["Max Card"]));
+      expect(started).not.toContain("Main Account");
+    });
+
+    it("disables Scrape All, with an explanation, once nothing is eligible", async () => {
+      const user = userEvent.setup();
+      stubScrapeAll();
+      renderWithProviders(<DataSources />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Max Card/i)).toBeInTheDocument();
+      });
+      await waitFor(() => expect(scrapeAllButton()).toBeEnabled());
+      await user.click(scrapeAllButton());
+
+      // "Main Account" was synced today and "Max Card" is now scraping, so the
+      // bulk action has nothing left to do — and says why, rather than looking
+      // broken. A single source is still re-scrapable from its own card.
+      await waitFor(() => expect(scrapeAllButton()).toBeDisabled());
+      expect(scrapeAllButton()).toHaveAttribute(
+        "title",
+        expect.stringContaining("synced today"),
+      );
+    });
+  });
 });

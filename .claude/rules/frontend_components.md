@@ -18,6 +18,7 @@ frontend/src/components/
 ├── dashboard/           # Dashboard-specific sections (BudgetSection, RecentTransactionsSection)
 ├── transactions/        # Transaction page sub-components (FilterPanel, Pagination, BulkActionsBar, RuleBuilder, etc.)
 ├── budget/              # Budget page sub-components (MonthlyBudgetView, ProjectBudgetView, TransactionCollapsibleList)
+├── dataSources/         # Data Sources page sub-components (AccountCard, SourcesSummary, ConnectAccountModal, DisconnectAccountModal, sourceHealth)
 ├── investments/         # Investment page sub-components
 ├── retirement/          # Early retirement calculator components
 ├── layout/              # App layout shell (Layout, Sidebar, TopBar)
@@ -145,6 +146,40 @@ Per-field auto-commit is acceptable **only** for genuinely
 single-field controls — a toggle, a debounced search input, a
 standalone slider — where there's no dependent state and no
 "halfway through" intermediate state for the user to be in.
+
+### Page cards: one anatomy across pages
+
+Entity cards (a liability, an insurance policy, a connected data source) share
+one anatomy. Follow it when adding a new one — the pages are meant to read as
+one product, and Data Sources was visibly the odd one out until it was aligned.
+
+```tsx
+<div className="group relative bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden shadow-sm hover:border-[var(--primary)]/30 hover:shadow-xl transition-all">
+  {/* type accent stripe — same colour family as the entity's icon elsewhere */}
+  <div className="absolute inset-y-0 inset-inline-start-0 w-1 bg-blue-400" />
+  <div className="ps-4 pe-3 md:ps-6 md:pe-5 py-4 md:py-5">
+    {/* identity (icon tile + name + `·`-separated metadata) | status pill */}
+    {/* label-over-value stat tiles: rounded-xl bg-[var(--surface-base)] p-3 */}
+    {/* actions on a divided footer row: primary labelled, rest icon-only */}
+  </div>
+</div>
+```
+
+- **Status pill:** `px-2.5 py-1 rounded-lg` + `text-[10px] font-black uppercase
+  tracking-tighter`, coloured `bg-<c>-500/15 border border-<c>-500/30`.
+- **Stat tile label:** `text-[9px] uppercase font-bold tracking-wider
+  text-[var(--text-muted)]`.
+- **Section heading above a card grid:** icon chip + `h2 text-lg md:text-xl
+  font-bold` + count pill (`text-[10px] font-black bg-[var(--primary)]/20
+  text-[var(--primary)] px-2 py-0.5 rounded-full`).
+- **Summary strip above the sections:** `grid grid-cols-1 sm:grid-cols-3`, each
+  card `p-4 md:p-6` with a `text-[10px] uppercase font-black tracking-widest`
+  label over a `text-xl md:text-2xl font-black` value.
+- **Card grids need `items-start`** when a card can grow (an inline prompt, an
+  expanded panel) — otherwise the row stretches its neighbours and leaves dead
+  space under the shorter card.
+- **Empty states go through `common/EmptyState`** — don't hand-roll a dashed
+  box. Use the connect → scrape → analyse `steps` for onboarding-shaped pages.
 
 ### Currency Formatting
 Always use the shared utility:

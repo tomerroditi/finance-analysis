@@ -181,3 +181,114 @@ class TestBackfillBudgetRulePeriodType:
         assert self._read_period_type(engine, 1) == "monthly"
         assert self._read_period_type(engine, 2) == "project"
         assert self._read_period_type(engine, 3) == "yearly"
+
+
+class TestDemoFixtureDataSources:
+    """The frozen demo DB must ship the connected sources the demo UI shows.
+
+    Demo credentials used to exist only in the OS keyring + DB rows written by
+    ``CredentialsService.seed_demo_credentials``, which runs from the demo-mode
+    *toggle*. The hosted demo forces demo mode on at cold start and never
+    toggles, so nothing ever seeded them and its Data Sources page was
+    permanently empty. They now live in the fixture like every other demo row.
+    """
+
+    @staticmethod
+    def _demo_connection():
+        import sqlite3
+        from pathlib import Path
+
+        db_path = (
+            Path(__file__).resolve().parents[3]
+            / "backend"
+            / "resources"
+            / "demo_data.db"
+        )
+        assert db_path.exists(), f"demo fixture missing at {db_path}"
+        return sqlite3.connect(db_path)
+
+    def test_fixture_ships_one_credential_per_demo_source(self):
+        """Every account the demo dashboard references has a credential row."""
+        conn = self._demo_connection()
+        try:
+            rows = {
+                (service, provider, account)
+                for service, provider, account in conn.execute(
+                    "SELECT service, provider, account_name FROM credentials"
+                )
+            }
+        finally:
+            conn.close()
+
+        assert rows == {
+            ("banks", "hapoalim", "Main Account"),
+            ("banks", "leumi", "Savings Account"),
+            ("credit_cards", "max", "Family Card"),
+            ("credit_cards", "visa cal", "Online Shopping"),
+            ("insurances", "hafenix", "The Cohens"),
+        }
+
+    def test_fixture_credentials_hold_no_password(self):
+        """Passwords belong in the OS keyring, never in the credentials table."""
+        conn = self._demo_connection()
+        try:
+            fields = [row[0] for row in conn.execute("SELECT fields FROM credentials")]
+        finally:
+            conn.close()
+
+        for raw in fields:
+            assert "password" not in raw.lower()
+
+    def test_fixture_scrape_statuses_are_canonical_lowercase(self):
+        """Statuses must match ``ScrapingHistoryRepository``'s constants exactly.
+
+        SQLite string comparison is case-sensitive, so the fixture's old
+        ``"SUCCESS"`` rows never matched ``WHERE status = 'success'``: every
+        demo source reported "Never synced" and the balance-entry button stayed
+        disabled, even though the history was right there.
+        """
+        from backend.repositories.scraping_history_repository import (
+            ScrapingHistoryRepository,
+        )
+
+        conn = self._demo_connection()
+        try:
+            statuses = {row[0] for row in conn.execute("SELECT status FROM scraping_history")}
+        finally:
+            conn.close()
+
+        allowed = {
+            ScrapingHistoryRepository.SUCCESS,
+            ScrapingHistoryRepository.FAILED,
+            ScrapingHistoryRepository.CANCELED,
+        }
+        assert statuses <= allowed, f"non-canonical statuses in fixture: {statuses - allowed}"
+        assert ScrapingHistoryRepository.SUCCESS in statuses
+
+    def test_every_scraped_source_resolves_a_last_scrape_date(self):
+        """The join the UI relies on must actually produce dates.
+
+        Pins both halves at once: the credential rows exist AND their
+        service/provider/account_name match the scraping-history rows, so
+        ``get_last_successful_scrape_date`` returns something for each.
+        """
+        conn = self._demo_connection()
+        try:
+            resolved = conn.execute(
+                """
+                SELECT COUNT(*) FROM credentials c
+                WHERE EXISTS (
+                    SELECT 1 FROM scraping_history h
+                    WHERE h.service_name = c.service
+                      AND h.provider_name = c.provider
+                      AND h.account_name = c.account_name
+                      AND h.status = 'success'
+                )
+                """
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+        # Insurance has no scrape history in the fixture; the four scrapable
+        # sources must all resolve.
+        assert resolved == 4

@@ -55,10 +55,52 @@ Abstract class defining the interface. Key abstract properties:
 
 **Cancellation:** User enters "cancel" -> `scraper.otp_code == scraper.CANCEL` -> logged as `CANCELED`
 
+## Concurrency: parallel across accounts, single-flight per account
+
+Accounts scrape **in parallel**. `ScrapingService.start_scraping_single`
+launches each adapter on the main event loop and the only mutual exclusion
+is per account, so a user clicking one source after another gets several
+concurrent scrapes (and "Scrape All" fans out over every eligible account —
+skipping ones already scraping or already synced today).
+
+Two invariants keep that safe — don't break either:
+
+1. **The launch critical section is locked.** The `_active_scrapers`
+   membership check, the history-row insert and the registration all happen
+   under `scraping_service._launch_lock`. `start_scraping_single` runs in a
+   FastAPI threadpool worker, so without the lock two starts for the same
+   account can both pass the check and both launch — two scrapes and two OTP
+   SMS for one account, with the second `/otp/prepare` superseding the code
+   the user is already reading. Keep slow I/O (keyring, start-date lookup)
+   *outside* the lock: the async resend-relaunch path calls this from the
+   event-loop thread.
+2. **Register before launching.** `adapter.run()` executes on the event-loop
+   thread, concurrently with the caller, and its `finally` pops the
+   registries by identity. Launch first and a scrape that fails immediately
+   finishes its cleanup before the registration lands — leaving a dead
+   adapter in `_active_scrapers` that blocks that account until restart.
+
+`GET /api/scraping/last-scrapes` lives in **`routes/scraping_readonly.py`**,
+not `routes/scraping.py`: importing the latter needs Playwright, and
+`backend/main.py` swallows that ImportError — so on a deployment without the
+scraper the endpoint would vanish and every source would report "never synced".
+Keep read-only history queries in that module (and in
+`services/scraping_history_service.py`, which `ScrapingService` delegates to).
+
+`GET /api/scraping/active` exposes the live registries (joined with each
+process's DB status) so a freshly loaded client can re-adopt running scrapes.
+It reads the **registries, not the history table** — rows left `in_progress`
+by a killed process would otherwise be resurrected forever as fake running
+scrapes with process ids nothing can answer.
+
 ## Scraping History
 
 Tracked in `scraping_history` table for audit and rate limiting:
-- **Daily limits enforced** - one scrape per account per day
+- **Same-day skip is a UI rule, not a backend one** — nothing in
+  `start_scraping_single` rejects a second scrape on the same day. The Data
+  Sources page derives "synced today" from
+  `get_last_successful_scrape_date` and excludes those accounts from
+  "Scrape All"; a per-source button still re-runs one on request.
 - **Status values:** `SUCCESS`, `FAILED`, `CANCELED`
 
 ## Adding a New Provider
@@ -95,7 +137,8 @@ class NewCardScraper(Scraper):
 ## Timeouts & Limits
 
 - **Fixed timeout:** 300 seconds (5 minutes) for all providers
-- **Daily limit:** One scrape per account per day
+- **Daily limit:** advisory only — "Scrape All" skips accounts that already
+  succeeded today, but the backend does not reject a same-day scrape
 - **No automatic retry** - manual retry via UI
 
 ## Notes

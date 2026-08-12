@@ -35,6 +35,22 @@ Pages are registered in `App.tsx` with `react-router-dom` and rendered inside th
 - Direct axios calls — use `services/api.ts` or custom hooks
 - Business logic — belongs in backend services
 
+## Pattern: State that must outlive the page
+
+Navigating away unmounts a page and wipes its `useState`. That is fine for
+view state (open tab, expanded row) but wrong for anything the user or the
+backend is still in the middle of. Put that in a Zustand store instead:
+
+| Store | Why it can't live in the page |
+|---|---|
+| `stores/scrapingStore.ts` | Scrapes run for tens of seconds and a 2FA-waiting scraper is parked until the user types the code from their phone. Losing the state lost the process id too — so the prompt became unanswerable while the backend still waited. Polling lives in `ScrapingTracker` (mounted by `Layout`, above the router) so it keeps running off-page. |
+| `stores/retirementWorkspaceStore.ts` | The Early Retirement page is a form + preview workspace; unmounting discarded unsaved edits. |
+
+Both are deliberately memory-only (not persisted to disk): they hold
+ephemeral working state, and stale process ids / snapshots are worse than an
+empty start. Where the backend is authoritative, re-adopt from it on load —
+scraping does this with `GET /api/scraping/active`.
+
 ## Pattern: Extracting Page Sections
 
 When a page grows beyond ~500 lines, extract self-contained sections into `components/<feature>/`:

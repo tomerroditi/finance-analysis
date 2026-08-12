@@ -16,6 +16,7 @@ def mock_scraping(monkeypatch):
     mock_service.submit_2fa_code.return_value = None
     mock_service.abort_scraping_process.return_value = None
     mock_service.get_last_scrape_dates.return_value = []
+    mock_service.get_active_scrapes.return_value = []
 
     monkeypatch.setattr(
         "backend.routes.scraping.ScrapingService",
@@ -88,3 +89,42 @@ class TestScrapingRoutes:
             )
         assert resp.status_code == 200
         assert instance.start_scraping_single.call_args.kwargs["force_2fa"] is True
+
+    def test_get_active_scrapes_empty(self, test_client):
+        """GET /api/scraping/active returns an empty list when nothing runs."""
+        response = test_client.get("/api/scraping/active")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_get_active_scrapes_lists_live_processes(self, test_client):
+        """GET /api/scraping/active reports each live scrape's identity + status.
+
+        This is how a freshly loaded client re-adopts scrapes it has no
+        process ids for — most importantly one parked on a 2FA prompt, which
+        cannot be answered without its process id.
+        """
+        instance = MagicMock()
+        instance.get_active_scrapes.return_value = [
+            {
+                "process_id": 91,
+                "service": "banks",
+                "provider": "onezero",
+                "account_name": "Daily",
+                "status": "waiting_for_2fa",
+            },
+        ]
+        with patch(
+            "backend.routes.scraping.ScrapingService", lambda db: instance
+        ):
+            response = test_client.get("/api/scraping/active")
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "process_id": 91,
+                "service": "banks",
+                "provider": "onezero",
+                "account_name": "Daily",
+                "status": "waiting_for_2fa",
+            },
+        ]

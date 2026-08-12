@@ -866,6 +866,8 @@
     "deleteAccount": "Delete Account",
     "scrape": "Scrape",
     "scrapeAll": "Scrape All",
+    "scrapeAllRunning": "Scrape All ({{count}} running)",
+    "scrapeAllNothingToDo": "Every source is already syncing or was synced today — use a source's own scrape button to re-run it",
     "lastScraped": "Last Scraped",
     "neverScraped": "Never Scraped",
     "provider": "Provider",
@@ -970,7 +972,18 @@
       "email": "Email",
       "phoneNumber": "Phone Number",
       "otpLongTermToken": "OTP Long-Term Token"
-    }
+    },
+    "lastSync": "Last sync",
+    "balanceLabel": "Balance",
+    "scrapeNow": "Scrape",
+    "stopScrape": "Stop",
+    "needsSync": "Needs sync",
+    "summaryConnected": "Connected sources",
+    "summarySyncedToday": "Synced today",
+    "summaryNeedsAttention": "Needs attention",
+    "summaryNeedsAttentionHint": "Never synced, or over {{count}} days old",
+    "summaryAllFresh": "Everything is up to date",
+    "scrapePeriodLabel": "Scraping period"
   },
   "liabilities": {
     "title": "Liabilities",

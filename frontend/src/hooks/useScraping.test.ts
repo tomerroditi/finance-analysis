@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { createElement } from "react";
 import {
   useScraping,
+  useScrapingPoller,
   RESEND_COOLDOWN_SECONDS,
   INITIAL_2FA_COOLDOWN_SECONDS,
 } from "./useScraping";
@@ -15,6 +16,7 @@ vi.mock("../services/api", () => ({
   scrapingApi: {
     start: vi.fn().mockResolvedValue({ data: 1 }),
     getStatus: vi.fn().mockResolvedValue({ data: { status: "in_progress" } }),
+    getActive: vi.fn().mockResolvedValue({ data: [] }),
     abort: vi.fn().mockResolvedValue({ data: { status: "aborted" } }),
     submit2fa: vi.fn().mockResolvedValue({ data: { status: "success" } }),
     resend2fa: vi
@@ -26,6 +28,26 @@ vi.mock("../services/api", () => ({
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient();
   return createElement(QueryClientProvider, { client: qc }, children);
+}
+
+type Wrapper = ({ children }: { children: ReactNode }) => ReactNode;
+
+/**
+ * Render the state hook together with the app-wide poller.
+ *
+ * In the app those are two separate mounts — `useScrapingPoller` is mounted
+ * once by `Layout` (via `ScrapingTracker`) while any number of components call
+ * `useScraping` — because the state lives in a global store rather than in the
+ * hook. Tests that assert on polling need both.
+ */
+function renderScraping(w: Wrapper = wrapper) {
+  return renderHook(
+    () => {
+      useScrapingPoller();
+      return useScraping();
+    },
+    { wrapper: w },
+  );
 }
 
 const acc = { service: "banks", provider: "onezero", account_name: "Acc" };
@@ -41,7 +63,7 @@ describe("useScraping.startScraper force2fa", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends force_2fa: true when opts.force2fa is set", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30, { force2fa: true });
     });
@@ -59,7 +81,7 @@ describe("useScraping.startScraper force2fa", () => {
   });
 
   it("omits force_2fa when no opts are passed", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, null);
     });
@@ -95,7 +117,7 @@ describe("useScraping.scrapeAll", () => {
       .mockResolvedValueOnce({ data: 201 })
       .mockResolvedValueOnce({ data: 202 });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed runningAcc into runningScrapers as "in_progress" — startScraper's
     // normal, only outcome.
@@ -142,7 +164,7 @@ describe("useScraping.scrapeAll", () => {
   });
 
   it("starts every account when none are currently active", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       result.current.scrapeAll([idleAcc, runningAcc], null);
@@ -159,7 +181,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -178,7 +200,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed runningScrapers with the waiting scraper the way startScraper
     // would, so resendTfa has an existing entry to preserve.
@@ -199,7 +221,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "restarted", process_id: 2 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.startScraper(acc, 30);
@@ -218,7 +240,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     expect(result.current.resendCooldownRemaining(1)).toBe(0);
 
@@ -240,7 +262,7 @@ describe("useScraping.resendTfa", () => {
         data: { detail: "Wait about a minute before requesting another code." },
       },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -257,7 +279,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       response: { status: 404, data: { detail: "Scraping process not found" } },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -307,7 +329,7 @@ describe("useScraping.resendTfa restarted — stale process cleanup (regression)
       data: { status: "restarted", process_id: newProcessId },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed a real waiting_for_2fa entry under oldProcessId the way the app
     // actually gets there (start -> poll), instead of hand-constructing
@@ -380,9 +402,7 @@ describe("useScraping — cache invalidation on scrape completion", () => {
       data: { status: "success" },
     });
 
-    const { result } = renderHook(() => useScraping(), {
-      wrapper: localWrapper,
-    });
+    const { result } = renderScraping(localWrapper);
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -425,9 +445,7 @@ describe("useScraping — cache invalidation on scrape completion", () => {
       data: { status: "in_progress" },
     });
 
-    const { result } = renderHook(() => useScraping(), {
-      wrapper: localWrapper,
-    });
+    const { result } = renderScraping(localWrapper);
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -464,6 +482,7 @@ describe("useScraping — resend cooldown timer lifecycle", () => {
     const { result } = renderHook(
       () => {
         renders += 1;
+        useScrapingPoller();
         return useScraping();
       },
       { wrapper },
@@ -516,7 +535,7 @@ describe("useScraping — initial 2FA cooldown", () => {
       data: { status: "waiting_for_2fa" },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -575,7 +594,7 @@ describe("useScraping — initial 2FA cooldown", () => {
       data: { status: "resent", process_id: 45 },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -599,5 +618,259 @@ describe("useScraping — initial 2FA cooldown", () => {
     expect(result.current.resendCooldownRemaining(45)).toBeGreaterThan(
       INITIAL_2FA_COOLDOWN_SECONDS,
     );
+  });
+});
+
+describe("useScraping — state survives leaving the page", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps a waiting_for_2fa scraper (and the half-typed code) across unmount/remount", async () => {
+    // Navigating away from Data Sources unmounts it. While this state lived in
+    // the hook's own useState, that wiped it: the user came back to an idle
+    // card with no way to answer a 2FA prompt the backend was still parked on.
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 300,
+    });
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "waiting_for_2fa" },
+    });
+
+    const first = renderScraping();
+    await act(async () => {
+      await first.result.current.startScraper(acc, 30);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    act(() => {
+      first.result.current.setTfaCode("banks_onezero_Acc", "123");
+    });
+    expect(first.result.current.getScraperForAccount(acc)?.status).toBe(
+      "waiting_for_2fa",
+    );
+
+    // Leave the page…
+    first.unmount();
+    // …and come back.
+    const second = renderScraping();
+
+    const scraper = second.result.current.getScraperForAccount(acc);
+    expect(scraper?.process_id).toBe(300);
+    expect(scraper?.status).toBe("waiting_for_2fa");
+    expect(second.result.current.tfaCodes["banks_onezero_Acc"]).toBe("123");
+    expect(second.result.current.isAnyScraping).toBe(true);
+  });
+
+  it("keeps polling a scrape started before the page was left", async () => {
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 301,
+    });
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "in_progress" },
+    });
+
+    const first = renderScraping();
+    await act(async () => {
+      await first.result.current.startScraper(acc, 30);
+    });
+    first.unmount();
+
+    // The poller lives in Layout, above the router — remounting the page must
+    // not be what keeps a running scrape alive, but a remount must also not
+    // lose track of it.
+    const second = renderScraping();
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(scrapingApi.getStatus).toHaveBeenCalledWith(301);
+    expect(second.result.current.isAnyScraping).toBe(true);
+  });
+
+  it("adopts scrapes already running on the backend on a cold load", async () => {
+    // A real page reload loses every process id, so a 2FA prompt would be
+    // unanswerable and a running scrape invisible. GET /scraping/active is the
+    // authoritative recovery path.
+    (scrapingApi.getActive as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: [
+        {
+          process_id: 400,
+          service: "banks",
+          provider: "onezero",
+          account_name: "Acc",
+          status: "waiting_for_2fa",
+        },
+      ],
+    });
+
+    const { result } = renderScraping();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const scraper = result.current.getScraperForAccount(acc);
+    expect(scraper?.process_id).toBe(400);
+    expect(scraper?.status).toBe("waiting_for_2fa");
+  });
+
+  it("does not let the adopted status clobber fresher local state", async () => {
+    // The optimistic in_progress flip on 2FA submit must win over a DB row
+    // that still reads waiting_for_2fa when /active answers late.
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 401,
+    });
+    let resolveActive: (value: unknown) => void = () => {};
+    (scrapingApi.getActive as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveActive = resolve;
+      }),
+    );
+
+    const { result } = renderScraping();
+    await act(async () => {
+      await result.current.startScraper(acc, 30);
+    });
+
+    await act(async () => {
+      resolveActive({
+        data: [
+          {
+            process_id: 401,
+            service: "banks",
+            provider: "onezero",
+            account_name: "Acc",
+            status: "waiting_for_2fa",
+          },
+        ],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.getScraperForAccount(acc)?.status).toBe("in_progress");
+  });
+});
+
+describe("useScraping — parallel per-account scraping", () => {
+  const accA = { service: "banks", provider: "hapoalim", account_name: "A" };
+  const accB = { service: "credit_cards", provider: "max", account_name: "B" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("tracks and polls a second account started while the first is running", async () => {
+    (scrapingApi.start as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ data: 501 })
+      .mockResolvedValueOnce({ data: 502 });
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { status: "in_progress" },
+    });
+
+    const { result } = renderScraping();
+    await act(async () => {
+      await result.current.startScraper(accA, null);
+    });
+    // Clicking a second source while the first runs must start it, not be
+    // swallowed — the whole point of dropping the global isAnyScraping gate.
+    await act(async () => {
+      await result.current.startScraper(accB, null);
+    });
+
+    expect(result.current.activeScraperCount).toBe(2);
+    expect(result.current.getScraperForAccount(accA)?.process_id).toBe(501);
+    expect(result.current.getScraperForAccount(accB)?.process_id).toBe(502);
+
+    (scrapingApi.getStatus as ReturnType<typeof vi.fn>).mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    const polled = (
+      scrapingApi.getStatus as ReturnType<typeof vi.fn>
+    ).mock.calls.map(([id]) => id);
+    expect(polled).toContain(501);
+    expect(polled).toContain(502);
+  });
+
+  it("ignores a second start for the SAME account while the first request is in flight", async () => {
+    // Per-account guard, not a global one: two clicks on one card must not
+    // fire two scrapes (two OTP SMS), but a click on another card must.
+    let resolveStart: (value: unknown) => void = () => {};
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+
+    const { result } = renderScraping();
+    let firstStart: Promise<void> = Promise.resolve();
+    act(() => {
+      firstStart = result.current.startScraper(accA, null);
+    });
+    expect(result.current.isStartPending(accA)).toBe(true);
+    expect(result.current.isStartPending(accB)).toBe(false);
+
+    await act(async () => {
+      await result.current.startScraper(accA, null);
+    });
+    expect(scrapingApi.start).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStart({ data: 503 });
+      await firstStart;
+    });
+    expect(result.current.isStartPending(accA)).toBe(false);
+    expect(result.current.getScraperForAccount(accA)?.process_id).toBe(503);
+  });
+});
+
+describe("useScraping — 2FA pending state is per account", () => {
+  const accA = { service: "banks", provider: "onezero", account_name: "A" };
+  const accB = { service: "banks", provider: "onezero", account_name: "B" };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("only marks the account whose code is in flight as pending", async () => {
+    // Two accounts can sit on a 2FA prompt at the same time now. A shared
+    // `tfaMutation.isPending` greyed out the other card's Verify/Resend
+    // buttons while an unrelated account's code was being verified.
+    let resolveSubmit: (value: unknown) => void = () => {};
+    (scrapingApi.submit2fa as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubmit = resolve;
+      }),
+    );
+
+    const { result } = renderScraping();
+    const scraperA: ScraperState = {
+      process_id: 601,
+      account: accA,
+      status: "waiting_for_2fa",
+      last_updated: Date.now(),
+    };
+
+    act(() => {
+      result.current.submitTfa(scraperA, "123456");
+    });
+
+    await waitFor(() => expect(result.current.isTfaPending(accA)).toBe(true));
+    expect(result.current.isTfaPending(accB)).toBe(false);
+
+    await act(async () => {
+      resolveSubmit({ data: { status: "success" } });
+    });
+    await waitFor(() => expect(result.current.isTfaPending(accA)).toBe(false));
   });
 });

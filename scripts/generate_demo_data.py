@@ -26,6 +26,9 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from backend.models.base import Base  # noqa: E402
+from backend.repositories.scraping_history_repository import (  # noqa: E402
+    ScrapingHistoryRepository,
+)
 from backend.models import (  # noqa: E402
     BankBalance,
     BankTransaction,
@@ -34,6 +37,7 @@ from backend.models import (  # noqa: E402
     CashBalance,
     CashTransaction,
     Category,
+    Credential,
     CreditCardTransaction,
     InsuranceAccount,
     InsuranceTransaction,
@@ -2491,6 +2495,53 @@ def create_retirement_goal(session):
     session.flush()
 
 
+def create_credentials(session):
+    """Create the four connected data sources the demo dashboard shows.
+
+    These are the rows behind the Data Sources page. They live in the frozen
+    DB (rather than only being seeded at demo-toggle time by
+    ``CredentialsService.seed_demo_credentials``) for two reasons:
+
+    - The hosted demo (Vercel) never runs the demo-mode toggle — demo mode is
+      forced on at cold start — so nothing ever seeded them there and the page
+      came up empty.
+    - Seeding goes through ``save_credentials``, which needs the OS keyring and
+      the encryption stack. Neither exists in a serverless sandbox.
+
+    ``fields`` is written as **plaintext** on purpose. Production rows are
+    Fernet-encrypted with a per-machine key from the OS keyring, which a
+    committed fixture cannot carry; ``decrypt_fields`` passes plaintext dicts
+    straight through (the legacy-row path), so these read fine everywhere. The
+    values are dummy strings — there is no secret here. Passwords are never
+    stored in this table at all; demo scrapes use the dummy scrapers, which
+    ignore credentials entirely.
+
+    Service / provider / account_name must stay in lockstep with
+    ``seed_demo_credentials`` and with ``create_scraping_history`` below, or the
+    account list, its sync history and its balances stop lining up.
+    """
+    for service, provider, account_name, fields in [
+        ("banks", "hapoalim", "Main Account", {"userCode": "demo"}),
+        ("banks", "leumi", "Savings Account", {"username": "demo"}),
+        ("credit_cards", "max", "Family Card", {"username": "demo"}),
+        ("credit_cards", "visa cal", "Online Shopping", {"username": "demo"}),
+        (
+            "insurances",
+            "hafenix",
+            "The Cohens",
+            {"id": "demo", "phoneNumber": "050-1234567"},
+        ),
+    ]:
+        session.add(
+            Credential(
+                service=service,
+                provider=provider,
+                account_name=account_name,
+                fields=fields,
+            )
+        )
+
+
 def create_scraping_history(session):
     """Create 5 scraping history records."""
     recent = REFERENCE_DATE - timedelta(days=1)
@@ -2502,7 +2553,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 30, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2510,7 +2561,7 @@ def create_scraping_history(session):
         provider_name="leumi",
         account_name="Savings Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 32, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2518,7 +2569,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(recent.year, recent.month, recent.day, 8, 35, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2526,7 +2577,7 @@ def create_scraping_history(session):
         provider_name="visa cal",
         account_name="Online Shopping",
         date=datetime(recent.year, recent.month, recent.day, 8, 40, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
 
@@ -2536,7 +2587,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(older.year, older.month, older.day, 9, 0, 0).isoformat(),
-        status="FAILED",
+        status=ScrapingHistoryRepository.FAILED,
         start_date=(older - timedelta(days=30)).isoformat(),
         error_message="Timeout waiting for page load",
     ))
@@ -2547,7 +2598,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(older.year, older.month, older.day, 9, 5, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(older - timedelta(days=30)).isoformat(),
     ))
 
@@ -2961,7 +3012,10 @@ def main():
         print("  Creating liabilities...")
         create_liabilities(session)
 
-        # 16. Scraping history
+        # 16. Connected data sources (credentials) + their scrape history
+        print("  Creating credentials...")
+        create_credentials(session)
+
         print("  Creating scraping history...")
         create_scraping_history(session)
 
@@ -3003,6 +3057,7 @@ def main():
             "pending_refunds",
             "refund_links",
             "budget_month_overrides",
+            "credentials",
             "scraping_history",
             "bank_balances",
             "cash_balances",

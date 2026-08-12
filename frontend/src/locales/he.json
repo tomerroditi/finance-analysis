@@ -866,6 +866,8 @@
     "deleteAccount": "מחק חשבון",
     "scrape": "שליפת נתונים",
     "scrapeAll": "שלוף הכל",
+    "scrapeAllRunning": "שלוף הכל ({{count}} בתהליך)",
+    "scrapeAllNothingToDo": "כל המקורות בתהליך שליפה או סונכרנו היום — השתמשו בכפתור השליפה של המקור עצמו כדי להריץ מחדש",
     "lastScraped": "שליפה אחרונה",
     "neverScraped": "לא נשלף אף פעם",
     "provider": "ספק",
@@ -972,7 +974,18 @@
       "email": "אימייל",
       "phoneNumber": "מספר טלפון",
       "otpLongTermToken": "אסימון התחברות ארוך טווח"
-    }
+    },
+    "lastSync": "סינכרון אחרון",
+    "balanceLabel": "יתרה",
+    "scrapeNow": "שליפה",
+    "stopScrape": "עצור",
+    "needsSync": "נדרש סינכרון",
+    "summaryConnected": "מקורות מחוברים",
+    "summarySyncedToday": "סונכרנו היום",
+    "summaryNeedsAttention": "דורשים טיפול",
+    "summaryNeedsAttentionHint": "לא סונכרנו מעולם, או לפני יותר מ-{{count}} ימים",
+    "summaryAllFresh": "הכול מעודכן",
+    "scrapePeriodLabel": "תקופת שליפה"
   },
   "liabilities": {
     "title": "התחייבויות",

@@ -183,10 +183,40 @@ scripts/generate_demo_data.py
 ├── create_pending_refunds          ← 7 refunds covering all statuses + split source
 ├── create_liabilities              ← Mortgage, Car Loan, paid-off Personal Loan
 ├── create_retirement_goal          ← derives KH totals from insurance-account constants
-├── create_scraping_history
+├── create_credentials              ← the 5 connected data sources (see below)
+├── create_scraping_history         ← statuses MUST use ScrapingHistoryRepository constants
 ├── generate_insurance_data         ← pension + KH per Israeli law (see rules above)
 └── main()                          ← orchestrates, drops+recreates the DB, prints row counts
 ```
+
+### Data sources (credentials) and their scrape history
+
+`create_credentials` writes the rows behind the **Data Sources** page. Two
+constraints, both learned the hard way:
+
+- **They belong in the fixture, not in runtime seeding.** They used to exist
+  only via `CredentialsService.seed_demo_credentials()`, which runs from the
+  demo-mode *toggle*. The hosted demo forces demo mode on at cold start and
+  never toggles, so nothing seeded them and its Data Sources page was
+  permanently empty. Seeding also goes through `save_credentials`, which needs
+  the OS keyring and `cryptography` — neither exists in a serverless sandbox.
+- **`fields` is plaintext, and carries no password.** Production rows are
+  Fernet-encrypted with a per-machine keyring key that a committed file cannot
+  hold; `decrypt_fields` passes plaintext dicts straight through, so these read
+  everywhere. Passwords never live in this table at all, and demo scrapes use
+  the dummy scrapers, which ignore credentials entirely.
+
+`service` / `provider` / `account_name` must match **exactly** across
+`create_credentials`, `create_scraping_history` and `create_bank_balance` —
+those three are joined on that triple, and a mismatch silently yields "Never
+synced" cards with no balance.
+
+**Scrape statuses must use `ScrapingHistoryRepository.SUCCESS` / `.FAILED`**,
+never string literals. SQLite comparison is case-sensitive: the fixture shipped
+`"SUCCESS"` for a long time, `get_last_successful_scrape_date` filters on
+`'success'`, and so every demo source reported "Never synced" and the
+balance-entry button stayed disabled while the history sat right there in the
+table.
 
 `random.seed(42)` is set at module load so every regeneration produces the same data — commits to the `.db` file stay deterministic. If you add new randomness, keep it seeded so diffs remain small.
 

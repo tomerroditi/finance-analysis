@@ -12,8 +12,9 @@ import { createStore, get, set, del } from "idb-keyval";
 const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   // Mirrors the SW's /api/scraping/* exclusion (rules/frontend_pwa.md says
   // both cache layers must agree). This is the ONLY scraping-backed query
-  // key in the app — live scraper status is polled imperatively through
-  // `scrapingApi.getStatus` in `hooks/useScraping.ts`, never via React
+  // key in the app — live scraper state is fetched imperatively through
+  // `scrapingApi.getStatus` / `scrapingApi.getActive` in
+  // `hooks/useScraping.ts` and kept in a Zustand store, never via React
   // Query, so there is no "scrapingStatus"/"scraping-status" entry to
   // exclude (two such dead strings used to sit here matching nothing).
   "last-scrapes",

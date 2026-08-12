@@ -16,13 +16,31 @@ import logging
 import os
 from typing import Optional
 
-import keyring
-import keyring.errors
+try:
+    import keyring
+    import keyring.errors
+
+    KEYRING_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised only where keyring is absent
+    # Serverless deployments (Vercel) deliberately omit `keyring`: there is no
+    # OS keystore in the sandbox and the demo instance never scrapes. Importing
+    # this module must still work there, or every module that reaches it —
+    # credentials repository → service → routes — becomes unimportable and the
+    # whole /api/credentials surface silently disappears from the app. Reads
+    # degrade to "no secret stored"; writes raise a clear error.
+    keyring = None  # type: ignore[assignment]
+    KEYRING_AVAILABLE = False
 
 from backend.config import AppConfig
 from backend.errors import ValidationException
 
 logger = logging.getLogger(__name__)
+
+_UNAVAILABLE_MESSAGE = (
+    "The OS keyring is not available in this environment, so credential "
+    "secrets cannot be stored. This is expected on the hosted demo, which is "
+    "read-only."
+)
 
 PROD_SERVICE = "finance-analysis-app"
 DEMO_SERVICE = f"{PROD_SERVICE}-demo"
@@ -56,8 +74,10 @@ def ensure_secure_backend() -> None:
     ------
     ValidationException
         If the resolved backend is a known-insecure one and no explicit
-        override is set.
+        override is set, or if ``keyring`` is not installed at all.
     """
+    if not KEYRING_AVAILABLE:
+        raise ValidationException(_UNAVAILABLE_MESSAGE)
     if os.environ.get("FAD_ALLOW_INSECURE_KEYRING") == "1":
         return
     if os.environ.get("PYTHON_KEYRING_BACKEND"):
@@ -118,8 +138,12 @@ def get_secret(service_name: str, secret_name: str) -> Optional[str]:
     Returns
     -------
     Optional[str]
-        The stored value, or None when no entry exists.
+        The stored value, or None when no entry exists — including when this
+        environment has no keyring at all, so callers that merely *prefer* a
+        secret (e.g. a stored password) keep working read-only.
     """
+    if not KEYRING_AVAILABLE:
+        return None
     return keyring.get_password(service_name, secret_name)
 
 
@@ -127,7 +151,8 @@ def set_secret(service_name: str, secret_name: str, value: str) -> None:
     """Store a secret in the OS keyring.
 
     Validates the active backend first — writing to a null/plaintext
-    backend raises instead of silently losing or leaking the secret.
+    backend (or no keyring at all) raises instead of silently losing or
+    leaking the secret.
     """
     ensure_secure_backend()
     keyring.set_password(service_name, secret_name, value)
@@ -139,9 +164,11 @@ def delete_secret(service_name: str, secret_name: str) -> bool:
     Returns
     -------
     bool
-        True when an entry was deleted, False when none existed (a
-        missing entry is not an error).
+        True when an entry was deleted, False when none existed or this
+        environment has no keyring (a missing entry is not an error).
     """
+    if not KEYRING_AVAILABLE:
+        return False
     try:
         keyring.delete_password(service_name, secret_name)
         return True

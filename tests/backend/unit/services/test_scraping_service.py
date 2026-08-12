@@ -106,27 +106,30 @@ class TestScrapingServiceStatus:
         assert result["status"] == "unknown"
         assert result["process_id"] == 99
 
-    def test_get_last_scrape_dates(self, service):
-        """Verify last scrape dates are fetched for all configured accounts."""
-        service.credentials_repo.list_accounts.return_value = [
-            {"service": "credit_cards", "provider": "isracard", "account_name": "Main"},
-            {"service": "banks", "provider": "hapoalim", "account_name": "Checking"},
-        ]
-        service.scraping_history_repo.get_last_successful_scrape_date.side_effect = [
-            "2026-02-18",
-            None,
-        ]
+    def test_get_last_scrape_dates_delegates_to_history_service(self, service):
+        """The public method must keep answering, via the shared implementation.
 
-        result = service.get_last_scrape_dates()
+        The query itself lives in ``ScrapingHistoryService`` so the scraper-free
+        route can reuse it (see ``test_scraping_history_service.py`` for its
+        behaviour); this pins that ``ScrapingService`` still exposes it and does
+        not grow a second copy.
+        """
+        expected = [
+            {
+                "service": "banks",
+                "provider": "hapoalim",
+                "account_name": "Checking",
+                "last_scrape_date": "2026-02-18",
+            },
+        ]
+        history_service = MagicMock()
+        history_service.get_last_scrape_dates.return_value = expected
 
-        assert len(result) == 2
-        assert result[0] == {
-            "service": "credit_cards",
-            "provider": "isracard",
-            "account_name": "Main",
-            "last_scrape_date": "2026-02-18",
-        }
-        assert result[1]["last_scrape_date"] is None
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryService",
+            return_value=history_service,
+        ):
+            assert service.get_last_scrape_dates() == expected
 
 
 class TestScrapingServiceStart:
@@ -785,3 +788,277 @@ class TestScrapingServiceCollectAdapters:
         assert len(normal) == 2
         assert len(tfa) == 0
         assert mock_create_adapter.call_count == 2
+
+
+def _make_adapter(process_id, service_name, provider_name, account_name):
+    """Build a stand-in adapter with the identity fields the registries expose."""
+    adapter = MagicMock()
+    adapter.process_id = process_id
+    adapter.service_name = service_name
+    adapter.provider_name = provider_name
+    adapter.account_name = account_name
+    return adapter
+
+
+class TestScrapingServiceActiveScrapes:
+    """Tests for get_active_scrapes — the client's cold-load recovery path.
+
+    Scraper state lives only in the browser's memory, so a reload (or a
+    second tab) has no process ids: a running scrape looks idle and a
+    2FA-waiting scrape is unanswerable. This endpoint is how the client
+    re-adopts them.
+    """
+
+    def test_reports_running_and_waiting_scrapes(self, service):
+        """Every live adapter is reported with its current DB status."""
+        service.scraping_history_repo.IN_PROGRESS = "in_progress"
+        service.scraping_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+        running = _make_adapter(11, "banks", "hapoalim", "Checking")
+        waiting = _make_adapter(12, "banks", "onezero", "Daily")
+        ss._active_scrapers["banks - hapoalim - Checking"] = running
+        ss._active_scrapers["banks - onezero - Daily"] = waiting
+        ss._tfa_scrapers_waiting["banks - onezero - Daily"] = waiting
+        service.scraping_history_repo.get_scraping_status.side_effect = (
+            lambda pid: "in_progress" if pid == 11 else "waiting_for_2fa"
+        )
+
+        result = service.get_active_scrapes()
+
+        assert result == [
+            {
+                "process_id": 11,
+                "service": "banks",
+                "provider": "hapoalim",
+                "account_name": "Checking",
+                "status": "in_progress",
+            },
+            {
+                "process_id": 12,
+                "service": "banks",
+                "provider": "onezero",
+                "account_name": "Daily",
+                "status": "waiting_for_2fa",
+            },
+        ]
+
+    def test_reports_a_2fa_waiting_adapter_once(self, service):
+        """An adapter in both registries yields exactly one record.
+
+        A 2FA-capable scraper is registered in ``_active_scrapers`` *and*
+        ``_tfa_scrapers_waiting``; reporting it twice would have the client
+        track (and poll) the same process under one card twice.
+        """
+        service.scraping_history_repo.IN_PROGRESS = "in_progress"
+        service.scraping_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+        adapter = _make_adapter(20, "banks", "onezero", "Daily")
+        ss._active_scrapers["banks - onezero - Daily"] = adapter
+        ss._tfa_scrapers_waiting["banks - onezero - Daily"] = adapter
+        service.scraping_history_repo.get_scraping_status.return_value = (
+            "waiting_for_2fa"
+        )
+
+        result = service.get_active_scrapes()
+
+        assert len(result) == 1
+        assert result[0]["process_id"] == 20
+
+    def test_omits_adapters_whose_run_already_finished(self, service):
+        """A terminal history row is not an active scrape.
+
+        An adapter can still be registered while its ``run()`` finally block
+        is unwinding. Reporting it would have a freshly loaded client show a
+        finished scrape as running — and poll a process that will never move.
+        """
+        service.scraping_history_repo.IN_PROGRESS = "in_progress"
+        service.scraping_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+        ss._active_scrapers["banks - hapoalim - Checking"] = _make_adapter(
+            30, "banks", "hapoalim", "Checking"
+        )
+        service.scraping_history_repo.get_scraping_status.return_value = "success"
+
+        assert service.get_active_scrapes() == []
+
+    def test_empty_when_nothing_is_registered(self, service):
+        """Orphaned in_progress rows from a killed process report nothing.
+
+        Truth is the in-process registries, not the history table: a scrape
+        interrupted by a crash leaves its row ``in_progress`` forever, and a
+        DB-driven implementation would resurrect it as a running scrape on
+        every load, with a process id nothing can ever answer.
+        """
+        service.scraping_history_repo.IN_PROGRESS = "in_progress"
+        service.scraping_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+
+        assert service.get_active_scrapes() == []
+        service.scraping_history_repo.get_scraping_status.assert_not_called()
+
+
+class TestScrapingServiceLaunchOrdering:
+    """The adapter must be registered BEFORE its coroutine is launched."""
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_registers_before_launching(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """``run()`` executes on the event-loop thread, concurrently with this
+        one, and its cleanup pops the registries by identity. Launching first
+        let a scrape that failed immediately finish its cleanup before the
+        registration ran — leaving a dead adapter in ``_active_scrapers``
+        that blocked every later scrape of that account until restart.
+        """
+        mock_is_2fa.return_value = False
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        mock_history_repo.record_scrape_start.return_value = 50
+
+        adapter = _make_adapter(50, "banks", "hapoalim", "Main")
+        mock_create_adapter.return_value = adapter
+
+        registered_at_launch = {}
+
+        def record_registry_state(*_args, **_kwargs):
+            registered_at_launch["value"] = (
+                ss._active_scrapers.get("banks - hapoalim - Main") is adapter
+            )
+            return MagicMock()
+
+        mock_asyncio.run_coroutine_threadsafe.side_effect = record_registry_state
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            service.start_scraping_single("banks", "hapoalim", "Main")
+
+        assert registered_at_launch["value"] is True
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_concurrent_starts_for_one_account_launch_once(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """Two simultaneous starts for the same account launch a single scrape.
+
+        ``start_scraping_single`` runs in a FastAPI threadpool worker, and the
+        UI now lets the user fire sources in quick succession — so two calls
+        for one account really can interleave. Without the launch lock both
+        could pass the registry check and launch, firing two scrapes and two
+        OTP SMS for one account. The delay injected into the history insert
+        forces exactly that interleaving.
+        """
+        import threading
+
+        mock_is_2fa.return_value = True
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        ids = iter([61, 62])
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
+
+        def slow_record_start(*_args, **_kwargs):
+            # Stand-in for the real DB insert: any pause here is a window for
+            # the other thread to slip between the check and the registration.
+            import time
+
+            time.sleep(0.05)
+            return next(ids)
+
+        mock_history_repo.record_scrape_start.side_effect = slow_record_start
+        mock_create_adapter.side_effect = lambda *a, **k: _make_adapter(
+            a[5], "banks", "onezero", "Acc"
+        )
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        results = []
+
+        def start():
+            results.append(service.start_scraping_single("banks", "onezero", "Acc"))
+
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            threads = [threading.Thread(target=start) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        assert mock_history_repo.record_scrape_start.call_count == 1
+        assert mock_asyncio.run_coroutine_threadsafe.call_count == 1
+        # Both callers get the one live process id.
+        assert results == [61, 61]
+
+    @patch("backend.services.scraping_service.asyncio")
+    @patch("backend.services.scraping_service.create_adapter")
+    @patch("backend.services.scraping_service.get_db_context")
+    @patch("backend.services.scraping_service.is_2fa_required")
+    def test_concurrent_starts_for_different_accounts_both_launch(
+        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    ):
+        """The lock is a per-account guard, not a global scraping mutex.
+
+        Accounts scrape in parallel — the user clicks one source after another
+        and expects both to run — so concurrent starts for *different*
+        accounts must both go through.
+        """
+        import threading
+
+        mock_is_2fa.return_value = False
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+
+        mock_history_repo = MagicMock()
+        mock_history_repo.IN_PROGRESS = "in_progress"
+        counter = iter([71, 72, 73])
+        mock_history_repo.record_scrape_start.side_effect = lambda *a, **k: next(counter)
+        mock_create_adapter.side_effect = lambda *a, **k: _make_adapter(
+            a[5], a[0], a[1], a[2]
+        )
+
+        @contextmanager
+        def fake_db_context():
+            yield MagicMock()
+
+        mock_get_db_ctx.side_effect = fake_db_context
+
+        def start(account):
+            service.start_scraping_single("banks", "hapoalim", account)
+
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryRepository",
+            return_value=mock_history_repo,
+        ):
+            threads = [
+                threading.Thread(target=start, args=(account,))
+                for account in ("AccA", "AccB", "AccC")
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        assert mock_asyncio.run_coroutine_threadsafe.call_count == 3
+        assert len(ss._active_scrapers) == 3

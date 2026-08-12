@@ -23,7 +23,21 @@ import logging
 import threading
 from typing import Dict
 
-from cryptography.fernet import Fernet, InvalidToken
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised only without cryptography
+    # Same reasoning as `keyring_store`: serverless deployments omit the
+    # encryption stack, and this module sits on the import path of every
+    # credentials route. Legacy/plaintext rows still decrypt (that path never
+    # touches Fernet), so a read-only demo works; encrypting raises.
+    Fernet = None  # type: ignore[assignment]
+
+    class InvalidToken(Exception):  # type: ignore[no-redef]
+        """Stand-in so `except InvalidToken` stays valid without cryptography."""
+
+    CRYPTOGRAPHY_AVAILABLE = False
 
 from backend.errors import ValidationException
 from backend.utils import keyring_store
@@ -32,7 +46,10 @@ logger = logging.getLogger(__name__)
 
 ENCRYPTED_MARKER = "__encrypted__"
 
-_fernet: Fernet | None = None
+# Quoted: `Fernet` is None when cryptography is absent, and an unquoted
+# `Fernet | None` is evaluated at import time (no `from __future__ import
+# annotations` here), which would raise before the fallback could help.
+_fernet: "Fernet | None" = None
 _fernet_lock = threading.Lock()
 
 
@@ -41,10 +58,21 @@ def get_fernet() -> Fernet:
 
     The key lives in the OS Keyring under the app's service name so it is
     never written to the repository, the DB, or any config file.
+
+    Raises
+    ------
+    ValidationException
+        If the ``cryptography`` package is not installed.
     """
     global _fernet
     if _fernet is not None:
         return _fernet
+    if not CRYPTOGRAPHY_AVAILABLE:
+        raise ValidationException(
+            "Credential encryption is unavailable in this environment "
+            "(the cryptography package is not installed). This is expected on "
+            "the hosted demo, which is read-only."
+        )
     with _fernet_lock:
         if _fernet is None:
             key = keyring_store.get_secret(

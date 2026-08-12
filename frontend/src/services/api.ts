@@ -341,6 +341,21 @@ export const credentialsApi = {
 export const scrapingApi = {
   getStatus: (processId: number) =>
     api.get("/scraping/status", { params: { scraping_process_id: processId } }),
+  /**
+   * Scrapes currently running or parked on a 2FA prompt on the backend.
+   * Lets a freshly loaded client re-adopt them — process ids only ever
+   * existed in the previous page's memory.
+   */
+  getActive: () =>
+    api.get<
+      {
+        process_id: number;
+        service: string;
+        provider: string;
+        account_name: string;
+        status: string;
+      }[]
+    >("/scraping/active"),
   start: (payload: {
     service: string;
     provider: string;
