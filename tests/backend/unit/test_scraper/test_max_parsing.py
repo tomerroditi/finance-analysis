@@ -212,3 +212,46 @@ class TestMapTransaction:
         """An id absent from the cache leaves the category as None."""
         txn = _map_transaction(_raw_txn())
         assert txn.category is None
+
+
+class TestFutureBillingMonth:
+    """Max's per-month endpoint is keyed by *billing* month, so a card billed
+    early in the month has the current calendar month's purchases in next
+    month's list. Upstream defaults ``futureMonthsToScrape ?? 1``; a port
+    that stops at the current month silently drops up to a month of data."""
+
+    def test_default_options_request_next_billing_month(self, monkeypatch):
+        """With default options the month after the current one is fetched."""
+        import asyncio
+        from datetime import date
+
+        from dateutil.relativedelta import relativedelta
+
+        from scraper.base import ScraperOptions
+
+        requested: list[date] = []
+
+        async def fake_fetch(page, month_date):
+            requested.append(month_date)
+            return {}
+
+        async def fake_load_categories(page):
+            return None
+
+        monkeypatch.setattr(max_module, "_fetch_transactions_for_month", fake_fetch)
+        async def fake_home_page(page):
+            return {}
+
+        monkeypatch.setattr(max_module, "_load_categories", fake_load_categories)
+        monkeypatch.setattr(max_module, "_load_home_page_data", fake_home_page)
+
+        scraper = max_module.MaxScraper(
+            "max",
+            {"username": "u", "password": "p"},
+            ScraperOptions(start_date=date.today().replace(day=1)),
+        )
+        scraper.page = None
+        asyncio.run(scraper.fetch_data())
+
+        next_month = date.today().replace(day=1) + relativedelta(months=1)
+        assert next_month in requested

@@ -530,7 +530,11 @@ class MaxScraper(BrowserScraper):
         list[AccountResult]
             Accounts with their transactions.
         """
-        future_months = self.options.future_months_to_scrape
+        # The per-month endpoint is keyed by *billing* month: a card billed
+        # early in the month has the current calendar month's purchases in
+        # NEXT month's list, so stopping at the current month silently drops
+        # up to a full month of data. Upstream defaults this to 1 as well.
+        future_months = self.options.future_months_to_scrape or 1
         start_date = self.options.start_date
         start_limit = date.today() - relativedelta(years=4)
         effective_start = max(start_limit, start_date)
