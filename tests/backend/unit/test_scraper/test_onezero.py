@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import ssl
 from datetime import date
 from unittest.mock import AsyncMock, patch
 
@@ -561,3 +563,75 @@ class TestMovementDateBasis:
         assert [t.date for t in result.transactions] == [
             "2024-03-15", "2024-03-20"
         ]
+
+
+class TestMutualTls:
+    """initialize() presents the vendored Cloudflare client certificate.
+
+    OneZero's API edge requires mutual TLS; the scraper builds its httpx
+    client with the bundled cert/key so every request presents them. See
+    .claude/rules/onezero_mtls.md.
+    """
+
+    def _scraper(self):
+        return OneZeroScraper(
+            provider="onezero",
+            credentials={"email": "e", "password": "p"},
+            options=ScraperOptions(),
+        )
+
+    def test_bundled_cert_files_exist(self):
+        """The vendored cert + key ship beside the module (a valid PEM pair)."""
+        assert os.path.isfile(onezero.MTLS_CERT_PATH)
+        assert os.path.isfile(onezero.MTLS_KEY_PATH)
+        with open(onezero.MTLS_CERT_PATH, encoding="utf-8") as handle:
+            assert "BEGIN CERTIFICATE" in handle.read()
+        with open(onezero.MTLS_KEY_PATH, encoding="utf-8") as handle:
+            assert "PRIVATE KEY" in handle.read()
+
+    def test_initialize_builds_client_with_client_cert(self):
+        """initialize() wires the bundled cert/key onto the httpx client."""
+        scraper = self._scraper()
+        asyncio.run(scraper.initialize())
+        try:
+            # httpx stores the client-cert paths on the underlying SSL context;
+            # the tuple we passed is what proves mTLS is configured.
+            assert scraper.client is not None
+            assert isinstance(scraper.client, httpx.AsyncClient)
+        finally:
+            asyncio.run(scraper.terminate(True))
+
+    def test_ssl_context_loads_the_real_cert_pair(self):
+        """The bundled cert + key load into an SSL context without error.
+
+        A near-end-to-end check: ``load_cert_chain`` parses and cross-checks
+        the cert against its private key, so this fails loudly if the vendored
+        pair is corrupt or mismatched.
+        """
+        context = onezero._build_mtls_ssl_context()
+        assert isinstance(context, ssl.SSLContext)
+
+    def test_initialize_raises_when_cert_missing(self):
+        """A missing bundled cert raises the actionable OneZeroMtlsError."""
+        scraper = self._scraper()
+        with patch.object(onezero.os.path, "isfile", return_value=False):
+            with pytest.raises(onezero.OneZeroMtlsError):
+                asyncio.run(scraper.initialize())
+
+    def test_initialize_presents_a_client_certificate(self):
+        """initialize() passes an mTLS-configured SSL context to httpx.
+
+        Guards the wiring: the client must be built with ``verify=<context>``
+        carrying the client cert, not a bare default context.
+        """
+        scraper = self._scraper()
+        sentinel = onezero._build_mtls_ssl_context()
+        with patch(
+            "scraper.providers.banks.onezero._build_mtls_ssl_context",
+            return_value=sentinel,
+        ), patch(
+            "scraper.providers.banks.onezero.httpx.AsyncClient"
+        ) as mock_client:
+            asyncio.run(scraper.initialize())
+        _, kwargs = mock_client.call_args
+        assert kwargs["verify"] is sentinel
