@@ -32,16 +32,16 @@ python -m scraper <provider> --show-browser             # Run scraper with visib
 
 ## Environment Setup (New Clone / Worktree)
 
-`npm run backend` auto-bootstraps the Python venv via `.claude/scripts/bootstrap_venv.sh` if `.venv/` is missing — the first backend start in a fresh worktree takes ~90s, subsequent starts are instant. Frontend deps still install manually:
+`npm run backend` auto-bootstraps the Python venv via `.claude/scripts/bootstrap_venv.sh` if `.venv/` is missing — the first backend start in a fresh worktree takes ~90s, subsequent starts are instant. `npm run dev` (frontend) does the same for `node_modules/` via a `predev` hook that runs `.claude/scripts/bootstrap_frontend.sh` (`npm ci`, ~6s once per worktree, then a single lock-hash check) — so the VS Code "Dev (Backend + Frontend)" task and `./start.sh` both work on a fresh worktree with no manual step. The frontend script deliberately uses `npm ci`, never `npm install`: a plain `npm install` prunes other platforms' optional binaries from `package-lock.json` and breaks Vercel (see `.claude/rules/frontend_pwa.md` → "Lockfile hygiene").
 
-```bash
-cd frontend && npm install
-```
-
-To bootstrap the backend explicitly (without starting it), run the script directly:
+To bootstrap either side explicitly (without starting it), run the script directly:
 
 ```bash
 ./.claude/scripts/bootstrap_venv.sh
+```
+
+```bash
+./.claude/scripts/bootstrap_frontend.sh
 ```
 
 Manual equivalent if you'd rather see each step:
@@ -168,7 +168,7 @@ wait is genuinely needed, prefer a positive anchor
 - **e2e is required, not optional** — `npm test` (vitest) and e2e (`playwright test`) are different layers. e2e specs live in `frontend/e2e/` and drive the real UI in Demo Mode; type-checking and unit tests miss the focus-trap / click-outside / query-invalidation bugs UI patches introduce. Every UI patch must add or update an e2e spec (see the CLAUDE.md "UI Testing" section).
 - **Adding e2e coverage? Extend the page's journey test, don't add a new `test()`.** Cold page navigations dominate suite runtime (each `test()` pays a fresh ~30 s dashboard/budget boot), so new read-only checks go into the existing single-load journey test as a labeled block. A separate `test()` is only for backend writes, a different pre-boot env (localStorage seed, `page.route()` stubs, `language=he`), or when the journey hits the size cap (~100 lines — don't build mega-tests either). Full decision checklist: `.claude/rules/testing.md` → "Adding a new e2e test".
 - **Sandbox (Claude Code on the web) gotcha:** a bare `npx playwright test` fails because the bundled Chromium lags `package.json`. Point Playwright at the installed full-chrome binary via `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` — full procedure in `.claude/rules/testing.md` → "Running e2e specs". **Verified green is the only "verified"** — a browser that failed to launch means the spec did not run.
-- **Fresh worktree:** the first backend command auto-bootstraps `.venv/` (~90 s); frontend deps need a manual `cd frontend && npm install`. See "Environment Setup" above.
+- **Fresh worktree:** the first backend command auto-bootstraps `.venv/` (~90 s) and the first `npm run dev` auto-bootstraps `frontend/node_modules/` (`npm ci`). See "Environment Setup" above.
 - Use a Conventional Commits subject on the PR merge (drives the Commitizen version bump).
 
 ## API
