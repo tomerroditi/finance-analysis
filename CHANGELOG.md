@@ -1,3 +1,9 @@
+## v1.50.3 (2026-08-22)
+
+### Fix
+
+- **scraper**: adapt HaPhoenix login to the new Auth0 Universal Login
+
 ## v1.50.2 (2026-08-22)
 
 ### Fix
