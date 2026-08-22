@@ -1,3 +1,9 @@
+## v1.50.1 (2026-08-22)
+
+### Fix
+
+- **one-zero**: present Cloudflare mTLS client certificate to unblock scraping
+
 ## v1.50.0 (2026-08-05)
 
 ### Feat
