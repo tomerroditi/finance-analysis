@@ -16,13 +16,45 @@ logger = logging.getLogger(__name__)
 LOGIN_URL = "https://my.fnx.co.il/"
 SAVINGS_URL = "https://my.fnx.co.il/savings"
 
-# Step 1: Login form selectors (Angular SPA on my.fnx.co.il)
-ID_FIELD_SELECTOR = "#fnx-id"
+# Step 1: Login form selectors. Since ~2026-08 my.fnx.co.il redirects to an
+# Auth0 Universal Login page on auth.fnx.co.il whose inputs carry no ids
+# (the old Angular form exposed ``#fnx-id``), so fields are located by
+# placeholder. The legacy id is kept as a fallback alternative.
+ID_FIELD_SELECTOR = '#fnx-id, input[placeholder="מספר ת.ז*"]'
 PHONE_FIELD_SELECTOR = 'input[placeholder="טלפון נייד או כתובת מייל*"]'
 
-# Step 2: OTP page selectors (on login.fnx.co.il)
-OTP_FIELD_SELECTOR = "#otp"
-OTP_SUBMIT_SELECTOR = "#login-btn"
+# Step 2: OTP page (auth.fnx.co.il/u/mfa-sms-challenge). The page renders no
+# stable ids and still shows the ID input, so the OTP field is found
+# structurally: the first visible input that is not the ID/phone field.
+# ``_TAG_OTP_INPUT_JS`` stamps it with this attribute so the typing helpers
+# can address it with a plain selector.
+OTP_FIELD_SELECTOR = "input[data-fad-otp]"
+OTP_SUBMIT_SELECTOR = '#login-btn, button[type="submit"]'
+_LOGIN_PLACEHOLDERS = ["מספר ת.ז*", "טלפון נייד או כתובת מייל*"]
+
+_TAG_OTP_INPUT_JS = """
+(loginPlaceholders) => {
+    const visible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    const candidates = Array.from(document.querySelectorAll('input'))
+        .filter(i => visible(i) && !i.disabled && !i.readOnly)
+        .filter(i => ['text', 'tel', 'number', 'password', ''].includes(i.type))
+        .filter(i => !loginPlaceholders.includes(i.placeholder));
+    const preferred = candidates.find(i =>
+        i.id === 'otp' || i.autocomplete === 'one-time-code'
+        || (i.placeholder || '').includes('קוד') || i.inputmode === 'numeric');
+    const otp = preferred || candidates[0];
+    if (!otp) return false;
+    otp.setAttribute('data-fad-otp', '1');
+    return true;
+}
+"""
+
+_DUMP_INPUTS_JS = """
+() => Array.from(document.querySelectorAll('input')).map(i => ({
+    id: i.id, type: i.type, placeholder: i.placeholder, inputmode: i.inputmode,
+    maxlength: i.maxLength, visible: !!(i.offsetWidth || i.offsetHeight),
+}))
+"""
 
 # JS to click the send-code button (no stable CSS selector)
 _CLICK_SEND_CODE_JS = """
@@ -136,9 +168,10 @@ class HaPhoenixScraper(BrowserScraper):
     async def login(self) -> LoginResult:
         """Authenticate with HaPhoenix personal area.
 
-        Two-step browser login:
-        1. Fill ID number and phone number on my.fnx.co.il, submit.
-        2. Redirected to login.fnx.co.il OTP page, fill code, submit.
+        Two-step browser login (Auth0 Universal Login on auth.fnx.co.il):
+        1. Fill ID number and phone number, request an SMS code.
+        2. Fill the OTP code on the next step, submit, wait for the
+           redirect back to my.fnx.co.il.
 
         Returns
         -------
@@ -182,11 +215,22 @@ class HaPhoenixScraper(BrowserScraper):
             await self._wait_for_submit_enabled()
             await self.page.evaluate(_CLICK_SEND_CODE_JS)
 
-            # Step 2: Wait for OTP page (redirects to login.fnx.co.il)
+            # Step 2: Wait for the MFA challenge step, then locate its input.
             self._emit_progress("waiting for OTP page")
-            await wait_until_element_found(
-                self.page, OTP_FIELD_SELECTOR, only_visible=True, timeout=30000
+            await self.page.wait_for_url(
+                lambda url: "mfa" in url or "challenge" in url or "login.fnx.co.il" in url,
+                timeout=30000,
             )
+            try:
+                await self.page.wait_for_function(
+                    _TAG_OTP_INPUT_JS, arg=_LOGIN_PLACEHOLDERS, timeout=30000
+                )
+            except Exception:
+                inputs = await self.page.evaluate(_DUMP_INPUTS_JS)
+                raise RuntimeError(
+                    f"could not find the OTP input on {self.page.url}; "
+                    f"inputs on page: {inputs}"
+                )
 
             # Request OTP from user
             if self.on_otp_request is None:
@@ -213,16 +257,26 @@ class HaPhoenixScraper(BrowserScraper):
             await self._human_delay(0.2, 0.5)
             await self._type_like_human(OTP_FIELD_SELECTOR, otp_code)
             await self._human_delay(0.3, 0.8)
-            await self.page.wait_for_selector(
-                f"{OTP_SUBMIT_SELECTOR}:not([disabled])", timeout=10000
-            )
-            await self.page.click(OTP_SUBMIT_SELECTOR)
+            submit = self.page.locator(OTP_SUBMIT_SELECTOR).first
+            try:
+                await submit.wait_for(state="visible", timeout=5000)
+                await self.page.wait_for_function(
+                    "sel => !document.querySelector(sel)?.disabled",
+                    arg=OTP_SUBMIT_SELECTOR,
+                    timeout=10000,
+                )
+                await submit.click()
+            except Exception:
+                # Some OTP forms auto-submit or only accept Enter.
+                await self.page.keyboard.press("Enter")
 
             # Wait for post-login redirect back to my.fnx.co.il
-            # Flow: login.fnx.co.il -> my.fnx.co.il/redirect?code=... -> my.fnx.co.il/
+            # Flow: auth.fnx.co.il/u/... (or legacy login.fnx.co.il)
+            #   -> my.fnx.co.il/redirect?code=... -> my.fnx.co.il/
             self._emit_progress("waiting for login to complete")
             await self.page.wait_for_url(
-                lambda url: "login.fnx.co.il" not in url,
+                lambda url: "login.fnx.co.il" not in url
+                and "auth.fnx.co.il" not in url,
                 timeout=30000,
             )
             # Wait for the dashboard nav to render (confirms login succeeded)
@@ -243,7 +297,8 @@ class HaPhoenixScraper(BrowserScraper):
             () => {
                 const btn = Array.from(document.querySelectorAll('button'))
                     .find(b => b.textContent.includes('שלחו לי קוד כניסה'));
-                return btn && btn.getAttribute('aria-disabled') !== 'true';
+                return btn && !btn.disabled
+                    && btn.getAttribute('aria-disabled') !== 'true';
             }
             """,
             timeout=timeout,
