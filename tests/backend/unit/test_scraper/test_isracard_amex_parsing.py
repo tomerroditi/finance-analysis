@@ -2,6 +2,8 @@
 
 from datetime import date, datetime
 
+from dateutil.relativedelta import relativedelta
+
 from scraper.models.transaction import TransactionStatus, TransactionType
 from scraper.providers.credit_cards.isracard_amex_base import (
     _convert_currency,
@@ -252,3 +254,37 @@ class TestUrlBuilders:
         assert "reqName=CardsTransactionsList" in url
         assert "month=03" in url
         assert "year=2024" in url
+
+
+class TestFutureBillingMonth:
+    """Isracard's ``month=`` is a *billing* month, so a card cut around the 1st
+    has every purchase of the current calendar month sitting in next month's
+    list. The scraper must request that future month by default or it returns
+    a silent "success" with the whole current month missing."""
+
+    def test_default_options_request_next_billing_month(self, monkeypatch):
+        """With default options the month after the current one is fetched."""
+        import asyncio
+
+        from scraper.base import ScraperOptions
+        from scraper.providers.credit_cards import isracard_amex_base as base
+
+        requested: list[date] = []
+
+        async def fake_fetch(page, options, services_url, start_date, month_date):
+            requested.append(month_date)
+            return {}
+
+        monkeypatch.setattr(base, "_fetch_transactions_for_month", fake_fetch)
+
+        asyncio.run(
+            base._fetch_all_transactions(
+                page=None,
+                options=ScraperOptions(),
+                services_url="https://x",
+                start_date=date.today().replace(day=1),
+            )
+        )
+
+        next_month = (date.today().replace(day=1) + relativedelta(months=1))
+        assert next_month in requested
