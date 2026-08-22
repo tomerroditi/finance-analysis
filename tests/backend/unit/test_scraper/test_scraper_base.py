@@ -280,3 +280,14 @@ class TestScraperErrorClassification:
         result = asyncio.run(scraper.scrape())
         assert result.success is False
         assert result.error_type == "INVALID_PASSWORD"
+
+
+class TestScraperOptionsDefaults:
+    """Defaults that every provider inherits and must not silently regress."""
+
+    def test_future_months_defaults_to_one(self):
+        """Month-keyed providers (Isracard/Amex, Max, Cal) query by *billing*
+        month, so the current calendar month's purchases live in next month's
+        list. A default of 0 silently dropped up to a month of data in two
+        ports; 1 (upstream's default) is the safe baseline for new providers."""
+        assert ScraperOptions().future_months_to_scrape == 1

@@ -67,7 +67,10 @@ class ScraperOptions:
     show_browser: bool = False
     default_timeout: float = 30000
     start_date: date = field(default_factory=date.today)
-    future_months_to_scrape: int = 0
+    # Month-keyed providers (Isracard/Amex, Max, Cal) query by *billing*
+    # month; the current calendar month's purchases live in next month's
+    # list. Upstream defaults this to 1 — 0 silently drops up to a month.
+    future_months_to_scrape: int = 1
     combine_installments: bool = False
     store_failure_screenshot_path: Optional[str] = None
     verbose: bool = False
