@@ -444,7 +444,11 @@ async def _fetch_all_transactions(
     list[AccountResult]
         List of accounts with their transactions.
     """
-    future_months = options.future_months_to_scrape
+    # ``month=`` is a *billing* month. A card cut around the 1st bills every
+    # purchase of the current calendar month in NEXT month's list, so stopping
+    # at the current month silently drops up to a full month of data (the
+    # scrape still reports success). Upstream defaults this to 1 as well.
+    future_months = options.future_months_to_scrape or 1
     all_months = get_all_months(start_date, future_months)
 
     results: list[dict[str, dict]] = []
