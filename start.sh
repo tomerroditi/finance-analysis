@@ -19,8 +19,9 @@
 # This file is the single owner of those numbers — VS Code tasks
 # (.vscode/tasks.json) call the same modes instead of repeating ports.
 #
-# The Python venv is auto-bootstrapped on first run (~90s, idempotent) via
-# .claude/scripts/bootstrap_venv.sh — no manual setup step needed.
+# The Python venv and frontend node_modules are auto-bootstrapped on first
+# run (idempotent) via .claude/scripts/bootstrap_venv.sh and
+# bootstrap_frontend.sh — no manual setup step needed.
 
 set -euo pipefail
 
@@ -36,6 +37,7 @@ BACKEND_PORT="${2:-${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}}"
 FRONTEND_PORT="${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}"
 
 ./.claude/scripts/bootstrap_venv.sh
+./.claude/scripts/bootstrap_frontend.sh
 
 # Run both dev servers; extra args are threaded to uvicorn/vite by the caller.
 #   $1 - extra uvicorn args (e.g. "--host 0.0.0.0"), may be empty

@@ -4,6 +4,7 @@
   "version": "1.46.0",
   "type": "module",
   "scripts": {
+    "predev": "bash ../.claude/scripts/bootstrap_frontend.sh",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
