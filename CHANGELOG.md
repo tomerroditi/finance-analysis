@@ -1,3 +1,9 @@
+## v1.50.2 (2026-08-22)
+
+### Fix
+
+- **scraper**: default future_months_to_scrape to 1 so current-month purchases are scraped
+
 ## v1.50.1 (2026-08-22)
 
 ### Fix
