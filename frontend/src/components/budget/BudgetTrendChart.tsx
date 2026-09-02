@@ -55,19 +55,16 @@ export const BudgetTrendChart: React.FC<BudgetTrendChartProps> = ({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-[var(--surface-light)]/40 transition-colors"
       >
+        {/* The chart lives in the ~272px rail, so the subtitle and a spelled-out
+            toggle label would wrap the title across three lines. The chevron
+            already says which way this goes. */}
         <span className="flex items-center gap-2 min-w-0">
           <TrendingUp size={18} className="text-[var(--primary)] shrink-0" />
-          <span className="font-semibold text-sm text-[var(--text-default)]">
+          <span className="font-semibold text-sm text-[var(--text-default)] truncate">
             {t("budget.trend.title")}
           </span>
-          <span className="text-xs text-[var(--text-muted)] hidden sm:inline">
-            {t("budget.trend.subtitle", { count: months })}
-          </span>
         </span>
-        <span className="flex items-center gap-2 shrink-0 text-[var(--text-muted)]">
-          <span className="text-xs font-medium hidden md:inline">
-            {open ? t("budget.trend.hide") : t("budget.trend.show")}
-          </span>
+        <span className="flex items-center shrink-0 text-[var(--text-muted)]">
           {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
         </span>
       </button>

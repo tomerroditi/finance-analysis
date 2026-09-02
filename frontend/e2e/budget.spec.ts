@@ -115,6 +115,30 @@ test.describe("Budget", () => {
       await expect(refundsHeader.first()).toBeVisible();
     }
 
+    // --- Per-rule trend column ---
+    // Every budgeted envelope carries its own sparkline, and the summary in
+    // its aria-label names each month plus the reference figure, so the
+    // status is never conveyed by colour alone.
+    const sparklines = page.getByTestId("rule-sparkline");
+    await expect(sparklines.first()).toBeVisible();
+    const monthlyLabel = await sparklines.first().locator("svg").getAttribute("aria-label");
+    expect(monthlyLabel).toBeTruthy();
+    expect(monthlyLabel).toMatch(/Budget/i);
+
+    // Monthly rules plot discrete bars against a dashed budget line; the
+    // yearly tab plots a cumulative burn line instead (different question,
+    // different mark), so the two must not render the same element type.
+    await expect(sparklines.first().locator("rect").first()).toBeVisible();
+
+    await page.getByRole("button", { name: /^Yearly$/i }).click();
+    const yearlySpark = page.getByTestId("rule-sparkline").first();
+    if (await yearlySpark.isVisible().catch(() => false)) {
+      await expect(yearlySpark.locator("polyline")).toHaveCount(1);
+      await expect(yearlySpark.locator("rect")).toHaveCount(0);
+    }
+    await page.getByText(/Monthly Budget/i).click();
+    await expect(prevMonth).toBeVisible();
+
     // --- 'View all projects' jumps to the Projects tab ---
     const viewAll = page.getByRole("button", { name: /View all projects/i });
     if (await viewAll.isVisible().catch(() => false)) {
