@@ -1,3 +1,13 @@
+## v1.51.0 (2026-09-02)
+
+### Feat
+
+- **budget**: command-bar layout with per-rule trend sparklines
+
+### Fix
+
+- **budget**: tighten the yearly empty state and the rail trend header
+
 ## v1.50.3 (2026-08-22)
 
 ### Fix
