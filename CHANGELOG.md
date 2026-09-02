@@ -1,3 +1,44 @@
+## v1.50.3 (2026-08-22)
+
+### Fix
+
+- **scraper**: adapt HaPhoenix login to the new Auth0 Universal Login
+
+## v1.50.2 (2026-08-22)
+
+### Fix
+
+- **scraper**: default future_months_to_scrape to 1 so current-month purchases are scraped
+
+## v1.50.1 (2026-08-22)
+
+### Fix
+
+- **one-zero**: present Cloudflare mTLS client certificate to unblock scraping
+
+## v1.50.0 (2026-08-05)
+
+### Feat
+
+- **retirement**: explain the readiness state behind an info icon
+- **retirement**: add a fourth readiness state for solvent plans without FIRE
+- **retirement**: remove dead Total Investments card, vehicle tooltips, depletion-truncated projection chart
+- **demo**: make the demo retirement plan on track
+- **dashboard**: add opt-in early retirement insights card
+
+### Fix
+
+- **rates**: make rate-point upserts atomic so concurrent seeding can't 500
+- **tests**: assert savings-goal monthly_needed against the day-based runway
+- **retirement**: cap the net worth projection at true depletion, in any phase
+- **retirement**: preserve page workspace across route navigation
+- **frontend**: satisfy fast-refresh lint on chart helper; stop focus-refetch churn
+- **retirement**: keep cached values on screen during background refetches
+- **retirement**: round all auto-filled amounts to whole shekels
+- **retirement**: second-pass audit — override freezing, wrong pension autofill, UI/solver edge cases
+- **retirement**: count synced KH investments once, not twice
+- **retirement**: correct FIRE math — real terms, KH wealth, additional savings, on-track solvers
+
 ## v1.49.7 (2026-07-28)
 
 ### Fix

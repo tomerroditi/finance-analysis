@@ -4,6 +4,7 @@ Interest rates repository with SQLAlchemy ORM.
 
 import pandas as pd
 from sqlalchemy import func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from backend.models.interest_rate import InterestRate
@@ -85,26 +86,35 @@ class InterestRatesRepository:
         int
             Number of points inserted or updated.
         """
+        # One atomic INSERT .. ON CONFLICT DO UPDATE per point, rather than
+        # SELECT-then-INSERT. The read-then-write version raced: seeding is
+        # lazy (RatesService.ensure_seeded is check-then-act), so two
+        # concurrent cold requests — the Liabilities page fetches
+        # /rates/current and /rates/history at once — both saw an empty
+        # series and both inserted the same points. The loser hit
+        # `UNIQUE constraint failed: interest_rates.series, date` and the
+        # request 500'd on a fresh install. Conflict resolution belongs in
+        # the write itself, where it is atomic.
         changed = 0
         for point in points:
-            stmt = select(InterestRate).where(
-                InterestRate.series == series, InterestRate.date == point["date"]
+            stmt = sqlite_insert(InterestRate).values(
+                series=series,
+                date=point["date"],
+                value=float(point["value"]),
+                source=source,
             )
-            existing = self.db.execute(stmt).scalar_one_or_none()
-            if existing is None:
-                self.db.add(
-                    InterestRate(
-                        series=series,
-                        date=point["date"],
-                        value=float(point["value"]),
-                        source=source,
-                    )
-                )
-                changed += 1
-            elif existing.value != float(point["value"]):
-                existing.value = float(point["value"])
-                existing.source = source
-                changed += 1
+            # DO UPDATE only when the value actually moved, so the return
+            # count keeps meaning "points inserted or changed".
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["series", "date"],
+                set_={
+                    "value": stmt.excluded.value,
+                    "source": stmt.excluded.source,
+                    "updated_at": func.now(),
+                },
+                where=InterestRate.value.is_distinct_from(stmt.excluded.value),
+            )
+            changed += self.db.execute(stmt).rowcount
         if changed:
             self.db.commit()
         return changed

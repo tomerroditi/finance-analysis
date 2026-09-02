@@ -57,11 +57,13 @@ test.describe("Retirement snapshot fields", () => {
     const computedLabels = page.getByText("auto-calculated");
     await expect(computedLabels).toHaveCount(2);
 
-    // No reset buttons should be visible initially (form = calculated values)
+    // Exactly one reset button is visible initially: the demo goal ships
+    // with an Avg Monthly Expenses override (steady-state spending without
+    // the wedding/renovation arcs), so that field differs from calculated.
     const resetBtns = page.locator("button[title='Reset to calculated']");
-    await expect(resetBtns).toHaveCount(0);
+    await expect(resetBtns).toHaveCount(1);
 
-    // Change the Net Worth value (first snapshot input)
+    // Change the Net Worth value (first snapshot input — not overridden)
     const netWorthInput = page
       .locator(".p-3.rounded-xl input[type='number']")
       .first();
@@ -69,15 +71,43 @@ test.describe("Retirement snapshot fields", () => {
     await netWorthInput.fill("999999");
     await netWorthInput.press("Tab");
 
-    // Reset button should now appear for that field
-    await expect(resetBtns.first()).toBeVisible();
+    // A second reset button appears; Net Worth's card comes first in the
+    // grid, so its reset button is the first one.
+    await expect(resetBtns).toHaveCount(2);
 
     // Click reset — value should revert
     await resetBtns.first().click();
     await expect(netWorthInput).toHaveValue(originalValue);
 
-    // Reset button should disappear again
-    await expect(resetBtns).toHaveCount(0);
+    // Back to just the shipped expenses-override reset button
+    await expect(resetBtns).toHaveCount(1);
+  });
+
+  // Regression: the form + Calculate preview lived in component state, so
+  // navigating to another app page (which unmounts this one) wiped them and
+  // every re-entry looked like a full page reload. The session workspace
+  // store must restore the user's edits on remount.
+  test("form edits survive navigating away and back", async ({ page }) => {
+    await navigateTo(page, "/early-retirement");
+
+    const netWorthInput = page
+      .locator(".p-3.rounded-xl input[type='number']")
+      .first();
+    await expect
+      .poll(async () => Number(await netWorthInput.inputValue()), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    await netWorthInput.fill("2222222");
+
+    // Client-side navigation away and back via the sidebar.
+    await page.getByRole("link", { name: /Transactions/i }).first().click();
+    await expect(page).toHaveURL(/transactions/);
+    await page.getByRole("link", { name: /Early Retirement/i }).first().click();
+
+    // The edited value is restored — not rebuilt from the saved goal.
+    await expect(netWorthInput).toHaveValue("2222222", { timeout: 30_000 });
   });
 
   test("modified snapshot fields are sent when saving the plan", async ({
@@ -114,5 +144,13 @@ test.describe("Retirement snapshot fields", () => {
     expect(resp.ok()).toBeTruthy();
     const body = await resp.request().postDataJSON();
     expect(body.net_worth_override).toBe(1234567);
+    // Untouched snapshot fields must save as null, NOT as frozen copies of
+    // today's calculated values — the old behavior pinned net worth/income/
+    // expenses at save-day numbers and the plan stopped tracking real data.
+    expect(body.monthly_income).toBeNull();
+    expect(body.total_investments_override).toBeNull();
+    // The demo goal's stored expenses override (steady-state spending,
+    // differs from calculated) survives the save untouched.
+    expect(body.monthly_expenses_override).toBe(22000);
   });
 });

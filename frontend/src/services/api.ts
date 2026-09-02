@@ -848,9 +848,12 @@ export interface RetirementProjections {
   earliest_possible_retirement_age: number;
   monthly_savings_needed: number;
   progress_pct: number;
-  readiness: "on_track" | "close" | "off_track";
+  // "funded" = never reaches the FIRE number in the target window, but the
+  // portfolio never depletes either (pension / Bituach Leumi carry it).
+  readiness: "on_track" | "close" | "funded" | "off_track";
   portfolio_depleted_age: number | null;
   target_retirement_age: number;
+  full_pension_age: number;
   net_worth_projection: {
     age: number;
     net_worth_optimistic: number;

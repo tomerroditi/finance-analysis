@@ -133,18 +133,31 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
   },
   "/early-retirement": (qc, { isDemoMode }) => {
     const k = makeQueryKeys(isDemoMode);
-    warm(qc, k.retirement.goal(), () =>
-      retirementApi.getGoal().then((r) => r.data),
-    );
     warm(qc, k.retirement.status(), () =>
       retirementApi.getStatus().then((r) => r.data),
     );
-    warm(qc, k.retirement.projections(), () =>
-      retirementApi.getProjections().then((r) => r.data),
-    );
-    warm(qc, k.retirement.suggestions(), () =>
-      retirementApi.getSuggestions().then((r) => r.data),
-    );
+    // Projections and suggestions 404 when no goal is configured (and the
+    // page's own queries are `enabled`-gated on the goal) — warm them only
+    // once the goal fetch confirms a plan exists. fetchQuery dedupes with
+    // the same key+staleTime the page uses, so this is still one request.
+    void qc
+      .fetchQuery({
+        queryKey: k.retirement.goal(),
+        queryFn: () => retirementApi.getGoal().then((r) => r.data),
+        staleTime: PREFETCH_STALE_TIME,
+      })
+      .then((goal) => {
+        if (!goal) return;
+        warm(qc, k.retirement.projections(), () =>
+          retirementApi.getProjections().then((r) => r.data),
+        );
+        warm(qc, k.retirement.suggestions(), () =>
+          retirementApi.getSuggestions().then((r) => r.data),
+        );
+      })
+      .catch(() => {
+        // Prefetch is best-effort — the page fetches on mount regardless.
+      });
   },
   "/data-sources": (qc, { isDemoMode }) => {
     // Only the bank balances are safe/worthwhile to warm — credentials,

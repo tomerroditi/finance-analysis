@@ -103,6 +103,14 @@ export const queryClient = new QueryClient({
       // disk while we refetch" experience after a cold start.
       gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
       retry: 1,
+      // Returning to the tab must not replay the loading experience. This
+      // app is local-first: server data only changes through the user's own
+      // mutations (covered by the global invalidator above) or an in-app
+      // scrape — there is no other writer to poll for. The default
+      // focus-refetch just burst-refetched every active query after >5 min
+      // away (chart redraws, network churn) for data that couldn't have
+      // changed. Navigation/mount refetches of stale data still apply.
+      refetchOnWindowFocus: false,
     },
   },
 });

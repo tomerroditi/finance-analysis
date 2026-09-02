@@ -66,7 +66,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
-- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing
+- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`)
 - **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
@@ -79,6 +79,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Project ↔ monthly/yearly category exclusion:** a category can't be both project-owned and used by a monthly/yearly rule — the new-project category picker (`GET /budget/projects/available`) filters out any category already claimed by a monthly/yearly rule, and monthly/yearly rule creation blocks categories already claimed by a project. Existing overlaps (e.g. from data predating this rule) surface via `GET /budget/category-conflicts` as a chip in the Budget page's `BudgetNoticeLine` — non-blocking, dismissible.
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
+- **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style
 
@@ -237,3 +238,4 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 - Alembic migrations run on startup (`backend/main.py` → `alembic upgrade head`) AFTER `Base.metadata.create_all` — they must be idempotent (fresh DBs already have current-model tables), set `down_revision` to the current head, and use `op.batch_alter_table(..., recreate="always")` to drop SQLite constraints/columns
 - Toggling Demo Mode (including e2e specs that flip it) re-copies the frozen demo snapshot — hand-added demo accounts/data are lost (real data is untouched)
 - **Vercel serverless (`index.py` → `backend/main.py` lifespan):** the `if os.environ.get("VERCEL"): yield; return` guard MUST stay at the very top of `lifespan`, before any import that transitively pulls in `keyring` (`scraping_service` → `credentials_repository` → `import keyring`). `keyring` is intentionally absent from the Vercel `requirements.txt` (no OS keyring in the sandbox; demo mode never scrapes), so any keyring-backed import placed above the guard crashes cold start with `ModuleNotFoundError: No module named 'keyring'` → the whole function 500s with `FUNCTION_INVOCATION_FAILED` on every route (it fails in lifespan, so it takes down all routes). Regression guard: `tests/backend/unit/test_vercel_lifespan.py`
+- **OneZero requires a Cloudflare mTLS client certificate** (since ~2026-08): its API hosts 403 with an "Attention Required" block page before login unless the request presents a client cert. The cert is bundled+shared in the OneZero app (not per-account — generic `O=One Zero` subject, no personal identifiers), so we vendor the extracted PEMs at `scraper/providers/banks/onezero_mtls/` and `OneZeroScraper.initialize()` builds an mTLS httpx client from them. If OneZero scraping starts 403ing, the cert likely rotated or expired (current one valid until 2027-08-05) — re-extract per `.claude/rules/onezero_mtls.md`. The cert is public-by-construction (extractable from the free app), so committing it exposes nothing about any account.

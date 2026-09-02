@@ -1,5 +1,7 @@
 import logging
+import os
 import re
+import ssl
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -24,6 +26,57 @@ HEBREW_WORDS_REGEX = re.compile(r"[\u0590-\u05FF][\u0590-\u05FF\"'\-_ /\\]*[\u05
 IDENTITY_SERVER_URL = "https://identity.tfd-bank.com/v1"
 
 GRAPHQL_API_URL = "https://mobile.tfd-bank.com/mobile-graph/graphql"
+
+# OneZero's API edge is behind Cloudflare mTLS (see OneZeroScraper's docstring
+# and .claude/rules/onezero_mtls.md): without a client certificate every
+# request — including the pre-login device-token call — is 403'd by Cloudflare
+# before it reaches OneZero. The certificate is bundled in the OneZero app and
+# shared across all installs, so it is extracted once and vendored here beside
+# this module. These are the two extracted PEM files.
+_MTLS_DIR = os.path.join(os.path.dirname(__file__), "onezero_mtls")
+MTLS_CERT_PATH = os.path.join(_MTLS_DIR, "mtls_cert.pem")
+MTLS_KEY_PATH = os.path.join(_MTLS_DIR, "mtls_key.key")
+
+# Actionable message shown when the bundled certificate is missing. Surfacing
+# this instead of the opaque Cloudflare 403 is the difference between
+# "re-extract the cert" and a day of head-scratching.
+MTLS_MISSING_MESSAGE = (
+    "OneZero requires a mutual-TLS client certificate that is not bundled at "
+    f"{_MTLS_DIR}. Re-extract it from the OneZero app — see "
+    ".claude/rules/onezero_mtls.md."
+)
+
+
+class OneZeroMtlsError(Exception):
+    """Raised when OneZero's mTLS client certificate is unavailable.
+
+    OneZero cannot be scraped without the Cloudflare-issued client
+    certificate; this is raised during ``initialize`` so the failure names
+    the real cause and points at the extraction runbook rather than letting
+    the scrape proceed into an opaque Cloudflare 403.
+    """
+
+
+def _build_mtls_ssl_context() -> ssl.SSLContext:
+    """Build an SSL context that presents the vendored client certificate.
+
+    Starts from the default (server-verifying, system-CA) context and loads
+    the bundled client cert/key so httpx presents them during the TLS
+    handshake. Passed to ``httpx.AsyncClient(verify=...)`` — the modern
+    replacement for the deprecated ``cert=`` argument, and the only way to
+    keep normal server verification while adding a client certificate.
+
+    Raises
+    ------
+    OneZeroMtlsError
+        When either bundled PEM file is missing.
+    """
+    if not os.path.isfile(MTLS_CERT_PATH) or not os.path.isfile(MTLS_KEY_PATH):
+        raise OneZeroMtlsError(MTLS_MISSING_MESSAGE)
+
+    context = ssl.create_default_context()
+    context.load_cert_chain(certfile=MTLS_CERT_PATH, keyfile=MTLS_KEY_PATH)
+    return context
 
 GET_CUSTOMER = """
 query GetCustomer {
@@ -739,6 +792,22 @@ class OneZeroScraper(ApiScraper):
 
     Uses the One Zero identity server for OTP-based authentication
     and GraphQL API for fetching transaction data.
+
+    Mutual TLS
+    ----------
+    OneZero's API hosts (``identity.tfd-bank.com`` / ``mobile.tfd-bank.com``)
+    sit behind **Cloudflare mTLS**: Cloudflare 403s any request that does not
+    present a client certificate issued by its managed CA, *before* the
+    request reaches OneZero — so even the pre-login device-token call fails.
+    The mobile app ships this certificate bundled in its APK
+    (``res/raw/mtls_cert.pem`` + ``res/raw/mtls_key.key``); it is shared
+    across all installs (not per-device / per-account — subject is the generic
+    ``O=One Zero`` org, carries no personal identifier, and is presented before
+    login). We vendor the extracted PEMs beside this module (``onezero_mtls/``)
+    and ``initialize`` builds an httpx client that presents them. When they are
+    missing, ``initialize`` raises ``OneZeroMtlsError``.
+
+    Full extraction/rotation runbook: ``.claude/rules/onezero_mtls.md``.
     """
 
     _otp_context: Optional[str] = None
@@ -747,6 +816,25 @@ class OneZeroScraper(ApiScraper):
     # flow runs (None when a stored token was reused). The backend adapter
     # reads this to persist a refreshed token after a forced re-auth.
     refreshed_otp_long_term_token: Optional[str] = None
+
+    async def initialize(self) -> None:
+        """Create an mTLS-authenticated HTTP client.
+
+        Builds an httpx client that presents the vendored Cloudflare client
+        certificate (``MTLS_CERT_PATH`` / ``MTLS_KEY_PATH``) on every request.
+        See the class docstring.
+
+        Raises
+        ------
+        OneZeroMtlsError
+            When the bundled certificate or key is absent — OneZero cannot be
+            reached without them.
+        """
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0),
+            follow_redirects=True,
+            verify=_build_mtls_ssl_context(),
+        )
 
     async def _trigger_two_factor_auth(self, phone_number: str) -> dict:
         """Trigger OTP SMS to the user's phone number.

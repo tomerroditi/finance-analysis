@@ -5,7 +5,7 @@ import pytest
 
 from backend.errors import EntityNotFoundException
 from backend.models.savings_goal import SavingsGoal
-from backend.services.savings_goal_service import SavingsGoalService
+from backend.services.savings_goal_service import DAYS_PER_MONTH, SavingsGoalService
 
 
 def _months_until(target_date: str) -> int:
@@ -13,6 +13,22 @@ def _months_until(target_date: str) -> int:
     today = pd.Timestamp.today().normalize()
     target = pd.Timestamp(target_date)
     return max(0, (target.year - today.year) * 12 + (target.month - today.month))
+
+
+def _runway_months_until(target_date: str) -> float:
+    """Mirror the service's day-based runway relative to today.
+
+    `months_remaining` (above) is a calendar-month difference that ignores
+    the day of month; `monthly_needed` is deliberately sized off the real
+    runway in days instead, so a goal due on the 1st two months out isn't
+    treated as two full months when only ~39 days remain. The two are
+    different quantities — asserting `monthly_needed` against the calendar
+    count only agreed by rounding coincidence and broke the day the month
+    ticked over (881 calendar months -> 880 while the day runway held).
+    """
+    today = pd.Timestamp.today().normalize()
+    target = pd.Timestamp(target_date)
+    return max(0, (target - today).days) / DAYS_PER_MONTH
 
 
 class TestSavingsGoalServiceCrud:
@@ -119,9 +135,10 @@ class TestSavingsGoalEnrichment:
             target_date=target_date,
         )
 
-        months = _months_until(target_date)
-        assert goal["months_remaining"] == months
-        assert goal["monthly_needed"] == round(12000.0 / months, 2)
+        assert goal["months_remaining"] == _months_until(target_date)
+        assert goal["monthly_needed"] == round(
+            12000.0 / _runway_months_until(target_date), 2
+        )
 
     def test_past_target_date_needs_full_remaining_now(self, db_session):
         """A past target date leaves 0 months and the full remaining amount."""

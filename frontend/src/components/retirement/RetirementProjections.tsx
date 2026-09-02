@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Target,
@@ -8,6 +8,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  ShieldCheck,
   XCircle,
   Info,
   Wand2,
@@ -41,6 +42,14 @@ const readinessConfig = {
     bg: "bg-amber-500/10",
     border: "border-amber-500/30",
   },
+  // Solvent for life, just never hits the FIRE number — a working plan, so
+  // it reads blue (informational) rather than amber (warning) or red.
+  funded: {
+    icon: ShieldCheck,
+    color: "text-sky-400",
+    bg: "bg-sky-500/10",
+    border: "border-sky-500/30",
+  },
   off_track: {
     icon: XCircle,
     color: "text-rose-400",
@@ -57,19 +66,39 @@ function formatSuggestionValue(field: SuggestionField, value: number): string {
   return `${value}`;
 }
 
+const TOOLTIP_MAX_WIDTH = 256; // matches the md:w-64 panel below
+
 function InfoTooltip({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [show, setShow] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  // The panel is hard-anchored beside the icon, so one near the right edge
+  // used to run off-screen (the readiness card's tooltip lost ~170px of its
+  // text). Flip it to the other side when it would overflow. Measured on
+  // both hover and tap, since either can open it.
+  const [flip, setFlip] = useState(false);
+  const place = () => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setFlip(rect.left + TOOLTIP_MAX_WIDTH > window.innerWidth);
+  };
   return (
-    <span className="group relative">
-      <Info
-        size={12}
-        className="text-[var(--text-muted)] cursor-help inline"
+    <span ref={wrapRef} className="group relative" onMouseEnter={place}>
+      {/* A real button, not a bare icon: keyboard-reachable, and screen
+          readers announce it. `getByRole("button")` in e2e depends on it. */}
+      <button
+        type="button"
+        aria-label={t("common.moreInfo")}
+        className="text-[var(--text-muted)] cursor-help inline-flex align-middle"
         onClick={(e) => {
           e.stopPropagation();
+          place();
           setShow((v) => !v);
         }}
-      />
-      <span className={`absolute z-10 w-48 sm:w-56 md:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 start-5 pointer-events-none ${show ? "block" : "hidden group-hover:block"}`}>
+      >
+        <Info size={12} />
+      </button>
+      <span className={`absolute z-10 w-48 sm:w-56 md:w-64 max-w-[calc(100vw-3rem)] p-2 text-xs font-normal text-[var(--text-primary)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-lg -top-2 ${flip ? "end-5" : "start-5"} pointer-events-none ${show ? "block" : "hidden group-hover:block"}`}>
         {text}
       </span>
       {show && (
@@ -137,12 +166,17 @@ export function RetirementProjections({
     {
       key: "monthlySavingsNeeded",
       icon: Banknote,
+      // "On track!" only when the plan actually is — 0 extra savings can
+      // coexist with off_track readiness (e.g. FIRE reached by target age
+      // but the portfolio depletes during drawdown).
       value:
-        projections.monthly_savings_needed === 0
+        projections.monthly_savings_needed === 0 &&
+        projections.readiness === "on_track"
           ? t("earlyRetirement.projections.onTrackNoExtra")
           : formatCurrency(projections.monthly_savings_needed),
       color:
-        projections.monthly_savings_needed === 0
+        projections.monthly_savings_needed === 0 &&
+        projections.readiness === "on_track"
           ? "text-emerald-400"
           : "text-amber-400",
       tooltip: t("earlyRetirement.tooltips.monthlySavings"),
@@ -237,6 +271,11 @@ export function RetirementProjections({
             <span className="text-xs text-[var(--text-muted)]">
               {t("earlyRetirement.projections.readiness")}
             </span>
+            <InfoTooltip
+              text={t(
+                `earlyRetirement.projections.readinessHelp_${projections.readiness}`,
+              )}
+            />
           </div>
           <div className={`text-lg font-bold ${readiness.color}`}>
             {t(`earlyRetirement.projections.readiness_${projections.readiness}`)}
@@ -256,9 +295,11 @@ export function RetirementProjections({
                     ? "bg-emerald-500"
                     : projections.readiness === "close"
                       ? "bg-amber-500"
-                      : "bg-rose-500"
+                      : projections.readiness === "funded"
+                        ? "bg-sky-500"
+                        : "bg-rose-500"
                 }`}
-                style={{ width: `${Math.min(projections.progress_pct, 100)}%` }}
+                style={{ width: `${Math.min(Math.max(projections.progress_pct, 0), 100)}%` }}
               />
             </div>
             <span className="text-xs text-[var(--text-muted)] mt-1" dir="ltr">
@@ -306,6 +347,7 @@ export function RetirementProjections({
             data={projections.net_worth_projection}
             fireNumber={projections.fire_number}
             targetAge={projections.target_retirement_age}
+            pensionAge={projections.full_pension_age}
           />
         </div>
         <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
