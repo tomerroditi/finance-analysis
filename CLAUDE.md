@@ -92,10 +92,9 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 
 ## Branch & PR Workflow
 
-- **PRs default to `dev`**, not `main`. Feature branches merge into `dev`. CI on PRs targeting `dev` runs backend pytest, frontend lint/build/vitest, **and the full 4-shard Playwright e2e suite**.
-- `dev` accumulates changes; when ready, `dev` is merged into `main` via a PR that triggers the full CI/CD pipeline (adds the Schemathesis API-fuzz job; the merge builds the Windows installer + GitHub release). macOS bundles are no longer built in CI — see `.claude/rules/installation_and_updates.md`.
-- Never open a PR directly to `main` for feature work — only `dev → main` merges go there.
-- **`dev` is long-lived — never delete it after a merge.** GitHub's auto-delete-head-branches setting kills it after each `dev → main` merge unless `dev` is protected by a deletion-restricting ruleset (or the setting is off). If it disappears, re-create it from `main`. See `.claude/rules/ci_and_release.md`.
+- **PRs target `main`.** Feature branches branch off `main` and merge back into `main`. CI on a PR to `main` runs backend pytest, frontend lint/build/vitest, **the full 4-shard Playwright e2e suite**, and the Schemathesis API-fuzz job. The merge triggers `release.yml`: commitizen bumps the version and builds the Windows installer + GitHub release. macOS bundles are no longer built in CI — see `.claude/rules/installation_and_updates.md`.
+- Use a Conventional Commits subject on the merge — it drives the Commitizen version bump, and every feature merge now cuts a release.
+- **`dev` is dormant, not the default target.** The repo used to stage feature branches on `dev` and ship via `dev → main` release merges; that stopped being practised around 2026-07 and `dev` has since fallen far behind `main`. Don't branch from it or target it. `ci.yml` still gates the e2e job on `dev` as well as `main`, so the old flow would work if revived — but revive it deliberately, don't drift back into it. See `.claude/rules/ci_and_release.md`.
 
 ## Pre-PR Checklist
 
