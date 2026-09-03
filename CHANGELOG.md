@@ -1,3 +1,9 @@
+## v1.51.1 (2026-09-03)
+
+### Fix
+
+- unblock the dependency PRs (smoke-test budget, axios types) + align workflow docs (#229)
+
 ## v1.51.0 (2026-09-02)
 
 ### Feat
