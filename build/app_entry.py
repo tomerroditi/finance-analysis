@@ -229,7 +229,17 @@ def _run_smoke_test() -> int:
     failures: list[str] = []
 
     def _probe():
-        if not _wait_for_port(port, timeout_s=15.0):
+        # uvicorn binds the port only AFTER the FastAPI lifespan finishes,
+        # and that lifespan runs `Base.metadata.create_all` plus
+        # `alembic upgrade head` against a fresh DB. On a cold Windows
+        # runner the PyInstaller bundle also has to unpack itself first, so
+        # the pre-bind work is tens of seconds and grows with every
+        # migration we add. A 15 s budget used to fit and stopped fitting
+        # (CI, 2026-09-03: migrations finished 0.4 s after the deadline
+        # expired). Budget generously — this is a liveness check, not a
+        # performance assertion, and a genuinely dead bundle still fails,
+        # just later.
+        if not _wait_for_port(port, timeout_s=120.0):
             failures.append("uvicorn never opened the port")
             server.should_exit = True
             return

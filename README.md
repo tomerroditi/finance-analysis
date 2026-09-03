@@ -98,8 +98,11 @@ Then launch it from Spotlight or Launchpad. Because you built it locally, the bu
 ## Contributing
 
 - Conventional Commits via Commitizen — `cz commit` is your friend
-- PRs target `dev`, not `main`
-- CI runs pytest + lint + build + vitest on every PR
+- PRs target `main` (the `dev` staging branch is dormant — see `.claude/rules/ci_and_release.md`)
+- CI runs pytest + lint + build + vitest on every PR, plus the 4-shard
+  Playwright e2e suite and an API-fuzz job on PRs to `main`
+- Merging to `main` cuts a release, so pick the conventional-commit type with
+  the version bump in mind
 - Read `.claude/rules/` before changing an architecture layer for the first time
 
 Detailed architecture, conventions, and gotchas live in [`CLAUDE.md`](./CLAUDE.md) and `.claude/rules/`.
