@@ -56,16 +56,28 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
   const tagOptions = category && categoriesMap ? (categoriesMap[category] ?? []) : [];
 
   const mutation = useMutation({
-    mutationFn: () => {
-      const payload = { name, amount: Number(amount), category, tags, year };
-      return editRule
-        ? budgetApi.updateYearlyRule(editRule.id, {
-            name,
-            amount: Number(amount),
-            category,
-            tags,
-          })
-        : budgetApi.createYearlyRule(payload);
+    // `await` both branches rather than returning the axios promise: axios
+    // threads the request-body type through `AxiosResponse<T, D>`, and
+    // update/create send different bodies, so returning the ternary gives a
+    // union of two `AxiosResponse` types that `MutationFunction` rejects.
+    // Nothing here reads the response, so collapse it to `Promise<void>`.
+    mutationFn: async () => {
+      if (editRule) {
+        await budgetApi.updateYearlyRule(editRule.id, {
+          name,
+          amount: Number(amount),
+          category,
+          tags,
+        });
+      } else {
+        await budgetApi.createYearlyRule({
+          name,
+          amount: Number(amount),
+          category,
+          tags,
+          year,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) });
