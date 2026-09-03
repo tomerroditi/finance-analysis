@@ -9,9 +9,9 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
 pandas = "==3.0.5"
-numpy = "==2.5.1"
+numpy = "==2.5.2"
 PyYAML = "==6.0.3"
-SQLAlchemy = "==2.0.51"
+SQLAlchemy = "==2.0.52"
 keyring = ">=24.0.0"
 # At-rest encryption of credential fields (backend/utils/crypto.py). Already
 # a transitive dep of keyring on Linux; pinned explicitly so Windows/macOS
@@ -28,7 +28,7 @@ httpx = "^0.28.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"
-Faker = "==40.36.0"
+Faker = "==40.37.0"
 commitizen = "^4.4.1"
 playwright = "^1.57.0"
 requests = "^2.32.5"
